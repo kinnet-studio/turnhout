@@ -2,3 +2,8 @@
 node_modules
 dist
 *.log
+
+# compiled TS artifacts (Vite bundles sources directly; tsc is type-check only)
+src/**/*.js
+src/**/*.d.ts
+*.tsbuildinfo
