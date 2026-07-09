@@ -93,4 +93,12 @@ describe('GameServer', () => {
     s.submit('me', { type: 'move', cardId: 'c0', toZone: 'hand-me' });
     expect(seen).toHaveBeenCalledTimes(1);
   });
+
+  it('does not notify subscribers on an illegal submit', () => {
+    const s = build();
+    const seen = vi.fn();
+    s.subscribe(seen);
+    s.submit('me', { type: 'move', cardId: 'ghost', toZone: 'deck' });
+    expect(seen).not.toHaveBeenCalled();
+  });
 });

@@ -13,6 +13,8 @@ export class GameSession {
   }
 
   connect(id: PlayerId, channel: Channel): () => void {
+    const existing = this.conns.get(id);
+    if (existing && existing !== channel) existing.close();
     this.conns.set(id, channel);
     channel.onMessage((msg) => {
       if (msg.type === 'move') {

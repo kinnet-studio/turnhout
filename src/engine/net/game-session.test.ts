@@ -84,4 +84,14 @@ describe('GameSession', () => {
     expect(second.msgs.filter((m) => m.type === 'view').length).toBeGreaterThanOrEqual(2);
     expect(first.msgs.filter((m) => m.type === 'view')).toHaveLength(1);
   });
+
+  it('retires the old channel on reconnect so it can no longer act as the seat', () => {
+    const s = build();
+    const first = collect(s, 'me');
+    const second = collect(s, 'me');   // reconnect 'me' → first is retired
+    const before = second.msgs.filter((m) => m.type === 'view').length;
+    first.client.send({ type: 'move', move: { type: 'flip', cardId: 'c0', faceUp: true } });
+    // the old channel is closed → its send is a no-op → no new view is pushed to the current channel
+    expect(second.msgs.filter((m) => m.type === 'view').length).toBe(before);
+  });
 });

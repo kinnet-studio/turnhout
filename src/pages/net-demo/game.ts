@@ -9,8 +9,6 @@ import type { CardState } from '@/engine/core/scene';
 import type { TableDef } from '@/engine/core/table-def';
 import { GameServer } from '@/engine/net/game-server';
 
-export const SEATS = ['me', 'opp'] as const;
-
 export const TABLE: TableDef = {
   players: ['me', 'opp'],
   zones: [
