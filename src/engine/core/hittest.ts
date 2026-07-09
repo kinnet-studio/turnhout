@@ -1,4 +1,7 @@
 import { CARD_HEIGHT, CARD_WIDTH, type CardState, type PlacedCard, type PlacedZone, type Vec2 } from './scene';
+import { canAccept, type RuleRegistry } from './rules';
+import type { ZoneDef } from './table-def';
+import { placeZone, slotAtPoint } from './zone-geometry';
 
 function inBox(pt: Vec2, cx: number, cy: number, w: number, h: number): boolean {
   return pt.x >= cx - w / 2 && pt.x <= cx + w / 2 && pt.y >= cy - h / 2 && pt.y <= cy + h / 2;
@@ -31,6 +34,24 @@ export function zoneAtPoint(
     if (!inBox(pt, z.x, z.y, z.width, z.height)) continue;
     if (card && z.accepts && !z.accepts(card)) continue;
     return { zoneId: z.id, slot: 0 };
+  }
+  return null;
+}
+
+export function resolveDrop(
+  pt: Vec2,
+  zones: ZoneDef[],
+  zoneCardsOf: (zoneId: string) => CardState[],
+  card: CardState,
+  registry: RuleRegistry,
+): { zoneId: string; slot: number } | null {
+  for (let i = zones.length - 1; i >= 0; i--) {
+    const zone = zones[i];
+    const zoneCards = zoneCardsOf(zone.id);
+    const placed = placeZone(zone, zoneCards);
+    if (!inBox(pt, placed.x, placed.y, placed.width, placed.height)) continue;
+    if (!canAccept(zone, card, zoneCards, registry)) continue;
+    return { zoneId: zone.id, slot: slotAtPoint(zone, zoneCards, pt) };
   }
   return null;
 }
