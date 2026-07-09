@@ -48,6 +48,10 @@ function DemoContent() {
 
   const onDrop = (i: DropIntent) => {
     if (!i.toZoneId) return; // rejected → snaps back automatically
+    if (i.toZoneId === i.fromZoneId) {
+      dispatch({ type: 'reorder', cardId: i.cardId, slot: i.slot });
+      return;
+    }
     dispatch({ type: 'move', cardId: i.cardId, toZone: i.toZoneId, slot: i.slot });
   };
 
