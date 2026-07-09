@@ -23,7 +23,13 @@ export function keepPositionalOnly(data: CardState['data']): CardState['data'] {
   return out;
 }
 
-/** Project one card into what `viewer` should see. */
+/**
+ * Project one card into what `viewer` should see.
+ * INVARIANT: card `id`s MUST be opaque / non-identifying. Projection preserves
+ * `id` (the renderer animates by id) while scrubbing faceKey + identity data, so
+ * an identity-encoding id (e.g. 'AS') would leak the card's identity to a viewer
+ * who may not see its face.
+ */
 export function projectCard(card: CardState, zone: ZoneDef | undefined, viewer: PlayerId): CardState {
   if (isRevealed(card, zone, viewer)) return { ...card, faceUp: true };
   return { ...card, faceUp: false, faceKey: HIDDEN_FACE_KEY, data: keepPositionalOnly(card.data) };
