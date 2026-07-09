@@ -21,6 +21,10 @@ function useSeat(session: GameSession, seat: string): { view: ClientView | null;
   }, [session, seat]);
   const submit = (i: DropIntent) => {
     if (!i.toZoneId) return;
+    if (i.toZoneId === i.fromZoneId) {
+      chan.current?.send({ type: 'move', move: { type: 'reorder', cardId: i.cardId, slot: i.slot } });
+      return;
+    }
     chan.current?.send({ type: 'move', move: { type: 'play', cardId: i.cardId, toZone: i.toZoneId, slot: i.slot } });
   };
   return { view, submit };

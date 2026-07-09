@@ -39,4 +39,23 @@ describe('net-demo', () => {
     expect(r.ok).toBe(true);
     expect(server.viewFor('opp').scene.cards.find((c) => c.id === meCard.id)!.zoneId).toBe('discard');
   });
+
+  it('lets a seat reorder its own hand off-turn', () => {
+    const server = createDemoServer(); // turn starts at 'me'
+    const before = server.viewFor('opp').scene.cards.filter((c) => c.zoneId === 'hand-opp').map((c) => c.id);
+    const r = server.submit('opp', { type: 'reorder', cardId: before[0], slot: 2 });
+    expect(r.ok).toBe(true);
+    const after = server.viewFor('opp').scene.cards
+      .filter((c) => c.zoneId === 'hand-opp')
+      .sort((a, b) => (a.slot ?? 0) - (b.slot ?? 0))
+      .map((c) => c.id);
+    expect(after).toEqual([before[1], before[2], before[0]]);
+  });
+
+  it("rejects reordering another seat's hand", () => {
+    const server = createDemoServer();
+    const meCard = server.viewFor('me').scene.cards.find((c) => c.zoneId === 'hand-me')!;
+    const r = server.submit('opp', { type: 'reorder', cardId: meCard.id, slot: 0 });
+    expect(r.ok).toBe(false);
+  });
 });
