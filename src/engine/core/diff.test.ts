@@ -40,4 +40,14 @@ describe('reconcile', () => {
       { type: 'move', id: 'mover', fromZoneId: 'deck', toZoneId: 'hand' },
     ]);
   });
+
+  it('emits only a flip (suppressing reface) when faceUp and faceKey both change', () => {
+    const ops = reconcile(s([c('a', { faceUp: false, faceKey: 'back' })]), s([c('a', { faceUp: true, faceKey: 'AS' })]));
+    expect(ops).toEqual([{ type: 'flip', id: 'a', faceUp: true }]);
+  });
+
+  it('emits an update when slot changes', () => {
+    const ops = reconcile(s([c('a', { slot: 0 })]), s([c('a', { slot: 1 })]));
+    expect(ops).toEqual([{ type: 'update', id: 'a' }]);
+  });
 });
