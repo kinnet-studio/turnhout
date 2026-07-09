@@ -94,4 +94,9 @@ describe('insertAtSlot', () => {
   it('returns the state unchanged for an unknown card', () => {
     expect(insertAtSlot(s, 'zz', 'h', 0)).toBe(s);
   });
+
+  it('reordering a card to its current slot preserves every card object identity', () => {
+    const out = insertAtSlot(s, 'c', 'h', 2);
+    out.cards.forEach((c, i) => expect(c).toBe(s.cards[i]));
+  });
 });

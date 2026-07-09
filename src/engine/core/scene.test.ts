@@ -65,4 +65,18 @@ describe('cardsByZone', () => {
     // fallback, a/b get indices 3/4 and x wrongly sorts under the pile.
     expect(cardsByZone(s).get('p')!.map((c) => c.id)).toEqual(['a', 'b', 'x']);
   });
+
+  it('an explicit slot ties with natural positions and breaks by insertion order', () => {
+    const s = scene(
+      [
+        { id: 'a', zoneId: 'p', faceUp: true, faceKey: 'a' },
+        { id: 'b', zoneId: 'p', faceUp: true, faceKey: 'b' },
+        { id: 'x', zoneId: 'p', faceUp: true, faceKey: 'x', slot: 0 },
+      ],
+      [{ id: 'p', layout: 'pile', transform: { x: 0, y: 0 } }],
+    );
+    // a's fallback key is its zone-local index (0), which ties with x's explicit
+    // slot (0); the tie is broken by local (insertion) order, so a sorts before x.
+    expect(cardsByZone(s).get('p')!.map((c) => c.id)).toEqual(['a', 'x', 'b']);
+  });
 });

@@ -95,6 +95,7 @@ const reorder: MoveHandler = {
   legal(state, m, ctx) {
     const cardId = m.cardId as string;
     const by = m.by as string | undefined;
+    if (typeof m.slot !== 'number') return 'reorder requires a numeric slot';
     const card = cardById(state, cardId);
     if (!card) return `unknown card: ${cardId}`;
     const zone = zoneById(ctx, card.zoneId);

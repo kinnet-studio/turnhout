@@ -19,6 +19,7 @@ const tableDef: TableDef = {
     { id: 'foundation', layout: 'pile', transform: { x: 300, y: 0 }, accept: { rule: 'sameSuitAscending' } },
     { id: 'guarded', layout: 'pile', transform: { x: 600, y: 0 }, accept: { rule: 'ghostRule' } },
     { id: 'fan', layout: 'fan', transform: { x: 0, y: 600 }, owner: 'p1', visibility: 'owner', ordering: 'free' },
+    { id: 'open-fan', layout: 'row', transform: { x: 0, y: 900 }, ordering: 'free' },
   ],
 };
 
@@ -146,9 +147,19 @@ describe('reorder', () => {
     expect(h.legal(fanState, { type: 'reorder', cardId: 'zz', slot: 0 }, ctx)).toBeTypeOf('string');
   });
 
+  it('rejects a missing or non-numeric slot', () => {
+    expect(h.legal(fanState, { type: 'reorder', cardId: 'a' }, ctx)).toBeTypeOf('string');
+    expect(h.legal(fanState, { type: 'reorder', cardId: 'a', slot: 'top' }, ctx)).toBeTypeOf('string');
+  });
+
   it('is a harmless no-op in a single-card zone', () => {
     const s = state([card('a', 'fan')]);
     const out = h.apply(s, { type: 'reorder', cardId: 'a', slot: 5 }, ctx);
     expect(zoneCards(out, 'fan').map((c) => c.id)).toEqual(['a']);
+  });
+
+  it('allows reorder with `by` in an ownerless free zone', () => {
+    const s = state([card('a', 'open-fan'), card('b', 'open-fan')]);
+    expect(h.legal(s, { type: 'reorder', cardId: 'a', slot: 1, by: 'p2' }, ctx)).toBe(true);
   });
 });

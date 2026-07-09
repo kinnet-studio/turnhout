@@ -37,7 +37,7 @@ const play: MoveHandler = {
   apply(state, m) {
     const cardId = m.cardId as string;
     const toZone = m.toZone as string;
-    return { ...state, cards: state.cards.map((c) => (c.id === cardId ? { ...c, zoneId: toZone } : c)) };
+    return { ...state, cards: state.cards.map((c) => (c.id === cardId ? { ...c, zoneId: toZone, slot: undefined } : c)) };
   },
 };
 
