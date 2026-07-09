@@ -17,7 +17,7 @@ describe('CardTable', () => {
   it('pushes the table into the engine on mount', () => {
     setTable.mockClear();
     render(<CardTable tableDef={tableDef} placement={placement} />);
-    expect(setTable).toHaveBeenCalledWith(tableDef, placement);
+    expect(setTable).toHaveBeenCalledWith(tableDef, placement, undefined);
   });
 
   it('registers intents from props', () => {
