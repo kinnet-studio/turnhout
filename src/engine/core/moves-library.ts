@@ -1,5 +1,5 @@
 import { canAccept } from './rules';
-import { cardById, zoneCards, type GameState } from './game-state';
+import { cardById, insertAtSlot, zoneCards, type GameState } from './game-state';
 import type { Move, MoveContext, MoveHandler, MoveRegistry } from './moves';
 import { shuffleWithRng } from './rng';
 import type { CardState } from './scene';
@@ -86,8 +86,35 @@ const shuffle: MoveHandler = {
   },
 };
 
+/** Reposition a card within its current free-ordered zone. Owner-checked, never turn-gated. */
+const reorder: MoveHandler = {
+  legal(state, m, ctx) {
+    const cardId = m.cardId as string;
+    const by = m.by as string | undefined;
+    const card = cardById(state, cardId);
+    if (!card) return `unknown card: ${cardId}`;
+    const zone = zoneById(ctx, card.zoneId);
+    if (!zone) return `unknown zone: ${card.zoneId}`;
+    if ((zone.ordering ?? 'stack') !== 'free') return `zone ${zone.id} is not reorderable`;
+    if (by !== undefined && zone.owner !== undefined && zone.owner !== 'shared' && zone.owner !== by) {
+      return `zone ${zone.id} is not owned by ${by}`;
+    }
+    return true;
+  },
+  apply(state, m) {
+    const card = cardById(state, m.cardId as string);
+    if (!card) return state;
+    return insertAtSlot(state, card.id, card.zoneId, m.slot as number);
+  },
+};
+
 export function registerCoreMoves(registry: MoveRegistry): MoveRegistry {
-  return registry.register('move', move).register('flip', flip).register('deal', deal).register('shuffle', shuffle);
+  return registry
+    .register('move', move)
+    .register('reorder', reorder)
+    .register('flip', flip)
+    .register('deal', deal)
+    .register('shuffle', shuffle);
 }
 
 export type { Move };

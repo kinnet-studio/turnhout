@@ -18,6 +18,7 @@ const tableDef: TableDef = {
     { id: 'hand', layout: 'row', transform: { x: 0, y: 300 } },
     { id: 'foundation', layout: 'pile', transform: { x: 300, y: 0 }, accept: { rule: 'sameSuitAscending' } },
     { id: 'guarded', layout: 'pile', transform: { x: 600, y: 0 }, accept: { rule: 'ghostRule' } },
+    { id: 'fan', layout: 'fan', transform: { x: 0, y: 600 }, owner: 'p1', visibility: 'owner', ordering: 'free' },
   ],
 };
 
@@ -100,5 +101,48 @@ describe('shuffle', () => {
   it('is legal only for an existing zone', () => {
     expect(h.legal(deck, { type: 'shuffle', zoneId: 'ghost' }, sctx)).toBeTypeOf('string');
     expect(h.legal(deck, { type: 'shuffle', zoneId: 'd' }, sctx)).toBe(true);
+  });
+});
+
+describe('reorder', () => {
+  const h = registry.get('reorder')!;
+  const fanState = state(['a', 'b', 'c', 'd', 'e'].map((id, i) => card(id, 'fan', { slot: i })));
+
+  it('is legal in a free-ordered zone and renormalizes the order', () => {
+    const m = { type: 'reorder', cardId: 'a', slot: 3 };
+    expect(h.legal(fanState, m, ctx)).toBe(true);
+    const out = h.apply(fanState, m, ctx);
+    expect(zoneCards(out, 'fan').map((c) => c.id)).toEqual(['b', 'c', 'd', 'a', 'e']);
+    expect(zoneCards(out, 'fan').map((c) => c.slot)).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it('clamps an out-of-range slot', () => {
+    const out = h.apply(fanState, { type: 'reorder', cardId: 'a', slot: 99 }, ctx);
+    expect(zoneCards(out, 'fan').map((c) => c.id)).toEqual(['b', 'c', 'd', 'e', 'a']);
+  });
+
+  it('rejects a zone that is not free-ordered', () => {
+    const s = state([card('a', 'deck')]);
+    expect(h.legal(s, { type: 'reorder', cardId: 'a', slot: 0 }, ctx)).toBeTypeOf('string');
+  });
+
+  it('enforces zone ownership when `by` is present', () => {
+    expect(h.legal(fanState, { type: 'reorder', cardId: 'a', slot: 0, by: 'p2' }, ctx)).toBeTypeOf('string');
+    expect(h.legal(fanState, { type: 'reorder', cardId: 'a', slot: 0, by: 'p1' }, ctx)).toBe(true);
+  });
+
+  it('is not turn-gated (legal off-turn)', () => {
+    const offTurn: GameState = { ...fanState, turn: { current: 'p2' } };
+    expect(h.legal(offTurn, { type: 'reorder', cardId: 'a', slot: 0, by: 'p1' }, ctx)).toBe(true);
+  });
+
+  it('rejects an unknown card', () => {
+    expect(h.legal(fanState, { type: 'reorder', cardId: 'zz', slot: 0 }, ctx)).toBeTypeOf('string');
+  });
+
+  it('is a harmless no-op in a single-card zone', () => {
+    const s = state([card('a', 'fan')]);
+    const out = h.apply(s, { type: 'reorder', cardId: 'a', slot: 5 }, ctx);
+    expect(zoneCards(out, 'fan').map((c) => c.id)).toEqual(['a']);
   });
 });
