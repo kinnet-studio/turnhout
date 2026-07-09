@@ -6,13 +6,14 @@ import type { DropIntent } from '@/engine/input/table-input-context';
 import { initApp } from '@/utils/init-app';
 import { standardDeck } from './deck';
 
-const ZONES: TableDef['zones'] = [
-  { id: 'deck', layout: 'pile', transform: { x: -400, y: 0 }, layoutOptions: { jitter: 0.02 } },
-  { id: 'hand', layout: 'fan', transform: { x: 0, y: 300 }, layoutOptions: { fanAngleDeg: 24 } },
-  { id: 'discard', layout: 'pile', transform: { x: 400, y: 0 } },
-];
-
-const TABLE: TableDef = { zones: ZONES };
+export const TABLE: TableDef = {
+  players: ['me'],
+  zones: [
+    { id: 'deck', layout: 'pile', transform: { x: -400, y: 0 }, layoutOptions: { jitter: 0.02 }, visibility: 'secret' },
+    { id: 'hand', layout: 'fan', transform: { x: 0, y: 300 }, layoutOptions: { fanAngleDeg: 24 }, owner: 'me', visibility: 'owner', ordering: 'free' },
+    { id: 'discard', layout: 'pile', transform: { x: 400, y: 0 }, visibility: 'public' },
+  ],
+};
 
 function DemoContent() {
   const handleRef = useRef<CardTableHandle>(null);
