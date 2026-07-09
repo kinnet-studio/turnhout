@@ -24,10 +24,14 @@ const move: MoveHandler = {
     if (!canAccept(zone, card, zoneCards(state, toZone), ctx.rules)) return `zone ${toZone} rejects ${cardId}`;
     return true;
   },
-  apply(state, m) {
+  apply(state, m, ctx) {
     const cardId = m.cardId as string;
     const toZone = m.toZone as string;
     const slot = m.slot as number | undefined;
+    const zone = zoneById(ctx, toZone);
+    if (slot !== undefined && (zone?.ordering ?? 'stack') === 'free') {
+      return insertAtSlot(state, cardId, toZone, slot);
+    }
     return mapCards(state, (c) =>
       c.id === cardId ? { ...c, zoneId: toZone, ...(slot !== undefined ? { slot } : {}) } : c,
     );

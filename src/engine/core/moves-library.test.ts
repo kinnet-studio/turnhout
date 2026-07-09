@@ -52,6 +52,12 @@ describe('move', () => {
     const out = h.apply(s, { type: 'move', cardId: 'AS', toZone: 'hand', slot: 3 }, ctx);
     expect(out.cards[0].slot).toBe(3);
   });
+  it('inserts at the drop slot in a free-ordered zone and renormalizes', () => {
+    const s = state([card('a', 'fan', { slot: 0 }), card('b', 'fan', { slot: 1 }), card('x', 'deck')]);
+    const out = h.apply(s, { type: 'move', cardId: 'x', toZone: 'fan', slot: 1 }, ctx);
+    expect(zoneCards(out, 'fan').map((c) => c.id)).toEqual(['a', 'x', 'b']);
+    expect(zoneCards(out, 'fan').map((c) => c.slot)).toEqual([0, 1, 2]);
+  });
 });
 
 describe('flip', () => {
