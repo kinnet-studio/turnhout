@@ -1,4 +1,6 @@
-import type { CardState, PlacedCard, PlacedZone, Scene, Vec2 } from '../core/scene';
+import type { CardState, PlacedCard, Vec2 } from '../core/scene';
+import type { RuleRegistry } from '../core/rules';
+import type { ZoneDef } from '../core/table-def';
 
 export interface DropIntent {
   cardId: string;
@@ -17,12 +19,13 @@ export interface TableIntents {
 export interface TableInputDeps {
   clientToWorld: (clientX: number, clientY: number) => Vec2;
   getPlacedCards: () => PlacedCard[];
-  getPlacedZones: () => PlacedZone[];
-  getScene: () => Scene;
+  getZones: () => ZoneDef[];
+  getCards: () => CardState[];
+  registry: RuleRegistry;
   beginDrag: (id: string) => void;
   dragTo: (id: string, world: Vec2) => void;
   endDrag: (id: string) => void;
   intents: TableIntents;
 }
 
-export type { CardState, PlacedCard, PlacedZone, Scene, Vec2 };
+export type { CardState, PlacedCard, Vec2 };

@@ -6,9 +6,9 @@ const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K'] 
 export function standardDeck(): CardState[] {
   const cards: CardState[] = [];
   for (const s of SUITS) {
-    for (const r of RANKS) {
-      cards.push({ id: `${r}${s}`, zoneId: 'deck', faceUp: false, faceKey: `${r}${s}` });
-    }
+    RANKS.forEach((r, i) => {
+      cards.push({ id: `${r}${s}`, zoneId: 'deck', faceUp: false, faceKey: `${r}${s}`, data: { suit: s, rank: i + 1 } });
+    });
   }
   return cards;
 }

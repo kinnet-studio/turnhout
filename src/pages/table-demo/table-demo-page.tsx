@@ -1,21 +1,24 @@
 import { useMemo, useRef, useState } from 'react';
 import { Wrapper } from '@/components/PixiCanvas';
-import type { Scene } from '@/engine/core/scene';
+import type { Placement, TableDef } from '@/engine/core/table-def';
 import { CardTable, type CardTableHandle } from '@/engine/react';
 import type { DropIntent } from '@/engine/input/table-input-context';
 import { initApp } from '@/utils/init-app';
 import { standardDeck } from './deck';
 
-const ZONES: Scene['zones'] = [
-  { id: 'deck', layout: 'pile', transform: { x: -400, y: 0 }, layoutOptions: { jitter: 0.02 } },
-  { id: 'hand', layout: 'fan', transform: { x: 0, y: 300 }, layoutOptions: { fanAngleDeg: 24 } },
-  { id: 'discard', layout: 'pile', transform: { x: 400, y: 0 } },
-];
+export const TABLE: TableDef = {
+  players: ['me'],
+  zones: [
+    { id: 'deck', layout: 'pile', transform: { x: -400, y: 0 }, layoutOptions: { jitter: 0.02 }, visibility: 'secret' },
+    { id: 'hand', layout: 'fan', transform: { x: 0, y: 300 }, layoutOptions: { fanAngleDeg: 24 }, owner: 'me', visibility: 'owner', ordering: 'free' },
+    { id: 'discard', layout: 'pile', transform: { x: 400, y: 0 }, visibility: 'public' },
+  ],
+};
 
 function DemoContent() {
   const handleRef = useRef<CardTableHandle>(null);
   const [cards, setCards] = useState(standardDeck());
-  const scene: Scene = { cards, zones: ZONES };
+  const placement: Placement = { cards };
 
   const onDrop = (i: DropIntent) => {
     if (!i.toZoneId) return; // rejected → snaps back automatically
@@ -35,7 +38,7 @@ function DemoContent() {
 
   return (
     <>
-      <CardTable ref={handleRef} scene={scene} onDrop={onDrop} onCardClick={onCardClick} />
+      <CardTable ref={handleRef} tableDef={TABLE} placement={placement} onDrop={onDrop} onCardClick={onCardClick} />
       {/* The integration's OverlayContainer sets pointer-events:none so pointers reach
           the canvas; interactive HTML overlay UI must re-enable it on itself. */}
       <button

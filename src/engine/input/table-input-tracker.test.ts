@@ -1,17 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
 import { TableInputTracker } from './table-input-tracker';
 import type { TableInputDeps } from './table-input-context';
-import type { PlacedCard, PlacedZone, Scene, Vec2 } from '../core/scene';
+import type { CardState, PlacedCard, Vec2 } from '../core/scene';
+import type { ZoneDef } from '../core/table-def';
+import { RuleRegistry } from '../core/rules';
 
 function makeDeps(over: Partial<TableInputDeps> = {}): TableInputDeps {
   const placedCards: PlacedCard[] = [{ id: 'a', draggable: true, transform: { x: 0, y: 0, rotation: 0, scale: 1, z: 0 } }];
-  const placedZones: PlacedZone[] = [{ id: 'hand', x: 300, y: 0, width: 200, height: 200 }];
-  const scene: Scene = { cards: [{ id: 'a', zoneId: 'deck', faceUp: true, faceKey: 'AS' }], zones: [] };
+  const zones: ZoneDef[] = [{ id: 'hand', layout: 'row', transform: { x: 300, y: 0 }, bounds: { width: 200, height: 200 } }];
+  const cards: CardState[] = [{ id: 'a', zoneId: 'deck', faceUp: true, faceKey: 'AS' }];
   return {
     clientToWorld: (x: number, y: number): Vec2 => ({ x, y }),
     getPlacedCards: () => placedCards,
-    getPlacedZones: () => placedZones,
-    getScene: () => scene,
+    getZones: () => zones,
+    getCards: () => cards,
+    registry: new RuleRegistry(),
     beginDrag: vi.fn(),
     dragTo: vi.fn(),
     endDrag: vi.fn(),

@@ -2,8 +2,12 @@ import { type KmtInputStateMachine, convertFromCanvas2ViewPort, convertFromWindo
 import { type BaseAppComponents, type InitAppOptions, baseInitApp } from '@ue-too/board-pixi-integration';
 import { Graphics, RenderTexture, type Texture } from 'pixi.js';
 import type { AppComponents } from '@/app-components';
-import type { PlacedZone, Scene, Vec2 } from '@/engine/core/scene';
+import type { CardState, Vec2 } from '@/engine/core/scene';
 import { CARD_HEIGHT, CARD_WIDTH } from '@/engine/core/scene';
+import type { Placement, TableDef } from '@/engine/core/table-def';
+import { RuleRegistry } from '@/engine/core/rules';
+import { registerStarterRules } from '@/engine/core/rules-library';
+import { deriveScene } from '@/engine/core/derive-scene';
 import type { TableIntents } from '@/engine/input/table-input-context';
 import { createTableInputStateMachine, trackerToSMContext } from '@/engine/input/table-kmt-state-machine';
 import { TableKmtParser } from '@/engine/input/table-kmt-parser';
@@ -60,15 +64,17 @@ export const initApp = async (
     return base.camera.convertFromViewPort2WorldSpace(viewportPt);
   };
 
-  let currentScene: Scene = { cards: [], zones: [] };
-  let currentZones: PlacedZone[] = [];
+  const registry = registerStarterRules(new RuleRegistry());
+  let currentDef: TableDef = { zones: [] };
+  let currentCards: CardState[] = [];
 
   let intents: TableIntents = {};
   const tracker = new TableInputTracker({
     clientToWorld,
     getPlacedCards: () => pixiTable.getPlacedCards(),
-    getPlacedZones: () => currentZones,
-    getScene: () => currentScene,
+    getZones: () => currentDef.zones,
+    getCards: () => currentCards,
+    registry,
     beginDrag: (id) => pixiTable.beginDrag(id),
     dragTo: (id, world) => pixiTable.dragTo(id, world),
     endDrag: (id) => pixiTable.endDrag(id),
@@ -115,17 +121,10 @@ export const initApp = async (
   base.camera.zoomBoundaries = { min: fit, max: fit };
   base.camera.setZoomLevel(fit);
 
-  const setScene = (scene: Scene): void => {
-    currentScene = scene;
-    currentZones = scene.zones.map((z) => ({
-      id: z.id,
-      x: z.transform.x,
-      y: z.transform.y,
-      width: (z.layoutOptions?.spacing ?? CARD_WIDTH) * 4,
-      height: CARD_HEIGHT * 2,
-      accepts: z.accepts,
-    }));
-    pixiTable.setScene(scene);
+  const setTable = (def: TableDef, placement: Placement): void => {
+    currentDef = def;
+    currentCards = placement.cards;
+    pixiTable.setScene(deriveScene(def, placement));
   };
 
   return {
@@ -133,7 +132,8 @@ export const initApp = async (
     type: 'table',
     pixiTable,
     inputTracker: tracker,
-    setScene,
+    registry,
+    setTable,
     setIntents: (next) => {
       intents = next;
     },

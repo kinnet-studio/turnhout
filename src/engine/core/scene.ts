@@ -7,6 +7,8 @@ export interface Vec2 {
   y: number;
 }
 
+export type PlayerId = string;
+
 export interface CardState {
   id: string;
   zoneId: string;
@@ -15,6 +17,7 @@ export interface CardState {
   slot?: number;
   draggable?: boolean;
   data?: { x?: number; y?: number; [k: string]: unknown };
+  revealTo?: PlayerId[] | 'all';
 }
 
 export interface LayoutOptions {
@@ -56,14 +59,7 @@ export interface PlacedCard {
 }
 
 /** A zone placed in world space (for drop hit-testing). */
-export interface PlacedZone {
-  id: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  accepts?: (card: CardState) => boolean;
-}
+export interface PlacedZone { id: string; x: number; y: number; width: number; height: number; }
 
 export function validateScene(scene: Scene): { ok: boolean; errors: string[]; warnings: string[] } {
   const errors: string[] = [];

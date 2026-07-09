@@ -12,8 +12,8 @@ export const CardTable = forwardRef<CardTableHandle, CardTableProps>(function Ca
 
   useEffect(() => {
     if (!app) return;
-    app.setScene(props.scene);
-  }, [app, props.scene]);
+    app.setTable(props.tableDef, props.placement);
+  }, [app, props.tableDef, props.placement]);
 
   useImperativeHandle(ref, () => ({
     deal: (_staggerMs?: number) => { /* wired to pixiTable choreography in a follow-up */ },
