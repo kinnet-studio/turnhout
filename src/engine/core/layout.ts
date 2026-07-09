@@ -1,7 +1,7 @@
 import { CARD_WIDTH, type CardState, type TargetTransform, type ZoneState } from './scene';
 
 const PILE_DY = 0.4;
-const DEFAULT_ROW_SPACING = 110; // CARD_WIDTH * 1.1
+const DEFAULT_ROW_SPACING = Math.round(CARD_WIDTH * 1.1); // 110
 const DEFAULT_GRID_ROW = 150;
 const DEFAULT_FAN_ANGLE = 30;
 const DEFAULT_FAN_RADIUS = 600;
