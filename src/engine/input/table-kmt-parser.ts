@@ -41,4 +41,13 @@ export class TableKmtParser extends VanillaKMTEventParser {
     if (this.disabled || e.button !== 0) return;
     this.cardSM.happens('pointerUp', { world: this.toWorld(e.clientX, e.clientY) });
   }
+
+  // Fixed table: no camera pan/zoom from wheel. The base VanillaKMTEventParser's
+  // scrollHandler drives camera pan (plain wheel) and zoom (ctrl+wheel) via the
+  // KMT state machine; overriding it here (rather than pointer handlers alone)
+  // is required to fully neutralize camera movement on the fixed table.
+  override scrollHandler(e: WheelEvent): void {
+    if (this.disabled) return;
+    e.preventDefault();
+  }
 }

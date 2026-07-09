@@ -100,7 +100,13 @@ export const initApp = async (
   base.kmtParser = parser;
   base.touchParser.tearDown();
 
-  // Fit camera to the table bounds; lock zoom (fixed table).
+  // Fit camera to the table bounds; lock zoom and pan (fixed table).
+  // `option.boundaries` isn't guaranteed to reach baseInitApp (main.tsx passes
+  // its own `option` with no `boundaries` key, so the default parameter here
+  // never applies), so set the camera's position boundaries explicitly here to
+  // keep the pan clamp consistent with the `fit` zoom computed from
+  // TABLE_BOUNDS below.
+  base.camera.boundaries = TABLE_BOUNDS;
   const fit = Math.min(
     base.camera.viewPortWidth / (TABLE_BOUNDS.max.x - TABLE_BOUNDS.min.x),
     base.camera.viewPortHeight / (TABLE_BOUNDS.max.y - TABLE_BOUNDS.min.y),
