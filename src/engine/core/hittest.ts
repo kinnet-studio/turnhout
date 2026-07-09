@@ -1,4 +1,4 @@
-import { CARD_HEIGHT, CARD_WIDTH, type CardState, type PlacedCard, type PlacedZone, type Vec2 } from './scene';
+import { CARD_HEIGHT, CARD_WIDTH, type CardState, type PlacedCard, type Vec2 } from './scene';
 import { canAccept, type RuleRegistry } from './rules';
 import type { ZoneDef } from './table-def';
 import { placeZone, slotAtPoint } from './zone-geometry';
@@ -22,20 +22,6 @@ export function cardAtPoint(
     }
   }
   return best?.id ?? null;
-}
-
-export function zoneAtPoint(
-  pt: Vec2,
-  zones: PlacedZone[],
-  card?: CardState,
-): { zoneId: string; slot: number } | null {
-  for (let i = zones.length - 1; i >= 0; i--) {
-    const z = zones[i];
-    if (!inBox(pt, z.x, z.y, z.width, z.height)) continue;
-    if (card && z.accepts && !z.accepts(card)) continue;
-    return { zoneId: z.id, slot: 0 };
-  }
-  return null;
 }
 
 export function resolveDrop(

@@ -1,4 +1,4 @@
-import type { Scene } from '../core/scene';
+import type { Placement, TableDef } from '../core/table-def';
 import type { DropIntent } from '../input/table-input-context';
 
 export interface CardTableHandle {
@@ -7,7 +7,8 @@ export interface CardTableHandle {
 }
 
 export interface CardTableProps {
-  scene: Scene;
+  tableDef: TableDef;
+  placement: Placement;
   onDrop?: (intent: DropIntent) => void;
   onCardClick?: (cardId: string) => void;
   onHover?: (cardId: string | null) => void;

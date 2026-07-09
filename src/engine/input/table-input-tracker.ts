@@ -1,4 +1,4 @@
-import { cardAtPoint, zoneAtPoint } from '../core/hittest';
+import { cardAtPoint, resolveDrop } from '../core/hittest';
 import type { Vec2 } from '../core/scene';
 import type { TableInputDeps } from './table-input-context';
 
@@ -20,7 +20,7 @@ export class TableInputTracker {
     const id = cardAtPoint(world, this.deps.getPlacedCards(), { draggableOnly: true });
     if (id == null) return;
     this.dragId = id;
-    this.dragFromZone = this.deps.getScene().cards.find((c) => c.id === id)?.zoneId ?? null;
+    this.dragFromZone = this.deps.getCards().find((c) => c.id === id)?.zoneId ?? null;
     this.deps.beginDrag(id);
   }
 
@@ -57,8 +57,10 @@ export class TableInputTracker {
       this.deps.intents.onCardClick?.(id);
       return;
     }
-    const card = this.deps.getScene().cards.find((c) => c.id === id);
-    const hit = zoneAtPoint(world, this.deps.getPlacedZones(), card);
+    const cards = this.deps.getCards();
+    const card = cards.find((c) => c.id === id);
+    const zoneCardsOf = (zoneId: string) => cards.filter((c) => c.zoneId === zoneId);
+    const hit = card ? resolveDrop(world, this.deps.getZones(), zoneCardsOf, card, this.deps.registry) : null;
     this.deps.intents.onDrop?.({
       cardId: id, fromZoneId: this.dragFromZone ?? '', toZoneId: hit?.zoneId ?? null, slot: hit?.slot ?? 0, worldPoint: world,
     });
