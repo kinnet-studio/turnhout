@@ -57,7 +57,7 @@ const deal: MoveHandler = {
     const toZone = m.toZone as string;
     const count = m.count as number;
     const faceUp = m.faceUp as boolean | undefined;
-    const top = zoneCards(state, fromZone).slice(-count);
+    const top = count > 0 ? zoneCards(state, fromZone).slice(-count) : [];
     const ids = new Set(top.map((c) => c.id));
     return mapCards(state, (c) =>
       ids.has(c.id) ? { ...c, zoneId: toZone, ...(faceUp !== undefined ? { faceUp } : {}) } : c,
