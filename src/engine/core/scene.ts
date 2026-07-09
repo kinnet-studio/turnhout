@@ -7,6 +7,8 @@ export interface Vec2 {
   y: number;
 }
 
+export type PlayerId = string;
+
 export interface CardState {
   id: string;
   zoneId: string;
@@ -15,6 +17,7 @@ export interface CardState {
   slot?: number;
   draggable?: boolean;
   data?: { x?: number; y?: number; [k: string]: unknown };
+  revealTo?: PlayerId[] | 'all';
 }
 
 export interface LayoutOptions {
