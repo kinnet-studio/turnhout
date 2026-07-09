@@ -75,18 +75,18 @@ export function validateScene(scene: Scene): { ok: boolean; errors: string[]; wa
 }
 
 export function cardsByZone(scene: Scene): Map<string, CardState[]> {
-  const groups = new Map<string, { card: CardState; index: number }[]>();
-  scene.cards.forEach((card, index) => {
+  const groups = new Map<string, { card: CardState; local: number }[]>();
+  for (const card of scene.cards) {
     const list = groups.get(card.zoneId) ?? [];
-    list.push({ card, index });
+    list.push({ card, local: list.length });
     groups.set(card.zoneId, list);
-  });
+  }
   const out = new Map<string, CardState[]>();
   for (const [zoneId, list] of groups) {
     list.sort((a, b) => {
-      const sa = a.card.slot ?? a.index;
-      const sb = b.card.slot ?? b.index;
-      return sa - sb || a.index - b.index;
+      const sa = a.card.slot ?? a.local;
+      const sb = b.card.slot ?? b.local;
+      return sa - sb || a.local - b.local;
     });
     out.set(zoneId, list.map((e) => e.card));
   }

@@ -48,4 +48,21 @@ describe('cardsByZone', () => {
     );
     expect(cardsByZone(s).get('h')!.map((c) => c.id)).toEqual(['b', 'a', 'c']);
   });
+
+  it('compares explicit slots against zone-local positions, not global scene indices', () => {
+    const s = scene(
+      [
+        { id: 'f0', zoneId: 'h', faceUp: true, faceKey: 'f0' },
+        { id: 'f1', zoneId: 'h', faceUp: true, faceKey: 'f1' },
+        { id: 'f2', zoneId: 'h', faceUp: true, faceKey: 'f2' },
+        { id: 'a', zoneId: 'p', faceUp: true, faceKey: 'a' },
+        { id: 'b', zoneId: 'p', faceUp: true, faceKey: 'b' },
+        { id: 'x', zoneId: 'p', faceUp: true, faceKey: 'x', slot: 2 },
+      ],
+      [{ id: 'p', layout: 'pile', transform: { x: 0, y: 0 } }],
+    );
+    // x was dropped onto the pile with slot = 2 (append). With a global-index
+    // fallback, a/b get indices 3/4 and x wrongly sorts under the pile.
+    expect(cardsByZone(s).get('p')!.map((c) => c.id)).toEqual(['a', 'b', 'x']);
+  });
 });
