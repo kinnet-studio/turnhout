@@ -74,6 +74,9 @@ describe('deal', () => {
   it('rejects when the source has too few cards', () => {
     expect(h.legal(deck, { type: 'deal', fromZone: 'deck', toZone: 'hand', count: 9 }, ctx)).toBeTypeOf('string');
   });
+  it('rejects dealing into an unknown zone', () => {
+    expect(h.legal(deck, { type: 'deal', fromZone: 'deck', toZone: 'ghostzone', count: 1 }, ctx)).toBeTypeOf('string');
+  });
   it('moves nothing when count is 0', () => {
     const out = h.apply(deck, { type: 'deal', fromZone: 'deck', toZone: 'hand', count: 0 }, ctx);
     expect(zoneCards(out, 'hand')).toHaveLength(0);

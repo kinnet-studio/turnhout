@@ -46,9 +46,13 @@ const flip: MoveHandler = {
 };
 
 const deal: MoveHandler = {
-  legal(state, m) {
+  legal(state, m, ctx) {
     const fromZone = m.fromZone as string;
+    const toZone = m.toZone as string;
     const count = m.count as number;
+    // deal is a privileged dealer op: it bypasses the destination's accept/capacity
+    // rules, but the destination zone must exist (else cards vanish from the table).
+    if (!zoneById(ctx, toZone)) return `unknown zone: ${toZone}`;
     if (zoneCards(state, fromZone).length < count) return `not enough cards in ${fromZone}`;
     return true;
   },
