@@ -22,4 +22,15 @@ describe('FaceTextureCache', () => {
     const cache = new FaceTextureCache(() => draw, () => drawn);
     expect(cache.get(card('back'))).toBe(drawn);
   });
+
+  it('caches face-up and face-down of the same faceKey separately', () => {
+    let n = 0;
+    const renderer = vi.fn(() => ({ id: `tex${n++}` }) as never);
+    const drawToTexture = vi.fn();
+    const cache = new FaceTextureCache(renderer, drawToTexture);
+    const up = cache.get({ id: 'x', zoneId: 'z', faceUp: true, faceKey: 'back' });
+    const down = cache.get({ id: 'x', zoneId: 'z', faceUp: false, faceKey: 'back' });
+    expect(up).not.toBe(down);
+    expect(renderer).toHaveBeenCalledTimes(2);
+  });
 });

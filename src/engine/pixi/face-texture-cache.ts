@@ -13,11 +13,12 @@ export class FaceTextureCache {
   ) {}
 
   get(card: CardState): Texture {
-    const existing = this.cache.get(card.faceKey);
+    const key = `${card.faceKey}|${card.faceUp}`;
+    const existing = this.cache.get(key);
     if (existing) return existing;
     const result = this.renderer(card);
     const texture = typeof result === 'function' ? this.drawToTexture(result) : result;
-    this.cache.set(card.faceKey, texture);
+    this.cache.set(key, texture);
     return texture;
   }
 
