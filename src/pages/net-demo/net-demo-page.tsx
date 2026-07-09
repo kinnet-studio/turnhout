@@ -57,8 +57,9 @@ function SeatCanvas({ session, seat }: { session: GameSession; seat: string }) {
 }
 
 export function NetDemoPage() {
+  // Session is page-lifetime (never unmounts), so no dispose effect needed. Under StrictMode,
+  // an effect cleanup would run on synthetic unmount and unsubscribe the session.
   const session = useMemo(() => new GameSession(createDemoServer()), []);
-  useEffect(() => () => session.dispose(), [session]);
   return (
     <div style={{ display: 'flex', width: '100vw', height: '100vh', alignItems: 'center', justifyContent: 'center', gap: 16, background: '#222', overflow: 'auto' }}>
       <SeatCanvas session={session} seat="me" />
