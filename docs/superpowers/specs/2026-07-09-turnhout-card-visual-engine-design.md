@@ -330,3 +330,4 @@ a harness for the engine, not a full game.
 - Touch drag ergonomics (one-finger drag threshold) — refine against the demo.
 - Whether the engine is later extracted to its own npm package; for now it
   lives in `src/engine/` importable within turnhout.
+- **core/diff reconcile not yet wired:** `TableModel`/`PixiTable` own reconciliation today; `core/diff.ts`'s op stream (move/reface/update/flip) is retained and unit-tested but not yet driving the render path. Wire it when finer-grained animation triggers (distinct reface vs flip) are needed.

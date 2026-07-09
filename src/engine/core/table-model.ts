@@ -55,6 +55,11 @@ export class TableModel {
       existing.faceUp = card.faceUp;
       existing.faceKey = card.faceKey;
       existing.draggable = card.draggable ?? true;
+      // Intentionally retarget even drag-owned cards: `advance` already skips
+      // position-stepping while ownedByDrag (current follows dragTo), so keeping
+      // target on the live layout means the card animates to its declared home on
+      // drop. Do NOT re-guard this with `if (!ownedByDrag)` — that reintroduces a
+      // bug where a card dropped after a mid-drag scene change never animates home.
       existing.target = target;
     }
   }
