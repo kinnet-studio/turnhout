@@ -36,7 +36,14 @@ function DemoContent() {
   return (
     <>
       <CardTable ref={handleRef} scene={scene} onDrop={onDrop} onCardClick={onCardClick} />
-      <button style={{ position: 'absolute', top: 12, left: 12, zIndex: 10 }} onClick={deal5}>Deal 5</button>
+      {/* The integration's OverlayContainer sets pointer-events:none so pointers reach
+          the canvas; interactive HTML overlay UI must re-enable it on itself. */}
+      <button
+        style={{ position: 'absolute', top: 12, left: 12, zIndex: 10, pointerEvents: 'auto' }}
+        onClick={deal5}
+      >
+        Deal 5
+      </button>
     </>
   );
 }
