@@ -2,7 +2,7 @@ import { type KmtInputStateMachine, convertFromCanvas2ViewPort, convertFromWindo
 import { type BaseAppComponents, type InitAppOptions, baseInitApp } from '@ue-too/board-pixi-integration';
 import { Graphics, RenderTexture, type Texture } from 'pixi.js';
 import type { AppComponents } from '@/app-components';
-import type { CardState, Vec2 } from '@/engine/core/scene';
+import type { CardState, PlayerId, Vec2 } from '@/engine/core/scene';
 import { CARD_HEIGHT, CARD_WIDTH } from '@/engine/core/scene';
 import type { Placement, TableDef } from '@/engine/core/table-def';
 import { RuleRegistry } from '@/engine/core/rules';
@@ -121,10 +121,10 @@ export const initApp = async (
   base.camera.zoomBoundaries = { min: fit, max: fit };
   base.camera.setZoomLevel(fit);
 
-  const setTable = (def: TableDef, placement: Placement): void => {
+  const setTable = (def: TableDef, placement: Placement, viewer?: PlayerId): void => {
     currentDef = def;
     currentCards = placement.cards;
-    pixiTable.setScene(deriveScene(def, placement));
+    pixiTable.setScene(deriveScene(def, placement, viewer));
   };
 
   return {
