@@ -47,6 +47,17 @@ describe('demo engine', () => {
     e.undo();
     expect(zoneCards(e.getState(), 'deck')).toHaveLength(52);
   });
+
+  it('reorders the hand and undoes it', () => {
+    const e = build();
+    e.dispatch({ type: 'deal', fromZone: 'deck', toZone: 'hand', count: 3 });
+    const [c0, c1, c2] = zoneCards(e.getState(), 'hand').map((c) => c.id);
+    const r = e.dispatch({ type: 'reorder', cardId: c0, slot: 2 });
+    expect(r.ok).toBe(true);
+    expect(zoneCards(e.getState(), 'hand').map((c) => c.id)).toEqual([c1, c2, c0]);
+    e.undo();
+    expect(zoneCards(e.getState(), 'hand').map((c) => c.id)).toEqual([c0, c1, c2]);
+  });
 });
 
 describe('demo projection', () => {

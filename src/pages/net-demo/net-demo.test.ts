@@ -39,4 +39,36 @@ describe('net-demo', () => {
     expect(r.ok).toBe(true);
     expect(server.viewFor('opp').scene.cards.find((c) => c.id === meCard.id)!.zoneId).toBe('discard');
   });
+
+  it('lets a seat reorder its own hand off-turn', () => {
+    const server = createDemoServer(); // turn starts at 'me'
+    const before = server.viewFor('opp').scene.cards.filter((c) => c.zoneId === 'hand-opp').map((c) => c.id);
+    const r = server.submit('opp', { type: 'reorder', cardId: before[0], slot: 2 });
+    expect(r.ok).toBe(true);
+    const after = server.viewFor('opp').scene.cards
+      .filter((c) => c.zoneId === 'hand-opp')
+      .sort((a, b) => (a.slot ?? 0) - (b.slot ?? 0))
+      .map((c) => c.id);
+    expect(after).toEqual([before[1], before[2], before[0]]);
+  });
+
+  it("rejects reordering another seat's hand", () => {
+    const server = createDemoServer();
+    const meCard = server.viewFor('me').scene.cards.find((c) => c.zoneId === 'hand-me')!;
+    const r = server.submit('opp', { type: 'reorder', cardId: meCard.id, slot: 0 });
+    expect(r.ok).toBe(false);
+  });
+
+  it('a card played after a reorder lands on top of the discard, not under it', () => {
+    const server = createDemoServer(); // turn starts at 'me'
+    const meHand = server.viewFor('me').scene.cards.filter((c) => c.zoneId === 'hand-me').map((c) => c.id);
+    expect(server.submit('me', { type: 'reorder', cardId: meHand[2], slot: 0 }).ok).toBe(true);
+    // discard starts empty; seed it with one play, then play a reordered low-slot card on top
+    expect(server.submit('me', { type: 'play', cardId: meHand[0], toZone: 'discard' }).ok).toBe(true);
+    expect(server.submit('me', { type: 'play', cardId: meHand[2], toZone: 'discard' }).ok).toBe(true);
+    const discard = server.viewFor('me').scene.cards.filter((c) => c.zoneId === 'discard');
+    // zone order = slot ?? zone-local index; the second play must sort last (top of pile)
+    const order = [...discard].sort((a, b) => (a.slot ?? discard.indexOf(a)) - (b.slot ?? discard.indexOf(b))).map((c) => c.id);
+    expect(order[order.length - 1]).toBe(meHand[2]);
+  });
 });

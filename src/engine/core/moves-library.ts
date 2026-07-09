@@ -1,5 +1,5 @@
 import { canAccept } from './rules';
-import { cardById, zoneCards, type GameState } from './game-state';
+import { cardById, insertAtSlot, zoneCards, type GameState } from './game-state';
 import type { Move, MoveContext, MoveHandler, MoveRegistry } from './moves';
 import { shuffleWithRng } from './rng';
 import type { CardState } from './scene';
@@ -24,10 +24,14 @@ const move: MoveHandler = {
     if (!canAccept(zone, card, zoneCards(state, toZone), ctx.rules)) return `zone ${toZone} rejects ${cardId}`;
     return true;
   },
-  apply(state, m) {
+  apply(state, m, ctx) {
     const cardId = m.cardId as string;
     const toZone = m.toZone as string;
     const slot = m.slot as number | undefined;
+    const zone = zoneById(ctx, toZone);
+    if (slot !== undefined && (zone?.ordering ?? 'stack') === 'free') {
+      return insertAtSlot(state, cardId, toZone, slot);
+    }
     return mapCards(state, (c) =>
       c.id === cardId ? { ...c, zoneId: toZone, ...(slot !== undefined ? { slot } : {}) } : c,
     );
@@ -86,8 +90,36 @@ const shuffle: MoveHandler = {
   },
 };
 
+/** Reposition a card within its current free-ordered zone. Owner-checked, never turn-gated. */
+const reorder: MoveHandler = {
+  legal(state, m, ctx) {
+    const cardId = m.cardId as string;
+    const by = m.by as string | undefined;
+    if (typeof m.slot !== 'number') return 'reorder requires a numeric slot';
+    const card = cardById(state, cardId);
+    if (!card) return `unknown card: ${cardId}`;
+    const zone = zoneById(ctx, card.zoneId);
+    if (!zone) return `unknown zone: ${card.zoneId}`;
+    if ((zone.ordering ?? 'stack') !== 'free') return `zone ${zone.id} is not reorderable`;
+    if (by !== undefined && zone.owner !== undefined && zone.owner !== 'shared' && zone.owner !== by) {
+      return `zone ${zone.id} is not owned by ${by}`;
+    }
+    return true;
+  },
+  apply(state, m) {
+    const card = cardById(state, m.cardId as string);
+    if (!card) return state;
+    return insertAtSlot(state, card.id, card.zoneId, m.slot as number);
+  },
+};
+
 export function registerCoreMoves(registry: MoveRegistry): MoveRegistry {
-  return registry.register('move', move).register('flip', flip).register('deal', deal).register('shuffle', shuffle);
+  return registry
+    .register('move', move)
+    .register('reorder', reorder)
+    .register('flip', flip)
+    .register('deal', deal)
+    .register('shuffle', shuffle);
 }
 
 export type { Move };
