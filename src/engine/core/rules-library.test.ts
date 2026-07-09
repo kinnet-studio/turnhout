@@ -29,6 +29,10 @@ describe('descAltColor', () => {
   it('rejects red 5 on black 7 (not one below)', () => {
     expect(canAccept(z, card('H', 5), [card('S', 7)], reg)).toBe(false);
   });
+  it('rejects a card with unknown suit (no color) on red 7', () => {
+    const noSuitCard: CardState = { id: 'x', zoneId: 'src', faceUp: true, faceKey: 'x', data: { rank: 6 } };
+    expect(canAccept(z, noSuitCard, [card('H', 7)], reg)).toBe(false);
+  });
 });
 
 describe('sameSuitAscending', () => {

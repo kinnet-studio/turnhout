@@ -12,9 +12,9 @@ function rankOf(c: CardState): number | undefined {
 function tagsOf(c: CardState): string[] {
   return Array.isArray(c.data?.tags) ? (c.data!.tags as string[]) : [];
 }
-function isRed(c: CardState): boolean {
+function isRed(c: CardState): boolean | undefined {
   const s = suitOf(c);
-  return s !== undefined && RED.has(s);
+  return s === undefined ? undefined : RED.has(s);
 }
 
 const alwaysAccept: AcceptRule = () => true;
@@ -24,7 +24,9 @@ const descAltColor: AcceptRule = ({ card, top }) => {
   if (cr === undefined) return false;
   if (!top) return cr === 13; // only a King starts an empty column
   const tr = rankOf(top);
-  return tr !== undefined && isRed(card) !== isRed(top) && cr === tr - 1;
+  const cRed = isRed(card);
+  const tRed = isRed(top);
+  return tr !== undefined && cRed !== undefined && tRed !== undefined && cRed !== tRed && cr === tr - 1;
 };
 
 const sameSuitAscending: AcceptRule = ({ card, top }) => {
