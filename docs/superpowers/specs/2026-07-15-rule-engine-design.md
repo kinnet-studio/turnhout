@@ -52,6 +52,7 @@ interface PhaseDef {
   id: string;                               // stored in state.turn.phase
   allow: string[] | 'any';                  // move types legal in this phase
   actor?: 'current' | 'any';                // who may submit (default 'current')
+  anyActor?: string[];                      // move types exempt from the actor gate
   onEnter?: NamedRef[];                     // effects run when the phase is entered
   advance?: { when: NamedRef; to: string }; // phase transition, checked post-move
   endTurn?: { when: NamedRef };             // when the turn passes to the policy's pick
@@ -79,10 +80,13 @@ type TurnPolicy    = (state: GameState, order: PlayerId[], ctx: MoveContext, par
 ```
 
 **Core library** (`flow-library.ts`, mirroring `rules-library.ts`/`moves-library.ts`):
-generic predicates (`zoneEmpty`, `zoneFull`, `handEmpty`), effects (`moveZone`,
-`setData`), and the `roundRobin` policy. Game-specific entries (e.g. Hearts'
-`trickComplete`, `awardTrick`, `trickWinnerLeads`) register from game code, proving the
-extension seam.
+generic predicates (`always`, `zoneEmpty`, `zonesEmpty`, `zoneCount`, `zonesCount`),
+effects (`moveZone`, `setData`, `deal`, `shuffleZone`), and the `roundRobin` policy
+(also the built-in default when `turn.next` is omitted). Zone-count predicates are
+deliberately generic: Hearts' "trick complete" is just `zoneCount {zone:'trick',
+count:4}` and "all passed" is `zonesCount {zones:[...], count:3}`. Game-specific
+entries (e.g. Hearts' `awardTrick`, `scoreHand`, `heartsNext`) register from game code,
+proving the extension seam.
 
 **`GameState` change:** one addition — `result?: Json`, `undefined` while the game is
 live. Set by an `EndDef`'s `result` effect; the gate rejects all moves once set.
@@ -108,9 +112,12 @@ Pure functions, each taking `(state, flowDef, flowRegistry, ctx)` — no engine 
 2. Current phase (`state.turn.phase`) looked up in `flowDef.phases`; unknown or missing
    phase → reject (**fail-closed**, the SP3 review lesson applied from day one).
 3. Phase gate: `move.type` must be in the phase's `allow` (or `allow: 'any'`).
-4. Actor gate: unless `phase.actor === 'any'`, `move.by` must equal
-   `state.turn.current`; a missing `by` fails. Strict on purpose — this makes server
-   authority over turn order uniform instead of per-move-handler.
+4. Actor gate: unless `phase.actor === 'any'` or `move.type` is listed in
+   `phase.anyActor`, `move.by` must equal `state.turn.current`; a missing `by` fails.
+   Strict on purpose — this makes server authority over turn order uniform instead of
+   per-move-handler. `anyActor` exists because some move types are legitimately
+   off-turn (the hand-reorder feature: any seat may reorder its own hand at any time);
+   such moves stay phase-gated via `allow` and owner-checked in their own `legal`.
 
 ### `runFlow(...) → GameState` — after every successful `apply`
 
@@ -147,7 +154,8 @@ not set it, runs the first phase's `onEnter` effects, then one `runFlow`. Setup 
 ### `validateFlowDef(flow, registry)` — at engine construction
 
 Every `NamedRef` resolves; every `advance.to` names a real phase; `turn.order`
-non-empty; phase ids unique. Throw at load, not mid-game (the SP1 follow-up lesson).
+non-empty; phase ids unique; every `anyActor` entry appears in that phase's `allow`.
+Throw at load, not mid-game (the SP1 follow-up lesson).
 
 ### Determinism / replay
 
@@ -205,9 +213,11 @@ every primitive.
 
 Coverage of the `FlowDef` surface:
 
-- **Phases:** `setup` (onEnter: deal 13 to each) → `passing` (`allow: ['pass']`,
-  `actor: 'any'` — simultaneous; advance when all four have passed) → `playing`
-  (`allow: ['play']`, `actor: 'current'`).
+- **Phases:** `setup` (onEnter: shuffle + deal 13 to each) → `passing`
+  (`allow: ['pass', 'reorder']`, `actor: 'any'` — simultaneous; `pass` moves one card
+  to the seat's pass pile, drag-friendly, three per seat; advance when all four pass
+  piles hold 3) → `playing` (`allow: ['play', 'reorder']`, `actor: 'current'`,
+  `anyActor: ['reorder']` so hands stay reorderable off-turn).
 - **Division of labor:** follow-suit and hearts-broken rules live in a game-specific
   `play` move handler's `legal` — *flow* decides who may move and which move types;
   *moves* decide card-level legality.
