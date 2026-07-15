@@ -3,12 +3,15 @@ import { Wrapper } from '@/components/PixiCanvas';
 import { CardTable } from '@/engine/react';
 import type { Placement } from '@/engine/core/table-def';
 import type { DropIntent } from '@/engine/input/table-input-context';
-import { initApp } from '@/utils/init-app';
+import { makeInitApp } from '@/utils/init-app';
 import { GameSession } from '@/engine/net/game-session';
 import { loopbackChannel } from '@/engine/net/loopback';
 import type { ClientChannel, ClientView } from '@/engine/net/protocol';
+import { standardFaceRenderer } from '@/engine/pixi/standard-faces';
 import { createHeartsServer } from './game';
 import { SEATS, TABLE } from './cards';
+
+const initAppWithFaces = makeInitApp(standardFaceRenderer);
 
 function useSeat(session: GameSession, seat: string): { view: ClientView | null; submit: (m: DropIntent) => void } {
   const chan = useRef<ClientChannel | null>(null);
@@ -51,7 +54,7 @@ function SeatCanvas({ session, seat }: { session: GameSession; seat: string }) {
       <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 10, pointerEvents: 'none', font: '14px sans-serif', color: '#eee' }}>
         seat: {seat}{status ? ` — ${status}` : ''}
       </div>
-      <Wrapper option={option} initFunction={initApp}>
+      <Wrapper option={option} initFunction={initAppWithFaces}>
         <CardTable tableDef={TABLE} placement={placement} viewer={undefined} onDrop={submit} />
       </Wrapper>
     </div>

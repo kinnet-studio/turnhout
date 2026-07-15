@@ -1,7 +1,7 @@
-import type { Graphics, Texture } from 'pixi.js';
+import type { Container, Texture } from 'pixi.js';
 import type { CardState } from '../core/scene';
 
-export type FaceDraw = (g: Graphics) => void;
+export type FaceDraw = (container: Container) => void;
 export type FaceRenderer = (card: CardState) => Texture | FaceDraw;
 
 export class FaceTextureCache {
