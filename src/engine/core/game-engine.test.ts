@@ -7,6 +7,9 @@ import { makeRng } from './rng';
 import { RuleRegistry } from './rules';
 import type { CardState } from './scene';
 import type { TableDef } from './table-def';
+import { FlowRegistry } from './flow-registry';
+import { registerCoreFlow } from './flow-library';
+import type { FlowDef } from './flow';
 
 const card = (id: string, zoneId: string): CardState => ({ id, zoneId, faceUp: false, faceKey: id });
 const tableDef: TableDef = {
@@ -106,5 +109,85 @@ describe('GameEngine', () => {
     expect(e.dispatch({ type: 'endTurn', player: 'p2' }).ok).toBe(false);
     expect(e.dispatch({ type: 'endTurn', player: 'p1' }).ok).toBe(true);
     expect(e.getState().turn!.current).toBe('p2');
+  });
+});
+
+describe('GameEngine with flow', () => {
+  const FLOW: FlowDef = {
+    turn: { order: ['a', 'b'] },
+    phases: [
+      { id: 'setup', allow: [], onEnter: [{ name: 'deal', params: { from: 'deck', to: 'hand', count: 1 } }], advance: { when: 'always', to: 'main' } },
+      // NOTE: not `when: 'always'` — endTurn fires whenever its predicate is true
+      // during any runFlow, including the construction-time one after setup→main
+      // advance, which would flip the turn before any move. Use a predicate that
+      // is false at construction settle (no card is faceUp until a flip move).
+      { id: 'main', allow: ['flip'], endTurn: { when: 'anyFaceUp' } },
+    ],
+    triggers: [{ id: 'refill', when: { name: 'zoneEmpty', params: { zone: 'hand' } }, then: [{ name: 'deal', params: { from: 'deck', to: 'hand', count: 1 } }] }],
+    end: [],
+  };
+  const table: TableDef = { zones: [
+    { id: 'deck', layout: 'pile', transform: { x: 0, y: 0 } },
+    { id: 'hand', layout: 'pile', transform: { x: 0, y: 0 } },
+  ] };
+  const cards = (): CardState[] => [
+    { id: 'c1', zoneId: 'deck', faceUp: false, faceKey: 'x' },
+    { id: 'c2', zoneId: 'deck', faceUp: false, faceKey: 'y' },
+  ];
+  const mkEngine = () =>
+    new GameEngine({
+      tableDef: table,
+      rules: new RuleRegistry(),
+      moves: registerCoreMoves(new MoveRegistry()),
+      initial: { cards: cards(), data: {}, rng: makeRng(3) },
+      flow: FLOW,
+      flowRegistry: registerCoreFlow(new FlowRegistry()).registerPredicate('anyFaceUp', (s) => s.cards.some((c) => c.faceUp)),
+    });
+
+  it('throws when flow and flowRegistry are not provided together', () => {
+    expect(() => new GameEngine({ tableDef: table, rules: new RuleRegistry(), moves: new MoveRegistry(), initial: { cards: [], data: {}, rng: makeRng(1) }, flow: FLOW })).toThrow(/together/);
+  });
+
+  it('throws at construction on an invalid FlowDef', () => {
+    const bad: FlowDef = { turn: { order: ['a'] }, phases: [{ id: 'p', allow: 'any', onEnter: ['ghost'] }] };
+    expect(() => new GameEngine({ tableDef: table, rules: new RuleRegistry(), moves: new MoveRegistry(), initial: { cards: [], data: {}, rng: makeRng(1) }, flow: bad, flowRegistry: new FlowRegistry() })).toThrow(/invalid FlowDef.*ghost/);
+  });
+
+  it('initFlow runs at construction: setup dealt, phase advanced', () => {
+    const e = mkEngine();
+    expect(e.getState().turn).toEqual({ current: 'a', phase: 'main' });
+    expect(zoneCards(e.getState(), 'hand')).toHaveLength(1);
+  });
+
+  it('gate rejects without touching the log; legal handlers still run', () => {
+    const e = mkEngine();
+    expect(e.dispatch({ type: 'deal', fromZone: 'deck', toZone: 'hand', count: 1, by: 'a' })).toMatchObject({ ok: false, reason: 'move deal not allowed in phase main' });
+    expect(e.dispatch({ type: 'flip', cardId: 'c1', by: 'b' })).toMatchObject({ ok: false, reason: "not b's turn" });
+    expect(e.getLog()).toHaveLength(0);
+  });
+
+  it('dispatch runs flow: endTurn passes the turn each move', () => {
+    const e = mkEngine();
+    const inHand = zoneCards(e.getState(), 'hand')[0];
+    expect(e.dispatch({ type: 'flip', cardId: inHand.id, by: 'a' }).ok).toBe(true);
+    expect(e.getState().turn?.current).toBe('b');
+  });
+
+  it('undo replays through flow deterministically', () => {
+    const e = mkEngine();
+    const before = e.getState();
+    const inHand = zoneCards(before, 'hand')[0];
+    e.dispatch({ type: 'flip', cardId: inHand.id, by: 'a' });
+    e.undo();
+    expect(e.getState()).toEqual(before);
+  });
+
+  it('loadLog reproduces byte-identical state in a fresh engine', () => {
+    const e1 = mkEngine();
+    const inHand = zoneCards(e1.getState(), 'hand')[0];
+    e1.dispatch({ type: 'flip', cardId: inHand.id, by: 'a' });
+    const e2 = mkEngine();
+    e2.loadLog([...e1.getLog()]);
+    expect(e2.getState()).toEqual(e1.getState());
   });
 });
