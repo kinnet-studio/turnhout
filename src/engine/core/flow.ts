@@ -1,5 +1,7 @@
 import type { PlayerId } from './scene';
 import type { NamedRef } from './flow-registry';
+import type { GameState } from './game-state';
+import type { Move } from './moves';
 
 export interface FlowDef {
   turn: {
@@ -42,4 +44,21 @@ export interface EndDef {
   when: NamedRef;
   /** Effect that writes the outcome into state.result. */
   result: NamedRef;
+}
+
+/** Flow gate, checked before a move handler's own `legal`. Pure data lookup — no registry. */
+export function gateMove(state: GameState, move: Move, flow: FlowDef): true | string {
+  if (state.result !== undefined) return 'game is over';
+  const phase = flow.phases.find((p) => p.id === state.turn?.phase);
+  if (!phase) return `unknown phase: ${state.turn?.phase ?? '(none)'}`;
+  if (phase.allow !== 'any' && !phase.allow.includes(move.type)) {
+    return `move ${move.type} not allowed in phase ${phase.id}`;
+  }
+  const exempt = phase.anyActor?.includes(move.type) ?? false;
+  if ((phase.actor ?? 'current') === 'current' && !exempt) {
+    const by = move.by;
+    if (typeof by !== 'string') return 'move has no actor (by)';
+    if (by !== state.turn?.current) return `not ${by}'s turn`;
+  }
+  return true;
 }
