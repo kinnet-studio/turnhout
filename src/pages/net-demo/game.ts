@@ -5,7 +5,7 @@ import { GameEngine } from '@/engine/core/game-engine';
 import { cardById, nextPlayer, zoneCards, type GameState } from '@/engine/core/game-state';
 import { MoveRegistry, type MoveHandler } from '@/engine/core/moves';
 import { registerCoreMoves } from '@/engine/core/moves-library';
-import { makeRng, shuffleWithRng } from '@/engine/core/rng';
+import { makeRng, shuffleWithRng, type RngState } from '@/engine/core/rng';
 import { canAccept, RuleRegistry } from '@/engine/core/rules';
 import { registerStarterRules } from '@/engine/core/rules-library';
 import type { CardState } from '@/engine/core/scene';
@@ -65,7 +65,7 @@ const endTurn: MoveHandler = {
   apply: (s) => nextPlayer(s, ['me', 'opp']),
 };
 
-function demoDeck(rng: ReturnType<typeof makeRng>): { cards: CardState[]; rng: ReturnType<typeof makeRng> } {
+function demoDeck(rng: RngState): { cards: CardState[]; rng: RngState } {
   const suits = ['S', 'H', 'D', 'C'];
   const identities: { suit: string; rank: number }[] = [];
   for (const s of suits) for (let r = 1; r <= 13; r++) identities.push({ suit: s, rank: r });
