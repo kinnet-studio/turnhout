@@ -23,8 +23,33 @@ export function heartsDeck(rng: RngState): { cards: CardState[]; rng: RngState }
   };
 }
 
+// Authored fan geometry + drop bounds (F2): the layout's `fan` case always
+// spreads cards along local x (radius*sin) and curls them toward local +y
+// (radius*(1-cos)) relative to `transform`, regardless of which side of the
+// table the hand sits on. At the DEFAULT_FAN_RADIUS (600) that spread is wide
+// enough for the side hands' inner cards to physically overlap the center
+// piles. HAND_FAN_RADIUS trims the fan to a visually tight, still-legible
+// 13-card spread; HAND_BOUNDS is the exact box that footprint occupies
+// (computed from computeZoneLayout's fan math for n=13, fanAngleDeg=48,
+// radius=HAND_FAN_RADIUS, CARD_WIDTH 100 / CARD_HEIGHT 140 — see
+// hearts-drop.test.ts's grid-scan tests, which verify this box against the
+// real per-card positions). The anchor is off-center on y because the fan
+// only curls toward +y from `transform`, never -y, so the box's true center
+// sits below `transform.y` by ~13.5 units — anchor.y = 0.5 - 13.5/178 ≈ 0.423
+// shifts the authored box down to match, per placeZone's anchor semantics.
+const HAND_FAN_RADIUS = 200;
+const HAND_BOUNDS = { width: 312, height: 178, anchor: { x: 0.5, y: 0.423 } };
 const hand = (seat: PlayerId, x: number, y: number) =>
-  ({ id: `hand-${seat}`, layout: 'fan', transform: { x, y }, layoutOptions: { fanAngleDeg: 48 }, owner: seat, visibility: 'owner', ordering: 'free' }) as const;
+  ({
+    id: `hand-${seat}`,
+    layout: 'fan',
+    transform: { x, y },
+    layoutOptions: { fanAngleDeg: 48, fanRadius: HAND_FAN_RADIUS },
+    bounds: HAND_BOUNDS,
+    owner: seat,
+    visibility: 'owner',
+    ordering: 'free',
+  }) as const;
 const pile = (id: string, x: number, y: number, visibility: 'public' | 'owner' | 'secret', owner?: PlayerId) =>
   ({ id, layout: 'pile', transform: { x, y }, visibility, ...(owner ? { owner } : {}) }) as const;
 
