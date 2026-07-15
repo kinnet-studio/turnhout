@@ -159,7 +159,7 @@ describe('GameEngine with flow', () => {
     expect(zoneCards(e.getState(), 'hand')).toHaveLength(1);
   });
 
-  it('gate rejects without touching the log; legal handlers still run', () => {
+  it('gate rejects without touching the log', () => {
     const e = mkEngine();
     expect(e.dispatch({ type: 'deal', fromZone: 'deck', toZone: 'hand', count: 1, by: 'a' })).toMatchObject({ ok: false, reason: 'move deal not allowed in phase main' });
     expect(e.dispatch({ type: 'flip', cardId: 'c1', by: 'b' })).toMatchObject({ ok: false, reason: "not b's turn" });

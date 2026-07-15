@@ -54,20 +54,22 @@ export class GameEngine {
     return h;
   }
 
+  /** Flow gate for `move`, or `true` when this engine has no flow. */
+  private gate(move: Move): true | string {
+    if (!this.flow) return true;
+    return gateMove(this.current, move, this.flow);
+  }
+
   canDispatch(move: Move): true | string {
-    if (this.flow) {
-      const g = gateMove(this.current, move, this.flow);
-      if (g !== true) return g;
-    }
+    const g = this.gate(move);
+    if (g !== true) return g;
     return this.handlerFor(move).legal(this.current, move, this.ctx);
   }
 
   dispatch(move: Move): DispatchResult {
     const handler = this.handlerFor(move);
-    if (this.flow) {
-      const g = gateMove(this.current, move, this.flow);
-      if (g !== true) return { ok: false, state: this.current, reason: g };
-    }
+    const g = this.gate(move);
+    if (g !== true) return { ok: false, state: this.current, reason: g };
     const verdict = handler.legal(this.current, move, this.ctx);
     if (verdict !== true) return { ok: false, state: this.current, reason: verdict };
     let next = handler.apply(this.current, move, this.ctx);

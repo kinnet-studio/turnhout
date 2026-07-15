@@ -26,8 +26,6 @@ const TABLE: TableDef = {
   ],
 };
 
-const tableDef = TABLE;
-
 // A move that only its stamped `by === 'me'` may perform — proves by-stamping.
 const onlyMe: MoveHandler = {
   legal: (_s, m) => (m.by === 'me' ? true : 'not me'),
@@ -42,8 +40,8 @@ const build = () => {
     data: { secretPot: 99 },
     rng: makeRng(1),
   };
-  const engine = new GameEngine({ tableDef, rules: registerStarterRules(new RuleRegistry()), moves, initial });
-  return new GameServer({ engine, tableDef, seats: ['me', 'opp'] });
+  const engine = new GameEngine({ tableDef: TABLE, rules: registerStarterRules(new RuleRegistry()), moves, initial });
+  return new GameServer({ engine, tableDef: TABLE, seats: ['me', 'opp'] });
 };
 
 describe('GameServer', () => {
