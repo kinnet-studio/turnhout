@@ -9,12 +9,15 @@ import { RuleRegistry } from '../core/rules';
 import { registerStarterRules } from '../core/rules-library';
 import type { CardState } from '../core/scene';
 import type { TableDef } from '../core/table-def';
+import { FlowRegistry } from '../core/flow-registry';
+import { registerCoreFlow } from '../core/flow-library';
+import type { FlowDef } from '../core/flow';
 
 const card = (id: string, zoneId: string, extra: Partial<CardState> = {}): CardState => ({
   id, zoneId, faceUp: false, faceKey: id, ...extra,
 });
 
-const tableDef: TableDef = {
+const TABLE: TableDef = {
   players: ['me', 'opp'],
   zones: [
     { id: 'deck', layout: 'pile', transform: { x: 0, y: 0 }, visibility: 'secret' },
@@ -37,8 +40,8 @@ const build = () => {
     data: { secretPot: 99 },
     rng: makeRng(1),
   };
-  const engine = new GameEngine({ tableDef, rules: registerStarterRules(new RuleRegistry()), moves, initial });
-  return new GameServer({ engine, tableDef, seats: ['me', 'opp'] });
+  const engine = new GameEngine({ tableDef: TABLE, rules: registerStarterRules(new RuleRegistry()), moves, initial });
+  return new GameServer({ engine, tableDef: TABLE, seats: ['me', 'opp'] });
 };
 
 describe('GameServer', () => {
@@ -80,7 +83,7 @@ describe('GameServer', () => {
 
   it('ClientView never leaks data or rng', () => {
     const view = build().viewFor('me');
-    expect(Object.keys(view).sort()).toEqual(['scene', 'seat', 'turn']);
+    expect(Object.keys(view).sort()).toEqual(['result', 'scene', 'seat', 'turn']);
   });
 
   it('subscribe fires on a successful submit and unsubscribe stops it', () => {
@@ -100,5 +103,26 @@ describe('GameServer', () => {
     s.subscribe(seen);
     s.submit('me', { type: 'move', cardId: 'ghost', toZone: 'deck' });
     expect(seen).not.toHaveBeenCalled();
+  });
+
+  it('projects state.result into every seat view once the game ends', () => {
+    // Build a server whose engine has a flow with an immediate end condition.
+    const flowReg = registerCoreFlow(new FlowRegistry()).registerEffect('declare', (s) => ({ ...s, result: { winner: 'me' } }));
+    const flow: FlowDef = {
+      turn: { order: ['me', 'opp'] },
+      phases: [{ id: 'main', allow: 'any' }],
+      end: [{ when: 'always', result: 'declare' }],
+    };
+    const engine = new GameEngine({
+      tableDef: TABLE, // the file's existing table fixture
+      rules: new RuleRegistry(),
+      moves: registerCoreMoves(new MoveRegistry()),
+      initial: { cards: [], data: {}, rng: makeRng(1) },
+      flow,
+      flowRegistry: flowReg,
+    });
+    const server = new GameServer({ engine, tableDef: TABLE, seats: ['me', 'opp'] });
+    expect(server.viewFor('me').result).toEqual({ winner: 'me' });
+    expect(server.viewFor('opp').result).toEqual({ winner: 'me' });
   });
 });

@@ -1,11 +1,14 @@
 import type { TurnState } from '../core/game-state';
 import type { Move } from '../core/moves';
 import type { PlayerId, Scene } from '../core/scene';
+import type { Json } from '../core/table-def';
 
 export interface ClientView {
   seat: PlayerId;
   scene: Scene;
   turn?: TurnState;
+  /** Game outcome, authored by the game's end-condition result effect. Undefined while live. */
+  result?: Json;
 }
 
 export type ClientMessage = { type: 'move'; move: Move };

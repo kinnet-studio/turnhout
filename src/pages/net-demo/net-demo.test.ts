@@ -71,4 +71,9 @@ describe('net-demo', () => {
     const order = [...discard].sort((a, b) => (a.slot ?? discard.indexOf(a)) - (b.slot ?? discard.indexOf(b))).map((c) => c.id);
     expect(order[order.length - 1]).toBe(meHand[2]);
   });
+
+  it('starts in the main phase after flow setup', () => {
+    const server = createDemoServer();
+    expect(server.viewFor('me').turn).toEqual({ current: 'me', phase: 'main' });
+  });
 });

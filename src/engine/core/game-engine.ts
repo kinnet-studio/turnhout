@@ -2,12 +2,18 @@ import type { Move, MoveContext, MoveHandler, MoveRegistry } from './moves';
 import type { RuleRegistry } from './rules';
 import type { GameState } from './game-state';
 import type { TableDef } from './table-def';
+import { gateMove, initFlow, runFlow, type FlowDef } from './flow';
+import { validateFlowDef } from './flow-def-validate';
+import type { FlowRegistry } from './flow-registry';
 
 export interface NewGameArgs {
   tableDef: TableDef;
   rules: RuleRegistry;
   moves: MoveRegistry;
   initial: GameState;
+  /** Optional declarative game flow. Provide flow and flowRegistry together. */
+  flow?: FlowDef;
+  flowRegistry?: FlowRegistry;
 }
 
 export interface DispatchResult {
@@ -23,12 +29,23 @@ export class GameEngine {
   private log: Move[] = [];
   private current: GameState;
   private listeners = new Set<(s: GameState) => void>();
+  private flow?: FlowDef;
+  private flowReg?: FlowRegistry;
 
   constructor(args: NewGameArgs) {
     this.ctx = { tableDef: args.tableDef, rules: args.rules };
     this.registry = args.moves;
-    this.initial = args.initial;
-    this.current = args.initial;
+    if (!!args.flow !== !!args.flowRegistry) throw new Error('flow and flowRegistry must be provided together');
+    if (args.flow && args.flowRegistry) {
+      const v = validateFlowDef(args.flow, args.flowRegistry);
+      if (!v.ok) throw new Error(`invalid FlowDef: ${v.errors.join('; ')}`);
+      this.flow = args.flow;
+      this.flowReg = args.flowRegistry;
+      this.initial = initFlow(args.initial, args.flow, args.flowRegistry, this.ctx);
+    } else {
+      this.initial = args.initial;
+    }
+    this.current = this.initial;
   }
 
   private handlerFor(move: Move): MoveHandler {
@@ -37,15 +54,27 @@ export class GameEngine {
     return h;
   }
 
+  /** Flow gate for `move`, or `true` when this engine has no flow. */
+  private gate(move: Move): true | string {
+    if (!this.flow) return true;
+    return gateMove(this.current, move, this.flow);
+  }
+
   canDispatch(move: Move): true | string {
+    const g = this.gate(move);
+    if (g !== true) return g;
     return this.handlerFor(move).legal(this.current, move, this.ctx);
   }
 
   dispatch(move: Move): DispatchResult {
     const handler = this.handlerFor(move);
+    const g = this.gate(move);
+    if (g !== true) return { ok: false, state: this.current, reason: g };
     const verdict = handler.legal(this.current, move, this.ctx);
     if (verdict !== true) return { ok: false, state: this.current, reason: verdict };
-    this.current = handler.apply(this.current, move, this.ctx);
+    let next = handler.apply(this.current, move, this.ctx);
+    if (this.flow) next = runFlow(next, this.flow, this.flowReg!, this.ctx, move);
+    this.current = next;
     this.log.push(move);
     this.notify();
     return { ok: true, state: this.current };
@@ -53,7 +82,10 @@ export class GameEngine {
 
   private replay(): void {
     let s = this.initial;
-    for (const m of this.log) s = this.handlerFor(m).apply(s, m, this.ctx);
+    for (const m of this.log) {
+      s = this.handlerFor(m).apply(s, m, this.ctx);
+      if (this.flow) s = runFlow(s, this.flow, this.flowReg!, this.ctx, m);
+    }
     this.current = s;
   }
 

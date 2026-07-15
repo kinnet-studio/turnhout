@@ -14,6 +14,8 @@ export interface GameState {
   turn?: TurnState;
   data: Record<string, Json>;
   rng: RngState;
+  /** Set once by an end condition's result effect; the flow gate rejects all moves when defined. */
+  result?: Json;
 }
 
 export function zoneCards(state: GameState, zoneId: string): CardState[] {
