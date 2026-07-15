@@ -71,4 +71,24 @@ describe('hearts end-to-end (seeded)', () => {
     const hand = server.viewFor(other).scene.cards.filter((c) => c.zoneId === `hand-${other}`);
     expect(server.submit(other, { type: 'reorder', cardId: hand[0].id, slot: 3 }).ok).toBe(true);
   });
+
+  it('a mid-trick off-turn reorder does not advance the turn', () => {
+    const server = createHeartsServer(42);
+    passAll(server);
+    const before = server.viewFor('p0').turn!.current;
+    // auto-player: the current seat plays the first legal card in its hand
+    const beforeHand = server.viewFor(before).scene.cards.filter((c) => c.zoneId === `hand-${before}`);
+    const played = beforeHand.some((c) => server.submit(before, { type: 'play', cardId: c.id }).ok);
+    expect(played).toBe(true);
+
+    const after = server.viewFor('p0').turn!.current;
+    expect(after).not.toBe(before); // the play itself legitimately passed the turn
+
+    // a different seat now reorders its own hand — this must NOT pass the turn again
+    const other = SEATS.find((s) => s !== after)!;
+    const otherHand = server.viewFor(other).scene.cards.filter((c) => c.zoneId === `hand-${other}`);
+    const result = server.submit(other, { type: 'reorder', cardId: otherHand[0].id, slot: 3 });
+    expect(result.ok).toBe(true);
+    expect(server.viewFor('p0').turn!.current).toBe(after);
+  });
 });

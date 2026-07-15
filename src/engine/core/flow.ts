@@ -29,7 +29,12 @@ export interface PhaseDef {
   onEnter?: NamedRef[];
   /** Phase transition, checked after each move. */
   advance?: { when: NamedRef; to: string };
-  /** When the turn passes to the policy's pick. Fires at most once per runFlow. */
+  /**
+   * When the turn passes to the policy's pick. Fires at most once per runFlow,
+   * but runFlow runs after EVERY accepted move: an endTurn predicate must be
+   * false except immediately after a turn-ending action, or off-turn moves
+   * (e.g. anyActor reorders) will advance the turn.
+   */
   endTurn?: { when: NamedRef };
 }
 

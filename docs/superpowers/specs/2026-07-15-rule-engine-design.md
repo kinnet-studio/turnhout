@@ -145,6 +145,19 @@ turn passing at most once per player action is also the correct game semantics.
 `advance` needs no such cap — changing phase moves evaluation to the *new* phase's
 `advance` clause, so it self-falsifies structurally.
 
+**Sharp edge:** `runFlow` runs after EVERY accepted move, not just the move that
+"should" end the turn. If a phase allows an off-turn move (e.g. an `anyActor`
+`reorder`), that move also triggers a `runFlow`, and if `endTurn.when` is still
+true at that point the turn advances with nothing having been played. An
+`endTurn` predicate must therefore be written to be false again immediately
+after it fires and stay false until the next turn-ending action — e.g. by
+checking that the *last* recorded action was taken by the current turn-holder,
+not merely that "the trick/round is mid-progress." The hearts demo hit this:
+`heartsTurnOver` originally returned true for the whole 1–3-play window of a
+trick, so a mid-trick `reorder` by a different seat re-fired `endTurn` and
+skipped a turn; the fix ties the mid-trick clause to `plays[n-1].by ===
+state.turn.current`.
+
 ### `initFlow(state, ...)` — once at construction/`reset`
 
 Fills in `turn` (`current = order[0]`, `phase = phases[0].id`) if the initial state did
