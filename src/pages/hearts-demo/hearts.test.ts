@@ -13,19 +13,22 @@ import { registerCoreFlow } from '@/engine/core/flow-library';
 const ctx: MoveContext = { tableDef: TABLE, rules: new RuleRegistry() };
 
 /** Deal deterministically for unit tests: card index i goes to hand-p{i % 4}. */
-const dealt = (): GameState => ({
-  cards: heartsDeck().map((c, i) => ({ ...c, zoneId: `hand-p${i % 4}`, faceUp: true })),
-  turn: { current: 'p0', phase: 'playing' },
-  data: {},
-  rng: makeRng(1),
-});
+const dealt = (): GameState => {
+  const { cards, rng } = heartsDeck(makeRng(1));
+  return {
+    cards: cards.map((c, i) => ({ ...c, zoneId: `hand-p${i % 4}`, faceUp: true })),
+    turn: { current: 'p0', phase: 'playing' },
+    data: {},
+    rng,
+  };
+};
 
 const findCard = (s: GameState, suit: string, rank: number, zonePrefix = 'hand-') =>
   s.cards.find((c) => c.data?.suit === suit && c.data?.rank === rank && c.zoneId.startsWith(zonePrefix))!;
 
 describe('cards', () => {
   it('builds a full 52-card deck with opaque ids', () => {
-    const deck = heartsDeck();
+    const { cards: deck } = heartsDeck(makeRng(1));
     expect(deck).toHaveLength(52);
     expect(new Set(deck.map((c) => c.id)).size).toBe(52);
     expect(deck.every((c) => c.zoneId === 'deck' && /^c\d+$/.test(c.id))).toBe(true);
@@ -158,6 +161,33 @@ describe('hearts flow entries', () => {
     expect(policy(s, ['p0', 'p1', 'p2', 'p3'], ctx)).toBe('p1');
     s = { ...s, data: { trickWinner: 'p2' } }; // trick empty + winner recorded → winner leads
     expect(policy(s, ['p0', 'p1', 'p2', 'p3'], ctx)).toBe('p2');
+  });
+});
+
+describe('shuffle determinism', () => {
+  it('same seed → identical id→faceKey mapping', () => {
+    const { cards: deck1 } = heartsDeck(makeRng(7));
+    const { cards: deck2 } = heartsDeck(makeRng(7));
+    const map1 = deck1.map((c) => ({ id: c.id, faceKey: c.faceKey }));
+    const map2 = deck2.map((c) => ({ id: c.id, faceKey: c.faceKey }));
+    expect(map1).toEqual(map2);
+  });
+
+  it('different seeds → different mapping', () => {
+    const { cards: deck1 } = heartsDeck(makeRng(1));
+    const { cards: deck2 } = heartsDeck(makeRng(2));
+    const map1 = new Map(deck1.map((c) => [c.id, c.faceKey]));
+    const map2 = new Map(deck2.map((c) => [c.id, c.faceKey]));
+    expect(map1).not.toEqual(map2);
+  });
+
+  it('mapping differs from unshuffled source order', () => {
+    const { cards: deck } = heartsDeck(makeRng(42));
+    const faceKeys = deck.map((c) => c.faceKey);
+    const suits = ['S', 'H', 'D', 'C'];
+    const unshuffled = [];
+    for (const s of suits) for (let r = 1; r <= 13; r++) unshuffled.push(`${r}${s}`);
+    expect(faceKeys).not.toEqual(unshuffled);
   });
 });
 

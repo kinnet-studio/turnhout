@@ -5,7 +5,7 @@ import { GameEngine } from '@/engine/core/game-engine';
 import { cardById, nextPlayer, zoneCards, type GameState } from '@/engine/core/game-state';
 import { MoveRegistry, type MoveHandler } from '@/engine/core/moves';
 import { registerCoreMoves } from '@/engine/core/moves-library';
-import { makeRng } from '@/engine/core/rng';
+import { makeRng, shuffleWithRng } from '@/engine/core/rng';
 import { canAccept, RuleRegistry } from '@/engine/core/rules';
 import { registerStarterRules } from '@/engine/core/rules-library';
 import type { CardState } from '@/engine/core/scene';
@@ -65,19 +65,23 @@ const endTurn: MoveHandler = {
   apply: (s) => nextPlayer(s, ['me', 'opp']),
 };
 
-function demoDeck(): CardState[] {
+function demoDeck(rng: ReturnType<typeof makeRng>): { cards: CardState[]; rng: ReturnType<typeof makeRng> } {
   const suits = ['S', 'H', 'D', 'C'];
-  const cards: CardState[] = [];
-  let n = 0;
-  for (const s of suits) {
-    for (let r = 1; r <= 13; r++) cards.push({ id: `c${n++}`, zoneId: 'deck', faceUp: false, faceKey: `${r}${s}`, data: { suit: s, rank: r } });
-  }
-  return cards;
+  const identities: { suit: string; rank: number }[] = [];
+  for (const s of suits) for (let r = 1; r <= 13; r++) identities.push({ suit: s, rank: r });
+  const { items, rng: next } = shuffleWithRng(identities, rng);
+  return {
+    cards: items.map(({ suit, rank }, i) => ({
+      id: `c${i}`, zoneId: 'deck', faceUp: false, faceKey: `${rank}${suit}`, data: { suit, rank },
+    })),
+    rng: next,
+  };
 }
 
 export function createDemoServer(): GameServer {
   const moves = registerCoreMoves(new MoveRegistry()).register('play', play).register('endTurn', endTurn);
-  const initial: GameState = { cards: demoDeck(), turn: { current: 'me' }, data: {}, rng: makeRng(20260709) };
+  const { cards, rng } = demoDeck(makeRng(20260709));
+  const initial: GameState = { cards, turn: { current: 'me' }, data: {}, rng };
   const engine = new GameEngine({
     tableDef: TABLE,
     rules: registerStarterRules(new RuleRegistry()),

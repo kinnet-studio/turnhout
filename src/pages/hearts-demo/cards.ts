@@ -1,19 +1,26 @@
 import type { PlayerId, CardState } from '@/engine/core/scene';
 import type { TableDef } from '@/engine/core/table-def';
+import { shuffleWithRng, type RngState } from '@/engine/core/rng';
 
 export const SEATS: PlayerId[] = ['p0', 'p1', 'p2', 'p3'];
 
-/** Opaque ids (c0..c51) — projection scrubs faceKey/data but preserves id (SP3 invariant). */
-export function heartsDeck(): CardState[] {
+/**
+ * Ids c0..c51 are only opaque if the id→(suit,rank) assignment is private: the
+ * identity list is shuffled with the server's seeded rng before ids are assigned,
+ * so clients cannot derive hidden cards from source order (SP3 invariant). The
+ * mapping is deterministic per seed — replay-safe.
+ */
+export function heartsDeck(rng: RngState): { cards: CardState[]; rng: RngState } {
   const suits = ['S', 'H', 'D', 'C'];
-  const cards: CardState[] = [];
-  let n = 0;
-  for (const s of suits) {
-    for (let r = 1; r <= 13; r++) {
-      cards.push({ id: `c${n++}`, zoneId: 'deck', faceUp: false, faceKey: `${r}${s}`, data: { suit: s, rank: r } });
-    }
-  }
-  return cards;
+  const identities: { suit: string; rank: number }[] = [];
+  for (const s of suits) for (let r = 1; r <= 13; r++) identities.push({ suit: s, rank: r });
+  const { items, rng: next } = shuffleWithRng(identities, rng);
+  return {
+    cards: items.map(({ suit, rank }, i) => ({
+      id: `c${i}`, zoneId: 'deck', faceUp: false, faceKey: `${rank}${suit}`, data: { suit, rank },
+    })),
+    rng: next,
+  };
 }
 
 const hand = (seat: PlayerId, x: number, y: number) =>

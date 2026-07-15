@@ -14,7 +14,8 @@ import { pass, play } from './moves';
 export function createHeartsServer(seed = 20260715): GameServer {
   const moves = registerCoreMoves(new MoveRegistry()).register('play', play).register('pass', pass);
   const flowRegistry = registerHeartsFlow(registerCoreFlow(new FlowRegistry()));
-  const initial: GameState = { cards: heartsDeck(), data: {}, rng: makeRng(seed) };
+  const { cards, rng } = heartsDeck(makeRng(seed));
+  const initial: GameState = { cards, data: {}, rng };
   const engine = new GameEngine({ tableDef: TABLE, rules: new RuleRegistry(), moves, initial, flow: FLOW, flowRegistry });
   return new GameServer({ engine, tableDef: TABLE, seats: [...SEATS] });
 }
