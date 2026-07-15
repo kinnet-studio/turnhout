@@ -27,7 +27,14 @@ export function validateFlowDef(flow: FlowDef, registry: FlowRegistry): { ok: bo
       pred(p.advance.when, `phase ${p.id} advance`);
       if (!ids.has(p.advance.to)) errors.push(`phase ${p.id} advances to unknown phase: ${p.advance.to}`);
     }
-    if (p.endTurn) pred(p.endTurn.when, `phase ${p.id} endTurn`);
+    if (p.endTurn) {
+      pred(p.endTurn.when, `phase ${p.id} endTurn`);
+      if (p.endTurn.after && p.allow !== 'any') {
+        for (const t of p.endTurn.after) {
+          if (!p.allow.includes(t)) errors.push(`phase ${p.id} endTurn.after lists move not in allow: ${t}`);
+        }
+      }
+    }
     if (p.anyActor && p.allow !== 'any') {
       for (const t of p.anyActor) {
         if (!p.allow.includes(t)) errors.push(`phase ${p.id} anyActor lists move not in allow: ${t}`);

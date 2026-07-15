@@ -165,6 +165,33 @@ describe('runFlow', () => {
     const flow: FlowDef = { turn: { order: ['a'] }, phases: [{ id: 'main', allow: 'any' }] };
     expect(() => runFlow(mk({ turn: { current: 'a', phase: 'ghost' } }), flow, reg(), ctx)).toThrow(/unknown phase: ghost/);
   });
+
+  it('endTurn.after does not fire when the just-applied move type is not listed', () => {
+    const flow: FlowDef = {
+      turn: { order: ['a', 'b'] },
+      phases: [{ id: 'main', allow: 'any', endTurn: { when: 'always', after: ['flip'] } }],
+    };
+    const out = runFlow(mk(), flow, reg(), ctx, { type: 'other' });
+    expect(out.turn?.current).toBe('a');
+  });
+
+  it('endTurn.after fires when the just-applied move type is listed', () => {
+    const flow: FlowDef = {
+      turn: { order: ['a', 'b'] },
+      phases: [{ id: 'main', allow: 'any', endTurn: { when: 'always', after: ['flip'] } }],
+    };
+    const out = runFlow(mk(), flow, reg(), ctx, { type: 'flip' });
+    expect(out.turn?.current).toBe('b');
+  });
+
+  it('endTurn without after keeps firing regardless of the move argument (backward compat)', () => {
+    const flow: FlowDef = {
+      turn: { order: ['a', 'b'] },
+      phases: [{ id: 'main', allow: 'any', endTurn: { when: 'always' } }],
+    };
+    const out = runFlow(mk(), flow, reg(), ctx, { type: 'irrelevant' });
+    expect(out.turn?.current).toBe('b');
+  });
 });
 
 describe('initFlow', () => {
@@ -186,5 +213,14 @@ describe('initFlow', () => {
     const out = initFlow(mk({ turn: { current: 'b', phase: 'main' } }), flow, reg(), ctx);
     expect(out.turn).toEqual({ current: 'b', phase: 'main' });
     expect(out.data.marked).toBeUndefined();
+  });
+
+  it('endTurn.after never fires during initFlow (no move to match against)', () => {
+    const flowWithEndTurn: FlowDef = {
+      turn: { order: ['a', 'b'] },
+      phases: [{ id: 'main', allow: 'any', endTurn: { when: 'always', after: ['flip'] } }],
+    };
+    const out = initFlow(mk(), flowWithEndTurn, reg(), ctx);
+    expect(out.turn?.current).toBe('a');
   });
 });

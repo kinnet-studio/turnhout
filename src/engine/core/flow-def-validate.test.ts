@@ -76,4 +76,16 @@ describe('validateFlowDef', () => {
     f.phases[0] = { id: 'main', allow: 'any', anyActor: ['reorder'] };
     expect(validateFlowDef(f, reg()).ok).toBe(true);
   });
+
+  it('rejects endTurn.after entries missing from allow', () => {
+    const f = base();
+    f.phases[0] = { id: 'main', allow: ['play'], endTurn: { when: 'always', after: ['reorder'] } };
+    expect(validateFlowDef(f, reg()).errors).toContain('phase main endTurn.after lists move not in allow: reorder');
+  });
+
+  it("accepts endTurn.after entries when allow is 'any'", () => {
+    const f = base();
+    f.phases[0] = { id: 'main', allow: 'any', endTurn: { when: 'always', after: ['reorder'] } };
+    expect(validateFlowDef(f, reg()).ok).toBe(true);
+  });
 });

@@ -30,12 +30,14 @@ export interface PhaseDef {
   /** Phase transition, checked after each move. */
   advance?: { when: NamedRef; to: string };
   /**
-   * When the turn passes to the policy's pick. Fires at most once per runFlow,
-   * but runFlow runs after EVERY accepted move: an endTurn predicate must be
-   * false except immediately after a turn-ending action, or off-turn moves
-   * (e.g. anyActor reorders) will advance the turn.
+   * When the turn passes to the policy's pick. Fires at most once per runFlow.
+   * runFlow runs after EVERY accepted move; without `after`, the predicate must
+   * be false except immediately after a turn-ending action, or off-turn moves
+   * (e.g. anyActor reorders) will advance the turn. Prefer `after` — the step is
+   * then only evaluated when the just-applied move's type is listed (and never
+   * during initFlow, which has no move).
    */
-  endTurn?: { when: NamedRef };
+  endTurn?: { when: NamedRef; after?: string[] };
 }
 
 export interface TriggerDef {
@@ -99,7 +101,7 @@ function pickNext(state: GameState, flow: FlowDef, reg: FlowRegistry, ctx: MoveC
  * phase advance (+ target onEnter) → endTurn (at most once) — first match
  * restarts the loop. Replay re-runs this identically after each apply.
  */
-export function runFlow(state: GameState, flow: FlowDef, reg: FlowRegistry, ctx: MoveContext): GameState {
+export function runFlow(state: GameState, flow: FlowDef, reg: FlowRegistry, ctx: MoveContext, move?: Move): GameState {
   let s = state;
   let endTurnFired = false;
   let lastFired = '(nothing)';
@@ -134,7 +136,12 @@ export function runFlow(state: GameState, flow: FlowDef, reg: FlowRegistry, ctx:
 
     // At most once per invocation: passing the turn rarely falsifies an endTurn
     // predicate (unlike triggers), and a turn passes at most once per player action.
-    if (!endTurnFired && phase.endTurn && evalPred(phase.endTurn.when, s, reg, ctx)) {
+    if (
+      !endTurnFired &&
+      phase.endTurn &&
+      (!phase.endTurn.after || (move !== undefined && phase.endTurn.after.includes(move.type))) &&
+      evalPred(phase.endTurn.when, s, reg, ctx)
+    ) {
       endTurnFired = true;
       s = { ...s, turn: { ...s.turn!, current: pickNext(s, flow, reg, ctx) } };
       lastFired = 'endTurn';
@@ -155,5 +162,6 @@ export function initFlow(state: GameState, flow: FlowDef, reg: FlowRegistry, ctx
   if (s.turn!.phase === first.id) {
     for (const e of first.onEnter ?? []) s = runEffect(e, s, reg, ctx);
   }
+  // No move here: an `after`-filtered endTurn never fires during init.
   return runFlow(s, flow, reg, ctx);
 }

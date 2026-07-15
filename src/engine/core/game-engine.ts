@@ -73,7 +73,7 @@ export class GameEngine {
     const verdict = handler.legal(this.current, move, this.ctx);
     if (verdict !== true) return { ok: false, state: this.current, reason: verdict };
     let next = handler.apply(this.current, move, this.ctx);
-    if (this.flow) next = runFlow(next, this.flow, this.flowReg!, this.ctx);
+    if (this.flow) next = runFlow(next, this.flow, this.flowReg!, this.ctx, move);
     this.current = next;
     this.log.push(move);
     this.notify();
@@ -84,7 +84,7 @@ export class GameEngine {
     let s = this.initial;
     for (const m of this.log) {
       s = this.handlerFor(m).apply(s, m, this.ctx);
-      if (this.flow) s = runFlow(s, this.flow, this.flowReg!, this.ctx);
+      if (this.flow) s = runFlow(s, this.flow, this.flowReg!, this.ctx, m);
     }
     this.current = s;
   }

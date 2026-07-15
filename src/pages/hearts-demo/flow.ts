@@ -7,23 +7,12 @@ import { trickPlays } from './moves';
 
 const heartsValue = (rank: number) => (rank === 1 ? 14 : rank);
 
-/**
- * True mid-trick (pass to next seat) or right after an award (winner leads).
- *
- * `runFlow` runs after EVERY accepted move, including off-turn `reorder`
- * (allowed mid-trick via `anyActor`) — not just after the play that actually
- * ends the turn. The mid-trick clause therefore only fires for the runFlow
- * immediately following the current turn-holder's own play (`plays[n-1].by
- * === state.turn.current`); a later off-turn reorder must not re-fire it.
- *
- * The `n === 0` winner-leads clause can still re-fire on a post-award
- * reorder, but `heartsNext` deterministically returns the recorded winner in
- * that case, so a repeat firing is a harmless no-op.
- */
+/** Evaluated only right after a `play` (endTurn.after): mid-trick → pass the turn;
+ * after the 4th play the award trigger has already emptied the trick and recorded
+ * the winner, so the n === 0 clause hands the lead to the winner. */
 const heartsTurnOver: FlowPredicate = (state) => {
-  const plays = trickPlays(state);
-  const n = plays.length;
-  if (n >= 1 && n <= 3) return plays[n - 1].by === state.turn?.current;
+  const n = trickPlays(state).length;
+  if (n >= 1 && n <= 3) return true;
   return n === 0 && typeof state.data.trickWinner === 'string' && zoneCards(state, 'trick').length === 0;
 };
 
@@ -111,7 +100,7 @@ export const FLOW: FlowDef = {
         { name: 'moveZone', params: { from: 'pass-p3', to: 'hand-p0' } },
         'setLeaderTwoOfClubs',
       ],
-      endTurn: { when: 'heartsTurnOver' },
+      endTurn: { when: 'heartsTurnOver', after: ['play'] },
     },
   ],
   triggers: [{ id: 'award-trick', when: { name: 'zoneCount', params: { zone: 'trick', count: 4 } }, then: ['awardTrick'] }],
