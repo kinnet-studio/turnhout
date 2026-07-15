@@ -981,7 +981,11 @@ describe('GameEngine with flow', () => {
     turn: { order: ['a', 'b'] },
     phases: [
       { id: 'setup', allow: [], onEnter: [{ name: 'deal', params: { from: 'deck', to: 'hand', count: 1 } }], advance: { when: 'always', to: 'main' } },
-      { id: 'main', allow: ['flip'], endTurn: { when: 'always' } },
+      // NOTE: not `when: 'always'` — endTurn fires whenever its predicate is true
+      // during any runFlow, including the construction-time one after setup→main
+      // advance, which would flip the turn before any move. Use a predicate that
+      // is false at construction settle (no card is faceUp until a flip move).
+      { id: 'main', allow: ['flip'], endTurn: { when: 'anyFaceUp' } },
     ],
     triggers: [{ id: 'refill', when: { name: 'zoneEmpty', params: { zone: 'hand' } }, then: [{ name: 'deal', params: { from: 'deck', to: 'hand', count: 1 } }] }],
     end: [],
@@ -1001,7 +1005,7 @@ describe('GameEngine with flow', () => {
       moves: registerCoreMoves(new MoveRegistry()),
       initial: { cards: cards(), data: {}, rng: makeRng(3) },
       flow: FLOW,
-      flowRegistry: registerCoreFlow(new FlowRegistry()),
+      flowRegistry: registerCoreFlow(new FlowRegistry()).registerPredicate('anyFaceUp', (s) => s.cards.some((c) => c.faceUp)),
     });
 
   it('throws when flow and flowRegistry are not provided together', () => {
