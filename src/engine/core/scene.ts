@@ -35,6 +35,7 @@ export interface ZoneState {
   transform: { x: number; y: number; rotation?: number };
   layoutOptions?: LayoutOptions;
   accepts?: (card: CardState) => boolean;
+  bounds?: { width: number; height: number; anchor?: { x: number; y: number } };
 }
 
 export interface Scene {

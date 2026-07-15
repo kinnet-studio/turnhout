@@ -103,6 +103,35 @@ describe('deriveScene projection', () => {
   });
 });
 
+describe('deriveScene bounds threading', () => {
+  const boundsDef: TableDef = {
+    players: ['me', 'opp'],
+    zones: [
+      {
+        id: 'hand',
+        layout: 'fan',
+        transform: { x: 0, y: 0 },
+        bounds: { width: 300, height: 180, anchor: { x: 0.5, y: 0.4 } },
+        owner: 'me',
+        visibility: 'owner',
+      },
+      { id: 'discard', layout: 'pile', transform: { x: 0, y: 0 }, visibility: 'public' },
+    ],
+  };
+  const boundsPlacement: Placement = { cards: [] };
+
+  it('threads an authored ZoneDef.bounds into the emitted ZoneState (omniscient)', () => {
+    const scene = deriveScene(boundsDef, boundsPlacement);
+    expect(scene.zones.find((z) => z.id === 'hand')?.bounds).toEqual({ width: 300, height: 180, anchor: { x: 0.5, y: 0.4 } });
+    expect(scene.zones.find((z) => z.id === 'discard')?.bounds).toBeUndefined();
+  });
+
+  it('keeps the authored bounds for a non-owner viewer projection', () => {
+    const scene = deriveScene(boundsDef, boundsPlacement, 'opp');
+    expect(scene.zones.find((z) => z.id === 'hand')?.bounds).toEqual({ width: 300, height: 180, anchor: { x: 0.5, y: 0.4 } });
+  });
+});
+
 describe('projectCard', () => {
   it('revealed → faceUp true; hidden → masked back', () => {
     expect(projectCard(card({ faceUp: true }), zone({ visibility: 'secret' }), 'opp').faceUp).toBe(true);

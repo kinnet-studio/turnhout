@@ -1,4 +1,4 @@
-import { Texture } from 'pixi.js';
+import { Graphics, Texture } from 'pixi.js';
 import { describe, expect, it } from 'vitest';
 import { PixiTable } from './pixi-table';
 import { FaceTextureCache } from './face-texture-cache';
@@ -25,5 +25,37 @@ describe('PixiTable', () => {
     table.setScene(scene(['a']));
     table.advance(0.016);
     expect(table.getPlacedCards().map((c) => c.id)).toEqual(['a']);
+  });
+});
+
+describe('PixiTable empty-zone outlines (showEmptyZones)', () => {
+  const twoZoneScene: Scene = {
+    cards: [{ id: 'a', zoneId: 'occupied', faceUp: false, faceKey: 'back' }],
+    zones: [
+      { id: 'occupied', layout: 'pile', transform: { x: 0, y: 0 } },
+      { id: 'empty', layout: 'pile', transform: { x: 200, y: 0 } },
+    ],
+  };
+
+  const outlineOf = (table: PixiTable): Graphics | undefined =>
+    table.children.find((c): c is Graphics => c instanceof Graphics);
+
+  it('draws exactly one outline for the one empty zone when the flag is on', () => {
+    const table = new PixiTable({ faces: faces(), createSprite: () => new CardSprite(), showEmptyZones: true });
+    table.setScene(twoZoneScene);
+    expect(outlineOf(table)?.context.instructions.length).toBe(1);
+  });
+
+  it('redraws (not accumulates) outlines on subsequent setScene calls', () => {
+    const table = new PixiTable({ faces: faces(), createSprite: () => new CardSprite(), showEmptyZones: true });
+    table.setScene(twoZoneScene);
+    table.setScene(twoZoneScene);
+    expect(outlineOf(table)?.context.instructions.length).toBe(1);
+  });
+
+  it('draws no outlines when the flag is off (default) — behavior unchanged', () => {
+    const table = new PixiTable({ faces: faces(), createSprite: () => new CardSprite() });
+    table.setScene(twoZoneScene);
+    expect(outlineOf(table)?.context.instructions.length ?? 0).toBe(0);
   });
 });

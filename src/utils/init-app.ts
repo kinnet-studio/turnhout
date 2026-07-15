@@ -27,7 +27,7 @@ const defaultRenderer: FaceRenderer = (card) => (container: Container) => {
 };
 
 export const makeInitApp =
-  (faceRenderer: FaceRenderer = defaultRenderer) =>
+  (faceRenderer: FaceRenderer = defaultRenderer, opts?: { showEmptyZones?: boolean }) =>
   async (
     canvas: HTMLCanvasElement,
     option: Partial<InitAppOptions> = { fullScreen: true, limitEntireViewPort: false, boundaries: TABLE_BOUNDS },
@@ -49,7 +49,7 @@ export const makeInitApp =
     };
 
     const faces = new FaceTextureCache(faceRenderer, drawToTexture);
-    const pixiTable = new PixiTable({ faces });
+    const pixiTable = new PixiTable({ faces, showEmptyZones: opts?.showEmptyZones });
     base.app.stage.addChild(pixiTable);
     base.app.ticker.add((t) => pixiTable.advance(t.deltaMS / 1000));
 
