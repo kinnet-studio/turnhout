@@ -36,6 +36,7 @@ export class GameServer {
       seat,
       scene: deriveScene(this.tableDef, { cards: state.cards }, seat),
       turn: state.turn,
+      result: state.result,
     };
   }
 
