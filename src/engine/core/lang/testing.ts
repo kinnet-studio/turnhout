@@ -1,8 +1,12 @@
-// Test fixtures for the phrase library. Pure data builders: no engine, no DOM, no clock.
+// Test fixtures for the phrase library and the table layout. Pure: no DOM, no clock.
 import type { GameState } from '../game-state';
+import { resolveDrop } from '../hittest';
+import { computeZoneLayout } from '../layout';
 import { makeRng } from '../rng';
+import { RuleRegistry } from '../rules';
 import type { CardState, PlayerId } from '../scene';
-import type { Json } from '../table-def';
+import type { Json, ZoneDef } from '../table-def';
+import { placeZone } from '../zone-geometry';
 import { standardDeckIdentities, textFaceKey } from './cards';
 import { emptyVocab, type PhraseLibrary } from './phrases';
 import type {
@@ -119,4 +123,40 @@ export function runPhrase<T = unknown>(
   if (m.status !== 'ok') throw new Error(`“${text}” → ${JSON.stringify(m)}`);
   const fn = lib.get(kind, m.pattern)!.fn as (...a: unknown[]) => unknown;
   return fn(env, m.args, ...extra) as T;
+}
+
+const ROW_CARDS = 4;
+const PILE_CARDS = 3;
+/** A hand counts as reachable when at least this share of its cards can be dropped onto. */
+const HAND_REACHABLE = 0.7;
+
+/**
+ * Which zones a drag cannot reach, as designer-readable messages. Fills hands with `handSize` cards, rows with 4
+ * and piles with 3, then drops at each zone's centre (it must land in that zone) and at each hand card's centre
+ * (at least 70% must land in the hand). A later zone that covers an earlier one's centre is what usually fails.
+ */
+export function unreachableZones(defs: ZoneDef[], handSize: number): string[] {
+  const registry = new RuleRegistry();
+  const held = new Map(defs.map((d) => {
+    const count = d.layout === 'fan' ? handSize : d.layout === 'row' ? ROW_CARDS : PILE_CARDS;
+    return [d.id, Array.from({ length: count }, (_, i) => fixtureCard(`${d.id}#${i}`, d.id, {}))] as const;
+  }));
+  const zoneCardsOf = (zoneId: string) => held.get(zoneId) ?? [];
+  const dragged = fixtureCard('dragged', '__hand', {});
+  const dropOn = (pt: { x: number; y: number }) => resolveDrop(pt, defs, zoneCardsOf, dragged, registry)?.zoneId ?? null;
+
+  const problems: string[] = [];
+  for (const def of defs) {
+    const cards = zoneCardsOf(def.id);
+    const centre = placeZone(def, cards);
+    const landed = dropOn(centre);
+    if (landed !== def.id) problems.push(`${def.id}: centre goes to ${landed ?? 'nothing'}`);
+    if (def.layout !== 'fan') continue;
+    const poses = [...computeZoneLayout(def, cards).values()];
+    const reachable = poses.filter((pose) => dropOn(pose) === def.id).length;
+    if (reachable < HAND_REACHABLE * poses.length) {
+      problems.push(`${def.id}: only ${reachable} of ${poses.length} card centres reachable`);
+    }
+  }
+  return problems;
 }
