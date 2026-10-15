@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { PhraseLibrary, STATIC_TYPES, emptyVocab, stubFor } from './phrases';
+import { standardDeckIdentities } from './cards';
+import { PhraseLibrary, STATIC_TYPES, emptyVocab, stubFor, vocabFrom } from './phrases';
 import type { ParamType } from './types';
 
 const V = emptyVocab();
@@ -119,5 +120,32 @@ describe('stubFor', () => {
 
   it('escapes apostrophes in the pattern', () => {
     expect(stubFor('condition', "It's their turn", V, STATIC_TYPES, { game: 'G', line: 2 })).toContain("library.condition('it\\'s their turn', (env) => {");
+  });
+});
+
+describe('vocabFrom', () => {
+  it('lists zones by owner, and card words only for table decks', () => {
+    const zones = [
+      { name: 'deck', perPlayer: false, layout: 'pile', visibility: 'secret' },
+      { name: 'hand', perPlayer: true, layout: 'hand', visibility: 'owner' },
+    ] as const;
+    const identity = (color: string, number: number) => ({ attrs: { color, number }, faceKey: `${color}${number}` });
+    const vocab = vocabFrom({
+      maxPlayers: 4, zones: [...zones], phases: ['main'], verbs: ['play'],
+      cards: [
+        { kind: 'standard', identities: standardDeckIdentities(), start: 'deck', acesHigh: false },
+        { kind: 'table', identities: [identity('red', 1), identity('red', 2)], start: 'deck', acesHigh: false },
+      ],
+    });
+    expect(vocab).toEqual({
+      sharedZones: ['deck'], playerZones: ['hand'], maxPlayers: 4, phases: ['main'], verbs: ['play'],
+      attributes: ['suit', 'rank', 'color', 'number'], standardDeck: true,
+      cardValues: [{ attribute: 'color', value: 'red' }, { attribute: 'number', value: 1 }, { attribute: 'number', value: 2 }],
+    });
+  });
+
+  it('makes a new object each time and defaults to an empty game', () => {
+    expect(vocabFrom({ maxPlayers: 2 })).toEqual({ ...emptyVocab(), maxPlayers: 2 });
+    expect(vocabFrom({ maxPlayers: 2 })).not.toBe(vocabFrom({ maxPlayers: 2 }));
   });
 });

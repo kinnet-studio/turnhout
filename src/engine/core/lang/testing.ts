@@ -8,7 +8,7 @@ import type { CardState, PlayerId } from '../scene';
 import type { Json, ZoneDef } from '../table-def';
 import { placeZone } from '../zone-geometry';
 import { standardDeckIdentities, textFaceKey } from './cards';
-import { emptyVocab, type PhraseLibrary } from './phrases';
+import { vocabFrom, type PhraseLibrary } from './phrases';
 import type {
   CompiledGame, CompiledPhase, DeclaredMove, MoveInfo, PhraseEnv, PhraseKind, Vocab, ZoneRef, ZoneSpec,
 } from './types';
@@ -87,29 +87,13 @@ export function fixturePhase(id: string, moves: DeclaredMove[], over: Partial<Co
 
 /** The words a designer could use about this game: its zones, move verbs, card attributes and values. */
 export function vocabFor(game: CompiledGame, players: number = game.players.max): Vocab {
-  const attributes = new Set<string>();
-  const cardValues: Vocab['cardValues'] = [];
-  for (const set of game.cards) {
-    for (const { attrs } of set.identities) {
-      for (const [attribute, value] of Object.entries(attrs)) {
-        attributes.add(attribute);
-        if (set.kind === 'table' && !cardValues.some((v) => v.attribute === attribute && v.value === value)) {
-          cardValues.push({ attribute, value });
-        }
-      }
-    }
-  }
-  return {
-    ...emptyVocab(),
-    sharedZones: game.zones.filter((z) => !z.perPlayer).map((z) => z.name),
-    playerZones: game.zones.filter((z) => z.perPlayer).map((z) => z.name),
+  return vocabFrom({
     maxPlayers: players,
+    zones: game.zones,
+    cards: game.cards,
     phases: game.phases.map((p) => p.id),
     verbs: [...new Set(game.phases.flatMap((p) => p.moves.map((m) => m.verb)))],
-    attributes: [...attributes],
-    cardValues,
-    standardDeck: game.cards.some((s) => s.kind === 'standard'),
-  };
+  });
 }
 
 /**

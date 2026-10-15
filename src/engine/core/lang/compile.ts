@@ -1,7 +1,7 @@
 import { addProblem, attempt, matchEffectLine, matchLine, phaseId, phraseFn, rejectChildren, type LineCtx } from './compile-util';
 import type { Diagnostic } from './diagnostics';
 import { parseOutline, type OutlineNode } from './outline';
-import { emptyVocab, normalizeLine, type PhraseLibrary } from './phrases';
+import { normalizeLine, vocabFrom, type PhraseLibrary } from './phrases';
 import type {
   CardSetSpec, CardsFn, CompiledEnd, CompiledGame, CompiledPhase, PhraseRef, Vocab, ZoneFn, ZoneSpec,
 } from './types';
@@ -16,8 +16,11 @@ const GAME_ENDS = /^the game ends when\s+(.+)$/i;
 const SAYS_WINS = /\bwins\b/i;
 const BLOCK_SECTIONS = new Set(['cards', 'table', 'setup', 'end']);
 
+const MAX_PLAYERS = 12;
+
 const MISSING_GAME = 'Start with a line like “Game: My Game”.';
 const BAD_PLAYERS = 'Say how many players, like “Players: 4” or “Players: 2 to 5”.';
+const TOO_MANY_PLAYERS = `This game can have at most ${MAX_PLAYERS} players.`;
 const UNKNOWN_SECTION = "I don't understand this section. Sections are Game, Players, Cards, Table, Setup, Phase, End and Example.";
 
 type Section = { keyword: string; rest: string; node: OutlineNode };
@@ -67,38 +70,12 @@ function readPlayers(lines: Section[], diagnostics: Diagnostic[]): { min: number
     const found = PLAYERS.exec(rest);
     const min = found ? Number(found[1]) : 0;
     const max = found?.[2] === undefined ? min : Number(found[2]);
-    if (min >= 1 && max >= min) players = { min, max };
+    if (Math.max(min, max) > MAX_PLAYERS) addProblem(diagnostics, node.line, TOO_MANY_PLAYERS);
+    else if (min >= 1 && max >= min) players = { min, max };
     else addProblem(diagnostics, node.line, BAD_PLAYERS);
   }
   if (!seen) addProblem(diagnostics, 1, BAD_PLAYERS);
   return players;
-}
-
-/** The words a designer may use about this game. Build a new one per stage: the library caches by object. */
-function buildVocab(maxPlayers: number, zones: ZoneSpec[], phases: string[], verbs: string[], cards: CardSetSpec[]): Vocab {
-  const attributes = new Set<string>();
-  const cardValues: Vocab['cardValues'] = [];
-  for (const set of cards) {
-    for (const { attrs } of set.identities) {
-      for (const [attribute, value] of Object.entries(attrs)) {
-        attributes.add(attribute);
-        if (set.kind === 'table' && !cardValues.some((v) => v.attribute === attribute && v.value === value)) {
-          cardValues.push({ attribute, value });
-        }
-      }
-    }
-  }
-  return {
-    ...emptyVocab(),
-    sharedZones: zones.filter((z) => !z.perPlayer).map((z) => z.name),
-    playerZones: zones.filter((z) => z.perPlayer).map((z) => z.name),
-    maxPlayers,
-    phases,
-    verbs,
-    attributes: [...attributes],
-    cardValues,
-    standardDeck: cards.some((s) => s.kind === 'standard'),
-  };
 }
 
 function compileTable(lines: OutlineNode[], ctx: LineCtx): ZoneSpec[] {
@@ -207,7 +184,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
 
   if (of('cards').length === 0) addProblem(diagnostics, 1, 'Add a Cards: section.');
   if (of('table').length === 0) addProblem(diagnostics, 1, 'Add a Table: section.');
-  const zones = compileTable(linesOf(of('table')), stage(buildVocab(maxPlayers, [], [], [], [])));
+  const zones = compileTable(linesOf(of('table')), stage(vocabFrom({ maxPlayers })));
 
   // Phases and move verbs are read ahead, so a rule may name a phase that comes later in the text.
   const phaseNodes = of('phase').map((s) => s.node);
@@ -216,9 +193,9 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   const phaseIds = [...new Set(named.map(phaseId))];
   const verbs = [...new Set(named.flatMap((node) => node.children).flatMap((c) => MOVE_VERB.exec(normalizeLine(c.text))?.[1].toLowerCase() ?? []))];
 
-  const cards = compileCards(linesOf(of('cards')), stage(buildVocab(maxPlayers, zones, phaseIds, verbs, [])));
+  const cards = compileCards(linesOf(of('cards')), stage(vocabFrom({ maxPlayers, zones, phases: phaseIds, verbs })));
 
-  const ctx = stage(buildVocab(maxPlayers, zones, phaseIds, verbs, cards));
+  const ctx = stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs }));
   const setup = linesOf(of('setup')).map((node) => {
     rejectChildren(node, diagnostics);
     return matchEffectLine(node.text, node.line, ctx);

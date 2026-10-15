@@ -80,6 +80,15 @@ describe('compileGame header and sections', () => {
     }
   });
 
+  it('allows at most 12 players, in either bound', () => {
+    expect(compileGame(BASE.replace('Players: 2 to 3', 'Players: 12'), lib).game!.players).toEqual({ min: 12, max: 12 });
+    for (const bad of ['Players: 13', 'Players: 2 to 13', 'Players: 13 to 2', 'Players: 99999999999999999999']) {
+      const result = compileGame(BASE.replace('Players: 2 to 3', bad), lib);
+      expect(result.diagnostics.map((d) => [d.line, d.message])).toEqual([[2, 'This game can have at most 12 players.']]);
+      expect(result.game).toBeUndefined();
+    }
+  });
+
   it('reads the largest player count into the vocabulary', () => {
     expect(messages(BASE.replace('Shuffle the deck.', 'Shuffle p9\'s hand.'))).toEqual([[12, 'This game only has players p0 to p2.']]);
     expect(compileGame(BASE.replace('Shuffle the deck.', 'Shuffle p2\'s hand.'), lib).diagnostics).toEqual([]);
@@ -235,6 +244,17 @@ describe('compileGame setup', () => {
     const { game, diagnostics } = compileGame(text, lib);
     expect(diagnostics).toEqual([]);
     expect(game!.setup[0]).toMatchObject({ phrase: 'if', args: [{ phrase: '{zone} is not empty' }, { phrase: 'shuffle {zone}, except its top card, into {zone}' }] });
+  });
+
+  it('splits an If line after a comma that belongs to the condition', () => {
+    const phrases = createDefaultLibrary().condition('the deck is empty, or the hand is empty', () => true);
+    const text = BASE.replace('Shuffle the deck.', 'If the deck is empty, or the hand is empty, shuffle the deck.');
+    const { game, diagnostics } = compileGame(text, phrases);
+    expect(diagnostics).toEqual([]);
+    expect(game!.setup[0]).toMatchObject({
+      phrase: 'if',
+      args: [{ kind: 'condition', phrase: 'the deck is empty, or the hand is empty', text: 'the deck is empty, or the hand is empty' }, { kind: 'effect', phrase: 'shuffle {zone}' }],
+    });
   });
 
   it('keeps the text of an If line\'s parts without the keyword or the period', () => {

@@ -1,6 +1,6 @@
 import type { Json } from '../table-def';
 import type {
-  ActionFn, CardsFn, ConditionFn, EffectFn, ExpectFn, ParamType, PhraseKind, ScoreFn, TurnFn, Vocab, WinnerFn, ZoneFn,
+  ActionFn, CardSetSpec, CardsFn, ConditionFn, EffectFn, ExpectFn, ParamType, PhraseKind, ScoreFn, TurnFn, Vocab, WinnerFn, ZoneFn, ZoneSpec,
 } from './types';
 
 const VISIBILITY: Record<string, string> = {
@@ -26,6 +26,39 @@ export const STATIC_TYPES: ParamType[] = [
 
 export function emptyVocab(): Vocab {
   return { sharedZones: [], playerZones: [], maxPlayers: 0, phases: [], verbs: [], attributes: [], cardValues: [], standardDeck: false };
+}
+
+/**
+ * The words a designer may use about a game: its zones, card attributes and values, phases and move verbs.
+ * Always make a new one per compile stage: the library caches what it builds from a Vocab by object.
+ */
+export function vocabFrom(game: {
+  maxPlayers: number; zones?: ZoneSpec[]; cards?: CardSetSpec[]; phases?: string[]; verbs?: string[];
+}): Vocab {
+  const { zones = [], cards = [] } = game;
+  const attributes = new Set<string>();
+  const cardValues: Vocab['cardValues'] = [];
+  for (const set of cards) {
+    for (const { attrs } of set.identities) {
+      for (const [attribute, value] of Object.entries(attrs)) {
+        attributes.add(attribute);
+        if (set.kind === 'table' && !cardValues.some((v) => v.attribute === attribute && v.value === value)) {
+          cardValues.push({ attribute, value });
+        }
+      }
+    }
+  }
+  return {
+    ...emptyVocab(),
+    sharedZones: zones.filter((z) => !z.perPlayer).map((z) => z.name),
+    playerZones: zones.filter((z) => z.perPlayer).map((z) => z.name),
+    maxPlayers: game.maxPlayers,
+    phases: game.phases ?? [],
+    verbs: game.verbs ?? [],
+    attributes: [...attributes],
+    cardValues,
+    standardDeck: cards.some((s) => s.kind === 'standard'),
+  };
 }
 
 /** Trims, collapses whitespace and drops one trailing period. Case is kept. */
