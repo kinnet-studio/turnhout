@@ -29,7 +29,7 @@ Consumer app  ──(TableDef + Placement)──►  turnhout
         │   scene · table-def · layout · zone-geometry · rules · diff         │
         │   tween · choreography · hittest · derive-scene · table-model       │
         │   game-state · game-engine · moves · rng · flow (+ registry)        │
-        │   lang/  (designer language: outline · phrases · compile · run)     │
+        │   lang/  (designer language: outline · phrases · compile · runtime) │
         └───────┬───────────────┬───────────────┬───────────────────────────-┘
                 │               │               │
             pixi/  (view)   input/ (KMT)    react/ (<CardTable>)
@@ -47,15 +47,13 @@ Requires [Bun](https://bun.sh).
 
 ```bash
 bun install
-bun run dev        # Vite dev server + the card-table demo
+bun run dev        # Vite dev server: the Hearts demo and the game designer
 bun run test       # vitest (happy-dom)
 bun run typecheck  # tsc --noEmit
 bun run build      # tsc --noEmit && vite build
 ```
 
-Open the dev server and try the demo: deal cards to the hand, drag between deck/hand/discard, click to flip.
-
-The app has two pages: the Hearts demo at `/`, and the game designer at `/#designer`.
+The app has two pages: the Hearts demo at `/` (four seats over loopback channels), and the game designer at `/#designer`.
 
 ## Designing a game
 
@@ -67,6 +65,7 @@ The designer page is a text editor for the rule language, with a line-numbered e
 
 - Start from a sample: **Load sample** has Hearts and Color Match (`src/games/hearts.rules`, `src/games/color-match.rules`).
 - A phrase the language doesn't know yet is flagged with the closest phrases it does know. **Copy for developer** copies a stub for a developer to implement; designers don't write code.
+- A name the rules never defined (a zone, phase, move, card value or attribute) is flagged with the closest names they do define, for the designer to fix.
 - **Play** is available once the rules read cleanly. It puts every seat on one screen (pick the player count first when the game allows a range), with undo and restart. Editing the rules ends the playtest; Play starts a fresh game under the new rules.
 - **Download** and **Upload** move the text to and from a `.rules` file.
 
@@ -84,6 +83,24 @@ Phase: playing
       the card has the same color as the top card of the discard pile
       the card has the same number as the top card of the discard pile
 ```
+
+## Adding a phrase (developers)
+
+A line the library doesn't know comes with **Copy for developer**, a stub ready to paste:
+
+```ts
+// Requested by a designer — game "Hearts", line 15:
+//   "Shuffle the deck twice"
+library.effect('shuffle {zone} twice', (env, [a1]) => {
+  throw new Error('not implemented yet');
+});
+```
+
+1. **Pick the file** in `src/engine/core/lang/library/`. Each has one `register…Phrases(lib)` function, a chain of `lib.<kind>(pattern, fn)` calls: `setup-phrases.ts` (`registerSetupPhrases`: Cards: and Table: lines), `flow-phrases.ts` (`registerFlowPhrases`: zones, effects, turn order, scoring, winners), `move-phrases.ts` (`registerMovePhrases`: the card being moved), `standard-deck.ts` (`registerStandardDeckPhrases`: suits and ranks), `example-phrases.ts` (`registerExamplePhrases`: Given/When/Then) or a game's own file such as `hearts.ts`. A new file's register function goes in `REGISTRARS` in `library/index.ts`.
+2. **Paste the stub into the chain** as `.effect('shuffle {zone} twice', (env, [zone]) => …)` and write the body: a pure function of `env` (state, compiled game, seats) and the arguments, already resolved from `{zone}`, `{card}`, `{int}`…; callback types are in `lang/types.ts`. Randomness only through `state.rng`.
+3. **`needsMove`.** A condition or effect that reads the move being judged (`env.move`, or `currentMove`/`movedCard` from `library/support.ts`) is registered with `{ needsMove: true }`, so the compiler only allows it under `A player may …`.
+4. **Designer problems throw `RuleError`** (`lang/diagnostics.ts`) in plain words, like `throw new RuleError('There are no cards left in the deck.')`: the designer sees that message on the line. Anything else thrown is reported as a bug in the phrase.
+5. **Add a unit test** in the file's `.test.ts`: set up cards with `fixtureCard`/`fixtureState`/`fixtureEnv` from `lang/testing.ts` and run the sentence as a designer writes it, `runPhrase(createDefaultLibrary(), 'effect', 'shuffle the deck twice', env)`.
 
 ## Describing a table
 
