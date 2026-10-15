@@ -1,0 +1,153 @@
+Game: Hearts
+Players: 4
+
+Cards:
+  A standard 52-card deck, aces high, starting in the deck.
+
+Table:
+  The deck is a pile in the center that no one can see.
+  Each player has a hand that only they can see.
+  Each player has a pass pile that only they can see.
+  Each player has a won pile that everyone can see.
+  The trick is a row in the center that everyone can see.
+
+Setup:
+  Shuffle the deck.
+  Deal 13 cards from the deck to each hand.
+
+Phase: passing
+  Hint: Drag 3 cards to your pass pile.
+  Everyone acts at once.
+  Players may rearrange their hand at any time.
+  A player may pass a card from their hand to their pass pile.
+    Only if their pass pile has fewer than 3 cards.
+  When every pass pile has 3 cards, go to playing.
+
+Phase: playing
+  Hint: Drag a card to the center.
+  When this phase starts:
+    Each pass pile goes to the hand of the player on its owner's left.
+    The player holding the 2 of clubs goes first.
+  Players take turns.
+  Players may rearrange their hand at any time.
+  A player may play a card from their hand to the trick.
+    Only if they follow the led suit when they can.
+    Only if one of:
+      the trick is not empty
+      the card is not a heart
+      hearts are broken
+      they hold only hearts
+    Then:
+      If the card is a heart, hearts are broken.
+  When the trick has 4 cards:
+    The highest card of the led suit wins the trick.
+    Move the trick to the winner's won pile.
+    The winner goes next.
+  After a player plays, the turn passes to the left.
+
+End:
+  The game ends when every hand and the trick are empty.
+  Each heart in a player's won pile scores 1 point.
+  The queen of spades in a player's won pile scores 13 points.
+  The lowest score wins.
+
+Example: you can only play your own cards
+  Given the phase is playing
+  And it is p1's turn
+  And p1 holds the 3 of clubs
+  And p2 holds the 4 of clubs
+  When p1 plays the 4 of clubs
+  Then it is rejected because "You can only play a card from your hand"
+
+Example: hearts can't be led before they are broken
+  Given the phase is playing
+  And it is p1's turn
+  And p1 holds the 3 of hearts and the 4 of clubs
+  When p1 plays the 3 of hearts
+  Then it is rejected
+
+Example: hearts can be led once broken
+  Given the phase is playing
+  And it is p1's turn
+  And hearts are broken
+  And p1 holds the 3 of hearts and the 4 of clubs
+  When p1 plays the 3 of hearts
+  Then it is accepted
+
+Example: a player holding only hearts may lead one
+  Given the phase is playing
+  And it is p1's turn
+  And p1 holds the 3 of hearts and the 9 of hearts
+  When p1 plays the 3 of hearts
+  Then it is accepted
+  And hearts are broken
+
+Example: you must follow suit
+  Given the phase is playing
+  And it is p2's turn
+  And p1 played the 5 of clubs to the trick
+  And p2 holds the 9 of clubs and the queen of spades
+  When p2 plays the queen of spades
+  Then it is rejected because "they follow the led suit when they can"
+
+Example: you may play anything when you cannot follow
+  Given the phase is playing
+  And it is p2's turn
+  And p1 played the 5 of clubs to the trick
+  And p2 holds the 9 of diamonds and the queen of spades
+  When p2 plays the queen of spades
+  Then it is accepted
+  And it is p3's turn
+
+Example: at most 3 cards can be passed
+  Given the phase is passing
+  And p0's pass pile has the 2 of clubs, the 3 of clubs and the 4 of clubs
+  And p0 holds the 5 of clubs
+  When p0 passes the 5 of clubs
+  Then it is rejected because "their pass pile has fewer than 3 cards"
+
+Example: you can only pass your own cards
+  Given the phase is passing
+  And p0 holds the 5 of clubs
+  And p1 holds the 6 of clubs
+  When p0 passes the 6 of clubs
+  Then it is rejected
+
+Example: passed cards go left and the 2 of clubs leads
+  Given the phase is passing
+  And p0's pass pile has the 2 of clubs, the 3 of clubs and the 4 of clubs
+  And p1's pass pile has the 2 of hearts, the 3 of hearts and the 4 of hearts
+  And p2's pass pile has the 2 of spades, the 3 of spades and the 4 of spades
+  And p3's pass pile has the 2 of diamonds and the 3 of diamonds
+  And p3 holds the 4 of diamonds and the 5 of diamonds
+  When p3 passes the 4 of diamonds
+  Then the phase is playing
+  And p1 holds 3 cards
+  And it is p1's turn
+
+Example: the highest card of the led suit wins the trick and leads next
+  Given the phase is playing
+  And it is p3's turn
+  And p0 played the 5 of clubs to the trick
+  And p1 played the ace of clubs to the trick
+  And p2 played the king of hearts to the trick
+  And p3 holds the 2 of clubs and the 3 of spades
+  When p3 plays the 2 of clubs
+  Then p1's won pile has 4 cards
+  And the trick is empty
+  And it is p1's turn
+
+Example: scoring at the end of the hand
+  Given the phase is playing
+  And it is p3's turn
+  And p0's won pile has the queen of spades and the 2 of hearts
+  And p1's won pile has the 3 of hearts
+  And p0 played the 2 of clubs to the trick
+  And p1 played the 3 of clubs to the trick
+  And p2 played the 4 of clubs to the trick
+  And p3 holds the 5 of clubs
+  When p3 plays the 5 of clubs
+  Then p0 scores 14
+  And p1 scores 1
+  And p3 scores 0
+  And p2 wins
