@@ -920,3 +920,14 @@ Example: giving up to the bank returns everything to the bank
   And Mill Lane is not mortgaged
   And p0's kept cards are empty
   And the bottom card of the chance pile is a Get Out Of Jail Free
+
+Example: you cannot roll the dice while someone owes
+  Given the treasury pile has an Opera Night
+  And p1 has 10 money
+  And p0 is on Go
+  And the next roll is 1 and 1
+  When p0 rolls the dice
+  Then p1 has -40 money
+  And p1 owes p0
+  When p0 rolls the dice
+  Then it is rejected because "no player has less than 0 money"

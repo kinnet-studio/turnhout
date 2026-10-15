@@ -29,6 +29,8 @@ const END = 'end their turn';
 const PAY = 'pay to leave jail';
 const ROLL_FOR_DOUBLE = 'roll for a double';
 const USE = 'use a get out of jail free';
+/** The buttons that pick no space and only work on the player's own turn; building, the one that picks a street, is asked apart. */
+const TURN_BUTTONS = [ROLL, PAY, ROLL_FOR_DOUBLE, USE, BUY, END];
 // The buttons any player may press at any time, to raise money or to settle a debt by going out.
 const SELL = 'sell a house on a street they own';
 const MORTGAGE = 'take a mortgage on a space they own';
@@ -36,7 +38,7 @@ const PAY_OFF = 'pay off a mortgage on a space they own';
 const GIVE_UP = 'give up';
 /** The yes-or-no space fact a mortgage sets. */
 const MORTGAGED = 'mortgaged';
-/** The money an even seat keeps back when it pays off its mortgages, so that it isn't straight back in debt. */
+/** The money a player keeps back when it pays off its mortgages, so that it isn't straight back in debt. */
 const PAY_OFF_RESERVE = 500;
 /** Where Jail and Go To Jail are on the board, and what leaving jail costs. */
 const JAIL = 10;
@@ -93,18 +95,19 @@ function firstBest(candidates: number[], value: (space: number) => number, beats
 }
 
 /**
- * One turn of a player who always buys and builds when allowed. An even seat first pays off its mortgages in board order, for
- * as long as it keeps `PAY_OFF_RESERVE` money after each. In jail, a player holding a Get Out Of Jail Free uses it first.
- * Otherwise an even seat pays to leave whenever it may; an odd seat never does, so it rolls for a double and sometimes reaches
- * the third failed roll, and every way out of jail comes up even with two players. Then it rolls while it may (a double rolls
- * again, until the third sends it to jail), buying after each roll if it may, builds on the first street it may until it
- * can't, and ends its turn.
+ * One turn of a player who always buys and builds when allowed. It first pays off its mortgages in board order, for as long as
+ * it keeps `PAY_OFF_RESERVE` money after each, so that spaces handed over mortgaged charge rent again. In jail, a player
+ * holding a Get Out Of Jail Free uses it first. Otherwise an even seat pays to leave whenever it may; an odd seat never does,
+ * so it rolls for a double and sometimes reaches the third failed roll, and every way out of jail comes up even with two
+ * players. Then it rolls while it may (a double rolls again, until the third sends it to jail), buying after each roll if it
+ * may, builds on the first street it may until it can't, and ends its turn.
  *
  * After every move, whoever's turn it is, the players in debt settle up, the first in seat order first, since nothing else can
- * happen until they do. An odd seat gives up at once, so players still go out holding buildings. An even seat raises money:
- * it sells a building off its street with the dearest house price, else mortgages its cheapest space, and gives up only when
- * it can do neither. Each sale or mortgage takes away a building or an unmortgaged space, so settling always ends. The turn
- * stops as soon as its player gives up (the turn has passed already) or the game ends.
+ * happen until they do: before each of their presses, the engine must refuse the player whose turn it is every turn button.
+ * An odd seat gives up at once, so players still go out holding buildings. An even seat raises money: it sells a building off
+ * its street with the dearest house price, else mortgages its cheapest space, and gives up only when it can do neither. Each
+ * sale or mortgage takes away a building or an unmortgaged space, so settling always ends. The turn stops as soon as its
+ * player gives up (the turn has passed already) or the game ends.
  */
 function playTurn(table: Table, watch: Watch = () => {}): void {
   const { engine, runtime } = table;
@@ -126,10 +129,19 @@ function playTurn(table: Table, watch: Watch = () => {}): void {
     const mortgage = firstBest(accepted(table, debtor, MORTGAGE), (at) => attr(at, 'price'), (a, b) => a < b);
     make(mortgage === null ? { type: GIVE_UP, by: debtor } : { type: MORTGAGE, by: debtor, target: mortgage });
   };
+  // While anyone owes, the turn's own buttons wait: the engine refuses every one of them to the player whose turn it is.
+  const turnWaits = () => {
+    const current = engine.getState().turn!.current;
+    for (const type of TURN_BUTTONS) expect(engine.canDispatch({ type, by: current }), `${current} may ${type} while someone owes`).not.toBe(true);
+    expect(buildable(table, current), `a street ${current} may build on while someone owes`).toBeNull();
+  };
   const settle = () => {
     settling = true;
     const owing = () => (engine.getState().result === undefined ? debtors(engine.getState(), runtime.seats) : []);
-    for (let debtor = owing()[0]; debtor !== undefined; debtor = owing()[0]) raise(debtor);
+    for (let debtor = owing()[0]; debtor !== undefined; debtor = owing()[0]) {
+      turnWaits();
+      raise(debtor);
+    }
     settling = false;
   };
   const stillTheirs = () => engine.getState().result === undefined && engine.getState().turn!.current === by;
@@ -139,11 +151,9 @@ function playTurn(table: Table, watch: Watch = () => {}): void {
     if (may(BUY)) make({ type: BUY, by });
   };
   const evenSeat = isEven(by);
-  if (evenSeat) {
-    for (let at = accepted(table, by, PAY_OFF)[0]; at !== undefined; at = accepted(table, by, PAY_OFF)[0]) {
-      if (counterOf(engine.getState(), 'money', by) - payOff(attr(at, 'price')) < PAY_OFF_RESERVE) break;
-      make({ type: PAY_OFF, by, target: at });
-    }
+  for (let at = accepted(table, by, PAY_OFF)[0]; at !== undefined; at = accepted(table, by, PAY_OFF)[0]) {
+    if (counterOf(engine.getState(), 'money', by) - payOff(attr(at, 'price')) < PAY_OFF_RESERVE) break;
+    make({ type: PAY_OFF, by, target: at });
   }
   if (may(USE)) make({ type: USE, by });
   if (evenSeat && may(PAY)) make({ type: PAY, by });
@@ -392,9 +402,9 @@ function colorsInBoardOrder(): string[] {
 }
 
 describe('Rent Day (designer language)', () => {
-  // Paying off a mortgage takes an even seat that mortgaged to get out of debt growing rich again before anyone gives up. None
-  // of the ten 2-player games below happens to (seven of the seeds 1 to 60 do), so the full-set games count it too, and the
-  // last test checks it once they have all run.
+  // Paying off a mortgage takes a player who mortgaged growing rich again before anyone gives up. In a 2-player game only the
+  // even seat ever mortgages, since the odd one gives up and so ends the game, and none of the ten below happens to pay one
+  // off (seven of the seeds 1 to 60 do). So the full-set games count it too, and the last test checks it once all have run.
   let paidOff = 0;
 
   it('compiles with no diagnostics', () => expect(diagnostics).toEqual([]));
@@ -423,7 +433,7 @@ describe('Rent Day (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(68);
+    expect(results).toHaveLength(69);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -498,9 +508,7 @@ describe('Rent Day (designer language)', () => {
     for (const [way, times] of Object.entries(raising)) expect(times, `times a player ${way}: ${JSON.stringify(raising)}`).toBeGreaterThan(0);
   }, 60_000);
 
-  // At 8 players, seed 3 has no winner even after 20000 turns: its last two players are odd seats, which never pay off the
-  // mortgaged spaces handed to them, so most of the board charges no rent and Go's salary keeps both of them in. Seed 4 ends.
-  it.each([[4, 1], [4, 2], [4, 3], [8, 1], [8, 2], [8, 4]])(
+  it.each([[4, 1], [4, 2], [4, 3], [8, 1], [8, 2], [8, 3]])(
     'ends a %i-player game where every player starts with a full color set (seed %i)',
     (n, seed) => {
       const seats = seatsFor(n);
