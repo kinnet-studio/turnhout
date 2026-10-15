@@ -146,7 +146,7 @@ To get there, the language gains:
     starts (to the next player in), after a bid or drop-out (to the next bidder), and when an auction ends (back to
     the lander).
 - The page shows the amount box for an amount button, the high bid on the bank line, and whose turn it is in the
-  auction. The seat status keeps its hint format and puts the phase's name first when it isn't the first phase.
+  auction. The seat status keeps its hint format and puts the phase's name first only while a turn is interrupted, so existing games read as before.
 - Hearts, Color Match, Venom and slices 1–5 behave as before. Rent Day's own text changes as described.
 
 ## Non-goals
@@ -306,7 +306,7 @@ All of it is additive, apart from Rent Day's own text.
 6. **Page:**
    - the amount box;
    - game facts on the bank line;
-   - the phase name in the seat status when it isn't the first phase ("auction — p1's turn").
+   - the phase name in the seat status while a turn is interrupted ("auction — Your turn — …"), from `BoardView.interrupted`.
 
 ## Proof (acceptance)
 

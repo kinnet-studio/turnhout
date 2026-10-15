@@ -70,7 +70,7 @@
   - A button whose wording does not end in " an amount" compiles and plays exactly as before.
   - Rent Day's 68 examples keep passing, except the two that Task 5 changes because a turn can no longer end on, or roll past, an unbought space.
   - Task 5 also changes the one playtest test whose p0 ends a turn on a space nobody owns.
-  - The spec puts the phase's name first in the seat status when the phase is not the first one. So Hearts' status in its second phase gains `playing — ` (Task 6). Hearts plays exactly as before.
+  - The seat status puts the phase's name first only while a turn is interrupted (controller ruling, replacing the spec's "not the first phase"). So Hearts, Color Match, Venom and Rent Day outside an auction show exactly the status they show today.
 - **Style and commits.**
   - 2-space indent, single quotes, chainable registrars, and comments that say why.
   - Commit prefixes: `feat(lang):`, `feat(games):`, `feat(designer):`, `docs:`.
@@ -972,7 +972,7 @@ git commit -m "feat(games): Rent Day slice 6: a space the lander does not buy is
 ### Task 6: The playtest shows the amount box, the game's numbers and the auction's turns; README
 
 **Files:**
-- Modify: `src/pages/designer/board-controls.tsx`, `src/pages/designer/playtest.tsx`, `src/pages/designer/seat-status.ts`, `README.md`
+- Modify: `src/engine/core/lang/board-view.ts` (`BoardView.interrupted`), `src/pages/designer/board-controls.tsx`, `src/pages/designer/playtest.tsx`, `src/pages/designer/seat-status.ts`, `README.md`
 - Test: `src/pages/designer/board-parts.test.tsx`, `src/pages/designer/playtest.test.tsx`, `src/pages/designer/seat-status.test.ts`
 
 **Interfaces:**
@@ -992,12 +992,13 @@ git commit -m "feat(games): Rent Day slice 6: a space the lander does not buy is
 - **`playtest.tsx`.**
   - `press` sends `{ type: move, amount }` when `amount` is a number, and `{ type: move }` otherwise.
   - A refused amount comes back as a rejection, which already flashes under the seat's status.
+- **`BoardView.interrupted: boolean`** (`board-view.ts`) is true while `lang:interrupted` holds a record. `readSeatExtras` requires it to be a boolean. The hand-built boards in `board-view.test.ts`, `board-parts.test.tsx` (`board()`) and `seat-status.test.ts` (`boardExtras`) gain `interrupted: false`.
 - **`seatStatus`.**
-  - When the view's phase is not `game.phases[0]` and has a hint, the status starts with `` `${phase.id} — ` ``, and the rest keeps its form:
+  - When the seat's board says `interrupted` and the view's phase has a hint, the status starts with `` `${phase.id} — ` ``, and the rest keeps its form:
     - `auction — Your turn — <hint>`;
     - `auction — <hint> — waiting for p1`.
   - A phase without a hint already shows its name, so it gets no prefix.
-  - Hearts' second phase gains `playing — ` (see Global Constraints).
+  - A game with no board (Hearts, Color Match) never gets the prefix.
 - No page code names a game number, a phase or a flag.
 
 - [ ] **Step 1: Write the failing tests.**
@@ -1034,10 +1035,12 @@ Also add these:
 - **No amount, no box.** A button with `amount: false` has no `spinbutton`.
 
 In `seat-status.test.ts`:
-- **The phase's name.** Hearts in `playing`:
-  - for p0, whose turn it is: `'playing — Your turn — Drag a card to the center.'`;
-  - for p0 while it is p1's turn: `'playing — Drag a card to the center. — waiting for p1'`.
-- **No hint, no prefix.** Hearts with every hint set to null, in `playing`, for p0: `'Your turn — playing'`.
+- **The phase's name while interrupted.** A board seat view (the existing `boardExtras` fixture) with `interrupted: true`, in a phase with a hint:
+  - for the seat whose turn it is: `` `${phase} — Your turn — ${hint}` ``;
+  - for another seat: `` `${phase} — ${hint} — waiting for p1` ``.
+- **Not interrupted, no prefix.** The same view with `interrupted: false` gives today's status, unchanged.
+- **Hearts unchanged.** Hearts in `playing`, for p0: `'Your turn — Drag a card to the center.'` (no board, no prefix).
+- **No hint, no prefix.** An interrupted board view in a phase with no hint: `'Your turn — <phase>'`.
 
 In `playtest.test.tsx` (import `placePiece` and `queueRoll` as already done):
 
@@ -1151,7 +1154,8 @@ grep -rniE '\b(auction(s|ed)?|bid(s|der|ders|ding)?|high bid)\b' src/engine src/
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/pages/designer/board-controls.tsx src/pages/designer/playtest.tsx src/pages/designer/seat-status.ts \
+git add src/engine/core/lang/board-view.ts src/engine/core/lang/board-view.test.ts \
+  src/pages/designer/board-controls.tsx src/pages/designer/playtest.tsx src/pages/designer/seat-status.ts \
   src/pages/designer/board-parts.test.tsx src/pages/designer/playtest.test.tsx src/pages/designer/seat-status.test.ts README.md
 git commit -m "feat(designer): a number box for buttons that carry an amount, game numbers on the bank line, and the phase in the seat status; docs: README"
 ```
