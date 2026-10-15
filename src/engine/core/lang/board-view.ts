@@ -4,7 +4,7 @@ import type { GameEngine } from '../game-engine';
 import type { GameState } from '../game-state';
 import type { PlayerId } from '../scene';
 import type { Json } from '../table-def';
-import { bankOf, counterOf, isOut, latestRoll, ownerOf, pieceAt, spaceFact } from './board-state';
+import { bankOf, counterOf, isOut, latestRoll, ownerOf, pieceAt, playerFact, spaceFact } from './board-state';
 import { targetCandidates } from './declared-actions';
 import { friendlyError, friendlyReason } from './friendly';
 import { secondPersonWords } from './refs';
@@ -16,15 +16,21 @@ import type { DeclaredAction } from './types';
  * what has come to be true of it in play, only the ones that are set: a count other than 0, a flag that is on.
  */
 export type SpaceView = {
-  name: string; color: string | null; details: { [k: string]: Json }; facts: { [fact: string]: number | boolean }; owner: PlayerId | null;
+  name: string; color: string | null; details: { [k: string]: Json }; facts: FactsView; owner: PlayerId | null;
 };
 /** One number per seat; null where the seat looking may not see it. */
 export type CounterView = { name: string; values: { [seat: string]: number | null } };
 /** What the bank has left of one thing; `name` is plural ('tokens'). */
 export type BankView = { name: string; count: number };
-/** `pieces` lists the seats that still have a piece, so a player who is out is absent; `bank` is in the order the game declares it. */
+/** What has come to be true of a thing, only the ones that are set. */
+type FactsView = { [fact: string]: number | boolean };
+/**
+ * `pieces` lists the seats that still have a piece, so a player who is out is absent; `bank` is in the order the game declares it.
+ * `playerFacts` has every seat of the game, `{}` for one with nothing set: what is true of a player is public, so every seat sees it.
+ */
 export type BoardView = {
   spaces: SpaceView[]; pieces: { [seat: string]: number }; roll: number[] | null; counters: CounterView[]; out: PlayerId[]; bank: BankView[];
+  playerFacts: { [seat: string]: FactsView };
 };
 /**
  * For a button that picks a space: what to ask the player, and every space its target phrase allows, by the space's place on
@@ -41,12 +47,15 @@ export type SeatExtras = { board: BoardView | null; actions: ActionView[] };
 
 const OUT_OF_GAME = "You're out of the game.";
 
-/** The facts of a space that are set: a fact never given a value, a count of 0 and a flag that is off are all left out. */
-function factsOf(runtime: LangRuntime, state: GameState, space: number): SpaceView['facts'] {
-  const set: SpaceView['facts'] = {};
+/**
+ * The facts of one kind of thing that are set, in the order the game declares them, as `read` finds them: a fact never given a
+ * value, a count of 0 and a flag that is off are all left out.
+ */
+function setFacts(runtime: LangRuntime, on: 'space' | 'player', read: (fact: string) => number | boolean | null): FactsView {
+  const set: FactsView = {};
   for (const fact of runtime.game.facts) {
-    if (fact.on !== 'space') continue;
-    const value = spaceFact(state, space, fact.name);
+    if (fact.on !== on) continue;
+    const value = read(fact.name);
     if (value !== null && value !== 0 && value !== false) set[fact.name] = value;
   }
   return set;
@@ -60,7 +69,7 @@ function boardView(runtime: LangRuntime, state: GameState, seat: PlayerId): Boar
     // A color that is not text (a number, say) is not one to paint with, but it is still something the table says.
     const painted = typeof color === 'string';
     const details = painted || color === undefined ? rest : { ...rest, color };
-    return { name: space.name, color: painted ? color : null, details, facts: factsOf(runtime, state, index), owner: ownerOf(state, index) };
+    return { name: space.name, color: painted ? color : null, details, facts: setFacts(runtime, 'space', (fact) => spaceFact(state, index, fact)), owner: ownerOf(state, index) };
   });
   const pieces: { [seat: string]: number } = {};
   for (const s of runtime.seats) {
@@ -72,7 +81,8 @@ function boardView(runtime: LangRuntime, state: GameState, seat: PlayerId): Boar
     values: Object.fromEntries(runtime.seats.map((s) => [s, counter.visibility === 'public' || s === seat ? counterOf(state, counter.name, s) : null])),
   }));
   const bank = board.bank.map(({ name }): BankView => ({ name, count: bankOf(state, name) }));
-  return { spaces, pieces, roll: latestRoll(state), counters, out: runtime.seats.filter((s) => isOut(state, s)), bank };
+  const playerFacts = Object.fromEntries(runtime.seats.map((s) => [s, setFacts(runtime, 'player', (fact) => playerFact(state, s, fact))]));
+  return { spaces, pieces, roll: latestRoll(state), counters, out: runtime.seats.filter((s) => isOut(state, s)), bank, playerFacts };
 }
 
 /** What a rule says about the space a button picks, said to the player: 'a field they own' is 'a field you own'. */
@@ -154,7 +164,7 @@ const isCounter = (v: unknown): boolean =>
   isRecord(v) && isText(v.name) && isMap(v.values, (n) => n === null || isNumber(n));
 const isBoard = (v: unknown): boolean =>
   isRecord(v) && isList(v.spaces, isSpace) && isMap(v.pieces, isNumber) && (v.roll === null || isList(v.roll, isNumber))
-  && isList(v.counters, isCounter) && isList(v.out, isText) && isList(v.bank, isBankLine);
+  && isList(v.counters, isCounter) && isList(v.out, isText) && isList(v.bank, isBankLine) && isMap(v.playerFacts, (facts) => isMap(facts, isFact));
 const isVerdict = (v: unknown): boolean => v === true || isText(v);
 const isTarget = (v: unknown): boolean => isRecord(v) && isText(v.prompt) && isMap(v.spaces, isVerdict);
 const isAction = (v: unknown): boolean =>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Json } from '../table-def';
-import { markOut, queueRoll, setBank, setCounter, setOwner, setSpaceFact, withBoardData } from './board-state';
+import { markOut, queueRoll, setBank, setCounter, setOwner, setPlayerFact, setSpaceFact, withBoardData } from './board-state';
 import { readSeatExtras, seatExtras } from './board-view';
 import { createEngine, initialState } from './build';
 import { compileGame } from './compile';
@@ -28,6 +28,11 @@ const BUILDING = TINY_BOARD
 const BUILD = 'build a house on a street they own';
 const ROSE = 3;
 const LILY = 4;
+/** TINY_BOARD where players can also be in jail, and have jail turns and a crown. */
+const JAILING = TINY_BOARD.replace(
+  '  There are two six-sided dice.',
+  '  There are two six-sided dice.\n  Players can be in jail.\n  Players can have jail turns and a crown.',
+);
 
 describe('seat views of a board game', () => {
   it('shows the board and the buttons from each seat', () => {
@@ -255,6 +260,52 @@ describe('seat views of a board with houses and a bank', () => {
   });
 });
 
+describe('seat views of a board whose players have facts', () => {
+  const built = compileGame(JAILING, lib);
+  const g = built.game!;
+  /** p0 is in jail with 1 jail turn; p1 has 0 jail turns and has taken its crown down. */
+  const arranged = setPlayerFact(setPlayerFact(setPlayerFact(setPlayerFact(
+    withBoardData(initialState(g, 1), g, ['p0', 'p1']), 'p0', 'in jail', true), 'p0', 'jail turns', 1), 'p1', 'jail turns', 0), 'p1', 'crown', false);
+  const view = (seat: string, start = arranged) => {
+    const { engine, runtime } = createEngine(g, lib, 2, start);
+    return seatExtras(engine, runtime, engine.getState(), seat);
+  };
+
+  it('compiles with no diagnostics', () => expect(built.diagnostics).toEqual([]));
+
+  it('shows every seat the facts of every player, and only the ones that are set', () => {
+    for (const seat of ['p0', 'p1']) {
+      expect(view(seat).board!.playerFacts, seat).toEqual({ p0: { 'in jail': true, 'jail turns': 1 }, p1: {} });
+    }
+  });
+
+  it('has an empty entry for every seat when nothing is set, or when the game has no player facts', () => {
+    const fresh = createEngine(g, lib, 2, initialState(g, 1));
+    expect(seatExtras(fresh.engine, fresh.runtime, fresh.engine.getState(), 'p0').board!.playerFacts).toEqual({ p0: {}, p1: {} });
+    const plain = createEngine(game, lib, 2, initialState(game, 1));
+    expect(seatExtras(plain.engine, plain.runtime, plain.engine.getState(), 'p1').board!.playerFacts).toEqual({ p0: {}, p1: {} });
+  });
+
+  it('keeps the facts in the order the game declares them, whatever order they were set in', () => {
+    const backwards = setPlayerFact(setPlayerFact(setPlayerFact(withBoardData(initialState(g, 1), g, ['p0', 'p1']), 'p0', 'crown', true), 'p0', 'jail turns', 2), 'p0', 'in jail', true);
+    expect(Object.keys(view('p1', backwards).board!.playerFacts.p0)).toEqual(['in jail', 'jail turns', 'crown']);
+  });
+
+  it('is plain data, and readSeatExtras reads it back', () => {
+    const extras = view('p0');
+    const sent: Json = JSON.parse(JSON.stringify(extras));
+    expect(sent).toEqual(extras);
+    expect(readSeatExtras(sent)).toEqual(extras);
+  });
+
+  it('refuses player facts that are not numbers or flags, or that are missing', () => {
+    const extras = JSON.parse(JSON.stringify(view('p0')));
+    expect(readSeatExtras({ ...extras, board: { ...extras.board, playerFacts: { p0: { 'in jail': 'yes' } } } })).toBeNull();
+    const { playerFacts: _gone, ...without } = extras.board;
+    expect(readSeatExtras({ ...extras, board: without })).toBeNull();
+  });
+});
+
 describe('readSeatExtras', () => {
   it('reads extras back, and nothing else', () => {
     expect(readSeatExtras(undefined)).toBeNull();
@@ -268,7 +319,7 @@ describe('readSeatExtras', () => {
   });
 
   const space = { name: 'Go', color: null, details: {}, facts: {}, owner: null };
-  const board = (over: { [k: string]: Json } = {}) => ({ spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [], ...over });
+  const board = (over: { [k: string]: Json } = {}) => ({ spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {}, ...over });
   const action = (over: { [k: string]: Json } = {}) => ({ move: 'roll the dice', label: 'Roll', allowed: true, target: null, ...over });
   const picking = (over: { [k: string]: Json } = {}) => action({ target: { prompt: 'Pick a street you own', spaces: { 3: true }, ...over } });
 
@@ -293,18 +344,23 @@ describe('readSeatExtras', () => {
     ['a target space that is neither true nor a reason', { board: null, actions: [picking({ spaces: { 3: false } })] }],
     ['a target space that is a number', { board: null, actions: [picking({ spaces: { 3: 1 } })] }],
     ['a board that is not an object', { board: 3, actions: [] }],
-    ['a board with no spaces', { board: { pieces: {}, roll: null, counters: [], out: [], bank: [] }, actions: [] }],
+    ['a board with no spaces', { board: { pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {} }, actions: [] }],
     ['a space with no name', { board: board({ spaces: [{ color: null, details: {}, facts: {}, owner: null }] }), actions: [] }],
     ['a space with no facts', { board: board({ spaces: [{ name: 'Go', color: null, details: {}, owner: null }] }), actions: [] }],
     ['a fact that is text', { board: board({ spaces: [{ ...space, facts: { houses: 'two' } }] }), actions: [] }],
     ['a fact that is null', { board: board({ spaces: [{ ...space, facts: { houses: null } }] }), actions: [] }],
-    ['a board with no bank', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [] }, actions: [] }],
+    ['a board with no bank', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [], playerFacts: {} }, actions: [] }],
     ['a bank that is not a list', { board: board({ bank: {} }), actions: [] }],
     ['a bank entry with no count', { board: board({ bank: [{ name: 'houses' }] }), actions: [] }],
     ['a bank entry with no name', { board: board({ bank: [{ count: 3 }] }), actions: [] }],
     ['a piece that is not a number', { board: board({ pieces: { p0: 'x' } }), actions: [] }],
     ['a roll of text', { board: board({ roll: 'six' }), actions: [] }],
     ['a counter value that is text', { board: board({ counters: [{ name: 'm', values: { p0: 'x' } }] }), actions: [] }],
+    ['a board with no player facts', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [] }, actions: [] }],
+    ['player facts that are not a map', { board: board({ playerFacts: [] }), actions: [] }],
+    ['a seat whose facts are not a map', { board: board({ playerFacts: { p0: true } }), actions: [] }],
+    ['a player fact that is text', { board: board({ playerFacts: { p0: { 'in jail': 'yes' } } }), actions: [] }],
+    ['a player fact that is null', { board: board({ playerFacts: { p0: { 'in jail': null } } }), actions: [] }],
     ['seats that are out given as a number', { board: board({ out: 1 }), actions: [] }],
   ])('refuses %s', (_name, extras) => expect(readSeatExtras(extras)).toBeNull());
 });

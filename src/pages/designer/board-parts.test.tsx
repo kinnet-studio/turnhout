@@ -16,6 +16,7 @@ const board = (over: Partial<BoardView> = {}): BoardView => ({
   counters: [{ name: 'money', values: { p0: 1500, p1: 1234567, p2: 40 } }],
   out: [],
   bank: [],
+  playerFacts: {},
   ...over,
 });
 
