@@ -199,11 +199,13 @@ export function actionOf(found: RegExpExecArray): {
 }
 
 /**
- * How to write a pick the designer said with another word than “a” or “an” (“on any field they own”, “on one of their
- * fields”, “on each field”), when the words after it start with a kind of space: “on a field they own”. Null for any
- * other line, which is a button that picks nothing (“roll on doubles”, “stand on the space”).
+ * A pick the designer said with another word than “a” or “an” (“on any field they own”, “on one of their fields”, “on each
+ * field”), when the words after it start with a kind of space; null for any other line, which is a button that picks
+ * nothing (“roll on doubles”, “stand on the space”). `written` is how to write it, “on a field they own”, only when what
+ * follows the pick is a bare kind of space, with “they own” or with nothing after it; “on any field with a gate” may mean
+ * more than that, so it gets none.
  */
-function otherPick(written: string, vocab: Vocab): string | null {
+function otherPick(written: string, vocab: Vocab): { written: string | null } | null {
   const found = OTHER_PICK.exec(written);
   if (!found) return null;
   // A kind written as a plural (“one of their fields”) is picked one at a time; null for words that are no kind.
@@ -218,8 +220,10 @@ function otherPick(written: string, vocab: Vocab): string | null {
   for (let n = words.length; n > 0; n--) {
     const kind = one(words.slice(0, n).join(' '));
     if (kind === null) continue;
-    const rest = [...words.slice(n).map((word) => one(word) ?? word), ...(found[2] ? ['they own'] : [])];
-    return ['on', /^[aeiou]/i.test(kind) ? 'an' : 'a', kind, ...rest].join(' ');
+    // “one of their” says the pick is theirs, so it reads as if “they own” were written after it.
+    const after = [...words.slice(n), ...(found[2] ? ['they', 'own'] : [])].join(' ').toLowerCase();
+    if (after !== '' && after !== 'they own') return { written: null };
+    return { written: ['on', /^[aeiou]/i.test(kind) ? 'an' : 'a', kind, ...(after === '' ? [] : ['they own'])].join(' ') };
   }
   return null;
 }
@@ -242,7 +246,9 @@ function compileAction(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx):
   const target = targetText === null ? null : matchLine('target', targetText, node.line, { ...ctx, player: true });
   // Made a plain button, “on any field they own” would quietly act on the space their piece is on.
   const pick = targetText === null ? otherPick(written, ctx.vocab) : null;
-  if (pick !== null) addProblem(ctx.diagnostics, node.line, `Write “${pick}” so the player picks one.`, { kind: 'invalid', text: normalizeLine(node.text) });
+  if (pick !== null) {
+    addProblem(ctx.diagnostics, node.line, `Write “${pick.written ?? 'on a …'}” so the player picks one.`, { kind: 'invalid', text: normalizeLine(node.text) });
+  }
   // An action is about the player who presses it and the space it picks, else the space their piece is on.
   const { conditions, effects } = readRuleBody(node, { ...ctx, player: true, space: true });
   if (reserved || pick !== null || (target !== null && isMissing(target))) return null;

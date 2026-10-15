@@ -300,10 +300,10 @@ const MOVE = wordType(
   'move', '[action]', (v) => v.verbs.map((verb) => [thirdPerson(verb), verb]),
   looseAs(ONE_WORD, misnamedWord('move', (v) => v.verbs.map(thirdPerson))),
 );
-const ATTRIBUTE = wordType(
-  'attribute', '[attribute]', (v) => v.attributes.map((a) => [a, a]),
-  looseAs(ANY_TEXT, misnamedWord('card attribute', (v) => v.attributes)),
-);
+// A number a card has is said in the singular beside a count of one ("1 charge"), whether the game declares it or its table has it.
+// Any text may be a misspelt attribute even in a game that has none, as it always has been; the other declared names wait
+// until a game declares one.
+const ATTRIBUTE = declaredWord('attribute', '[attribute]', 'card attribute', (v) => v.attributes, true, true);
 
 const PLAYER: ParamType = {
   name: 'player', label: '[player]', stubOrder: 4,
@@ -616,14 +616,17 @@ const COUNTER = wordType(
 
 /**
  * A type whose text is a name the game declares. With `singulars` the text may also be the singular of a plural name
- * ("token" for "tokens"), as a count of one is said; either way it resolves to the declared name.
+ * ("token" for "tokens"), as a count of one is said; either way it resolves to the declared name. A line is read as a
+ * misspelt name only in a game that declares some, unless `anyText` says any line may be one.
  */
-function declaredWord(name: string, label: string, what: string, names: (vocab: Vocab) => string[], singulars: boolean): ParamType {
+function declaredWord(
+  name: string, label: string, what: string, names: (vocab: Vocab) => string[], singulars: boolean, anyText = false,
+): ParamType {
   const forms = (vocab: Vocab): [text: string, value: string][] =>
     names(vocab).flatMap((declared) => [declared, ...(singulars ? singularForms(declared) : [])].map((form): [string, string] => [form, declared]));
   return wordType(name, label, forms, {
-    // Any text may be a misspelt name, but only in a game that declares some: elsewhere the line is some other phrase.
-    source: (vocab) => (names(vocab).length === 0 ? NEVER : ANY_TEXT),
+    // With no names declared (and no `anyText`) the line is some other phrase.
+    source: (vocab) => (!anyText && names(vocab).length === 0 ? NEVER : ANY_TEXT),
     explain: (text, vocab) => (holdsName(text, forms(vocab).map(([form]) => form)) ? null : missing(what, text, closestOrFirst(text, names(vocab)))),
   });
 }

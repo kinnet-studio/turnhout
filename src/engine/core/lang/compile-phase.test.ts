@@ -861,12 +861,17 @@ describe('buttons that pick a target', () => {
       ['build a house on one of the streets they own', 'on a street they own'],
       ['build a house on each street', 'on a street'],
       ['Build a House on Every Street', 'on a street'],
-      ['build a house on any orange street they own', 'on an orange street they own'],
-      ['build a house on one of their orange streets', 'on an orange street they own'],
     ];
     for (const [line, written] of lines) {
       const built = phase([`A player may ${line}.`, '  Then:', '    It gets a house from the bank.']);
       expect(problems(built).map((d) => [d.line, d.message]), line).toEqual([[20, `Write “${written}” so the player picks one.`]]);
+      expect(built.game, line).toBeUndefined();
+    }
+  });
+  it('suggests no wording when the words after the pick are more than a kind of space, and still makes no button', () => {
+    for (const line of ['build a house on any orange street they own', 'build a house on one of their orange streets', 'build a house on any street with houses']) {
+      const built = phase([`A player may ${line}.`, '  Then:', '    It gets a house from the bank.']);
+      expect(problems(built).map((d) => [d.line, d.message]), line).toEqual([[20, 'Write “on a …” so the player picks one.']]);
       expect(built.game, line).toBeUndefined();
     }
   });

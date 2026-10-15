@@ -718,8 +718,80 @@ describe('facts on cards', () => {
     it('expects a count, which a card never given any has 0 of', () => {
       const expectOf = (text: string, state: GameState) => runPhrase<true | string>(lib, 'expect', text, envOf(state));
       expect(expectOf("the Knight in p1's camp has 0 charges", table())).toBe(true);
-      expect(expectOf("the Knight in p1's camp has 1 charges", table())).toBe("Expected the Knight in p1's camp to have 1 charges, but it has 0.");
+      expect(expectOf("the Knight in p1's camp has 1 charges", table())).toBe("Expected the Knight in p1's camp to have 1 charge, but it has 0.");
       expect(expectOf("the Knight in p0's camp has 2 charges", withCharges())).toBe(true);
+    });
+  });
+
+  describe('raising a number a card has', () => {
+    const charged: CompiledGame = { ...creatures, facts: [...creatures.facts, { name: 'charges', on: 'card', kind: 'number' }] };
+    const envOf = (state: GameState, subject?: Subject) => fixtureEnv(state, { game: charged, seats: SEATS, subject });
+    const effectOf = (text: string, subject: Subject, state = table()) => runPhrase<GameState>(lib, 'effect', text, envOf(state, subject));
+    const givenOf = (text: string, state = table()) => runPhrase<GameState>(lib, 'given', text, envOf(state));
+    const expectOf = (text: string, state = table()) => runPhrase<true | string>(lib, 'expect', text, envOf(state));
+    const chargesOf = (state: GameState, ...ids: string[]) => ids.map((id) => cardFact(cardOf(state, id), 'charges'));
+
+    it('has the card a rule is about gain from 0 for a count it was never given, in the singular for one', () => {
+      const once = effectOf('it gains 1 charge', aboutCard('c0'));
+      expect(chargesOf(once, 'c0')).toEqual([1]);
+      expect(cardOf(once, 'c0').faceKey).toBe(textFaceKey({ name: 'Knight', health: 3, charges: 1 }));
+      const twice = effectOf('it gains 2 charges', aboutCard('c0'), once);
+      expect(chargesOf(twice, 'c0')).toEqual([3]);
+      expect(cardOf(twice, 'c0').faceKey).toBe(textFaceKey({ name: 'Knight', health: 3, charges: 3 }));
+    });
+    it('changes only the card the rule is about', () => {
+      const before = table();
+      const s = effectOf('it gains 1 charge', aboutCard('c0'), before);
+      expect(s.cards.filter((c, i) => c !== before.cards[i]).map((c) => c.id)).toEqual(['c0']);
+    });
+    it('raises a number of the card\'s own table, and its face shows it', () => {
+      const s = effectOf('it gains 2 health', aboutCard('c1'));
+      expect(healthOf(s, 'c1')).toEqual([4]);
+      expect(cardOf(s, 'c1').faceKey).toBe(faceOf('Archer', 4, true));
+    });
+    it('says so when the rule is about no card', () => {
+      expect(() => effectOf('it gains 1 charge', byPlayer('p0'))).toThrow('This phrase needs a card, but none is being judged.');
+      expect(lib.get('effect', 'it gains {int} {attribute}')).toMatchObject({ needsCard: true });
+    });
+    it('leaves a card whose value is no number as it is', () => {
+      const state = fixtureState([fixtureCard('c0', 'camp-p0', { name: 'Ghost' }, { faceKey: textFaceKey({ name: 'Ghost' }), slot: 0 })]);
+      expect(effectOf('it gains 1 health', aboutCard('c0'), state)).toEqual(state);
+    });
+
+    it('has each flagged card of the zone gain, and no other card', () => {
+      const s = effectOf('each poisoned card in their camp gains 1 health', byPlayer('p0'));
+      expect(healthOf(s, 'c0', 'c1', 'c6', 'c2')).toEqual([3, 3, 0, 3]);
+      expect(cardOf(s, 'c1').faceKey).toBe(faceOf('Archer', 3, true));
+      expect(cardOf(s, 'c0').faceKey).toBe(faceOf('Knight', 3));
+      // The other camp, a hand and the discard pile are not touched.
+      expect(healthOf(s, 'c2', 'c3', 'c4', 'c5', 'c7', 'c8')).toEqual([3, 1, 3, 0, 0, 0]);
+    });
+    it('has each flagged card gain a declared count from 0, and leaves a card that is not flagged at it', () => {
+      const s = effectOf('each poisoned card in their camp gains 2 charges', byPlayer('p1'));
+      expect(chargesOf(s, 'c3', 'c4', 'c2')).toEqual([2, 2, null]);
+      expect(cardOf(s, 'c3').faceKey).toBe(textFaceKey({ name: 'Viper', health: 1, poisoned: 'yes', charges: 2 }));
+    });
+    it('still loses a count in the singular, and leaves it at 0 for a card that had none', () => {
+      const s = effectOf('each poisoned card in their camp loses 1 charge', byPlayer('p0'));
+      expect(chargesOf(s, 'c1')).toEqual([0]);
+      expect(cardOf(s, 'c1').faceKey).toBe(faceOf('Archer', 2, true));
+    });
+
+    it('is given as a number a card has, the first such card of the zone', () => {
+      const s = givenOf("the Knight in p1's camp has 2 charges");
+      expect(chargesOf(s, 'c2', 'c4')).toEqual([2, null]);
+      expect(cardOf(s, 'c2').faceKey).toBe(textFaceKey({ name: 'Knight', health: 3, charges: 2 }));
+      expect(healthOf(givenOf("a Knight in p1's camp has 1 health"), 'c2')).toEqual([1]);
+    });
+    it('says so when the zone has no such card to give a number to', () => {
+      expect(() => givenOf("the Archer in p1's camp has 2 charges")).toThrow(new RuleError("There is no Archer in p1's camp."));
+    });
+    it('says the count of an expected number as it is said, in the singular for one', () => {
+      const given = givenOf("the Knight in p1's camp has 2 charges");
+      expect(expectOf("the Knight in p1's camp has 1 charge", given)).toBe("Expected the Knight in p1's camp to have 1 charge, but it has 2.");
+      expect(expectOf("the Knight in p1's camp has 2 charges", given)).toBe(true);
+      expect(expectOf("the Knight in p1's camp has 3 charge", given)).toBe("Expected the Knight in p1's camp to have 3 charges, but it has 2.");
+      expect(expectOf("the Knight in p1's camp has 1 health", table())).toBe("Expected the Knight in p1's camp to have 1 health, but it has 3.");
     });
   });
 });
@@ -798,6 +870,31 @@ describe('a small card game with facts, played from a designer\'s words', () => 
       expect(runExamples(game!, lib).map((r) => [r.status, r.message])).toEqual([
         ['pass', null], ['pass', null], ['fail', "Expected the Knight in p1's camp to have 2 charges, but it has 0."],
       ]);
+    });
+
+    describe('raised, and said in the singular for one', () => {
+      const GAINS = CHARGES.replace('loses 1 charges', 'gains 1 charge');
+      const GAIN_EXAMPLES = [
+        '', 'Example: a poisoned card gains a charge when its owner plays', "  Given it is p1's turn", '  And p1 holds an Archer', "  And p1's camp has a Viper",
+        "  And the Viper in p1's camp is poisoned", "  And the Viper in p1's camp has 1 charge", '  When p1 plays an Archer',
+        "  Then the Viper in p1's camp has 2 charges", '',
+        'Example: a wrong count says it in the singular', "  Given it is p1's turn", '  And p1 holds an Archer', "  And p1's camp has a Viper",
+        "  And the Viper in p1's camp is poisoned", "  And the Viper in p1's camp has 1 charge", '  When p1 plays an Archer',
+        "  Then the Viper in p1's camp has 1 charge",
+      ].join('\n');
+
+      it('reads every line that gains or names one charge, with no problem', () => {
+        expect(GAINS).not.toBe(CHARGES);
+        const { game, diagnostics } = compileGame(`${GAINS}${GAIN_EXAMPLES}`, lib);
+        expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+        expect(game!.phases[0].moves[0].effects[0]).toMatchObject({ phrase: 'each {cardflag} card in {zone} gains {int} {attribute}', args: ['poisoned', expect.anything(), 1, 'charges'] });
+      });
+      it('plays its examples', () => {
+        const { game } = compileGame(`${GAINS}${GAIN_EXAMPLES}`, lib);
+        expect(runExamples(game!, lib).map((r) => [r.status, r.message])).toEqual([
+          ['pass', null], ['fail', "Expected the Viper in p1's camp to have 1 charge, but it has 2."],
+        ]);
+      });
     });
   });
 });

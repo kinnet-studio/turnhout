@@ -204,6 +204,15 @@ describe('players, phases, moves and attributes', () => {
     expect(parseParam('attribute', 'number', V)).toEqual({ value: 'number' });
     expect(parseParam('attribute', 'suit', V)).toBeNull();
   });
+  it('reads a card attribute in the singular too, as a count of one says it', () => {
+    const charged = vocabFrom({ maxPlayers: 2, facts: [{ name: 'charges', on: 'card', kind: 'number' }] });
+    expect(parseParam('attribute', 'charge', charged)).toEqual({ value: 'charges' });
+    expect(parseParam('attribute', 'charges', charged)).toEqual({ value: 'charges' });
+    expect(parseParam('attribute', 'Charge', charged)).toEqual({ value: 'charges' });
+    expect(parseParam('attribute', 'chargess', charged)).toBeNull();
+    // A name with no singular is read as it is, and a singular is no name of its own.
+    expect(parseParam('attribute', 'number', V)).toEqual({ value: 'number' });
+  });
   it('accepts any apostrophe in phase names', () => {
     const vocab: Vocab = { ...emptyVocab(), phases: ["dealer's turn"] };
     for (const apostrophe of ["'", '‘', '’']) {
@@ -699,6 +708,10 @@ describe('names the game never defined', () => {
     expect(misnamed('phase', 'playing now')).toBeNull();
     expect(misnamed('move', 'plyas')).toEqual(missing('move', 'plyas', ['plays']));
     expect(misnamed('attribute', 'colour')).toEqual(missing('card attribute', 'colour', ['color']));
+    // The singular of a count is a name the game has, so it is not reported; a misspelling of it is.
+    const charged = vocabFrom({ maxPlayers: 2, facts: [{ name: 'charges', on: 'card', kind: 'number' }] });
+    expect(misnamed('attribute', 'charge', charged)).toBeNull();
+    expect(misnamed('attribute', 'chrage', charged)).toEqual(missing('card attribute', 'chrage', ['charges']));
   });
 
   it('names the suit, rank or card value that is not one', () => {

@@ -174,16 +174,27 @@ const everyCardIsFlagged: EffectFn = (env, [zone, fact]) =>
     .reduce((state, card) => changeCard(state, card.id, { [fact as string]: true }, env.game), env.state);
 
 /**
- * Each card with the flag loses that much of a number it has, down to 0 and no lower, so that a rule about cards at 0 still
- * finds it. A card that has no such number has nothing to lose; a declared count it was never given is 0, and stays there.
+ * Changes a number a card has, from what it has now, and refreshes the face with it. A card that has no such number, or whose
+ * value is no number, is left as it is; a declared count it was never given is 0 to change from.
  */
-const eachFlaggedLoses: EffectFn = (env, [fact, zone, n, attribute]) =>
+function changeNumber(env: PhraseEnv, state: GameState, card: CardState, attribute: string, next: (have: number) => number): GameState {
+  const have = cardAttribute(card, attribute, env.game);
+  return typeof have === 'number' ? changeCard(state, card.id, { [attribute]: next(have) }, env.game) : state;
+}
+
+/** The card the rule is about gains that much of a number it has. */
+const itGains: EffectFn = (env, [n, attribute]) => changeNumber(env, env.state, itCard(env), attribute as string, (have) => have + (n as number));
+
+/** Each card with the flag has a number it has changed, whichever way `change` says. */
+const eachFlaggedChanges = (change: (have: number, n: number) => number): EffectFn => (env, [fact, zone, n, attribute]) =>
   cardsInZones(env, zone as ZoneRef)
     .filter((card) => isFlagged(card, fact as string))
-    .reduce((state, card) => {
-      const have = cardAttribute(card, attribute as string, env.game);
-      return typeof have === 'number' ? changeCard(state, card.id, { [attribute as string]: Math.max(0, have - (n as number)) }, env.game) : state;
-    }, env.state);
+    .reduce((state, card) => changeNumber(env, state, card, attribute as string, (have) => change(have, n as number)), env.state);
+
+const eachFlaggedGains = eachFlaggedChanges((have, n) => have + n);
+
+/** Down to 0 and no lower, so that a rule about cards at 0 still finds it. */
+const eachFlaggedLoses = eachFlaggedChanges((have, n) => Math.max(0, have - n));
 
 // ---- winners -----------------------------------------------------------------------------------
 
@@ -218,6 +229,13 @@ const cardInZoneIsGiven: EffectFn = (env, [match, zone, fact]) => {
   return changeCard(env.state, card.id, { [fact as string]: true }, env.game);
 };
 
+/** Sets the number the first card of the zone that is the named one has, whatever it had. */
+const cardInZoneHasGiven: EffectFn = (env, [match, zone, n, attribute]) => {
+  const card = namedCardIn(env, match as CardMatch, zone as ZoneRef);
+  if (!card) throw new RuleError(`There is ${noCardIn(match as CardMatch, zone as ZoneRef)}.`);
+  return changeCard(env.state, card.id, { [attribute as string]: n as number }, env.game);
+};
+
 // ---- examples: expect --------------------------------------------------------------------------
 
 /** Whether the named card of the zone has the flag, as wanted; otherwise what an example should say about it. */
@@ -232,7 +250,7 @@ const cardInZoneIsExpected = (wanted: boolean): ExpectFn => (env, [match, zone, 
 const cardInZoneHasExpected: ExpectFn = (env, [match, zone, n, attribute]) => {
   const [named, where] = [match as CardMatch, zone as ZoneRef];
   const card = namedCardIn(env, named, where);
-  const expected = `Expected ${theCard(named)} in ${describeZone(where)} to have ${n} ${attribute}`;
+  const expected = `Expected ${theCard(named)} in ${describeZone(where)} to have ${counted(n as number, attribute as string)}`;
   if (!card) return `${expected}, but there is ${noCardIn(named, where)}.`;
   const have = cardAttribute(card, attribute as string, env.game);
   if (have === n) return true;
@@ -264,7 +282,8 @@ const bankHasExpected: ExpectFn = (env, [n, name]) => {
  * A plural noun is a count (starting at 0) and “a” or “an” and a noun, or an adjective, is a yes/no (starting at no). Then the
  * sentences that read and change what a space has, and what the bank holds, that ask whether a player owns a whole set, and
  * that say which spaces a button may pick. And those about cards: which cards a rule is about, whether one has a flag,
- * changing every card of a zone, moving the card a rule is about, and the player with the most cards.
+ * changing every card of a zone, raising or lowering a number a card has, moving the card a rule is about, and the player
+ * with the most cards.
  */
 export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
@@ -294,6 +313,8 @@ export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('their {banked} go back to the bank', theirGoBack, { needsPlayer: true, needsBoard: true })
     .effect('move it to {zone}', moveItTo, { needsCard: true })
     .effect('every card in {zone} is {cardflag}', everyCardIsFlagged)
+    .effect('it gains {int} {attribute}', itGains, { needsCard: true })
+    .effect('each {cardflag} card in {zone} gains {int} {attribute}', eachFlaggedGains)
     .effect('each {cardflag} card in {zone} loses {int} {attribute}', eachFlaggedLoses)
     .winner('the player with the most cards in their {perzone} wins', mostCardsWins)
     .given('{space} has {int} {spacenumber}', spaceHasGiven)
@@ -301,6 +322,7 @@ export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
     .given('{space} has an {spaceflag}', spaceHasFlagGiven)
     .given('the bank has {int} {banked}', bankHasGiven)
     .given('{card} in {zone} is {cardflag}', cardInZoneIsGiven)
+    .given('{card} in {zone} has {int} {attribute}', cardInZoneHasGiven)
     .expect('{space} has {int} {spacenumber}', spaceHasExpected)
     .expect('{space} has a {spaceflag}', spaceHasFlagExpected)
     .expect('{space} has an {spaceflag}', spaceHasFlagExpected)
