@@ -174,7 +174,9 @@ export class LangRuntime {
    * lines inside its own, so past the cap on that it is refused rather than overflowing the stack, like moment rules are.
    */
   readonly runLine = (state: GameState, ref: PhraseRef, subject: Subject): GameState => {
-    if (this.cardDepth >= MAX_MOMENT_DEPTH) throw new RuleError(KEEPS_DRAWING);
+    // The line to blame is the card's own, as with moment rules; unlocated, it would be taken for the line of whichever
+    // sentence drew this one.
+    if (this.cardDepth >= MAX_MOMENT_DEPTH) throw new RuleError(KEEPS_DRAWING, ref.line, ref.text);
     this.cardDepth++;
     try {
       return this.run(ref, state, undefined, undefined, subject);

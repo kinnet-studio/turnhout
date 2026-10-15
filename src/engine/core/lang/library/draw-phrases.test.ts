@@ -5,7 +5,7 @@ import { counterOf, isOut, lastDrawn, pieceAt, placePiece, queueRoll, setCounter
 import { createEngine, initialState, seatsFor } from '../build';
 import { deckOf } from '../cards';
 import { compileGame } from '../compile';
-import { LangRuntime } from '../runtime';
+import { LangRuntime, MAX_MOMENT_DEPTH } from '../runtime';
 import { deckGameText, fixtureCard, fixtureEnv, fixtureGame, fixtureState, runPhrase } from '../testing';
 import type { CompiledGame, PhraseEnv, PhraseRef, Subject } from '../types';
 import { BOX_ZONE, relocate, zoneIdFor } from '../zones';
@@ -94,6 +94,25 @@ describe('drawing a card and doing what it says', () => {
   it('stops cards that keep drawing cards', () => {
     const engine = started(decks([HEAD, '| Loop | They draw from the lucky pile and do what it says. |']), [1, 1]);
     expect(() => rollDice(engine)).toThrow('Cards keep drawing cards without stopping.');
+  });
+  it('points at the row of the card that recursed', () => {
+    const ONE = 'They draw from the lucky pile and do what it says.';
+    const TWO = 'They draw from the fate pile and do what it says.';
+    const single = decks([HEAD, `| Loop | ${ONE} |`]);
+    const thrown = (g: CompiledGame) => {
+      try {
+        rollDice(started(g, [1, 1]));
+      } catch (error) {
+        return error;
+      }
+      return undefined;
+    };
+    expect(thrown(single)).toMatchObject({ message: 'Cards keep drawing cards without stopping.', line: 7, text: ONE.replace(/\.$/, '') });
+    // Two cards that send the player to each other (rows 7 and 10): the sentence that is refused is the one the cap is reached on,
+    // the lucky card's at an even depth and the fate card's at an odd one, not the one that drew it.
+    const pair = decks([HEAD, `| Back | ${TWO} |`], [HEAD, `| Forth | ${ONE} |`]);
+    const refused = MAX_MOMENT_DEPTH % 2 === 0 ? { line: 7, text: TWO } : { line: 10, text: ONE };
+    expect(thrown(pair)).toMatchObject({ line: refused.line, text: refused.text.replace(/\.$/, '') });
   });
   it('counts only the cards that are running inside one another, so a stopped loop leaves nothing behind', () => {
     const game = decks([HEAD, '| Loop | They draw from the lucky pile and do what it says. |']);
