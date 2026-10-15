@@ -1,7 +1,7 @@
 # Board Games, Slice 3: Doubles and Jail
 
 **Date:** 2026-10-15
-**Status:** Draft, written under the user's goal to finish every slice (see Decisions)
+**Status:** Ready to build. The user delegated the design calls under the goal to finish every slice (see Decisions); a builder check was run and its four questions are settled below.
 **Part of:** `2026-10-15-board-games-overview-design.md`. Its decisions, calls, anti-goals and constraints
 apply here.
 **Builds on:** slice 1 (PR #8) and slice 2 (PR #9), both merged to `main`.
@@ -70,8 +70,13 @@ It also clears the small leftovers slice 2's final review handed on (see *Leftov
   - "they have rolled fewer than 3 doubles this turn";
   - "When a player has rolled 3 doubles this turn:".
   - Any roll by the player counts: "Roll the dice" from either button.
-- **A double needs at least two dice.** A game with one die that says "rolled a double" gets a compile error on
-  that line: "A double needs at least two dice."
+- **A double needs exactly two dice.** A game with one die, or with three or more, that says "rolled a double"
+  gets a compile error on that line: "A double needs exactly two dice." (builder check: three dice had no
+  agreed meaning, and examples can only fix rolls of one or two dice.)
+- **Fact names may have several words** ("jail turns"). In every "… can have …" declaration, a list is split at
+  commas and " and " before anything else, so a name can't contain "and" or a comma, and "houses and a hotel"
+  stays two facts. "a"/"an" + name is a yes/no fact; any other name is a number. (builder check: slice 2's
+  `{factlist}` took one-word names only.)
 - **"Their piece goes straight to <space>"** places the piece without passing or landing on anything. Slice 4's
   "Advance to Go" card, which does pass Go, will be a separate phrase.
 - **"They pay <n>"** pays the bank in the pay-with counter, like "They pay its tax".
@@ -81,6 +86,13 @@ It also clears the small leftovers slice 2's final review handed on (see *Leftov
   out, as in the classic game.
 - **Player facts are public.** Every seat sees "in jail" and "1 jail turn" next to that player's money. Hiding
   a player fact is left until a game needs it.
+- **The page shows player facts by a general rule, never by name** (builder check): a piece whose player has any
+  yes/no fact set gets a ring, and each space's title lists the players on it with their set facts
+  ("Jail — p0 (in jail, 1 jail turn)"). No page code names "jail".
+- **One earlier example's expected reason changes** (builder check): "you cannot roll twice in one turn" now
+  fails the roll button's `Only if one of:` group, so its reason becomes "they have not rolled this turn or they
+  rolled a double". The rule changed in this slice, so the example follows it; every other earlier example is
+  unchanged.
 - **Player fact names may not clash with existing words:**
   - a counter ("Players can have money" when money is a counter): `“money” is already a number each player has.`;
   - the reserved "out": `“out” is already how a player leaves the game.`
@@ -271,14 +283,15 @@ All additive. Existing games compile and run unchanged.
 As slice 2, plus:
 
 - **The money line** shows each player's set facts after their money.
-- **A jailed piece** gets a marker on the board (a dark ring), and the Jail space's title lists who is in jail.
+- **A piece whose player has a yes/no fact set** (here, in jail) gets a ring on the board, and each space's
+  title lists the players on it with their facts.
 - **The jail buttons** ("Pay to leave jail", "Roll for a double") appear in every seat's button row like any
   other button. Each greys out with its reason when it can't be pressed.
 
 ## Proof (acceptance)
 
 1. **Rent Day (slice 3)** compiles with no diagnostics. Its examples include the table above, and every earlier
-   example still passes.
+   example still passes (the one roll-twice reason updated as above).
 2. **Rent Day games still end:**
    - **2 players:** at least 9 of seeds 1 to 10 reach a winner within the cap, and the test names any seed that
      doesn't.
