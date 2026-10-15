@@ -104,7 +104,8 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError }: {
     onError(null);
     const move = moveForDrop(game, seats, view?.turn?.phase, seat, intent);
     if (move) send(move);
-    else flash(NO_RULE);
+    // A card let go outside every zone, or back where it came from, just snaps back: nothing to explain.
+    else if (intent.toZoneId !== null && intent.toZoneId !== intent.fromZoneId) flash(NO_RULE);
   };
   return (
     <div style={{ width: SEAT_WIDTH, height: SEAT_HEIGHT, flex: '0 0 auto', position: 'relative', border: '1px solid #ccc' }}>

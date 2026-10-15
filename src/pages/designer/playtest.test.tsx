@@ -27,7 +27,7 @@ const colorMatch = compileGame(COLOR_MATCH, lib).game!;
 const HINT = 'Play a card matching the color or number, or draw one.';
 const SEED = 1;
 
-const drag = (seat: number, cardId: string, from: string, to: string) =>
+const drag = (seat: number, cardId: string, from: string, to: string | null) =>
   act(() => drops[seat]({ cardId, fromZoneId: from, toZoneId: to, slot: 0, worldPoint: { x: 0, y: 0 } }));
 
 const mount = (over: Partial<Parameters<typeof Playtest>[0]> = {}) =>
@@ -62,6 +62,18 @@ describe('Playtest', () => {
     mount();
     drag(0, 'c0', 'hand-p0', 'draw-pile');
     expect(screen.getByText('No rule lets you move a card there.')).toBeTruthy();
+  });
+
+  it('stays silent when a card is dropped outside every zone', () => {
+    mount();
+    drag(0, 'c0', 'hand-p0', null);
+    expect(screen.queryByText('No rule lets you move a card there.')).toBeNull();
+  });
+
+  it('stays silent when a card is dropped back where it came from and nothing rearranges', () => {
+    mount();
+    drag(0, 'c0', 'draw-pile', 'draw-pile');
+    expect(screen.queryByText('No rule lets you move a card there.')).toBeNull();
   });
 
   it('clears the feedback after a moment', () => {
