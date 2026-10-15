@@ -409,6 +409,29 @@ describe('board references', () => {
     expect(parseParam('done', 'built', v)).toEqual({ value: ['build a house on a street they own'] });
     expect(parseParam('done', 'built a house on a street they own', v)).toEqual({ value: ['build a house on a street they own'] });
   });
+  it('reads what was done by a button that picks a target as its base too, since the target is not part of what was done', () => {
+    expect(parseParam('done', 'built a house', v)).toEqual({ value: ['build a house on a street they own'] });
+    expect(parseParam('done', 'Built A House', v)).toEqual({ value: ['build a house on a street they own'] });
+    // Two buttons that share a base are both what was done; a rule asking whether either was pressed is still clear.
+    const both = vocabFrom({
+      maxPlayers: 2,
+      actions: [
+        { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true },
+        { verb: 'build', words: 'build a house on a station they own', base: 'build a house', targeted: true },
+      ],
+    });
+    expect(parseParam('done', 'built a house', both)).toEqual({ value: ['build a house on a street they own', 'build a house on a station they own'] });
+    // A button's own wording still wins over another's base, and a base is no wording for a button that takes no target.
+    const plain = vocabFrom({
+      maxPlayers: 2,
+      actions: [
+        { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true },
+        { verb: 'build', words: 'build a house', base: 'build a house', targeted: false },
+      ],
+    });
+    expect(parseParam('done', 'built a house', plain)).toEqual({ value: ['build a house'] });
+    expect(parseParam('done', 'built a house on a street', v)).toBeNull();
+  });
   it('does not read what the game does not have', () => {
     expect(parseParam('counter', 'gold', v)).toBeNull();
     expect(parseParam('spaceattr', 'colour', v)).toBeNull();

@@ -662,22 +662,40 @@ const TARGETACTION: ParamType = {
   },
 };
 
+type VocabAction = Vocab['actions'][number];
+
+/** The words of a button, from its verb on, with the verb in the past: 'roll for a double' is 'rolled for a double'. */
+const pastTense = (action: VocabAction, words: string): string => `${participle(action.verb)}${words.slice(action.verb.length)}`;
+
 /** What a button is called once it has been pressed: 'roll for a double' is 'rolled for a double', and a one-word button is its bare participle. */
-const doneWording = (action: Vocab['actions'][number]): string => `${participle(action.verb)}${action.words.slice(action.verb.length)}`;
+const doneWording = (action: VocabAction): string => pastTense(action, action.words);
+
+/**
+ * What a button that picks a space is called once pressed, without the space: 'planted a flag' for 'plant a flag on a space
+ * they own'. Where the player planted it is no part of having planted it, so a rule may leave it out. A button that takes no
+ * target has no such name, since its whole wording is all there is to say.
+ */
+const doneBase = (action: VocabAction): string[] => (action.targeted ? [pastTense(action, action.base)] : []);
+
+/** The ways a done-text can name a button, nearest first: a text that is several of them reads as the first. */
+const DONE_NAMES: ((action: VocabAction) => string[])[] = [
+  (a) => [participle(a.verb)], (a) => [doneWording(a)], doneBase,
+];
 
 /**
  * What was done names buttons by the move type each sends: a bare participle ('rolled') every button whose verb has it, a
- * whole done-wording ('rolled for a double') that one button. Text that is both, as a one-word button's is, reads as the bare
- * participle. The moves come once each, in the order the buttons were declared.
+ * whole done-wording ('rolled for a double') that one button, and the done-wording of a targeted button's base ('planted a
+ * flag') every such button with that base. A one-word button's wording is also its bare participle, and a button's own
+ * wording is nearer than another's base, so the first way that fits is the one read. The moves come once each, in the
+ * order the buttons were declared.
  */
 const DONE: ParamType = {
   name: 'done', label: '[action done]',
-  source: (vocab) => bounded(anyOf(vocab.actions.flatMap((a) => [participle(a.verb), doneWording(a)]))),
+  source: (vocab) => bounded(anyOf(vocab.actions.flatMap((a) => DONE_NAMES.flatMap((namesOf) => namesOf(a))))),
   resolve: (text, vocab) => {
-    const named = (nameOf: (a: Vocab['actions'][number]) => string) =>
-      [...new Set(vocab.actions.filter((a) => canon(nameOf(a)) === canon(text)).map((a) => a.words))];
-    const byVerb = named((a) => participle(a.verb));
-    const moves = byVerb.length > 0 ? byVerb : named(doneWording);
+    const named = (namesOf: (action: VocabAction) => string[]) =>
+      [...new Set(vocab.actions.filter((a) => namesOf(a).some((name) => canon(name) === canon(text))).map((a) => a.words))];
+    const moves = DONE_NAMES.map(named).find((found) => found.length > 0) ?? [];
     return moves.length === 0 ? unknownText(text) : { value: moves };
   },
 };

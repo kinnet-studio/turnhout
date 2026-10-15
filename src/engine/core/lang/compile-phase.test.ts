@@ -635,6 +635,17 @@ describe('actions, moments and player rules on a board', () => {
     const none = compileGame(`${TINY_BOARD_HEAD.replace('  Players pay with money.\n', '')}\n${fee('money')}`, lib);
     expect(none.diagnostics).toContainEqual(expect.objectContaining({ message: 'Say what players pay with, like “Players pay with coins.” under Board:.' }));
   });
+  it('reads “they have not built a house this turn” as the button that picks a street to build on', () => {
+    const lines = [
+      '  A player may build a house on a street they own.', '    Only if they have not built a house this turn.', '    Then:', '      They pay 10.',
+      '  A player may end their turn.', '    Only if they have built a house this turn.',
+    ];
+    const { game, diagnostics } = compileGame(`${TINY_BOARD_HEAD}\n${lines.join('\n')}`, lib);
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    const [build, end] = game!.phases[0].actions;
+    expect(build.conditions[0].refs[0]).toMatchObject({ phrase: 'they have not {done} this turn', args: [['build a house on a street they own']] });
+    expect(end.conditions[0].refs[0]).toMatchObject({ phrase: 'they have {done} this turn', args: [['build a house on a street they own']] });
+  });
   it('refuses board phrases in a game with no board, and rolling in a game with no dice', () => {
     const NEEDS_BOARD = (line: string) => `“${line}” needs a board. Add a Board: section with a line like “The board is a loop of spaces, starting at Go:”.`;
     const NEEDS_DICE = (line: string) => `“${line}” needs dice. Add a line like “There are two six-sided dice.” under Board:.`;
