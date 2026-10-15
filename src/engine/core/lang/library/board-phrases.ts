@@ -209,32 +209,73 @@ const rollDice: EffectFn = (env) => {
   return setRoll(seat === null ? state : recordRoll(state, seat, faces), faces);
 };
 
+/** Where their piece stands; a player with no piece (one who is out) has nothing to move, and must not be given one. */
+function pieceOfThey(env: PhraseEnv): { they: PlayerId; from: number } {
+  const they = theyOf(env);
+  const from = pieceAt(env.state, they);
+  if (from === null) throw new RuleError('They have no piece on the board.');
+  return { they, from };
+}
+
+/** Moves on the board are told to the game's rules as they happen, so a move with no one listening is a bug. */
+function announcerOf(env: PhraseEnv): NonNullable<PhraseEnv['announce']> {
+  if (!env.announce) throw new Error('This phrase needs to announce where the piece passes and lands, but nothing is listening.');
+  return env.announce;
+}
+
 /**
  * One space at a time, so a rule about passing a space (like collecting on the way) sees every space on the way. If such a
  * rule moves the piece somewhere else, or takes the player out, the walk ends there: the move is over and nothing lands.
  */
-const moveByRoll: EffectFn = (env) => {
-  const they = theyOf(env);
-  const steps = rollTotal(env.state);
-  if (!env.announce) throw new Error('This phrase needs to announce where the piece passes and lands, but nothing is listening.');
-  const from = pieceAt(env.state, they);
-  if (from === null) throw new RuleError('They have no piece on the board.');
+function walk(env: PhraseEnv, steps: number): GameState {
+  const { they, from } = pieceOfThey(env);
+  const announce = announcerOf(env);
   const count = boardIn(env).spaces.length;
   let state = env.state;
   let space = from;
   for (let step = 1; step <= steps; step++) {
     space = (from + step) % count;
-    state = env.announce(placePiece(state, they, space), { kind: 'pass', seat: they, space });
+    state = announce(placePiece(state, they, space), { kind: 'pass', seat: they, space });
     if (pieceAt(state, they) !== space || isOut(state, they)) return state;
   }
-  return env.announce(state, { kind: 'land', seat: they, space });
+  return announce(state, { kind: 'land', seat: they, space });
+}
+
+// The roll is read first, so a move that needs one says so before anything about the piece.
+const moveByRoll: EffectFn = (env) => walk(env, rollTotal(env.state));
+
+/** Walks, passing Go if it is on the way; from the space itself that is once round the board, never no move at all. */
+const movesForwardToSpace: EffectFn = (env, [target]) => {
+  const { from } = pieceOfThey(env);
+  const count = boardIn(env).spaces.length;
+  return walk(env, ((target as number) - from - 1 + count) % count + 1);
+};
+
+/** The first space ahead of the piece of the kind; the space it is on only counts after a whole round. */
+const movesForwardToNearest: EffectFn = (env, [kind]) => {
+  const { from } = pieceOfThey(env);
+  const count = boardIn(env).spaces.length;
+  for (let step = 1; step <= count; step++) {
+    if (isOfClass(env, (from + step) % count, kind as SpaceClass)) return walk(env, step);
+  }
+  throw new Error('This phrase needs a space of that kind on the board, but there is none.');
+};
+
+/** Backwards nothing is passed, so there is no walk: the piece is placed, and only the landing is announced. */
+const movesBack: EffectFn = (env, [n]) => {
+  const spaces = n as number;
+  if (spaces < 1) throw new RuleError('Say how many spaces back, 1 or more.');
+  const { they, from } = pieceOfThey(env);
+  const announce = announcerOf(env);
+  const count = boardIn(env).spaces.length;
+  // Going back past Go wraps to the far end of the loop, and a remainder of a negative number is itself negative.
+  const space = (((from - spaces) % count) + count) % count;
+  return announce(placePiece(env.state, they, space), { kind: 'land', seat: they, space });
 };
 
 /** Puts the piece on the space without a walk, so nothing is passed or landed on and no rule waiting for either happens. */
 const goesStraightTo: EffectFn = (env, [space]) => {
-  const they = theyOf(env);
-  // Without this check the piece would appear on the board for a player who has none (one who is out).
-  if (pieceAt(env.state, they) === null) throw new RuleError('They have no piece on the board.');
+  const { they } = pieceOfThey(env);
   return placePiece(env.state, they, space as number);
 };
 
@@ -436,6 +477,9 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .moment('a player lands on {spaceclass} someone else owns', landsOnClassOwnedByOther)
     .effect(ROLL_THE_DICE, rollDice, { needsDice: true })
     .effect('their piece moves forward by the roll', moveByRoll, { needsPlayer: true, needsBoard: true, needsDice: true })
+    .effect('their piece moves forward to {space}', movesForwardToSpace, { needsPlayer: true, needsBoard: true })
+    .effect('their piece moves forward to the nearest {spacekind}', movesForwardToNearest, { needsPlayer: true, needsBoard: true })
+    .effect('their piece moves back {int} space(s)', movesBack, { needsPlayer: true, needsBoard: true })
     .effect('their piece goes straight to {space}', goesStraightTo, { needsPlayer: true, needsBoard: true })
     .effect('its player gets {int} {counter}', gets, { needsPlayer: true })
     .effect('they get {int} {counter}', gets, { needsPlayer: true })

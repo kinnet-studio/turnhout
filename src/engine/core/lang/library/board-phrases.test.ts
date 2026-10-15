@@ -205,6 +205,55 @@ describe('going straight to a space', () => {
   });
 });
 
+describe('moving forward to a space, and back', () => {
+  /** Where p0's piece ends and every moment on the way, from `from`. */
+  const walked = (text: string, from: number) => {
+    const seen: string[] = [];
+    const announce = (s: GameState, m: Moment) => { seen.push(`${m.kind} ${m.space}`); return s; };
+    const s = runPhrase<GameState>(lib, 'effect', text, env(placePiece(fixtureBoardState(), 'p0', from), { ...as('p0'), announce }));
+    return { at: pieceAt(s, 'p0'), seen };
+  };
+  it('walks forward to the space, passing every space on the way and the space itself, then lands', () => {
+    expect(walked('their piece moves forward to Go', 5)).toEqual({ at: 0, seen: ['pass 6', 'pass 7', 'pass 0', 'land 0'] });
+    expect(walked('their piece moves forward to Mill Lane', 1).seen).toHaveLength(9);
+  });
+  it('walks forward to the first space of the kind ahead, never the one it is on', () => {
+    expect(walked('their piece moves forward to the nearest utility', 4)).toEqual({ at: 6, seen: ['pass 5', 'pass 6', 'land 6'] });
+    expect(walked('their piece moves forward to the nearest station', 4).seen.at(-1)).toBe('land 3');
+    expect(walked('their piece moves forward to the nearest chance', 4).at).toBe(7);
+  });
+  it('moves back without passing anything, going round past Go backwards', () => {
+    expect(walked('their piece moves back 3 spaces', 1)).toEqual({ at: 6, seen: ['land 6'] });
+    expect(walked('their piece moves back 1 space', 4)).toEqual({ at: 3, seen: ['land 3'] });
+  });
+  it('asks for at least one space back', () => {
+    const start = placePiece(fixtureBoardState(), 'p0', 4);
+    expect(() => runPhrase(lib, 'effect', 'their piece moves back 0 spaces', env(start, { ...as('p0'), announce: (s) => s })))
+      .toThrow('Say how many spaces back, 1 or more.');
+  });
+  it('says so when they have no piece on the board, going forward or back', () => {
+    const start = markOut(fixtureBoardState(), 'p1');
+    for (const text of ['their piece moves forward to Go', 'their piece moves forward to the nearest station', 'their piece moves back 3 spaces']) {
+      expect(() => runPhrase(lib, 'effect', text, env(start, as('p1')))).toThrow('They have no piece on the board.');
+    }
+  });
+  it('ends the walk where a passes rule moves the piece, and announces no landing', () => {
+    const seen: string[] = [];
+    const announce = (s: GameState, m: Moment) => {
+      seen.push(`${m.kind} ${m.space}`);
+      return seen.length === 1 ? placePiece(s, 'p0', 2) : s;
+    };
+    const s = runPhrase<GameState>(lib, 'effect', 'their piece moves forward to Go', env(placePiece(fixtureBoardState(), 'p0', 5), { ...as('p0'), announce }));
+    expect(seen).toEqual(['pass 6']);
+    expect(pieceAt(s, 'p0')).toBe(2);
+  });
+  it('is a bug in the compiler when nothing is listening for the moments', () => {
+    for (const text of ['their piece moves forward to Go', 'their piece moves forward to the nearest utility', 'their piece moves back 3 spaces']) {
+      expect(() => runPhrase(lib, 'effect', text, env(fixtureBoardState(), as('p0')))).toThrow(/announce|listening/);
+    }
+  });
+});
+
 describe('counters', () => {
   it('gives a number to its player and to they', () => {
     const start = fixtureBoardState();
