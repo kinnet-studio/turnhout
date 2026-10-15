@@ -159,7 +159,7 @@ describe('Playtest of a board game', () => {
 
   it('keeps the status line of each seat, and draws no card table for a game with no zones', () => {
     mountRentDay();
-    const hint = 'Roll the dice, then buy where you landed or end your turn.';
+    const hint = 'Roll the dice, then buy, build, or end your turn.';
     expect(screen.getByText(`seat: p0 — Your turn — ${hint}`)).toBeTruthy();
     expect(screen.getByText(`seat: p1 — ${hint} — waiting for p0`)).toBeTruthy();
     expect(rendered).toBe(0);
