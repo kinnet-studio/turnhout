@@ -5,14 +5,14 @@ import { createDefaultLibrary } from '@/engine/core/lang/library';
 import { runExamples } from '@/engine/core/lang/examples';
 import { createEngine, initialState, seatsFor } from '@/engine/core/lang/build';
 import {
-  bankOf, counterOf, isOut, LAST_DRAWN_KEY, lastDrawn, latestRoll, owedTo, ownerOf, pieceAt, playerFact, playersIn, rollsThisTurn,
-  setOwner, setRoll, spaceFact, TURN_KEY, TURN_ROLLS_KEY, withBoardData,
+  bankOf, counterOf, isOut, LAST_DRAWN_KEY, lastDrawn, latestRoll, owedTo, ownerOf, pieceAt, playerFact, playersIn, queueRoll, rollsThisTurn,
+  setBank, setCounter, setOwner, setRoll, setSpaceFact, spaceFact, TURN_KEY, TURN_ROLLS_KEY, withBoardData,
 } from '@/engine/core/lang/board-state';
 import { deckOf } from '@/engine/core/lang/cards';
 import { targetCandidates } from '@/engine/core/lang/declared-actions';
 import { isDouble } from '@/engine/core/lang/library/board-phrases';
 import type { LangRuntime } from '@/engine/core/lang/runtime';
-import { zoneIdFor, zoneInfo } from '@/engine/core/lang/zones';
+import { relocate, zoneIdFor, zoneInfo } from '@/engine/core/lang/zones';
 import type { GameEngine } from '@/engine/core/game-engine';
 import { zoneCards, type GameState } from '@/engine/core/game-state';
 import type { Move } from '@/engine/core/moves';
@@ -542,6 +542,36 @@ describe('Rent Day (designer language)', () => {
     },
     60_000,
   );
+
+  it('settles the debts of players whose turn it is not while the turn waits for them, then plays on to a winner at 5 players', () => {
+    const n = 5;
+    const seats = seatsFor(n);
+    // The Setup has shuffled the piles; then p0 is to roll 1 and 1 onto Treasury, where Opera Night is on top, and every
+    // other player has 30 money, so all four owe p0 at once in p0's turn. Each settles in its own way: p1 has nothing and
+    // gives up, p2 sells a house off the brown set, p3 gives up and hands North Station to p0, and p4 mortgages Power Works.
+    // The fixed roll makes that happen whatever the seed. Of the seeds 1 to 20, seed 19 plays on longest (234 turns to a
+    // winner), and in it p0 later sells a house in p2's turn of its own accord.
+    const started = createEngine(game!, lib, n, initialState(game!, 19)).engine.getState();
+    const pile = zoneIdFor('treasury pile');
+    const opera = zoneCards(started, pile).find((card) => card.data?.name === 'Opera Night')!;
+    let state = queueRoll(relocate(started, [opera.id], pile, game!), [1, 1]);
+    for (const seat of seats.slice(1)) state = setCounter(state, 'money', seat, 30);
+    const [millLane, ferryRow, northStation, powerWorks] = [1, 3, 5, 12];
+    state = setBank(setSpaceFact(setSpaceFact(state, millLane, 'houses', 1), ferryRow, 'houses', 1), 'houses', HOUSES - 2);
+    state = setOwner(setOwner(setOwner(setOwner(state, millLane, 'p2'), ferryRow, 'p2'), northStation, 'p3'), powerWorks, 'p4');
+    const table = createEngine(game!, lib, n, state);
+    const rules = keepsTheRules(table.runtime, seats);
+    // The presses made by a player whose turn it is not, by button.
+    const outOfTurn: Record<string, number> = {};
+    const turns = playUpTo(table, 60 * n, (before, move, after) => {
+      rules(before, move, after);
+      if (move.by !== before.turn!.current) outOfTurn[move.type] = (outOfTurn[move.type] ?? 0) + 1;
+    });
+    if (turns < 60 * n) expect(playersIn(table.engine.getState(), seats)).toHaveLength(1);
+    // Only the buttons any player may press are ever pressed out of turn, and the three ways of settling a debt all were.
+    expect(Object.keys(outOfTurn).filter((type) => ![SELL, MORTGAGE, PAY_OFF, GIVE_UP].includes(type))).toEqual([]);
+    for (const type of [GIVE_UP, SELL, MORTGAGE]) expect(outOfTurn[type] ?? 0, `out-of-turn presses to ${type}: ${JSON.stringify(outOfTurn)}`).toBeGreaterThan(0);
+  }, 30_000);
 
   it.each([[2, 1], [4, 2], [8, 3]])('a game with little money and no Go salary ends with a winner at %i players (seed %i)', (n, seed) => {
     const salary = '  When a piece passes Go:\n    Its player gets 200 money.\n';
