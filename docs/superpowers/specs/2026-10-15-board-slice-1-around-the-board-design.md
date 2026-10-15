@@ -1,7 +1,7 @@
 # Board Games, Slice 1: Around the Board
 
 **Date:** 2026-10-15
-**Status:** Draft, pending review
+**Status:** Draft, reviewed; pending the user's approval
 **Part of:** `2026-10-15-board-games-overview-design.md` (read it first: the decisions, calls, anti-goals
 and constraints there apply here).
 **Builds on:** the designer rule language, merged to `main`.
@@ -40,6 +40,10 @@ this turn, owners that change during play, and players going out.
    declarations of pieces, money and dice, button actions with `Only if` and `Then:`, and `When a piece
    passes …` / `When a player lands on …` rules). The exact wording of phrases stays open, as in the
    language spec.
+6. **The game names what players pay with, once.** A line under `Board:`, "Players pay with money.",
+   says which of the players' numbers every "pay" line moves. Pay lines stay short ("They pay its rent
+   to its owner"), and a second per-player number in a later slice (turns in jail, say) does not make
+   them unclear.
 
 ## Calls made while writing this (the user has not weighed in)
 
@@ -154,6 +158,7 @@ Board:
     | The Promenade   | street     | dark blue  | 400   | 50   |     |
   Each player has a piece that starts on Go.
   Each player has 1500 money that everyone can see.
+  Players pay with money.
   There are two six-sided dice.
 
 Phase: playing
@@ -211,6 +216,7 @@ section: a game may have a board and no cards, and pieces and money start where 
 | `Board:` + "The board is a loop of spaces, starting at Go:" + a table | An ordered loop of spaces. The `space` column names each space. Every other column becomes an attribute rules can mention ("its rent", "a street"), as card-table columns do today. Blank cells mean the space has no such attribute ("it has a price" is false for Go). A cell's words, such as `light blue` or `go to jail`, are values rules can refer to. |
 | "Each player has a piece that starts on Go." | One piece per seat, on that space at the start. |
 | "Each player has 1500 money that everyone can see." | A number per seat, named by the designer ("money"), with its starting value and who may see it. |
+| "Players pay with money." | Which of those numbers every "pay" line moves. A "pay" line in a game without it is an error on that line, with a hint to add it. Naming a number the game never declared is an error with suggestions, as for zones. |
 | "There are two six-sided dice." | The dice "Roll the dice" rolls, and "the roll" (their total in the latest roll). |
 | `A player may <action>.` (no "a card from … to …") | A button on each seat. `Only if` lines decide whether it is allowed (the first failing sentence is the reason shown); `Then:` lines are everything it does. |
 | `When a piece passes <space>:` / `When a player lands on <spaces>:` | A moment rule: its lines run once, when a piece's move goes past or onto that space, or stops on it. "Its player", "they" and "their" are the piece's player; "it" and "its" are the space. |
@@ -243,8 +249,10 @@ All additive. Existing card games compile and run unchanged.
    the roll" moves it around the loop and wraps past the last space to the first. A player who is out
    has no piece on the board.
 3. **Numbers players hold** (counters). Named, per seat, with a starting value and a visibility, kept in
-   `GameState`. Effects add to and subtract from them; "pay … to …" moves an amount between two players,
-   and "pay …" with no receiver pays the bank, which has unlimited money in this slice.
+   `GameState`. Effects add to and subtract from them; "pay … to …" moves an amount of the number named
+   in "Players pay with …" between two players, and "pay …" with no receiver pays the bank, which has
+   unlimited money in this slice. Lines that name their number ("gets 200 money", "at least its price in
+   money") work with any declared number.
 4. **Dice.** "Roll the dice" draws each die from `state.rng` and stores the faces of the latest roll in
    `GameState`, so they can be shown and replayed. Examples can set the next roll; that setting exists
    only for examples and never changes what `state.rng` produces in a real game.
@@ -340,8 +348,9 @@ The page keeps Undo, Restart, Stop and the player-count picker (2 to 8 here).
 ## Testing
 
 - **Compiler:** the `Board:` section (columns, blank cells, multi-word values, shared names); piece,
-  counter and dice declarations; action lines versus card-move lines; moment rules; `After` naming an
-  action; diagnostics for unknown spaces, kinds, counters and unresolvable pronouns.
+  counter and dice declarations; "Players pay with …"; action lines versus card-move lines; moment
+  rules; `After` naming an action; diagnostics for unknown spaces, kinds, counters, a "pay" line with no
+  "Players pay with …", and unresolvable pronouns.
 - **Engine:** action legality and rejection text; moments fire once each, in order, in replay too; the
   passes-includes-landing rule; wrap-around past the last space; turn memory cleared when the turn
   passes; going out mid-turn passes the turn exactly once; counters a seat may not see are not in its
