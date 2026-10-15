@@ -146,10 +146,13 @@ export function actionLine(clean: string): RegExpExecArray | null {
   return CARD_MOVE_WORDS.test(clean) ? null : ACTION_LINE.exec(clean);
 }
 
-/** The verb (lowercase) and the words after “a player may” of an action line: the verb, then the rest as written. */
-export function actionOf(found: RegExpExecArray): { verb: string; words: string } {
-  const verb = found[1].toLowerCase();
-  return { verb, words: found[2] === undefined ? verb : `${verb} ${found[2]}` };
+/**
+ * What follows “a player may” in an action line: the verb, and all the words (lowercase, so rules and examples can
+ * repeat them in any capitals). `written` keeps the designer's capitals for the button, so “Go to Rose Lane” stays one.
+ */
+export function actionOf(found: RegExpExecArray): { verb: string; words: string; written: string } {
+  const written = found[2] === undefined ? found[1] : `${found[1]} ${found[2]}`;
+  return { verb: found[1].toLowerCase(), words: written.toLowerCase(), written };
 }
 
 /** What an action's button says: its words in the second person, as the player reads them. */
@@ -160,13 +163,13 @@ export function actionLabel(words: string): string {
 
 /** One button a player may press, with its `Only if` conditions and `Then:` effects; null when its verb is reserved. */
 function compileAction(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx): DeclaredAction | null {
-  const { verb, words } = actionOf(found);
+  const { verb, words, written } = actionOf(found);
   const reserved = verb === RESERVED_VERB;
   if (reserved) addProblem(ctx.diagnostics, node.line, `“${RESERVED_VERB}” is reserved; pick another word.`, { text: found[1] });
   // An action is about the player who presses it and the space their piece is on.
   const { conditions, effects } = readRuleBody(node, { ...ctx, player: true, space: true });
   if (reserved) return null;
-  return { verb, words, label: actionLabel(words), conditions, effects, line: node.line };
+  return { verb, words, label: actionLabel(written), conditions, effects, line: node.line };
 }
 
 /** The `Only if` groups and the effects under a `When …:` rule; every line that is not an `Only if` is an effect. */
@@ -225,7 +228,9 @@ function afterCuts(body: string): AfterCut[] {
 /**
  * An `After a player <names>, <turn phrase>` line. `names` holds every way this phase's moves and actions can be named
  * (“plays”, “ends their turn”), in lowercase, each for the verb it stands for. Names and phrase may both hold commas,
- * so the line is cut where a turn phrase follows names that are all known; failing that, where the names are known.
+ * so the comma is found by trying them left to right, and the first cut that is best wins: names all known and a turn
+ * phrase after them; else a turn phrase after them (the names that are not known are then reported, as they would
+ * be if the line had one comma); else names all known; else the first comma.
  */
 function readAfter(node: OutlineNode, cuts: AfterCut[], names: Map<string, string>, ctx: LineCtx, seen: boolean): CompiledPhase['after'] {
   rejectChildren(node, ctx.diagnostics);
@@ -234,7 +239,8 @@ function readAfter(node: OutlineNode, cuts: AfterCut[], names: Map<string, strin
     return null;
   }
   const named = (list: string) => list.split(VERB_SEPARATOR).every((word) => names.has(word.toLowerCase()));
-  const cut = cuts.find((c) => named(c.list) && canRead('turn', c.turn, ctx)) ?? cuts.find((c) => named(c.list)) ?? cuts[0];
+  const reads = (c: AfterCut) => canRead('turn', c.turn, ctx);
+  const cut = cuts.find((c) => named(c.list) && reads(c)) ?? cuts.find(reads) ?? cuts.find((c) => named(c.list)) ?? cuts[0];
   const verbs: string[] = [];
   let known = true;
   for (const word of cut.list.split(VERB_SEPARATOR)) {
@@ -347,7 +353,7 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx): CompiledPhase {
   for (const verb of moveVerbs) names.set(thirdPerson(verb), verb);
   for (const { verb, words: actionWords } of actionNames) {
     names.set(thirdPerson(verb), verb);
-    names.set(thirdPersonWords(actionWords).toLowerCase(), verb);
+    names.set(thirdPersonWords(actionWords), verb);
   }
   afters.forEach(({ node: line, cuts }, index) => {
     const after = readAfter(line, cuts, names, ctx, index > 0);

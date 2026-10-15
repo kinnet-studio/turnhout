@@ -80,8 +80,8 @@ function readActions(lines: string[]): Vocab['actions'] {
   for (const line of lines) {
     const found = actionLine(line);
     if (!found) continue;
-    const action = actionOf(found);
-    if (!byWords.has(action.words.toLowerCase())) byWords.set(action.words.toLowerCase(), action);
+    const { verb, words } = actionOf(found);
+    if (!byWords.has(words)) byWords.set(words, { verb, words });
   }
   return [...byWords.values()];
 }

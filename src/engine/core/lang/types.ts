@@ -32,7 +32,10 @@ export type BoardPart =
   | { kind: 'pay-with'; counter: string };
 /** A group of spaces named by one of their attributes, like every space whose kind is street. */
 export type SpaceClass = { attribute: string; values: Json[] };
-/** `words` is the lowercase text after "a player may" ('roll the dice'); `label` is the button text ('Roll the dice'). */
+/**
+ * `words` is the lowercase text after "a player may" ('roll the dice'); `label` is the button text in the second person,
+ * with the designer's capitals ('Roll the dice', 'Go to Rose Lane').
+ */
 export type DeclaredAction = { verb: string; words: string; label: string; conditions: CondGroup[]; effects: PhraseRef[]; line: number };
 export type CompiledMoment = { line: number; text: string; when: PhraseRef; conditions: CondGroup[]; effects: PhraseRef[] };
 export type CompiledTrigger = { line: number; text: string; when: PhraseRef; conditions: CondGroup[]; effects: PhraseRef[] };

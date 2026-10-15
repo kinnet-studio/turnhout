@@ -456,10 +456,16 @@ describe('actions, moments and player rules on a board', () => {
     expect(actionLabel('thank theirs then')).toBe('Thank theirs then');
     expect(actionLabel('gather them there')).toBe('Gather you there');
   });
-  it('takes the verb in lowercase and the rest as written', () => {
+  it('keeps the words in lowercase and the designer\'s capitals on the button', () => {
     const { game } = phase(['A player may Buy the space they are on.']);
     expect(game!.phases[0].actions[0]).toMatchObject({ verb: 'buy', words: 'buy the space they are on', label: 'Buy the space you are on' });
-    expect(phase(['A player may go to Rose Lane.']).game!.phases[0].actions[0]).toMatchObject({ verb: 'go', words: 'go to Rose Lane', label: 'Go to Rose Lane' });
+    expect(phase(['A player may Go to Rose Lane.']).game!.phases[0].actions[0]).toMatchObject({ verb: 'go', words: 'go to rose lane', label: 'Go to Rose Lane' });
+    expect(phase(['A player may end their turn.']).game!.phases[0].actions[0]).toMatchObject({ words: 'end their turn', label: 'End your turn' });
+  });
+  it('lets a rule name an action in any capitals', () => {
+    const lines = ['A player may Go to Rose Lane.', 'After a player GOES TO ROSE LANE, the turn passes to the left.'];
+    expect(errorsOf(lines)).toEqual([]);
+    expect(phase(lines).game!.phases[0].after).toMatchObject({ verbs: ['go'] });
   });
   it('lets a one-word action stand alone', () => {
     const { game } = phase(['A player may pass.']);
@@ -541,16 +547,29 @@ describe('actions, moments and player rules on a board', () => {
     expect(diagnostics).toEqual([]);
     expect(game!.phases[0].after).toMatchObject({ verbs: ['play', 'pass'] });
   });
-  it('cuts an After line where a turn phrase follows the names, else where the names are known, else at the first comma', () => {
-    // Nothing after a comma is a turn phrase: the first cut that names known actions stands, and the rest is read as the phrase.
+  it('cuts an After line at the best comma: names known and a turn phrase after, else a turn phrase after, else names known, else the first', () => {
+    // No comma leaves a turn phrase: the first cut that names known actions stands, and what follows it is read as the phrase.
     const loose = phase([...TURN_ACTIONS, 'After a player rolls, ends their turn, the turn goes nowhere.']);
     expect(loose.game!.phases[0].after).toMatchObject({ verbs: ['roll'], next: { phrase: 'missing', text: 'ends their turn, the turn goes nowhere' } });
-    // No cut names known actions: the first is reported, naming what is unknown.
+    // A turn phrase follows the second comma, so the names before it are the ones reported.
     const unknown = phase([...TURN_ACTIONS, 'After a player dances, sings, the turn passes to the left.']);
-    expect(unknown.diagnostics.filter((d) => d.message.includes('isn\'t a move'))).toEqual([
-      expect.objectContaining({ line: 20, text: 'dances', message: '“dances” isn\'t a move in this phase. The moves here are: rolls, rolls the dice, ends, ends their turn.' }),
+    expect(unknown.diagnostics.filter((d) => d.message.includes('isn\'t a move')).map((d) => [d.line, d.text, d.message])).toEqual([
+      [20, 'dances', '“dances” isn\'t a move in this phase. The moves here are: rolls, rolls the dice, ends, ends their turn.'],
+      [20, 'sings', '“sings” isn\'t a move in this phase. The moves here are: rolls, rolls the dice, ends, ends their turn.'],
     ]);
+    expect(unknown.diagnostics.filter((d) => d.kind === 'unknown-phrase')).toEqual([]);
     expect(unknown.game).toBeUndefined();
+  });
+  it('reports a typo in a list of moves as a move that is not there, not as an unknown turn phrase', () => {
+    const lines = [
+      '  A player may play a card from their hand to the deck.', '  A player may draw a card from the deck to their hand.',
+      '  After a player plays, drawz, the turn passes to the left.',
+    ];
+    const result = compileGame(rules(...lines), lib);
+    expect(result.diagnostics).toEqual([expect.objectContaining({
+      line: 19, kind: 'structure', text: 'drawz', message: '“drawz” isn\'t a move in this phase. The moves here are: plays, draws.',
+    })]);
+    expect(result.game).toBeUndefined();
   });
   it('lists the actions among the moves an After line can name', () => {
     expect(errorsOf(['A player may end their turn.', 'After a player plays, the turn passes to the left.'])).toEqual([
