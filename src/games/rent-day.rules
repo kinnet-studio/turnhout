@@ -376,3 +376,27 @@ Example: going out returns your buildings to the bank
   And the bank has 32 houses
   And Rose Lane has 0 houses
   And no one owns Rose Lane
+
+Example: three houses raise the rent
+  Given p1 owns Rose Lane
+  And p1 owns Lily Lane
+  And p1 owns Iris Road
+  And Rose Lane has 3 houses
+  And Lily Lane has 3 houses
+  And Iris Road has 3 houses
+  And p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 has 950 money
+  And p1 has 2050 money
+
+Example: four stations charge 200
+  Given p1 owns North Station
+  And p1 owns East Station
+  And p1 owns South Station
+  And p1 owns West Station
+  And p0 is on Go
+  And the next roll is 2 and 3
+  When p0 rolls the dice
+  Then p0 has 1300 money
+  And p1 has 1700 money
