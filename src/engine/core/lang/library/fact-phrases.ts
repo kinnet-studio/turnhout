@@ -206,12 +206,15 @@ function mustHold(env: PhraseEnv, space: number, fact: string): void {
   if (heldBy(env.state, space, fact) < 1) throw new RuleError(`${nameOfSpace(env, space)} has no ${fact}.`);
 }
 
-/** One of a count goes back to the bank's item of the same name, and the space keeps the rest. */
+/**
+ * One of a count goes back to the bank's item of the same name, and the space keeps the rest. A game with no such item is
+ * told so first, as `flagGoesBack` does: it is the game's mistake, whatever this space holds.
+ */
 const oneGoesBack: EffectFn = (env, [name]) => {
   const fact: FactItem = { name: name as string, kind: 'number' };
+  const item = bankItemFor(env, fact);
   const space = itOf(env);
   mustHold(env, space, fact.name);
-  const item = bankItemFor(env, fact);
   const returned = setBank(env.state, item, bankOf(env.state, item) + 1);
   return setSpaceFact(returned, space, fact.name, heldBy(returned, space, fact.name) - 1);
 };

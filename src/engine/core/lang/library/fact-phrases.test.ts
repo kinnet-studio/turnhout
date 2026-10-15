@@ -273,6 +273,12 @@ describe('giving one back to the bank', () => {
     expect(() => effect('one of its tokens goes back to the bank', setSpaceFact(fresh(lonely), ROSE, 'tokens', 2), ROSE, lonely))
       .toThrow(new RuleError('No bank item goes with the fact tokens.'));
   });
+  it('says the game has no bank item for it before saying the space holds none, as giving a flag back does', () => {
+    // The mistake is in the game, not in this space: no space could ever give one back.
+    const lonely = fixtureBoardGame({ facts: [{ name: 'tokens', on: 'space', kind: 'number' }], board: boardOf({ bank: [] }) });
+    expect(() => effect('one of its tokens goes back to the bank', fresh(lonely), ROSE, lonely)).toThrow(new RuleError('No bank item goes with the fact tokens.'));
+    expect(() => effect('its mortgaged goes back to the bank', fresh(FLAGGED), ROSE, FLAGGED)).toThrow(new RuleError('No bank item goes with the fact mortgaged.'));
+  });
   it('leaves the other spaces alone and is about the space the rule names, else the one their piece is on', () => {
     const start = withHouses(withHouses(fresh(), ROSE, 2), LILY, 3);
     const s = effect('one of its houses goes back to the bank', start, LILY);
