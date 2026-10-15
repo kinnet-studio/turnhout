@@ -332,10 +332,17 @@ describe('a button that picks a target', () => {
       const roll = g.phases[0].actions.find((a) => a.words === 'roll the dice')!;
       expect(targetCandidates(runtime, roll, playing(), 'p0')).toEqual([]);
     });
-    it('agrees with what the move accepts', () => {
+    it('lists exactly the spaces the move gets past its target check with', () => {
       const state = playing();
-      const accepted = [0, 1, 2, 3].filter((target) => handler.legal(state, { type: BUILD, by: 'p0', target }, ctx) === true);
-      expect(accepted).toEqual(targetCandidates(runtime, action, state, 'p0'));
+      const pastTarget = [0, 1, 2, 3].filter((target) => handler.legal(state, { type: BUILD, by: 'p0', target }, ctx) !== "That isn't a street you own.");
+      expect(targetCandidates(runtime, action, state, 'p0')).toEqual(pastTarget);
+    });
+    it('still lists a space the Only if lines then refuse: the move itself says whether it can be picked', () => {
+      // Mill Lane is a street they own, so the target phrase allows it, but it already has the most houses there may be.
+      const full = playing((s) => setSpaceFact(owned(s), MILL, 'houses', 3));
+      expect(targetCandidates(runtime, action, full, 'p0')).toEqual([MILL]);
+      expect(handler.legal(full, { type: BUILD, by: 'p0', target: MILL }, ctx)).toBe('it has fewer than 3 houses');
+      expect(createEngine(g, lib, 2, full).engine.canDispatch({ type: BUILD, by: 'p0', target: MILL })).toBe('it has fewer than 3 houses');
     });
   });
 

@@ -3,6 +3,7 @@ import type { GameState } from '../game-state';
 import type { Move } from '../moves';
 import type { PlayerId } from '../scene';
 import { numberIn } from './board';
+import { isMissing } from './compile-util';
 import { MissingPhraseError, RuleError } from './diagnostics';
 import type { PhraseLibrary } from './phrases';
 import type {
@@ -22,7 +23,6 @@ const KEEPS_MOVING = 'It keeps moving pieces without stopping.';
  */
 export const MAX_MOMENT_DEPTH = MAX_FLOW_ITERATIONS;
 
-const isMissing = (ref: PhraseRef) => ref.kind === 'lang' && ref.phrase === 'missing';
 const notImplemented = (ref: PhraseRef) => new MissingPhraseError(`“${ref.text}” isn't implemented yet.`, ref.line, ref.text);
 
 /** What a phrase threw, as a RuleError that says which line of the rules it came from. */

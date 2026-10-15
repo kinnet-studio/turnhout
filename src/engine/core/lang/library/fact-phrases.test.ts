@@ -229,8 +229,8 @@ describe('the spaces a button may point at', () => {
   const MILL = 1;
   const STATION = 3;
   /** Whether the target phrase allows `space` for `player`, who has the owners it is given. */
-  const allows = (text: string, space: number, owners: [number, string][] = [], player = 'p0') =>
-    runPhrase<boolean>(lib, 'target', text, about(owners.reduce((state, [at, seat]) => setOwner(state, at, seat), fresh()), null, game, player), space);
+  const allows = (text: string, space: number, owners: [number, string][] = [], player = 'p0', g = game) =>
+    runPhrase<boolean>(lib, 'target', text, about(owners.reduce((state, [at, seat]) => setOwner(state, at, seat), fresh(g)), null, g, player), space);
 
   it('“a street they own” is a street, and one they own', () => {
     const owners: [number, string][] = [[MILL, 'p0'], [ROSE, 'p1'], [STATION, 'p0']];
@@ -260,9 +260,21 @@ describe('the spaces a button may point at', () => {
     // Space 0 is a space too.
     expect(allows('a space they own', 0, [[0, 'p0']])).toBe(true);
   });
+  it('says “an” for a kind that starts with a vowel, and means the same as “a”', () => {
+    const AIRPORT = 9;
+    const airports = fixtureBoardGame({
+      facts: FACTS, board: boardOf({ spaces: [...FIXTURE_SPACES, LILY_LANE, { name: 'Heathrow', attrs: { kind: 'airport', price: 300 } }] }),
+    });
+    const owners: [number, string][] = [[AIRPORT, 'p0'], [MILL, 'p1']];
+    expect(allows('an airport they own', AIRPORT, owners, 'p0', airports)).toBe(true);
+    expect(allows('an airport they own', AIRPORT, owners, 'p1', airports)).toBe(false);
+    expect(allows('an airport they own', MILL, owners, 'p1', airports)).toBe(false);
+    expect(allows('an airport', AIRPORT, [], 'p1', airports)).toBe(true);
+    expect(allows('an airport', MILL, [[MILL, 'p0']], 'p0', airports)).toBe(false);
+  });
   it('needs a board and a player, so the compiler keeps it out of a game that has none', () => {
-    for (const phrase of ['a {spacekind} they own', 'a {spacekind}', 'a space they own']) {
-      expect(lib.get('target', phrase), phrase).toMatchObject({ needsBoard: true, needsPlayer: phrase !== 'a {spacekind}' });
+    for (const phrase of ['a {spacekind} they own', 'an {spacekind} they own', 'a {spacekind}', 'an {spacekind}', 'a space they own']) {
+      expect(lib.get('target', phrase), phrase).toMatchObject({ needsBoard: true, needsPlayer: phrase.endsWith('they own') });
     }
   });
 });

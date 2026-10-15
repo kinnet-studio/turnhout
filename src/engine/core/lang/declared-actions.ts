@@ -74,7 +74,8 @@ export function declaredActionHandler(move: string, runtime: LangRuntime): MoveH
 
 /**
  * The spaces the button's target phrase allows `seat` to pick, in board order; none for a button that picks no space. It
- * asks only the target phrase: the button's `Only if` lines may still refuse a space it lists.
+ * asks only the target phrase, so the button's `Only if` lines may still refuse a space it lists: a caller must ask the move
+ * itself (`canDispatch` with the `target`) before offering a candidate as one the player can pick.
  */
 export function targetCandidates(runtime: LangRuntime, action: DeclaredAction, state: GameState, seat: PlayerId): number[] {
   const { target } = action;

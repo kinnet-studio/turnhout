@@ -1,4 +1,4 @@
-import { addProblem, canRead, matchEffectLine, matchLine, phaseId, rejectChildren, type LineCtx } from './compile-util';
+import { addProblem, canRead, isMissing, matchEffectLine, matchLine, phaseId, rejectChildren, type LineCtx } from './compile-util';
 import type { OutlineNode } from './outline';
 import { normalizeLine, suggestNames } from './phrases';
 import { joinOr, parseParam, secondPersonWords, thirdPerson, thirdPersonWords, VOCAB_TYPES } from './refs';
@@ -194,9 +194,6 @@ export function actionLabel(words: string): string {
   const spoken = secondPersonWords(words);
   return spoken.charAt(0).toUpperCase() + spoken.slice(1);
 }
-
-/** True for the placeholder a line that could not be read becomes. */
-const isMissing = (ref: PhraseRef) => ref.kind === 'lang' && ref.phrase === 'missing';
 
 /**
  * One button a player may press, with its `Only if` conditions and `Then:` effects; null when its verb is reserved or the

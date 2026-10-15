@@ -65,6 +65,9 @@ export function missingRef(kind: PhraseKind, text: string, line: number): Phrase
   return { kind: 'lang', phrase: 'missing', args: [kind], line, text };
 }
 
+/** True for the placeholder `missingRef` makes: a line no phrase could be found for. */
+export const isMissing = (ref: PhraseRef): boolean => ref.kind === 'lang' && ref.phrase === 'missing';
+
 /** A pattern the way a designer reads it: `{zone}` shown as `[zone]`. */
 function displayPattern(pattern: string, types: ParamType[]): string {
   return pattern.replace(/\{([^{}]+)\}/g, (whole, name: string) => types.find((t) => t.name === name)?.label ?? whole);

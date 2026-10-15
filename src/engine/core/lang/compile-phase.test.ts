@@ -798,7 +798,21 @@ describe('buttons that pick a target', () => {
       words: 'build a house on a street they own', base: 'build a house', label: 'Build a House', target: { phrase: 'a {spacekind} they own' },
     });
   });
-  it('reads “on an …” as a target too, though only “a” targets are phrases so far', () => {
+  it('reads “on an …” as a target too: the kinds of a board may start with a vowel', () => {
+    const withAirport = BUILDING_HEAD.replace('    | Rose Lane  | street | orange | 180   | 14   |     |', '    | Rose Lane  | street | orange | 180   | 14   |     |\n    | Heathrow   | airport |       | 300   |      |     |');
+    expect(withAirport).not.toBe(BUILDING_HEAD);
+    const on = (target: string) => compileGame(`${withAirport}\n  A player may build a house on ${target}.`, lib);
+    for (const [target, phrase] of [['an airport they own', 'an {spacekind} they own'], ['an airport', 'an {spacekind}']]) {
+      const built = on(target);
+      expect(problems(built), target).toEqual([]);
+      expect(built.game!.phases[0].actions[0], target).toMatchObject({
+        words: `build a house on ${target}`, base: 'build a house', target: { kind: 'target', phrase },
+      });
+    }
+    expect(problems(on('an airpot they own')).map((d) => d.message)).toEqual(['There is no kind of space called “airpot”.']);
+    expect(on('an airpot they own').game).toBeUndefined();
+  });
+  it('asks a developer for an “an …” target nobody has written a phrase for', () => {
     expect(errorsOf(['A player may build a house on an orange street.'])).toEqual([[20, '“an orange street” isn\'t in the phrase library yet.']]);
   });
   it('reads each way of saying where: a kind of space they own, any space of a kind, any space they own', () => {
