@@ -18,6 +18,7 @@ const BASE = [
 /** BASE with its one phase replaced; the first phase line is line 15. */
 const withPhase = (phase: string) => BASE.replace(/Phase: main[\s\S]*?\n\nEnd:/, `${phase}\n\nEnd:`);
 const messages = (text: string) => compileGame(text, lib).diagnostics.map((d) => [d.line, d.message]);
+const MALFORMED_MOVE = 'I can\'t read this card move. Write it as “A player may <verb> a card from <zone> to <zone>.”';
 
 const PHASE = [
   'Phase: main',
@@ -406,7 +407,7 @@ describe('compilePhase on its own', () => {
 
   it('makes no move and no button of a card move it cannot read', () => {
     const { phase, diagnostics } = phaseFrom('Phase: main\n  A player may play a card form their hand to the deck.');
-    expect(diagnostics.map((d) => [d.line, d.message])).toEqual([[2, 'I can\'t read this card move. Write it as “A player may <verb> a card from <zone> to <zone>.”']]);
+    expect(diagnostics.map((d) => [d.line, d.message])).toEqual([[2, MALFORMED_MOVE]]);
     expect([phase.moves, phase.actions]).toEqual([[], []]);
   });
 
@@ -434,7 +435,6 @@ describe('actions, moments and player rules on a board', () => {
   const NOT_UNDERSTOOD = "I don't understand this line in a phase. Phase lines start with Hint:, A player may…, When…, After a player…, Players take turns or Everyone acts at once.";
   const NEEDS_PLAYER = (line: string) => `“${line}” only makes sense in a rule about a player, such as a move, an action or a “When a player …” rule.`;
   const NEEDS_SPACE = (line: string) => `“${line}” only makes sense in a rule about a space, such as an action or a “lands on” rule.`;
-  const MALFORMED_MOVE = 'I can\'t read this card move. Write it as “A player may <verb> a card from <zone> to <zone>.”';
 
   it('compiles an action with its conditions, effects and button label', () => {
     const { game } = phase(['A player may roll the dice.', '  Only if they have not rolled this turn.', '  Then:', '    Roll the dice.', '    Their piece moves forward by the roll.']);
