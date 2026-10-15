@@ -1,0 +1,94 @@
+Game: Color Match
+Players: 2 to 5
+
+Cards:
+  A deck called color cards, starting in the draw pile:
+    | color  | number | copies |
+    | red    | 1 to 9 | 2      |
+    | yellow | 1 to 9 | 2      |
+    | green  | 1 to 9 | 2      |
+    | blue   | 1 to 9 | 2      |
+
+Table:
+  The draw pile is a pile in the center that no one can see.
+  The discard pile is a pile in the center that everyone can see.
+  Each player has a hand that only they can see.
+
+Setup:
+  Shuffle the draw pile.
+  Deal 7 cards from the draw pile to each hand.
+  Move the top card of the draw pile to the discard pile.
+
+Phase: playing
+  Hint: Play a card matching the color or number, or draw one.
+  Players take turns.
+  Players may rearrange their hand at any time.
+  A player may play a card from their hand to the discard pile.
+    Only if one of:
+      the card has the same color as the top card of the discard pile
+      the card has the same number as the top card of the discard pile
+  A player may draw a card from the draw pile to their hand.
+    Only if they have no card they could play.
+  When the draw pile is empty:
+    Only if the discard pile has more than 1 card.
+    Shuffle the discard pile, except its top card, into the draw pile.
+  After a player plays or draws, the turn passes to the left.
+
+End:
+  The game ends when a player's hand is empty.
+  The player with an empty hand wins.
+
+Example: a card of the same color can be played
+  Given the discard pile has a red 7
+  And p0 holds a red 2 and a blue 3
+  And p1 holds a green 5
+  When p0 plays a red 2
+  Then it is accepted
+  And the top card of the discard pile is a red 2
+  And it is p1's turn
+
+Example: a card of the same number can be played
+  Given the discard pile has a red 7
+  And p0 holds a blue 7 and a blue 3
+  And p1 holds a green 5
+  When p0 plays a blue 7
+  Then it is accepted
+
+Example: a card matching neither cannot be played
+  Given the discard pile has a red 7
+  And p0 holds a blue 3
+  And p1 holds a green 5
+  When p0 plays a blue 3
+  Then it is rejected
+
+Example: you cannot draw while you hold a playable card
+  Given the discard pile has a red 7
+  And p0 holds a red 2
+  And p1 holds a green 5
+  When p0 draws a card
+  Then it is rejected because "they have no card they could play"
+
+Example: you can draw when stuck, then the turn passes
+  Given the discard pile has a red 7
+  And p0 holds a blue 3
+  And p1 holds a green 5
+  When p0 draws a card
+  Then it is accepted
+  And p0 holds 2 cards
+  And it is p1's turn
+
+Example: an empty draw pile is refilled from the discard pile
+  Given the draw pile has a red 1
+  And the discard pile has a blue 2, a green 3 and a red 9
+  And p0 holds a yellow 4
+  And p1 holds a green 5
+  When p0 draws a card
+  Then the draw pile has 2 cards
+  And the top card of the discard pile is a red 9
+
+Example: emptying your hand wins
+  Given the discard pile has a red 7
+  And p0 holds a red 2
+  And p1 holds a green 5
+  When p0 plays a red 2
+  Then p0 wins

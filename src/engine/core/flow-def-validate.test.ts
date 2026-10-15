@@ -88,4 +88,10 @@ describe('validateFlowDef', () => {
     f.phases[0] = { id: 'main', allow: 'any', endTurn: { when: 'always', after: ['reorder'] } };
     expect(validateFlowDef(f, reg()).ok).toBe(true);
   });
+
+  it('reports an unknown per-phase endTurn.next policy', () => {
+    const flow: FlowDef = { turn: { order: ['a'] }, phases: [{ id: 'main', allow: 'any', endTurn: { when: 'always', next: 'nope' } }] };
+    const reg = new FlowRegistry().registerPredicate('always', () => true);
+    expect(validateFlowDef(flow, reg).errors).toContain('phase main endTurn.next references unknown policy: nope');
+  });
 });

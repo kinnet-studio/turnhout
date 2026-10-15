@@ -105,6 +105,17 @@ describe('GameServer', () => {
     expect(seen).not.toHaveBeenCalled();
   });
 
+  it('undo rewinds the engine and notifies subscribers', () => {
+    const s = build();
+    s.submit('me', { type: 'move', cardId: 'c0', toZone: 'deck' });
+    expect(s.viewFor('me').scene.cards.find((c) => c.id === 'c0')!.zoneId).toBe('deck');
+    const seen = vi.fn();
+    s.subscribe(seen);
+    s.undo();
+    expect(s.viewFor('me').scene.cards.find((c) => c.id === 'c0')!.zoneId).toBe('hand-me');
+    expect(seen).toHaveBeenCalledTimes(1);
+  });
+
   it('projects state.result into every seat view once the game ends', () => {
     // Build a server whose engine has a flow with an immediate end condition.
     const flowReg = registerCoreFlow(new FlowRegistry()).registerEffect('declare', (s) => ({ ...s, result: { winner: 'me' } }));

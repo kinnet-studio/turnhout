@@ -192,6 +192,52 @@ describe('runFlow', () => {
     const out = runFlow(mk(), flow, reg(), ctx, { type: 'irrelevant' });
     expect(out.turn?.current).toBe('b');
   });
+
+  it('a trigger that chooses the next player suppresses endTurn and the flag is cleared', () => {
+    const r = reg().registerEffect('chooseA', (s) => ({ ...s, turn: { ...s.turn!, current: 'a', chosen: true } }));
+    const flow: FlowDef = {
+      turn: { order: ['a', 'b', 'c'] },
+      phases: [{ id: 'main', allow: 'any', endTurn: { when: 'always' } }],
+      triggers: [{ id: 'pick', when: 'aHasCards', then: ['drainA', 'chooseA'] }],
+    };
+    expect(runFlow(mk(), flow, r, ctx).turn).toEqual({ current: 'a', phase: 'main' });
+  });
+
+  it('a phase onEnter that chooses the next player also suppresses endTurn', () => {
+    const r = reg().registerEffect('chooseC', (s) => ({ ...s, turn: { ...s.turn!, current: 'c', chosen: true } }));
+    const flow: FlowDef = {
+      turn: { order: ['a', 'b', 'c'] },
+      phases: [
+        { id: 'main', allow: 'any', advance: { when: 'always', to: 'next' } },
+        { id: 'next', allow: 'any', onEnter: ['chooseC'], endTurn: { when: 'always' } },
+      ],
+    };
+    expect(runFlow(mk(), flow, r, ctx).turn).toEqual({ current: 'c', phase: 'next' });
+  });
+
+  it('without the flag, endTurn still fires after a trigger', () => {
+    const flow: FlowDef = {
+      turn: { order: ['a', 'b'] },
+      phases: [{ id: 'main', allow: 'any', endTurn: { when: 'always' } }],
+      triggers: [{ id: 'drain', when: 'aHasCards', then: ['drainA'] }],
+    };
+    expect(runFlow(mk(), flow, reg(), ctx).turn?.current).toBe('b');
+  });
+
+  it('clears the flag when the game ends', () => {
+    const r = reg().registerEffect('chooseAndFinish', (s) => ({ ...s, turn: { ...s.turn!, chosen: true }, result: { done: true } }));
+    const flow: FlowDef = { turn: { order: ['a'] }, phases: [{ id: 'main', allow: 'any' }], end: [{ when: 'always', result: 'chooseAndFinish' }] };
+    expect(runFlow(mk(), flow, r, ctx).turn).toEqual({ current: 'a', phase: 'main' });
+  });
+
+  it('endTurn.next overrides turn.next for that phase', () => {
+    const r = reg().registerPolicy('toC', () => 'c').registerPolicy('toB', () => 'b');
+    const flow: FlowDef = {
+      turn: { order: ['a', 'b', 'c'], next: 'toC' },
+      phases: [{ id: 'main', allow: 'any', endTurn: { when: 'always', next: 'toB' } }],
+    };
+    expect(runFlow(mk(), flow, r, ctx).turn?.current).toBe('b');
+  });
 });
 
 describe('initFlow', () => {
