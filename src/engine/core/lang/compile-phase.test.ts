@@ -617,7 +617,7 @@ describe('actions, moments and player rules on a board', () => {
     const it2 = phase(['When a player has less than 0 money:', '  They own it.']);
     expect(it2.diagnostics).toContainEqual(expect.objectContaining({ message: NEEDS_SPACE('They own it') }));
     const pay = compileGame(`${TINY_BOARD_HEAD.replace('  Players pay with money.\n', '')}\n  A player may buy the space they are on.\n    Then:\n      They pay its price.`, lib);
-    expect(pay.diagnostics).toContainEqual(expect.objectContaining({ message: 'Say what players pay with, like “Players pay with money.” under Board:.' }));
+    expect(pay.diagnostics).toContainEqual(expect.objectContaining({ message: 'Say what players pay with, like “Players pay with coins.” under Board:.' }));
   });
   it('refuses board phrases in a game with no board, and rolling in a game with no dice', () => {
     const NEEDS_BOARD = (line: string) => `“${line}” needs a board. Add a Board: section with a line like “The board is a loop of spaces, starting at Go:”.`;

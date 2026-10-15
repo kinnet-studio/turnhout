@@ -339,7 +339,7 @@ const valuesSource = (vocab: Vocab): string => {
 const STANDARD_CARD = new RegExp(`^(?:the )?(${anyOf(Object.keys(STANDARD_RANKS))}) of (${anyOf(Object.keys(STANDARD_SUITS))})$`, 'i');
 const STANDARD_SOURCE = `(?:the )?${anyOf(Object.keys(STANDARD_RANKS))} of ${anyOf(Object.keys(STANDARD_SUITS))}`;
 
-/** Splits 'red 7' into its values (or 'street or station', with ' or ' between them), trying longer values first; null if some word is not a value. */
+/** Splits 'red 7' into its values (or 'field or forest', with ' or ' between them), trying longer values first; null if some word is not a value. */
 function tokenize(body: string, texts: string[], separator = ' '): string[] | null {
   const lower = canon(body);
   const from = (pos: number): string[] | null => {
@@ -536,7 +536,7 @@ function spaceClassSource(vocab: Vocab): string {
   return `(?:a|an) ${value}(?: or ${value})*(?: space)?`;
 }
 
-/** “a street or station”: spaces whose value in one column is any of those. */
+/** “a field or forest”: spaces whose value in one column is any of those. */
 function resolveSpaceClass(text: string, vocab: Vocab): Parsed {
   const body = A_OR_AN.exec(text)?.[1] ?? text;
   const { texts, owners } = spaceValueTable(vocab);
@@ -561,7 +561,7 @@ function resolveSpaceClass(text: string, vocab: Vocab): Parsed {
 const LOOSE_SPACE_CLASS = '(?:a|an) \\S+(?: or \\S+)*(?: space)?';
 const OR = / or /i;
 
-/** “a taks space” or “a street or stattion”: the first word that is no word of the board's table, with the closest that are. */
+/** “a taks space” or “a field or forrest”: the first word that is no word of the board's table, with the closest that are. */
 function misnamedSpaceClass(text: string, vocab: Vocab): NameProblem | null {
   const body = (A_OR_AN.exec(text)?.[1] ?? text).replace(SPACE_SUFFIX, '');
   const values = [...new Set(vocab.spaceValues.map((v) => v.value))];

@@ -238,3 +238,19 @@ describe('no street of its color has fewer buildings', () => {
     ]);
   });
 });
+
+describe('the words of Rent Day', () => {
+  // Every source file of the engine and the language but this library itself, as text; tests and the test fixtures may say them.
+  const sources = import.meta.glob<string>(['../../**/*.ts', '!../../**/*.test.ts', '!../testing.ts', '!./rent-day.ts'], {
+    query: '?raw', import: 'default', eager: true,
+  });
+  // “Rent Day” is the game's name, and so the name of this library's file, not the word.
+  const WORDS = /\b(?:rent(?![- ]day\b)|houses?|hotels?|streets?|stations?|utility|utilities|money|jail)\b/i;
+
+  it('appear in no other code of the engine or the language, comments included', () => {
+    expect(Object.keys(sources).length).toBeGreaterThan(20);
+    const found = Object.entries(sources).flatMap(([path, source]) =>
+      source.split('\n').flatMap((line, at) => (WORDS.test(line) ? [`${path}:${at + 1}: ${line.trim()}`] : [])));
+    expect(found).toEqual([]);
+  });
+});
