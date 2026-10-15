@@ -227,11 +227,11 @@ describe('taking several from the bank', () => {
     const more = effect('it gets 2 houses from the bank', s);
     expect([spaceFact(more, ROSE, 'houses'), bankOf(more, 'houses')]).toEqual([6, 26]);
   });
-  it('may take the last of them, and says so when the bank has fewer', () => {
+  it('may take the last of them, and says so when the bank has fewer, or none, as taking one does', () => {
     expect(bankOf(effect('it gets 3 houses from the bank', setBank(fresh(), 'houses', 3)), 'houses')).toBe(0);
     expect(() => effect('it gets 4 houses from the bank', setBank(fresh(), 'houses', 3))).toThrow(new RuleError('The bank has only 3 houses left.'));
-    expect(() => effect('it gets 4 houses from the bank', setBank(fresh(), 'houses', 1))).toThrow('The bank has only 1 house left.');
-    expect(() => effect('it gets 2 houses from the bank', setBank(fresh(), 'houses', 0))).toThrow('The bank has only 0 houses left.');
+    expect(() => effect('it gets 4 houses from the bank', setBank(fresh(), 'houses', 1))).toThrow(new RuleError('The bank has only 1 house left.'));
+    expect(() => effect('it gets 2 houses from the bank', setBank(fresh(), 'houses', 0))).toThrow(new RuleError('The bank has no houses left.'));
   });
   it('needs at least 1', () => {
     expect(() => effect('it gets 0 houses from the bank', fresh())).toThrow(new RuleError('Say how many, 1 or more.'));

@@ -190,6 +190,8 @@ const getsSeveralFromBank: EffectFn = (env, [n, name]) => {
     return getsFromBank(env, [name]);
   }
   const left = bankOf(env.state, bank);
+  // A bank with none left says so as taking one does, not as having “only 0”.
+  if (left === 0) throw new RuleError(`The bank has no ${bank} left.`);
   if (left < wanted) throw new RuleError(`The bank has only ${counted(left, bank)} left.`);
   const taken = setBank(env.state, bank, left - wanted);
   return setSpaceFact(taken, space, fact.name, heldBy(taken, space, fact.name) + wanted);
