@@ -15,7 +15,7 @@ const NEEDS_START = 'Start an example with Given or When.';
 const players = (n: number) => `${n} ${n === 1 ? 'player' : 'players'}`;
 
 /** Says how many players the game has, the way “Players:” does. */
-const gameIsFor = ({ min, max }: { min: number; max: number }) => `This game is for ${min === max ? players(min) : `${min} to ${players(max)}`}.`;
+export const gameIsFor = ({ min, max }: { min: number; max: number }) => `This game is for ${min === max ? players(min) : `${min} to ${players(max)}`}.`;
 
 /** The step a Given, When or Then line stands for; the phrase kinds that line is looked up as depend on the keyword. */
 function readStep(keyword: ExampleStep['keyword'], text: string, line: number, ctx: LineCtx): PhraseRef {

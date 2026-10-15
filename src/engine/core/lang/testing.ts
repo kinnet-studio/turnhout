@@ -1,4 +1,4 @@
-// Test fixtures for the phrase library and the table layout. Pure: no DOM, no clock.
+// Test fixtures for the phrase library, the table layout and games run on the engine. Pure: no DOM, no clock.
 import type { GameState } from '../game-state';
 import { resolveDrop } from '../hittest';
 import { computeZoneLayout } from '../layout';
@@ -52,6 +52,49 @@ export function fixtureColorGame(over: Partial<CompiledGame> = {}): CompiledGame
     ...over,
   });
 }
+
+/**
+ * A small two-player trick game written the way a designer would, used to run compiled rules on the engine.
+ * `When the middle has 2 cards:` is line 27, `If the card is a spade, shuffle the deck.` is line 25 and the
+ * `After a player …` line is line 31.
+ */
+export const TEST_DUEL = [
+  'Game: Test Duel',
+  'Players: 2',
+  '',
+  'Cards:',
+  '  A standard 52-card deck, aces high, starting in the deck.',
+  '',
+  'Table:',
+  '  The deck is a pile in the center that no one can see.',
+  '  The middle is a row in the center that everyone can see.',
+  '  Each player has a hand that only they can see.',
+  '  Each player has a won pile that everyone can see.',
+  '',
+  'Setup:',
+  '  Deal 3 cards from the deck to each hand.',
+  '',
+  'Phase: play',
+  '  Players take turns.',
+  '  Players may rearrange their hand at any time.',
+  '  A player may play a card from their hand to the middle.',
+  '    Only if the card is not a heart.',
+  '    Only if one of:',
+  '      the middle is empty',
+  '      they follow the led suit when they can',
+  '    Then:',
+  '      If the card is a spade, shuffle the deck.',
+  '  A player may draw a card from the deck to their hand.',
+  '  When the middle has 2 cards:',
+  '    The highest card of the led suit wins the middle.',
+  "    Move the middle to the winner's won pile.",
+  '    The winner goes next.',
+  '  After a player plays or draws, the turn passes to the left.',
+  '',
+  'End:',
+  "  The game ends when a player's hand is empty.",
+  '  The player with an empty hand wins.',
+].join('\n');
 
 export function fixtureState(cards: CardState[], over: Partial<GameState> = {}): GameState {
   return { cards, data: {}, rng: makeRng(1), ...over };
