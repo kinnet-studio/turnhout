@@ -50,6 +50,8 @@ const MAX_SUGGESTIONS = 3;
 /** A card move and a button that start alike would share a name in an After line, and a one-word button a move type, so one gives way. */
 const sameVerb = (verb: string) => `Two rules in this phase start “A player may ${verb}”. Start one with another word.`;
 const sameWords = (words: string) => `Two rules in this phase say “A player may ${words}”.`;
+/** Two buttons that pick a space with the same words before “on” would show one label, and an example could name neither. */
+const samePick = (base: string) => `Two rules in this phase say “A player may ${base} on …”; give them different words.`;
 /** A bare verb in an After line that more than one button in the phase starts with. */
 const sharedVerb = (word: string, wordings: string[]) => `“${word}” could be ${joinOr(wordings.map((w) => `“${w}”`))}; write the whole wording.`;
 const moveElsewhere = (verb: string) => `“${verb}” is a card move in another phase, so it can't also be a button. Start one with another word.`;
@@ -387,6 +389,8 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx, uses: VerbUses = {
   const afters: { node: OutlineNode; cuts: AfterCut[] }[] = [];
   const moveVerbs: string[] = [];
   const actionNames: { verb: string; words: string }[] = [];
+  /** The words before “on” of the buttons that pick a space. */
+  const pickBases = new Set<string>();
   let hinted = false;
   let sawGoTo = false;
 
@@ -434,14 +438,17 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx, uses: VerbUses = {
       readRuleBody(child, { ...ctx, inMove: true, player: true });
       continue;
     } else if (action) {
-      const { verb, words: actionWords } = actionOf(action);
-      // Buttons that start alike are different moves; only the same wording twice is a repeat.
+      const { verb, words: actionWords, base, target } = actionOf(action);
+      // Buttons that start alike are different moves; only the same wording twice is a repeat, or two picks with one base.
       const repeated = actionNames.some((a) => a.words === actionWords);
-      const taken = repeated || moveVerbs.includes(verb);
+      const pickedAlike = target !== null && pickBases.has(base);
+      const taken = repeated || pickedAlike || moveVerbs.includes(verb);
       if (repeated) addProblem(ctx.diagnostics, child.line, sameWords(actionWords), { text: clean });
+      else if (pickedAlike) addProblem(ctx.diagnostics, child.line, samePick(base), { text: clean });
       else if (taken) addProblem(ctx.diagnostics, child.line, sameVerb(verb), { text: clean });
       else if (uses.moves.has(verb)) addProblem(ctx.diagnostics, child.line, moveElsewhere(verb), { text: clean });
       if (!taken) actionNames.push({ verb, words: actionWords });
+      if (!taken && target !== null) pickBases.add(base);
       const declared = compileAction(child, action, ctx);
       if (declared && !taken) phase.actions.push(declared);
       continue;

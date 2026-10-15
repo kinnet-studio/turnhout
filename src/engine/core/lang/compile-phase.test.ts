@@ -907,14 +907,26 @@ describe('buttons that pick a target', () => {
       '  Then:', '    It gets a house from the bank.',
     ])).toEqual([]);
   });
-  it('allows two buttons with the same base and different targets, and refuses the same wording twice', () => {
-    const both = phase(['A player may build a house on a street they own.', 'A player may build a house on a street.']);
-    expect(problems(both)).toEqual([]);
-    expect(both.game!.phases[0].actions.map((a) => [a.base, a.words])).toEqual([
-      ['build a house', 'build a house on a street they own'], ['build a house', 'build a house on a street'],
+  it('refuses a second button that picks a space with the same words before “on”, and the same wording twice', () => {
+    // Both would show “Build a house”, and an example could name neither of them.
+    expect(errorsOf(['A player may build a house on a street they own.', 'A player may Build a House on a street.'])).toEqual([
+      [21, 'Two rules in this phase say “A player may build a house on …”; give them different words.'],
     ]);
+    const compiled = compilePhase(
+      parseOutline('Phase: main\n  A player may build a house on a street they own.\n  A player may build a house on a street.').roots[0],
+      { library: lib, vocab: vocabFrom({ maxPlayers: 2, phases: ['main'], board: fixtureBoardGame().board }), gameName: 'Tiny', inMove: false, player: false, space: false, card: false, diagnostics: [] },
+    );
+    expect(compiled.actions.map((a) => a.words)).toEqual(['build a house on a street they own']);
     expect(errorsOf(['A player may build a house on a street they own.', 'A player may Build a House on a Street they own.'])).toEqual([
       [21, 'Two rules in this phase say “A player may build a house on a street they own”.'],
+    ]);
+  });
+  it('allows buttons that pick a space with different words before “on”, and a button that picks nothing with the same words', () => {
+    const both = phase(['A player may build a house on a street they own.', 'A player may knock down a house on a street they own.', 'A player may build a house.']);
+    expect(problems(both)).toEqual([]);
+    expect(both.game!.phases[0].actions.map((a) => [a.base, a.words])).toEqual([
+      ['build a house', 'build a house on a street they own'], ['knock down a house', 'knock down a house on a street they own'],
+      ['build a house', 'build a house'],
     ]);
   });
 });
