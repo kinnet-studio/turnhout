@@ -1,7 +1,7 @@
 import { Container, Text } from 'pixi.js';
 import { describe, expect, it } from 'vitest';
 import { textFaceKey } from '../core/lang/cards';
-import type { CardState } from '../core/scene';
+import { CARD_HEIGHT, CARD_WIDTH, type CardState } from '../core/scene';
 import type { FaceDraw } from './face-texture-cache';
 import { designerFaceRenderer, textFaceRenderer } from './text-faces';
 
@@ -38,6 +38,26 @@ describe('textFaceRenderer', () => {
     expect(fill(textFaceKey({ color: 'red', number: 7 }))).toBe(0xcc2222);
     expect(fill(textFaceKey({ color: 'blue', number: 7 }))).toBe(0x2255cc);
     expect(fill(textFaceKey({ number: 7 }))).toBe(0x333333);
+  });
+
+  it('puts a corner index in the top-left, readable in the strip a fanned hand shows', () => {
+    const corner = (attrs: Record<string, string | number>) => {
+      const container = drawn(card({ faceKey: textFaceKey(attrs) }));
+      return container.children.find((ch): ch is Text => ch instanceof Text && ch.label === 'corner-index');
+    };
+    const red7 = corner({ color: 'red', number: 7 })!;
+    expect(red7.text).toBe('7');
+    expect(red7.style.fill).toBe(0xcc2222);
+    expect(red7.x).toBeLessThan(-CARD_WIDTH / 2 + 12);
+    expect(red7.y).toBeLessThan(-CARD_HEIGHT / 2 + 12);
+    expect(corner({ name: 'Goblin', attack: 3, color: 'green' })!.text).toBe('Gob');
+    expect(corner({ suit: 'star', rank: 10, bonus: 'yes' })!.text).toBe('10\nyes');
+    expect(corner({ color: 'red' })!.text).toBe('red');
+    expect(corner({ shape: 'circle' })!.text).toBe('cir');
+  });
+
+  it('keeps the big centre label beside the corner index', () => {
+    expect(labels(drawn(card({ faceKey: textFaceKey({ color: 'red', number: 7 }) })))).toEqual(expect.arrayContaining(['7', 'red 7']));
   });
 
   it('draws a card back when face down', () => {
