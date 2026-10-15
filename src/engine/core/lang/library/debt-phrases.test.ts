@@ -71,8 +71,11 @@ describe('debt phrases', () => {
       expect(zoneCards(s, 'kept-cards-p1')).toEqual([]);
     });
     it('leaves the spaces and cards of everyone else where they are', () => {
-      const s = handOver(setOwner(owing('p1'), 2, 'p2'));
+      const before = setOwner(relocate(owing('p1'), [passOf('fate-pile')], 'kept-cards-p2', game), 2, 'p2');
+      const s = handOver(before);
       expect(ownerOf(s, 2)).toBe('p2');
+      expect(zoneCards(s, 'kept-cards-p2').map((c) => c.id)).toEqual([passOf('fate-pile')]);
+      expect(zoneCards(s, 'kept-cards-p1').map((c) => c.id)).toEqual([passOf('lucky-pile')]);
     });
     it('Review Focus: owing no one is said plainly, and nothing is handed over', () => {
       expect(() => handOver(setCounter(owing('p1'), 'money', 'p0', 5))).toThrow('They owe no one: no payment took them below 0.');
