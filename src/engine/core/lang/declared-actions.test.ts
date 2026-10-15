@@ -14,7 +14,7 @@ import { friendlyError } from './friendly';
 import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { MAX_MOMENT_DEPTH } from './runtime';
-import { AMOUNT_BOARD, ANY_PLAYER_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD } from './testing';
+import { AMOUNT_BOARD, ANY_PLAYER_BOARD, INTERRUPT_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD } from './testing';
 
 const lib = createDefaultLibrary();
 const game = compileGame(TINY_BOARD, lib).game!;
@@ -209,6 +209,18 @@ describe('button actions on a board', () => {
     const fresh = createEngine(game, lib, 3, initialState(game, 9)).engine;
     fresh.loadLog([...engine.getLog()]);
     expect(fresh.getState()).toEqual(engine.getState());
+  });
+});
+
+describe('a button the After line names', () => {
+  it('that goes back to an interrupted turn keeps the turn it went back to', () => {
+    const engine = engineWith((s) => queueRoll(s, [1, 2]), compileGame(INTERRUPT_BOARD, lib).game!);
+    for (const [type, by] of [['roll the dice', 'p0'], ['call a vote', 'p0'], ['close the vote', 'p1']]) {
+      expect(engine.dispatch({ type, by }).reason).toBeUndefined();
+    }
+    const s = engine.getState();
+    expect(s.turn).toEqual({ current: 'p0', phase: 'playing' });
+    expect(s.data[TURN_KEY]).toEqual({ p0: ['roll the dice', 'call a vote'] });
   });
 });
 

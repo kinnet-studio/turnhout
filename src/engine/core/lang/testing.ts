@@ -187,6 +187,27 @@ export const AMOUNT_BOARD = [
 ].join('\n');
 
 /**
+ * TINY_BOARD_HEAD with a vote that interrupts the turn. After rolling, a player may call one: the vote phase starts with the player
+ * on their left, and its start line makes every player voting. Voters abstain in turn, the turn skipping players who are not
+ * voting; once no player is, play goes back to the caller's turn. Closing the vote goes back at once, and the After line names it.
+ * `Phase: vote` is line 32.
+ */
+export const INTERRUPT_BOARD = [
+  TINY_BOARD_HEAD.replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  Players can be voting.'),
+  '  A player may roll the dice.', '    Only if they have not rolled this turn.', '    Then:', '      Roll the dice.',
+  '      Their piece moves forward by the roll.',
+  '  A player may call a vote.', '    Only if they have rolled this turn.', '    Then:', '      The vote phase starts with the player on their left.',
+  '  A player may end their turn.', '    Only if they have rolled this turn.',
+  '  After a player ends their turn, the turn passes to the left.',
+  '', 'Phase: vote', '  Hint: Abstain, or close the vote.', '  When this phase starts:', '    Every player is voting.',
+  '  A player may abstain.', '    Only if they are voting.', '    Then:', '      They are not voting.',
+  '  A player may close the vote.', '    Then:', '      No player is voting.', '      Go back to the interrupted turn.',
+  '  When no player is voting:', '    Go back to the interrupted turn.',
+  '  After a player abstains or closes the vote, the turn passes to the next player on the left who is voting.',
+  '', 'End:', '  The game ends when one player is left.', '  That player wins.',
+].join('\n');
+
+/**
  * A board game whose two decks say what their cards do. `lucky` and `fate` are the tables under each deck line, header row
  * first; `rules` are lines under `Phase: playing`, indented as written there. Lines: the lucky table starts on line 6 (its
  * first card on line 7); the fate deck line is line 6 + lucky.length and its first card line 8 + lucky.length. The loop is

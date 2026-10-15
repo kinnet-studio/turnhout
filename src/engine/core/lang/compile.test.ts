@@ -6,7 +6,7 @@ import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
-import { TINY_BOARD_HEAD, deckGameText } from './testing';
+import { INTERRUPT_BOARD, TINY_BOARD_HEAD, deckGameText } from './testing';
 import type { ParamType } from './types';
 
 const lib = createDefaultLibrary();
@@ -350,6 +350,30 @@ describe('compileGame phases', () => {
       + '\nPhase: Second Phase';
     // The lines that use the phase and the verb were read; only the second phase, which nothing leads to, is reported.
     expect(messages(text, phrases)).toEqual([[24, 'Nothing leads to the phase “second phase”.']]);
+  });
+});
+
+describe('phases a line starts', () => {
+  const START = '      The vote phase starts with the player on their left.';
+  const unstarted = INTERRUPT_BOARD.replace(START, '      They get 5 money.');
+  it('reaches a phase a line of another phase starts', () => expect(compileGame(INTERRUPT_BOARD, lib).diagnostics).toEqual([]));
+  it('warns about a phase nothing starts', () => {
+    expect(messages(unstarted)).toEqual([[32, 'Nothing leads to the phase “vote”.']]);
+  });
+  it('does not count a line of the phase itself', () => {
+    const own = unstarted.replace('      Go back to the interrupted turn.\n  When', `      Go back to the interrupted turn.\n${START}\n  When`);
+    expect(own).not.toBe(unstarted);
+    expect(messages(own)).toEqual([[32, 'Nothing leads to the phase “vote”.']]);
+  });
+  it('counts a line that starts it only if something holds', () => {
+    const iffy = INTERRUPT_BOARD.replace(START, '      If they have rolled this turn, the vote phase starts with the player on their left.');
+    expect(iffy).not.toBe(INTERRUPT_BOARD);
+    expect(compileGame(iffy, lib).diagnostics).toEqual([]);
+  });
+  it('counts a card that says to start it', () => {
+    const lucky = ['| name | says |', '| Recess | The vote phase starts with the player on their left. |'];
+    const text = `${deckGameText(lucky, ['| name | says |', '| Calm | They get 0 money. |'])}\n\nPhase: vote\n  Hint: Vote.`;
+    expect(compileGame(text, lib).diagnostics).toEqual([]);
   });
 });
 

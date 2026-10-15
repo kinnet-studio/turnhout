@@ -68,7 +68,8 @@ function choose(
 /**
  * The move handler for one button the designer declared, like “A player may roll the dice.” It refuses in the
  * designer's own words, then notes the action for the player (so “they have rolled this turn” holds) and runs its Then
- * lines. A button the After line names passes the turn, and with it everything done in the turn stops counting. A button
+ * lines. A button the After line names passes the turn, and with it everything done in the turn stops counting, unless its
+ * lines left the phase, as going back to an interrupted turn does: the turn they went back to keeps what was done in it. A button
  * any player may press (“Any player may wave.”) may be sent by any seat still in, whoever's turn it is; it is no part of
  * anyone's turn, so it is not noted for the turn, and the After line can't name it. A button that picks a space
  * (“A player may plant a flag on a field they own.”) takes it from the move's `target`, the index of the space on the
@@ -88,7 +89,8 @@ export function declaredActionHandler(move: string, runtime: LangRuntime): MoveH
       // A press anyone may make is no part of anyone's turn, so it is not noted among what the player did in it.
       const recorded = action.anyone ? state : recordAction(state, by, move);
       const done = action.effects.reduce((s, ref) => runtime.run(ref, s, undefined, undefined, subject), recorded);
-      return endsTurn(phase, move) ? clearTurnLog(done) : done;
+      // Only a turn of this phase passes: lines that went back to an interrupted turn leave that turn's log as it was.
+      return endsTurn(phase, move) && done.turn?.phase === phase.id ? clearTurnLog(done) : done;
     },
   };
 }

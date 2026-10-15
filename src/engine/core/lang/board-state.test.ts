@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  LAST_DRAWN_KEY, OWES_KEY, TURN_KEY, TURN_ROLLS_KEY, addToCounter, bankOf, clearTurnLog, counterOf, didThisTurn, endsTurn, isOut, lastDrawn,
-  markOut, nextIn, ownerOf, owedTo, pieceAt, placePiece, playerFact, playersIn, queueRoll, recordAction, recordDebt, recordRoll, rollsThisTurn,
-  setBank, setCounter, setLastDrawn, setOwner, setPlayerFact, setSpaceFact, spaceFact, takeQueuedRoll, withBoardData,
+  INTERRUPTED_KEY, LAST_DRAWN_KEY, OWES_KEY, TURN_KEY, TURN_ROLLS_KEY, addToCounter, bankOf, clearTurnLog, counterOf, didThisTurn, endsTurn,
+  interruptTurn, interruptedTurn, isOut, lastDrawn, markOut, nextIn, ownerOf, owedTo, pieceAt, placePiece, playerFact, playersIn, queueRoll,
+  recordAction, recordDebt, recordRoll, resumeTurn, rollsThisTurn, setBank, setCounter, setLastDrawn, setOwner, setPlayerFact, setSpaceFact,
+  spaceFact, takeQueuedRoll, withBoardData,
 } from './board-state';
 import { fixtureBoardGame, fixtureBoardState, fixtureGame, fixturePhase, fixtureState } from './testing';
 import { chooseNext } from './zones';
@@ -186,5 +187,28 @@ describe('debts', () => {
     expect(owedTo(markOut(s, 'p1'), 'p0', 'money')).toBe('bank');
     expect(owedTo(recordDebt(s, 'p0', 'bank'), 'p0', 'money')).toBe('bank');
     expect(JSON.parse(JSON.stringify(s.data[OWES_KEY]))).toEqual({ p0: 'p1' });
+  });
+});
+
+describe('an interrupted turn', () => {
+  const before = recordAction(fixtureBoardState(), 'p0', 'call a vote');
+  it('Review Focus: comes back exactly as it was: a key that was absent comes back absent, and presses made meanwhile are gone', () => {
+    const during = interruptTurn(before, 'vote', 'p1');
+    expect(during.turn).toEqual({ current: 'p1', phase: 'vote' });
+    expect(during.data[TURN_KEY]).toEqual({});
+    expect(interruptedTurn(during)).toEqual({ phase: 'playing', current: 'p0', log: { p0: ['call a vote'] }, rolls: null });
+    const after = resumeTurn(recordRoll(recordAction(during, 'p1', 'abstain'), 'p1', [3, 4]));
+    expect(after.turn).toEqual(before.turn);
+    expect(after.data).toEqual(before.data);
+    expect(after.data).not.toHaveProperty(TURN_ROLLS_KEY);
+    expect(after.data).not.toHaveProperty(INTERRUPTED_KEY);
+  });
+  it('Review Focus: allows one at a time, and going back needs one', () => {
+    expect(() => interruptTurn(interruptTurn(before, 'vote', 'p1'), 'vote', 'p0'))
+      .toThrow('A turn is already interrupted; go back to it before interrupting another.');
+    expect(() => resumeTurn(before)).toThrow('There is no interrupted turn to go back to.');
+  });
+  it('needs a turn to interrupt', () => {
+    expect(() => interruptTurn(fresh(), 'vote', 'p1')).toThrow('There is no turn to interrupt.');
   });
 });

@@ -215,11 +215,12 @@ export type MatchResult =
  * a card the rule is about, or a card that has just been drawn (only a card's says column has one); from the game, something to
  * pay with, a board (a Board: loop of spaces), dice or, for a double, exactly two of them. A phrase that sets `needsTwoDice`
  * sets `needsDice` too, so a game with no dice hears about that first. `needsAmount` is for a phrase that reads the amount a
- * button's press carries, which only a button whose wording ends in “an amount” has.
+ * button's press carries, which only a button whose wording ends in “an amount” has. `entersPhase` is no need: it says the phrase's
+ * first argument is a phase the line enters, so that the compiler counts the line as leading there.
  */
 export type PhraseOpts = {
   needsMove?: boolean; needsPlayer?: boolean; needsSpace?: boolean; needsCard?: boolean; needsDrawnCard?: boolean; needsPayment?: boolean;
-  needsBoard?: boolean; needsDice?: boolean; needsTwoDice?: boolean; needsAmount?: boolean;
+  needsBoard?: boolean; needsDice?: boolean; needsTwoDice?: boolean; needsAmount?: boolean; entersPhase?: boolean;
 };
 
 type Part = { literal: string } | { type: ParamType };
@@ -365,7 +366,7 @@ export class PhraseLibrary {
     return entry && {
       fn: entry.fn, needsMove: entry.needsMove, needsPlayer: entry.needsPlayer, needsSpace: entry.needsSpace, needsCard: entry.needsCard,
       needsDrawnCard: entry.needsDrawnCard, needsPayment: entry.needsPayment, needsBoard: entry.needsBoard, needsDice: entry.needsDice,
-      needsTwoDice: entry.needsTwoDice, needsAmount: entry.needsAmount,
+      needsTwoDice: entry.needsTwoDice, needsAmount: entry.needsAmount, entersPhase: entry.entersPhase,
     };
   }
 
@@ -459,7 +460,7 @@ export class PhraseLibrary {
       needsMove: opts.needsMove ?? false, needsPlayer: opts.needsPlayer ?? false, needsSpace: opts.needsSpace ?? false,
       needsCard: opts.needsCard ?? false, needsDrawnCard: opts.needsDrawnCard ?? false, needsPayment: opts.needsPayment ?? false,
       needsBoard: opts.needsBoard ?? false, needsDice: opts.needsDice ?? false, needsTwoDice: opts.needsTwoDice ?? false,
-      needsAmount: opts.needsAmount ?? false,
+      needsAmount: opts.needsAmount ?? false, entersPhase: opts.entersPhase ?? false,
     });
     return this;
   }

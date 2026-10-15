@@ -1,4 +1,4 @@
-import type { GameState } from '../game-state';
+import type { GameState, TurnState } from '../game-state';
 import type { PlayerId } from '../scene';
 import type { Json } from '../table-def';
 import { RuleError } from './diagnostics';
@@ -29,6 +29,11 @@ export const TURN_KEY = 'lang:turn';
  * passes, with the log above. It is written only when a player rolls, so a game without dice never gets it.
  */
 export const TURN_ROLLS_KEY = 'lang:turn-rolls';
+/**
+ * The turn another phase interrupted, kept to go back to: an `InterruptedTurn`. Written only while a turn is interrupted, so a game
+ * where none ever is never gets it.
+ */
+export const INTERRUPTED_KEY = 'lang:interrupted';
 /** Seats that have left the game, in the order they went: `PlayerId[]`. */
 export const OUT_KEY = 'lang:out';
 /**
@@ -49,6 +54,12 @@ export const LAST_DRAWN_KEY = 'lang:last-drawn';
 
 /** Who drew the card, from which pile (said with its owner, “the lucky pile” or “p1's deck”), the card's name and what it said. */
 export type LastDrawn = { seat: PlayerId; zone: string; name: string; says: string };
+
+/**
+ * The turn as it stood when another phase interrupted it: its phase (null for none), whose it was, and what was done and rolled
+ * in it, as the turn log and the turn's rolls held them (null where the state had none).
+ */
+export type InterruptedTurn = { phase: string | null; current: PlayerId; log: Json | null; rolls: Json | null };
 
 /** Whom a payment was owed to: a player, or the bank. */
 export type Creditor = PlayerId | 'bank';
@@ -283,6 +294,42 @@ export function clearTurnLog(state: GameState): GameState {
   if (forgetsActions) data[TURN_KEY] = {};
   if (forgetsRolls) data[TURN_ROLLS_KEY] = {};
   return { ...state, data };
+}
+
+/** The turn another phase interrupted; null when none is. */
+export function interruptedTurn(state: GameState): InterruptedTurn | null {
+  return (state.data[INTERRUPTED_KEY] ?? null) as InterruptedTurn | null;
+}
+
+/**
+ * Hands the turn to `next` in `phase`, keeping the turn as it stood to go back to. Only one turn can be interrupted at a time.
+ * What was done and rolled is forgotten as the turn passes, so only the seat whose turn it now is has any of it; the kept turn
+ * has its own.
+ */
+export function interruptTurn(state: GameState, phase: string, next: PlayerId): GameState {
+  if (interruptedTurn(state) !== null) throw new RuleError('A turn is already interrupted; go back to it before interrupting another.');
+  const { turn } = state;
+  if (!turn) throw new RuleError('There is no turn to interrupt.');
+  const kept: InterruptedTurn = {
+    phase: turn.phase ?? null, current: turn.current, log: state.data[TURN_KEY] ?? null, rolls: state.data[TURN_ROLLS_KEY] ?? null,
+  };
+  return clearTurnLog(withData({ ...state, turn: { ...turn, phase, current: next } }, INTERRUPTED_KEY, kept));
+}
+
+/**
+ * Goes back to the interrupted turn exactly as it stood: its phase, whose it is, and what was done and rolled in it, a log it
+ * did not have coming back absent. Whatever was done meanwhile is forgotten.
+ */
+export function resumeTurn(state: GameState): GameState {
+  const kept = interruptedTurn(state);
+  if (kept === null) throw new RuleError('There is no interrupted turn to go back to.');
+  const { [INTERRUPTED_KEY]: _kept, [TURN_KEY]: _log, [TURN_ROLLS_KEY]: _rolls, ...data } = state.data;
+  if (kept.log !== null) data[TURN_KEY] = kept.log;
+  if (kept.rolls !== null) data[TURN_ROLLS_KEY] = kept.rolls;
+  const turn: TurnState = { ...state.turn, current: kept.current };
+  if (kept.phase === null) delete turn.phase;
+  else turn.phase = kept.phase;
+  return { ...state, turn, data };
 }
 
 /** Whether the phase's After line names the move type: making that move or pressing that button passes the turn. */

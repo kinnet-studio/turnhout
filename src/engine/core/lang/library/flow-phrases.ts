@@ -1,11 +1,11 @@
 import { zoneCards, type GameState } from '../../game-state';
 import { shuffleWithRng } from '../../rng';
-import { nextIn } from '../board-state';
+import { interruptTurn, isOut, nextIn, playerFact, resumeTurn } from '../board-state';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
-import type { CardMatch, ConditionFn, EffectFn, PhraseEnv, ScoreFn, TurnFn, WinnerFn, ZoneRef } from '../types';
+import type { CardMatch, ConditionFn, EffectFn, PhraseEnv, ScoreFn, Subject, TurnFn, WinnerFn, ZoneRef } from '../types';
 import { chooseNext, leftOf, matchesCard, relocate, resolveSeat, resolveZoneIds, topCard, zoneIdFor, zoneInfo } from '../zones';
-import { describeZone, soleZone } from './support';
+import { describeZone, soleZone, theyOf } from './support';
 
 const idsIn = (state: GameState, zoneId: string): string[] => zoneCards(state, zoneId).map((c) => c.id);
 
@@ -106,6 +106,25 @@ const holderGoesFirst: EffectFn = (env, args) => {
   return chooseNext(env.state, holder);
 };
 
+// ---- interrupting a turn ---------------------------------------------------------------------
+
+/**
+ * Interrupts the turn for another phase, which starts with the next player still in on their left: a player who is out could
+ * not act in it. The phase's start lines then run, as `go to` runs them, about no one in particular.
+ */
+const phaseStartsOnTheirLeft: EffectFn = (env, [phase]) => {
+  const id = phase as string;
+  const started = interruptTurn(env.state, id, nextIn(env.state, theyOf(env), env.seats));
+  const startLines = env.game.phases.find((p) => p.id === id)?.onEnter ?? [];
+  if (startLines.length === 0) return started;
+  const { runLine } = env;
+  if (!runLine) throw new Error('This phrase needs to run the start lines of a phase, but nothing is listening.');
+  const nobody: Subject = { player: null, space: null, card: null };
+  return startLines.reduce((state, ref) => runLine(state, ref, nobody), started);
+};
+
+const goBackToTheTurn: EffectFn = (env) => resumeTurn(env.state);
+
 // ---- turn order, scores and winners ----------------------------------------------------------
 
 const passesLeft: TurnFn = (env) => {
@@ -115,6 +134,21 @@ const passesLeft: TurnFn = (env) => {
   if (env.seats.length === 1) return leftOf(current, env.seats);
   // `nextIn` is `leftOf` until a board game has players out, so card games pass the turn just as before.
   return nextIn(env.state, current, env.seats);
+};
+
+/**
+ * The first player on the left, going round, who is still in and has the flag. With nobody, the turn stays where it is: the
+ * phase's own rules are what end it then.
+ */
+const passesToNextWhoIs: TurnFn = (env, [fact]) => {
+  if (!env.state.turn) throw new RuleError('There is no turn to pass.');
+  const { current } = env.state.turn;
+  let seat = current;
+  for (let step = 0; step < env.seats.length; step++) {
+    seat = leftOf(seat, env.seats);
+    if (!isOut(env.state, seat) && playerFact(env.state, seat, fact as string) === true) return seat;
+  }
+  return current;
 };
 
 const everyCardScores: ScoreFn = (env, args, seat) => {
@@ -140,7 +174,7 @@ const emptyZoneWins: WinnerFn = (env, args) => {
   return winner;
 };
 
-/** Counting zones, moving and shuffling cards, who goes next, scoring and winning. */
+/** Counting zones, moving and shuffling cards, who goes next, interrupting a turn and going back to it, scoring and winning. */
 export function registerFlowPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
     .condition('{zone} has {int} card(s)', sizeIs((have, n) => have === n))
@@ -158,7 +192,10 @@ export function registerFlowPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect("each {perzone} goes to the {perzone} of the player on its owner's left", passLeft)
     .effect('the winner goes next', winnerGoesNext)
     .effect('the player holding {card} goes first', holderGoesFirst)
+    .effect('the {phase} phase starts with the player on their left', phaseStartsOnTheirLeft, { needsPlayer: true, entersPhase: true })
+    .effect('go back to the interrupted turn', goBackToTheTurn)
     .turn('the turn passes to the left', passesLeft)
+    .turn('the turn passes to the next player on the left who is {playerflag}', passesToNextWhoIs)
     .score("each {cardclass} in a player's {perzone} scores {int} point(s)", everyCardScores)
     .score("{card} in a player's {perzone} scores {int} point(s)", oneCardScores)
     .winner('the lowest score wins', bestScore((score, best) => score < best))

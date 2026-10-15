@@ -375,12 +375,32 @@ function compileColumns(sections: Section[], ctx: LineCtx): CompiledGame['column
   return Object.fromEntries(lines);
 }
 
-/** A phase that is not the first needs a `go to` from some other phase, or the game can never reach it. */
-function warnUnreachable(phases: CompiledPhase[], diagnostics: Diagnostic[]): void {
+/** The phase a line starts when its phrase enters the phase it names; through what an `If …, …` line does. Null for any other line. */
+function phaseStartedBy(ref: PhraseRef, library: PhraseLibrary): string | null {
+  if (ref.kind === 'lang') return ref.phrase === 'if' ? phaseStartedBy(ref.args[1] as PhraseRef, library) : null;
+  return library.get(ref.kind, ref.phrase)?.entersPhase ? (ref.args[0] as string) : null;
+}
+
+/** Every line of a phase that does something: its buttons, card moves, rules and start lines. */
+const effectsOf = (phase: CompiledPhase): PhraseRef[] => [
+  ...phase.onEnter, ...phase.actions.flatMap((a) => a.effects), ...phase.moves.flatMap((m) => m.effects),
+  ...phase.triggers.flatMap((t) => t.effects), ...phase.moments.flatMap((m) => m.effects),
+];
+
+/**
+ * A phase that is not the first needs something to lead to it, or the game can never reach it: a `go to` in another phase, or a
+ * line that starts it, in another phase or `elsewhere` (Setup, or what a card says). A phase's own lines run only once it is
+ * reached, so they never lead to it.
+ */
+function warnUnreachable(phases: CompiledPhase[], elsewhere: PhraseRef[], library: PhraseLibrary, diagnostics: Diagnostic[]): void {
+  const starts = (refs: PhraseRef[]) => new Set(refs.flatMap((ref) => phaseStartedBy(ref, library) ?? []));
+  const startedElsewhere = starts(elsewhere);
+  const startedBy = phases.map((phase) => starts(effectsOf(phase)));
   phases.forEach((phase, index) => {
     // A phase named twice is already reported; its repeat would only echo that.
     if (index === 0 || phases.findIndex((p) => p.id === phase.id) !== index) return;
-    if (phases.some((p) => p.id !== phase.id && p.goTo?.to === phase.id)) return;
+    if (startedElsewhere.has(phase.id)) return;
+    if (phases.some((p, i) => p.id !== phase.id && (p.goTo?.to === phase.id || startedBy[i].has(phase.id)))) return;
     addProblem(diagnostics, phase.line, `Nothing leads to the phase “${phase.id}”.`, { severity: 'warning' });
   });
 }
@@ -478,7 +498,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
     phases.push(phase);
   }
   if (phaseNodes.length === 0) addProblem(diagnostics, 1, 'Add at least one Phase: section.');
-  warnUnreachable(phases, diagnostics);
+  warnUnreachable(phases, [...setup, ...Object.values(says).flat()], library, diagnostics);
 
   const end = compileEnd(of('end'), ctx);
   const examples = of('example').map((s) => compileExample(s.node, ctx, players));
