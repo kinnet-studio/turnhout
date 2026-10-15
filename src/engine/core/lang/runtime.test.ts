@@ -289,4 +289,12 @@ describe('the game flow', () => {
     const error = thrown(() => createEngine(rules, lib, 2, initialState(rules, 1)));
     expect(friendlyError(error)).toBe('The rule on line 32 (“When the deck is not empty”) keeps firing. Its effects must change what it checks.');
   });
+
+  it('“go to” rules that send the game back and forth are reported in plain words', () => {
+    const rules = compiled(insertAfter(31, '  When the deck is not empty, go to rest.', '', 'Phase: rest', '  When the deck is not empty, go to play.'));
+    const error = thrown(() => createEngine(rules, lib, 2, initialState(rules, 1)));
+    expect(friendlyError(error)).toBe(
+      'The “go to” rules keep moving the game to rest and away again. A phase\'s “go to” condition must stop holding once the game gets there.',
+    );
+  });
 });
