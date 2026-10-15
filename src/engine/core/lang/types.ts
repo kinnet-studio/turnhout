@@ -61,6 +61,8 @@ export type Vocab = {
   /** The text cells of the board's table, not the numbers. */
   spaceValues: { attribute: string; value: string }[];
   counters: string[]; payWith: string | null; actions: { verb: string; words: string }[];
+  /** True when the board has dice: a line like “There are two six-sided dice.” under Board:. */
+  dice: boolean;
 };
 /** Who and which space a phrase is about, when a rule is about a player's piece or a space. */
 export type Subject = { player: PlayerId | null; space: number | null };

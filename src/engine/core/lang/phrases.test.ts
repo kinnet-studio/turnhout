@@ -104,7 +104,9 @@ describe('PhraseLibrary.match', () => {
   it('looks a registered phrase up by kind and pattern', () => {
     const fn = () => true;
     const l = lib().condition('it is their move', fn, { needsMove: true }).condition('hearts are broken', () => true);
-    expect(l.get('condition', 'it is their move')).toEqual({ fn, needsMove: true, needsPlayer: false, needsSpace: false, needsPayment: false });
+    expect(l.get('condition', 'it is their move')).toEqual({
+      fn, needsMove: true, needsPlayer: false, needsSpace: false, needsPayment: false, needsBoard: false, needsDice: false,
+    });
     expect(l.get('condition', 'hearts are broken')?.needsMove).toBe(false);
     expect(l.get('effect', 'it is their move')).toBeUndefined();
   });
@@ -238,9 +240,19 @@ describe('board vocabulary and phrase flags', () => {
     expect(v.counters).toEqual(['money']);
     expect(v.payWith).toBe('money');
     expect(v.actions).toEqual([{ verb: 'roll', words: 'roll the dice' }]);
+    expect(v.dice).toBe(true);
+  });
+  it('knows whether the board has dice', () => {
+    expect(vocabFrom({ maxPlayers: 2, board: { ...fixtureBoardGame().board!, dice: null } }).dice).toBe(false);
+    expect(vocabFrom({ maxPlayers: 2 }).dice).toBe(false);
   });
   it('reports every flag a phrase was registered with', () => {
-    const l = new PhraseLibrary(STATIC_TYPES).effect('they rest', (env) => env.state, { needsPlayer: true });
-    expect(l.get('effect', 'they rest')).toMatchObject({ needsMove: false, needsPlayer: true, needsSpace: false, needsPayment: false });
+    const l = new PhraseLibrary(STATIC_TYPES)
+      .effect('they rest', (env) => env.state, { needsPlayer: true })
+      .effect('they roll', (env) => env.state, { needsBoard: true, needsDice: true });
+    expect(l.get('effect', 'they rest')).toMatchObject({
+      needsMove: false, needsPlayer: true, needsSpace: false, needsPayment: false, needsBoard: false, needsDice: false,
+    });
+    expect(l.get('effect', 'they roll')).toMatchObject({ needsPlayer: false, needsBoard: true, needsDice: true });
   });
 });

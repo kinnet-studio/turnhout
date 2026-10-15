@@ -602,6 +602,31 @@ describe('actions, moments and player rules on a board', () => {
     const pay = compileGame(`${TINY_BOARD_HEAD.replace('  Players pay with money.\n', '')}\n  A player may buy the space they are on.\n    Then:\n      They pay its price.`, lib);
     expect(pay.diagnostics).toContainEqual(expect.objectContaining({ message: 'Say what players pay with, like “Players pay with money.” under Board:.' }));
   });
+  it('refuses board phrases in a game with no board, and rolling in a game with no dice', () => {
+    const NEEDS_BOARD = (line: string) => `“${line}” needs a board. Add a Board: section with a line like “The board is a loop of spaces, starting at Go:”.`;
+    const NEEDS_DICE = (line: string) => `“${line}” needs dice. Add a line like “There are two six-sided dice.” under Board:.`;
+    // A card game whose one button runs `line`, on line 18.
+    const inCardGame = (line: string) => messages(BASE.replace('Phase: main', `Phase: main\n  A player may tidy up.\n    Then:\n      ${line}`));
+    expect(inCardGame('Roll the dice.')).toEqual([[18, NEEDS_DICE('Roll the dice')]]);
+    expect(inCardGame('Their piece moves forward by the roll.')).toEqual([[18, NEEDS_BOARD('Their piece moves forward by the roll')]]);
+    expect(inCardGame('Their spaces go back to the bank.')).toEqual([[18, NEEDS_BOARD('Their spaces go back to the bank')]]);
+    expect(inCardGame('They own it.')).toEqual([[18, NEEDS_BOARD('They own it')]]);
+    // What the game lacks is said before what the rule lacks: a rule about a player won't help a game with no board.
+    expect(messages(BASE.replace('  Shuffle the deck.', '  Their piece moves forward by the roll.'))).toEqual([
+      [12, NEEDS_BOARD('Their piece moves forward by the roll')],
+    ]);
+
+    // A board with no dice, whose phase lines start on line 17.
+    const noDice = (lines: string[]) => compileGame(`${TINY_BOARD_HEAD.replace('  There are two six-sided dice.\n', '')}\n${lines.map((l) => `  ${l}`).join('\n')}`, lib)
+      .diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message]);
+    expect(noDice(['A player may roll the dice.', '  Then:', '    Roll the dice.', '    Their piece moves forward by the roll.'])).toEqual([
+      [19, NEEDS_DICE('Roll the dice')], [20, NEEDS_DICE('Their piece moves forward by the roll')],
+    ]);
+    expect(noDice(['When a player lands on a street someone else owns:', '  They pay 4 times the roll to its owner.'])).toEqual([
+      [18, NEEDS_DICE('They pay 4 times the roll to its owner')],
+    ]);
+    expect(noDice(['A player may give up.', '  Then:', '    Their spaces go back to the bank.', '    They own it.'])).toEqual([]);
+  });
   it('reports a line that lacks several things once, naming the first: a player, then a space, then something to pay with', () => {
     expect(errorsOf(['When one player is left:', '  They pay its price.'])).toEqual([[19, NEEDS_PLAYER('They pay its price')]]);
     expect(errorsOf(['When a player has less than 0 money:', '  They pay its price.'])).toEqual([[19, NEEDS_SPACE('They pay its price')]]);

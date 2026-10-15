@@ -55,7 +55,11 @@ function diceOf(count: number, sides: number) {
 
 // ---- what a rule about a piece or a space can ask --------------------------------------------
 
-/** The board a board phrase plays on. The compiler only lets such phrases into a game with a board, so a missing one is a bug. */
+/**
+ * The board a board phrase plays on. Each phrase that needs one says so (`needsBoard`, or `needsDice`, since dice only
+ * come with a board) or names spaces, details or counters only a board has, so the compiler only lets it into a game
+ * with a board: a missing one is a bug.
+ */
 function boardIn(env: PhraseEnv): BoardSpec {
   if (!env.game.board) throw new Error('This phrase needs a board, but this game has none.');
   return env.game.board;
@@ -295,9 +299,9 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .condition('they have not {done} this turn', hasDoneThisTurn(false), { needsPlayer: true })
     .condition('it has a {spaceattr}', spaceHas, { needsSpace: true })
     .condition('it has an {spaceattr}', spaceHas, { needsSpace: true })
-    .condition('no one owns it', noOneOwns, { needsSpace: true })
-    .condition('someone else owns it', someoneElseOwns, { needsSpace: true })
-    .condition('they own it', theyOwn, { needsPlayer: true, needsSpace: true })
+    .condition('no one owns it', noOneOwns, { needsSpace: true, needsBoard: true })
+    .condition('someone else owns it', someoneElseOwns, { needsSpace: true, needsBoard: true })
+    .condition('they own it', theyOwn, { needsPlayer: true, needsSpace: true, needsBoard: true })
     .condition('they have at least its {spaceattr} in {counter}', haveAtLeastItsAmount, { needsPlayer: true, needsSpace: true })
     .condition('they have at least {int} {counter}', haveAtLeast, { needsPlayer: true })
     .condition('one player is left', oneLeft)
@@ -306,16 +310,16 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .moment('a player lands on {space}', landsOn)
     .moment('a player lands on {spaceclass}', landsOnClass)
     .moment('a player lands on {spaceclass} someone else owns', landsOnClassOwnedByOther)
-    .effect('roll the dice', rollDice)
-    .effect('their piece moves forward by the roll', moveByRoll, { needsPlayer: true })
+    .effect('roll the dice', rollDice, { needsDice: true })
+    .effect('their piece moves forward by the roll', moveByRoll, { needsPlayer: true, needsBoard: true, needsDice: true })
     .effect('its player gets {int} {counter}', gets, { needsPlayer: true })
     .effect('they get {int} {counter}', gets, { needsPlayer: true })
     .effect('they pay its {spaceattr}', paysBank, { needsPlayer: true, needsSpace: true, needsPayment: true })
     .effect('they pay its {spaceattr} to its owner', paysOwner, { needsPlayer: true, needsSpace: true, needsPayment: true })
-    .effect('they pay {int} times the roll to its owner', paysRollToOwner, { needsPlayer: true, needsSpace: true, needsPayment: true })
-    .effect('they own it', owns, { needsPlayer: true, needsSpace: true })
+    .effect('they pay {int} times the roll to its owner', paysRollToOwner, { needsPlayer: true, needsSpace: true, needsPayment: true, needsDice: true })
+    .effect('they own it', owns, { needsPlayer: true, needsSpace: true, needsBoard: true })
     .effect('they are out', goesOut, { needsPlayer: true })
-    .effect('their spaces go back to the bank', returnToBank, { needsPlayer: true })
+    .effect('their spaces go back to the bank', returnToBank, { needsPlayer: true, needsBoard: true })
     .winner('that player wins', lastOneStanding)
     .given('{player} is on {space}', isOnGiven)
     .given('{player} owns {space}', ownsGiven)

@@ -37,7 +37,7 @@ export const STATIC_TYPES: ParamType[] = [
 export function emptyVocab(): Vocab {
   return {
     sharedZones: [], playerZones: [], maxPlayers: 0, phases: [], verbs: [], attributes: [], cardValues: [], standardDeck: false,
-    spaces: [], spaceAttributes: [], spaceValues: [], counters: [], payWith: null, actions: [],
+    spaces: [], spaceAttributes: [], spaceValues: [], counters: [], payWith: null, actions: [], dice: false,
   };
 }
 
@@ -89,6 +89,7 @@ export function vocabFrom(game: {
     counters: (board?.counters ?? []).map((c) => c.name),
     payWith: board?.payWith ?? null,
     actions: game.actions ?? [],
+    dice: (board?.dice ?? null) !== null,
   };
 }
 
@@ -104,10 +105,12 @@ export type MatchResult =
   | { status: 'invalid'; message: string };
 
 /**
- * What a phrase needs from the rule around it, checked when a game is compiled: a move being made, a player the rule
- * is about, a space, or an amount being paid.
+ * What a phrase needs, checked when a game is compiled: from the rule around it, a move being made, a player the rule
+ * is about or a space; from the game, something to pay with, a board (a Board: loop of spaces) or dice.
  */
-export type PhraseOpts = { needsMove?: boolean; needsPlayer?: boolean; needsSpace?: boolean; needsPayment?: boolean };
+export type PhraseOpts = {
+  needsMove?: boolean; needsPlayer?: boolean; needsSpace?: boolean; needsPayment?: boolean; needsBoard?: boolean; needsDice?: boolean;
+};
 
 type Part = { literal: string } | { type: ParamType };
 type Entry = {
@@ -227,6 +230,7 @@ export class PhraseLibrary {
     const entry = this.entries.get(kind)?.get(pattern.toLowerCase());
     return entry && {
       fn: entry.fn, needsMove: entry.needsMove, needsPlayer: entry.needsPlayer, needsSpace: entry.needsSpace, needsPayment: entry.needsPayment,
+      needsBoard: entry.needsBoard, needsDice: entry.needsDice,
     };
   }
 
@@ -308,7 +312,7 @@ export class PhraseLibrary {
     ofKind.set(pattern, {
       pattern, parts, display, literal: literal.replace(/\s+/g, ' ').trim(), specificity, fn,
       needsMove: opts.needsMove ?? false, needsPlayer: opts.needsPlayer ?? false, needsSpace: opts.needsSpace ?? false,
-      needsPayment: opts.needsPayment ?? false,
+      needsPayment: opts.needsPayment ?? false, needsBoard: opts.needsBoard ?? false, needsDice: opts.needsDice ?? false,
     });
     return this;
   }

@@ -15,6 +15,8 @@ export type LineCtx = {
 const MAX_SUGGESTIONS = 3;
 const NOT_INDENTED = "This line shouldn't be indented under the line above.";
 const NEEDS_PAYMENT = 'Say what players pay with, like “Players pay with money.” under Board:.';
+const NEEDS_BOARD = (clean: string) => `“${clean}” needs a board. Add a Board: section with a line like “The board is a loop of spaces, starting at Go:”.`;
+const NEEDS_DICE = (clean: string) => `“${clean}” needs dice. Add a line like “There are two six-sided dice.” under Board:.`;
 const IF_FRAME = /^if\s+(.+)$/i;
 const COMMA = /, /g;
 const PHASE_NAME = /^phase\s*:\s*(.*)$/i;
@@ -98,8 +100,14 @@ function tryMisnamed(kinds: PhraseKind[], text: string, ctx: LineCtx): Misnamed 
   }
 }
 
-/** What a phrase needs that the rule around it does not give, said for the designer; null when it has all it needs. The first lack is the one reported. */
+/**
+ * What a phrase needs that the game or the rule around it does not give, said for the designer; null when it has all it
+ * needs. The first lack is the one reported, and a board or dice comes first: no rule can make up for a game without them.
+ */
 function unmetNeed(entry: Required<PhraseOpts> | undefined, args: Json[], clean: string, ctx: LineCtx): string | null {
+  // A game has a board when its Board: section has a loop of spaces, and dice only come with a board.
+  if (entry?.needsBoard && ctx.vocab.spaces.length === 0) return NEEDS_BOARD(clean);
+  if (entry?.needsDice && !ctx.vocab.dice) return NEEDS_DICE(clean);
   const aboutPlayer = ctx.inMove || ctx.player;
   if (!ctx.inMove && entry?.needsMove) return `“${clean}” only makes sense in a rule about a player's move.`;
   if (!aboutPlayer && entry?.needsPlayer) {
