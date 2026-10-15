@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { GameEngine } from '../../game-engine';
 import { zoneCards, type GameState } from '../../game-state';
-import { counterOf, lastDrawn, pieceAt, placePiece, queueRoll, setOwner, withBoardData } from '../board-state';
+import { counterOf, isOut, lastDrawn, pieceAt, placePiece, queueRoll, setCounter, setOwner, withBoardData } from '../board-state';
 import { createEngine, initialState, seatsFor } from '../build';
+import { deckOf } from '../cards';
 import { compileGame } from '../compile';
 import { LangRuntime } from '../runtime';
 import { deckGameText, fixtureCard, fixtureEnv, fixtureGame, fixtureState, runPhrase } from '../testing';
 import type { CompiledGame, PhraseEnv, PhraseRef, Subject } from '../types';
-import { BOX_ZONE, relocate } from '../zones';
+import { BOX_ZONE, relocate, zoneIdFor } from '../zones';
 import { createDefaultLibrary } from './index';
 
 const lib = createDefaultLibrary();
@@ -162,5 +163,41 @@ describe('keeping a card outside a card', () => {
     const line = text.split('\n').findIndex((l) => l.includes('They keep this card')) + 1;
     const { diagnostics } = compileGame(text, lib);
     expect(diagnostics.map((d) => [d.line, d.message])).toEqual([[line, '“They keep this card in their kept cards” only makes sense in a card\'s says column.']]);
+  });
+});
+
+describe('using a kept card', () => {
+  const PASS = '| Free Pass | They keep this card in their kept cards. |';
+  const USE = ['  A player may use a Free Pass.', '    Only if their kept cards has a Free Pass.', '    Then:',
+    '      A Free Pass from their kept cards goes to the bottom of the pile it came from.'];
+  const game = decks([HEAD, DIVIDEND, PASS], [HEAD, '| Calm | They get 0 money. |', PASS], USE);
+  /** The Free Pass of the deck that starts in `pile`. */
+  const passOf = (pile: string) => initialState(game, 1).cards
+    .find((c) => c.data?.name === 'Free Pass' && zoneIdFor(deckOf(game.cards, c.id)!.start) === pile)!.id;
+
+  it('greys the button until they keep one, and each card goes back under the pile its own deck starts in', () => {
+    const [lucky, fate] = [passOf('lucky-pile'), passOf('fate-pile')];
+    expect(started(game, [1, 1]).canDispatch({ type: 'use a free pass', by: 'p0' })).toBe('their kept cards has a Free Pass');
+    const engine = started(game, [1, 1], { arrange: (s) => relocate(s, [fate, lucky], 'kept-cards-p0', game) });
+    expect(engine.dispatch({ type: 'use a free pass', by: 'p0' }).ok).toBe(true);
+    expect(engine.dispatch({ type: 'use a free pass', by: 'p0' }).ok).toBe(true);
+    const s = engine.getState();
+    expect(zoneCards(s, 'kept-cards-p0')).toEqual([]);
+    expect([zoneCards(s, 'lucky-pile')[0].id, zoneCards(s, 'fate-pile')[0].id]).toEqual([lucky, fate]);
+    expect(s.cards.filter((c) => c.id === lucky || c.id === fate).every((c) => !c.faceUp)).toBe(true);
+  });
+  it('says there is no such card when they keep none', () => {
+    const state = started(game, [1, 1]).getState();
+    const env = fixtureEnv(state, { game, seats: ['p0', 'p1'], subject: { player: 'p0', space: null, card: null } });
+    expect(() => runPhrase(lib, 'effect', 'a Free Pass from their kept cards goes to the bottom of the pile it came from', env))
+      .toThrow('There is no Free Pass in their kept cards.');
+  });
+  it('Review Focus: collecting from each other player takes a player below 0 out, and the rest are paid', () => {
+    const party = decks([HEAD, '| Party | They get 50 money from each other player. |']);
+    const engine = started(party, [1, 1], { players: 3, arrange: (s) => setCounter(s, 'money', 'p1', 30) });
+    expect(rollDice(engine).ok).toBe(true);
+    const s = engine.getState();
+    expect([counterOf(s, 'money', 'p0'), counterOf(s, 'money', 'p2')]).toEqual([1600, 1450]);
+    expect(isOut(s, 'p1')).toBe(true);
   });
 });

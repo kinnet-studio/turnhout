@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { zoneCards, type GameState } from '../../game-state';
-import { bankOf, ownerOf, placePiece, setBank, setOwner, setSpaceFact, spaceFact } from '../board-state';
+import { bankOf, counterOf, ownerOf, placePiece, setBank, setOwner, setSpaceFact, spaceFact } from '../board-state';
 import { cardFact, changeCard } from '../card-facts';
 import { textFaceKey } from '../cards';
 import { compileGame } from '../compile';
@@ -142,6 +142,20 @@ describe('giving back to the bank', () => {
   it('is no clash with their spaces going back to the bank', () => {
     const start = setOwner(fresh(), ROSE, 'p0');
     expect(ownerOf(effect('their spaces go back to the bank', start, null), ROSE)).toBeNull();
+  });
+});
+
+describe('paying for each building', () => {
+  it('Review Focus: charges for the houses and hotels on their own spaces only, a hotel once', () => {
+    // p0: Mill Lane (1) with 2 houses, Rose Lane with a hotel; p1: Lily Lane with 3 houses.
+    const owned = withHotel(withHouses(withHouses(setOwner(setOwner(setOwner(fresh(), 1, 'p0'), ROSE, 'p0'), LILY, 'p1'), 1, 2), LILY, 3), ROSE);
+    const housed = effect('they pay 25 for each of their houses', owned, null);
+    expect([counterOf(housed, 'money', 'p0'), counterOf(housed, 'money', 'p1')]).toEqual([1450, 1500]);
+    expect(counterOf(effect('they pay 100 for each of their hotels', owned, null), 'money', 'p0')).toBe(1400);
+    expect(counterOf(effect('they pay 25 for each of their houses', fresh(), null), 'money', 'p0')).toBe(1500);
+  });
+  it('needs a player, a board and something to pay with', () => {
+    expect(lib.get('effect', 'they pay {int} for each of their {banked}')).toMatchObject({ needsPlayer: true, needsBoard: true, needsPayment: true });
   });
 });
 

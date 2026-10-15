@@ -10,6 +10,7 @@ import type {
   WhichFn, WinnerFn, ZoneRef,
 } from '../types';
 import { matchesCard, relocate, resolveZoneIds, zoneIdFor } from '../zones';
+import { transfer } from './board-phrases';
 import { describeCard } from './example-phrases';
 import { cardOf, describeZone, itOf, movedCard, soleZone, theyOf } from './support';
 
@@ -162,6 +163,14 @@ const theirGoBack: EffectFn = (env, [name]) => {
   );
 };
 
+/** Pays the bank an amount for every one of a bank item that sits on the spaces they own: a count as many, a flag set as one. */
+const paysForEach: EffectFn = (env, [n, name]) => {
+  const they = theyOf(env);
+  const fact = factForBank(env, name as string);
+  const held = boardOf(env).spaces.reduce((sum, _space, at) => (ownerOf(env.state, at) === they ? sum + heldBy(env.state, at, fact.name) : sum), 0);
+  return transfer(env, they, null, (n as number) * held);
+};
+
 /** Every card in the zones a reference names, zone by zone and slot by slot. */
 const cardsInZones = (env: PhraseEnv, ref: ZoneRef): CardState[] => resolveZoneIds(ref, env).flatMap((id) => zoneCards(env.state, id));
 
@@ -311,6 +320,7 @@ export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('it gets an {banked} from the bank', getsFromBank, { needsSpace: true })
     .effect('its {spacenumber} go back to the bank', countGoesBack, { needsSpace: true })
     .effect('their {banked} go back to the bank', theirGoBack, { needsPlayer: true, needsBoard: true })
+    .effect('they pay {int} for each of their {banked}', paysForEach, { needsPlayer: true, needsBoard: true, needsPayment: true })
     .effect('move it to {zone}', moveItTo, { needsCard: true })
     .effect('every card in {zone} is {cardflag}', everyCardIsFlagged)
     .effect('it gains {int} {attribute}', itGains, { needsCard: true })

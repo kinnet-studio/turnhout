@@ -1,10 +1,12 @@
-import { cardById, type GameState } from '../../game-state';
+import { cardById, zoneCards, type GameState } from '../../game-state';
 import { pieceAt, setLastDrawn } from '../board-state';
 import { cardName, saysOf } from '../card-facts';
+import { deckOf } from '../cards';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
-import type { CompiledGame, EffectFn, ZoneRef } from '../types';
-import { relocate, toBottom, topCard, zoneIdFor, zoneInfo } from '../zones';
+import type { CardMatch, CompiledGame, ConditionFn, EffectFn, PhraseEnv, ZoneRef } from '../types';
+import { matchesCard, relocate, toBottom, topCard, zoneIdFor, zoneInfo } from '../zones';
+import { describeCard } from './example-phrases';
 import { cardOf, describeZone, soleZone, theyOf } from './support';
 
 /** A pile as the page says it, with its owner: “the lucky pile” for a shared one, “p1's deck” for a seat's. */
@@ -48,9 +50,33 @@ const theyDraw: EffectFn = (env, [zone]) => {
 /** The card that was just drawn goes to the player's own zone, face up when that zone is one everyone can see. */
 const theyKeep: EffectFn = (env, [zone]) => relocate(env.state, [cardOf(env)], zoneIdFor(zone as string, theyOf(env)), env.game);
 
-/** The sentences of a card that is drawn and does what it says: drawing it, and keeping it instead of putting it back. */
+/** The cards in their own zone of that name that are the named card, in slot order. */
+const matchingKept = (env: PhraseEnv, zone: string, match: CardMatch) =>
+  zoneCards(env.state, zoneIdFor(zone, theyOf(env))).filter((card) => matchesCard(card, match));
+
+/** Whether they have a card of that kind in their zone of that name. */
+const theyHaveKept: ConditionFn = (env, [zone, match]) => matchingKept(env, zone as string, match as CardMatch).length > 0;
+
+/**
+ * Puts their first matching card, in slot order, at the bottom of the pile of the deck it came from: a card has one deck for
+ * good, whatever its name is and wherever it was kept, so two cards of one name each go back where they began.
+ */
+const keptGoesBack: EffectFn = (env, [match, zone]) => {
+  const [found] = matchingKept(env, zone as string, match as CardMatch);
+  if (!found) {
+    const what = describeCard(match as CardMatch).replace(/^(?:an?|the) /, '');
+    throw new RuleError(`There is no ${what} in their ${zone}.`);
+  }
+  const deck = deckOf(env.game.cards, found.id);
+  if (!deck) throw new Error(`The card ${found.id} came from no deck.`);
+  return toBottom(env.state, found.id, zoneIdFor(deck.start), env.game);
+};
+
+/** The sentences of a card that is drawn and does what it says, keeping it instead of putting it back, and using a card kept. */
 export function registerDrawPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
+    .condition('their {perzone} has {card}', theyHaveKept, { needsPlayer: true })
     .effect('they draw from {zone} and do what it says', theyDraw, { needsPlayer: true })
-    .effect('they keep this card in their {perzone}', theyKeep, { needsPlayer: true, needsDrawnCard: true });
+    .effect('they keep this card in their {perzone}', theyKeep, { needsPlayer: true, needsDrawnCard: true })
+    .effect('{card} from their {perzone} goes to the bottom of the pile it came from', keptGoesBack, { needsPlayer: true });
 }

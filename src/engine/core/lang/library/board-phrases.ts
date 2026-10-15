@@ -118,7 +118,7 @@ function ownerOfIt(env: PhraseEnv): PlayerId {
 }
 
 /** Takes the amount from `from` and gives it to `to`; the bank (null) has no counter to fill. */
-function transfer(env: PhraseEnv, from: PlayerId, to: PlayerId | null, amount: number): GameState {
+export function transfer(env: PhraseEnv, from: PlayerId, to: PlayerId | null, amount: number): GameState {
   const counter = boardIn(env).payWith;
   if (counter === null) throw new Error('This phrase needs something to pay with, but the board names none.');
   const paid = addToCounter(env.state, counter, from, -amount);
@@ -301,6 +301,22 @@ const paysRollToOwner: EffectFn = (env, [times]) => {
   const owner = ownerOfIt(env);
   return transfer(env, theyOf(env), owner, (times as number) * rollTotal(env.state));
 };
+
+/**
+ * Each other player still in, in seat order, ends up with the amount more of the counter than they had, and they with as much
+ * less; or the other way round. A count may go below 0 here: what a player left with less than none must do is a rule of the game.
+ */
+const swapsWithEachOther = (theyPay: boolean): EffectFn => (env, [n, counter]) => {
+  const they = theyOf(env);
+  const gain = (theyPay ? 1 : -1) * (n as number);
+  return playersIn(env.state, env.seats)
+    .filter((seat) => seat !== they)
+    .reduce((state, seat) => addToCounter(addToCounter(state, counter as string, seat, gain), counter as string, they, -gain), env.state);
+};
+
+const paysEachOther = swapsWithEachOther(true);
+
+const getsFromEachOther = swapsWithEachOther(false);
 
 const owns: EffectFn = (env) => setOwner(env.state, itOf(env), theyOf(env));
 
@@ -488,6 +504,8 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('they pay its {spaceattr}', paysBank, { needsPlayer: true, needsSpace: true, needsPayment: true })
     .effect('they pay its {spaceattr} to its owner', paysOwner, { needsPlayer: true, needsSpace: true, needsPayment: true })
     .effect('they pay {int} times the roll to its owner', paysRollToOwner, { needsPlayer: true, needsSpace: true, needsPayment: true, needsDice: true })
+    .effect('they pay {int} {counter} to each other player', paysEachOther, { needsPlayer: true })
+    .effect('they get {int} {counter} from each other player', getsFromEachOther, { needsPlayer: true })
     .effect('they own it', owns, { needsPlayer: true, needsSpace: true, needsBoard: true })
     .effect('they are out', goesOut, { needsPlayer: true })
     .effect('their spaces go back to the bank', returnToBank, { needsPlayer: true, needsBoard: true })

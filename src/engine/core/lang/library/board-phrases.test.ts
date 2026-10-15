@@ -359,6 +359,29 @@ describe('paying', () => {
   });
 });
 
+describe('paying and collecting from each other player', () => {
+  const seats = ['p0', 'p1', 'p2'];
+  const money = (s: GameState) => seats.map((seat) => counterOf(s, 'money', seat));
+  const start = fixtureBoardState(game, seats);
+  const run = (text: string, state: GameState) => runPhrase<GameState>(lib, 'effect', text, env(state, as('p0')));
+
+  it('pays the amount to each other player, and takes it from them', () => {
+    expect(money(run('they pay 50 money to each other player', start))).toEqual([1400, 1550, 1550]);
+  });
+  it('collects the amount from each other player, even below 0', () => {
+    expect(money(run('they get 50 money from each other player', setCounter(start, 'money', 'p1', 30)))).toEqual([1600, -20, 1450]);
+  });
+  it('Review Focus: leaves a player who is out as they were, neither paid nor charged', () => {
+    const out = markOut(start, 'p2');
+    expect(money(run('they pay 50 money to each other player', out))).toEqual([1450, 1550, 1500]);
+    expect(money(run('they get 50 money from each other player', out))).toEqual([1550, 1450, 1500]);
+  });
+  it('needs a player', () => {
+    expect(lib.get('effect', 'they pay {int} {counter} to each other player')).toMatchObject({ needsPlayer: true });
+    expect(lib.get('effect', 'they get {int} {counter} from each other player')).toMatchObject({ needsPlayer: true });
+  });
+});
+
 describe('owning', () => {
   it('judges the buy conditions on the space they are on', () => {
     const onRose = placePiece(fixtureBoardState(), 'p0', 5);
