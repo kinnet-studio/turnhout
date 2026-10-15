@@ -1,5 +1,5 @@
 import { cardById } from '../../game-state';
-import type { CardState } from '../../scene';
+import type { CardState, PlayerId } from '../../scene';
 import { RuleError } from '../diagnostics';
 import type { MoveInfo, PhraseEnv, ZoneRef } from '../types';
 import { resolveZoneIds } from '../zones';
@@ -12,9 +12,9 @@ export function describeZone(ref: ZoneRef): string {
   return ref.of.who === 'actor' ? `their ${ref.zone}` : `the winner's ${ref.zone}`;
 }
 
-/** The one zone a rule is about; “each hand” names several, which this rule cannot use. */
-export function soleZone(ref: ZoneRef, env: PhraseEnv): string {
-  const ids = resolveZoneIds(ref, env);
+/** The one zone a rule is about; “each hand” names several, which this rule cannot use. `actor` is who “their” means. */
+export function soleZone(ref: ZoneRef, env: PhraseEnv, actor?: PlayerId): string {
+  const ids = resolveZoneIds(ref, env, actor);
   if (ids.length !== 1) throw new RuleError(`${describeZone(ref)} is more than one zone, but this rule needs just one.`);
   return ids[0];
 }

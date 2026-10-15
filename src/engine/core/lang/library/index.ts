@@ -1,5 +1,6 @@
 import { PhraseLibrary, STATIC_TYPES } from '../phrases';
 import { VOCAB_TYPES } from '../refs';
+import { registerExamplePhrases } from './example-phrases';
 import { registerFlowPhrases } from './flow-phrases';
 import { registerHeartsPhrases } from './hearts';
 import { registerMovePhrases } from './move-phrases';
@@ -12,6 +13,7 @@ const REGISTRARS: ((lib: PhraseLibrary) => PhraseLibrary)[] = [
   registerMovePhrases,
   registerStandardDeckPhrases,
   registerHeartsPhrases,
+  registerExamplePhrases,
 ];
 
 /** Every phrase that ships with the language. */
