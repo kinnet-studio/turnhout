@@ -1,5 +1,6 @@
 import { cardById, zoneCards, type GameState } from '../../game-state';
 import type { CardState, PlayerId } from '../../scene';
+import { bankItemOf } from '../board';
 import { bankOf, ownerOf, setBank, setSpaceFact, spaceFact } from '../board-state';
 import { cardAttribute, cardFact, changeCard } from '../card-facts';
 import { RuleError } from '../diagnostics';
@@ -50,6 +51,13 @@ function giveBack(state: GameState, space: number, fact: FactItem, bank: string)
   return setSpaceFact(returned, space, fact.name, fact.kind === 'flag' ? false : 0);
 }
 
+/** The bank item that goes with a fact on spaces; one the bank keeps nothing for is a mistake in the rule, said as one. */
+function bankItemFor(env: PhraseEnv, fact: FactItem): string {
+  const item = bankItemOf(fact, boardOf(env).bank);
+  if (item === null) throw new RuleError(`No bank item goes with the fact ${fact.name}.`);
+  return item;
+}
+
 const withArticle = (noun: string): string => `${/^[aeiou]/i.test(noun) ? 'an' : 'a'} ${noun}`;
 
 const nameOfSpace = (env: PhraseEnv, space: number): string => boardOf(env).spaces[space].name;
@@ -65,6 +73,11 @@ const hasCount: ConditionFn = (env, [n, fact]) => heldBy(env.state, itOf(env), f
 const hasFewer: ConditionFn = (env, [n, fact]) => heldBy(env.state, itOf(env), fact as string) < (n as number);
 
 const bankHasOne: ConditionFn = (env, [name]) => bankOf(env.state, name as string) > 0;
+
+const bankHasAtLeast: ConditionFn = (env, [n, name]) => bankOf(env.state, name as string) >= (n as number);
+
+/** At least one of a count: it is above 0. */
+const hasSome: ConditionFn = (env, [fact]) => heldBy(env.state, itOf(env), fact as string) > 0;
 
 /** The card a rule about a card is about. */
 function itCard(env: PhraseEnv): CardState {
@@ -114,6 +127,10 @@ export function ownsSet(state: GameState, spaces: SpaceSpec[], at: number, kind:
 const ownsEverySpaceOfSet: ConditionFn = (env, [kind, attr]) =>
   ownsSet(env.state, boardOf(env).spaces, itOf(env), kind as SpaceClass, attr as string, theyOf(env));
 
+/** No space of the set of the space the rule is about, itself included, has the flag set. A space in no set holds this too. */
+const noSpaceOfSetIsFlagged: ConditionFn = (env, [kind, attr, fact]) =>
+  setOf(boardOf(env).spaces, itOf(env), kind as SpaceClass, attr as string).every((other) => spaceFact(env.state, other, fact as string) !== true);
+
 // ---- targets: the spaces a button may pick --------------------------------------------------
 
 const ofKind: TargetFn = (env, [kind], space) => isOfKind(boardOf(env).spaces[space], kind as SpaceClass);
@@ -158,11 +175,54 @@ const getsFromBank: EffectFn = (env, [name]) => {
   return setSpaceFact(taken, space, fact.name, fact.kind === 'flag' ? true : heldBy(taken, space, fact.name) + 1);
 };
 
+/**
+ * Takes several of a bank item at once, all or none. A flag is given once, so 1 is what “a” gives and more is a mistake
+ * in the rule.
+ */
+const getsSeveralFromBank: EffectFn = (env, [n, name]) => {
+  const wanted = n as number;
+  const bank = name as string;
+  if (wanted < 1) throw new RuleError('Say how many, 1 or more.');
+  const fact = factForBank(env, bank);
+  const space = itOf(env);
+  if (fact.kind === 'flag') {
+    if (wanted > 1) throw new RuleError(`${nameOfSpace(env, space)} can have only one ${fact.name}.`);
+    return getsFromBank(env, [name]);
+  }
+  const left = bankOf(env.state, bank);
+  if (left < wanted) throw new RuleError(`The bank has only ${counted(left, bank)} left.`);
+  const taken = setBank(env.state, bank, left - wanted);
+  return setSpaceFact(taken, space, fact.name, heldBy(taken, space, fact.name) + wanted);
+};
+
 /** A count goes back to the bank's item of the same name; a bank that keeps nothing by that name has nowhere to put it. */
 const countGoesBack: EffectFn = (env, [name]) => {
   const fact: FactItem = { name: name as string, kind: 'number' };
-  if (!env.game.board?.bank.some((item) => item.name === fact.name)) throw new RuleError(`No bank item goes with the fact ${fact.name}.`);
-  return giveBack(env.state, itOf(env), fact, fact.name);
+  return giveBack(env.state, itOf(env), fact, bankItemFor(env, fact));
+};
+
+/** Says so when the space holds none of the fact, which a space must for something of it to go back. */
+function mustHold(env: PhraseEnv, space: number, fact: string): void {
+  if (heldBy(env.state, space, fact) < 1) throw new RuleError(`${nameOfSpace(env, space)} has no ${fact}.`);
+}
+
+/** One of a count goes back to the bank's item of the same name, and the space keeps the rest. */
+const oneGoesBack: EffectFn = (env, [name]) => {
+  const fact: FactItem = { name: name as string, kind: 'number' };
+  const space = itOf(env);
+  mustHold(env, space, fact.name);
+  const item = bankItemFor(env, fact);
+  const returned = setBank(env.state, item, bankOf(env.state, item) + 1);
+  return setSpaceFact(returned, space, fact.name, heldBy(returned, space, fact.name) - 1);
+};
+
+/** A flag that is set goes back to the bank item named its plural and is cleared. */
+const flagGoesBack: EffectFn = (env, [name]) => {
+  const fact: FactItem = { name: name as string, kind: 'flag' };
+  const item = bankItemFor(env, fact);
+  const space = itOf(env);
+  mustHold(env, space, fact.name);
+  return giveBack(env.state, space, fact, item);
 };
 
 /** Every space they own gives back what it holds, a flag that is set counting for 1. */
@@ -323,6 +383,8 @@ export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
     .condition('it has a {spaceflag}', hasFlag, { needsSpace: true })
     .condition('it has an {spaceflag}', hasFlag, { needsSpace: true })
     .condition('it has no {spaceflag}', hasNoFlag, { needsSpace: true })
+    .condition('it has a {spacenumber}', hasSome, { needsSpace: true })
+    .condition('it has an {spacenumber}', hasSome, { needsSpace: true })
     .condition('it has {int} {spacenumber}', hasCount, { needsSpace: true })
     .condition('it has fewer than {int} {spacenumber}', hasFewer, { needsSpace: true })
     .condition('it is {spaceflag}', hasFlag, { needsSpace: true })
@@ -331,7 +393,9 @@ export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
     .condition('the card is {cardflag}', theCardIsFlagged, { needsMove: true })
     .condition('the bank has a {banked}', bankHasOne)
     .condition('the bank has an {banked}', bankHasOne)
+    .condition('the bank has at least {int} {banked}', bankHasAtLeast)
     .condition('they own every {spacekind} of its {spaceattr}', ownsEverySpaceOfSet, { needsPlayer: true, needsSpace: true, needsBoard: true })
+    .condition('no {spacekind} of its {spaceattr} is {spaceflag}', noSpaceOfSetIsFlagged, { needsSpace: true })
     .target('a {spacekind} they own', ofKindTheyOwn, { needsPlayer: true, needsBoard: true })
     .target('an {spacekind} they own', ofKindTheyOwn, { needsPlayer: true, needsBoard: true })
     .target('a {spacekind}', ofKind, { needsBoard: true })
@@ -341,10 +405,13 @@ export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
     .which('a card in a {perzone} has {int} {attribute}', cardsWithNumber)
     .effect('it gets a {banked} from the bank', getsFromBank, { needsSpace: true })
     .effect('it gets an {banked} from the bank', getsFromBank, { needsSpace: true })
+    .effect('it gets {int} {banked} from the bank', getsSeveralFromBank, { needsSpace: true })
     .effect('it is {spaceflag}', itBecomes(true), { needsSpace: true })
     .effect('it is not {spaceflag}', itBecomes(false), { needsSpace: true })
     .effect('their spaces are no longer {spaceflag}', theirAreNoLonger, { needsPlayer: true, needsBoard: true })
     .effect('its {spacenumber} go back to the bank', countGoesBack, { needsSpace: true })
+    .effect('one of its {spacenumber} goes back to the bank', oneGoesBack, { needsSpace: true })
+    .effect('its {spaceflag} goes back to the bank', flagGoesBack, { needsSpace: true })
     .effect('their {banked} go back to the bank', theirGoBack, { needsPlayer: true, needsBoard: true })
     .effect('they pay {int} for each of their {banked}', paysForEach, { needsPlayer: true, needsBoard: true, needsPayment: true })
     .effect('move it to {zone}', moveItTo, { needsCard: true })

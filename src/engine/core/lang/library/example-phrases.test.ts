@@ -482,6 +482,15 @@ describe('expect: the state of the table', () => {
       .toBe('Expected the top card of the deck to be the 2 of clubs, but the deck is empty.');
   });
 
+  it('the bottom card of a zone', () => {
+    const env = at([std('c1', 'trick', 'C', 2, { slot: 0 }), std('c2', 'trick', 'S', 12, { slot: 1 })]);
+    expect(expectThat('the bottom card of the trick is the 2 of clubs', env)).toBe(true);
+    expect(expectThat('the bottom card of the trick is the queen of spades', env))
+      .toBe('Expected the bottom card of the trick to be the queen of spades, but it is the 2 of clubs.');
+    expect(expectThat('the bottom card of the deck is the 2 of clubs', env))
+      .toBe('Expected the bottom card of the deck to be the 2 of clubs, but the deck is empty.');
+  });
+
   it('the top card of a zone accepts a partly described card', () => {
     const game = fixtureColorGame();
     const env = fixtureEnv(fixtureState([colored('c1', 'discard-pile', 'red', 2)]), { game });
@@ -550,6 +559,7 @@ describe('the default library', () => {
     ['expect', 'p0 holds 2 cards', '{player} holds {int} card(s)'],
     ['expect', 'the trick has the 2 of clubs', '{zone} has {cardlist}'],
     ['expect', 'the top card of the trick is the 2 of clubs', 'the top card of {zone} is {card}'],
+    ['expect', 'the bottom card of the trick is the 2 of clubs', 'the bottom card of {zone} is {card}'],
     ['expect', 'p0 scores 14', '{player} scores {int}'],
     ['expect', 'p0 wins', '{player} wins'],
   ])('reads an example %s line exactly one way: “%s”', (kind, text, pattern) => {

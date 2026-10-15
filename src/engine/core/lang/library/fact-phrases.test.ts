@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { zoneCards, type GameState } from '../../game-state';
+import { bankItemOf } from '../board';
 import { bankOf, counterOf, ownerOf, placePiece, setBank, setOwner, setSpaceFact, spaceFact } from '../board-state';
 import { cardFact, changeCard } from '../card-facts';
 import { textFaceKey } from '../cards';
@@ -22,6 +23,9 @@ const game = fixtureBoardGame({
   facts: FACTS,
   board: boardOf({ spaces: [...FIXTURE_SPACES, LILY_LANE], bank: [{ name: 'houses', start: 32 }, { name: 'hotels', start: 12 }] }),
 });
+
+/** The same game, with a yes-or-no that no bank item goes with. */
+const FLAGGED = fixtureBoardGame({ facts: [...FACTS, { name: 'mortgaged', on: 'space', kind: 'flag' }], board: game.board! });
 
 const ROSE = 5;
 const LILY = 8;
@@ -191,6 +195,153 @@ describe('judging what a space has', () => {
   });
 });
 
+describe('the bank having enough, and a space having a building', () => {
+  it('judges whether the bank has at least that many', () => {
+    expect(condition('the bank has at least 4 houses', setBank(fresh(), 'houses', 4))).toBe(true);
+    expect(condition('the bank has at least 4 houses', setBank(fresh(), 'houses', 3))).toBe(false);
+    expect(condition('the bank has at least 1 hotel', fresh())).toBe(true);
+    expect(condition('the bank has at least 1 hotel', setBank(fresh(), 'hotels', 0))).toBe(false);
+  });
+  it('judges whether a space has one at least, a flag counting for one', () => {
+    expect(condition('it has a house', withHouses(fresh(), ROSE, 1))).toBe(true);
+    expect(condition('it has a house', withHouses(fresh(), ROSE, 3))).toBe(true);
+    expect(condition('it has a house', fresh())).toBe(false);
+    expect(condition('it has a house', withHotel(fresh(), ROSE))).toBe(false);
+    expect(condition('it has a house', withHouses(fresh(), LILY, 2))).toBe(false);
+  });
+  it('says "an" before a count that starts with a vowel', () => {
+    const eggs = fixtureBoardGame({ facts: [{ name: 'eggs', on: 'space', kind: 'number' }], board: boardOf({}) });
+    expect(condition('it has an egg', setSpaceFact(fresh(eggs), ROSE, 'eggs', 2), ROSE, eggs)).toBe(true);
+    expect(condition('it has an egg', fresh(eggs), ROSE, eggs)).toBe(false);
+  });
+  it('needs a space', () => {
+    expect(lib.get('condition', 'it has a {spacenumber}')).toMatchObject({ needsSpace: true });
+    expect(lib.get('condition', 'it has an {spacenumber}')).toMatchObject({ needsSpace: true });
+  });
+});
+
+describe('taking several from the bank', () => {
+  it('moves them from the bank to the count the space has', () => {
+    const s = effect('it gets 4 houses from the bank', fresh());
+    expect([spaceFact(s, ROSE, 'houses'), bankOf(s, 'houses')]).toEqual([4, 28]);
+    const more = effect('it gets 2 houses from the bank', s);
+    expect([spaceFact(more, ROSE, 'houses'), bankOf(more, 'houses')]).toEqual([6, 26]);
+  });
+  it('may take the last of them, and says so when the bank has fewer', () => {
+    expect(bankOf(effect('it gets 3 houses from the bank', setBank(fresh(), 'houses', 3)), 'houses')).toBe(0);
+    expect(() => effect('it gets 4 houses from the bank', setBank(fresh(), 'houses', 3))).toThrow(new RuleError('The bank has only 3 houses left.'));
+    expect(() => effect('it gets 4 houses from the bank', setBank(fresh(), 'houses', 1))).toThrow('The bank has only 1 house left.');
+    expect(() => effect('it gets 2 houses from the bank', setBank(fresh(), 'houses', 0))).toThrow('The bank has only 0 houses left.');
+  });
+  it('needs at least 1', () => {
+    expect(() => effect('it gets 0 houses from the bank', fresh())).toThrow(new RuleError('Say how many, 1 or more.'));
+  });
+  it('gives a flag once: 1 does what taking a hotel does, and more cannot be had', () => {
+    expect(() => effect('it gets 2 hotels from the bank', fresh())).toThrow(new RuleError('Rose Lane can have only one hotel.'));
+    const s = effect('it gets 1 hotel from the bank', fresh());
+    expect([spaceFact(s, ROSE, 'hotel'), bankOf(s, 'hotels'), bankOf(s, 'houses')]).toEqual([true, 11, 32]);
+    expect(() => effect('it gets 1 hotel from the bank', s)).toThrow('Rose Lane already has a hotel.');
+    expect(() => effect('it gets 1 hotel from the bank', setBank(fresh(), 'hotels', 0))).toThrow('The bank has no hotels left.');
+  });
+  it('is about the space the rule names, else the one their piece is on', () => {
+    expect(spaceFact(effect('it gets 2 houses from the bank', fresh(), LILY), LILY, 'houses')).toBe(2);
+    expect(spaceFact(effect('it gets 2 houses from the bank', placePiece(fresh(), 'p0', 1), null), 1, 'houses')).toBe(2);
+  });
+  it('says so when no fact goes with the bank item', () => {
+    const lonely = fixtureBoardGame({ facts: [], board: boardOf({ bank: [{ name: 'tokens', start: 5 }] }) });
+    expect(() => effect('it gets 2 tokens from the bank', fresh(lonely), ROSE, lonely)).toThrow(new RuleError("No fact goes with the bank's tokens."));
+  });
+  it('needs a space', () => {
+    expect(lib.get('effect', 'it gets {int} {banked} from the bank')).toMatchObject({ needsSpace: true });
+  });
+});
+
+describe('giving one back to the bank', () => {
+  it('moves one from the count the space has to the bank', () => {
+    const s = effect('one of its houses goes back to the bank', withHouses(fresh(), ROSE, 3));
+    expect([spaceFact(s, ROSE, 'houses'), bankOf(s, 'houses')]).toEqual([2, 33]);
+    const last = effect('one of its houses goes back to the bank', effect('one of its houses goes back to the bank', s));
+    expect([spaceFact(last, ROSE, 'houses'), bankOf(last, 'houses')]).toEqual([0, 35]);
+  });
+  it('says so when the space holds none', () => {
+    expect(() => effect('one of its houses goes back to the bank', fresh())).toThrow(new RuleError('Rose Lane has no houses.'));
+    expect(() => effect('one of its houses goes back to the bank', withHouses(fresh(), LILY, 2))).toThrow('Rose Lane has no houses.');
+    expect(() => effect('one of its houses goes back to the bank', withHouses(fresh(), ROSE, 0))).toThrow('Rose Lane has no houses.');
+  });
+  it('says so when the bank keeps nothing of that name', () => {
+    const lonely = fixtureBoardGame({ facts: [{ name: 'tokens', on: 'space', kind: 'number' }], board: boardOf({ bank: [] }) });
+    expect(() => effect('one of its tokens goes back to the bank', setSpaceFact(fresh(lonely), ROSE, 'tokens', 2), ROSE, lonely))
+      .toThrow(new RuleError('No bank item goes with the fact tokens.'));
+  });
+  it('leaves the other spaces alone and is about the space the rule names, else the one their piece is on', () => {
+    const start = withHouses(withHouses(fresh(), ROSE, 2), LILY, 3);
+    const s = effect('one of its houses goes back to the bank', start, LILY);
+    expect([ROSE, LILY].map((at) => spaceFact(s, at, 'houses'))).toEqual([2, 2]);
+    expect(spaceFact(effect('one of its houses goes back to the bank', placePiece(withHouses(fresh(), 1, 1), 'p0', 1), null), 1, 'houses')).toBe(0);
+  });
+  it('needs a space', () => {
+    expect(lib.get('effect', 'one of its {spacenumber} goes back to the bank')).toMatchObject({ needsSpace: true });
+  });
+});
+
+describe('giving a flag back to the bank', () => {
+  it('clears the flag and adds one to the bank item the flag goes with', () => {
+    const s = effect('its hotel goes back to the bank', withHotel(fresh(), ROSE));
+    expect([spaceFact(s, ROSE, 'hotel'), bankOf(s, 'hotels'), bankOf(s, 'houses')]).toEqual([false, 13, 32]);
+  });
+  it('says so when the space does not have it', () => {
+    expect(() => effect('its hotel goes back to the bank', fresh())).toThrow(new RuleError('Rose Lane has no hotel.'));
+    expect(() => effect('its hotel goes back to the bank', setSpaceFact(withHotel(fresh(), ROSE), ROSE, 'hotel', false))).toThrow('Rose Lane has no hotel.');
+    expect(() => effect('its hotel goes back to the bank', withHotel(fresh(), LILY))).toThrow('Rose Lane has no hotel.');
+  });
+  it('says so when no bank item goes with the flag', () => {
+    const flagged = setSpaceFact(fresh(FLAGGED), ROSE, 'mortgaged', true);
+    expect(() => effect('its mortgaged goes back to the bank', flagged, ROSE, FLAGGED)).toThrow(new RuleError('No bank item goes with the fact mortgaged.'));
+  });
+  it('needs a space', () => {
+    expect(lib.get('effect', 'its {spaceflag} goes back to the bank')).toMatchObject({ needsSpace: true });
+  });
+});
+
+describe('which bank item goes with a fact on spaces', () => {
+  const bank = game.board!.bank;
+  it('is the item of the same name for a count, and the item named the plural for a flag', () => {
+    expect(bankItemOf({ name: 'houses', kind: 'number' }, bank)).toBe('houses');
+    expect(bankItemOf({ name: 'hotel', kind: 'flag' }, bank)).toBe('hotels');
+  });
+  it('is none when nothing in the bank goes with it', () => {
+    expect(bankItemOf({ name: 'mortgaged', kind: 'flag' }, bank)).toBeNull();
+    expect(bankItemOf({ name: 'tokens', kind: 'number' }, bank)).toBeNull();
+    expect(bankItemOf({ name: 'hotel', kind: 'flag' }, [])).toBeNull();
+  });
+  it('does not take a flag for a count: a count needs the same name, and a flag the plural of its name', () => {
+    expect(bankItemOf({ name: 'houses', kind: 'flag' }, bank)).toBeNull();
+    expect(bankItemOf({ name: 'hotel', kind: 'number' }, bank)).toBeNull();
+  });
+});
+
+describe('no space of a set having a flag', () => {
+  const NONE = 'no street of its color is mortgaged';
+  const flagged = (...spaces: number[]) => spaces.reduce((s, at) => setSpaceFact(s, at, 'mortgaged', true), fresh(FLAGGED));
+  const holds = (state: GameState, space: number) => condition(NONE, state, space, FLAGGED);
+
+  it('is false while a space of its set has the flag, whichever of them it is about', () => {
+    expect([ROSE, LILY].map((at) => holds(flagged(LILY), at))).toEqual([false, false]);
+    expect([ROSE, LILY].map((at) => holds(flagged(ROSE), at))).toEqual([false, false]);
+  });
+  it('is true when the flag is on a space of another color, when no space has it, and when it was cleared', () => {
+    expect(holds(flagged(1), ROSE)).toBe(true);
+    expect(holds(fresh(FLAGGED), ROSE)).toBe(true);
+    expect(holds(setSpaceFact(flagged(LILY), LILY, 'mortgaged', false), ROSE)).toBe(true);
+  });
+  it('is true for a space with no color, which is in no set', () => {
+    expect(holds(flagged(LILY, ROSE, 1), 3)).toBe(true);
+  });
+  it('needs a space', () => {
+    expect(lib.get('condition', 'no {spacekind} of its {spaceattr} is {spaceflag}')).toMatchObject({ needsSpace: true });
+  });
+});
+
 describe('owning every space of a set', () => {
   const owning = (...spaces: number[]) => spaces.reduce((state, at) => setOwner(state, at, 'p0'), fresh());
   const OWNS_SET = 'they own every street of its color';
@@ -352,7 +503,6 @@ describe('example phrases', () => {
 });
 
 describe('a yes-or-no that rules set and clear on a space', () => {
-  const FLAGGED = fixtureBoardGame({ facts: [...FACTS, { name: 'mortgaged', on: 'space', kind: 'flag' }], board: game.board! });
   const flaggedExample = (kind: 'given' | 'expect', text: string, state: GameState = fresh(FLAGGED)) => runPhrase(lib, kind, text, bare(state, FLAGGED));
 
   it('sets and clears the flag on the space the rule is about, and judges it', () => {

@@ -1,6 +1,7 @@
 import type { Json } from '../table-def';
 import { RuleError } from './diagnostics';
-import type { CardTable, SpaceSpec } from './types';
+import { singularForms } from './refs';
+import type { BankSpec, CardTable, FactItem, SpaceSpec } from './types';
 
 /** The most spaces a board can have: more would crowd the page that draws them. */
 export const MAX_SPACES = 200;
@@ -52,4 +53,15 @@ export function numberIn(space: SpaceSpec, column: string): number | null {
   if (cell === undefined || cell === null) return null;
   if (typeof cell !== 'number') throw new RuleError(`${space.name}'s ${column} isn't a number.`);
   return cell;
+}
+
+/**
+ * The bank item that goes with a fact on spaces, by name: a count goes with the item of the same name, and a flag with the item
+ * named its plural. Null when the bank keeps nothing for it, as for a flag that is only ever set and cleared.
+ */
+export function bankItemOf(fact: FactItem, bank: BankSpec[]): string | null {
+  const item = fact.kind === 'number'
+    ? bank.find((banked) => banked.name === fact.name)
+    : bank.find((banked) => singularForms(banked.name).includes(fact.name));
+  return item?.name ?? null;
 }

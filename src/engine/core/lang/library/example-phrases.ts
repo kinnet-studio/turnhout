@@ -207,13 +207,19 @@ const zoneHasExactly: ExpectFn = (env, args) => {
   return `Expected ${describeZone(ref)} to have ${joinAnd(wanted.map(describeCard))}, but ${actual}.`;
 };
 
-const topCardIs: ExpectFn = (env, args) => {
+/** Whether the card at one end of a zone is the named one; otherwise what an example should say about it. */
+const endCardIs = (end: 'top' | 'bottom', pick: (state: GameState, zoneId: string) => CardState | undefined): ExpectFn => (env, args) => {
   const [ref, match] = args as [ZoneRef, CardMatch];
-  const top = topCard(env.state, soleZone(ref, env));
-  if (top && matchesCard(top, match)) return true;
-  const actual = top ? `it is ${describeCards([top], env.game)}` : `${describeZone(ref)} is empty`;
-  return `Expected the top card of ${describeZone(ref)} to be ${describeCard(match)}, but ${actual}.`;
+  const found = pick(env.state, soleZone(ref, env));
+  if (found && matchesCard(found, match)) return true;
+  const actual = found ? `it is ${describeCards([found], env.game)}` : `${describeZone(ref)} is empty`;
+  return `Expected the ${end} card of ${describeZone(ref)} to be ${describeCard(match)}, but ${actual}.`;
 };
+
+const topCardIs = endCardIs('top', topCard);
+
+/** The first card in slot order, as the card on top is the last. */
+const bottomCardIs = endCardIs('bottom', (state, zoneId) => zoneCards(state, zoneId)[0]);
 
 // ---- expect: how the game ended ----------------------------------------------------------------
 
@@ -260,6 +266,7 @@ export function registerExamplePhrases(lib: PhraseLibrary): PhraseLibrary {
     .expect('{player} holds {int} card(s)', holdsCount)
     .expect('{zone} has {cardlist}', zoneHasExactly)
     .expect('the top card of {zone} is {card}', topCardIs)
+    .expect('the bottom card of {zone} is {card}', bottomCardIs)
     .expect('{player} scores {int}', scoresExpected)
     .expect('{player} wins', winsExpected);
 }
