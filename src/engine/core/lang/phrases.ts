@@ -10,9 +10,18 @@ const VISIBILITY: Record<string, string> = {
   'everyone can see': 'public',
 };
 
+const COUNT_WORDS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+
 /** Parameter types that need no game vocabulary. */
 export const STATIC_TYPES: ParamType[] = [
   { name: 'int', label: '[number]', stubOrder: 5, source: () => '-?\\d+', resolve: (t) => ({ value: Number(t) }) },
+  // Small counts read the way people say them ("two dice"); no stubOrder, since a stub should keep a digit as an {int}.
+  {
+    name: 'count',
+    label: '[number]',
+    source: () => `\\d+|${COUNT_WORDS.join('|')}`,
+    resolve: (t) => ({ value: /^\d/.test(t) ? Number(t) : COUNT_WORDS.indexOf(t.toLowerCase()) + 1 }),
+  },
   { name: 'string', label: '[text]', stubOrder: 1, source: () => '["“”][^"“”]*["“”]', resolve: (t) => ({ value: t.slice(1, -1) }) },
   { name: 'word', label: '[word]', source: () => '\\S+', resolve: (t) => ({ value: t }) },
   { name: 'name', label: '[name]', source: () => '.+?', resolve: (t) => ({ value: t.toLowerCase() }) },

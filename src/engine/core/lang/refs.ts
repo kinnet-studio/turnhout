@@ -1,6 +1,6 @@
 import type { Json } from '../table-def';
 import { suggestNames } from './phrases';
-import type { NameProblem, ParamType, Vocab } from './types';
+import type { NameProblem, ParamType, SpaceClass, Vocab } from './types';
 
 type Parsed = { value: Json } | { error: string };
 
@@ -18,6 +18,23 @@ const SUIT_FORMS = new Map(
 export function thirdPerson(verb: string): string {
   if (/[^aeiou]y$/i.test(verb)) return `${verb.slice(0, -1)}ies`;
   return /(?:s|sh|ch|x|z|o)$/i.test(verb) ? `${verb}es` : `${verb}s`;
+}
+
+/** The first word of an action in the third person: 'end their turn' is 'ends their turn'. */
+export const thirdPersonWords = (words: string): string => words.replace(/^\S+/, (first) => thirdPerson(first));
+
+const IRREGULAR_PARTICIPLES = new Map(Object.entries({
+  buy: 'bought', draw: 'drawn', pay: 'paid', build: 'built', sell: 'sold', take: 'taken', give: 'given', throw: 'thrown', put: 'put',
+  go: 'gone', make: 'made', get: 'got', win: 'won', lose: 'lost', hold: 'held', keep: 'kept', leave: 'left', bid: 'bid', deal: 'dealt',
+  spend: 'spent', choose: 'chosen',
+}));
+
+/** What a player has done by the end of the turn: 'rolled', 'bought'. Regular verbs only add `d`, `ied` or `ed`. */
+export function participle(verb: string): string {
+  const irregular = IRREGULAR_PARTICIPLES.get(verb.toLowerCase());
+  if (irregular !== undefined) return irregular;
+  if (/e$/i.test(verb)) return `${verb}d`;
+  return /[^aeiou]y$/i.test(verb) ? `${verb.slice(0, -1)}ied` : `${verb}ed`;
 }
 
 // ---- regex building blocks -------------------------------------------------------------------
@@ -46,7 +63,10 @@ function anyOf(words: string[]): string {
 /** Keeps a reference from starting or ending inside a longer word (matters when stubs scan free text). */
 const bounded = (source: string) => `(?<!\\w)(?:${source})(?!\\w)`;
 
-const joinOr = (words: string[]) => (words.length < 2 ? words.join('') : `${words.slice(0, -1).join(', ')} or ${words.at(-1)}`);
+const joinWith = (conjunction: string) => (words: string[]) =>
+  (words.length < 2 ? words.join('') : `${words.slice(0, -1).join(', ')} ${conjunction} ${words.at(-1)}`);
+const joinOr = joinWith('or');
+const joinAnd = joinWith('and');
 
 const unknownText = (text: string): { error: string } => ({ error: `I don't understand “${text}” here.` });
 
@@ -283,16 +303,17 @@ const PLAYER: ParamType = {
 
 type ValueTable = { texts: string[]; owners: Map<string, { attribute: string; value: Json }[]> };
 
-/** Every card-table value, by its text; `texts` is longest first. */
-const valueTable = (vocab: Vocab): ValueTable =>
-  memo(vocab, 'value-table', () => {
-    const owners = new Map<string, { attribute: string; value: Json }[]>();
-    for (const { attribute, value } of vocab.cardValues) {
-      const key = canon(String(value));
-      owners.set(key, [...(owners.get(key) ?? []), { attribute, value }]);
-    }
-    return { texts: [...owners.keys()].sort((a, b) => b.length - a.length || (a < b ? -1 : 1)), owners };
-  });
+/** Every value of a table, by its text; `texts` is longest first. */
+function tableOf(values: { attribute: string; value: Json }[]): ValueTable {
+  const owners = new Map<string, { attribute: string; value: Json }[]>();
+  for (const { attribute, value } of values) {
+    const key = canon(String(value));
+    owners.set(key, [...(owners.get(key) ?? []), { attribute, value }]);
+  }
+  return { texts: [...owners.keys()].sort((a, b) => b.length - a.length || (a < b ? -1 : 1)), owners };
+}
+
+const valueTable = (vocab: Vocab): ValueTable => memo(vocab, 'value-table', () => tableOf(vocab.cardValues));
 
 /** One or more card values in a row, separated by spaces. */
 const valuesSource = (vocab: Vocab): string => {
@@ -303,15 +324,15 @@ const valuesSource = (vocab: Vocab): string => {
 const STANDARD_CARD = new RegExp(`^(?:the )?(${anyOf(Object.keys(STANDARD_RANKS))}) of (${anyOf(Object.keys(STANDARD_SUITS))})$`, 'i');
 const STANDARD_SOURCE = `(?:the )?${anyOf(Object.keys(STANDARD_RANKS))} of ${anyOf(Object.keys(STANDARD_SUITS))}`;
 
-/** Splits 'red 7' into its values, trying longer values first; null if some word is not a value. */
-function tokenize(body: string, texts: string[]): string[] | null {
+/** Splits 'red 7' into its values (or 'street or station', with ' or ' between them), trying longer values first; null if some word is not a value. */
+function tokenize(body: string, texts: string[], separator = ' '): string[] | null {
   const lower = canon(body);
   const from = (pos: number): string[] | null => {
     if (pos === lower.length) return [];
     for (const text of texts) {
       const end = pos + text.length;
-      if (!lower.startsWith(text, pos) || (end < lower.length && lower[end] !== ' ')) continue;
-      const rest = from(end < lower.length ? end + 1 : end);
+      if (!lower.startsWith(text, pos) || (end < lower.length && !lower.startsWith(separator, end))) continue;
+      const rest = from(end < lower.length ? end + separator.length : end);
       if (rest !== null) return [body.slice(pos, end), ...rest];
     }
     return null;
@@ -455,10 +476,96 @@ const CARDCLASS: ParamType = {
   loose: looseAs(ANY_TEXT, misnamedCardClass),
 };
 
+// ---- board: spaces, counters and actions -------------------------------------------------------
+
+/** Each space name (any capitals) with its first spelling in the table and the places it holds in the loop; a shared name holds several. */
+type SpaceTable = Map<string, { name: string; at: number[] }>;
+
+const spaceTable = (vocab: Vocab): SpaceTable =>
+  memo(vocab, 'space-table', () => {
+    const table: SpaceTable = new Map();
+    vocab.spaces.forEach((name, at) => {
+      const found = table.get(canon(name));
+      if (found) found.at.push(at);
+      else table.set(canon(name), { name, at: [at] });
+    });
+    return table;
+  });
+
+/** Each name once: suggestions and "is this a real name" both care about names, not about how many spaces carry one. */
+const spaceNames = (vocab: Vocab): string[] => [...spaceTable(vocab).values()].map((space) => space.name);
+
+function resolveSpace(text: string, vocab: Vocab): Parsed {
+  const found = spaceTable(vocab).get(canon(text));
+  if (!found) return unknownText(text);
+  // A rule about "Chance" would silently be about only one of them.
+  if (found.at.length > 1) return { error: `There are ${found.at.length} spaces called “${found.name}”, so this can't tell which one.` };
+  return { value: found.at[0] };
+}
+
+const SPACE: ParamType = {
+  name: 'space', label: '[space]', stubOrder: 3,
+  source: (vocab) => bounded(anyOf(vocab.spaces)),
+  resolve: resolveSpace,
+  loose: looseAs(ANY_TEXT, misnamedWord('space', spaceNames)),
+};
+
+const spaceValueTable = (vocab: Vocab): ValueTable => memo(vocab, 'space-value-table', () => tableOf(vocab.spaceValues));
+
+const SPACE_SUFFIX = / space$/i;
+const A_OR_AN = /^(?:a|an) (.+)$/i;
+
+function spaceClassSource(vocab: Vocab): string {
+  if (vocab.spaceValues.length === 0) return NEVER;
+  const value = anyOf(vocab.spaceValues.map((v) => v.value));
+  return `(?:a|an) ${value}(?: or ${value})*(?: space)?`;
+}
+
+/** “a street or station”: spaces whose value in one column is any of those. */
+function resolveSpaceClass(text: string, vocab: Vocab): Parsed {
+  const body = A_OR_AN.exec(text)?.[1] ?? text;
+  const { texts, owners } = spaceValueTable(vocab);
+  // Try the whole body first: a value may itself end in "space".
+  const tokens = tokenize(body, texts, ' or ') ?? tokenize(body.replace(SPACE_SUFFIX, ''), texts, ' or ');
+  if (tokens === null || tokens.length === 0) return unknownText(text);
+  const columns: string[] = [];
+  const values = new Set<Json>();
+  for (const token of tokens) {
+    const options = owners.get(canon(token)) ?? [];
+    const attributes = [...new Set(options.map((o) => o.attribute))];
+    if (attributes.length !== 1) return { error: `“${token}” could be ${joinOr(attributes)}.` };
+    if (!columns.includes(attributes[0])) columns.push(attributes[0]);
+    for (const { value } of options) values.add(value);
+  }
+  if (columns.length > 1) return { error: `“${text}” mixes ${joinAnd(columns)}.` };
+  const kind: SpaceClass = { attribute: columns[0], values: [...values] };
+  return { value: kind };
+}
+
+const SPACECLASS: ParamType = {
+  name: 'spaceclass', label: '[kind of space]',
+  source: (vocab) => bounded(spaceClassSource(vocab)),
+  resolve: resolveSpaceClass,
+};
+
+const SPACEATTR = wordType(
+  'spaceattr', '[space detail]', (v) => v.spaceAttributes.map((a) => [a, a]),
+  looseAs(ANY_TEXT, misnamedWord('space detail', (v) => v.spaceAttributes)),
+);
+const COUNTER = wordType(
+  'counter', '[counter]', (v) => v.counters.map((c) => [c, c]),
+  looseAs(ANY_TEXT, misnamedWord('counter', (v) => v.counters)),
+);
+// Actions and what was done are whole phrases ("ends their turn", "rolled") with a fixed form, not names to misspell.
+const ACTION = wordType('action', '[action]', (v) => v.actions.map((a) => [thirdPersonWords(a.words), a.verb]), undefined);
+const DONE = wordType('done', '[action done]', (v) => v.actions.map((a) => [participle(a.verb), a.verb]), undefined);
+
 // ---- the list ----------------------------------------------------------------------------------
 
 /** Parameter types whose text depends on the game being compiled. */
-export const VOCAB_TYPES: ParamType[] = [ZONE, ZONES, PERZONE, PLAYER, PHASE, MOVE, ATTRIBUTE, CARD, CARDLIST, CARDCLASS];
+export const VOCAB_TYPES: ParamType[] = [
+  ZONE, ZONES, PERZONE, PLAYER, PHASE, MOVE, ATTRIBUTE, CARD, CARDLIST, CARDCLASS, SPACE, SPACECLASS, SPACEATTR, COUNTER, ACTION, DONE,
+];
 
 const TYPES_BY_NAME = new Map(VOCAB_TYPES.map((t) => [t.name, t] as const));
 

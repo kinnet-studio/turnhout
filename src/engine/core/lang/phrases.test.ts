@@ -20,6 +20,15 @@ describe('PhraseLibrary.match', () => {
     expect(l.match('score', 'scores 2 points', V).status).toBe('ok');
   });
 
+  it('{count} reads digits or a number word', () => {
+    const l = lib().effect('there are {count} dice', (env) => env.state);
+    expect(l.match('effect', 'There are two dice', V)).toEqual({ status: 'ok', pattern: 'there are {count} dice', args: [2] });
+    expect(l.match('effect', 'There are 3 dice', V)).toEqual({ status: 'ok', pattern: 'there are {count} dice', args: [3] });
+    expect(l.match('effect', 'There are Twelve dice', V)).toMatchObject({ status: 'ok', args: [12] });
+    expect(l.match('effect', 'There are eleven dice', V)).toMatchObject({ status: 'ok', args: [11] });
+    expect(l.match('effect', 'There are lots dice', V).status).toBe('unknown');
+  });
+
   it('{string} accepts straight and curly quotes and keeps case', () => {
     const l = lib().expect('it is rejected because {string}', () => true);
     expect(l.match('expect', 'It is rejected because “They Can’t”.', V)).toMatchObject({ status: 'ok', args: ['They Can’t'] });
