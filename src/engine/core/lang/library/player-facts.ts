@@ -72,10 +72,10 @@ const hasExpected: ExpectFn = (env, [seat, n, fact]) => {
 };
 
 /**
- * The sentences about what a game keeps facts about players: what a player can have, or be, while the game is played. A name
- * of several words is allowed. A count starts at 0 and a yes/no at no. Then the sentences that read and change what the
- * player a rule is about has, that find the players still in who have or are something, and the Given and Then lines of an
- * example that set and check it.
+ * The sentences for facts about players, which a game declares under Board: with “Players can have …” (a count, starting at 0)
+ * and “Players can be …” (a yes/no, starting at no). A name may be several words. Then the sentences a rule uses: asking what
+ * the player it is about has or is, changing it, and finding the players still in who have or are something. And the Given and
+ * Then lines that set and check these in an example.
  */
 export function registerPlayerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
