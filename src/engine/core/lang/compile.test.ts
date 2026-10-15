@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import COLOR_MATCH_TEXT from '@/games/color-match.rules?raw';
+import VENOM_TEXT from '@/games/venom.rules?raw';
 import { canPlay, compileGame } from './compile';
 import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
@@ -639,6 +640,15 @@ describe('declaring facts and the bank', () => {
   it('declares a card fact under Cards:', () => {
     const text = COLOR_MATCH_TEXT.replace('    | blue   | 1 to 9 | 2      |', '    | blue   | 1 to 9 | 2      |\n  Cards can be poisoned.');
     expect(compileGame(text, createDefaultLibrary()).game!.facts).toEqual([{ name: 'poisoned', on: 'card', kind: 'flag' }]);
+  });
+
+  it('refuses a fact about players in a game with no board, on its own line', () => {
+    const text = VENOM_TEXT.replace('  Cards can be poisoned.', '  Cards can be poisoned.\n  Players can be stung.');
+    const line = text.split('\n').findIndex((l) => l.includes('Players can be stung.')) + 1;
+    expect(errors(text)).toEqual([[line, 'Facts about players need a Board: section for now.']]);
+    // The card fact beside it is still fine, and so is a board game's fact about players.
+    expect(compiled(text).diagnostics.filter((d) => d.line !== line)).toEqual([]);
+    expect(errors(withFacts('  Players can be stung.'))).toEqual([]);
   });
 
   it('declares facts about players, with names of several words', () => {
