@@ -63,13 +63,13 @@ bun run dev        # then open http://localhost:5173/#designer
 
 The designer page is a text editor for the rule language, with a line-numbered editor, a list of problems (each with a hint), and the results of the game's own `Example:`s. It checks the text as you type and keeps it in your browser.
 
-- Start from a sample: **Load sample** has Hearts, Color Match and Rent Day (`src/games/hearts.rules`, `src/games/color-match.rules`, `src/games/rent-day.rules`).
+- Start from a sample: **Load sample** has Hearts, Color Match, Rent Day and Venom (`src/games/hearts.rules`, `src/games/color-match.rules`, `src/games/rent-day.rules`, `src/games/venom.rules`).
 - A phrase the language doesn't know yet is flagged with the closest phrases it does know. **Copy for developer** copies a stub for a developer to implement; designers don't write code.
 - A name the rules never defined (a zone, phase, move, card value or attribute) is flagged with the closest names they do define, for the designer to fix.
 - **Play** is available once the rules read cleanly. It puts every seat on one screen (pick the player count first when the game allows a range), with undo and restart. Editing the rules ends the playtest; Play starts a fresh game under the new rules.
 - **Download** and **Upload** move the text to and from a `.rules` file.
 
-**Board games.** A game can have a `Board:` section: a table of spaces for the pieces to loop round (a `color` column is drawn as a band on the space), a piece for each player, numbers each player holds (money, say) and dice. In a phase, each `A player may …` line becomes a button on that seat's panel, greyed with the reason on hover while it is not allowed. `When a piece passes …` and `When a player lands on …` rules run as pieces move. Each seat's panel in the playtest draws the board with its pieces and owners, a line with everyone's numbers, and the seat's buttons. `src/games/rent-day.rules` is a 2 to 8 player property-trading game written this way, with 16 examples:
+**Board games.** A game can have a `Board:` section: a table of spaces for the pieces to loop round (a `color` column is drawn as a band on the space), a piece for each player, numbers each player holds (money, say) and dice. In a phase, each `A player may …` line becomes a button on that seat's panel, greyed with the reason on hover while it is not allowed. `When a piece passes …` and `When a player lands on …` rules run as pieces move. Each seat's panel in the playtest draws the board with its pieces and owners, a line with everyone's numbers, and the seat's buttons. `src/games/rent-day.rules` is a 2 to 8 player property-trading game written this way, with 29 examples:
 
 ```
 Phase: playing
@@ -80,6 +80,23 @@ Phase: playing
       Their piece moves forward by the roll.
   When a player lands on a tax space:
     They pay its tax.
+```
+
+**Things that change during play.** A game can say what its spaces and cards may come to have, and then rules and examples can use it:
+
+- `Spaces can have houses and a hotel.` A plural noun is a count that starts at 0; "a hotel", or an adjective such as "poisoned", is a yes or no that starts at no. A space's counts are drawn on the board as small squares (up to 4, then one square and the number) and its yes-or-no facts as red blocks, and pointing at the space lists them.
+- `Cards can be poisoned.` The same for cards: a card's face shows what is set, so a card's health and "poisoned" show on it without anything else written. `src/games/venom.rules`, a two-player card game, is built on this: a Viper poisons the other camp, and a poisoned card loses health each time its owner plays.
+- `The bank has 32 houses and 12 hotels.` Supplies the game takes from and gives back to; the playtest shows what is left (`bank: 31 houses, 12 hotels`).
+
+**Buttons that pick a space.** A button whose line ends in "on a …" (`A player may build a house on a street they own.`) asks the player to pick a space. In the playtest, pressing it puts a banner with the question and a Cancel button above the board; the streets the player may pick are outlined, the ones the rules refuse are dashed (click one to see why) and the rest fade. A button with nothing to pick, because the player owns no street, say, stays greyed and says so on hover.
+
+**Column sections.** A section named after a column of the board table (`Rent:`) says what "its rent" means for each kind of space, so a station's rent can grow with the stations its owner has while a street's comes from its houses:
+
+```
+Rent:
+  A street's rent depends on its houses and hotel.
+  A street in a full set with no buildings has double rent.
+  A station's rent is 25, 50, 100 or 200 when its owner has 1, 2, 3 or 4 stations.
 ```
 
 A taste of the language (from `src/games/color-match.rules`):
@@ -182,7 +199,7 @@ src/
               standard and text card faces
     input/    pointer tracker, KMT state machine + parser (Pixi federation off)
     react/    <CardTable> declarative bridge
-  games/              Hearts and Color Match, written in the designer language
+  games/              Hearts, Color Match, Rent Day and Venom, written in the designer language
   pages/
     table-demo/       deck + demo page
     hearts-demo/      four-seat Hearts over loopback channels
@@ -212,7 +229,7 @@ turnhout is built as dependency-ordered sub-projects, each with its own design s
 **Next:**
 
 - **Online play** — a real transport and rooms on top of the net core (a Cloudflare Durable Object per room is the intended fit).
-- **Tokens and meeples** — 🚧 in progress: non-card pieces, in the engine and in the designer language. Slice 1 has shipped (a board to loop round, pieces, dice, numbers such as money, buttons, and the Rent Day sample to play it); the slices after it are laid out in [the board games overview](docs/superpowers/specs/2026-10-15-board-games-overview-design.md).
+- **Tokens and meeples** — 🚧 in progress: non-card pieces, in the engine and in the designer language. Slice 1 (a board to loop round, pieces, dice, numbers such as money, buttons, and the Rent Day sample to play it) and slice 2 (sets and buildings: buttons that pick a space, facts on spaces and cards, a bank, `Rent:` sections, houses and hotels on the board, and the Venom sample) have shipped; the slices after them are laid out in [the board games overview](docs/superpowers/specs/2026-10-15-board-games-overview-design.md).
 
 ## Tech stack
 

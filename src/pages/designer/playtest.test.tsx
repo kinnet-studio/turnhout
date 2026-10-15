@@ -1,8 +1,9 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { StrictMode, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import COLOR_MATCH from '@/games/color-match.rules?raw';
 import RENT_DAY from '@/games/rent-day.rules?raw';
+import { setOwner, withBoardData } from '@/engine/core/lang/board-state';
 import { createEngine, initialState } from '@/engine/core/lang/build';
 import { compileGame } from '@/engine/core/lang/compile';
 import { createDefaultLibrary } from '@/engine/core/lang/library';
@@ -228,5 +229,117 @@ describe('Playtest of a board game', () => {
     render(<StrictMode><Playtest game={rentDay} library={lib} players={3} seed={SEED} onRestart={() => {}} onStop={() => {}} /></StrictMode>);
     expect(screen.getAllByText('p0 1,500 money')).toHaveLength(3);
     expect(rollButtons()).toHaveLength(3);
+  });
+});
+
+describe('Playtest: building by picking a street', () => {
+  const nameAt = (name: string) => rentDay.board!.spaces.findIndex((space) => space.name === name);
+  // p0 owns the three orange streets, so on p0's turn "Build a house" has streets to pick from; p1 owns nothing.
+  const ownsOrange = ['Rose Lane', 'Lily Lane', 'Iris Road'].reduce(
+    (state, name) => setOwner(state, nameAt(name), 'p0'),
+    withBoardData(initialState(rentDay, SEED), rentDay, ['p0', 'p1']),
+  );
+  const mountOwning = () => mountRentDay({ players: 2, initial: ownsOrange });
+  const build = (seat: number) => screen.getAllByRole('button', { name: 'Build a house' })[seat];
+  const banner = () => screen.queryByRole('status');
+  const submit = () => vi.spyOn(GameServer.prototype, 'submit');
+
+  it('opens a banner with the prompt and a Cancel button when the button is pressed, and sends nothing', () => {
+    mountOwning();
+    const sent = submit();
+    expect(banner()).toBeNull();
+    fireEvent.click(build(0));
+    expect(within(banner()!).getByText('Pick a street you own')).toBeTruthy();
+    expect(within(banner()!).getByRole('button', { name: 'Cancel' })).toBeTruthy();
+    expect(sent).not.toHaveBeenCalled();
+    // Only the seat that pressed the button is picking.
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: /^Pick / })).toHaveLength(3);
+  });
+
+  it('builds on the street that is picked: the money drops, the street shows the house and the bank has one less', () => {
+    mountOwning();
+    expect(screen.getAllByText('p0 1,500 money')).toHaveLength(2);
+    expect(screen.getAllByText('bank: 32 houses, 12 hotels')).toHaveLength(2);
+    fireEvent.click(build(0));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Pick Rose Lane' })[0]);
+    expect(banner()).toBeNull();
+    expect(screen.getAllByText('p0 1,400 money')).toHaveLength(2);
+    expect(screen.getAllByTitle(/^Rose Lane — 1 house,/)).toHaveLength(2);
+    expect(screen.getAllByText('bank: 31 houses, 12 hotels')).toHaveLength(2);
+    expect(screen.getAllByTestId('house')).toHaveLength(2);
+    expect(screen.queryAllByRole('button', { name: /^Pick / })).toHaveLength(0);
+  });
+
+  it('says why a street cannot be picked when it is clicked, and stays picking', () => {
+    mountOwning();
+    fireEvent.click(build(0));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Pick Rose Lane' })[0]);
+    fireEvent.click(build(0));
+    // Rose Lane is ahead of the other two orange streets now.
+    const refused = screen.getAllByRole('button', { name: 'Pick Rose Lane' })[0];
+    expect(refused.getAttribute('aria-disabled')).toBe('true');
+    const sent = submit();
+    fireEvent.click(refused);
+    expect(sent).not.toHaveBeenCalled();
+    expect(screen.getByText('no street of its color has fewer buildings')).toBeTruthy();
+    expect(banner()).not.toBeNull();
+  });
+
+  it('leaves picking on Cancel without sending', () => {
+    mountOwning();
+    fireEvent.click(build(0));
+    const sent = submit();
+    fireEvent.click(within(banner()!).getByRole('button', { name: 'Cancel' }));
+    expect(banner()).toBeNull();
+    expect(screen.queryAllByRole('button', { name: /^Pick / })).toHaveLength(0);
+    expect(sent).not.toHaveBeenCalled();
+    expect(screen.getAllByText('p0 1,500 money')).toHaveLength(2);
+  });
+
+  it('leaves picking when another button is pressed', () => {
+    mountOwning();
+    fireEvent.click(build(0));
+    fireEvent.click(rollButtons()[0]);
+    expect(banner()).toBeNull();
+  });
+
+  it('greys a button for a seat with no street to pick, with the reason, and opens nothing', () => {
+    mountOwning();
+    const button = build(1);
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.getAttribute('title')).toBe('There is no street you own.');
+    const sent = submit();
+    fireEvent.click(button);
+    expect(banner()).toBeNull();
+    expect(sent).not.toHaveBeenCalled();
+    expect(screen.getByText('There is no street you own.')).toBeTruthy();
+  });
+
+  it('Undo takes a built house back', () => {
+    mountOwning();
+    fireEvent.click(build(0));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Pick Rose Lane' })[0]);
+    expect(screen.getAllByText('p0 1,400 money')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.getAllByText('p0 1,500 money')).toHaveLength(2);
+    expect(screen.queryAllByTestId('house')).toHaveLength(0);
+    expect(screen.getAllByText('bank: 32 houses, 12 hotels')).toHaveLength(2);
+  });
+
+  it('stops picking when the button can no longer be pressed, and does not start again by itself', () => {
+    const brown = ['Mill Lane', 'Ferry Row'].reduce((state, name) => setOwner(state, nameAt(name), 'p1'), ownsOrange);
+    mountRentDay({ players: 2, initial: brown });
+    fireEvent.click(rollButtons()[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'End your turn' })[0]);
+    fireEvent.click(build(1));
+    expect(within(banner()!).getByText('Pick a street you own')).toBeTruthy();
+    // Undo hands the turn back to p0, so p1's button is greyed and its picking is over.
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(banner()).toBeNull();
+    // When it is p1's turn again nothing was waiting to be picked.
+    fireEvent.click(screen.getAllByRole('button', { name: 'End your turn' })[0]);
+    expect(build(1).getAttribute('aria-disabled')).toBe('false');
+    expect(banner()).toBeNull();
   });
 });

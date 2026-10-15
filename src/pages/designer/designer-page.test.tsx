@@ -160,6 +160,17 @@ describe('DesignerPage', () => {
     expect(screen.getByText('playtest 4')).toBeTruthy();
   });
 
+  it('loads Venom with no problems, all 7 examples passing, and Play on', () => {
+    render(<DesignerPage />);
+    loadSample('Venom');
+    expect(rules().value).toBe(SAMPLES.find((s) => s.name === 'Venom')!.text);
+    expect(screen.getByText('No problems found.')).toBeTruthy();
+    expect(screen.getByText('7 of 7 examples pass')).toBeTruthy();
+    expect(playButton().disabled).toBe(false);
+    play();
+    expect(screen.getByText('playtest 2')).toBeTruthy();
+  });
+
   it('has no player count to pick for a game with a fixed number of players', () => {
     render(<DesignerPage />); flush();
     expect(screen.queryByLabelText('Players')).toBeNull();
