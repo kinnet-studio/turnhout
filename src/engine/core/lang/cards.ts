@@ -44,17 +44,30 @@ export function standardDeckIdentities(): CardIdentity[] {
   );
 }
 
-/** What a table cell says: each value it stands for. 'a to b' counts up from a to b; whole numbers become numbers. */
-function cellValues(cell: string, line: number): Json[] {
+/** The most cards a game can have, across all its card sets: more would freeze the page that lays them out. */
+export const MAX_CARDS = 1000;
+export const TOO_MANY_CARDS = `A game can have at most ${MAX_CARDS} cards.`;
+
+const COPIES = 'copies';
+
+/** What a table cell says: 'a to b' counts up from a to b; anything else is one value, whole numbers as numbers. */
+type Cell = { from: number; to: number } | { value: Json };
+
+function readCell(cell: string, line: number): Cell {
   const text = cell.trim();
   const range = RANGE.exec(text);
   if (range) {
     const [from, to] = [Number(range[1]), Number(range[2])];
     if (from > to) throw new RuleError(`“${text}” counts down. Write the smaller number first.`, line, text);
-    return Array.from({ length: to - from + 1 }, (_, i) => from + i);
+    return { from, to };
   }
-  return [INTEGER.test(text) ? Number(text) : text];
+  return { value: INTEGER.test(text) ? Number(text) : text };
 }
+
+const countOf = (cell: Cell): number => ('value' in cell ? 1 : cell.to - cell.from + 1);
+
+const valuesOf = (cell: Cell): Json[] =>
+  'value' in cell ? [cell.value] : Array.from({ length: countOf(cell) }, (_, i) => cell.from + i);
 
 function copiesOf(row: CardTable['rows'][number], column: number): number {
   if (column < 0) return 1;
@@ -63,16 +76,24 @@ function copiesOf(row: CardTable['rows'][number], column: number): number {
   return Number(text);
 }
 
-/** One identity per card in a designer's table: ranges expand to a row per value, `copies` repeats the row. */
+/**
+ * One identity per card in a designer's table: ranges expand to a row per value, a `copies` column (any case)
+ * repeats the row. Each row's cards are counted before they are made, so a table of too many cards is refused at once.
+ */
 export function expandCardTable(table: CardTable): CardIdentity[] {
-  const copiesColumn = table.columns.indexOf('copies');
+  const copiesColumn = table.columns.findIndex((name) => name.trim().toLowerCase() === COPIES);
   const columns = table.columns.map((name, at) => ({ name, at })).filter((c) => c.at !== copiesColumn);
   const identities: CardIdentity[] = [];
   for (const row of table.rows) {
     const copies = copiesOf(row, copiesColumn);
+    const cells = columns.map(({ name, at }) => ({ name, cell: readCell(row.cells[at] ?? '', row.line) }));
+    const count = cells.reduce((n, { cell }) => n * countOf(cell), copies);
+    if (count === 0) continue; // no copies: nothing to make, however long its ranges
+    // Written so that a count too big to be a number (NaN) is refused too.
+    if (!(identities.length + count <= MAX_CARDS)) throw new RuleError(TOO_MANY_CARDS, row.line);
     let combos: { [k: string]: Json }[] = [{}];
-    for (const { name, at } of columns) {
-      const values = cellValues(row.cells[at] ?? '', row.line);
+    for (const { name, cell } of cells) {
+      const values = valuesOf(cell);
       combos = combos.flatMap((attrs) => values.map((value) => ({ ...attrs, [name]: value })));
     }
     for (const attrs of combos) {

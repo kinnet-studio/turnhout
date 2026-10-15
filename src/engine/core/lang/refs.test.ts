@@ -137,6 +137,12 @@ describe('players, phases, moves and attributes', () => {
     expect([thirdPerson('play'), thirdPerson('pass'), thirdPerson('catch'), thirdPerson('fix')]).toEqual(['plays', 'passes', 'catches', 'fixes']);
     expect([thirdPerson('wash'), thirdPerson('buzz')]).toEqual(['washes', 'buzzes']);
   });
+  it('spells -y and -o verbs the way English does', () => {
+    expect([thirdPerson('bury'), thirdPerson('carry'), thirdPerson('go')]).toEqual(['buries', 'carries', 'goes']);
+    // A vowel before the y keeps it.
+    expect([thirdPerson('play'), thirdPerson('buy')]).toEqual(['plays', 'buys']);
+    expect(parseParam('move', 'buries', { ...V, verbs: ['bury'] })).toEqual({ value: 'bury' });
+  });
   it('reads phases and attributes from the vocabulary', () => {
     expect(parseParam('phase', 'Passing', V)).toEqual({ value: 'passing' });
     expect(parseParam('phase', 'scoring', V)).toBeNull();
@@ -263,5 +269,76 @@ describe('inside a phrase library', () => {
     expect(stubFor('effect', 'Deal 13 cards from the deck to each hand', V, types, { game: 'Hearts', line: 4 })).toContain(
       "library.effect('deal {int} cards from {zone} to {zone}'",
     );
+  });
+});
+
+describe('names the game never defined', () => {
+  /** What the type says about text shaped like it that its strict pattern does not cover. */
+  const misnamed = (type: string, text: string, vocab: Vocab = V) => {
+    const found = VOCAB_TYPES.find((t) => t.name === type)!;
+    return found.loose!.explain(text, vocab);
+  };
+  const missing = (what: string, name: string, suggestions: string[]) => ({ message: `There is no ${what} called “${name}”.`, suggestions });
+
+  it.each([V, emptyVocab()])('every type has a loose source with no capture groups that does not match empty text', (vocab) => {
+    for (const type of VOCAB_TYPES) {
+      const source = type.loose!.source(vocab);
+      expect(new RegExp(`${source}|`).exec('')).toHaveLength(1);
+      expect(new RegExp(`^(?:${source})$`, 'i').test('')).toBe(false);
+    }
+  });
+
+  it('names a zone with the closest zones, or the zones there are when none is close', () => {
+    expect(misnamed('zone', 'the trik')).toEqual(missing('zone', 'trik', ['trick']));
+    expect(misnamed('zone', "the winner's wonpile")).toEqual(missing('zone', 'wonpile', ['won pile']));
+    expect(misnamed('zone', 'Their Hnad')).toEqual(missing('zone', 'Hnad', ['hand']));
+    expect(misnamed('zone', 'the graveyard')).toEqual(missing('zone', 'graveyard', ['trick', 'deck', 'draw pile']));
+  });
+
+  it('leaves text that holds a real zone among other words to other phrases', () => {
+    expect(misnamed('zone', 'the deck twice')).toBeNull();
+    expect(misnamed('zone', 'the top card of the deck')).toBeNull();
+  });
+
+  it('finds the misnamed zone in a list', () => {
+    expect(misnamed('zones', 'every hand and the trik')).toEqual(missing('zone', 'trik', ['trick']));
+    expect(misnamed('zones', 'the deck twice and the trick')).toBeNull();
+  });
+
+  it('says when a zone each player has is wanted', () => {
+    expect(misnamed('perzone', 'hnad')).toEqual(missing('zone', 'hnad', ['hand']));
+    expect(misnamed('perzone', 'deck')).toEqual({ message: '“deck” is shared, but this needs a zone that each player has.', suggestions: ['hand', 'pass pile', 'won pile'] });
+  });
+
+  it('names a player only for text that looks like a seat', () => {
+    expect(misnamed('player', 'player1')).toEqual({ message: 'There is no player called “player1”. Players are called p0 to p3.', suggestions: ['p1'] });
+    expect(misnamed('player', 'player9')).toEqual({ message: 'There is no player called “player9”. Players are called p0 to p3.', suggestions: [] });
+    expect(misnamed('player', 'nobody')).toBeNull();
+  });
+
+  it('names phases, moves and card attributes', () => {
+    expect(misnamed('phase', 'playng')).toEqual(missing('phase', 'playng', ['playing']));
+    expect(misnamed('phase', 'playing now')).toBeNull();
+    expect(misnamed('move', 'plyas')).toEqual(missing('move', 'plyas', ['plays']));
+    expect(misnamed('attribute', 'colour')).toEqual(missing('card attribute', 'colour', ['color']));
+  });
+
+  it('names the suit, rank or card value that is not one', () => {
+    expect(misnamed('card', 'the 2 of clbs')).toEqual(missing('suit', 'clbs', ['clubs']));
+    expect(misnamed('card', 'the jak of spades')).toEqual(missing('rank', 'jak', ['jack']));
+    expect(misnamed('card', 'a purple 7')).toEqual(missing('card value', 'purple', []));
+    expect(misnamed('card', 'a reed 7')).toEqual(missing('card value', 'reed', ['red']));
+    expect(misnamed('cardlist', 'the 2 of clubs and the 3 of clbs')).toEqual(missing('suit', 'clbs', ['clubs']));
+    expect(misnamed('cardclass', 'a hart')).toEqual(missing('suit', 'hart', ['heart', 'hearts']));
+    expect(misnamed('cardclass', 'reed cards')).toEqual(missing('card value', 'reed', ['red']));
+  });
+
+  it('leaves text that is no card to other phrases', () => {
+    expect(misnamed('card', 'the top of the deck')).toBeNull();
+    expect(misnamed('card', 'the most cards')).toBeNull();
+    expect(misnamed('cardlist', 'the red 7 and the most cards')).toBeNull();
+    // A lone word is only a misspelt suit or value when it looks like one.
+    expect(misnamed('cardclass', 'playable')).toBeNull();
+    expect(misnamed('card', 'the 2 of clubs', { ...emptyVocab(), maxPlayers: 4 })).toBeNull();
   });
 });

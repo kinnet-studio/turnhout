@@ -1,7 +1,7 @@
 import type { Json } from '../table-def';
 import { RuleError, type Diagnostic } from './diagnostics';
 import type { OutlineNode } from './outline';
-import { normalizeLine, stubFor, type MatchResult, type PhraseLibrary } from './phrases';
+import { normalizeLine, stubFor, type MatchResult, type Misnamed, type PhraseLibrary } from './phrases';
 import type { ParamType, PhraseKind, PhraseRef, Vocab } from './types';
 
 /** What every line of one compile stage shares. Never change `vocab` after a line has been matched with it. */
@@ -78,9 +78,20 @@ function tryMatch(kind: PhraseKind, text: string, ctx: LineCtx): MatchResult {
   }
 }
 
+/** A name in a line no phrase matched that the game never defined; a library that fails here just says nothing. */
+function tryMisnamed(kinds: PhraseKind[], text: string, ctx: LineCtx): Misnamed | null {
+  try {
+    return ctx.library.misnamed(kinds, text, ctx.vocab);
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Reads one line as a phrase of `kind` (`text` has no leading keyword). A line the library does not know becomes a
- * placeholder plus an unknown-phrase diagnostic with suggestions and a stub; `fallback` is a second kind to try first.
+ * Reads one line as a phrase of `kind` (`text` has no leading keyword); `fallback` is a second kind to try. A line no
+ * phrase matches becomes a placeholder. When it is shaped like a phrase but names something the game never defined, the
+ * designer is told which name, with the closest real ones; otherwise it gets an unknown-phrase diagnostic with
+ * suggestions and a stub for a developer.
  */
 export function matchLine(kind: PhraseKind, text: string, line: number, ctx: LineCtx, fallback?: PhraseKind): PhraseRef {
   const clean = normalizeLine(text);
@@ -106,6 +117,12 @@ export function matchLine(kind: PhraseKind, text: string, line: number, ctx: Lin
       return { kind: found, phrase: result.pattern, args: result.args, line, text: clean };
     }
     case 'unknown': {
+      const misnamed = tryMisnamed(fallback ? [kind, fallback] : [kind], clean, ctx);
+      if (misnamed) {
+        const { message, suggestions } = misnamed.problem;
+        addProblem(ctx.diagnostics, line, message, { kind: 'invalid', text: clean, suggestions });
+        return missingRef(misnamed.kind, clean, line);
+      }
       const diagnostic: Diagnostic = {
         line, severity: 'error', kind: 'unknown-phrase', message: `“${clean}” isn't in the phrase library yet.`, text: clean,
         suggestions: result.suggestions,

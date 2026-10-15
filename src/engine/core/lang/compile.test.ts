@@ -205,6 +205,27 @@ describe('compileGame table and cards', () => {
     expect(compileGame(text, lib).diagnostics).toEqual([expect.objectContaining({ line: 7, kind: 'invalid', text: 'many' })]);
   });
 
+  it('refuses a table of more than 1000 cards with one message on its row, at once', () => {
+    for (const row of ['| red | 1 to 9 | 2000 |', '| red | 1 to 9999 | 1 |', '| red | 1 to 9999999999 | 1 |']) {
+      const text = BASE.replace('  A standard 52-card deck, starting in the deck.', [
+        '  A deck called color cards, starting in the deck:', '    | color | number | copies |', `    ${row}`,
+      ].join('\n'));
+      const started = performance.now();
+      const result = compileGame(text, lib);
+      expect(performance.now() - started).toBeLessThan(500);
+      expect(result.diagnostics).toEqual([expect.objectContaining({ line: 7, severity: 'error', message: 'A game can have at most 1000 cards.' })]);
+      expect(canPlay(result).ok).toBe(false);
+    }
+  });
+
+  it('counts the cards of every set towards the 1000', () => {
+    const text = BASE.replace('  A standard 52-card deck, starting in the deck.', [
+      '  A standard 52-card deck, starting in the deck.', '  A deck called extras, starting in the deck:', '    | n | copies |', '    | 1 to 100 | 10 |',
+    ].join('\n'));
+    expect(messages(text)).toEqual([[6, 'A game can have at most 1000 cards.']]);
+    expect(compileGame(text.replace('| 1 to 100 | 10 |', '| 1 to 94 | 10 |'), lib).diagnostics).toEqual([]);
+  });
+
   it('asks for the table a custom deck needs', () => {
     expect(messages(BASE.replace('A standard 52-card deck', 'A deck called plain'))).toEqual([[5, 'Add a table of cards under this line.']]);
   });
@@ -377,7 +398,7 @@ describe('canPlay', () => {
   });
 
   it('counts problems the designer must fix, even beside unknown phrases', () => {
-    const text = BASE.replace('Players: 2 to 3', 'Players: lots').replace('Shuffle the deck.', 'Shufle the deck.').replace('Deal 5', 'Dael 5');
+    const text = BASE.replace('Shuffle the deck.', 'Shufle the deck.').replace('to each hand', 'to the hand').replace('Hint: Do things.', 'Hint: Do things.\n  Dance.');
     const result = compileGame(text, lib);
     expect(result.game).toBeUndefined();
     expect(canPlay(result)).toEqual({ ok: false, reason: 'Fix 3 problems in the rules first.' });
@@ -387,5 +408,91 @@ describe('canPlay', () => {
     const result = compileGame(BASE.replace(/End:[\s\S]*/, ''), lib);
     expect(result.diagnostics.map((d) => d.severity)).toEqual(['warning']);
     expect(canPlay(result)).toEqual({ ok: true });
+  });
+});
+
+describe('compileGame names the game never defined', () => {
+  const COLOR_DECK = ['  A deck called color cards, starting in the deck:', '    | color | number |', '    | red   | 1 to 2 |', '    | blue  | 7      |'].join('\n');
+
+  it('names a zone with the closest one, as a problem for the designer rather than a phrase for a developer', () => {
+    const result = compileGame(BASE.replace('Shuffle the deck.', 'Shuffle the dek.'), lib);
+    expect(result.diagnostics).toEqual([{
+      line: 12, severity: 'error', kind: 'invalid', message: 'There is no zone called “dek”.', text: 'Shuffle the dek', suggestions: ['deck'],
+    }]);
+    expect(canPlay(result)).toEqual({ ok: false, reason: 'Fix 1 problem in the rules first.' });
+  });
+
+  it('names it inside an If line', () => {
+    expect(messages(BASE.replace('Shuffle the deck.', 'If the dek is empty, shuffle the deck.'))).toEqual([[12, 'There is no zone called “dek”.']]);
+  });
+
+  it('keeps a line with other words around a real zone a phrase for a developer', () => {
+    expect(compileGame(BASE.replace('Shuffle the deck.', 'Shuffle the deck twice.'), lib).diagnostics).toEqual([
+      expect.objectContaining({ line: 12, kind: 'unknown-phrase', stub: expect.stringContaining("library.effect('shuffle {zone} twice'") }),
+    ]);
+  });
+
+  it('names phases, suits and moves in examples', () => {
+    const text = BASE.replace('Players take turns.', 'Players take turns.\n  A player may play a card from their hand to the deck.')
+      + "\n\nExample: typos\n  Given the phase is mian\n  And p0 holds the 2 of clbs\n  When p0 plyas a card\n  Then it is p1's turn";
+    expect(compileGame(text, lib).diagnostics.map((d) => [d.line, d.kind, d.message, d.suggestions])).toEqual([
+      [25, 'invalid', 'There is no phase called “mian”.', ['main']],
+      [26, 'invalid', 'There is no suit called “clbs”.', ['clubs']],
+      [27, 'invalid', 'There is no move called “plyas”.', ['plays']],
+    ]);
+  });
+
+  it('names card values and card attributes from the card table', () => {
+    const text = BASE
+      .replace('  A standard 52-card deck, starting in the deck.', COLOR_DECK)
+      .replace('Shuffle the deck.', 'The player holding the purple 2 goes first.')
+      .replace('Players take turns.', 'Players take turns.\n  A player may play a card from their hand to the deck.\n    Only if the card has the same colour as the top card of the deck.');
+    expect(compileGame(text, lib).diagnostics.map((d) => [d.line, d.message, d.suggestions])).toEqual([
+      [15, 'There is no card value called “purple”.', []],
+      [22, 'There is no card attribute called “colour”.', ['color']],
+    ]);
+  });
+});
+
+describe('compileGame after a broken Players:, Cards: or Table: line', () => {
+  const HOLD_BACK = (line: number) => `Some lines below can't be checked until line ${line} is fixed.`;
+  const EXAMPLE = "\n\nExample: turns\n  Given it is p1's turn\n  Then p1 holds 5 cards";
+
+  it('holds back what a broken player count makes unreadable, with one warning', () => {
+    const before = compileGame(`${BASE}${EXAMPLE}`.replace('Players: 2 to 3', 'Players: four'), lib);
+    expect(before.diagnostics.map((d) => [d.line, d.severity, d.message])).toEqual([
+      [2, 'error', 'Say how many players, like “Players: 4” or “Players: 2 to 5”.'],
+      [24, 'warning', HOLD_BACK(2)],
+    ]);
+    expect(canPlay(before).ok).toBe(false);
+  });
+
+  it('holds back the card names a broken deck line leaves undefined, keeping the deck line\'s own hint', () => {
+    const text = BASE.replace('A standard 52-card deck', 'A standard 52 card deck').replace('Shuffle the deck.', 'The player holding the 2 of clubs goes first.');
+    const result = compileGame(text, lib);
+    expect(result.diagnostics.map((d) => [d.line, d.severity, d.kind])).toEqual([[5, 'error', 'unknown-phrase'], [12, 'warning', 'structure']]);
+    expect(result.diagnostics[1].message).toBe(HOLD_BACK(5));
+    expect(result.diagnostics.filter((d) => d.stub !== undefined).map((d) => d.line)).toEqual([5]);
+    expect(canPlay(result).ok).toBe(false);
+  });
+
+  it('shows every problem on the Players:, Cards: and Table: lines and points at the zone line the deck depends on', () => {
+    const text = BASE.replace('The deck is a pile in the center that no one can see', 'The deck is a pile in the center that only they can see');
+    expect(messages(text)).toEqual([
+      [5, 'There is no zone called “deck”.'],
+      [8, 'Only a player\'s own zone can be “only they can see”.'],
+      [12, HOLD_BACK(8)],
+    ]);
+  });
+
+  it('holds back nothing, and warns of nothing, when no later line has a problem', () => {
+    expect(messages(BASE.replace('Players: 2 to 3', 'Players: 0'))).toEqual([[2, 'Say how many players, like “Players: 4” or “Players: 2 to 5”.']]);
+  });
+
+  it('still reports structure problems below a broken line', () => {
+    expect(messages(`${BASE.replace('Players: 2 to 3', 'Players: four')}\nRules:\n  Be nice.`)).toEqual([
+      [2, 'Say how many players, like “Players: 4” or “Players: 2 to 5”.'],
+      [22, 'I don\'t understand this section. Sections are Game, Players, Cards, Table, Setup, Phase, End and Example.'],
+    ]);
   });
 });

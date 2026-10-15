@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { standardDeckIdentities } from './cards';
 import { PhraseLibrary, STATIC_TYPES, emptyVocab, stubFor, suggestNames, vocabFrom } from './phrases';
-import type { ParamType } from './types';
+import { VOCAB_TYPES } from './refs';
+import type { EffectFn, ParamType } from './types';
 
 const V = emptyVocab();
 const lib = () => new PhraseLibrary(STATIC_TYPES);
@@ -99,6 +100,41 @@ describe('PhraseLibrary.match', () => {
   });
 });
 
+describe('PhraseLibrary.misnamed', () => {
+  const same: EffectFn = (env) => env.state;
+  const named = () => new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
+    .effect('move {zone} to {zone}', same)
+    .effect('move the top card of {zone} to {zone}', same)
+    .effect('shuffle {zone}', same)
+    .condition('{zone} is empty', () => true);
+  const vocab = vocabFrom({
+    maxPlayers: 4,
+    zones: [
+      { name: 'deck', perPlayer: false, layout: 'pile', visibility: 'secret' },
+      { name: 'trick', perPlayer: false, layout: 'row', visibility: 'public' },
+      { name: 'hand', perPlayer: true, layout: 'hand', visibility: 'owner' },
+    ],
+  });
+
+  it('names the zone of a line shaped like a phrase, on the phrase written most specifically', () => {
+    expect(named().misnamed(['effect'], 'Move the top card of the dek to the trick.', vocab)).toEqual({
+      kind: 'effect', problem: { message: 'There is no zone called “dek”.', suggestions: ['deck'] },
+    });
+    expect(named().misnamed(['effect', 'condition'], 'The dek is empty', vocab)).toMatchObject({ kind: 'condition' });
+  });
+
+  it('finds nothing for a line no phrase is shaped like, or whose names are all fine', () => {
+    expect(named().misnamed(['effect'], 'Shufle the deck', vocab)).toBeNull();
+    expect(named().misnamed(['effect'], 'Shuffle the deck twice', vocab)).toBeNull();
+    expect(named().misnamed(['effect'], 'Shuffle the deck', vocab)).toBeNull();
+    expect(named().misnamed(['turn'], 'Shuffle the dek', vocab)).toBeNull();
+  });
+
+  it('leaves the strict answer alone', () => {
+    expect(named().match('effect', 'Shuffle the dek', vocab).status).toBe('unknown');
+  });
+});
+
 describe('stubFor', () => {
   it('writes a ready-to-paste stub with typed parameters', () => {
     expect(stubFor('effect', 'The winner draws 2 cards.', V, STATIC_TYPES, { game: 'Hearts', line: 31 })).toBe(
@@ -152,7 +188,18 @@ describe('vocabFrom', () => {
 
 describe('suggestNames', () => {
   it('lists the names closest to the text first, ignoring case, at most three', () => {
-    expect(suggestNames('Playing', ['placing', 'dealing', 'scoring', 'PLAYING NOW', 'plays', 'playing time'])).toEqual(['PLAYING NOW', 'playing time', 'placing']);
+    expect(suggestNames('Playing', ['placing', 'dealing', 'scoring', 'PLAYING NOW', 'plays', 'playing time'])).toEqual(['placing', 'PLAYING NOW', 'playing time']);
+  });
+
+  it('counts swapped, missing and extra letters as typos', () => {
+    expect(suggestNames('hnad', ['deck', 'hand', 'trick'])).toEqual(['hand']);
+    expect(suggestNames('plyas', ['plays', 'passes', 'draws'])).toEqual(['plays']);
+    expect(suggestNames('dek', ['deck', 'hand'])).toEqual(['deck']);
+    expect(suggestNames('trik', ['deck', 'hand', 'pass pile', 'won pile', 'trick'])).toEqual(['trick']);
+  });
+
+  it('leaves out names much further off than the closest', () => {
+    expect(suggestNames('wonpile', ['trick', 'deck', 'draw pile', 'hand', 'pass pile', 'won pile'])).toEqual(['won pile']);
   });
 
   it('leaves out names with little in common', () => {

@@ -1,3 +1,4 @@
+import { MAX_CARDS, TOO_MANY_CARDS } from './cards';
 import { compileExample } from './compile-example';
 import { compilePhase } from './compile-phase';
 import { addProblem, attempt, matchEffectLine, matchLine, phaseId, phraseFn, rejectChildren, type LineCtx } from './compile-util';
@@ -23,6 +24,7 @@ const MISSING_GAME = 'Start with a line like “Game: My Game”.';
 const BAD_PLAYERS = 'Say how many players, like “Players: 4” or “Players: 2 to 5”.';
 const TOO_MANY_PLAYERS = `This game can have at most ${MAX_PLAYERS} players.`;
 const UNKNOWN_SECTION = "I don't understand this section. Sections are Game, Players, Cards, Table, Setup, Phase, End and Example.";
+const HOLD_BACK = (line: number) => `Some lines below can't be checked until line ${line} is fixed.`;
 
 type Section = { keyword: string; rest: string; node: OutlineNode };
 
@@ -41,6 +43,32 @@ function readSections(roots: OutlineNode[], diagnostics: Diagnostic[]): Section[
     sections.push({ keyword, rest, node });
   }
   return sections;
+}
+
+/** Every line a section takes up: its own, the lines under it and the rows of their tables. */
+function linesIn(node: OutlineNode): number[] {
+  return [node.line, ...(node.table?.rows.map((row) => row.line) ?? []), ...node.children.flatMap(linesIn)];
+}
+
+/**
+ * The Players:, Table: and Cards: sections give every other line its words: the seats, the zones and the cards. While
+ * one of their lines has an error, what the rule lines below it say about those words is held back, and one warning
+ * stands in for it; the problems on their own lines are always shown. The line to fix is the first error in the order
+ * those words are read (cards name the zones they start in), so that fixing it cannot be blocked by another.
+ */
+function holdBack(diagnostics: Diagnostic[], stages: Section[][]): void {
+  const lineSet = (sections: Section[]) => new Set(sections.flatMap((s) => linesIn(s.node)));
+  const errorLines = (lines: Set<number>) => diagnostics.filter((d) => d.severity === 'error' && lines.has(d.line)).map((d) => d.line);
+  const failing = stages.map((stage) => errorLines(lineSet(stage))).find((lines) => lines.length > 0);
+  if (!failing) return;
+  const root = Math.min(...failing);
+  const ownLines = lineSet(stages.flat());
+  const held = (d: Diagnostic) => (d.kind === 'unknown-phrase' || d.kind === 'invalid') && d.line > root && !ownLines.has(d.line);
+  const heldLines = diagnostics.filter(held).map((d) => d.line);
+  if (heldLines.length === 0) return;
+  const kept = diagnostics.filter((d) => !held(d));
+  diagnostics.splice(0, diagnostics.length, ...kept);
+  addProblem(diagnostics, Math.min(...heldLines), HOLD_BACK(root), { severity: 'warning' });
 }
 
 /** The lines inside every section of one kind, in the order written. */
@@ -95,12 +123,19 @@ function compileTable(lines: OutlineNode[], ctx: LineCtx): ZoneSpec[] {
 
 function compileCards(lines: OutlineNode[], ctx: LineCtx): CardSetSpec[] {
   const sets: CardSetSpec[] = [];
+  let total = 0;
   for (const node of lines) {
     rejectChildren(node, ctx.diagnostics);
     const ref = matchLine('cards', node.text.replace(/:$/, ''), node.line, ctx);
     if (ref.kind !== 'cards') continue;
     const set = attempt(ctx, node.line, ref.text, () => phraseFn<CardsFn>(ctx, ref)(ref.args, node.table));
-    if (set) sets.push(set);
+    if (!set) continue;
+    if (total + set.identities.length > MAX_CARDS) {
+      addProblem(ctx.diagnostics, node.line, TOO_MANY_CARDS, { kind: 'invalid', text: ref.text });
+      continue;
+    }
+    total += set.identities.length;
+    sets.push(set);
   }
   return sets;
 }
@@ -195,7 +230,9 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   const end = compileEnd(of('end'), ctx);
   const examples = of('example').map((s) => compileExample(s.node, ctx, players));
 
+  // Decided before anything is held back: a game whose held-back lines have problems is not one to play.
   const onlyUnknownPhrases = diagnostics.every((d) => d.severity !== 'error' || d.kind === 'unknown-phrase');
+  holdBack(diagnostics, [of('players'), of('table'), of('cards')]);
   if (name === null || players === null || phases.length === 0 || !onlyUnknownPhrases) return undefined;
   return { name, players, zones, cards, setup, phases, end, examples };
 }

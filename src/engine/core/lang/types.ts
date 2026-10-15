@@ -52,9 +52,16 @@ export type ActionFn = (env: PhraseEnv, args: Json[]) => { by: PlayerId; move: M
 export type ExpectFn = (env: PhraseEnv, args: Json[]) => true | string;
 export type CardsFn = (args: Json[], table: CardTable | null) => CardSetSpec;
 export type ZoneFn = (args: Json[]) => ZoneSpec;
+/** A name in a line that the game never defined, said for the designer, with the closest names it did define. */
+export type NameProblem = { message: string; suggestions: string[] };
 export interface ParamType {
   name: string; label: string;                      // label e.g. '[number]', used in suggestions
   source(vocab: Vocab): string;                      // regex source, no capture groups
   resolve(text: string, vocab: Vocab): { value: Json } | { error: string };
   stubOrder?: number;                                // lower = replaced first by stubFor
+  /** For a type of names the game defines: text shaped like one, and what is wrong with text `source` does not cover. */
+  loose?: {
+    source(vocab: Vocab): string;                    // regex source, no capture groups
+    explain(text: string, vocab: Vocab): NameProblem | null; // null: the text is not meant as such a name at all
+  };
 }

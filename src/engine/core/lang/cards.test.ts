@@ -44,6 +44,25 @@ describe('card tables', () => {
   it('rejects a range that counts down', () => {
     expect(() => expandCardTable({ columns: ['n'], rows: [{ cells: ['9 to 1'], line: 4 }] })).toThrow('smaller number first');
   });
+  it('finds the copies column whatever its case or spacing', () => {
+    for (const copies of ['Copies', ' COPIES ']) {
+      const ids = expandCardTable({ ...COLOR_TABLE, columns: ['Color', 'Number', copies] });
+      expect(ids).toHaveLength(72);
+      expect(ids[0].attrs).toEqual({ Color: 'red', Number: 1 });
+    }
+  });
+  it('allows at most 1000 cards, counted before any card is made', () => {
+    const tooMany = (cells: string[], columns = ['color', 'number', 'copies']) => () =>
+      expandCardTable({ columns, rows: [{ cells: ['red', '1 to 9', '1'], line: 5 }, { cells, line: 6 }] });
+    for (const cells of [['blue', '1 to 9', '2000'], ['blue', '1 to 9999', '1'], ['blue', '1 to 9999999999', '1'], ['blue', '1 to 9', '99999999999999999999']]) {
+      const started = performance.now();
+      expect(tooMany(cells)).toThrow(expect.objectContaining({ name: 'RuleError', message: 'A game can have at most 1000 cards.', line: 6 }));
+      expect(performance.now() - started).toBeLessThan(100);
+    }
+    expect(expandCardTable({ columns: ['n', 'copies'], rows: [{ cells: ['1 to 100', '10'], line: 3 }] })).toHaveLength(1000);
+    expect(() => expandCardTable({ columns: ['n', 'copies'], rows: [{ cells: ['1 to 100', '10'], line: 3 }, { cells: ['1', '1'], line: 4 }] }))
+      .toThrow(expect.objectContaining({ message: 'A game can have at most 1000 cards.', line: 4 }));
+  });
   it('round-trips text face keys', () => {
     expect(parseTextFaceKey(textFaceKey({ name: 'Big Troll', attack: 4 }))).toEqual({ name: 'Big Troll', attack: '4' });
     expect(parseTextFaceKey('12S')).toBeNull();

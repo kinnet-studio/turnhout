@@ -1,6 +1,7 @@
 import type { Json } from '../table-def';
 import type {
-  ActionFn, CardSetSpec, CardsFn, ConditionFn, EffectFn, ExpectFn, ParamType, PhraseKind, ScoreFn, TurnFn, Vocab, WinnerFn, ZoneFn, ZoneSpec,
+  ActionFn, CardSetSpec, CardsFn, ConditionFn, EffectFn, ExpectFn, NameProblem, ParamType, PhraseKind, ScoreFn, TurnFn, Vocab, WinnerFn, ZoneFn,
+  ZoneSpec,
 } from './types';
 
 const VISIBILITY: Record<string, string> = {
@@ -78,12 +79,21 @@ type Entry = {
   parts: Part[];
   display: string; // pattern with each {type} shown as its label
   literal: string; // pattern text with the parameters removed, for suggestions
+  specificity: number; // how many letters of the pattern are its own words rather than parameters
   fn: unknown;
   needsMove: boolean;
 };
 
+/** Regexes built for one vocabulary: each phrase strictly and loosely (null: nothing to loosen), and each whole parameter. */
+type VocabCache = { strict: Map<Entry, RegExp>; loose: Map<Entry, RegExp | null>; whole: Map<ParamType, RegExp> };
+
+/** A line `match` found no phrase for, read as a phrase of `kind` that names something the game never defined. */
+export type Misnamed = { kind: PhraseKind; problem: NameProblem };
+
 const PARAM = /\{([^{}]+)\}/g;
 const MIN_SUGGESTION_SCORE = 0.4;
+/** Names this much less alike than the closest one are left out of suggestions. */
+const CLOSE_TO_BEST = 0.2;
 const MAX_SUGGESTIONS = 3;
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -117,13 +127,34 @@ function dice(a: string, b: string): number {
   return (2 * shared) / (a.length - 1 + b.length - 1);
 }
 
+/** Edits that turn one text into the other, a swap of neighbouring letters counting as one (optimal string alignment). */
+function editDistance(a: string, b: string): number {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)));
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  }
+  return d[a.length][b.length];
+}
+
+/** How alike two names are, 0 to 1: by the letter pairs they share, or by how few typos turn one into the other. */
+function nameScore(a: string, b: string): number {
+  const longest = Math.max(a.length, b.length);
+  return Math.max(dice(a, b), longest === 0 ? 1 : 1 - editDistance(a, b) / longest);
+}
+
 /** The names that look most like `text`, closest first: for words that are not phrases, like a phase that does not exist. */
 export function suggestNames(text: string, names: string[]): string[] {
   const wanted = text.toLowerCase();
-  return names
-    .map((name) => ({ name, score: dice(wanted, name.toLowerCase()) }))
+  const close = names
+    .map((name) => ({ name, score: nameScore(wanted, name.toLowerCase()) }))
     .filter((s) => s.score >= MIN_SUGGESTION_SCORE)
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => b.score - a.score);
+  const best = close[0]?.score ?? 0;
+  return close
+    .filter((s) => s.score >= best - CLOSE_TO_BEST)
     .slice(0, MAX_SUGGESTIONS)
     .map((s) => s.name);
 }
@@ -136,7 +167,7 @@ export class PhraseLibrary {
   private readonly typeList: ParamType[];
   private readonly typeByName = new Map<string, ParamType>();
   private readonly entries = new Map<PhraseKind, Map<string, Entry>>();
-  private readonly compiled = new WeakMap<Vocab, Map<Entry, RegExp>>();
+  private readonly caches = new WeakMap<Vocab, VocabCache>();
 
   constructor(types: ParamType[]) {
     this.typeList = [...types];
@@ -189,6 +220,26 @@ export class PhraseLibrary {
     return { status: 'unknown', suggestions: this.suggest(entries, line.toLowerCase()) };
   }
 
+  /**
+   * For a line `match` found no phrase for: whether it has the shape of a phrase of one of `kinds` once the names in it
+   * are let loose, with a name the game never defined (“Shuffle the dek” is “shuffle {zone}” and there is no zone
+   * “dek”). The phrase with the most words of its own wins. Null when no phrase has the line's shape that way: then it is
+   * a phrase nobody has written yet. Only says what is wrong; it never makes a line match.
+   */
+  misnamed(kinds: PhraseKind[], text: string, vocab: Vocab): Misnamed | null {
+    const line = normalizeLine(text);
+    let best: (Misnamed & { specificity: number }) | null = null;
+    for (const kind of kinds) {
+      for (const entry of this.entries.get(kind)?.values() ?? []) {
+        if (best && best.specificity >= entry.specificity) continue;
+        const found = this.looseRegexFor(entry, vocab)?.exec(line);
+        const problem = found ? this.firstMisnamed(entry, found, vocab) : null;
+        if (problem) best = { kind, problem, specificity: entry.specificity };
+      }
+    }
+    return best && { kind: best.kind, problem: best.problem };
+  }
+
   private add(kind: PhraseKind, p: string, fn: unknown, needsMove = false): this {
     const pattern = p.toLowerCase();
     const parts: Part[] = [];
@@ -213,19 +264,61 @@ export class PhraseLibrary {
     pushLiteral(pattern.slice(last));
     let ofKind = this.entries.get(kind);
     if (!ofKind) this.entries.set(kind, (ofKind = new Map()));
-    ofKind.set(pattern, { pattern, parts, display, literal: literal.replace(/\s+/g, ' ').trim(), fn, needsMove });
+    const specificity = parts.reduce((n, part) => n + ('literal' in part ? part.literal.replace(/\s+/g, '').length : 0), 0);
+    ofKind.set(pattern, { pattern, parts, display, literal: literal.replace(/\s+/g, ' ').trim(), specificity, fn, needsMove });
     return this;
   }
 
+  private cacheFor(vocab: Vocab): VocabCache {
+    let cache = this.caches.get(vocab);
+    if (!cache) this.caches.set(vocab, (cache = { strict: new Map(), loose: new Map(), whole: new Map() }));
+    return cache;
+  }
+
   private regexFor(entry: Entry, vocab: Vocab): RegExp {
-    let perVocab = this.compiled.get(vocab);
-    if (!perVocab) this.compiled.set(vocab, (perVocab = new Map()));
-    let re = perVocab.get(entry);
+    const { strict } = this.cacheFor(vocab);
+    let re = strict.get(entry);
     if (!re) {
       const body = entry.parts.map((part) => ('type' in part ? `(${part.type.source(vocab)})` : literalSource(part.literal))).join('');
-      perVocab.set(entry, (re = new RegExp(`^${body}$`, 'i')));
+      strict.set(entry, (re = new RegExp(`^${body}$`, 'i')));
     }
     return re;
+  }
+
+  /** The phrase with every name parameter matching any text of its shape; null when it has no such parameter. */
+  private looseRegexFor(entry: Entry, vocab: Vocab): RegExp | null {
+    const { loose } = this.cacheFor(vocab);
+    if (!loose.has(entry)) {
+      const hasNames = entry.parts.some((part) => 'type' in part && part.type.loose);
+      const body = entry.parts
+        .map((part) => ('type' in part ? `(${(part.type.loose ?? part.type).source(vocab)})` : literalSource(part.literal)))
+        .join('');
+      loose.set(entry, hasNames ? new RegExp(`^${body}$`, 'i') : null);
+    }
+    return loose.get(entry) ?? null;
+  }
+
+  /** True when the whole text is one instance of the type, read strictly. */
+  private isWhole(type: ParamType, text: string, vocab: Vocab): boolean {
+    const { whole } = this.cacheFor(vocab);
+    let re = whole.get(type);
+    if (!re) whole.set(type, (re = new RegExp(`^(?:${type.source(vocab)})$`, 'i')));
+    return re.test(text);
+  }
+
+  /** The first name in a loose match the game never defined; null when there is none, or some text is no name at all. */
+  private firstMisnamed(entry: Entry, found: RegExpExecArray, vocab: Vocab): NameProblem | null {
+    let problem: NameProblem | null = null;
+    let group = 1;
+    for (const part of entry.parts) {
+      if (!('type' in part)) continue;
+      const text = found[group++];
+      if (!part.type.loose || this.isWhole(part.type, text, vocab)) continue;
+      const named = part.type.loose.explain(text, vocab);
+      if (named === null) return null;
+      problem ??= named;
+    }
+    return problem;
   }
 
   private suggest(entries: Entry[], line: string): string[] {

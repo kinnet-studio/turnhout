@@ -1,5 +1,6 @@
 import type { Json } from '../table-def';
-import type { ParamType, Vocab } from './types';
+import { suggestNames } from './phrases';
+import type { NameProblem, ParamType, Vocab } from './types';
 
 type Parsed = { value: Json } | { error: string };
 
@@ -13,9 +14,10 @@ const SUIT_FORMS = new Map(
   Object.entries(STANDARD_SUITS).flatMap(([plural, letter]) => [[plural, letter], [plural.slice(0, -1), letter]] as const),
 );
 
-/** `+es` after s/sh/ch/x/z, else `+s`. */
+/** `-ies` for a consonant and y (bury), `+es` after s/sh/ch/x/z/o, else `+s`. */
 export function thirdPerson(verb: string): string {
-  return /(?:s|sh|ch|x|z)$/i.test(verb) ? `${verb}es` : `${verb}s`;
+  if (/[^aeiou]y$/i.test(verb)) return `${verb.slice(0, -1)}ies`;
+  return /(?:s|sh|ch|x|z|o)$/i.test(verb) ? `${verb}es` : `${verb}s`;
 }
 
 // ---- regex building blocks -------------------------------------------------------------------
@@ -99,7 +101,61 @@ function listResult(items: Parsed[] | null, text: string): Parsed {
   return { value: values };
 }
 
+// ---- names the game never defined -------------------------------------------------------------
+
+/** Loose shapes for text that may name something the game never defined: any text, or one word. */
+const ANY_TEXT = '.+?';
+const ONE_WORD = '\\S+';
+const MAX_SUGGESTIONS = 3;
+
+const looseAs = (source: string, explain: (text: string, vocab: Vocab) => NameProblem | null): ParamType['loose'] =>
+  ({ source: () => source, explain });
+
+const missing = (what: string, name: string, suggestions: string[]): NameProblem =>
+  ({ message: `There is no ${what} called “${name}”.`, suggestions });
+
+/** The defined names closest to `name`; when none is close, the first few there are, so the designer sees what exists. */
+function closestOrFirst(name: string, names: string[]): string[] {
+  const close = suggestNames(name, names);
+  return close.length > 0 ? close : names.slice(0, MAX_SUGGESTIONS);
+}
+
+/** True when `text` holds one of `names` as whole words: a real name with other words around it is some other phrase. */
+const holdsName = (text: string, names: string[]): boolean =>
+  names.some((name) => new RegExp(bounded(wordSource(name)), 'i').test(canon(text)));
+
+const LIST_SEPARATOR = new RegExp(SEPARATOR_SOURCE, 'i');
+
+/** The first misnamed item of a list; null when an item is not meant as one at all, or when none is misnamed. */
+function misnamedItem(text: string, vocab: Vocab, item: ParamType): NameProblem | null {
+  let problem: NameProblem | null = null;
+  for (const part of text.split(LIST_SEPARATOR)) {
+    if (fullMatch(item, part, vocab)) continue;
+    const found = item.loose?.explain(part, vocab) ?? null;
+    if (found === null) return null;
+    problem ??= found;
+  }
+  return problem;
+}
+
 // ---- players ---------------------------------------------------------------------------------
+
+/** Who the players are, for a designer who named one that is not. */
+function playersAre(vocab: Vocab): string {
+  if (vocab.maxPlayers <= 0) return 'This game has no players.';
+  if (vocab.maxPlayers === 1) return 'The only player is p0.';
+  return `Players are called p0 to p${vocab.maxPlayers - 1}.`;
+}
+
+/** “player1” or “P-2”: text that looks like a seat but is not written as one. */
+const SEAT_LIKE = /^p\D*(\d+)$/i;
+
+function misnamedPlayer(text: string, vocab: Vocab): NameProblem | null {
+  const seat = SEAT_LIKE.exec(text);
+  if (!seat) return null;
+  const n = Number(seat[1]);
+  return { message: `There is no player called “${text}”. ${playersAre(vocab)}`, suggestions: n < vocab.maxPlayers ? [`p${n}`] : [] };
+}
 
 function seatResult(seatText: string, vocab: Vocab): Parsed {
   const n = Number(seatText.slice(1));
@@ -152,22 +208,44 @@ function resolveZone(text: string, vocab: Vocab): Parsed {
   return 'error' in owner ? owner : { value: { of: { seat: owner.value }, zone: name } };
 }
 
+/** The same owner words as OWNER_PREFIX, read from the text as written; group 1 = the zone name. */
+const OWNED_NAME = /^(?:the winner['‘’]s|p\d+['‘’]s|the|their|each|every) (.+)$/i;
+
+const allZones = (vocab: Vocab): string[] => [...vocab.sharedZones, ...vocab.playerZones];
+
+function misnamedZone(text: string, vocab: Vocab): NameProblem | null {
+  const name = OWNED_NAME.exec(text)?.[1] ?? text;
+  return holdsName(name, allZones(vocab)) ? null : missing('zone', name, closestOrFirst(name, allZones(vocab)));
+}
+
+function misnamedPlayerZone(text: string, vocab: Vocab): NameProblem | null {
+  const shared = vocab.sharedZones.find((zone) => canon(zone) === canon(text));
+  if (shared !== undefined) {
+    return { message: `“${shared}” is shared, but this needs a zone that each player has.`, suggestions: closestOrFirst(text, vocab.playerZones) };
+  }
+  return holdsName(text, allZones(vocab)) ? null : missing('zone', text, closestOrFirst(text, vocab.playerZones));
+}
+
 const ZONE: ParamType = {
   name: 'zone', label: '[zone]', stubOrder: 3,
   source: (vocab) => bounded(zoneSource(vocab)),
   resolve: resolveZone,
+  loose: looseAs(ANY_TEXT, misnamedZone),
 };
 
 const ZONES: ParamType = {
   name: 'zones', label: '[zones]',
   source: (vocab) => bounded(listSource(zoneSource(vocab))),
   resolve: (text, vocab) => listResult(splitList(text, (item) => (fullMatch(ZONE, item, vocab) ? resolveZone(item, vocab) : null)), text),
+  loose: looseAs(ANY_TEXT, (text, vocab) => misnamedItem(text, vocab, ZONE)),
 };
 
 // ---- single words from the vocabulary ----------------------------------------------------------
 
 /** A type whose text is one of a fixed set of words, each standing for a value. */
-function wordType(name: string, label: string, entries: (vocab: Vocab) => [text: string, value: string][]): ParamType {
+function wordType(
+  name: string, label: string, entries: (vocab: Vocab) => [text: string, value: string][], loose: ParamType['loose'],
+): ParamType {
   return {
     name, label,
     source: (vocab) => bounded(anyOf(entries(vocab).map(([text]) => text))),
@@ -175,18 +253,30 @@ function wordType(name: string, label: string, entries: (vocab: Vocab) => [text:
       const entry = entries(vocab).find(([word]) => canon(word) === canon(text));
       return entry ? { value: entry[1] } : unknownText(text);
     },
+    loose,
   };
 }
 
-const PERZONE = wordType('perzone', '[zone]', (v) => v.playerZones.map((z) => [z, z]));
-const PHASE = wordType('phase', '[phase]', (v) => v.phases.map((p) => [p, p]));
-const MOVE = wordType('move', '[action]', (v) => v.verbs.map((verb) => [thirdPerson(verb), verb]));
-const ATTRIBUTE = wordType('attribute', '[attribute]', (v) => v.attributes.map((a) => [a, a]));
+/** A name that is not one of `names`, unless it holds one among other words (then it is some other phrase). */
+const misnamedWord = (what: string, names: (vocab: Vocab) => string[]) => (text: string, vocab: Vocab): NameProblem | null =>
+  holdsName(text, names(vocab)) ? null : missing(what, text, closestOrFirst(text, names(vocab)));
+
+const PERZONE = wordType('perzone', '[zone]', (v) => v.playerZones.map((z) => [z, z]), looseAs(ANY_TEXT, misnamedPlayerZone));
+const PHASE = wordType('phase', '[phase]', (v) => v.phases.map((p) => [p, p]), looseAs(ANY_TEXT, misnamedWord('phase', (v) => v.phases)));
+const MOVE = wordType(
+  'move', '[action]', (v) => v.verbs.map((verb) => [thirdPerson(verb), verb]),
+  looseAs(ONE_WORD, misnamedWord('move', (v) => v.verbs.map(thirdPerson))),
+);
+const ATTRIBUTE = wordType(
+  'attribute', '[attribute]', (v) => v.attributes.map((a) => [a, a]),
+  looseAs(ANY_TEXT, misnamedWord('card attribute', (v) => v.attributes)),
+);
 
 const PLAYER: ParamType = {
   name: 'player', label: '[player]', stubOrder: 4,
   source: () => bounded('p\\d+'),
   resolve: (text, vocab) => seatResult(text, vocab),
+  loose: looseAs(ONE_WORD, misnamedPlayer),
 };
 
 // ---- cards -----------------------------------------------------------------------------------
@@ -260,16 +350,74 @@ function resolveCard(text: string, vocab: Vocab): Parsed {
   return tokens && tokens.length > 0 ? valuesResult(tokens, vocab) : unknownText(text);
 }
 
+const RANK_NAMES = Object.keys(STANDARD_RANKS);
+const SUIT_NAMES = Object.keys(STANDARD_SUITS);
+const ARTICLE = /^(?:a|an|the) (.+)$/i;
+const RANK_OF_SUIT = /^(.+) of (.+)$/i;
+
+/** “the 2 of clbs”: a standard card whose rank or suit, but not both, is not one. */
+function misnamedStandard(body: string): NameProblem | null {
+  const found = RANK_OF_SUIT.exec(body);
+  if (!found) return null;
+  const [, rank, suit] = found;
+  const rankKnown = RANK_NAMES.includes(canon(rank));
+  const suitKnown = SUIT_NAMES.includes(canon(suit));
+  if (rankKnown && !suitKnown) return missing('suit', suit, suggestNames(suit, SUIT_NAMES));
+  if (suitKnown && !rankKnown) return missing('rank', rank, suggestNames(rank, RANK_NAMES));
+  return null;
+}
+
+/** The words of `body` that are no card value, reading the longest values first, and how many values it holds. */
+function readValues(body: string, vocab: Vocab): { unknown: string[]; known: number } {
+  const { texts } = valueTable(vocab);
+  const words = body.split(' ');
+  const unknown: string[] = [];
+  let known = 0;
+  for (let at = 0; at < words.length;) {
+    const rest = canon(words.slice(at).join(' '));
+    const value = texts.find((text) => rest === text || rest.startsWith(`${text} `));
+    if (value === undefined) {
+      unknown.push(words[at]);
+      at += 1;
+    } else {
+      known += 1;
+      at += value.split(' ').length;
+    }
+  }
+  return { unknown, known };
+}
+
+/**
+ * “a purple 7”: one word that is no card value beside words that are. A word on its own counts only when it looks like
+ * a value, since “the card is playable” is more likely a phrase nobody has written yet than a misspelt value.
+ */
+function misnamedValues(body: string, vocab: Vocab): NameProblem | null {
+  const { unknown, known } = readValues(body, vocab);
+  if (unknown.length !== 1) return null;
+  const close = suggestNames(unknown[0], [...new Set(vocab.cardValues.map((v) => String(v.value)))]);
+  return known > 0 || close.length > 0 ? missing('card value', unknown[0], close) : null;
+}
+
+function misnamedCard(text: string, vocab: Vocab): NameProblem | null {
+  const article = ARTICLE.exec(text);
+  const body = article?.[1] ?? text;
+  const standard = vocab.standardDeck ? misnamedStandard(body) : null;
+  if (standard) return standard;
+  return article && vocab.cardValues.length > 0 ? misnamedValues(body, vocab) : null;
+}
+
 const CARD: ParamType = {
   name: 'card', label: '[card]', stubOrder: 2,
   source: (vocab) => bounded(cardSource(vocab)),
   resolve: resolveCard,
+  loose: looseAs(ANY_TEXT, misnamedCard),
 };
 
 const CARDLIST: ParamType = {
   name: 'cardlist', label: '[cards]',
   source: (vocab) => bounded(listSource(cardSource(vocab))),
   resolve: (text, vocab) => listResult(splitList(text, (item) => (fullMatch(CARD, item, vocab) ? resolveCard(item, vocab) : null)), text),
+  loose: looseAs(ANY_TEXT, (text, vocab) => misnamedItem(text, vocab, CARD)),
 };
 
 const CARD_SUFFIX = / cards?$/i;
@@ -290,10 +438,21 @@ function resolveCardClass(text: string, vocab: Vocab): Parsed {
   return tokens && tokens.length > 0 ? valuesResult(tokens, vocab) : unknownText(text);
 }
 
+/** “a hart” or “reed cards”; like a value, a lone word counts as a misspelt suit only when it looks like one. */
+function misnamedCardClass(text: string, vocab: Vocab): NameProblem | null {
+  const body = /^(?:a|an) (.+)$/i.exec(text)?.[1] ?? text;
+  if (vocab.standardDeck && !body.includes(' ')) {
+    const close = suggestNames(body, [...SUIT_FORMS.keys()]);
+    if (close.length > 0) return missing('suit', body, close);
+  }
+  return vocab.cardValues.length > 0 ? misnamedValues(body.replace(CARD_SUFFIX, ''), vocab) : null;
+}
+
 const CARDCLASS: ParamType = {
   name: 'cardclass', label: '[kind of card]',
   source: (vocab) => bounded(cardClassSource(vocab)),
   resolve: resolveCardClass,
+  loose: looseAs(ANY_TEXT, misnamedCardClass),
 };
 
 // ---- the list ----------------------------------------------------------------------------------

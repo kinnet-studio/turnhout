@@ -34,6 +34,8 @@ const zoneType = ((): ParamType => {
 })();
 
 const moveLines = new WeakMap<Vocab, RegExp>();
+/** A move line whose zones may not be the game's; they are read, and explained, one by one. */
+const LOOSE_MOVE_LINE = /^a player may (\w+) a card from (.+?) to (.+)$/i;
 
 /** group 1 = the verb, group 2 = the zone it takes the card from, group 3 = the zone it puts it in */
 function moveLineFor(vocab: Vocab): RegExp {
@@ -52,11 +54,13 @@ function isOneZone(ref: ZoneRef): boolean {
   return !('who' in ref.of && ref.of.who === 'winner');
 }
 
-/** Reads the zone a move line names; says so, and returns null, when it makes no sense. */
+/** Reads the zone a move line names; says so (naming a zone the table never defined), and returns null, when it makes no sense. */
 function moveZone(text: string, line: number, ctx: LineCtx): ZoneRef | null {
   const parsed = parseParam('zone', text, ctx.vocab);
   if (parsed !== null && 'value' in parsed) return parsed.value as ZoneRef;
-  addProblem(ctx.diagnostics, line, parsed?.error ?? `I don't understand “${text}” here.`, { kind: 'invalid', text });
+  const misnamed = parsed === null ? zoneType.loose?.explain(text, ctx.vocab) : null;
+  if (misnamed) addProblem(ctx.diagnostics, line, misnamed.message, { kind: 'invalid', text, suggestions: misnamed.suggestions });
+  else addProblem(ctx.diagnostics, line, parsed?.error ?? `I don't understand “${text}” here.`, { kind: 'invalid', text });
   return null;
 }
 
@@ -193,7 +197,7 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx): CompiledPhase {
     const words = clean.toLowerCase();
     const hint = HINT.exec(child.text);
     const rearrange = REARRANGE.exec(clean);
-    const move = moveLine.exec(clean);
+    const move = moveLine.exec(clean) ?? LOOSE_MOVE_LINE.exec(clean);
     const goTo = GO_TO.exec(clean);
     const trigger = TRIGGER.exec(clean);
     const after = AFTER.exec(clean);

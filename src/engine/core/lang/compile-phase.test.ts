@@ -203,6 +203,16 @@ describe('compilePhase', () => {
     ]);
   });
 
+  it('names a zone of a move line the table never defined', () => {
+    const result = compileGame(rules('  A player may play a card from their hnad to the deck.', '    Only if the moon is full.'), lib);
+    expect(result.diagnostics).toEqual([
+      { line: 17, severity: 'error', kind: 'invalid', message: 'There is no zone called “hnad”.', text: 'their hnad', suggestions: ['hand'] },
+      expect.objectContaining({ line: 18, kind: 'unknown-phrase' }),
+    ]);
+    expect(messages(rules('  A player may play a card from their hand to the dek.'))).toEqual([[17, 'There is no zone called “dek”.']]);
+    expect(messages(rules('  A player may play a card from their hand to the deck and shout.'))).toEqual([[17, 'I don\'t understand “the deck and shout” here.']]);
+  });
+
   it('still reads the conditions and effects of a move that has a problem', () => {
     const result = compileGame(rules('  A player may reorder a card from their hand to the deck.', '    Only if the moon is full.'), lib);
     expect(result.diagnostics.map((d) => [d.line, d.kind])).toEqual([[17, 'structure'], [18, 'unknown-phrase']]);
@@ -297,7 +307,7 @@ describe('compilePhase', () => {
 
   it('says what it does not understand in a phase', () => {
     const expected = 'I don\'t understand this line in a phase. Phase lines start with Hint:, A player may…, When…, After a player…, Players take turns or Everyone acts at once.';
-    for (const line of ['  Dance.', '  A player may play a card from their hnad to the deck.', '  When the deck is empty', '  After a player, the turn passes to the left.', '  Players may rearrange at any time.']) {
+    for (const line of ['  Dance.', '  When the deck is empty', '  After a player, the turn passes to the left.', '  Players may rearrange at any time.']) {
       expect(messages(rules(line))).toEqual([[17, expected]]);
     }
     expect(compileGame(rules('  Dance.'), lib).diagnostics[0].text).toBe('Dance');
