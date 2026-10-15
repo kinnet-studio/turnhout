@@ -1,14 +1,14 @@
 # Board Games, Slice 2: Sets and Buildings
 
 **Date:** 2026-10-15
-**Status:** Draft, pending review
+**Status:** Draft, reviewed; pending the user's approval
 **Part of:** `2026-10-15-board-games-overview-design.md`. Its decisions, calls, anti-goals and constraints
 apply here.
 **Builds on:** slice 1 (`2026-10-15-board-slice-1-around-the-board-design.md`), merged to `main` as PR #8.
 
 ## What this slice is
 
-Rent Day becomes a game that ends on its own:
+Rent Day gains its economy:
 
 - Owning a full color set doubles a street's base rent.
 - Players build houses, then hotels, on full sets, evenly, from a bank with a limited supply.
@@ -21,7 +21,8 @@ To get there, the language gains four general building blocks:
   health or "poisoned", and later "in jail".
 - **Buttons that pick a target on the board.** "Build a house on a street they own."
 - **Numbers that belong to the bank.**
-- **A `Rent:` section** that says what "its rent" means.
+- **A section named after a table column** (`Rent:`) that says what "its rent" means for each kind of
+  space.
 
 The user asked that **cards carry facts too**, which was their very first question: a character card
 gains an attribute that has an extra effect later. A small second sample game, **Venom**, proves it.
@@ -93,12 +94,31 @@ These were played back and accepted ("lgtm"):
   - Verbs with a doubled consonant ("they have stopped this turn") work.
 - **Building stays on your own turn.** Building out of turn, selling buildings and mortgages are
   slice 5.
+- **Games with more than two players still rarely end in slice 2, and the proof says so.** A simulation
+  during review found that with 1500 money and the Go salary, an auto-player that buys and builds ends
+  about 96% of 2-player games, 32% of 4-player games and 6% of 8-player games. With more players, full
+  color sets rarely form until auctions (slice 6) and trading (slice 7) move streets around. So:
+  - the 2-player game must end on its own, across ordinary seeds;
+  - the building economy is proven at 4 and 8 players by a variant where every player starts with a
+    full color set, rather than by hand-picking seeds that happen to end.
+- **`Rent:` is a general kind of section, not a keyword.** Any section named after a column of the board
+  table (`Rent:` after `rent`) defines what "its <column>" means for each kind of space. A later
+  `Tax:` section works the same way. A misspelt section name gets suggestions from the fixed section
+  names and the table's columns. The compiler never contains the word "rent".
+- **The table's hotel rent column is called `with hotel`,** so it can't be confused with the yes/no
+  `hotel` fact.
+- **Double rent applies to a full set with no buildings,** so a hotel street isn't doubled.
+- **A player who goes out gives their buildings back to the bank,** with one more line in the rule that
+  puts them out.
+- **Venom's rule covers cards in a camp** ("When a card in a camp has 0 health:"). A card in the discard
+  pile keeps its 0 health, and the rule must stop matching once the card has moved.
 
 ## Goals
 
 - The slice 2 Rent Day text compiles with no diagnostics, and its examples cover every rule below.
-- A full Rent Day game, with 1500 starting money and the Go salary, now ends: an auto-player that buys
-  and builds whenever it can reaches a winner at 2, 4 and 8 players, with fixed seeds.
+- A 2-player Rent Day game, with 1500 starting money and the Go salary, ends on its own: an auto-player
+  that buys and builds whenever it can reaches a winner in ordinary seeded games. At 4 and 8 players,
+  games where every player starts with a full color set end the same way.
 - Venom compiles, its examples pass, and it plays to a winner, showing a card's fact changing and
   mattering later.
 - On the playtest page you can build by picking a street, see houses and hotels on every seat's board,
@@ -133,9 +153,9 @@ the slice is done.
 
 ### Rent Day (slice 2 additions)
 
-The board table gains a `house` column and the rent columns `1 house` to `hotel`. Classic values:
+The board table gains a `house` column and the rent columns `1 house` to `with hotel`. Classic values:
 
-| space | price | house | rent | 1 house | 2 houses | 3 houses | 4 houses | hotel |
+| space | price | house | rent | 1 house | 2 houses | 3 houses | 4 houses | with hotel |
 |---|---|---|---|---|---|---|---|---|
 | Mill Lane | 60 | 50 | 2 | 10 | 30 | 90 | 160 | 250 |
 | Ferry Row | 60 | 50 | 4 | 20 | 60 | 180 | 320 | 450 |
@@ -166,7 +186,7 @@ may be blank.
 ```text
 Board:
   The board is a loop of spaces, starting at Go:
-    | space | kind | color | price | house | rent | 1 house | 2 houses | 3 houses | 4 houses | hotel | tax |
+    | space | kind | color | price | house | rent | 1 house | 2 houses | 3 houses | 4 houses | with hotel | tax |
     …
   Each player has a piece that starts on Go.
   Each player has 1500 money that everyone can see.
@@ -176,8 +196,8 @@ Board:
   The bank has 32 houses and 12 hotels.
 
 Rent:
-  A street's rent is its hotel column if it has a hotel, else the column for its number of houses.
-  A street in a full set with no houses has double rent.
+  A street's rent is its "with hotel" column if it has a hotel, else the column for its number of houses.
+  A street in a full set with no buildings has double rent.
   A station's rent is 25, 50, 100 or 200 when its owner has 1, 2, 3 or 4 stations.
   A utility's rent is 4 times the roll, or 10 times the roll when its owner has both utilities.
 
@@ -197,10 +217,15 @@ Phase: playing
       If it has no hotel, it gets a house from the bank.
   When a player lands on a space someone else owns:
     They pay its rent to its owner.
+  When a player has less than 0 money:
+    They are out.
+    Their buildings go back to the bank.
+    Their spaces go back to the bank.
   …
 ```
 
-`Rent:` lines compile to the definition of "its rent" for each kind of space. A space whose kind no rent
+`Rent:` is a section named after the table's `rent` column. Its lines compile to the definition of
+"its rent" for each kind of space. A space whose kind no rent
 line covers uses its `rent` column, as in slice 1. Slice 1's separate utility line goes away, because
 the lands-on line now covers every kind.
 
@@ -241,7 +266,7 @@ Phase: playing
       If the card is a Viper, every card in the other player's camp is poisoned.
   A player may draw a card from the deck to their hand.
     Only if their hand is empty.
-  When a card has 0 health:
+  When a card in a camp has 0 health:
     Move it to the discard pile.
   After a player plays or draws, the turn passes to the left.
 
@@ -260,9 +285,9 @@ poisons the opponent's camp. A freshly poisoned card loses its first health on i
 | "Spaces can have houses and a hotel." / "Cards can be poisoned." / (later) "Players can be in jail." | Declares facts on that kind of thing. A plural noun is a number (starts at 0); "a hotel" or an adjective such as "poisoned" is yes/no (starts at "no"). |
 | A table column (`health`, `price`) | A fact whose starting value is the cell. Effects may change it ("loses 1 health"). |
 | "The bank has 32 houses and 12 hotels." | Numbers that belong to the bank (no player). Effects move them ("gets a house from the bank", "its houses go back to the bank"). |
-| `Rent:` + lines | What "its rent" means for each kind of space (a value phrase per line). |
+| `<Column>:` + lines (`Rent:`) | A section named after a board-table column: what "its <column>" means for each kind of space (a value phrase per line). Kinds no line covers use the column's cell. |
 | `A player may <verb> … on <target>.` | A button that picks a target: a space matching the target phrase ("a street they own"). Its conditions and effects see the target as "it". |
-| `When a card has 0 health:` | A state rule bound to each card it matches, "it" being the card (as "When a player …" binds "they"). |
+| `When a card in a camp has 0 health:` | A state rule bound to each card it matches, "it" being the card (as "When a player …" binds "they"). |
 | "the other player's camp" | In a two-player game, the zone of the player who is not acting. |
 
 ## What the engine and language gain
@@ -287,8 +312,12 @@ All additive. Existing games compile and run unchanged.
      "move it to the discard pile".
    - Counts: "they own every street of its color", "its owner has 2 stations".
    - Monopoly-specific ones ("fewer buildings" counting a hotel as five) go in `library/rent-day.ts`.
-4. **Rent definitions.**
-   - The `Rent:` section compiles to one value per kind of space. "its rent" reads it.
+4. **Column sections.**
+   - A section named after a board-table column (`Rent:`) compiles to one value per kind of space.
+     "its rent" reads it, falling back to the cell for kinds no line covers.
+   - Section names stop being only a fixed list: the compiler accepts the fixed names plus the columns
+     of the board table, and suggests from both for a misspelt one. No section name is hard-coded
+     beyond the existing fixed list.
    - A value phrase kind (returns a number) is new. It may be reused later (taxes as a percentage,
      Chance amounts).
 5. **Targeted buttons.**
@@ -299,8 +328,8 @@ All additive. Existing games compile and run unchanged.
    - Examples name the target ("When p1 builds a house on Iris Road").
 6. **Button identity by wording,** replacing slice 1's "first word". `After a player …` lines, examples
    and the "two rules in this phase start…" check follow it.
-7. **Card-bound state rules.** "When a card has 0 health:" runs for each matching card, in a fixed
-   order, with "it" bound to the card. Its lines must make the condition false, as today.
+7. **Card-bound state rules.** "When a card in a camp has 0 health:" runs for each matching card, in a
+   fixed order, with "it" bound to the card. Its lines must make the condition false, as today.
 8. **Other-player references** for two-player games: "the other player's camp". In a game with more
    than two players this is an error on the line.
 9. **Views.**
@@ -335,10 +364,16 @@ As slice 1 (layout B), plus:
    - station rent with two stations (50);
    - utility rent with both utilities (10 times the roll);
    - building is refused on someone else's street, and before you own the full set.
-2. **A full Rent Day game ends.** With 1500 money and the Go salary, an auto-player that buys and builds
-   whenever it can reaches a winner at 2, 4 and 8 players with fixed seeds, within a turn cap.
-   - The slice 1 money check is extended: building costs exactly the house price, and rent follows the
-     `Rent:` section.
+2. **Rent Day games end.**
+   - **2 players, ordinary seeds.** With 1500 money and the Go salary, an auto-player that buys and
+     builds whenever it can reaches a winner within a turn cap in at least 9 of 10 consecutive seeds
+     (for example seeds 1 to 10). The test names any seed that doesn't end.
+   - **4 and 8 players, full sets dealt.** A variant where every player starts owning one full color
+     set (written as `Given` lines or setup lines, the builder's call) reaches a winner at 4 and 8
+     players with fixed seeds.
+   - The slice 1 money check is extended: building costs exactly the house price, buildings move
+     between the bank and the board without being created or lost, and rent follows the `Rent:`
+     section.
 3. **Venom** compiles with no diagnostics. Its examples cover:
    - a Viper poisons the other camp;
    - a poisoned card loses health when its owner plays;
