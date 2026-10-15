@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { GameState } from '../../game-state';
 import {
-  addToCounter, counterOf, isOut, latestRoll, markOut, ownerOf, pieceAt, placePiece, queueRoll, recordAction, setCounter, setOwner, setRoll,
-  takeQueuedRoll,
+  addToCounter, clearTurnLog, counterOf, isOut, latestRoll, markOut, ownerOf, pieceAt, placePiece, queueRoll, recordAction, setCounter, setOwner,
+  setRoll, takeQueuedRoll,
 } from '../board-state';
 import {
   FIXTURE_SPACES, fixtureBoardGame, fixtureBoardState, fixtureEnv, fixtureGame, fixturePhase, fixtureState, runPhrase,
@@ -187,7 +187,7 @@ describe('owning', () => {
     expect(runPhrase(lib, 'condition', 'no one owns it', env(onRose, as('p0')))).toBe(true);
     expect(runPhrase(lib, 'condition', 'they have at least its price in money', env(setCounter(onRose, 'money', 'p0', 179), as('p0')))).toBe(false);
     expect(runPhrase(lib, 'condition', 'they have at least its price in money', env(setCounter(onRose, 'money', 'p0', 180), as('p0')))).toBe(true);
-    expect(runPhrase(lib, 'condition', 'they have rolled this turn', env(recordAction(onRose, 'p0', 'roll', false), as('p0')))).toBe(true);
+    expect(runPhrase(lib, 'condition', 'they have rolled this turn', env(recordAction(onRose, 'p0', 'roll'), as('p0')))).toBe(true);
   });
   it('accepts either article before the detail', () => {
     const onRose = placePiece(fixtureBoardState(), 'p0', 5);
@@ -197,10 +197,10 @@ describe('owning', () => {
     const start = fixtureBoardState();
     expect(runPhrase(lib, 'condition', 'they have rolled this turn', env(start, as('p0')))).toBe(false);
     expect(runPhrase(lib, 'condition', 'they have not rolled this turn', env(start, as('p0')))).toBe(true);
-    const rolled = recordAction(start, 'p0', 'roll', false);
+    const rolled = recordAction(start, 'p0', 'roll');
     expect(runPhrase(lib, 'condition', 'they have not rolled this turn', env(rolled, as('p0')))).toBe(false);
     expect(runPhrase(lib, 'condition', 'they have rolled this turn', env(rolled, as('p1')))).toBe(false);
-    expect(runPhrase(lib, 'condition', 'they have rolled this turn', env(recordAction(start, 'p0', 'roll', true), as('p0')))).toBe(false);
+    expect(runPhrase(lib, 'condition', 'they have rolled this turn', env(clearTurnLog(rolled), as('p0')))).toBe(false);
   });
   it('tells who owns the space', () => {
     const owned = setOwner(placePiece(fixtureBoardState(), 'p0', 5), 5, 'p1');
@@ -324,6 +324,11 @@ describe('example phrases', () => {
       expect(they('they have not rolled this turn', 'p0')).toBe(false);
       expect(they('they have rolled this turn', 'p1')).toBe(false);
       expect(s.turn).toEqual(fixtureBoardState(playing).turn);
+    });
+    it("notes each player's actions apart: a later player's doesn't erase an earlier one's", () => {
+      const s = given('p1 has rolled this turn', given('p0 has rolled this turn'));
+      const they = (player: string) => runPhrase(lib, 'condition', 'they have rolled this turn', env(s, { game: playing, ...as(player) }));
+      expect([they('p0'), they('p1'), they('p2')]).toEqual([true, true, false]);
     });
     it('refuses a player who is not at the table', () => {
       expect(() => given('p3 is on Rose Lane')).toThrow('There is no player p3 at this table.');

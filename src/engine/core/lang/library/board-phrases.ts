@@ -222,7 +222,7 @@ const hasGiven: EffectFn = (env, [seat, n, counter]) => setCounter(env.state, co
 // Going out in an example only arranges the table: whose turn it is stays as the example set it.
 const isOutGiven: EffectFn = (env, [seat]) => markOut(env.state, seatOf(env, seat));
 
-const hasDoneGiven: EffectFn = (env, [seat, verb]) => recordAction(env.state, seatOf(env, seat), verb as string, false);
+const hasDoneGiven: EffectFn = (env, [seat, verb]) => recordAction(env.state, seatOf(env, seat), verb as string);
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 

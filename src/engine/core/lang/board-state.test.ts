@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  TURN_KEY, addToCounter, counterOf, didThisTurn, endTurnLog, isOut, markOut, nextIn, ownerOf, pieceAt, placePiece, playersIn, queueRoll,
-  recordAction, setOwner, takeQueuedRoll, withBoardData,
+  TURN_KEY, addToCounter, clearTurnLog, counterOf, didThisTurn, endsTurn, isOut, markOut, nextIn, ownerOf, pieceAt, placePiece, playersIn,
+  queueRoll, recordAction, setOwner, takeQueuedRoll, withBoardData,
 } from './board-state';
-import { fixtureBoardGame, fixtureGame, fixtureState } from './testing';
+import { fixtureBoardGame, fixtureGame, fixturePhase, fixtureState } from './testing';
 import { chooseNext } from './zones';
 
 const seats = ['p0', 'p1', 'p2'];
@@ -36,19 +36,33 @@ describe('board state', () => {
     expect(nextIn(s, 'p2', seats)).toBe('p0');
     expect(playersIn(s, seats)).toEqual(['p0', 'p2']);
   });
-  it('remembers actions for the current turn only', () => {
-    let s = recordAction(fresh(), 'p0', 'roll', false);
-    expect(didThisTurn(s, 'p0', 'roll')).toBe(true);
+  it('remembers what each seat has done this turn', () => {
+    const s = recordAction(recordAction(fresh(), 'p0', 'roll'), 'p0', 'buy');
+    expect([didThisTurn(s, 'p0', 'roll'), didThisTurn(s, 'p0', 'buy'), didThisTurn(s, 'p0', 'end')]).toEqual([true, true, false]);
     expect(didThisTurn(s, 'p1', 'roll')).toBe(false);
-    s = recordAction(s, 'p0', 'end', true);
-    expect(didThisTurn(s, 'p0', 'roll')).toBe(false);
-    s = recordAction(s, 'p0', 'roll', false);
-    expect((s.data[TURN_KEY] as { did: string[] }).did).toEqual(['roll']);
+    expect(s.data[TURN_KEY]).toEqual({ p0: ['roll', 'buy'] });
   });
-  it('chooseNext ends the turn log, and leaves card games without one', () => {
-    const s = chooseNext(recordAction(fresh(), 'p0', 'roll', false), 'p0');
-    expect(didThisTurn(s, 'p0', 'roll')).toBe(false);
+  it("keeps one seat's actions apart from another's: p1's roll doesn't erase p0's", () => {
+    const s = recordAction(recordAction(fresh(), 'p0', 'roll'), 'p1', 'roll');
+    expect([didThisTurn(s, 'p0', 'roll'), didThisTurn(s, 'p1', 'roll'), didThisTurn(s, 'p2', 'roll')]).toEqual([true, true, false]);
+    expect(s.data[TURN_KEY]).toEqual({ p0: ['roll'], p1: ['roll'] });
+  });
+  it('forgets what every seat did when the turn passes', () => {
+    const s = clearTurnLog(recordAction(recordAction(fresh(), 'p0', 'roll'), 'p1', 'roll'));
+    expect([didThisTurn(s, 'p0', 'roll'), didThisTurn(s, 'p1', 'roll')]).toEqual([false, false]);
+    expect(s.data[TURN_KEY]).toEqual({});
+    expect(didThisTurn(recordAction(s, 'p1', 'buy'), 'p1', 'roll')).toBe(false);
+  });
+  it('chooseNext forgets the turn, and leaves card games without a record of it', () => {
+    const s = chooseNext(recordAction(recordAction(fresh(), 'p0', 'roll'), 'p1', 'roll'), 'p0');
+    expect([didThisTurn(s, 'p0', 'roll'), didThisTurn(s, 'p1', 'roll')]).toEqual([false, false]);
     expect(chooseNext(fixtureState([]), 'p0').data).toEqual({});
+  });
+  it('knows which verbs pass the turn: the ones the phase\'s After line names', () => {
+    const after = { verbs: ['play', 'end'], next: { kind: 'turn' as const, phrase: 'the turn passes to the left', args: [], line: 9, text: '' }, line: 9 };
+    const phase = fixturePhase('playing', [], { after });
+    expect([endsTurn(phase, 'play'), endsTurn(phase, 'end'), endsTurn(phase, 'roll')]).toEqual([true, true, false]);
+    expect(endsTurn(fixturePhase('playing', []), 'play')).toBe(false);
   });
   it('queues rolls for examples, first in first out', () => {
     const s = queueRoll(queueRoll(fresh(), [3, 4]), [1, 1]);
@@ -68,8 +82,9 @@ describe('board state', () => {
     const alone = markOut(markOut(fresh(), 'p1'), 'p2');
     expect(() => nextIn(alone, 'p0', seats)).toThrow('No other player is still in.');
   });
-  it('endTurnLog hands back the same state when nothing was logged', () => {
+  it('clearTurnLog hands back the same state when nothing was logged, so a card game never gets a log', () => {
     const s = fresh();
-    expect(endTurnLog(s)).toBe(s);
+    expect(clearTurnLog(s)).toBe(s);
+    expect(s.data).not.toHaveProperty(TURN_KEY);
   });
 });

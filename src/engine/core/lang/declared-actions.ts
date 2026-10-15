@@ -1,7 +1,7 @@
 import type { GameState } from '../game-state';
 import type { Move, MoveHandler } from '../moves';
 import type { PlayerId } from '../scene';
-import { isOut, recordAction } from './board-state';
+import { clearTurnLog, endsTurn, isOut, recordAction } from './board-state';
 import type { LangRuntime } from './runtime';
 import type { CompiledPhase, DeclaredAction, Subject } from './types';
 
@@ -24,8 +24,8 @@ function choose(
 
 /**
  * The move handler for one button the designer declared, like “A player may roll the dice.” It refuses in the
- * designer's own words, then notes the action on the turn (so “they have rolled this turn” holds) and runs its Then
- * lines.
+ * designer's own words, then notes the action for the player (so “they have rolled this turn” holds) and runs its Then
+ * lines. A button the After line names passes the turn, and with it everything done in the turn stops counting.
  */
 export function declaredActionHandler(verb: string, runtime: LangRuntime): MoveHandler {
   return {
@@ -37,10 +37,9 @@ export function declaredActionHandler(verb: string, runtime: LangRuntime): MoveH
       const choice = choose(verb, runtime, state, m);
       if (typeof choice === 'string') throw new Error(`A ${verb} move was applied that is not allowed: ${choice}`);
       const { phase, action, by, subject } = choice;
-      // An action the After line names ends the turn, so what was done in it stops counting for the next one.
-      const endsTurn = phase.after?.verbs.includes(verb) ?? false;
-      const recorded = recordAction(state, by, verb, endsTurn);
-      return action.effects.reduce((s, ref) => runtime.run(ref, s, undefined, undefined, subject), recorded);
+      const recorded = recordAction(state, by, verb);
+      const done = action.effects.reduce((s, ref) => runtime.run(ref, s, undefined, undefined, subject), recorded);
+      return endsTurn(phase, verb) ? clearTurnLog(done) : done;
     },
   };
 }

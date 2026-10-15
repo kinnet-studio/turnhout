@@ -334,8 +334,8 @@ describe('LangRuntime on a board', () => {
     const choosy = new LangRuntime(rules, lib, ['p0', 'p1']);
     const both = broke(start, 'p0', 'p1');
     expect(choosy.triggerSubject('playing', rule, both)).toEqual({ player: 'p0', space: null });
-    expect(choosy.triggerSubject('playing', rule, recordAction(both, 'p0', 'roll', false))).toEqual({ player: 'p1', space: null });
-    expect(choosy.triggerSubject('playing', rule, recordAction(broke(start, 'p0'), 'p0', 'roll', false))).toBeNull();
+    expect(choosy.triggerSubject('playing', rule, recordAction(both, 'p0', 'roll'))).toEqual({ player: 'p1', space: null });
+    expect(choosy.triggerSubject('playing', rule, recordAction(broke(start, 'p0'), 'p0', 'roll'))).toBeNull();
   });
 
   it('runs a rule about no one in particular with no player', () => {

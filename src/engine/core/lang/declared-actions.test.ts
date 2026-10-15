@@ -1,20 +1,41 @@
 import { describe, expect, it } from 'vitest';
-import type { GameState } from '../game-state';
+import { zoneCards, type GameState } from '../game-state';
 import type { MoveContext } from '../moves';
 import { RuleRegistry } from '../rules';
-import { counterOf, isOut, markOut, ownerOf, pieceAt, placePiece, queueRoll, setCounter, setOwner, withBoardData } from './board-state';
+import { TURN_KEY, counterOf, isOut, markOut, ownerOf, pieceAt, placePiece, queueRoll, setCounter, setOwner, withBoardData } from './board-state';
 import { createEngine, initialState } from './build';
 import { compileGame } from './compile';
 import { declaredActionHandler } from './declared-actions';
 import { friendlyError } from './friendly';
 import { createDefaultLibrary } from './library';
-import { TINY_BOARD } from './testing';
+import { TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD } from './testing';
 
 const lib = createDefaultLibrary();
 const game = compileGame(TINY_BOARD, lib).game!;
 /** A two-player engine whose starting board has been arranged by `arrange`. */
 const engineWith = (arrange: (s: GameState) => GameState, g = game) =>
   createEngine(g, lib, 2, arrange(withBoardData(initialState(g, 1), g, ['p0', 'p1']))).engine;
+
+/** A board game with cards: a player may roll once a turn and play a card at any time, and playing passes the turn. */
+const ROLL_AND_PLAY = [
+  'Game: Roll and Play', 'Players: 2', '',
+  'Cards:', '  A deck called tiles, starting in the draw pile:', '    | color | number | copies |', '    | red   | 1 to 9 | 2      |', '',
+  'Table:', '  The draw pile is a pile in the center that no one can see.', '  The discard pile is a pile in the center that everyone can see.',
+  '  Each player has a hand that only they can see.', '',
+  'Board:', '  The board is a loop of spaces, starting at Go:', '    | space     | kind   |', '    | Go        | go     |', '    | Mill Lane | street |',
+  '    | Rose Lane | street |', '    | Lily Lane | street |', '  Each player has a piece that starts on Go.', '  There are two six-sided dice.', '',
+  'Setup:', '  Deal 3 cards from the draw pile to each hand.', '',
+  'Phase: playing', '  Players take turns.',
+  '  A player may roll the dice.', '    Only if they have not rolled this turn.', '    Then:', '      Roll the dice.', '      Their piece moves forward by the roll.',
+  '  A player may play a card from their hand to the discard pile.',
+  '  After a player plays, the turn passes to the left.',
+].join('\n');
+
+/** A roll button that everyone may press at once, each once. */
+const EVERYONE_ROLLS = [
+  TINY_BOARD_HEAD.replace('  Players take turns.', '  Everyone acts at once.'),
+  '  A player may roll the dice.', '    Only if they have not rolled this turn.', '    Then:', '      Roll the dice.', '      Their piece moves forward by the roll.',
+].join('\n');
 
 /** TINY_BOARD with its tax rule moving the piece again: from Income Tax, a roll of 4 lands on Income Tax again. */
 const LOOPING = TINY_BOARD.replace('  When a player lands on a tax space:\n    They pay its tax.', '  When a player lands on a tax space:\n    Their piece moves forward by the roll.');
@@ -34,6 +55,36 @@ describe('button actions on a board', () => {
     expect(engine.dispatch({ type: 'end', by: 'p0' }).ok).toBe(true);
     expect(engine.getState().turn?.current).toBe('p1');
     expect(engine.canDispatch({ type: 'end', by: 'p1' })).toBe('they have rolled this turn');
+  });
+
+  it('forgets what was done when a card move the After line names passes the turn', () => {
+    const { game: g, diagnostics } = compileGame(ROLL_AND_PLAY, lib);
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    const { engine } = createEngine(g!, lib, 2, initialState(g!, 1));
+    const play = (by: string) => engine.dispatch({ type: 'play', by, cardId: zoneCards(engine.getState(), `hand-${by}`)[0].id });
+    expect(engine.dispatch({ type: 'roll', by: 'p0' }).ok).toBe(true);
+    expect(play('p0').ok).toBe(true);
+    expect(play('p1').ok).toBe(true);
+    expect(engine.getState().turn?.current).toBe('p0');
+    expect(engine.dispatch({ type: 'roll', by: 'p0' }).ok).toBe(true);
+  });
+
+  it('remembers what each player did apart when everyone acts at once', () => {
+    const { game: g, diagnostics } = compileGame(EVERYONE_ROLLS, lib);
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    const { engine } = createEngine(g!, lib, 2, initialState(g!, 1));
+    expect(engine.dispatch({ type: 'roll', by: 'p0' }).ok).toBe(true);
+    expect(engine.dispatch({ type: 'roll', by: 'p1' }).ok).toBe(true);
+    expect(engine.dispatch({ type: 'roll', by: 'p0' })).toMatchObject({ ok: false, reason: 'they have not rolled this turn' });
+    expect(engine.dispatch({ type: 'roll', by: 'p1' })).toMatchObject({ ok: false, reason: 'they have not rolled this turn' });
+  });
+
+  it('keeps a card game free of any record of the turn', () => {
+    const duel = compileGame(TEST_DUEL, lib).game!;
+    const { engine } = createEngine(duel, lib, 2, initialState(duel, 1));
+    expect(engine.dispatch({ type: 'draw', by: 'p0', cardId: zoneCards(engine.getState(), 'deck').at(-1)!.id }).ok).toBe(true);
+    expect(engine.getState().turn?.current).toBe('p1');
+    expect(engine.getState().data).not.toHaveProperty(TURN_KEY);
   });
 
   it('buys the space a piece is on, after rolling, and charges rent to whoever lands there next', () => {

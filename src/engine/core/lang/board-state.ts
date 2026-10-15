@@ -2,7 +2,7 @@ import type { GameState } from '../game-state';
 import type { PlayerId } from '../scene';
 import type { Json } from '../table-def';
 import { RuleError } from './diagnostics';
-import type { CompiledGame } from './types';
+import type { CompiledGame, CompiledPhase } from './types';
 import { leftOf } from './zones';
 
 // The state of a board game lives in `GameState.data` under these keys, so it travels with the engine's state
@@ -18,7 +18,10 @@ export const COUNTERS_KEY = 'lang:counters';
 export const ROLL_KEY = 'lang:roll';
 /** Rolls an example fixed ahead of time, taken first in first out: `number[][]`. */
 export const NEXT_ROLLS_KEY = 'lang:next-rolls';
-/** What the current seat has done this turn: `{ seat, did: verbs, ended }`. */
+/**
+ * What each seat has done this turn: `{ [seat]: verbs }`, emptied whenever the turn passes. It is written only when a
+ * button is pressed (or an example says what was done), so a card game without buttons never gets it.
+ */
 export const TURN_KEY = 'lang:turn';
 /** Seats that have left the game, in the order they went: `PlayerId[]`. */
 export const OUT_KEY = 'lang:out';
@@ -26,7 +29,7 @@ export const OUT_KEY = 'lang:out';
 type Pieces = { [seat: string]: number };
 type Owners = { [space: string]: PlayerId };
 type Counters = { [counter: string]: { [seat: string]: number } };
-type TurnLog = { seat: PlayerId; did: string[]; ended: boolean };
+type TurnLog = { [seat: string]: string[] };
 
 const withData = (state: GameState, key: string, value: Json): GameState => ({ ...state, data: { ...state.data, [key]: value } });
 
@@ -34,7 +37,7 @@ const piecesOf = (state: GameState): Pieces => (state.data[PIECES_KEY] ?? {}) as
 const ownersOf = (state: GameState): Owners => (state.data[OWNERS_KEY] ?? {}) as Owners;
 const countersOf = (state: GameState): Counters => (state.data[COUNTERS_KEY] ?? {}) as Counters;
 const outOf = (state: GameState): PlayerId[] => (state.data[OUT_KEY] ?? []) as PlayerId[];
-const turnLogOf = (state: GameState): TurnLog | null => (state.data[TURN_KEY] ?? null) as TurnLog | null;
+const turnLogOf = (state: GameState): TurnLog => (state.data[TURN_KEY] ?? {}) as TurnLog;
 
 /**
  * Puts a board game's pieces, owners and counters in the state the first time it is needed. A card game, or a state
@@ -133,22 +136,26 @@ export function nextIn(state: GameState, seat: PlayerId, seats: PlayerId[]): Pla
   throw new RuleError('No other player is still in.');
 }
 
-/** Whether the seat has already done this on the turn it is taking now. */
+/** Whether the seat has already done this since the turn last passed. */
 export function didThisTurn(state: GameState, seat: PlayerId, verb: string): boolean {
-  const log = turnLogOf(state);
-  return log !== null && log.seat === seat && !log.ended && log.did.includes(verb);
+  return turnLogOf(state)[seat]?.includes(verb) ?? false;
 }
 
-/** Notes an action on the seat's turn; a log of another seat's turn, or of a turn that ended, starts afresh. */
-export function recordAction(state: GameState, seat: PlayerId, verb: string, endsTurn: boolean): GameState {
+/** Notes that the seat has done this; what the other seats did stays as it was, since everyone may act at once. */
+export function recordAction(state: GameState, seat: PlayerId, verb: string): GameState {
   const log = turnLogOf(state);
-  const did = log !== null && log.seat === seat && !log.ended ? log.did : [];
-  return withData(state, TURN_KEY, { seat, did: [...did, verb], ended: endsTurn });
+  return withData(state, TURN_KEY, { ...log, [seat]: [...(log[seat] ?? []), verb] });
 }
 
-/** Closes the turn log, so what was done stops counting. The same state when there is no log. */
-export function endTurnLog(state: GameState): GameState {
-  const log = turnLogOf(state);
-  if (log === null) return state;
-  return withData(state, TURN_KEY, { ...log, ended: true });
+/**
+ * Forgets what every seat did, as the turn passes. A state with no log, or an empty one, comes back as it is, so a
+ * card game's state never gets one.
+ */
+export function clearTurnLog(state: GameState): GameState {
+  return Object.keys(turnLogOf(state)).length === 0 ? state : withData(state, TURN_KEY, {});
+}
+
+/** Whether the phase's After line names the verb: making that move or pressing that button passes the turn. */
+export function endsTurn(phase: CompiledPhase, verb: string): boolean {
+  return phase.after?.verbs.includes(verb) ?? false;
 }
