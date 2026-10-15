@@ -24,6 +24,9 @@ const MAX_SIDES = 100;
 /** The most dice an example can fix a roll for: the Given lines take one number or two. */
 const MAX_FIXED_DICE = 2;
 
+/** The most doubles an example may say a player has rolled this turn; one roll is made for each. */
+const MAX_GIVEN_DOUBLES = 20;
+
 /** Said by anything that rolls or fixes a roll in a game that has no dice. */
 const NO_DICE = 'This game has no dice. Add a line like “There are two six-sided dice.” under Board:';
 
@@ -325,8 +328,11 @@ const rollsTheDice = (ref: PhraseRef): boolean => {
 const rolledDoublesGiven: EffectFn = (env, [seat, n]) => {
   const who = seatOf(env, seat);
   const count = n as number;
-  const rolled = setRollsThisTurn(env.state, who, Array.from({ length: Math.max(count, 0) }, () => [1, 1]));
-  if (count <= 0) return rolled;
+  // One roll is made for each, so a huge number would stall the page or fail with a message nobody can read.
+  if (count > MAX_GIVEN_DOUBLES) throw new RuleError(`Say ${MAX_GIVEN_DOUBLES} doubles or fewer.`);
+  if (count < 0) throw new RuleError(`Say how many doubles, from 0 to ${MAX_GIVEN_DOUBLES}.`);
+  const rolled = setRollsThisTurn(env.state, who, Array.from({ length: count }, () => [1, 1]));
+  if (count === 0) return rolled;
   const phase = env.game.phases.find((p) => p.id === env.state.turn?.phase);
   const button = phase?.actions.find((action) => action.effects.some(rollsTheDice));
   if (!button) throw new RuleError('No button in this phase rolls the dice.');

@@ -497,6 +497,15 @@ describe('example phrases', () => {
       it('refuses a player who is not at the table', () => {
         expect(() => givenRolling('p3 has rolled 1 double this turn')).toThrow('There is no player p3 at this table.');
       });
+      it('allows up to 20 doubles and refuses more, instead of rolling that many', () => {
+        expect(rollsThisTurn(givenRolling('p0 has rolled 20 doubles this turn'), 'p0')).toHaveLength(20);
+        expect(() => givenRolling('p0 has rolled 21 doubles this turn')).toThrow('Say 20 doubles or fewer.');
+        expect(() => givenRolling('p0 has rolled 5000000 doubles this turn')).toThrow('Say 20 doubles or fewer.');
+        expect(() => givenRolling('p0 has rolled 99999999999 doubles this turn')).toThrow('Say 20 doubles or fewer.');
+      });
+      it('refuses a negative number of doubles', () => {
+        expect(() => givenRolling('p0 has rolled -1 doubles this turn')).toThrow('Say how many doubles, from 0 to 20.');
+      });
       it('needs dice, and exactly two of them', () => {
         expect(lib.get('given', '{player} has rolled {int} double(s) this turn')).toMatchObject({ needsDice: true, needsTwoDice: true });
       });
