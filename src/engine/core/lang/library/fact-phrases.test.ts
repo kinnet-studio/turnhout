@@ -559,6 +559,27 @@ describe('a yes-or-no that rules set and clear on a space', () => {
       expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
       expect(runExamples(compiled!, lib).map((r) => [r.status, r.message])).toEqual([['pass', null], ['pass', null]]);
     });
+    describe('a misspelt line', () => {
+      const problems = (...lines: string[]) => compileGame([
+        HEAD, '  A player may mortgage the space they are on.', '    Only if it is not mortgaged.', '    Then:', '      It is mortgaged.', '',
+        'Example: a slip', '  Given p0 is on Rose Lane', '  When p0 mortgages the space they are on', ...lines,
+      ].join('\n'), lib).diagnostics.filter((d) => d.severity === 'error');
+
+      it('is a phrase the library does not have when the slip is in its own words, with the phrase it was meant to be', () => {
+        expect(problems('  Then it is acepted')).toEqual([expect.objectContaining({
+          kind: 'unknown-phrase', message: '“it is acepted” isn\'t in the phrase library yet.', suggestions: expect.arrayContaining(['it is accepted']),
+        })]);
+        expect(problems('  Then it is accepted', '  And it is p1s turn')).toEqual([expect.objectContaining({
+          kind: 'unknown-phrase', message: '“it is p1s turn” isn\'t in the phrase library yet.', suggestions: expect.arrayContaining(["it is [player]'s turn"]),
+        })]);
+      });
+      it('names the space fact when the slip is in the name of the fact', () => {
+        expect(problems('  Then it is accepted', '  And Rose Lane is mortgagd'))
+          .toEqual([expect.objectContaining({ message: 'There is no space fact called “mortgagd”.', suggestions: ['mortgaged'] })]);
+        expect(problems('  Then it is mortgagd'))
+          .toEqual([expect.objectContaining({ message: 'There is no space fact called “mortgagd”.', suggestions: ['mortgaged'] })]);
+      });
+    });
   });
 
   describe('example phrases', () => {
@@ -1082,6 +1103,21 @@ describe('a small card game with facts, played from a designer\'s words', () => 
     expect(runExamples(game!, lib).map((r) => [r.status, r.message])).toEqual([
       ['pass', null], ['pass', null], ['fail', "Expected the Knight in p1's camp to have 2 health, but it has 3."], ['pass', null],
     ]);
+  });
+  it('says a slip in a phrase\'s own words is not in the library, and names the card fact when the slip is in the fact', () => {
+    const problems = (from: string, to: string) =>
+      compileGame(`${VENOM}${EXAMPLES}`.replace(from, to), lib).diagnostics.filter((d) => d.severity === 'error');
+    const REJECTED = '  Then it is rejected because "the card is poisoned"';
+    expect(problems(REJECTED, '  Then it is acepted')).toEqual([expect.objectContaining({
+      kind: 'unknown-phrase', message: '“it is acepted” isn\'t in the phrase library yet.', suggestions: expect.arrayContaining(['it is accepted']),
+    })]);
+    expect(problems(REJECTED, '  Then it is p1s turn')).toEqual([expect.objectContaining({
+      kind: 'unknown-phrase', message: '“it is p1s turn” isn\'t in the phrase library yet.', suggestions: expect.arrayContaining(["it is [player]'s turn"]),
+    })]);
+    expect(problems('    Only if it is poisoned.', '    Only if it is poisonned.'))
+      .toEqual([expect.objectContaining({ message: 'There is no card fact called “poisonned”.', suggestions: ['poisoned'] })]);
+    expect(problems(REJECTED, "  Then the Knight in p1's camp is poisonned"))
+      .toEqual([expect.objectContaining({ message: 'There is no card fact called “poisonned”.', suggestions: ['poisoned'] })]);
   });
 
   describe('with a count declared on cards', () => {

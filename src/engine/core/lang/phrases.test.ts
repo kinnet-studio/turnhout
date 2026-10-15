@@ -198,6 +198,22 @@ describe('PhraseLibrary.misnamed between phrases with the same words', () => {
   });
 });
 
+describe('PhraseLibrary.misnamed beside a phrase with words of its own where the name would be', () => {
+  const board = vocabFrom({ maxPlayers: 2, board: fixtureBoardGame().board, facts: [{ name: 'mortgaged', on: 'space', kind: 'flag' }] });
+  const l = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
+    .expect('it is accepted', () => true).expect("it is {player}'s turn", () => true).condition('it is {spaceflag}', () => true);
+
+  it('blames no name like no real one when the line is more like the words of another phrase', () => {
+    expect(l.misnamed(['expect', 'condition'], 'it is acepted', board)).toBeNull();
+    expect(l.misnamed(['expect', 'condition'], 'it is p1s turn', board)).toBeNull();
+  });
+  it('still blames a name near a real one, and a name like no real one when no phrase is nearer', () => {
+    expect(l.misnamed(['expect', 'condition'], 'it is mortgagd', board)?.problem)
+      .toEqual({ message: 'There is no space fact called “mortgagd”.', suggestions: ['mortgaged'] });
+    expect(l.misnamed(['expect', 'condition'], 'it is xyz', board)?.problem.message).toBe('There is no space fact called “xyz”.');
+  });
+});
+
 describe('stubFor', () => {
   it('writes a ready-to-paste stub with typed parameters', () => {
     expect(stubFor('effect', 'The winner draws 2 cards.', V, STATIC_TYPES, { game: 'Hearts', line: 31 })).toBe(

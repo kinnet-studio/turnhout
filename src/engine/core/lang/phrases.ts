@@ -247,6 +247,11 @@ const MAX_SUGGESTIONS = 3;
  * meant: less than one letter of the phrase's own words, so it only settles a tie.
  */
 const NARROW_BONUS = 0.5;
+/**
+ * How alike a line must be to a phrase's own words for a name in it that is like no real name to be read as a slip in
+ * those words instead. Kept high: a long line with a misspelt name shares many letter pairs with unrelated phrases.
+ */
+const SLIP_IN_WORDS = 0.7;
 
 /**
  * How alike a misnamed text is to the name closest to it among the suggestions, 0 when none is alike enough to have been
@@ -398,11 +403,14 @@ export class PhraseLibrary {
    * are let loose, with a name the game never defined (“Shuffle the dek” is “shuffle {zone}” and there is no zone
    * “dek”). The phrase with the most words of its own wins; of phrases with as many, the one whose names the misnamed text
    * is nearest to, else the one registered first. Null when no phrase has the line's shape that way: then it is a phrase
-   * nobody has written yet. Only says what is wrong; it never makes a line match.
+   * nobody has written yet. Null too when the misnamed text is like no real name and the line is very like the words of
+   * another phrase, more than those of the one that read it: “it is acepted” is “it is accepted” misspelt, not a space fact
+   * called “acepted”, and the unknown-phrase diagnostic suggests the phrase it meant. Only says what is wrong; it never
+   * makes a line match.
    */
   misnamed(kinds: PhraseKind[], text: string, vocab: Vocab): Misnamed | null {
     const line = normalizeLine(text);
-    let best: (Misnamed & { rank: number; near: number }) | null = null;
+    let best: (Misnamed & { rank: number; near: number; literal: string }) | null = null;
     for (const kind of kinds) {
       for (const entry of this.entries.get(kind)?.values() ?? []) {
         // A phrase that could only tie is still read: it may name something nearer.
@@ -411,10 +419,13 @@ export class PhraseLibrary {
         const named = found ? this.firstMisnamed(entry, found, vocab) : null;
         if (!named) continue;
         const rank = entry.specificity + (named.narrow ? NARROW_BONUS : 0);
-        if (!best || rank > best.rank || (rank === best.rank && named.near > best.near)) best = { kind, problem: named.problem, rank, near: named.near };
+        if (!best || rank > best.rank || (rank === best.rank && named.near > best.near)) {
+          best = { kind, problem: named.problem, rank, near: named.near, literal: entry.literal };
+        }
       }
     }
-    return best && { kind: best.kind, problem: best.problem };
+    if (!best || (best.near === 0 && this.isNearerToOther(kinds, line, best.literal))) return null;
+    return { kind: best.kind, problem: best.problem };
   }
 
   private add(kind: PhraseKind, p: string, fn: unknown, opts: PhraseOpts = {}): this {
@@ -504,6 +515,19 @@ export class PhraseLibrary {
       first ??= { problem: named, narrow: part.type.loose.narrow ?? false, near: nearness(text, named.suggestions) };
     }
     return first;
+  }
+
+  /**
+   * True when `line` is very like the words of some phrase of `kinds`, and more like them than the words `literal` of the
+   * phrase that read a name in it.
+   */
+  private isNearerToOther(kinds: PhraseKind[], line: string, literal: string): boolean {
+    const lower = line.toLowerCase();
+    const blamed = dice(lower, literal);
+    return kinds.some((kind) => [...(this.entries.get(kind)?.values() ?? [])].some((entry) => {
+      const score = dice(lower, entry.literal);
+      return score >= SLIP_IN_WORDS && score > blamed;
+    }));
   }
 
   private suggest(entries: Entry[], line: string): string[] {
