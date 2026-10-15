@@ -53,6 +53,10 @@ describe('zone phrases', () => {
     expect(zone('Each player has a hand that only they can see')()).toMatchObject({ name: 'hand', perPlayer: true, layout: 'hand', visibility: 'owner' });
     expect(zone('Each player has a bonus hand that no one can see')()).toMatchObject({ name: 'bonus hand', layout: 'hand', visibility: 'secret' });
   });
+  it('declares a per-player row, which shows every card it holds, without reading it as a pile called "<name> row"', () => {
+    expect(zone('Each player has a camp row that everyone can see')()).toEqual({ name: 'camp', perPlayer: true, layout: 'row', visibility: 'public' });
+    expect(zone('Each player has a bonus pile row that only they can see')()).toEqual({ name: 'bonus pile', perPlayer: true, layout: 'row', visibility: 'owner' });
+  });
   it('rejects a shared zone only its owner can see', () => {
     const declare = zone('The deck is a pile in the center that only they can see');
     expect(declare).toThrow(RuleError);

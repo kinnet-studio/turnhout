@@ -99,6 +99,9 @@ export const STATIC_TYPES: ParamType[] = [
   { name: 'string', label: '[text]', stubOrder: 1, source: () => '["“”][^"“”]*["“”]', resolve: (t) => ({ value: t.slice(1, -1) }) },
   { name: 'word', label: '[word]', source: () => '\\S+', resolve: (t) => ({ value: t }) },
   { name: 'name', label: '[name]', source: () => '.+?', resolve: (t) => ({ value: t.toLowerCase() }) },
+  // The name of a per-player zone that is not a row: a trailing "row" is the word that says it is one, so that “each player has a
+  // camp row that …” is read only as a row called camp, and never also as a pile called “camp row”.
+  { name: 'unrowedname', label: '[name]', source: () => '.+?(?<! row)', resolve: (t) => ({ value: t.toLowerCase() }) },
   { name: 'layout', label: '[layout]', source: () => 'pile|row|hand', resolve: (t) => ({ value: t.toLowerCase() }) },
   {
     name: 'visibility',

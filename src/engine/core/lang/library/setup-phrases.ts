@@ -36,6 +36,9 @@ const playerZone: ZoneFn = ([name, visibility]) => ({
   visibility,
 } as ZoneSpec);
 
+/** A row shows every card it holds side by side, where a pile shows only its top card: the zone for cards a player must see all of. */
+const playerRow: ZoneFn = ([name, visibility]) => ({ name, perPlayer: true, layout: 'row', visibility } as ZoneSpec);
+
 /** The sentences that set a game's table: which cards it has and which zones they sit in. */
 export function registerSetupPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
@@ -43,5 +46,6 @@ export function registerSetupPhrases(lib: PhraseLibrary): PhraseLibrary {
     .cards('a standard 52-card deck, aces high, starting in {zone}', standardDeck(true))
     .cards('a deck called {name}, starting in {zone}', tableDeck)
     .zone('the {name} is a {layout} in the center that {visibility}', sharedZone)
-    .zone('each player has a {name} that {visibility}', playerZone);
+    .zone('each player has a {unrowedname} that {visibility}', playerZone)
+    .zone('each player has a {name} row that {visibility}', playerRow);
 }

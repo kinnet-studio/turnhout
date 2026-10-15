@@ -1,0 +1,87 @@
+Game: Venom
+Players: 2
+
+Cards:
+  A deck called creatures, starting in the deck:
+    | name   | health | copies |
+    | Knight | 3      | 6      |
+    | Archer | 2      | 6      |
+    | Viper  | 1      | 4      |
+  Cards can be poisoned.
+
+Table:
+  The deck is a pile in the center that no one can see.
+  The discard pile is a pile in the center that everyone can see.
+  Each player has a hand that only they can see.
+  Each player has a camp row that everyone can see.
+
+Setup:
+  Shuffle the deck.
+  Deal 4 cards from the deck to each hand.
+
+Phase: playing
+  Hint: Play a card to your camp, or draw one.
+  Players take turns.
+  A player may play a card from their hand to their camp.
+    Then:
+      Each poisoned card in their camp loses 1 health.
+      If the card is a Viper, every card in the other player's camp is poisoned.
+  A player may draw a card from the deck to their hand.
+    Only if their hand is empty.
+  When a card in a camp has 0 health:
+    Move it to the discard pile.
+  After a player plays or draws, the turn passes to the left.
+
+End:
+  The game ends when the deck and every hand are empty.
+  The player with the most cards in their camp wins.
+
+Example: a Viper poisons the other camp
+  Given p0 holds a Viper
+  And p1's camp has a Knight
+  When p0 plays a Viper
+  Then the Knight in p1's camp is poisoned
+
+Example: a freshly poisoned card loses no health yet
+  Given p0 holds a Viper
+  And p1's camp has a Knight
+  When p0 plays a Viper
+  Then the Knight in p1's camp has 3 health
+
+Example: poisoned cards lose health when their owner plays
+  Given it is p1's turn
+  And p1 holds an Archer
+  And p1's camp has a Knight
+  And the Knight in p1's camp is poisoned
+  When p1 plays an Archer
+  Then the Knight in p1's camp has 2 health
+
+Example: a card at 0 health goes to the discard pile
+  Given it is p1's turn
+  And p1 holds an Archer
+  And p1's camp has a Viper
+  And the Viper in p1's camp is poisoned
+  When p1 plays an Archer
+  Then the discard pile has a Viper
+  And p1's camp has an Archer
+
+Example: an unpoisoned card keeps its health
+  Given it is p1's turn
+  And p1 holds an Archer
+  And p1's camp has a Knight
+  When p1 plays an Archer
+  Then the Knight in p1's camp has 3 health
+
+Example: you draw only with an empty hand
+  Given p0 holds a Knight
+  When p0 draws a card
+  Then it is rejected because "their hand is empty"
+
+Example: the most cards in a camp wins
+  Given the deck is empty
+  And p0 holds a Knight
+  And p1's hand is empty
+  And p0's camp has a Knight
+  And p1's camp has an Archer
+  When p0 plays a Knight
+  Then p0 wins
