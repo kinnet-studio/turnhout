@@ -1,3 +1,5 @@
+import { compileExample } from './compile-example';
+import { compilePhase } from './compile-phase';
 import { addProblem, attempt, matchEffectLine, matchLine, phaseId, phraseFn, rejectChildren, type LineCtx } from './compile-util';
 import type { Diagnostic } from './diagnostics';
 import { parseOutline, type OutlineNode } from './outline';
@@ -11,7 +13,6 @@ export type CompileResult = { game?: CompiledGame; diagnostics: Diagnostic[] };
 const SECTION = /^(game|players|cards|table|setup|phase|end|example)\s*:\s*(.*)$/i;
 const PLAYERS = /^(\d+)(?:\s+to\s+(\d+))?$/i;
 const MOVE_VERB = /^a player may (\w+) a card from /i;
-const HINT = /^hint:\s*(.*)$/i;
 const GAME_ENDS = /^the game ends when\s+(.+)$/i;
 const SAYS_WINS = /\bwins\b/i;
 const BLOCK_SECTIONS = new Set(['cards', 'table', 'setup', 'end']);
@@ -104,35 +105,14 @@ function compileCards(lines: OutlineNode[], ctx: LineCtx): CardSetSpec[] {
   return sets;
 }
 
-/**
- * One `Phase:` block. Lines that set rules for the phase's moves, triggers and transitions are not read yet:
- * they are reported until the phase-rule compiler takes them over from here.
- */
-function compilePhase(node: OutlineNode, ctx: LineCtx): CompiledPhase {
-  const phase: CompiledPhase = {
-    id: phaseId(node), line: node.line, hint: null, actor: 'current', rearrange: [], moves: [], onEnter: [],
-    goTo: null, triggers: [], after: null,
-  };
-  let hinted = false;
-  for (const child of node.children) {
-    const clean = normalizeLine(child.text);
-    const words = clean.toLowerCase();
-    const hint = HINT.exec(child.text);
-    if (hint) {
-      if (hinted) addProblem(ctx.diagnostics, child.line, 'A phase can have only one Hint.');
-      hinted = true;
-      phase.hint = hint[1].trim() || null;
-    } else if (words === 'players take turns') {
-      phase.actor = 'current';
-    } else if (words === 'everyone acts at once') {
-      phase.actor = 'any';
-    } else {
-      addProblem(ctx.diagnostics, child.line, "I don't understand this line in a phase.", { text: clean });
-      continue;
-    }
-    rejectChildren(child, ctx.diagnostics);
-  }
-  return phase;
+/** A phase that is not the first needs a `go to` from some other phase, or the game can never reach it. */
+function warnUnreachable(phases: CompiledPhase[], diagnostics: Diagnostic[]): void {
+  phases.forEach((phase, index) => {
+    // A phase named twice is already reported; its repeat would only echo that.
+    if (index === 0 || phases.findIndex((p) => p.id === phase.id) !== index) return;
+    if (phases.some((p) => p.id !== phase.id && p.goTo?.to === phase.id)) return;
+    addProblem(diagnostics, phase.line, `Nothing leads to the phase “${phase.id}”.`, { severity: 'warning' });
+  });
 }
 
 /** A winner phrase, or the placeholder for one nobody has written yet. */
@@ -210,13 +190,14 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
     phases.push(phase);
   }
   if (phaseNodes.length === 0) addProblem(diagnostics, 1, 'Add at least one Phase: section.');
+  warnUnreachable(phases, diagnostics);
 
   const end = compileEnd(of('end'), ctx);
-  // Example: blocks are not read yet.
+  const examples = of('example').map((s) => compileExample(s.node, ctx, players));
 
   const onlyUnknownPhrases = diagnostics.every((d) => d.severity !== 'error' || d.kind === 'unknown-phrase');
   if (name === null || players === null || phases.length === 0 || !onlyUnknownPhrases) return undefined;
-  return { name, players, zones, cards, setup, phases, end, examples: [] };
+  return { name, players, zones, cards, setup, phases, end, examples };
 }
 
 /**

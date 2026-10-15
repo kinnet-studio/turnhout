@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { standardDeckIdentities } from './cards';
-import { PhraseLibrary, STATIC_TYPES, emptyVocab, stubFor, vocabFrom } from './phrases';
+import { PhraseLibrary, STATIC_TYPES, emptyVocab, stubFor, suggestNames, vocabFrom } from './phrases';
 import type { ParamType } from './types';
 
 const V = emptyVocab();
@@ -147,5 +147,16 @@ describe('vocabFrom', () => {
   it('makes a new object each time and defaults to an empty game', () => {
     expect(vocabFrom({ maxPlayers: 2 })).toEqual({ ...emptyVocab(), maxPlayers: 2 });
     expect(vocabFrom({ maxPlayers: 2 })).not.toBe(vocabFrom({ maxPlayers: 2 }));
+  });
+});
+
+describe('suggestNames', () => {
+  it('lists the names closest to the text first, ignoring case, at most three', () => {
+    expect(suggestNames('Playing', ['placing', 'dealing', 'scoring', 'PLAYING NOW', 'plays', 'playing time'])).toEqual(['PLAYING NOW', 'playing time', 'placing']);
+  });
+
+  it('leaves out names with little in common', () => {
+    expect(suggestNames('zzzz', ['main', 'placing'])).toEqual([]);
+    expect(suggestNames('main', [])).toEqual([]);
   });
 });

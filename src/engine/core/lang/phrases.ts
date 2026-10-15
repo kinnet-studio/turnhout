@@ -117,6 +117,17 @@ function dice(a: string, b: string): number {
   return (2 * shared) / (a.length - 1 + b.length - 1);
 }
 
+/** The names that look most like `text`, closest first: for words that are not phrases, like a phase that does not exist. */
+export function suggestNames(text: string, names: string[]): string[] {
+  const wanted = text.toLowerCase();
+  return names
+    .map((name) => ({ name, score: dice(wanted, name.toLowerCase()) }))
+    .filter((s) => s.score >= MIN_SUGGESTION_SCORE)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, MAX_SUGGESTIONS)
+    .map((s) => s.name);
+}
+
 /**
  * Registry of the sentences designers may write, one set per kind. A pattern is
  * lowercase text with `{type}` parameters and an optional `(s)`; it is the phrase's stable id.

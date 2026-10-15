@@ -304,7 +304,9 @@ describe('compileGame phases', () => {
   });
 
   it('leaves lines it cannot read in a phase for the designer to fix', () => {
-    expect(messages(BASE.replace('Hint: Do things.', 'Hint: Do things.\n  Dance.'))).toEqual([[17, 'I don\'t understand this line in a phase.']]);
+    expect(messages(BASE.replace('Hint: Do things.', 'Hint: Do things.\n  Dance.'))).toEqual([
+      [17, 'I don\'t understand this line in a phase. Phase lines start with Hint:, A player may…, When…, After a player…, Players take turns or Everyone acts at once.'],
+    ]);
   });
 
   it('allows one Hint and no indentation under a phase line', () => {
@@ -321,8 +323,8 @@ describe('compileGame phases', () => {
       .replace('Players take turns.', 'Players take turns.\n  A player may play a card from their hand to the deck.')
       .replace('Shuffle the deck.', 'Shuffle the deck.\n  If the game is in second phase, shuffle the deck.')
       + '\nPhase: Second Phase';
-    // Only the move line itself is left over: the lines that use the phase and the verb were read.
-    expect(messages(text, phrases)).toEqual([[19, 'I don\'t understand this line in a phase.']]);
+    // The lines that use the phase and the verb were read; only the second phase, which nothing leads to, is reported.
+    expect(messages(text, phrases)).toEqual([[24, 'Nothing leads to the phase “second phase”.']]);
   });
 });
 
