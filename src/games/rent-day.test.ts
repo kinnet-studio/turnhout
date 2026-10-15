@@ -5,14 +5,16 @@ import { createDefaultLibrary } from '@/engine/core/lang/library';
 import { runExamples } from '@/engine/core/lang/examples';
 import { createEngine, initialState, seatsFor } from '@/engine/core/lang/build';
 import {
-  bankOf, counterOf, isOut, latestRoll, ownerOf, pieceAt, playerFact, playersIn, rollsThisTurn, setOwner, setRoll, spaceFact,
-  TURN_KEY, TURN_ROLLS_KEY, withBoardData,
+  bankOf, counterOf, isOut, LAST_DRAWN_KEY, lastDrawn, latestRoll, ownerOf, pieceAt, playerFact, playersIn, rollsThisTurn, setOwner,
+  setRoll, spaceFact, TURN_KEY, TURN_ROLLS_KEY, withBoardData,
 } from '@/engine/core/lang/board-state';
+import { deckOf } from '@/engine/core/lang/cards';
 import { targetCandidates } from '@/engine/core/lang/declared-actions';
 import { isDouble } from '@/engine/core/lang/library/board-phrases';
 import type { LangRuntime } from '@/engine/core/lang/runtime';
+import { zoneIdFor, zoneInfo } from '@/engine/core/lang/zones';
 import type { GameEngine } from '@/engine/core/game-engine';
-import type { GameState } from '@/engine/core/game-state';
+import { zoneCards, type GameState } from '@/engine/core/game-state';
 import type { Move } from '@/engine/core/moves';
 import type { PlayerId } from '@/engine/core/scene';
 
@@ -26,6 +28,7 @@ const BUILD = 'build a house on a street they own';
 const END = 'end their turn';
 const PAY = 'pay to leave jail';
 const ROLL_FOR_DOUBLE = 'roll for a double';
+const USE = 'use a get out of jail free';
 /** Where Jail and Go To Jail are on the board, and what leaving jail costs. */
 const JAIL = 10;
 const GO_TO_JAIL = 30;
@@ -35,6 +38,12 @@ const HOUSES = 32;
 const HOTELS = 12;
 /** A hotel counts as this many buildings when a street's buildings are compared, so a hotel is one more than four houses. */
 const HOTEL_WORTH = 5;
+/** Each player's row of cards they keep, and the one card a player ever keeps. */
+const KEPT = 'kept cards';
+const PASS_CARD = 'Get Out Of Jail Free';
+/** The kinds of space that draw a card, and how many cards each of their two decks has. */
+const DRAW_KINDS = ['chance', 'treasury'];
+const DECK_SIZE = 16;
 
 /** An engine and the runtime behind it: the auto-player asks the runtime which streets the build button may pick. */
 type Table = { engine: GameEngine; runtime: LangRuntime };
@@ -60,11 +69,11 @@ function buildable({ engine, runtime }: Table, by: PlayerId): number | null {
 }
 
 /**
- * One turn of a player who always buys and builds when allowed. In jail, an even seat pays to leave whenever it may; an odd
- * seat never does, so it rolls for a double and sometimes reaches the third failed roll, and every way out of jail comes up
- * even with two players. Then it rolls while it may (a double rolls again, until the third sends it to jail), buying after
- * each roll if it may, builds on the first street it may until it can't, and ends its turn. It stops as soon as a move puts
- * it out (the turn has passed already) or ends the game.
+ * One turn of a player who always buys and builds when allowed. In jail, a player holding a Get Out Of Jail Free uses it
+ * first. Otherwise an even seat pays to leave whenever it may; an odd seat never does, so it rolls for a double and sometimes
+ * reaches the third failed roll, and every way out of jail comes up even with two players. Then it rolls while it may (a
+ * double rolls again, until the third sends it to jail), buying after each roll if it may, builds on the first street it may
+ * until it can't, and ends its turn. It stops as soon as a move puts it out (the turn has passed already) or ends the game.
  */
 function playTurn(table: Table, watch: Watch = () => {}): void {
   const { engine } = table;
@@ -82,6 +91,7 @@ function playTurn(table: Table, watch: Watch = () => {}): void {
     if (may(BUY)) make({ type: BUY, by });
   };
   const evenSeat = Number(by.slice(1)) % 2 === 0;
+  if (may(USE)) make({ type: USE, by });
   if (evenSeat && may(PAY)) make({ type: PAY, by });
   if (may(ROLL_FOR_DOUBLE)) rollWith(ROLL_FOR_DOUBLE);
   while (may(ROLL)) rollWith(ROLL);
@@ -100,13 +110,19 @@ function playUpTo(table: Table, turns: number, watch?: Watch): number {
 const totalMoney = (state: GameState, seats: PlayerId[]) => seats.reduce((sum, seat) => sum + counterOf(state, 'money', seat), 0);
 
 /**
- * The rules of money, of the bank and of jail, checked around every move. Money only comes in through Go and only leaves
- * through tax, purchases, building and leaving jail; rent moves it between players. Houses and hotels only move between the
- * bank and the board. A player in jail is on Jail, and only a player in jail has jail turns, never more than two. What a
- * player did and rolled this turn is forgotten as the turn passes, so only the player whose turn it is has any.
+ * The rules of money, of the bank, of jail and of the cards, checked around every move. Money only comes in through Go and
+ * the cards, and only leaves through tax, purchases, building, leaving jail and the cards; rent moves it between players.
+ * What a drawn card does is checked card by card in the examples, so here a walk onto a Chance or Treasury space only checks
+ * that the mover drew. Houses and hotels only move between the bank and the board. A player in jail is on Jail, and only a
+ * player in jail has jail turns, never more than two. What a player did and rolled this turn is forgotten as the turn
+ * passes, so only the player whose turn it is has any. No card is ever lost or made: each lies face down in its own deck's
+ * pile, or face up in a player's kept cards when it is a Get Out Of Jail Free, so each pile and the kept cards between them
+ * always hold their deck exactly.
  */
 function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
-  const { spaces } = runtime.game.board!;
+  const { game } = runtime;
+  const { spaces } = game.board!;
+  const keptBy = (state: GameState, seat: PlayerId) => zoneCards(state, zoneIdFor(KEPT, seat)).length;
 
   /** Each seat's money changed by what `moved` says for it, and nobody else's changed at all. */
   const moneyMoves = (before: GameState, after: GameState, moved: Record<PlayerId, number>, why: string) => {
@@ -126,6 +142,12 @@ function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
     const to = from + roll[0] + roll[1];
     const at = to % SPACES;
     const landed = spaces[at].attrs;
+    if (DRAW_KINDS.includes(landed.kind as string)) {
+      // The card may move money and the piece on; the examples check each card, so here only that the mover drew one.
+      expect(after.data[LAST_DRAWN_KEY], `${by} drew no card on ${spaces[at].name}`).not.toBe(before.data[LAST_DRAWN_KEY]);
+      expect(lastDrawn(after)!.seat, `who drew on ${spaces[at].name}`).toBe(by);
+      return;
+    }
     const salary = to >= SPACES ? 200 : 0;
     const tax = landed.kind === 'tax' ? (landed.tax as number) : 0;
     // Rent only moves money from the mover to the owner of the space they landed on, as much as the Rent: section says.
@@ -173,6 +195,11 @@ function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
       moneyMoves(before, after, { [by]: -FINE }, `${by} paid to leave jail`);
       expect(inJail(after, by)).toBe(false);
       expect(jailTurns(after, by)).toBe(0);
+    } else if (move.type === USE) {
+      moneyMoves(before, after, {}, `${by} used a ${PASS_CARD}`);
+      expect(inJail(after, by)).toBe(false);
+      expect(jailTurns(after, by)).toBe(0);
+      expect(keptBy(after, by), `${by}'s kept cards after using one`).toBe(keptBy(before, by) - 1);
     } else if (move.type === BUY) {
       const at = pieceAt(before, by)!;
       expect(change).toBe(-(spaces[at].attrs.price as number));
@@ -202,6 +229,26 @@ function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
     expect(hotels + bankOf(after, 'hotels'), `hotels on the board and in the bank after ${by} ${move.type}`).toBe(HOTELS);
     expect(bankOf(after, 'houses')).toBeGreaterThanOrEqual(0);
     expect(bankOf(after, 'hotels')).toBeGreaterThanOrEqual(0);
+
+    // A card's deck comes from its id, never its name, since both decks have a Get Out Of Jail Free. A player who goes out
+    // keeps their kept card for now, and it still counts towards its deck.
+    expect(after.cards, `cards after ${by} ${move.type}`).toHaveLength(2 * DECK_SIZE);
+    const perDeck = new Map<string, number>();
+    for (const card of after.cards) {
+      const deck = deckOf(game.cards, card.id);
+      if (deck === null) throw new Error(`${card.id} came from no deck`);
+      perDeck.set(deck.start, (perDeck.get(deck.start) ?? 0) + 1);
+      const where = `${card.data?.name} (${card.id}) in ${card.zoneId} after ${by} ${move.type}`;
+      if (card.zoneId === zoneIdFor(deck.start)) {
+        expect(card.faceUp, `${where} is face up`).toBe(false);
+      } else {
+        const kept = zoneInfo(game, card.zoneId);
+        expect(kept?.spec.name === KEPT && kept.seat !== null, `${where} is neither in its pile nor kept`).toBe(true);
+        expect(card.faceUp, `${where} is face down`).toBe(true);
+        expect(card.data?.name, `${where} was kept`).toBe(PASS_CARD);
+      }
+    }
+    expect([...perDeck.values()], `cards of each deck after ${by} ${move.type}`).toEqual([DECK_SIZE, DECK_SIZE]);
 
     expect(isOut(after, after.turn!.current)).toBe(false);
     for (const seat of seats) {
@@ -257,7 +304,7 @@ describe('Rent Day (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(45);
+    expect(results).toHaveLength(56);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -276,7 +323,9 @@ describe('Rent Day (designer language)', () => {
     const jail = {
       'sent to jail by a third double': 0,
       'sent to jail by landing on Go To Jail': 0,
+      'sent to jail by a card': 0,
       'paid to leave jail': 0,
+      'used a Get Out Of Jail Free': 0,
       'freed by a double': 0,
       'let out after a third failed roll': 0,
     };
@@ -287,9 +336,15 @@ describe('Rent Day (designer language)', () => {
         rules(before, move, after);
         const by = move.by as PlayerId;
         if (move.type === ROLL && !inJail(before, by) && inJail(after, by)) {
-          jail[doublesThisTurn(after, by) === 3 ? 'sent to jail by a third double' : 'sent to jail by landing on Go To Jail']++;
+          // A roll that ends neither on a third double nor on Go To Jail sent them there by the card it drew.
+          const [a, b] = latestRoll(after)!;
+          if (doublesThisTurn(after, by) === 3) jail['sent to jail by a third double']++;
+          else if ((pieceAt(before, by)! + a + b) % SPACES === GO_TO_JAIL) jail['sent to jail by landing on Go To Jail']++;
+          else jail['sent to jail by a card']++;
         } else if (move.type === PAY) {
           jail['paid to leave jail']++;
+        } else if (move.type === USE) {
+          jail['used a Get Out Of Jail Free']++;
         } else if (move.type === ROLL_FOR_DOUBLE && isDouble(latestRoll(after)!)) {
           jail['freed by a double']++;
         } else if (move.type === ROLL_FOR_DOUBLE && jailTurns(before, by) === 2) {
@@ -343,10 +398,14 @@ describe('Rent Day (designer language)', () => {
 
   it.each([[2, 1], [4, 2], [8, 3]])('a game with little money and no Go salary ends with a winner at %i players (seed %i)', (n, seed) => {
     const salary = '  When a piece passes Go:\n    Its player gets 200 money.\n';
+    const draws = '  When a player lands on a chance space:\n    They draw from the chance pile and do what it says.\n'
+      + '  When a player lands on a treasury space:\n    They draw from the treasury pile and do what it says.\n';
     expect(RENT_DAY).toContain('Each player has 1500 money');
     expect(RENT_DAY).toContain(salary);
-    // Without a Go salary money only leaves the table (taxes, purchases and building), so someone always runs out in the end.
-    const lean = RENT_DAY.replace('Each player has 1500 money', 'Each player has 300 money').replace(salary, '');
+    expect(RENT_DAY).toContain(draws);
+    // Without a Go salary and without the cards, which bring money in too, money only leaves the table (taxes, purchases and
+    // building), so someone always runs out in the end.
+    const lean = RENT_DAY.replace('Each player has 1500 money', 'Each player has 300 money').replace(salary, '').replace(draws, '');
     const compiled = compileGame(lean, lib);
     expect(compiled.diagnostics).toEqual([]);
     const g = compiled.game!;

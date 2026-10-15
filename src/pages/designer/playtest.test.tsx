@@ -27,8 +27,8 @@ vi.mock('@/engine/react', () => ({
 const lib = createDefaultLibrary();
 const colorMatch = compileGame(COLOR_MATCH, lib).game!;
 const rentDay = compileGame(RENT_DAY, lib).game!;
-// With 5 money each, seed 13 rolls p0 onto Income Tax: they cannot pay it and are out on their first turn.
-const BROKE_SEED = 13;
+// With 5 money each, seed 2 rolls p0 a 3 and a 1 onto Income Tax: they cannot pay it and are out on their first turn.
+const BROKE_SEED = 2;
 const brokeRentDay = compileGame(RENT_DAY.replace('1500 money', '5 money'), lib).game!;
 const HINT = 'Play a card matching the color or number, or draw one.';
 const SEED = 1;
@@ -158,7 +158,7 @@ describe('Playtest of a board game', () => {
     expect(screen.getAllByTitle(/^Rose Lane — /)).toHaveLength(3);
   });
 
-  it('keeps the status line of each seat, and draws no card table for a game with no zones', () => {
+  it('keeps the status line of each seat, and draws no card table for a board game whose phases move no cards', () => {
     mountRentDay();
     const hint = 'Roll the dice, then buy, build, or end your turn. A double rolls again.';
     expect(screen.getByText(`seat: p0 — Your turn — ${hint}`)).toBeTruthy();
@@ -166,12 +166,22 @@ describe('Playtest of a board game', () => {
     expect(rendered).toBe(0);
   });
 
+  it('draws the card table for a board game once a phase moves cards by hand', () => {
+    const turns = '  Players take turns.\n';
+    expect(RENT_DAY).toContain(turns);
+    const byHand = compileGame(RENT_DAY.replace(turns, `${turns}  A player may take a card from the chance pile to their kept cards.\n`), lib);
+    expect(byHand.diagnostics).toEqual([]);
+    mountRentDay({ game: byHand.game! });
+    expect(rendered).toBeGreaterThan(0);
+  });
+
   it('rolls on press, and a greyed button says why instead of sending', () => {
     mountRentDay();
     const [p0Roll, p1Roll] = rollButtons();
-    // Seed 1 rolls 2 and 4, not a double, so p0 may not roll again.
+    // Building the two decks and shuffling both piles draw on the rng first, so seed 1 then rolls 4 and 2: not a double, so
+    // p0 may not roll again.
     fireEvent.click(p0Roll);
-    expect(screen.getAllByLabelText('Rolled 2 and 4')).toHaveLength(3);
+    expect(screen.getAllByLabelText('Rolled 4 and 2')).toHaveLength(3);
     expect(rollButtons()[0].getAttribute('title')).toBe('they have not rolled this turn or they rolled a double');
     fireEvent.click(p1Roll);
     expect(screen.getByText("It's p0's turn.")).toBeTruthy();

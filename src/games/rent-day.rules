@@ -1,6 +1,48 @@
 Game: Rent Day
 Players: 2 to 8
 
+Cards:
+  A deck called chance cards, starting in the chance pile:
+    | name                           | says                                                                                                       | copies |
+    | Advance To Go                  | Their piece moves forward to Go.                                                                           | 1      |
+    | Advance To Bell Square         | Their piece moves forward to Bell Square.                                                                  | 1      |
+    | Advance To Dock Road           | Their piece moves forward to Dock Road.                                                                    | 1      |
+    | Advance To The Nearest Utility | Their piece moves forward to the nearest utility.                                                          | 1      |
+    | Advance To The Nearest Station | Their piece moves forward to the nearest station. If someone else owns it, they pay its rent to its owner. | 2      |
+    | Bank Pays A Dividend           | They get 50 money.                                                                                         | 1      |
+    | Get Out Of Jail Free           | They keep this card in their kept cards.                                                                   | 1      |
+    | Go Back Three Spaces           | Their piece moves back 3 spaces.                                                                           | 1      |
+    | Go To Jail                     | Their piece goes straight to Jail. They are in jail.                                                       | 1      |
+    | General Repairs                | They pay 25 for each of their houses. They pay 100 for each of their hotels.                               | 1      |
+    | Speeding Fine                  | They pay 15.                                                                                               | 1      |
+    | A Trip To North Station        | Their piece moves forward to North Station.                                                                | 1      |
+    | A Walk On The Promenade        | Their piece moves forward to The Promenade.                                                                | 1      |
+    | Chair Of The Board             | They pay 50 money to each other player.                                                                    | 1      |
+    | Building Loan Matures          | They get 150 money.                                                                                        | 1      |
+  A deck called treasury cards, starting in the treasury pile:
+    | name                      | says                                                                         | copies |
+    | Advance To Go             | Their piece moves forward to Go.                                             | 1      |
+    | Bank Error In Your Favour | They get 200 money.                                                          | 1      |
+    | Doctor's Fee              | They pay 50.                                                                 | 1      |
+    | Sale Of Stock             | They get 50 money.                                                           | 1      |
+    | Get Out Of Jail Free      | They keep this card in their kept cards.                                     | 1      |
+    | Go To Jail                | Their piece goes straight to Jail. They are in jail.                         | 1      |
+    | Opera Night               | They get 50 money from each other player.                                    | 1      |
+    | Holiday Fund Matures      | They get 100 money.                                                          | 1      |
+    | Tax Refund                | They get 20 money.                                                           | 1      |
+    | Life Insurance Matures    | They get 100 money.                                                          | 1      |
+    | Hospital Fees             | They pay 100.                                                                | 1      |
+    | School Fees               | They pay 50.                                                                 | 1      |
+    | Consultancy Fee           | They get 25 money.                                                           | 1      |
+    | Street Repairs            | They pay 40 for each of their houses. They pay 115 for each of their hotels. | 1      |
+    | Beauty Contest Prize      | They get 10 money.                                                           | 1      |
+    | Inheritance               | They get 100 money.                                                          | 1      |
+
+Table:
+  The chance pile is a pile in the center that no one can see.
+  The treasury pile is a pile in the center that no one can see.
+  Each player has a kept cards row that everyone can see.
+
 Board:
   The board is a loop of spaces, starting at Go:
     | space           | kind       | color      | price | house price | rent | 1 house | 2 houses | 3 houses | 4 houses | with hotel | tax |
@@ -53,6 +95,10 @@ Board:
   Players can be in jail.
   Players can have jail turns.
 
+Setup:
+  Shuffle the chance pile.
+  Shuffle the treasury pile.
+
 Rent:
   A street's rent depends on its houses and hotel.
   A street in a full set with no buildings has double rent.
@@ -88,6 +134,14 @@ Phase: playing
       If they are in jail, they gain 1 jail turn.
       If they are not in jail, their jail turns go back to 0.
       If they are not in jail, their piece moves forward by the roll.
+  A player may use a Get Out Of Jail Free.
+    Only if they are in jail.
+    Only if they have not rolled this turn.
+    Only if their kept cards has a Get Out Of Jail Free.
+    Then:
+      They are not in jail.
+      Their jail turns go back to 0.
+      A Get Out Of Jail Free from their kept cards goes to the bottom of the pile it came from.
   A player may buy the space they are on.
     Only if they have rolled this turn.
     Only if it has a price.
@@ -136,6 +190,10 @@ Phase: playing
     They pay its rent to its owner.
   When a player lands on a tax space:
     They pay its tax.
+  When a player lands on a chance space:
+    They draw from the chance pile and do what it says.
+  When a player lands on a treasury space:
+    They draw from the treasury pile and do what it says.
   When a player has less than 0 money:
     They are out.
     Their houses go back to the bank.
@@ -171,7 +229,8 @@ Example: you cannot buy before rolling
   Then it is rejected because "they have rolled this turn"
 
 Example: you cannot buy a space that has no price
-  Given p0 is on Go
+  Given the chance pile has a Building Loan Matures
+  And p0 is on Go
   And the next roll is 3 and 4
   When p0 rolls the dice
   And p0 buys the space they are on
@@ -565,3 +624,103 @@ Example: four houses raise the rent
   When p0 rolls the dice
   Then p0 has 750 money
   And p1 has 2250 money
+
+Example: Advance To Go collects 200
+  Given the chance pile has an Advance To Go
+  And p0 is on Go
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 is on Go
+  And p0 has 1700 money
+
+Example: a card that moves past Go pays the salary
+  Given the chance pile has an Advance To Bell Square
+  And p0 is on Crown Row
+  And the next roll is 2 and 3
+  When p0 rolls the dice
+  Then p0 is on Bell Square
+  And p0 has 1700 money
+
+Example: the nearest station charges double rent
+  Given p1 owns East Station
+  And the chance pile has an Advance To The Nearest Station
+  And p0 is on Go
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 is on East Station
+  And p0 has 1450 money
+  And p1 has 1550 money
+
+Example: Go Back Three Spaces lands without passing
+  Given the chance pile has a Go Back Three Spaces
+  And p0 is on Go
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 is on Income Tax
+  And p0 has 1300 money
+
+Example: a Go To Jail card sends you to jail
+  Given the chance pile has a Go To Jail
+  And p0 is on Go
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 is on Jail
+  And p0 is in jail
+  And p0 has 1500 money
+
+Example: paying each other player
+  Given 3 players
+  And the chance pile has a Chair Of The Board
+  And p0 is on Go
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 has 1400 money
+  And p1 has 1550 money
+  And p2 has 1550 money
+
+Example: collecting from each other player
+  Given 3 players
+  And the treasury pile has an Opera Night
+  And p0 is on Go
+  And the next roll is 1 and 1
+  When p0 rolls the dice
+  Then p0 has 1600 money
+  And p1 has 1450 money
+  And p2 has 1450 money
+
+Example: general repairs charge for each house
+  Given p0 owns Mill Lane
+  And p0 owns Ferry Row
+  And Mill Lane has 2 houses
+  And Ferry Row has 2 houses
+  And the chance pile has a General Repairs
+  And p0 is on Go
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 has 1400 money
+
+Example: keeping a Get Out Of Jail Free
+  Given the chance pile has a Speeding Fine and a Get Out Of Jail Free
+  And p0 is on Go
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0's kept cards has a Get Out Of Jail Free
+  And the chance pile has a Speeding Fine
+  And p0 has 1500 money
+
+Example: using a Get Out Of Jail Free
+  Given p0 is on Jail
+  And p0 is in jail
+  And p0's kept cards has a Get Out Of Jail Free
+  When p0 uses a Get Out Of Jail Free
+  Then it is accepted
+  And p0 is not in jail
+  And p0's kept cards are empty
+
+Example: a drawn card goes to the bottom of its pile
+  Given the chance pile has a Speeding Fine and a Bank Pays A Dividend
+  And p0 is on Go
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 has 1550 money
+  And the top card of the chance pile is a Speeding Fine
