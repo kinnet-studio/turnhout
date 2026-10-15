@@ -30,6 +30,12 @@ export class GameServer {
     return { ok: true };
   }
 
+  /** Takes back the last move and pushes the rewound view to every subscriber. */
+  undo(): void {
+    this.engine.undo();
+    for (const fn of this.listeners) fn();
+  }
+
   viewFor(seat: PlayerId): ClientView {
     const state = this.engine.getState();
     return {

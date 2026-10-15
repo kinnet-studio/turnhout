@@ -1,0 +1,157 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Wrapper } from '@/components/PixiCanvas';
+import { CardTable } from '@/engine/react';
+import { createEngine, initialState } from '@/engine/core/lang/build';
+import { moveForDrop } from '@/engine/core/lang/drops';
+import { friendlyError, friendlyReason } from '@/engine/core/lang/friendly';
+import type { PhraseLibrary } from '@/engine/core/lang/phrases';
+import type { CompiledGame } from '@/engine/core/lang/types';
+import type { Move } from '@/engine/core/moves';
+import type { PlayerId } from '@/engine/core/scene';
+import type { Placement, TableDef } from '@/engine/core/table-def';
+import type { DropIntent } from '@/engine/input/table-input-context';
+import { GameServer } from '@/engine/net/game-server';
+import { GameSession } from '@/engine/net/game-session';
+import { loopbackChannel } from '@/engine/net/loopback';
+import type { ClientChannel, ClientView } from '@/engine/net/protocol';
+import { designerFaceRenderer } from '@/engine/pixi/text-faces';
+import { makeInitApp } from '@/utils/init-app';
+import { seatStatus } from './seat-status';
+
+const initAppWithFaces = makeInitApp(designerFaceRenderer, { showEmptyZones: true });
+
+/** Feedback under a seat's status line auto-clears after this long. */
+const NOTICE_DISPLAY_MS = 2500;
+
+const NO_RULE = 'No rule lets you move a card there.';
+
+// Fixed 800x600 per seat, like the Hearts demo page.
+const SEAT_WIDTH = 800;
+const SEAT_HEIGHT = 600;
+
+type Started = { server: GameServer; session: GameSession; tableDef: TableDef; seats: PlayerId[] } | { error: string };
+
+/** Everything one playtest runs on, or why the rules cannot start (wrong player count, rules that never settle). */
+function start(game: CompiledGame, library: PhraseLibrary, players: number, seed: number): Started {
+  try {
+    const { engine, tableDef, seats } = createEngine(game, library, players, initialState(game, seed));
+    const server = new GameServer({ engine, tableDef, seats });
+    return { server, session: new GameSession(server), tableDef, seats };
+  } catch (e) {
+    return { error: friendlyError(e) };
+  }
+}
+
+function useSeat(
+  session: GameSession,
+  seat: PlayerId,
+  onError: (message: string) => void,
+): { view: ClientView | null; send: (move: Move) => void; notice: string | null; flash: (text: string) => void } {
+  const chan = useRef<ClientChannel | null>(null);
+  const latest = useRef<ClientView | null>(null);
+  const [view, setView] = useState<ClientView | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flash = useCallback((text: string) => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    setNotice(text);
+    noticeTimer.current = setTimeout(() => setNotice(null), NOTICE_DISPLAY_MS);
+  }, []);
+
+  useEffect(() => {
+    const { server, client } = loopbackChannel();
+    chan.current = client;
+    client.onMessage((msg) => {
+      if (msg.type === 'view') {
+        latest.current = msg.view;
+        setView(msg.view);
+      } else if (msg.type === 'rejected') {
+        flash(friendlyReason(msg.reason, latest.current?.turn?.current));
+      }
+    });
+    const disconnect = session.connect(seat, server);
+    return () => {
+      disconnect();
+      chan.current = null;
+      if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    };
+  }, [session, seat, flash]);
+
+  // The server runs the rules inside this call, so a rule that blows up throws here.
+  const send = (move: Move) => {
+    try {
+      chan.current?.send({ type: 'move', move });
+    } catch (e) {
+      onError(friendlyError(e));
+    }
+  };
+  return { view, send, notice, flash };
+}
+
+function SeatCanvas({ game, session, tableDef, seats, seat, onError }: {
+  game: CompiledGame;
+  session: GameSession;
+  tableDef: TableDef;
+  seats: PlayerId[];
+  seat: PlayerId;
+  onError: (message: string | null) => void;
+}) {
+  const { view, send, notice, flash } = useSeat(session, seat, onError);
+  const option = useMemo(() => ({ fullScreen: false, limitEntireViewPort: false }), []);
+  const placement: Placement = { cards: view?.scene.cards ?? [] };
+  const submit = (intent: DropIntent) => {
+    onError(null);
+    const move = moveForDrop(game, seats, view?.turn?.phase, seat, intent);
+    if (move) send(move);
+    else flash(NO_RULE);
+  };
+  return (
+    <div style={{ width: SEAT_WIDTH, height: SEAT_HEIGHT, flex: '0 0 auto', position: 'relative', border: '1px solid #ccc' }}>
+      <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 10, pointerEvents: 'none', font: '14px sans-serif', color: '#eee' }}>
+        <div>{`seat: ${seat} — ${seatStatus(game, view, seat)}`}</div>
+        {notice && <div style={{ color: '#ff8a65' }}>{notice}</div>}
+      </div>
+      <Wrapper option={option} initFunction={initAppWithFaces}>
+        <CardTable tableDef={tableDef} placement={placement} viewer={undefined} onDrop={submit} />
+      </Wrapper>
+    </div>
+  );
+}
+
+/** Every seat of a game on one screen, played over loopback channels exactly as an online table would be. */
+export function Playtest({ game, library, players, seed, onRestart, onStop }: {
+  game: CompiledGame;
+  library: PhraseLibrary;
+  players: number;
+  seed: number;
+  onRestart(): void;
+  onStop(): void;
+}) {
+  // Page-lifetime session — no dispose effect (StrictMode would unsubscribe it; see hearts-demo-page).
+  const started = useMemo(() => start(game, library, players, seed), [game, library, players, seed]);
+  const [problem, setProblem] = useState<string | null>(null);
+  const running = 'error' in started ? null : started;
+  const banner = 'error' in started ? started.error : problem;
+  const undo = () => {
+    setProblem(null);
+    running?.server.undo();
+  };
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 12, background: '#222', font: '14px sans-serif', color: '#eee' }}>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="button" disabled={!running} onClick={undo}>Undo</button>
+        <button type="button" onClick={onRestart}>Restart</button>
+        <button type="button" onClick={onStop}>Stop</button>
+      </div>
+      {banner && <div role="alert" style={{ padding: '8px 12px', background: '#7f1d1d', color: '#fff' }}>{banner}</div>}
+      {running && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignContent: 'flex-start', overflow: 'auto' }}>
+          {running.seats.map((seat) => (
+            <SeatCanvas key={seat} game={game} session={running.session} tableDef={running.tableDef} seats={running.seats} seat={seat} onError={setProblem} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
