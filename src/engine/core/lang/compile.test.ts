@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import COLOR_MATCH_TEXT from '@/games/color-match.rules?raw';
 import { canPlay, compileGame } from './compile';
 import { createDefaultLibrary } from './library';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
@@ -615,5 +616,136 @@ describe('the Board: section', () => {
   it('says so for a line under Board: that is not a board sentence', () => {
     const { diagnostics } = compileGame(withLines(14, '  There is a bank.'), createDefaultLibrary());
     expect(diagnostics).toContainEqual(expect.objectContaining({ line: 15, kind: 'unknown-phrase', message: '“There is a bank” isn\'t in the phrase library yet.' }));
+  });
+});
+
+describe('declaring facts and the bank', () => {
+  /** The head with `extra` lines (already indented) put in after the dice line, which is line 14. */
+  const withFacts = (...extra: string[]) => TINY_BOARD_HEAD.replace('  There are two six-sided dice.', ['  There are two six-sided dice.', ...extra].join('\n'));
+  const compiled = (text: string) => compileGame(text, createDefaultLibrary());
+  const errors = (text: string) => compiled(text).diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message]);
+
+  it('declares facts on spaces and a bank', () => {
+    const { game, diagnostics } = compileGame(TINY_BOARD_HEAD.replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  Spaces can have houses and a hotel.\n  The bank has 32 houses and 12 hotels.'), createDefaultLibrary());
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(game!.facts).toEqual([{ name: 'houses', on: 'space', kind: 'number' }, { name: 'hotel', on: 'space', kind: 'flag' }]);
+    expect(game!.board!.bank).toEqual([{ name: 'houses', start: 32 }, { name: 'hotels', start: 12 }]);
+  });
+  it('refuses a fact named like a column', () => {
+    const { diagnostics } = compileGame(TINY_BOARD_HEAD.replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  Spaces can have a price.'), createDefaultLibrary());
+    expect(diagnostics).toContainEqual(expect.objectContaining({ line: 15, message: '“price” is already a column of the table; give the fact another name.' }));
+  });
+  it('declares a card fact under Cards:', () => {
+    const text = COLOR_MATCH_TEXT.replace('    | blue   | 1 to 9 | 2      |', '    | blue   | 1 to 9 | 2      |\n  Cards can be poisoned.');
+    expect(compileGame(text, createDefaultLibrary()).game!.facts).toEqual([{ name: 'poisoned', on: 'card', kind: 'flag' }]);
+  });
+
+  it('has no facts and no bank unless the game declares them', () => {
+    const { game } = compiled(TINY_BOARD_HEAD);
+    expect(game!.facts).toEqual([]);
+    expect(game!.board!.bank).toEqual([]);
+    expect(compileGame(COLOR_MATCH_TEXT, createDefaultLibrary()).game!.facts).toEqual([]);
+  });
+  it('reads every way to declare a fact, whatever the capitals, and keeps them in the order written', () => {
+    const { game, diagnostics } = compiled(withFacts('  spaces CAN have Mortgages, a Deed and an Inn.', '  Cards can have health and a shield.'));
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(game!.facts).toEqual([
+      { name: 'mortgages', on: 'space', kind: 'number' }, { name: 'deed', on: 'space', kind: 'flag' }, { name: 'inn', on: 'space', kind: 'flag' },
+      { name: 'health', on: 'card', kind: 'number' }, { name: 'shield', on: 'card', kind: 'flag' },
+    ]);
+  });
+  it('reads a card fact written under Board: and a space fact written under Cards:', () => {
+    const text = COLOR_MATCH_TEXT.replace('    | blue   | 1 to 9 | 2      |', '    | blue   | 1 to 9 | 2      |\n  Spaces can have a hotel.');
+    expect(compileGame(text, createDefaultLibrary()).game!.facts).toEqual([{ name: 'hotel', on: 'space', kind: 'flag' }]);
+    expect(compiled(withFacts('  Cards can be poisoned.')).game!.facts).toEqual([{ name: 'poisoned', on: 'card', kind: 'flag' }]);
+  });
+  it('orders the facts of both sections by line', () => {
+    const text = [
+      'Game: Both', 'Players: 2', '', 'Cards:', '  A standard 52-card deck, starting in the deck.', '  Cards can be marked.', '',
+      'Board:', '  The board is a loop of spaces, starting at Go:', '    | space | kind |', '    | Go | go |', '    | A | x |', '    | B | x |', '    | C | x |',
+      '  Spaces can have a flag.', '', 'Table:', '  The deck is a pile in the center that no one can see.', '', 'Phase: main', '  Players take turns.',
+    ].join('\n');
+    const { game, diagnostics } = compiled(text);
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(game!.facts.map((f) => f.name)).toEqual(['marked', 'flag']);
+  });
+
+  it('refuses a fact named like a column of a table of cards, on the line of the fact', () => {
+    const declare = (fact: string) => compiled(COLOR_MATCH_TEXT.replace('    | blue   | 1 to 9 | 2      |', `    | blue   | 1 to 9 | 2      |\n  ${fact}`));
+    for (const fact of ['Cards can be color.', 'Cards can have a number.', 'Cards can have health and Color.']) {
+      expect(declare(fact).diagnostics).toContainEqual(expect.objectContaining({
+        line: 11, severity: 'error', message: `“${fact.endsWith('number.') ? 'number' : 'color'}” is already a column of the table; give the fact another name.`,
+      }));
+    }
+  });
+  it('refuses a space fact named like a card column, and a card fact named like a space column', () => {
+    const both = [
+      'Game: Both', 'Players: 2', '', 'Cards:', '  A deck called color cards, starting in the deck:', '    | color | number | copies |', '    | red | 1 to 2 | 1 |',
+      '  Cards can be kind.', '', 'Board:', '  The board is a loop of spaces, starting at Go:', '    | space | kind |', '    | Go | go |', '    | A | x |', '    | B | x |', '    | C | x |',
+      '  Spaces can have a color.', '', 'Table:', '  The deck is a pile in the center that no one can see.', '', 'Phase: main', '  Players take turns.',
+    ].join('\n');
+    expect(errors(both)).toEqual([
+      [8, '“kind” is already a column of the table; give the fact another name.'],
+      [17, '“color” is already a column of the table; give the fact another name.'],
+    ]);
+  });
+  it('refuses a fact named like the column that names the spaces, whatever the capitals', () => {
+    expect(errors(withFacts('  Spaces can have a SPACE.'))).toEqual([[15, '“space” is already a column of the table; give the fact another name.']]);
+    expect(errors(withFacts('  Spaces can have a Price.'))).toEqual([[15, '“price” is already a column of the table; give the fact another name.']]);
+  });
+  it('refuses a fact named like a column of a standard deck', () => {
+    const text = BASE.replace('  A standard 52-card deck, starting in the deck.', '  A standard 52-card deck, starting in the deck.\n  Cards can have a rank.');
+    expect(errors(text)).toEqual([[6, '“rank” is already a column of the table; give the fact another name.']]);
+  });
+  it('refuses a name two facts share, on the later line', () => {
+    expect(errors(withFacts('  Spaces can have houses.', '  Spaces can have a hotel and houses.'))).toEqual([[16, 'There are two facts called “houses”.']]);
+  });
+  it('refuses a name two facts share even when one is a flag and the other a number, or they are on different things', () => {
+    expect(errors(withFacts('  Spaces can have a hotel.', '  Spaces can have hotel.'))).toEqual([[16, 'There are two facts called “hotel”.']]);
+    expect(errors(withFacts('  Spaces can have houses.', '  Cards can have houses.'))).toEqual([[16, 'There are two facts called “houses”.']]);
+    expect(errors(withFacts('  Spaces can have houses and Houses.'))).toEqual([[15, 'There are two facts called “houses”.']]);
+  });
+  it('reports a name two facts share on the later line however the sections are ordered', () => {
+    const text = [
+      'Game: Both', 'Players: 2', '', 'Cards:', '  A standard 52-card deck, starting in the deck.', '  Cards can be marked.', '',
+      'Board:', '  The board is a loop of spaces, starting at Go:', '    | space | kind |', '    | Go | go |', '    | A | x |', '    | B | x |', '    | C | x |',
+      '  Spaces can have a marked.', '', 'Table:', '  The deck is a pile in the center that no one can see.', '', 'Phase: main', '  Players take turns.',
+    ].join('\n');
+    expect(errors(text)).toEqual([[15, 'There are two facts called “marked”.']]);
+  });
+
+  it('reads one bank line, and a second is reported on the later line', () => {
+    expect(errors(withFacts('  The bank has 32 houses.', '  The bank has 12 hotels.'))).toEqual([[16, 'There is already a “The bank has …” line above.']]);
+  });
+  it('refuses a bank that names one thing twice', () => {
+    expect(errors(withFacts('  The bank has 32 houses and 12 Houses.'))).toEqual([[15, 'There are two bank items called “houses”.']]);
+  });
+  it('keeps the bank apart from the facts: the bank may have what a space can have', () => {
+    expect(errors(withFacts('  Spaces can have houses.', '  The bank has 32 houses.'))).toEqual([]);
+  });
+
+  it('gives the declared facts and the bank to every line below, so a misspelt name gets a hint like any other', () => {
+    const library = createDefaultLibrary()
+      .effect('mark {spaceflag}', (env) => env.state)
+      .effect('count {spacenumber}', (env) => env.state)
+      .effect('take a {banked}', (env) => env.state)
+      .effect('poison {cardflag}', (env) => env.state);
+    const text = (...setup: string[]) => `${withFacts('  Spaces can have houses and a hotel.', '  Cards can be poisoned.', '  The bank has 32 houses and 12 hotels.')}\n\nSetup:\n${setup.map((l) => `  ${l}`).join('\n')}`;
+    const read = (...setup: string[]) => compileGame(text(...setup), library).diagnostics.filter((d) => d.severity === 'error');
+    expect(read('Mark hotel.', 'Count houses.', 'Count house.', 'Take a house.', 'Take a hotel.', 'Poison poisoned.')).toEqual([]);
+    expect(read('Mark hotl.')).toEqual([expect.objectContaining({ line: 23, message: 'There is no space fact called “hotl”.', suggestions: ['hotel'] })]);
+    expect(read('Count hoses.')).toEqual([expect.objectContaining({ message: 'There is no space fact called “hoses”.', suggestions: ['houses'] })]);
+    expect(read('Take a hotl.')).toEqual([expect.objectContaining({ message: 'There is no bank item called “hotl”.', suggestions: ['hotels'] })]);
+    expect(read('Poison poisonned.')).toEqual([expect.objectContaining({ message: 'There is no card fact called “poisonned”.', suggestions: ['poisoned'] })]);
+  });
+  it('says what is wrong with a declaration nobody has written a phrase for, with the closest declarations', () => {
+    const { diagnostics } = compiled(withFacts('  Spaces can has houses.'));
+    expect(diagnostics).toContainEqual(expect.objectContaining({
+      line: 15, kind: 'unknown-phrase', message: '“Spaces can has houses” isn\'t in the phrase library yet.',
+      suggestions: expect.arrayContaining(['spaces can have [facts]']),
+    }));
+  });
+  it('does not make a declaration of a line that is some other board sentence', () => {
+    expect(errors(withFacts('  Players pay with gold.'))).toEqual([[15, 'There is no counter called “gold”.']]);
   });
 });

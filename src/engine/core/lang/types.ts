@@ -4,7 +4,8 @@ import type { PlayerId } from '../scene';
 import type { Json } from '../table-def';
 
 export type PhraseKind =
-  | 'cards' | 'zone' | 'board' | 'condition' | 'effect' | 'turn' | 'who' | 'score' | 'winner' | 'moment' | 'given' | 'action' | 'expect';
+  | 'cards' | 'zone' | 'board' | 'declare' | 'condition' | 'effect' | 'turn' | 'who' | 'score' | 'winner' | 'moment' | 'given' | 'action'
+  | 'expect';
 /** kind 'lang' = compiler built-ins: all | any | phase | always | if | missing */
 export type PhraseRef = { kind: PhraseKind | 'lang'; phrase: string; args: Json[]; line: number; text: string };
 export type SeatRef = { seat: string } | { who: 'actor' | 'winner' };
@@ -27,14 +28,17 @@ export type BoardSpec = {
 };
 /** A fact the game keeps about every space, card or player: a count, or something that is either so or not. */
 export type FactSpec = { name: string; on: 'space' | 'card' | 'player'; kind: 'number' | 'flag' };
+/** One fact as a line that declares facts lists it, before it is told what it is on. */
+export type FactItem = Pick<FactSpec, 'name' | 'kind'>;
 /** What one line of a Board: section says; the compiler folds the parts into a BoardSpec. */
 export type BoardPart =
   | { kind: 'loop'; spaces: SpaceSpec[] }
   | { kind: 'pieces'; start: number }
   | { kind: 'counter'; counter: CounterSpec }
   | { kind: 'dice'; count: number; sides: number }
-  | { kind: 'pay-with'; counter: string };
-/** A group of spaces named by one of their attributes, like every space whose kind is street. */
+  | { kind: 'pay-with'; counter: string }
+  | { kind: 'bank'; bank: BankSpec[] };
+/** A group of spaces named by one of their attributes, like every space whose kind is go. */
 export type SpaceClass = { attribute: string; values: Json[] };
 /**
  * `words` is the lowercase text after "a player may" ('roll the dice'); `label` is the button text in the second person,
@@ -103,6 +107,8 @@ export type ExpectFn = (env: PhraseEnv, args: Json[]) => true | string;
 export type CardsFn = (args: Json[], table: CardTable | null) => CardSetSpec;
 export type ZoneFn = (args: Json[]) => ZoneSpec;
 export type BoardFn = (args: Json[], table: CardTable | null) => BoardPart;
+/** A line that says what the game keeps facts about: the facts it declares, each already told which thing it is on. */
+export type DeclareFn = (args: Json[]) => FactSpec[];
 /** A name in a line that the game never defined, said for the designer, with the closest names it did define. */
 export type NameProblem = { message: string; suggestions: string[] };
 export interface ParamType {

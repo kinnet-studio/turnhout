@@ -6,7 +6,8 @@ import type { Diagnostic } from './diagnostics';
 import { parseOutline, type OutlineNode } from './outline';
 import { normalizeLine, vocabFrom, type PhraseLibrary } from './phrases';
 import type {
-  BoardFn, BoardSpec, CardSetSpec, CardsFn, CompiledEnd, CompiledGame, CompiledPhase, PhraseRef, SpaceSpec, Vocab, ZoneFn, ZoneSpec,
+  BankSpec, BoardFn, BoardSpec, CardSetSpec, CardsFn, CompiledEnd, CompiledGame, CompiledPhase, DeclareFn, FactSpec, PhraseRef, SpaceSpec, Vocab,
+  ZoneFn, ZoneSpec,
 } from './types';
 
 export type CompileResult = { game?: CompiledGame; diagnostics: Diagnostic[] };
@@ -135,12 +136,46 @@ function compileTable(lines: OutlineNode[], ctx: LineCtx): ZoneSpec[] {
   return zones;
 }
 
-function compileCards(lines: OutlineNode[], ctx: LineCtx): CardSetSpec[] {
+/** A fact a line declares and the line it is on, kept until the columns of every table are known. */
+type Declared = FactSpec & { line: number };
+
+/** Reads what a line that declares facts says, and keeps each fact in `declared`. */
+function declareFacts(ref: PhraseRef, ctx: LineCtx, declared: Declared[]): void {
+  const facts = attempt(ctx, ref.line, ref.text, () => phraseFn<DeclareFn>(ctx, ref)(ref.args));
+  for (const fact of facts ?? []) declared.push({ ...fact, line: ref.line });
+}
+
+/**
+ * The facts the game declares, in the order written. A fact's name is its own in the whole game, and is not a column of the
+ * board's table or of a set of cards: a space's details and a card's face already say something under that name. A
+ * declaration with either problem is reported on its own line and left out.
+ */
+function acceptFacts(declared: Declared[], board: BoardSpec | null, cards: CardSetSpec[], diagnostics: Diagnostic[]): FactSpec[] {
+  const columns = new Set(
+    [
+      ...(board ? ['space', ...board.spaces.flatMap((space) => Object.keys(space.attrs))] : []),
+      ...cards.flatMap((set) => set.identities.flatMap((identity) => Object.keys(identity.attrs))),
+    ].map((column) => column.toLowerCase()),
+  );
+  const facts: FactSpec[] = [];
+  for (const { line, ...fact } of [...declared].sort((a, b) => a.line - b.line)) {
+    if (columns.has(fact.name)) addProblem(diagnostics, line, `“${fact.name}” is already a column of the table; give the fact another name.`);
+    else if (facts.some((other) => other.name === fact.name)) addProblem(diagnostics, line, `There are two facts called “${fact.name}”.`);
+    else facts.push(fact);
+  }
+  return facts;
+}
+
+function compileCards(lines: OutlineNode[], ctx: LineCtx, declared: Declared[]): CardSetSpec[] {
   const sets: CardSetSpec[] = [];
   let total = 0;
   for (const node of lines) {
     rejectChildren(node, ctx.diagnostics);
-    const ref = matchLine('cards', node.text.replace(/:$/, ''), node.line, ctx);
+    const ref = matchLine('cards', node.text.replace(/:$/, ''), node.line, ctx, 'declare');
+    if (ref.kind === 'declare') {
+      declareFacts(ref, ctx, declared);
+      continue;
+    }
     if (ref.kind !== 'cards') continue;
     const set = attempt(ctx, node.line, ref.text, () => phraseFn<CardsFn>(ctx, ref)(ref.args, node.table));
     if (!set) continue;
@@ -155,24 +190,32 @@ function compileCards(lines: OutlineNode[], ctx: LineCtx): CardSetSpec[] {
 }
 
 /** What the Board: lines above a line have said, as a board the lines below can name spaces and counters of. */
-type BoardParts = { spaces: SpaceSpec[] | null; pieces: BoardSpec['pieces']; counters: BoardSpec['counters']; dice: BoardSpec['dice']; payWith: string | null };
+type BoardParts = {
+  spaces: SpaceSpec[] | null; pieces: BoardSpec['pieces']; counters: BoardSpec['counters']; dice: BoardSpec['dice']; payWith: string | null;
+  bank: BankSpec[] | null;
+};
 
-const boardOf = (parts: BoardParts): BoardSpec => ({ ...parts, spaces: parts.spaces ?? [], bank: [] });
+const boardOf = (parts: BoardParts): BoardSpec => ({ ...parts, spaces: parts.spaces ?? [], bank: parts.bank ?? [] });
 
 /**
  * Reads the Board: lines in the order written. Every line is read with the words of the lines above it (a piece
  * starts on a space the table already named), so each gets a vocabulary of its own. A line that repeats one above
- * is reported and the first one stands. Null when there is no Board: section, or no loop of spaces in it.
+ * is reported and the first one stands. A line that declares facts goes to `declared`. Null when there is no Board:
+ * section, or no loop of spaces in it.
  */
-function compileBoard(sections: Section[], maxPlayers: number, stage: (vocab: Vocab) => LineCtx): BoardSpec | null {
+function compileBoard(sections: Section[], maxPlayers: number, stage: (vocab: Vocab) => LineCtx, declared: Declared[]): BoardSpec | null {
   if (sections.length === 0) return null;
-  const parts: BoardParts = { spaces: null, pieces: null, counters: [], dice: null, payWith: null };
+  const parts: BoardParts = { spaces: null, pieces: null, counters: [], dice: null, payWith: null, bank: null };
   const ctxFor = () => stage(vocabFrom({ maxPlayers, board: boardOf(parts) }));
   const { diagnostics } = ctxFor();
   for (const node of linesOf(sections)) {
     const ctx = ctxFor();
     rejectChildren(node, diagnostics);
-    const ref = matchLine('board', node.text.replace(/:$/, ''), node.line, ctx);
+    const ref = matchLine('board', node.text.replace(/:$/, ''), node.line, ctx, 'declare');
+    if (ref.kind === 'declare') {
+      declareFacts(ref, ctx, declared);
+      continue;
+    }
     if (ref.kind !== 'board') continue;
     const part = attempt(ctx, node.line, ref.text, () => phraseFn<BoardFn>(ctx, ref)(ref.args, node.table));
     if (!part) continue;
@@ -197,6 +240,10 @@ function compileBoard(sections: Section[], maxPlayers: number, stage: (vocab: Vo
       case 'pay-with':
         if (parts.payWith) already('There is already a “Players pay with …” line above.');
         else parts.payWith = part.counter;
+        break;
+      case 'bank':
+        if (parts.bank) already('There is already a “The bank has …” line above.');
+        else parts.bank = part.bank;
         break;
     }
   }
@@ -268,7 +315,8 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
     if (of('cards').length === 0) addProblem(diagnostics, 1, 'Add a Cards: section.');
     if (of('table').length === 0) addProblem(diagnostics, 1, 'Add a Table: section.');
   }
-  const board = compileBoard(of('board'), maxPlayers, stage);
+  const declared: Declared[] = [];
+  const board = compileBoard(of('board'), maxPlayers, stage, declared);
   const zones = compileTable(linesOf(of('table')), stage(vocabFrom({ maxPlayers })));
 
   // Phases and move verbs are read ahead, so a rule may name a phase that comes later in the text.
@@ -282,9 +330,11 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   // Buttons are read ahead too: “they have not rolled this turn” may come before the action that rolls.
   const actions = readActions(phaseLines);
 
-  const cards = compileCards(linesOf(of('cards')), stage(vocabFrom({ maxPlayers, zones, phases: phaseIds, verbs, actions })));
+  const cards = compileCards(linesOf(of('cards')), stage(vocabFrom({ maxPlayers, zones, phases: phaseIds, verbs, actions })), declared);
+  // Facts are checked once both tables are read, since a fact may be named like a column of either.
+  const facts = acceptFacts(declared, board, cards, diagnostics);
 
-  const ctx = stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board, actions }));
+  const ctx = stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board, actions, facts }));
   const setup = linesOf(of('setup')).map((node) => {
     rejectChildren(node, diagnostics);
     return matchEffectLine(node.text, node.line, ctx);
@@ -309,7 +359,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   const onlyUnknownPhrases = diagnostics.every((d) => d.severity !== 'error' || d.kind === 'unknown-phrase');
   holdBack(diagnostics, [of('players'), of('board'), of('table'), of('cards')]);
   if (name === null || players === null || phases.length === 0 || !onlyUnknownPhrases) return undefined;
-  return { name, players, zones, cards, setup, phases, end, examples, board, facts: [] };
+  return { name, players, zones, cards, setup, phases, end, examples, board, facts };
 }
 
 /**

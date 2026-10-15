@@ -1,6 +1,6 @@
 import type { Json } from '../table-def';
-import { suggestNames } from './phrases';
-import type { NameProblem, ParamType, SpaceClass, Vocab } from './types';
+import { SEPARATORS, listSource, separatorSource, splitList, suggestNames } from './phrases';
+import type { FactSpec, NameProblem, ParamType, SpaceClass, Vocab } from './types';
 
 type Parsed = { value: Json } | { error: string };
 
@@ -18,6 +18,24 @@ const SUIT_FORMS = new Map(
 export function thirdPerson(verb: string): string {
   if (/[^aeiou]y$/i.test(verb)) return `${verb.slice(0, -1)}ies`;
   return /(?:s|sh|ch|x|z|o)$/i.test(verb) ? `${verb}es` : `${verb}s`;
+}
+
+/** A noun's plural: `-ies` for a consonant and y (penny), `+es` after s/sh/ch/x/z (box), else `+s`. */
+export function plural(noun: string): string {
+  if (/[^aeiou]y$/i.test(noun)) return `${noun.slice(0, -1)}ies`;
+  return /(?:s|sh|ch|x|z)$/i.test(noun) ? `${noun}es` : `${noun}s`;
+}
+
+/**
+ * The words a plural noun may be the plural of. English does not say whether "boxes" comes from box or boxe, or "caches"
+ * from cache or cach, so every way that makes a word is given; the odd one among them is only ever an odd name.
+ */
+export function singularForms(noun: string): string[] {
+  const forms: string[] = [];
+  if (/[^s]s$/i.test(noun)) forms.push(noun.slice(0, -1));
+  if (/(?:ss|sh|ch|x|z)es$/i.test(noun)) forms.push(noun.slice(0, -2));
+  if (/[^aeiou]ies$/i.test(noun)) forms.push(`${noun.slice(0, -3)}y`);
+  return forms;
 }
 
 /** The first word of an action in the third person: 'end their turn' is 'ends their turn'. */
@@ -47,8 +65,6 @@ export function participle(verb: string): string {
 const NEVER = '(?!)';
 /** Straight and curly apostrophes: designers paste text from word processors. */
 const APOSTROPHE = "['‘’]";
-const SEPARATORS = [', and ', ', ', ' and '];
-const SEPARATOR_SOURCE = `(?:${SEPARATORS.join('|')})`;
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -90,30 +106,6 @@ function fullMatch(type: ParamType, text: string, vocab: Vocab): boolean {
   return memo(vocab, `full:${type.name}`, () => new RegExp(`^(?:${type.source(vocab)})$`, 'i')).test(text);
 }
 
-/** Splits 'a, b and c' into items, trying every separator position so names containing 'and' still work. */
-function splitList<T>(text: string, parseItem: (item: string) => T | null): T[] | null {
-  const lower = text.toLowerCase();
-  const seps: { at: number; len: number }[] = [];
-  for (let at = 0; at < lower.length; at++) {
-    for (const sep of SEPARATORS) if (lower.startsWith(sep, at)) seps.push({ at, len: sep.length });
-  }
-  const from = (start: number): T[] | null => {
-    const last = parseItem(text.slice(start));
-    if (last !== null) return [last];
-    for (const sep of seps) {
-      if (sep.at <= start) continue;
-      const head = parseItem(text.slice(start, sep.at));
-      const rest = head === null ? null : from(sep.at + sep.len);
-      if (head !== null && rest !== null) return [head, ...rest];
-    }
-    return null;
-  };
-  return from(0);
-}
-
-/** One or more items joined by the separators. */
-const listSource = (item: string) => `${item}(?:${SEPARATOR_SOURCE}${item})*`;
-
 /** The list's value, or its first error. */
 function listResult(items: Parsed[] | null, text: string): Parsed {
   if (items === null) return unknownText(text);
@@ -148,7 +140,7 @@ function closestOrFirst(name: string, names: string[]): string[] {
 const holdsName = (text: string, names: string[]): boolean =>
   names.some((name) => new RegExp(bounded(wordSource(name)), 'i').test(canon(text)));
 
-const LIST_SEPARATOR = new RegExp(SEPARATOR_SOURCE, 'i');
+const LIST_SEPARATOR = new RegExp(separatorSource(SEPARATORS), 'i');
 
 /** The first misnamed item of a list; null when an item is not meant as one at all, or when none is misnamed. */
 function misnamedItem(text: string, vocab: Vocab, item: ParamType): NameProblem | null {
@@ -307,12 +299,14 @@ const PLAYER: ParamType = {
 
 type ValueTable = { texts: string[]; owners: Map<string, { attribute: string; value: Json }[]> };
 
-/** Every value of a table, by its text; `texts` is longest first. */
-function tableOf(values: { attribute: string; value: Json }[]): ValueTable {
+/** Every value of a table, by its text or by each of the `forms` it may be written in; `texts` is longest first. */
+function tableOf(values: { attribute: string; value: Json }[], forms: (text: string) => string[] = (text) => [text]): ValueTable {
   const owners = new Map<string, { attribute: string; value: Json }[]>();
   for (const { attribute, value } of values) {
-    const key = canon(String(value));
-    owners.set(key, [...(owners.get(key) ?? []), { attribute, value }]);
+    for (const form of forms(String(value))) {
+      const key = canon(form);
+      owners.set(key, [...(owners.get(key) ?? []), { attribute, value }]);
+    }
   }
   return { texts: [...owners.keys()].sort((a, b) => b.length - a.length || (a < b ? -1 : 1)), owners };
 }
@@ -567,6 +561,33 @@ const SPACECLASS: ParamType = {
   loose: { source: (vocab) => (vocab.spaceValues.length === 0 ? NEVER : LOOSE_SPACE_CLASS), explain: misnamedSpaceClass, narrow: true },
 };
 
+const spaceKindTable = (vocab: Vocab): ValueTable => memo(vocab, 'space-kind-table', () => tableOf(vocab.spaceValues, (text) => [text, plural(text)]));
+
+/** “tax” or “taxes”: the spaces whose value in one column is that, with no article and no “space” to follow it. */
+function resolveSpaceKind(text: string, vocab: Vocab): Parsed {
+  const options = spaceKindTable(vocab).owners.get(canon(text)) ?? [];
+  const attributes = [...new Set(options.map((o) => o.attribute))];
+  if (attributes.length === 0) return unknownText(text);
+  if (attributes.length > 1) return { error: `“${text}” could be ${joinOr(attributes)}.` };
+  const kind: SpaceClass = { attribute: attributes[0], values: [...new Set(options.map((o) => o.value))] };
+  return { value: kind };
+}
+
+/** A word that is no value of the board's table, with the values closest to it; a real value among other words is some other phrase. */
+function misnamedSpaceKind(text: string, vocab: Vocab): NameProblem | null {
+  if (holdsName(text, spaceKindTable(vocab).texts)) return null;
+  const values = [...new Set(vocab.spaceValues.map((v) => v.value))];
+  return missing('kind of space', text, closestOrFirst(text, values));
+}
+
+const SPACEKIND: ParamType = {
+  name: 'spacekind', label: '[kind of space]',
+  source: (vocab) => bounded(anyOf(spaceKindTable(vocab).texts)),
+  resolve: resolveSpaceKind,
+  // Any text may be a misspelt kind, but only on a board with words in its table: elsewhere the line is some other phrase.
+  loose: { source: (vocab) => (vocab.spaceValues.length === 0 ? NEVER : ANY_TEXT), explain: misnamedSpaceKind },
+};
+
 const SPACEATTR = wordType(
   'spaceattr', '[space detail]', (v) => v.spaceAttributes.map((a) => [a, a]),
   looseAs(ANY_TEXT, misnamedWord('space detail', (v) => v.spaceAttributes)),
@@ -575,6 +596,30 @@ const COUNTER = wordType(
   'counter', '[counter]', (v) => v.counters.map((c) => [c, c]),
   looseAs(ANY_TEXT, misnamedWord('counter', (v) => v.counters)),
 );
+
+/**
+ * A type whose text is a name the game declares. With `singulars` the text may also be the singular of a plural name
+ * ("token" for "tokens"), as a count of one is said; either way it resolves to the declared name.
+ */
+function declaredWord(name: string, label: string, what: string, names: (vocab: Vocab) => string[], singulars: boolean): ParamType {
+  const forms = (vocab: Vocab): [text: string, value: string][] =>
+    names(vocab).flatMap((declared) => [declared, ...(singulars ? singularForms(declared) : [])].map((form): [string, string] => [form, declared]));
+  return wordType(name, label, forms, {
+    // Any text may be a misspelt name, but only in a game that declares some: elsewhere the line is some other phrase.
+    source: (vocab) => (names(vocab).length === 0 ? NEVER : ANY_TEXT),
+    explain: (text, vocab) => (holdsName(text, forms(vocab).map(([form]) => form)) ? null : missing(what, text, closestOrFirst(text, names(vocab)))),
+  });
+}
+
+/** The names of the facts a game declares on something, of one kind: a count it has, or something it has or has not. */
+const factNames = (on: FactSpec['on'], kind: FactSpec['kind']) => (vocab: Vocab): string[] =>
+  vocab.facts.filter((fact) => fact.on === on && fact.kind === kind).map((fact) => fact.name);
+
+const SPACEFLAG = declaredWord('spaceflag', '[space fact]', 'space fact', factNames('space', 'flag'), false);
+const SPACENUMBER = declaredWord('spacenumber', '[space fact]', 'space fact', factNames('space', 'number'), true);
+const CARDFLAG = declaredWord('cardflag', '[card fact]', 'card fact', factNames('card', 'flag'), false);
+const BANKED = declaredWord('banked', '[bank item]', 'bank item', (vocab) => vocab.bank, true);
+
 // Actions and what was done are whole phrases ("ends their turn", "rolled") with a fixed form, not names to misspell.
 // An action is its wording, which is the move a button sends.
 const ACTION = wordType('action', '[action]', (v) => v.actions.map((a) => [thirdPersonWords(a.words), a.words]), undefined);
@@ -596,6 +641,7 @@ const DONE: ParamType = {
 /** Parameter types whose text depends on the game being compiled. */
 export const VOCAB_TYPES: ParamType[] = [
   ZONE, ZONES, PERZONE, PLAYER, PHASE, MOVE, ATTRIBUTE, CARD, CARDLIST, CARDCLASS, SPACE, SPACECLASS, SPACEATTR, COUNTER, ACTION, DONE,
+  SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, BANKED,
 ];
 
 const TYPES_BY_NAME = new Map(VOCAB_TYPES.map((t) => [t.name, t] as const));

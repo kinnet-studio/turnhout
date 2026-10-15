@@ -226,7 +226,7 @@ export function fixturePhase(id: string, moves: DeclaredMove[], over: Partial<Co
   };
 }
 
-/** The words a designer could use about this game: its zones, move verbs, card attributes and values. */
+/** The words a designer could use about this game: its zones, move verbs, card attributes and values, and its facts. */
 export function vocabFor(game: CompiledGame, players: number = game.players.max): Vocab {
   return vocabFrom({
     maxPlayers: players,
@@ -236,6 +236,7 @@ export function vocabFor(game: CompiledGame, players: number = game.players.max)
     verbs: [...new Set(game.phases.flatMap((p) => p.moves.map((m) => m.verb)))],
     board: game.board,
     actions: game.phases.flatMap((p) => p.actions.map((a) => ({ verb: a.verb, words: a.words }))),
+    facts: game.facts,
   });
 }
 

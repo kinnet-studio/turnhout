@@ -4,8 +4,9 @@ import {
   addToCounter, clearTurnLog, counterOf, isOut, latestRoll, markOut, ownerOf, pieceAt, placePiece, queueRoll, recordAction, setCounter, setOwner,
   setRoll, takeQueuedRoll,
 } from '../board-state';
+import { RuleError } from '../diagnostics';
 import {
-  FIXTURE_SPACES, fixtureBoardGame, fixtureBoardState, fixtureEnv, fixtureGame, fixturePhase, fixtureState, runPhrase,
+  FIXTURE_SPACES, fixtureBoardGame, fixtureBoardState, fixtureEnv, fixtureGame, fixturePhase, fixtureState, runPhrase, vocabFor,
 } from '../testing';
 import type { DeclaredAction, Moment } from '../types';
 import { createDefaultLibrary } from './index';
@@ -438,5 +439,25 @@ describe('example phrases', () => {
         expect(() => expectThat(text, start)).toThrow('There is no player p3 at this table.');
       }
     });
+  });
+});
+
+describe('the bank line', () => {
+  const read = (text: string) => {
+    const found = lib.match('board', text, vocabFor(game));
+    if (found.status !== 'ok') throw new Error(`“${text}” → ${JSON.stringify(found)}`);
+    return (lib.get('board', found.pattern)!.fn as (args: unknown[], table: null) => unknown)(found.args, null);
+  };
+
+  it('says what the bank holds, each name with how many to begin with', () => {
+    expect(read('The bank has 32 houses and 12 hotels')).toEqual({
+      kind: 'bank', bank: [{ name: 'houses', start: 32 }, { name: 'hotels', start: 12 }],
+    });
+  });
+  it('lets the bank start with none of something', () => {
+    expect(read('The bank has 0 tokens')).toEqual({ kind: 'bank', bank: [{ name: 'tokens', start: 0 }] });
+  });
+  it('refuses a name the line lists twice, whatever the capitals', () => {
+    expect(() => read('The bank has 32 houses and 12 Houses')).toThrow(new RuleError('There are two bank items called “houses”.'));
   });
 });

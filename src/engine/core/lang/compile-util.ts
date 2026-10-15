@@ -120,22 +120,26 @@ function unmetNeed(entry: Required<PhraseOpts> | undefined, args: Json[], clean:
 }
 
 /**
- * Reads one line as a phrase of `kind` (`text` has no leading keyword); `fallback` is a second kind to try. A line no
- * phrase matches becomes a placeholder. When it is shaped like a phrase but names something the game never defined, the
- * designer is told which name, with the closest real ones; otherwise it gets an unknown-phrase diagnostic with
- * suggestions and a stub for a developer.
+ * Reads one line as a phrase of `kind` (`text` has no leading keyword); `fallback` is the kinds to try, in order, when no
+ * phrase of `kind` fits. A line no phrase matches becomes a placeholder. When it is shaped like a phrase but names
+ * something the game never defined, the designer is told which name, with the closest real ones; otherwise it gets an
+ * unknown-phrase diagnostic with suggestions and a stub for a developer.
  */
-export function matchLine(kind: PhraseKind, text: string, line: number, ctx: LineCtx, fallback?: PhraseKind): PhraseRef {
+export function matchLine(
+  kind: PhraseKind, text: string, line: number, ctx: LineCtx, fallback: PhraseKind | PhraseKind[] = [],
+): PhraseRef {
   const clean = normalizeLine(text);
+  const others = typeof fallback === 'string' ? [fallback] : fallback;
   let found = kind;
   let result = tryMatch(kind, clean, ctx);
-  if (result.status === 'unknown' && fallback) {
-    const second = tryMatch(fallback, clean, ctx);
-    if (second.status === 'unknown') {
-      result = { status: 'unknown', suggestions: [...new Set([...result.suggestions, ...second.suggestions])].slice(0, MAX_SUGGESTIONS) };
+  for (const other of others) {
+    if (result.status !== 'unknown') break;
+    const next = tryMatch(other, clean, ctx);
+    if (next.status === 'unknown') {
+      result = { status: 'unknown', suggestions: [...new Set([...result.suggestions, ...next.suggestions])].slice(0, MAX_SUGGESTIONS) };
     } else {
-      result = second;
-      found = fallback;
+      result = next;
+      found = other;
     }
   }
 
@@ -150,7 +154,7 @@ export function matchLine(kind: PhraseKind, text: string, line: number, ctx: Lin
       return { kind: found, phrase: result.pattern, args: result.args, line, text: clean };
     }
     case 'unknown': {
-      const misnamed = tryMisnamed(fallback ? [kind, fallback] : [kind], clean, ctx);
+      const misnamed = tryMisnamed([kind, ...others], clean, ctx);
       if (misnamed) {
         const { message, suggestions } = misnamed.problem;
         addProblem(ctx.diagnostics, line, message, { kind: 'invalid', text: clean, suggestions });

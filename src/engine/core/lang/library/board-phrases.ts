@@ -9,7 +9,7 @@ import {
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import { canon } from '../refs';
-import type { ActionFn, BoardFn, BoardSpec, ConditionFn, EffectFn, ExpectFn, MomentFn, PhraseEnv, SpaceClass, WhoFn, WinnerFn } from '../types';
+import type { ActionFn, BankSpec, BoardFn, BoardSpec, ConditionFn, EffectFn, ExpectFn, MomentFn, PhraseEnv, SpaceClass, WhoFn, WinnerFn } from '../types';
 import { chooseNext } from '../zones';
 import { itOf, seatOf, theyOf } from './support';
 
@@ -45,6 +45,14 @@ const counter: BoardFn = ([start, name, visibility]) => {
 };
 
 const payWith: BoardFn = ([name]) => ({ kind: 'pay-with', counter: name as string });
+
+const bank: BoardFn = ([items]) => {
+  const things = items as BankSpec[];
+  // A name listed twice would leave the bank with only the last count, so the designer is told instead.
+  const twice = things.find((thing, at) => things.findIndex((other) => other.name === thing.name) !== at);
+  if (twice) throw new RuleError(`There are two bank items called “${twice.name}”.`);
+  return { kind: 'bank', bank: things };
+};
 
 function diceOf(count: number, sides: number) {
   if (count < MIN_DICE || count > MAX_DICE || sides < MIN_SIDES || sides > MAX_SIDES) {
@@ -288,8 +296,8 @@ const isOutExpected: ExpectFn = (env, [seat]) => {
 };
 
 /**
- * The sentences under Board: that say what the board is, who plays on it and what they roll and pay with, the ones that play
- * a board game, and the Given, When and Then lines of its examples.
+ * The sentences under Board: that say what the board is, who plays on it, what they roll and pay with and what the bank
+ * holds, the ones that play a board game, and the Given, When and Then lines of its examples.
  */
 export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
@@ -297,6 +305,7 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .board('each player has a piece that starts on {space}', pieces)
     .board('each player has {int} {name} that {visibility}', counter)
     .board('players pay with {counter}', payWith)
+    .board('the bank has {banklist}', bank)
     .board('there are {count} {count}-sided dice', ([count, sides]) => diceOf(count as number, sides as number))
     .board('there is one {count}-sided die', ([sides]) => diceOf(1, sides as number))
     .condition('they have {done} this turn', hasDoneThisTurn(true), { needsPlayer: true })

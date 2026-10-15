@@ -1,7 +1,7 @@
 import type { Json } from '../table-def';
 import type {
-  ActionFn, BoardFn, BoardSpec, CardSetSpec, CardsFn, ConditionFn, EffectFn, ExpectFn, MomentFn, NameProblem, ParamType, PhraseKind,
-  ScoreFn, TurnFn, Vocab, WhoFn, WinnerFn, ZoneFn, ZoneSpec,
+  ActionFn, BoardFn, BoardSpec, CardSetSpec, CardsFn, ConditionFn, DeclareFn, EffectFn, ExpectFn, FactItem, FactSpec, MomentFn, NameProblem, ParamType,
+  PhraseKind, ScoreFn, TurnFn, Vocab, WhoFn, WinnerFn, ZoneFn, ZoneSpec,
 } from './types';
 
 const VISIBILITY: Record<string, string> = {
@@ -11,6 +11,80 @@ const VISIBILITY: Record<string, string> = {
 };
 
 const COUNT_WORDS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+
+// ---- lists -------------------------------------------------------------------------------------
+
+/** How the items of a list are separated: "a, b and c", with or without a comma before the last "and". */
+export const SEPARATORS = [', and ', ', ', ' and '];
+/** Numbers are said as alternatives: "25, 50 or 100". */
+const OR_SEPARATORS = [', or ', ', ', ' or '];
+
+export const separatorSource = (separators: string[]): string => `(?:${separators.join('|')})`;
+
+/** One or more items joined by the separators. */
+export const listSource = (item: string, separators = SEPARATORS): string => `${item}(?:${separatorSource(separators)}${item})*`;
+
+/** Splits 'a, b and c' into items, trying every separator position so names containing 'and' still work. */
+export function splitList<T>(text: string, parseItem: (item: string) => T | null, separators = SEPARATORS): T[] | null {
+  const lower = text.toLowerCase();
+  const seps: { at: number; len: number }[] = [];
+  for (let at = 0; at < lower.length; at++) {
+    for (const sep of separators) if (lower.startsWith(sep, at)) seps.push({ at, len: sep.length });
+  }
+  const from = (start: number): T[] | null => {
+    const last = parseItem(text.slice(start));
+    if (last !== null) return [last];
+    for (const sep of seps) {
+      if (sep.at <= start) continue;
+      const head = parseItem(text.slice(start, sep.at));
+      const rest = head === null ? null : from(sep.at + sep.len);
+      if (head !== null && rest !== null) return [head, ...rest];
+    }
+    return null;
+  };
+  return from(0);
+}
+
+/**
+ * A type whose text is a list of items; `parse` reads one item, null for text that is none. The source and the reading
+ * share `item` so that a list matches exactly when every item reads.
+ */
+function listType<T extends Json>(
+  name: string, label: string, item: string, parse: (item: string) => T | null, separators = SEPARATORS,
+): ParamType {
+  return {
+    name, label,
+    source: () => listSource(item, separators),
+    resolve: (text) => {
+      const items = splitList(text, parse, separators);
+      return items === null ? { error: `I don't understand “${text}” here.` } : { value: items };
+    },
+  };
+}
+
+/** One word naming a fact or a bank item: not a number, and not "a" or "an" on its own. */
+const NOUN = '(?!\\d)(?!an?(?:\\s|,|$))[^\\s,]+';
+const FACT_ITEM = `(?:(?:a|an) ${NOUN}|${NOUN})`;
+const BANK_ITEM = `\\d+ ${NOUN}`;
+const A_NOUN = new RegExp(`^(?:a|an) (${NOUN})$`, 'i');
+const BARE_NOUN = new RegExp(`^${NOUN}$`, 'i');
+const COUNTED_NOUN = new RegExp(`^(\\d+) (${NOUN})$`, 'i');
+
+/** A plural noun is a number a thing has, and "a" or "an" and a noun is something it has or has not. */
+function factItem(text: string): FactItem | null {
+  const flag = A_NOUN.exec(text)?.[1];
+  if (flag !== undefined) return { name: flag.toLowerCase(), kind: 'flag' };
+  return BARE_NOUN.test(text) ? { name: text.toLowerCase(), kind: 'number' } : null;
+}
+
+/** One thing the bank has, as "32 tokens" says it. */
+function bankItem(text: string): { name: string; start: number } | null {
+  const found = COUNTED_NOUN.exec(text);
+  return found ? { name: found[2].toLowerCase(), start: Number(found[1]) } : null;
+}
+
+const WHOLE_NUMBER = /^-?\d+$/;
+const INT_ITEM = '-?\\d+';
 
 /** Parameter types that need no game vocabulary. */
 export const STATIC_TYPES: ParamType[] = [
@@ -32,6 +106,10 @@ export const STATIC_TYPES: ParamType[] = [
     source: () => Object.keys(VISIBILITY).join('|'),
     resolve: (t) => ({ value: VISIBILITY[t.toLowerCase()] }),
   },
+  // Lists never get a stubOrder: a stub keeps "tokens and a coin" as words, and a developer decides what they are.
+  listType('factlist', '[facts]', FACT_ITEM, factItem),
+  listType('banklist', '[amounts]', BANK_ITEM, bankItem),
+  listType('ints', '[numbers]', INT_ITEM, (text) => (WHOLE_NUMBER.test(text) ? Number(text) : null), OR_SEPARATORS),
 ];
 
 export function emptyVocab(): Vocab {
@@ -44,12 +122,13 @@ export function emptyVocab(): Vocab {
 
 /**
  * The words a designer may use about a game: its zones, card attributes and values, phases and move verbs, and for a
- * board game its spaces, the words of their table, its counters and the actions a player may take.
+ * board game its spaces, the words of their table, its counters, the actions a player may take, the facts it declares
+ * and what its bank holds.
  * Always make a new one per compile stage: the library caches what it builds from a Vocab by object.
  */
 export function vocabFrom(game: {
   maxPlayers: number; zones?: ZoneSpec[]; cards?: CardSetSpec[]; phases?: string[]; verbs?: string[];
-  board?: BoardSpec | null; actions?: { verb: string; words: string }[];
+  board?: BoardSpec | null; actions?: { verb: string; words: string }[]; facts?: FactSpec[];
 }): Vocab {
   const { zones = [], cards = [], board = null } = game;
   const attributes = new Set<string>();
@@ -91,6 +170,8 @@ export function vocabFrom(game: {
     payWith: board?.payWith ?? null,
     actions: game.actions ?? [],
     dice: (board?.dice ?? null) !== null,
+    facts: game.facts ?? [],
+    bank: (board?.bank ?? []).map((b) => b.name),
   };
 }
 
@@ -221,6 +302,7 @@ export class PhraseLibrary {
   cards(p: string, fn: CardsFn): this { return this.add('cards', p, fn); }
   zone(p: string, fn: ZoneFn): this { return this.add('zone', p, fn); }
   board(p: string, fn: BoardFn): this { return this.add('board', p, fn); }
+  declare(p: string, fn: DeclareFn): this { return this.add('declare', p, fn); }
   condition(p: string, fn: ConditionFn, opts?: PhraseOpts): this { return this.add('condition', p, fn, opts); }
   effect(p: string, fn: EffectFn, opts?: PhraseOpts): this { return this.add('effect', p, fn, opts); }
   turn(p: string, fn: TurnFn): this { return this.add('turn', p, fn); }
@@ -396,6 +478,7 @@ function stubParams(kind: PhraseKind, argNames: string[]): string {
   switch (kind) {
     case 'cards':
     case 'board': return `${args}, table`;
+    case 'declare': return args;
     case 'zone': return argNames.length > 0 ? args : '';
     case 'score': return `env, ${args}, seat`;
     case 'winner': return `env, ${args}, scores`;
