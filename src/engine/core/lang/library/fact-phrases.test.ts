@@ -60,6 +60,16 @@ describe('taking from the bank', () => {
     expect(bankOf(s, 'houses')).toBe(32);
     expect(spaceFact(s, ROSE, 'houses')).toBeNull();
   });
+  it('says so when the flag is already set, and takes nothing from the bank', () => {
+    const once = effect('it gets a hotel from the bank', fresh());
+    expect(() => effect('it gets a hotel from the bank', once)).toThrow(new RuleError('Rose Lane already has a hotel.'));
+    expect([bankOf(once, 'hotels'), spaceFact(once, ROSE, 'hotel')]).toEqual([11, true]);
+    // A space that was only given the flag, with the bank full, is no different.
+    expect(() => effect('it gets a hotel from the bank', withHotel(fresh(), LILY), LILY)).toThrow('Lily Lane already has a hotel.');
+    // Another space may still have one, and so may a space that had its flag cleared.
+    expect(spaceFact(effect('it gets a hotel from the bank', once, LILY), LILY, 'hotel')).toBe(true);
+    expect(spaceFact(effect('it gets a hotel from the bank', setSpaceFact(once, ROSE, 'hotel', false)), ROSE, 'hotel')).toBe(true);
+  });
   it('goes with the number of the same name before the flag named its singular', () => {
     const both = fixtureBoardGame({
       facts: [{ name: 'token', on: 'space', kind: 'flag' }, { name: 'tokens', on: 'space', kind: 'number' }],
@@ -319,6 +329,30 @@ describe('reading the lines of a game', () => {
     expect(phrases).toEqual([
       'a player lands on a space someone else owns', 'a player lands on {spaceclass} someone else owns', 'a player lands on {spaceclass} someone else owns',
     ]);
+  });
+  it('names the fact a misspelt flag was meant for, and the detail a misspelt detail was meant for', () => {
+    const problem = (line: string, text = WITH_FACTS) =>
+      compileGame(`${text}\n  A player may build on the space they are on.\n    Only if ${line}.`, lib).diagnostics.filter((d) => d.severity === 'error');
+    expect(problem('it has a hotl')).toEqual([expect.objectContaining({ message: 'There is no space fact called “hotl”.', suggestions: ['hotel'] })]);
+    expect(problem('it has a prise')).toEqual([expect.objectContaining({ message: 'There is no space detail called “prise”.', suggestions: ['price'] })]);
+    expect(problem('it has a hotel')).toEqual([]);
+    expect(problem('it has fewer than 3 hoses')).toEqual([expect.objectContaining({ message: 'There is no space fact called “hoses”.', suggestions: ['houses'] })]);
+    expect(problem('the bank has a hotl')).toEqual([expect.objectContaining({ message: 'There is no bank item called “hotl”.', suggestions: ['hotels'] })]);
+  });
+  it('reads a flag that is written with "an" in every phrase that has an article', () => {
+    const inns = WITH_FACTS.replace('  Spaces can have houses and a hotel.', '  Spaces can have an inn.').replace('32 houses and 12 hotels', '32 houses and 12 inns');
+    const rules = [
+      inns, '  A player may build on the space they are on.', '    Only if it has an inn.', '    Only if it has no inn.', '    Only if the bank has an inn.',
+      '    Then:', '      It gets an inn from the bank.', '', 'Example: an inn', '  Given p0 is on Rose Lane', '  And Rose Lane has an inn',
+      '  Then Rose Lane has an inn', '  And Mill Lane has no inn',
+    ].join('\n');
+    const built = compileGame(rules, lib);
+    expect(built.diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(runExamples(built.game!, lib).map((r) => r.status)).toEqual(['pass']);
+    const problem = (line: string) =>
+      compileGame(`${inns}\n  A player may build on the space they are on.\n    Only if ${line}.`, lib).diagnostics.filter((d) => d.severity === 'error');
+    expect(problem('it has an inm')).toEqual([expect.objectContaining({ message: 'There is no space fact called “inm”.', suggestions: ['inn'] })]);
+    expect(problem('it has an prise')).toEqual([expect.objectContaining({ message: 'There is no space detail called “prise”.', suggestions: ['price'] })]);
   });
   it('builds and gives back in a played example, in a designer\'s words', () => {
     const rules = [

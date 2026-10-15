@@ -95,9 +95,13 @@ const landsOnSpaceOwnedByOther: MomentFn = (env, _args, moment) => {
 const getsFromBank: EffectFn = (env, [name]) => {
   const bank = name as string;
   const fact = factForBank(env, bank);
+  const space = itOf(env);
+  // The bank gives a flag once: a second one would be taken from it and lost, and the bank would stay short for good.
+  if (fact.kind === 'flag' && heldBy(env.state, space, fact.name) > 0) {
+    throw new RuleError(`${nameOfSpace(env, space)} already has ${withArticle(fact.name)}.`);
+  }
   const left = bankOf(env.state, bank);
   if (left < 1) throw new RuleError(`The bank has no ${bank} left.`);
-  const space = itOf(env);
   const taken = setBank(env.state, bank, left - 1);
   return setSpaceFact(taken, space, fact.name, fact.kind === 'flag' ? true : heldBy(taken, space, fact.name) + 1);
 };
@@ -160,20 +164,25 @@ export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
     .declare('cards can have {factlist}', declares('card'))
     .declare('cards can be {name}', cardIs)
     .condition('it has a {spaceflag}', hasFlag, { needsSpace: true })
+    .condition('it has an {spaceflag}', hasFlag, { needsSpace: true })
     .condition('it has no {spaceflag}', hasNoFlag, { needsSpace: true })
     .condition('it has {int} {spacenumber}', hasCount, { needsSpace: true })
     .condition('it has fewer than {int} {spacenumber}', hasFewer, { needsSpace: true })
     .condition('the bank has a {banked}', bankHasOne)
+    .condition('the bank has an {banked}', bankHasOne)
     .condition('they own every {spacekind} of its {spaceattr}', ownsEverySpaceOfSet, { needsPlayer: true, needsSpace: true, needsBoard: true })
     .moment('a player lands on a space someone else owns', landsOnSpaceOwnedByOther)
     .effect('it gets a {banked} from the bank', getsFromBank, { needsSpace: true })
+    .effect('it gets an {banked} from the bank', getsFromBank, { needsSpace: true })
     .effect('its {spacenumber} go back to the bank', countGoesBack, { needsSpace: true })
     .effect('their {banked} go back to the bank', theirGoBack, { needsPlayer: true, needsBoard: true })
     .given('{space} has {int} {spacenumber}', spaceHasGiven)
     .given('{space} has a {spaceflag}', spaceHasFlagGiven)
+    .given('{space} has an {spaceflag}', spaceHasFlagGiven)
     .given('the bank has {int} {banked}', bankHasGiven)
     .expect('{space} has {int} {spacenumber}', spaceHasExpected)
     .expect('{space} has a {spaceflag}', spaceHasFlagExpected)
+    .expect('{space} has an {spaceflag}', spaceHasFlagExpected)
     .expect('{space} has no {spaceflag}', spaceHasNoFlagExpected)
     .expect('the bank has {int} {banked}', bankHasExpected);
 }

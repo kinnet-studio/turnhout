@@ -161,6 +161,28 @@ describe('PhraseLibrary.misnamed', () => {
   });
 });
 
+describe('PhraseLibrary.misnamed between phrases with the same words', () => {
+  // A detail of a space and a fact on it are read the same way: “it has a …”.
+  const board = vocabFrom({ maxPlayers: 2, board: fixtureBoardGame().board, facts: [{ name: 'hotel', on: 'space', kind: 'flag' }] });
+  const detailFirst = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
+    .condition('it has a {spaceattr}', () => true).condition('it has a {spaceflag}', () => true);
+  const factFirst = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
+    .condition('it has a {spaceflag}', () => true).condition('it has a {spaceattr}', () => true);
+
+  it('prefers the one whose names the text is nearest to, whichever was registered first', () => {
+    for (const l of [detailFirst, factFirst]) {
+      expect(l.misnamed(['condition'], 'it has a hotl', board)?.problem)
+        .toEqual({ message: 'There is no space fact called “hotl”.', suggestions: ['hotel'] });
+      expect(l.misnamed(['condition'], 'it has a prise', board)?.problem)
+        .toEqual({ message: 'There is no space detail called “prise”.', suggestions: ['price'] });
+    }
+  });
+  it('keeps the one registered first when the text is near no name of either', () => {
+    expect(detailFirst.misnamed(['condition'], 'it has a zzz', board)?.problem.message).toBe('There is no space detail called “zzz”.');
+    expect(factFirst.misnamed(['condition'], 'it has a zzz', board)?.problem.message).toBe('There is no space fact called “zzz”.');
+  });
+});
+
 describe('stubFor', () => {
   it('writes a ready-to-paste stub with typed parameters', () => {
     expect(stubFor('effect', 'The winner draws 2 cards.', V, STATIC_TYPES, { game: 'Hearts', line: 31 })).toBe(
