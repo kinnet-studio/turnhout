@@ -441,6 +441,32 @@ describe('seat views of debts and of flags no bank item goes with', () => {
     for (const seat of ['p0', 'p1']) expect(view(t, seat).board!.owes, seat).toEqual({});
   });
 
+  it('shows a debt to the bank as owed to the bank', () => {
+    // The tax is the bank's to collect: p0 has 10 money and a 1 and a 1 to roll, which land on Income Tax (200).
+    const taxed = compileGame(TEXT.replace(
+      '  After a player ends their turn', '  When a player lands on a tax space:\n    They pay its tax.\n  After a player ends their turn',
+    ), lib);
+    expect(taxed.diagnostics).toEqual([]);
+    const tg = taxed.game!;
+    const start = queueRoll(setCounter(withBoardData(initialState(tg, 1), tg, ['p0', 'p1']), 'money', 'p0', 10), [1, 1]);
+    const { engine, runtime } = createEngine(tg, lib, 2, start);
+    expect(engine.dispatch({ type: 'roll the dice', by: 'p0' }).ok).toBe(true);
+    for (const seat of ['p0', 'p1']) expect(seatExtras(engine, runtime, engine.getState(), seat).board!.owes, seat).toEqual({ p0: 'bank' });
+  });
+
+  it('leaves out a seat that is out, though its counter is still below 0', () => {
+    // Three players, so p0 going out does not end the game.
+    const owing = queueRoll(setCounter(setOwner(withBoardData(initialState(g, 1), g, seatsFor(3)), ROSE, 'p1'), 'money', 'p0', 10), [1, 2]);
+    const first = createEngine(g, lib, 3, owing);
+    expect(first.engine.dispatch({ type: 'roll the dice', by: 'p0' }).ok).toBe(true);
+    expect(view(first, 'p2').board!.owes).toEqual({ p0: 'p1' });
+    // p0 goes out with the debt still on the books.
+    const { board } = view(createEngine(g, lib, 3, markOut(first.engine.getState(), 'p0')), 'p2');
+    expect(board!.out).toEqual(['p0']);
+    expect(board!.counters[0].values.p0).toBeLessThan(0);
+    expect(board!.owes).toEqual({});
+  });
+
   it('has no debts for a board with no pay-with counter', () => {
     // Nothing on this board takes a payment, so no counter is the one a debt is kept against.
     const free = compileGame([
@@ -461,6 +487,17 @@ describe('seat views of debts and of flags no bank item goes with', () => {
       expect(spaces[ROSE].stripes, seat).toEqual(['mortgaged']);
       expect(spaces[1].stripes, seat).toEqual([]);
     }
+  });
+
+  it('does not stripe a count, though no bank item goes with it, and still keeps it in facts', () => {
+    const counted = compileGame(TEXT.replace('  Spaces can be mortgaged.', '  Spaces can have visitors.\n  Spaces can be mortgaged.'), lib);
+    expect(counted.diagnostics).toEqual([]);
+    const cg = counted.game!;
+    const start = setSpaceFact(setSpaceFact(withBoardData(initialState(cg, 1), cg, ['p0', 'p1']), ROSE, 'visitors', 3), ROSE, 'mortgaged', true);
+    const { engine, runtime } = createEngine(cg, lib, 2, start);
+    const rose = seatExtras(engine, runtime, engine.getState(), 'p0').board!.spaces[ROSE];
+    expect(rose.facts).toEqual({ visitors: 3, mortgaged: true });
+    expect(rose.stripes).toEqual(['mortgaged']);
   });
 
   it('has no stripes on a space with nothing set, or with only a flag a bank item goes with', () => {

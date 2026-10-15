@@ -17,8 +17,8 @@ import { zoneIdFor } from './zones';
 /**
  * `color` is the space's color when it is written as text; `details` is every other thing the table says about it. `facts` is
  * what has come to be true of it in play, only the ones that are set: a count other than 0, a flag that is on. `stripes` names the
- * flags among those that no bank item goes with, in the order the game declares them, for the page to stripe the space with; they
- * stay in `facts` too, so the space's title still names them.
+ * flags among those (never a count) that no bank item goes with, in the order the game declares them, for the page to stripe the
+ * space with; they stay in `facts` too, so the space's title still names them.
  */
 export type SpaceView = {
   name: string; color: string | null; details: { [k: string]: Json }; facts: FactsView; stripes: string[]; owner: PlayerId | null;
@@ -85,11 +85,14 @@ function cardsInView(runtime: LangRuntime, state: GameState): { [seat: string]: 
 
 /**
  * The flags set on a space that no bank item goes with, in the order the game declares them: the ones that are only ever set and
- * cleared, which the page shows on the space itself instead of counting them out of the bank.
+ * cleared, which the page shows on the space itself instead of counting them out of the bank. A count is never one of them, whether
+ * or not the bank keeps something for it; it stays in `facts` for the page to count.
  */
 function stripesOf(runtime: LangRuntime, facts: FactsView): string[] {
   const bank = runtime.game.board?.bank ?? [];
-  return runtime.game.facts.filter((fact) => fact.on === 'space' && fact.name in facts && bankItemOf(fact, bank) === null).map((fact) => fact.name);
+  return runtime.game.facts
+    .filter((fact) => fact.on === 'space' && fact.kind === 'flag' && Object.hasOwn(facts, fact.name) && bankItemOf(fact, bank) === null)
+    .map((fact) => fact.name);
 }
 
 /** Whom each seat still in owes, for the seats that owe anyone: the board's counter to pay with is the one a debt is kept against. */
