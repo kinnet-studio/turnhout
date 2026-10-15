@@ -13,11 +13,17 @@ const hearts = compileGame(HEARTS, lib).game!;
 
 const HINT = 'Play a card matching the color or number, or draw one.';
 
-const view = (turn: ClientView['turn'], result?: ClientView['result']): ClientView => ({
+const view = (turn: ClientView['turn'], result?: ClientView['result'], extras?: ClientView['extras']): ClientView => ({
   seat: 'p0',
   scene: { cards: [], zones: [] },
   turn,
   result,
+  extras,
+});
+
+const boardExtras = (out: string[]) => ({
+  board: { spaces: [], pieces: {}, roll: null, counters: [], out },
+  actions: [],
 });
 
 describe('seatStatus', () => {
@@ -57,5 +63,19 @@ describe('seatStatus', () => {
 
   it('is empty while there is no turn yet', () => {
     expect(seatStatus(colorMatch, view(undefined), 'p0')).toBe('');
+  });
+
+  it('tells a seat that is out, once the others play on', () => {
+    const turn = { current: 'p0', phase: 'playing' };
+    expect(seatStatus(colorMatch, view(turn, undefined, boardExtras(['p1'])), 'p1')).toBe("You're out.");
+    expect(seatStatus(colorMatch, view(turn, undefined, boardExtras(['p1'])), 'p0')).toBe(`Your turn — ${HINT}`);
+  });
+
+  it('announces the winner instead of saying a seat is out once the game is over', () => {
+    expect(seatStatus(colorMatch, view({ current: 'p0', phase: 'playing' }, { winner: 'p0' }, boardExtras(['p1'])), 'p1')).toBe('Game over — p0 wins');
+  });
+
+  it('ignores extras it does not recognise', () => {
+    expect(seatStatus(colorMatch, view({ current: 'p0', phase: 'playing' }, undefined, { board: 'nope' }), 'p0')).toBe(`Your turn — ${HINT}`);
   });
 });

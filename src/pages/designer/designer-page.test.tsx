@@ -146,6 +146,20 @@ describe('DesignerPage', () => {
     expect(screen.getByText('playtest 3')).toBeTruthy();
   });
 
+  it('loads Rent Day with no problems, all 16 examples passing, 2 to 8 players and Play on', () => {
+    render(<DesignerPage />);
+    loadSample('Rent Day');
+    expect(rules().value).toBe(SAMPLES.find((s) => s.name === 'Rent Day')!.text);
+    expect(screen.getByText('No problems found.')).toBeTruthy();
+    expect(screen.getByText('16 of 16 examples pass')).toBeTruthy();
+    const select = screen.getByLabelText('Players') as HTMLSelectElement;
+    expect([...select.options].map((o) => o.value)).toEqual(['2', '3', '4', '5', '6', '7', '8']);
+    expect(playButton().disabled).toBe(false);
+    fireEvent.change(select, { target: { value: '4' } });
+    play();
+    expect(screen.getByText('playtest 4')).toBeTruthy();
+  });
+
   it('has no player count to pick for a game with a fixed number of players', () => {
     render(<DesignerPage />); flush();
     expect(screen.queryByLabelText('Players')).toBeNull();

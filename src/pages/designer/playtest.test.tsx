@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { StrictMode, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import COLOR_MATCH from '@/games/color-match.rules?raw';
+import RENT_DAY from '@/games/rent-day.rules?raw';
 import { createEngine, initialState } from '@/engine/core/lang/build';
 import { compileGame } from '@/engine/core/lang/compile';
 import { createDefaultLibrary } from '@/engine/core/lang/library';
@@ -24,6 +25,10 @@ vi.mock('@/engine/react', () => ({
 
 const lib = createDefaultLibrary();
 const colorMatch = compileGame(COLOR_MATCH, lib).game!;
+const rentDay = compileGame(RENT_DAY, lib).game!;
+// With 5 money each, seed 13 rolls p0 onto Income Tax: they cannot pay it and are out on their first turn.
+const BROKE_SEED = 13;
+const brokeRentDay = compileGame(RENT_DAY.replace('1500 money', '5 money'), lib).game!;
 const HINT = 'Play a card matching the color or number, or draw one.';
 const SEED = 1;
 
@@ -32,6 +37,9 @@ const drag = (seat: number, cardId: string, from: string, to: string | null) =>
 
 const mount = (over: Partial<Parameters<typeof Playtest>[0]> = {}) =>
   render(<Playtest game={colorMatch} library={lib} players={3} seed={SEED} onRestart={() => {}} onStop={() => {}} {...over} />);
+
+const mountRentDay = (over: Partial<Parameters<typeof Playtest>[0]> = {}) => mount({ game: rentDay, ...over });
+const rollButtons = () => screen.getAllByRole('button', { name: 'Roll the dice' });
 
 beforeEach(() => {
   rendered = 0;
@@ -134,5 +142,91 @@ describe('Playtest', () => {
     expect(onRestart).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
     expect(onStop).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Playtest of a board game', () => {
+  it('gives each seat its board, money line and buttons, greyed with the reason', () => {
+    mountRentDay();
+    expect(screen.getAllByRole('button', { name: 'Roll the dice' })).toHaveLength(3);
+    const [p0Roll, p1Roll] = rollButtons();
+    expect(p0Roll.getAttribute('aria-disabled')).toBe('false');
+    expect(p1Roll.getAttribute('aria-disabled')).toBe('true');
+    expect(p1Roll.getAttribute('title')).toBe("It's p0's turn.");
+    expect(screen.getAllByText('p0 1,500 money')).toHaveLength(3);
+    expect(screen.getAllByTitle(/^Rose Lane — /)).toHaveLength(3);
+  });
+
+  it('keeps the status line of each seat, and draws no card table for a game with no zones', () => {
+    mountRentDay();
+    const hint = 'Roll the dice, then buy where you landed or end your turn.';
+    expect(screen.getByText(`seat: p0 — Your turn — ${hint}`)).toBeTruthy();
+    expect(screen.getByText(`seat: p1 — ${hint} — waiting for p0`)).toBeTruthy();
+    expect(rendered).toBe(0);
+  });
+
+  it('rolls on press, and a greyed button says why instead of sending', () => {
+    mountRentDay();
+    const [p0Roll, p1Roll] = rollButtons();
+    fireEvent.click(p0Roll);
+    expect(screen.getAllByLabelText(/^Rolled \d and \d$/)).toHaveLength(3);
+    expect(rollButtons()[0].getAttribute('title')).toBe('they have not rolled this turn');
+    fireEvent.click(p1Roll);
+    expect(screen.getByText("It's p0's turn.")).toBeTruthy();
+  });
+
+  it('moves the piece and Undo takes the roll back', () => {
+    mountRentDay();
+    fireEvent.click(rollButtons()[0]);
+    expect(screen.getAllByLabelText(/^Rolled/)).toHaveLength(3);
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.queryAllByLabelText(/^Rolled/)).toHaveLength(0);
+    expect(rollButtons()[0].getAttribute('aria-disabled')).toBe('false');
+  });
+
+  it('clears the reason a greyed button gave after a moment', () => {
+    mountRentDay();
+    vi.useFakeTimers();
+    fireEvent.click(rollButtons()[1]);
+    expect(screen.getByText("It's p0's turn.")).toBeTruthy();
+    act(() => vi.advanceTimersByTime(2600));
+    expect(screen.queryByText("It's p0's turn.")).toBeNull();
+  });
+
+  it('shows a seat that is out as out, greys its buttons, and sends nothing when one is pressed', () => {
+    mountRentDay({ game: brokeRentDay, seed: BROKE_SEED });
+    fireEvent.click(rollButtons()[0]);
+    expect(screen.getAllByText('p0 out')).toHaveLength(3);
+    expect(screen.getByText("seat: p0 — You're out.")).toBeTruthy();
+    const p0Roll = rollButtons()[0];
+    expect(p0Roll.getAttribute('aria-disabled')).toBe('true');
+    expect(p0Roll.getAttribute('title')).toBe("You're out of the game.");
+    const submit = vi.spyOn(GameServer.prototype, 'submit');
+    fireEvent.click(p0Roll);
+    expect(submit).not.toHaveBeenCalled();
+    expect(screen.getByText("You're out of the game.")).toBeTruthy();
+    // The others play on.
+    expect(rollButtons()[1].getAttribute('aria-disabled')).toBe('false');
+  });
+
+  it('greys every button when the game is over, and sends nothing when one is pressed', () => {
+    mountRentDay({ game: brokeRentDay, seed: BROKE_SEED, players: 2 });
+    fireEvent.click(rollButtons()[0]);
+    expect(screen.getByText('seat: p0 — Game over — p1 wins')).toBeTruthy();
+    expect(screen.getByText('seat: p1 — Game over — p1 wins')).toBeTruthy();
+    for (const button of rollButtons()) {
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      expect(button.getAttribute('title')).toBe('The game is over.');
+    }
+    const submit = vi.spyOn(GameServer.prototype, 'submit');
+    fireEvent.click(rollButtons()[1]);
+    expect(submit).not.toHaveBeenCalled();
+    expect(screen.getByText('The game is over.')).toBeTruthy();
+  });
+
+  it('connects every seat under StrictMode', () => {
+    render(<StrictMode><Playtest game={rentDay} library={lib} players={3} seed={SEED} onRestart={() => {}} onStop={() => {}} /></StrictMode>);
+    expect(screen.getAllByText('p0 1,500 money')).toHaveLength(3);
+    expect(rollButtons()).toHaveLength(3);
   });
 });

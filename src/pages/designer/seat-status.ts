@@ -1,3 +1,4 @@
+import { readSeatExtras } from '@/engine/core/lang/board-view';
 import type { CompiledGame } from '@/engine/core/lang/types';
 import type { PlayerId } from '@/engine/core/scene';
 import type { Json } from '@/engine/core/table-def';
@@ -7,6 +8,8 @@ import type { ClientView } from '@/engine/net/protocol';
 export function seatStatus(game: CompiledGame, view: ClientView | null, seat: PlayerId): string {
   if (!view) return '';
   if (view.result !== undefined) return gameOver(view.result);
+  // A player who is out watches the others play on; the phase's hint is not for them.
+  if (readSeatExtras(view.extras)?.board?.out.includes(seat)) return "You're out.";
   if (!view.turn) return '';
   const phase = game.phases.find((p) => p.id === view.turn?.phase);
   const hint = phase?.hint ?? phase?.id ?? view.turn.phase ?? '';
