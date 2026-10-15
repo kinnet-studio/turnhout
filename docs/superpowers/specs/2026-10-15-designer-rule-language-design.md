@@ -65,14 +65,14 @@ Proposed in conversation and accepted:
 - **The proof is Hearts**, rewritten in the language, behaving like the hand-coded
   version (existing Hearts tests are the yardstick).
 - **English only** to start.
-
-Made while writing this (the user has not yet weighed in):
-
 - **The language compiles to the existing engine.** `GameEngine`, `FlowDef`,
   `gateMove`/`runFlow`, replay/undo, `GameServer`, view projection — all reused. The
   compiler produces a `TableDef`, starting cards, move handlers, and a `FlowDef` +
   `FlowRegistry`. Only small, additive engine changes (listed under *Engine
   additions*).
+
+Made while writing this (the user has not yet weighed in):
+
 - **Matching is exact, never guessed.** A line either matches a library pattern
   (case-insensitive, whitespace-normalised, trailing period optional) or it is
   unknown. Fuzzy matching is used only to *suggest* phrases in hints. No AI or
@@ -95,6 +95,16 @@ Made while writing this (the user has not yet weighed in):
   file. No accounts or server storage.
 - **The hand-coded Hearts demo stays** as the reference until the compiled version is
   proven; retiring it is a later decision.
+- **Rules written under a phase apply only in that phase.** A `When …:` trigger or an
+  `After …` line inside `Phase: playing` fires only while the phase is `playing`
+  (compiled by combining its condition with a phase check, since `FlowDef` triggers
+  are global today). Rules outside any phase apply in every phase.
+- **Engine rejections are reworded for players.** Besides the designer's own "Only
+  if" sentences, the gate's messages are translated: "not p2's turn" → "It's p1's
+  turn", "move pass not allowed in phase playing" → "You can't pass during playing",
+  "game is over" → "The game is over".
+- **Examples run with the game's player count** (the smallest number when it is a
+  range) unless a Given says otherwise ("Given 5 players").
 
 ## Goals
 
@@ -288,8 +298,8 @@ phrases.moveCondition('they follow the led suit when they can', (state, move, ct
   `NamedRef` shape, so conditions/effects/turn orders populate a `FlowRegistry`
   directly.
 - **Ambiguity:** if a line matches more than one pattern of its kind, that is a
-  library bug: the compiler reports it, and a library test asserts that no two
-  built-in patterns can match the same line for the sample games.
+  library bug: the compiler reports it, and a library test asserts that no line in
+  any checked-in game text matches two patterns.
 - **Where phrases live:** a built-in library (generic phrases: zones, dealing,
   shuffling, counts, turn order, simple scoring, standard-deck vocabulary) plus
   game-specific phrases that developers add on request (Hearts will likely need a
