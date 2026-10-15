@@ -47,9 +47,11 @@ export type SpaceClass = { attribute: string; values: Json[] };
  * “pay the fine” and “pay the toll” are two buttons although they start with the same `verb`.
  * A button whose line ends in “on a …” picks a space on the board: `base` is the lowercase wording before “on” ('plant a
  * flag') and `target` the phrase that says which spaces it may pick. Any other button has `base` equal to `words`, no target.
+ * `anyone` is true for a line that starts “Any player may”: any seat still in may press it, whoever's turn it is.
  */
 export type DeclaredAction = {
-  verb: string; words: string; base: string; label: string; target: PhraseRef | null; conditions: CondGroup[]; effects: PhraseRef[]; line: number;
+  verb: string; words: string; base: string; label: string; target: PhraseRef | null; anyone: boolean; conditions: CondGroup[];
+  effects: PhraseRef[]; line: number;
 };
 export type CompiledMoment = { line: number; text: string; when: PhraseRef; conditions: CondGroup[]; effects: PhraseRef[] };
 export type CompiledTrigger = { line: number; text: string; when: PhraseRef; conditions: CondGroup[]; effects: PhraseRef[] };
@@ -87,8 +89,11 @@ export type Vocab = {
   /** The text cells of the board's table, not the numbers. */
   spaceValues: { attribute: string; value: string }[];
   counters: string[]; payWith: string | null;
-  /** Every button the phases declare, one for each wording; `targeted` ones pick a space, so an example names it after their `base`. */
-  actions: { verb: string; words: string; base: string; targeted: boolean }[];
+  /**
+   * Every button the phases declare, one for each wording; `targeted` ones pick a space, so an example names it after their `base`,
+   * and `anyone` ones may be pressed by any seat at any time, so they are never part of a turn.
+   */
+  actions: { verb: string; words: string; base: string; targeted: boolean; anyone: boolean }[];
   /** True when the board has dice: a line like “There are two six-sided dice.” under Board:. */
   dice: boolean;
   /** How many dice the board rolls: 0 without dice. */

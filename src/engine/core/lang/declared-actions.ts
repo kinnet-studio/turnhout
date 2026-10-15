@@ -39,9 +39,10 @@ function choose(
 ): { phase: CompiledPhase; action: DeclaredAction; by: PlayerId; subject: Subject } | string {
   const phase = runtime.game.phases.find((p) => p.id === state.turn?.phase);
   const action = phase?.actions.find((a) => a.words === move);
-  // Nobody can press a button without being someone: a move with no player is refused as if the button were not there.
+  // Nobody can press a button without being someone at the table: a move with no player, or from a seat the game does not
+  // have, is refused as if the button were not there. The turn gate lets a button any player may press through for anyone.
   const by = m.by as PlayerId | undefined;
-  if (!phase || !action || typeof by !== 'string') return `You can't ${calledBy(move, runtime)} now.`;
+  if (!phase || !action || typeof by !== 'string' || !runtime.seats.includes(by)) return `You can't ${calledBy(move, runtime)} now.`;
   if (isOut(state, by)) return OUT;
   const subject = aboutPress(action, runtime, state, m, by);
   if (typeof subject === 'string') return subject;
@@ -65,7 +66,8 @@ export function declaredActionHandler(move: string, runtime: LangRuntime): MoveH
       const choice = choose(move, runtime, state, m);
       if (typeof choice === 'string') throw new Error(`The “${move}” button was applied though it is not allowed: ${choice}`);
       const { phase, action, by, subject } = choice;
-      const recorded = recordAction(state, by, move);
+      // A press anyone may make is no part of anyone's turn, so it is not noted among what the player did in it.
+      const recorded = action.anyone ? state : recordAction(state, by, move);
       const done = action.effects.reduce((s, ref) => runtime.run(ref, s, undefined, undefined, subject), recorded);
       return endsTurn(phase, move) ? clearTurnLog(done) : done;
     },

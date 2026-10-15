@@ -21,8 +21,13 @@ const THEN = /^then:?$/i;
 const AFTER = /^after a player (.+)$/i;
 const VERB_SEPARATOR = /, or |, | or /i;
 const COMMA = /, /g;
-/** `A player may <verb> <the rest>`: a card move when it mentions a card, else a button the player presses. */
-const ACTION_LINE = /^a player may (\w+)(?:\s+(.+))?$/i;
+/**
+ * `A player may <verb> <the rest>`: a card move when it mentions a card, else a button the player presses. `Any player may …` is
+ * a button too, one any seat may press at any time; the move lines below still start “a player may”, so it is never a card move.
+ */
+const ACTION_LINE = /^(?:a|any) player may (\w+)(?:\s+(.+))?$/i;
+/** The start of a button any seat may press, as opposed to one the player whose turn it is may. */
+const ANYONE_LINE = /^any player may /i;
 /** “card” or “cards” as a word of its own: “discard” does not count. */
 const MENTIONS_CARD = /\bcards?\b/i;
 /**
@@ -54,6 +59,8 @@ const sameWords = (words: string) => `Two rules in this phase say “A player ma
 const samePick = (base: string) => `Two rules in this phase say “A player may ${base} on …”; give them different words.`;
 /** A bare verb in an After line that more than one button in the phase starts with. */
 const sharedVerb = (word: string, wordings: string[]) => `“${word}” could be ${joinOr(wordings.map((w) => `“${w}”`))}; write the whole wording.`;
+/** A button any player may press can't be what an After line waits for. */
+const anyoneAfter = (word: string) => `“${word}” names a button any player may press at any time, so it can't pass the turn.`;
 const moveElsewhere = (verb: string) => `“${verb}” is a card move in another phase, so it can't also be a button. Start one with another word.`;
 const buttonElsewhere = (verb: string) => `“${verb}” is a button in another phase, so it can't also be a card move. Start one with another word.`;
 
@@ -185,16 +192,17 @@ export function actionLine(clean: string): RegExpExecArray | null {
  * What follows “a player may” in an action line: the verb, and all the words (lowercase, so rules and examples can
  * repeat them in any capitals). `written` keeps the designer's capitals for the button, so “Go to Rose Lane” stays one.
  * A line that ends in “on a …” picks a space: `base` and `baseWritten` are the words before that “on”, and `target` is what
- * follows it as written. Any other line has `base` equal to `words` and no target.
+ * follows it as written. Any other line has `base` equal to `words` and no target. `anyone` is true for “Any player may …”.
  */
 export function actionOf(found: RegExpExecArray): {
-  verb: string; words: string; written: string; base: string; baseWritten: string; target: string | null;
+  verb: string; words: string; written: string; base: string; baseWritten: string; target: string | null; anyone: boolean;
 } {
   const written = found[2] === undefined ? found[1] : `${found[1]} ${found[2]}`;
   const targeted = TARGETED.exec(written);
   const baseWritten = targeted ? targeted[1] : written;
   return {
     verb: found[1].toLowerCase(), words: written.toLowerCase(), written, base: baseWritten.toLowerCase(), baseWritten, target: targeted ? targeted[2] : null,
+    anyone: ANYONE_LINE.test(found[0]),
   };
 }
 
@@ -239,7 +247,7 @@ export function actionLabel(words: string): string {
  * space it picks is not something the language can read (a mistyped target is reported and never makes a plain button).
  */
 function compileAction(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx): DeclaredAction | null {
-  const { verb, words, written, base, baseWritten, target: targetText } = actionOf(found);
+  const { verb, words, written, base, baseWritten, target: targetText, anyone } = actionOf(found);
   const reserved = verb === RESERVED_VERB;
   if (reserved) addProblem(ctx.diagnostics, node.line, `“${RESERVED_VERB}” is reserved; pick another word.`, { text: found[1] });
   // The player who presses the button is the one the target is about ("a field they own").
@@ -252,7 +260,7 @@ function compileAction(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx):
   // An action is about the player who presses it and the space it picks, else the space their piece is on.
   const { conditions, effects } = readRuleBody(node, { ...ctx, player: true, space: true });
   if (reserved || pick !== null || (target !== null && isMissing(target))) return null;
-  return { verb, words, base, label: actionLabel(baseWritten), target, conditions, effects, line: node.line };
+  return { verb, words, base, label: actionLabel(baseWritten), target, anyone, conditions, effects, line: node.line };
 }
 
 /** The `Only if` groups and the effects under a `When …:` rule; every line that is not an `Only if` is an effect. */
@@ -314,15 +322,16 @@ type AfterCut = { list: string; turn: string };
 
 /**
  * What an After line may call the phase's moves, in lowercase. `names` maps each name to the move type it stands for;
- * `shared` holds the bare verbs that more than one button starts with, each with the wordings it could mean.
+ * `shared` holds the bare verbs that more than one button starts with, each with the wordings it could mean; `anyone` holds
+ * the move types of the buttons any player may press, which are named like any other but can't pass the turn.
  */
-type AfterNames = { names: Map<string, string>; shared: Map<string, string[]> };
+type AfterNames = { names: Map<string, string>; shared: Map<string, string[]>; anyone: Set<string> };
 
 /**
  * “plays” names a card move; “ends their turn” always names its button; “ends” names it too, unless another button in
  * the phase also starts with “end”, when only the whole wording can tell them apart.
  */
-function afterNamesOf(moveVerbs: string[], buttons: { verb: string; words: string }[]): AfterNames {
+function afterNamesOf(moveVerbs: string[], buttons: { verb: string; words: string; anyone: boolean }[]): AfterNames {
   const names = new Map<string, string>();
   const shared = new Map<string, string[]>();
   for (const verb of moveVerbs) names.set(thirdPerson(verb), verb);
@@ -335,7 +344,7 @@ function afterNamesOf(moveVerbs: string[], buttons: { verb: string; words: strin
     const bare = thirdPerson(verb);
     if (!names.has(bare)) shared.set(bare, buttons.filter((b) => b.verb === verb).map((b) => b.words));
   }
-  return { names, shared };
+  return { names, shared, anyone: new Set(buttons.filter((b) => b.anyone).map((b) => b.words)) };
 }
 
 /** Every way to cut the text of an After line at a comma, the first comma first. */
@@ -350,7 +359,7 @@ function afterCuts(body: string): AfterCut[] {
  * phrase after them; else a turn phrase after them (the names that are not known are then reported, as they would
  * be if the line had one comma); else names all known; else the first comma.
  */
-function readAfter(node: OutlineNode, cuts: AfterCut[], { names, shared }: AfterNames, ctx: LineCtx, seen: boolean): CompiledPhase['after'] {
+function readAfter(node: OutlineNode, cuts: AfterCut[], { names, shared, anyone }: AfterNames, ctx: LineCtx, seen: boolean): CompiledPhase['after'] {
   rejectChildren(node, ctx.diagnostics);
   if (seen) {
     addProblem(ctx.diagnostics, node.line, ONE_AFTER, { text: normalizeLine(node.text) });
@@ -365,7 +374,11 @@ function readAfter(node: OutlineNode, cuts: AfterCut[], { names, shared }: After
   for (const word of cut.list.split(VERB_SEPARATOR)) {
     const move = names.get(word.toLowerCase());
     const wordings = shared.get(word.toLowerCase());
-    if (move !== undefined) {
+    if (move !== undefined && anyone.has(move)) {
+      // Anyone may press it in anyone's turn, so it can't be the thing that ends this player's.
+      addProblem(ctx.diagnostics, node.line, anyoneAfter(word), { text: word });
+      known = false;
+    } else if (move !== undefined) {
       if (!moves.includes(move)) moves.push(move);
     } else if (wordings !== undefined) {
       addProblem(ctx.diagnostics, node.line, sharedVerb(word, wordings), { text: word });
@@ -394,7 +407,7 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx, uses: VerbUses = {
   // After lines are read last: they may come before the moves and actions they name. One with a problem still counts as named.
   const afters: { node: OutlineNode; cuts: AfterCut[] }[] = [];
   const moveVerbs: string[] = [];
-  const actionNames: { verb: string; words: string }[] = [];
+  const actionNames: { verb: string; words: string; anyone: boolean }[] = [];
   /** The words before “on” of the buttons that pick a space. */
   const pickBases = new Set<string>();
   let hinted = false;
@@ -444,7 +457,7 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx, uses: VerbUses = {
       readRuleBody(child, { ...ctx, inMove: true, player: true });
       continue;
     } else if (action) {
-      const { verb, words: actionWords, base, target } = actionOf(action);
+      const { verb, words: actionWords, base, target, anyone } = actionOf(action);
       // Buttons that start alike are different moves; only the same wording twice is a repeat, or two picks with one base.
       const repeated = actionNames.some((a) => a.words === actionWords);
       const pickedAlike = target !== null && pickBases.has(base);
@@ -453,7 +466,7 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx, uses: VerbUses = {
       else if (pickedAlike) addProblem(ctx.diagnostics, child.line, samePick(base), { text: clean });
       else if (taken) addProblem(ctx.diagnostics, child.line, sameVerb(verb), { text: clean });
       else if (uses.moves.has(verb)) addProblem(ctx.diagnostics, child.line, moveElsewhere(verb), { text: clean });
-      if (!taken) actionNames.push({ verb, words: actionWords });
+      if (!taken) actionNames.push({ verb, words: actionWords, anyone });
       if (!taken && target !== null) pickBases.add(base);
       const declared = compileAction(child, action, ctx);
       if (declared && !taken) phase.actions.push(declared);

@@ -338,8 +338,8 @@ describe('board vocabulary and phrase flags', () => {
     const v = vocabFrom({
       maxPlayers: 2, board: fixtureBoardGame().board,
       actions: [
-        { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false },
-        { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true },
+        { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false, anyone: false },
+        { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true, anyone: false },
       ],
     });
     expect(v.spaces).toHaveLength(8);
@@ -349,8 +349,8 @@ describe('board vocabulary and phrase flags', () => {
     expect(v.counters).toEqual(['money']);
     expect(v.payWith).toBe('money');
     expect(v.actions).toEqual([
-      { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false },
-      { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true },
+      { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false, anyone: false },
+      { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true, anyone: false },
     ]);
     expect(v.dice).toBe(true);
     expect(v.diceCount).toBe(2);

@@ -690,7 +690,8 @@ const DONE_NAMES: ((action: VocabAction) => string[])[] = [
  * whole done-wording ('rolled for a double') that one button, and the done-wording of a targeted button's base ('planted a
  * flag') every such button with that base. A one-word button's wording is also its bare participle, and a button's own
  * wording is nearer than another's base, so the first way that fits is the one read. The moves come once each, in the
- * order the buttons were declared.
+ * order the buttons were declared. A button any player may press is recognised but never part of a turn, so it is left out of
+ * the moves, and a text that names only such buttons is an error.
  */
 const DONE: ParamType = {
   name: 'done', label: '[action done]',
@@ -698,8 +699,12 @@ const DONE: ParamType = {
   resolve: (text, vocab) => {
     const named = (namesOf: (action: VocabAction) => string[]) =>
       [...new Set(vocab.actions.filter((a) => namesOf(a).some((name) => canon(name) === canon(text))).map((a) => a.words))];
-    const moves = DONE_NAMES.map(named).find((found) => found.length > 0) ?? [];
-    return moves.length === 0 ? unknownText(text) : { value: moves };
+    const found = DONE_NAMES.map(named).find((moves) => moves.length > 0) ?? [];
+    if (found.length === 0) return unknownText(text);
+    const anyone = new Set(vocab.actions.filter((a) => a.anyone).map((a) => a.words));
+    const moves = found.filter((move) => !anyone.has(move));
+    if (moves.length > 0) return { value: moves };
+    return { error: `“${text}” names a button any player may press at any time, which is never part of a turn.` };
   },
 };
 

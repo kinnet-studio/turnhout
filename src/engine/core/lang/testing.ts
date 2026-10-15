@@ -154,6 +154,23 @@ export const TINY_BOARD = [
 ].join('\n');
 
 /**
+ * TINY_BOARD_HEAD with two buttons any player may press: waving gets 5 money, and planting a flag on a street they own pays 10
+ * while they have at least 10. Nothing puts a player out, so a player below 0 stays in. Rose Lane is space 3 and charges 14.
+ * The anyone buttons are on lines 25 and 28, and the After line is line 34.
+ */
+export const ANY_PLAYER_BOARD = [
+  TINY_BOARD_HEAD,
+  '  A player may roll the dice.', '    Only if they have not rolled this turn.', '    Then:', '      Roll the dice.',
+  '      Their piece moves forward by the roll.',
+  '  A player may end their turn.', '    Only if they have rolled this turn.',
+  '  Any player may wave.', '    Then:', '      They get 5 money.',
+  '  Any player may plant a flag on a street they own.', '    Only if they have at least 10 money.', '    Then:', '      They pay 10.',
+  '  When a player lands on a street someone else owns:', '    They pay its rent to its owner.',
+  '  After a player ends their turn, the turn passes to the left.',
+  '', 'End:', '  The game ends when one player is left.', '  That player wins.',
+].join('\n');
+
+/**
  * A board game whose two decks say what their cards do. `lucky` and `fate` are the tables under each deck line, header row
  * first; `rules` are lines under `Phase: playing`, indented as written there. Lines: the lucky table starts on line 6 (its
  * first card on line 7); the fate deck line is line 6 + lucky.length and its first card line 8 + lucky.length. The loop is
@@ -285,7 +302,9 @@ export function vocabFor(game: CompiledGame, players: number = game.players.max)
     phases: game.phases.map((p) => p.id),
     verbs: [...new Set(game.phases.flatMap((p) => p.moves.map((m) => m.verb)))],
     board: game.board,
-    actions: game.phases.flatMap((p) => p.actions.map((a) => ({ verb: a.verb, words: a.words, base: a.base, targeted: a.target !== null }))),
+    actions: game.phases.flatMap((p) => p.actions.map((a) => ({
+      verb: a.verb, words: a.words, base: a.base, targeted: a.target !== null, anyone: a.anyone,
+    }))),
     facts: game.facts,
   });
 }

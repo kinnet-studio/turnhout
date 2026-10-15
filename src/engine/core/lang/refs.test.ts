@@ -21,10 +21,10 @@ const BOARD = vocabFrom({
     spaces: [...FIXTURE_SPACES, { name: "Bishop's Row", attrs: { kind: 'street', color: 'green', price: 300, rent: 26 } }],
   },
   actions: [
-    { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false },
-    { verb: 'end', words: 'end their turn', base: 'end their turn', targeted: false },
-    { verb: 'buy', words: 'buy the space they are on', base: 'buy the space they are on', targeted: false },
-    { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true },
+    { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false, anyone: false },
+    { verb: 'end', words: 'end their turn', base: 'end their turn', targeted: false, anyone: false },
+    { verb: 'buy', words: 'buy the space they are on', base: 'buy the space they are on', targeted: false, anyone: false },
+    { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true, anyone: false },
   ],
 });
 
@@ -355,9 +355,9 @@ describe('board references', () => {
     const building = vocabFrom({
       maxPlayers: 2,
       actions: [
-        { verb: 'build', words: 'build a house', base: 'build a house', targeted: false },
-        { verb: 'build', words: 'build a hotel', base: 'build a hotel', targeted: false },
-        { verb: 'end', words: 'end their turn', base: 'end their turn', targeted: false },
+        { verb: 'build', words: 'build a house', base: 'build a house', targeted: false, anyone: false },
+        { verb: 'build', words: 'build a hotel', base: 'build a hotel', targeted: false, anyone: false },
+        { verb: 'end', words: 'end their turn', base: 'end their turn', targeted: false, anyone: false },
       ],
     });
     expect(parseParam('done', 'built', building)).toEqual({ value: ['build a house', 'build a hotel'] });
@@ -365,15 +365,15 @@ describe('board references', () => {
     expect(parseParam('done', 'ended', building)).toEqual({ value: ['end their turn'] });
     expect(parseParam('action', 'builds a hotel', building)).toEqual({ value: 'build a hotel' });
     // The same wording in two phases is still one button.
-    const roll = { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false };
+    const roll = { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false, anyone: false };
     const twice = vocabFrom({ maxPlayers: 2, actions: [roll, roll] });
     expect(parseParam('done', 'rolled', twice)).toEqual({ value: ['roll the dice'] });
   });
   it('reads a bare participle as every button with that verb, and a whole done-wording as one button', () => {
     const rolls = vocabFrom({ maxPlayers: 2, actions: [
-      { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false },
-      { verb: 'roll', words: 'roll for a double', base: 'roll for a double', targeted: false },
-      { verb: 'end', words: 'end their turn', base: 'end their turn', targeted: false },
+      { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false, anyone: false },
+      { verb: 'roll', words: 'roll for a double', base: 'roll for a double', targeted: false, anyone: false },
+      { verb: 'end', words: 'end their turn', base: 'end their turn', targeted: false, anyone: false },
     ] });
     expect(parseParam('done', 'rolled', rolls)).toEqual({ value: ['roll the dice', 'roll for a double'] });
     expect(parseParam('done', 'Rolled For A Double', rolls)).toEqual({ value: ['roll for a double'] });
@@ -397,8 +397,8 @@ describe('board references', () => {
     const both = vocabFrom({
       maxPlayers: 2,
       actions: [
-        { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true },
-        { verb: 'build', words: 'build a house on a station they own', base: 'build a house', targeted: true },
+        { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true, anyone: false },
+        { verb: 'build', words: 'build a house on a station they own', base: 'build a house', targeted: true, anyone: false },
       ],
     });
     expect(parseParam('targetaction', 'builds a house', both)).toEqual({
@@ -416,8 +416,8 @@ describe('board references', () => {
     const both = vocabFrom({
       maxPlayers: 2,
       actions: [
-        { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true },
-        { verb: 'build', words: 'build a house on a station they own', base: 'build a house', targeted: true },
+        { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true, anyone: false },
+        { verb: 'build', words: 'build a house on a station they own', base: 'build a house', targeted: true, anyone: false },
       ],
     });
     expect(parseParam('done', 'built a house', both)).toEqual({ value: ['build a house on a street they own', 'build a house on a station they own'] });
@@ -425,8 +425,8 @@ describe('board references', () => {
     const plain = vocabFrom({
       maxPlayers: 2,
       actions: [
-        { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true },
-        { verb: 'build', words: 'build a house', base: 'build a house', targeted: false },
+        { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true, anyone: false },
+        { verb: 'build', words: 'build a house', base: 'build a house', targeted: false, anyone: false },
       ],
     });
     expect(parseParam('done', 'built a house', plain)).toEqual({ value: ['build a house'] });

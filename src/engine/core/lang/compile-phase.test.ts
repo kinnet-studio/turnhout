@@ -5,7 +5,7 @@ import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { parseOutline } from './outline';
 import { vocabFrom } from './phrases';
-import { TINY_BOARD_HEAD, fixtureBoardGame } from './testing';
+import { ANY_PLAYER_BOARD, TINY_BOARD_HEAD, fixtureBoardGame } from './testing';
 
 const lib = createDefaultLibrary();
 const BASE = [
@@ -1053,5 +1053,42 @@ describe('rules about a card, and the other player', () => {
     expect(errorsOf(['When the deck is empty:', '  Every card in the other player\'s camp is poisoned.'])).toEqual([
       [20, '“Every card in the other player\'s camp is poisoned” only makes sense in a rule about a player\'s move.'],
     ]);
+  });
+});
+
+describe('buttons any player may press', () => {
+  const found = (text: string) => compileGame(text, lib).diagnostics.map((d) => [d.line, d.message]);
+
+  it('are told apart from the other buttons, and keep their own wording', () => {
+    const { game, diagnostics } = compileGame(ANY_PLAYER_BOARD, lib);
+    expect(diagnostics).toEqual([]);
+    expect(game!.phases[0].actions.map((a) => [a.label, a.anyone])).toEqual([
+      ['Roll the dice', false], ['End your turn', false], ['Wave', true], ['Plant a flag', true],
+    ]);
+  });
+  it('can be written in any capitals', () => {
+    const shouted = ANY_PLAYER_BOARD.replace('  Any player may wave.', '  ANY PLAYER MAY wave.');
+    expect(compileGame(shouted, lib).game!.phases[0].actions.map((a) => a.anyone)).toEqual([false, false, true, true]);
+  });
+  it('can not be named by an After line, since they never pass the turn', () => {
+    expect(found(ANY_PLAYER_BOARD.replace('After a player ends their turn,', 'After a player ends their turn or waves,')))
+      .toContainEqual([34, '“waves” names a button any player may press at any time, so it can\'t pass the turn.']);
+  });
+  it('can not be named by a done-wording, since they are never part of a turn', () => {
+    const waved = ANY_PLAYER_BOARD.replace('  A player may end their turn.\n    Only if they have rolled this turn.', '  A player may end their turn.\n    Only if they have waved this turn.');
+    expect(found(waved)).toContainEqual([24, '“waved” names a button any player may press at any time, which is never part of a turn.']);
+  });
+  it('still read a done-wording that names a button of the turn as well, as that button alone', () => {
+    const both = ANY_PLAYER_BOARD
+      .replace('  Any player may wave.', '  A player may wave to the crowd.\n  Any player may wave.')
+      .replace('Only if they have rolled this turn.', 'Only if they have waved this turn.');
+    // “waved” is the participle of both buttons; the one anyone may press is no part of a turn, so only the other is meant.
+    expect(found(both).filter(([line]) => line === 24)).toEqual([]);
+  });
+  it('are never card moves: “Any player may take a card …” is a move the phase can not read', () => {
+    const MALFORMED_MOVE = 'I can\'t read this card move. Write it as “A player may <verb> a card from <zone> to <zone>.”';
+    const lines = ANY_PLAYER_BOARD.split('\n');
+    lines.splice(24, 0, '  Any player may take a card from the draw pile to their hand.');
+    expect(found(lines.join('\n'))).toContainEqual([25, MALFORMED_MOVE]);
   });
 });

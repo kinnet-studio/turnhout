@@ -6,14 +6,14 @@ import { RuleRegistry } from '../rules';
 import {
   TURN_KEY, counterOf, isOut, markOut, ownerOf, pieceAt, placePiece, queueRoll, setCounter, setOwner, setSpaceFact, spaceFact, withBoardData,
 } from './board-state';
-import { createEngine, initialState } from './build';
+import { createEngine, flowDefFor, initialState, seatsFor } from './build';
 import { compileGame } from './compile';
 import { declaredActionHandler, targetCandidates } from './declared-actions';
 import { friendlyError } from './friendly';
 import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { MAX_MOMENT_DEPTH } from './runtime';
-import { TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD } from './testing';
+import { ANY_PLAYER_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD } from './testing';
 
 const lib = createDefaultLibrary();
 const game = compileGame(TINY_BOARD, lib).game!;
@@ -381,6 +381,91 @@ describe('a button that picks a target', () => {
       expect(bare.diagnostics.map((d) => d.message)).toEqual(['“p0 builds a house” isn\'t in the phrase library yet.']);
       const wrong = compileGame(`${BUILDING}\n\nExample: wrong\n  When p0 ends their turn on Rose Lane`, lib);
       expect(wrong.diagnostics.map((d) => d.message)).toEqual(['“p0 ends their turn on Rose Lane” isn\'t in the phrase library yet.']);
+    });
+  });
+});
+
+describe('buttons any player may press', () => {
+  const anyone = compileGame(ANY_PLAYER_BOARD, lib).game!;
+  const PLANT = 'plant a flag on a street they own';
+  const MILL = 1;
+  const ROSE = 3;
+
+  it('compiles with no diagnostics, and the flow lets any seat send them', () => {
+    expect(compileGame(ANY_PLAYER_BOARD, lib).diagnostics).toEqual([]);
+    expect(anyone.phases[0].actions.map((a) => [a.words, a.anyone]))
+      .toEqual([['roll the dice', false], ['end their turn', false], ['wave', true], ['plant a flag on a street they own', true]]);
+    expect(flowDefFor(anyone, ['p0', 'p1']).phases[1].anyActor).toEqual(['wave', 'plant a flag on a street they own']);
+    expect(flowDefFor(game, ['p0', 'p1']).phases[1]).not.toHaveProperty('anyActor');
+  });
+  it('Review Focus: a press out of turn leaves the turn and every turn log as they were', () => {
+    const engine = engineWith((s) => queueRoll(s, [1, 2]), anyone);
+    expect(engine.dispatch({ type: 'roll the dice', by: 'p0' }).ok).toBe(true);
+    expect(engine.dispatch({ type: 'wave', by: 'p1' }).ok).toBe(true);
+    expect(engine.dispatch({ type: 'wave', by: 'p0' }).ok).toBe(true);
+    const s = engine.getState();
+    expect([counterOf(s, 'money', 'p0'), counterOf(s, 'money', 'p1'), s.turn!.current]).toEqual([1505, 1505, 'p0']);
+    expect(s.data[TURN_KEY]).toEqual({ p0: ['roll the dice'] });
+    expect(engine.canDispatch({ type: 'end their turn', by: 'p0' })).toBe(true);
+  });
+
+  describe('who may press', () => {
+    it('refuses a seat that is out, though it is no one’s turn to be asked', () => {
+      // Three players: with two, one going out would end the game at once.
+      const three = createEngine(anyone, lib, 3, markOut(withBoardData(initialState(anyone, 1), anyone, seatsFor(3)), 'p1')).engine;
+      expect(three.canDispatch({ type: 'wave', by: 'p1' })).toBe("You're out of the game.");
+      expect(three.canDispatch({ type: 'wave', by: 'p2' })).toBe(true);
+    });
+    it('refuses a seat the game does not have, as if the button were not there', () => {
+      const engine = engineWith((s) => s, anyone);
+      expect(engine.canDispatch({ type: 'wave', by: 'p7' })).toBe("You can't wave now.");
+      expect(engine.canDispatch({ type: 'wave' })).toBe("You can't wave now.");
+    });
+    it('still keeps the buttons of a turn to the player whose turn it is', () => {
+      const engine = engineWith((s) => queueRoll(s, [1, 2]), anyone);
+      expect(engine.canDispatch({ type: 'roll the dice', by: 'p1' })).toMatch(/turn/);
+    });
+  });
+
+  describe('its Only if lines and its pick still decide', () => {
+    const owning = (s: GameState) => setOwner(s, MILL, 'p1');
+    it('accepts a street the presser owns, whoever’s turn it is, and charges them', () => {
+      const engine = engineWith(owning, anyone);
+      expect(engine.dispatch({ type: PLANT, by: 'p1', target: MILL }).ok).toBe(true);
+      expect(counterOf(engine.getState(), 'money', 'p1')).toBe(1490);
+      expect(engine.getState().turn!.current).toBe('p0');
+    });
+    it('refuses a street they do not own', () => {
+      const engine = engineWith(owning, anyone);
+      expect(engine.dispatch({ type: PLANT, by: 'p1', target: ROSE })).toMatchObject({ ok: false, reason: "That isn't a street you own." });
+    });
+    it('refuses while the Only if line fails', () => {
+      const engine = engineWith((s) => setCounter(owning(s), 'money', 'p1', 5), anyone);
+      expect(engine.dispatch({ type: PLANT, by: 'p1', target: MILL })).toMatchObject({ ok: false, reason: 'they have at least 10 money' });
+    });
+    it('lets a player below 0 press, since nothing in this game puts them out', () => {
+      const engine = engineWith((s) => setCounter(s, 'money', 'p1', -20), anyone);
+      expect(engine.dispatch({ type: 'wave', by: 'p1' }).ok).toBe(true);
+      expect(counterOf(engine.getState(), 'money', 'p1')).toBe(-15);
+    });
+  });
+
+  describe('as an example', () => {
+    const EXAMPLE = [
+      "Example: anyone may press it on someone else's turn",
+      '  Given p1 owns Mill Lane',
+      '  When p1 waves',
+      '  And p1 plants a flag on Mill Lane',
+      '  Then it is accepted',
+      '  And p1 has 1495 money',
+      "  And it is p0's turn",
+    ].join('\n');
+    it('runs on the engine and passes', () => {
+      const { game: withExample, diagnostics } = compileGame(`${ANY_PLAYER_BOARD}\n\n${EXAMPLE}`, lib);
+      expect(diagnostics).toEqual([]);
+      const results = runExamples(withExample!, lib);
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({ status: 'pass', message: null });
     });
   });
 });

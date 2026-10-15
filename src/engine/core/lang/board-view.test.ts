@@ -7,7 +7,7 @@ import { createEngine, initialState, seatsFor } from './build';
 import { compileGame } from './compile';
 import { RuleError } from './diagnostics';
 import { createDefaultLibrary } from './library';
-import { deckGameText, TEST_DUEL, TINY_BOARD } from './testing';
+import { ANY_PLAYER_BOARD, deckGameText, TEST_DUEL, TINY_BOARD } from './testing';
 import type { CompiledGame } from './types';
 import { relocate } from './zones';
 
@@ -50,6 +50,15 @@ describe('seat views of a board game', () => {
       { move: 'end their turn', label: 'End your turn', allowed: 'they have rolled this turn', target: null },
     ]);
     expect(seatExtras(engine, runtime, engine.getState(), 'p1').actions.every((a) => a.allowed === "It's p0's turn.")).toBe(true);
+  });
+
+  it('shows the buttons any player may press as allowed from a seat whose turn it is not', () => {
+    const anyone = compileGame(ANY_PLAYER_BOARD, lib).game!;
+    const { engine, runtime } = createEngine(anyone, lib, 2, initialState(anyone, 1));
+    const p1 = seatExtras(engine, runtime, engine.getState(), 'p1');
+    expect(p1.actions.map((a) => [a.move, a.allowed])).toEqual([
+      ['roll the dice', "It's p0's turn."], ['end their turn', "It's p0's turn."], ['wave', true], ['plant a flag on a street they own', 'There is no street you own.'],
+    ]);
   });
 
   it('keeps a space with no color without one, and lists every space in loop order', () => {

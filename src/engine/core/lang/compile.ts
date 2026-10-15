@@ -129,8 +129,8 @@ function readActions(lines: string[]): Vocab['actions'] {
   for (const line of lines) {
     const found = actionLine(line);
     if (!found) continue;
-    const { verb, words, base, target } = actionOf(found);
-    if (!byWords.has(words)) byWords.set(words, { verb, words, base, targeted: target !== null });
+    const { verb, words, base, target, anyone } = actionOf(found);
+    if (!byWords.has(words)) byWords.set(words, { verb, words, base, targeted: target !== null, anyone });
   }
   return [...byWords.values()];
 }
