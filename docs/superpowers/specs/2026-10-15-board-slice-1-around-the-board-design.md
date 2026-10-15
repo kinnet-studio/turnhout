@@ -1,7 +1,7 @@
 # Board Games, Slice 1: Around the Board
 
 **Date:** 2026-10-15
-**Status:** Draft, reviewed; pending the user's approval
+**Status:** Approved. Implementation plan: `docs/superpowers/plans/2026-10-15-board-slice-1-around-the-board.md`
 **Part of:** `2026-10-15-board-games-overview-design.md` (read it first: the decisions, calls, anti-goals
 and constraints there apply here).
 **Builds on:** the designer rule language, merged to `main`.
