@@ -2,14 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { cardById, zoneCards, type GameState } from '../game-state';
 import type { PlayerId } from '../scene';
 import type { Json } from '../table-def';
+import { counterOf, isOut, recordAction, setCounter, setOwner, withBoardData } from './board-state';
 import { createEngine, flowDefFor, initialState, seatsFor, tableDefFor } from './build';
 import { compileGame } from './compile';
 import { MissingPhraseError, RuleError } from './diagnostics';
 import { friendlyError } from './friendly';
 import { createDefaultLibrary } from './library';
 import { LangRuntime } from './runtime';
-import { TEST_DUEL } from './testing';
-import type { CompiledGame, ExampleEnv, PhraseRef } from './types';
+import { TEST_DUEL, TINY_BOARD } from './testing';
+import type { CompiledGame, ExampleEnv, MoveInfo, PhraseRef } from './types';
 import { matchesCard } from './zones';
 
 const lib = createDefaultLibrary();
@@ -242,7 +243,8 @@ describe('the game flow', () => {
   it('scopes triggers to their phase', () => {
     const t = flowDefFor(game, ['p0', 'p1']).triggers![0];
     expect(t.id).toBe('line 27: When the middle has 2 cards');
-    expect((t.when as { params?: Json }).params).toMatchObject({ kind: 'lang', phrase: 'all', args: [{ phrase: 'phase', args: ['play'] }, expect.anything()] });
+    const params = { phase: 'play', trigger: game.phases[0].triggers[0] };
+    expect(t).toMatchObject({ when: { name: 'lang:trigger-when', params }, then: [{ name: 'lang:trigger-then', params }] });
   });
 
   it('runs setup in a phase of its own, then goes to the first phase', () => {
@@ -296,5 +298,65 @@ describe('the game flow', () => {
     expect(friendlyError(error)).toBe(
       'The “go to” rules keep moving the game to rest and away again. A phase\'s “go to” condition must stop holding once the game gets there.',
     );
+  });
+});
+
+describe('LangRuntime on a board', () => {
+  const board = compiled(TINY_BOARD);
+  const runtime = new LangRuntime(board, lib, ['p0', 'p1']);
+  const start: GameState = { ...withBoardData(initialState(board, 1), board, ['p0', 'p1']), turn: { current: 'p0', phase: 'playing' } };
+  const [goingOut] = board.phases[0].triggers;
+  const broke = (state: GameState, ...seats: string[]) => seats.reduce((s, seat) => setCounter(s, 'money', seat, -1), state);
+
+  it('says who and which space a phrase is about', () => {
+    expect(runtime.env(start, undefined, undefined, { player: 'p1', space: 2 }).subject).toEqual({ player: 'p1', space: 2 });
+    const move: MoveInfo = { verb: 'play', by: 'p1', cardId: 'c1', from: 'hand-p1', to: 'middle' };
+    expect(runtime.env(start, move).subject).toEqual({ player: 'p1', space: null });
+    expect(runtime.env(start).subject).toBeUndefined();
+  });
+
+  it('picks out the players a rule about a player is about', () => {
+    expect(runtime.who(goingOut.when, start)).toEqual([]);
+    expect(runtime.who(goingOut.when, broke(start, 'p1'))).toEqual(['p1']);
+  });
+
+  it('runs a rule about a player for the first player it picks out, only in its phase', () => {
+    expect(runtime.triggerSubject('playing', goingOut, start)).toBeNull();
+    expect(runtime.triggerSubject('playing', goingOut, broke(start, 'p0', 'p1'))).toEqual({ player: 'p0', space: null });
+    expect(runtime.triggerSubject('elsewhere', goingOut, broke(start, 'p0', 'p1'))).toBeNull();
+    const fired = runtime.fireTrigger('playing', goingOut, broke(start, 'p1'));
+    expect([isOut(fired, 'p0'), isOut(fired, 'p1')]).toEqual([false, true]);
+  });
+
+  it('passes over a player whose Only if lines do not hold', () => {
+    const rules = compiled(TINY_BOARD.replace('    They are out.', '    Only if they have not rolled this turn.\n    They are out.'));
+    const [rule] = rules.phases[0].triggers;
+    const choosy = new LangRuntime(rules, lib, ['p0', 'p1']);
+    const both = broke(start, 'p0', 'p1');
+    expect(choosy.triggerSubject('playing', rule, both)).toEqual({ player: 'p0', space: null });
+    expect(choosy.triggerSubject('playing', rule, recordAction(both, 'p0', 'roll', false))).toEqual({ player: 'p1', space: null });
+    expect(choosy.triggerSubject('playing', rule, recordAction(broke(start, 'p0'), 'p0', 'roll', false))).toBeNull();
+  });
+
+  it('runs a rule about no one in particular with no player', () => {
+    const duel = new LangRuntime(game, lib, ['p0', 'p1']);
+    const [full] = game.phases[0].triggers;
+    const twoInMiddle = arrange('p0', {}, [['5C', 'p1'], ['7C', 'p0']]);
+    expect(duel.triggerSubject('play', full, twoInMiddle)).toEqual({ player: null, space: null });
+    expect(duel.triggerSubject('play', full, arrange('p0', {}, [['5C', 'p1']]))).toBeNull();
+    expect(duel.triggerSubject('elsewhere', full, twoInMiddle)).toBeNull();
+  });
+
+  it('runs the rules for a piece passing or landing on a space, about its player and that space', () => {
+    expect(counterOf(runtime.announce(start, { kind: 'pass', seat: 'p1', space: 0 }), 'money', 'p1')).toBe(1700);
+    expect(counterOf(runtime.announce(start, { kind: 'land', seat: 'p1', space: 2 }), 'money', 'p1')).toBe(1300);
+    const rented = runtime.announce(setOwner(start, 1, 'p0'), { kind: 'land', seat: 'p1', space: 1 });
+    expect([counterOf(rented, 'money', 'p0'), counterOf(rented, 'money', 'p1')]).toEqual([1502, 1498]);
+    expect(runtime.announce(start, { kind: 'pass', seat: 'p1', space: 2 })).toEqual(start);
+  });
+
+  it('lets players press the phase’s buttons and passes the turn after the ones that end it', () => {
+    const playing = flowDefFor(board, ['p0', 'p1']).phases[1];
+    expect(playing).toMatchObject({ allow: ['roll', 'buy', 'end'], endTurn: { after: ['end'] } });
   });
 });

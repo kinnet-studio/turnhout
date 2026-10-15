@@ -116,6 +116,43 @@ export const TINY_BOARD_HEAD = [
   '', 'Phase: playing', '  Players take turns.',
 ].join('\n');
 
+/**
+ * TINY_BOARD_HEAD played to the end: rolling, buying and ending a turn, collecting on Go, rent, tax and going out.
+ * `When a player lands on a tax space:` is line 37 and `When a player has less than 0 money:` is line 39.
+ */
+export const TINY_BOARD = [
+  TINY_BOARD_HEAD,
+  '  A player may roll the dice.',
+  '    Only if they have not rolled this turn.',
+  '    Then:',
+  '      Roll the dice.',
+  '      Their piece moves forward by the roll.',
+  '  A player may buy the space they are on.',
+  '    Only if they have rolled this turn.',
+  '    Only if it has a price.',
+  '    Only if no one owns it.',
+  '    Only if they have at least its price in money.',
+  '    Then:',
+  '      They pay its price.',
+  '      They own it.',
+  '  A player may end their turn.',
+  '    Only if they have rolled this turn.',
+  '  When a piece passes Go:',
+  '    Its player gets 200 money.',
+  '  When a player lands on a street someone else owns:',
+  '    They pay its rent to its owner.',
+  '  When a player lands on a tax space:',
+  '    They pay its tax.',
+  '  When a player has less than 0 money:',
+  '    They are out.',
+  '    Their spaces go back to the bank.',
+  '  After a player ends their turn, the turn passes to the left.',
+  '',
+  'End:',
+  '  The game ends when one player is left.',
+  '  That player wins.',
+].join('\n');
+
 /** The loop of the board fixtures: a start, two streets, a tax, a station, a utility and two chance spaces. */
 export const FIXTURE_SPACES: SpaceSpec[] = [
   { name: 'Go', attrs: { kind: 'go' } },

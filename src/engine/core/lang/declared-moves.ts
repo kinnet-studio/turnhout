@@ -2,7 +2,7 @@ import { cardById, type GameState } from '../game-state';
 import type { Move, MoveHandler } from '../moves';
 import type { PlayerId } from '../scene';
 import type { LangRuntime } from './runtime';
-import type { CondGroup, DeclaredMove, MoveInfo, PhraseRef, ZoneRef } from './types';
+import type { DeclaredMove, MoveInfo, ZoneRef } from './types';
 import { relocate, topCard, zoneIdFor, zoneInfo } from './zones';
 
 const NOT_ON_TABLE = "That card isn't on the table.";
@@ -22,12 +22,6 @@ export function moveZoneId(ref: ZoneRef, seats: PlayerId[], by: PlayerId): strin
 const yours = (text: string) => text.replace(/^their\s+/i, 'your ');
 
 const joinOr = (items: string[]) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} or ${items.at(-1)}`);
-
-/** The words of the first `Only if` group that does not hold, or null when they all do. */
-function failedGroup(runtime: LangRuntime, groups: CondGroup[], state: GameState, info: MoveInfo): string | null {
-  const holds = (ref: PhraseRef) => runtime.test(ref, state, info);
-  return groups.find((g) => !(g.mode === 'all' ? g.refs.every(holds) : g.refs.some(holds)))?.text ?? null;
-}
 
 /** The current phase's declaration of `verb` that allows the move, with the move as its phrases see it; else why not. */
 function choose(verb: string, runtime: LangRuntime, state: GameState, m: Move): { decl: DeclaredMove; info: MoveInfo } | string {
@@ -53,7 +47,7 @@ function choose(verb: string, runtime: LangRuntime, state: GameState, m: Move): 
   let failure: string | undefined;
   for (const { decl, to } of there) {
     const info: MoveInfo = { verb, by, cardId: card.id, from: card.zoneId, to };
-    const failed = failedGroup(runtime, decl.conditions, state, info);
+    const failed = runtime.failedGroup(decl.conditions, state, info);
     if (failed === null) return { decl, info };
     failure ??= failed;
   }

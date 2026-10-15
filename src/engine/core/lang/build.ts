@@ -12,13 +12,15 @@ import { RuleRegistry } from '../rules';
 import type { PlayerId } from '../scene';
 import type { Json, TableDef } from '../table-def';
 import { autoLayout } from './auto-layout';
+import { withBoardData } from './board-state';
 import { buildCards } from './cards';
 import { gameIsFor } from './compile-example';
+import { declaredActionHandler } from './declared-actions';
 import { declaredMoveHandler } from './declared-moves';
 import { RuleError } from './diagnostics';
 import type { PhraseLibrary } from './phrases';
 import { LangRuntime } from './runtime';
-import type { CompiledGame, CondGroup, PhraseRef } from './types';
+import type { CompiledGame, CompiledTrigger, PhraseRef } from './types';
 
 /** The phase the engine starts in: it runs the Setup lines, then goes straight to the game's first phase. */
 export const SETUP_PHASE = '__setup';
@@ -39,8 +41,8 @@ export function initialState(game: CompiledGame, seed: number): GameState {
 
 const cond = (ref: PhraseRef): NamedRef => ({ name: 'lang:cond', params: ref });
 const effect = (ref: PhraseRef): NamedRef => ({ name: 'lang:effect', params: ref });
-const lang = (phrase: string, args: Json[], line: number, text: string): PhraseRef => ({ kind: 'lang', phrase, args, line, text });
-const groupRef = (g: CondGroup): PhraseRef => lang(g.mode, g.refs, g.line, g.text);
+/** A `When …:` rule and the phase it is written under, as the flow hands it back to the runtime. */
+type TriggerParams = { phase: string; trigger: CompiledTrigger };
 
 export function flowDefFor(game: CompiledGame, seats: PlayerId[]): FlowDef {
   const first = game.phases[0];
@@ -48,7 +50,7 @@ export function flowDefFor(game: CompiledGame, seats: PlayerId[]): FlowDef {
   const setup: PhaseDef = { id: SETUP_PHASE, allow: [], onEnter: game.setup.map(effect), advance: { when: 'lang:always', to: first.id } };
 
   const phases = game.phases.map((phase): PhaseDef => {
-    const verbs = [...new Set(phase.moves.map((m) => m.verb))];
+    const verbs = [...new Set([...phase.moves.map((m) => m.verb), ...phase.actions.map((a) => a.verb)])];
     const rearranging = phase.rearrange.length > 0;
     const { goTo, after } = phase;
     return {
@@ -62,12 +64,12 @@ export function flowDefFor(game: CompiledGame, seats: PlayerId[]): FlowDef {
     };
   });
 
-  // A rule written under a phase only fires while the game is in that phase.
-  const triggers = game.phases.flatMap((phase) => phase.triggers.map((t): TriggerDef => ({
-    id: `line ${t.line}: ${t.text}`,
-    when: cond(lang('all', [lang('phase', [phase.id], t.line, `the phase is ${phase.id}`), t.when, ...t.conditions.map(groupRef)], t.line, t.text)),
-    then: t.effects.map(effect),
-  })));
+  // A rule written under a phase only fires while the game is in that phase. The runtime answers both halves, so
+  // that the lines of a rule about a player are about the player it picked out.
+  const triggers = game.phases.flatMap((phase) => phase.triggers.map((t): TriggerDef => {
+    const params: TriggerParams = { phase: phase.id, trigger: t };
+    return { id: `line ${t.line}: ${t.text}`, when: { name: 'lang:trigger-when', params }, then: [{ name: 'lang:trigger-then', params }] };
+  }));
 
   const end = game.end ? [{ when: cond(game.end.when), result: 'lang:result' }] : [];
   return { turn: { order: seats }, phases: [setup, ...phases], triggers, end };
@@ -75,10 +77,19 @@ export function flowDefFor(game: CompiledGame, seats: PlayerId[]): FlowDef {
 
 function flowRegistryFor(runtime: LangRuntime): FlowRegistry {
   const ref = (params: Json | undefined) => params as PhraseRef;
+  const rule = (params: Json | undefined) => params as TriggerParams;
   return new FlowRegistry()
     .registerPredicate('lang:always', () => true)
     .registerPredicate('lang:cond', (state, _ctx, params) => runtime.test(ref(params), state))
     .registerEffect('lang:effect', (state, _ctx, params) => runtime.run(ref(params), state))
+    .registerPredicate('lang:trigger-when', (state, _ctx, params) => {
+      const { phase, trigger } = rule(params);
+      return runtime.triggerSubject(phase, trigger, state) !== null;
+    })
+    .registerEffect('lang:trigger-then', (state, _ctx, params) => {
+      const { phase, trigger } = rule(params);
+      return runtime.fireTrigger(phase, trigger, state);
+    })
     .registerPolicy('lang:turn', (state, _order, _ctx, params) => runtime.pick(ref(params), state))
     .registerEffect('lang:result', (state) => runtime.result(state));
 }
@@ -105,10 +116,14 @@ export function createEngine(
   const moves = registerCoreMoves(new MoveRegistry());
   const verbs = new Set(game.phases.flatMap((p) => p.moves.map((m) => m.verb)));
   for (const verb of verbs) moves.register(verb, declaredMoveHandler(verb, runtime));
+  const actionVerbs = new Set(game.phases.flatMap((p) => p.actions.map((a) => a.verb)));
+  for (const verb of actionVerbs) moves.register(verb, declaredActionHandler(verb, runtime));
 
   const flow = flowDefFor(game, seats);
   const rules = new RuleRegistry();
-  const engine = new GameEngine({ tableDef, rules, moves, initial, flow, flowRegistry: flowRegistryFor(runtime) });
+  // A board game starts with its pieces on the board and its counters full; a state that has them already keeps them.
+  const start = withBoardData(initial, game, seats);
+  const engine = new GameEngine({ tableDef, rules, moves, initial: start, flow, flowRegistry: flowRegistryFor(runtime) });
 
   // “They have no card they could play” asks the engine, exactly as a dispatch would, without making the move.
   const ctx: MoveContext = { tableDef, rules };
