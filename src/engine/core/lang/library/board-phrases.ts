@@ -77,11 +77,11 @@ const nameOfSpace = (env: PhraseEnv, space: number): string => boardIn(env).spac
 
 /**
  * The number a detail of the space comes to, or the sentence that says why it comes to none. It is what the game's own lines
- * make of the table's cell when the runtime can say (`env.valueOf`), else the cell.
+ * make of the table's cell when the runtime can say (`env.columnValue`), else the cell.
  */
 function amountOf(env: PhraseEnv, attr: string): number {
   const space = itOf(env);
-  const value = env.valueOf ? env.valueOf(env.state, space, attr) : numberIn(boardIn(env).spaces[space], attr);
+  const value = env.columnValue ? env.columnValue(env.state, space, attr) : numberIn(boardIn(env).spaces[space], attr);
   if (value === null) throw new RuleError(`${nameOfSpace(env, space)} has no ${attr}.`);
   return value;
 }

@@ -101,11 +101,9 @@ export interface PhraseEnv {
   announce?: (state: GameState, moment: Moment) => GameState;
   /**
    * What a column of the board's table says for a space once the lines of its section have had their say; the runtime
-   * supplies it. Null for a blank cell no line fills. Without it a phrase reads the table's cell as it stands. Make an env with
-   * `LangRuntime.env` (or `fixtureEnv` in a test): an object written out by hand without this property does not satisfy the
-   * type, since every object already has a `valueOf` of another kind.
+   * supplies it. Null for a blank cell no line fills. Without it a phrase reads the table's cell as it stands.
    */
-  valueOf?: (state: GameState, space: number, column: string) => number | null;
+  columnValue?: (state: GameState, space: number, column: string) => number | null;
 }
 export type ConditionFn = (env: PhraseEnv, args: Json[]) => boolean;
 export type EffectFn = (env: PhraseEnv, args: Json[]) => GameState;   // also 'given'

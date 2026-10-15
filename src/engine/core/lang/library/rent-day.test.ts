@@ -69,7 +69,7 @@ const game = compiled(text());
 const runtime = new LangRuntime(game, lib, SEATS);
 const fresh = () => fixtureBoardState(game, SEATS);
 const owning = (...owned: [space: number, seat: string][]) => owned.reduce((state, [space, seat]) => setOwner(state, space, seat), fresh());
-const rentOf = (state: GameState, space: number, runtimeOf = runtime) => runtimeOf.valueOf(state, space, 'rent');
+const rentOf = (state: GameState, space: number, runtimeOf = runtime) => runtimeOf.columnValue(state, space, 'rent');
 const withHouses = (state: GameState, space: number, n: number) => setSpaceFact(state, space, 'houses', n);
 const withHotel = (state: GameState, space: number) => setSpaceFact(state, space, 'hotel', true);
 const about = (state: GameState, space: number, player: string | null = 'p1') => runtime.env(state, undefined, undefined, { player, space, card: null });
@@ -167,12 +167,12 @@ describe('a utility’s rent', () => {
 describe('the rent of a space no line covers', () => {
   it('is the table’s cell, which is nothing when it is blank', () => {
     expect(rentOf(fresh(), 0)).toBeNull();
-    expect(runtime.valueOf(fresh(), ROSE, 'price')).toBe(180);
-    expect(runtime.valueOf(fresh(), ROSE, 'house price')).toBe(100);
-    expect(runtime.valueOf(fresh(), ROSE, 'nothing')).toBeNull();
+    expect(runtime.columnValue(fresh(), ROSE, 'price')).toBe(180);
+    expect(runtime.columnValue(fresh(), ROSE, 'house price')).toBe(100);
+    expect(runtime.columnValue(fresh(), ROSE, 'nothing')).toBeNull();
   });
   it('says which cell is not a number', () => {
-    expect(() => runtime.valueOf(fresh(), 0, 'kind')).toThrow("Go's kind isn't a number.");
+    expect(() => runtime.columnValue(fresh(), 0, 'kind')).toThrow("Go's kind isn't a number.");
   });
 });
 

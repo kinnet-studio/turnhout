@@ -79,9 +79,7 @@ function readColumnSections(others: OutlineNode[], board: BoardSpec | null, boar
     if (column !== undefined) {
       found.push({ keyword: column, rest: '', node });
     } else if (!boardFailed) {
-      // A header that already names a column or a section is no help to suggest back, as when text follows its colon.
-      const closest = header === undefined ? [] : suggestNames(header, [...SECTION_NAMES, ...columns.map(capitalised)]);
-      const suggestions = closest.filter((name) => canon(name) !== canon(header ?? ''));
+      const suggestions = header === undefined ? [] : suggestNames(header, [...SECTION_NAMES, ...columns.map(capitalised)]);
       addProblem(diagnostics, node.line, UNKNOWN_SECTION, { text: node.text, suggestions });
     }
   }

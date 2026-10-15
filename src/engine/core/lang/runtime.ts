@@ -56,7 +56,7 @@ export class LangRuntime {
   /** What a phrase sees. A card move is about the player making it; `subject` names someone (or a space) else. */
   env(state: GameState, move?: MoveInfo, example?: ExampleEnv, subject?: Subject): PhraseEnv {
     const about = subject ?? (move ? { player: move.by, space: null, card: null } : undefined);
-    return { state, game: this.game, seats: this.seats, move, check: this.check, example, subject: about, announce: this.announce, valueOf: this.valueOf };
+    return { state, game: this.game, seats: this.seats, move, check: this.check, example, subject: about, announce: this.announce, columnValue: this.columnValue };
   }
 
   /** A condition, or the compiler's all / any / phase / always. */
@@ -148,11 +148,11 @@ export class LangRuntime {
   };
 
   /**
-   * `env.valueOf`: what a column of the board's table comes to for a space. It starts from the table's cell and each line of
+   * `env.columnValue`: what a column of the board's table comes to for a space. It starts from the table's cell and each line of
    * the column's section then has its say in the order written, about that space and no player, seeing what the line before
    * made of it. A column no section is about is just its cell.
    */
-  readonly valueOf = (state: GameState, space: number, column: string): number | null => {
+  readonly columnValue = (state: GameState, space: number, column: string): number | null => {
     const spec = this.game.board?.spaces[space];
     if (!spec) throw new Error(`There is no space ${space} on this board.`);
     const subject: Subject = { player: null, space, card: null };

@@ -192,8 +192,7 @@ export function fixtureEnv(
   state: GameState,
   opts: {
     game?: CompiledGame; seats?: PlayerId[]; move?: MoveInfo; check?: PhraseEnv['check']; subject?: Subject; announce?: PhraseEnv['announce'];
-    // Not called `valueOf`: an options object that said nothing of it would then clash with the one every object has.
-    columnValue?: PhraseEnv['valueOf'];
+    columnValue?: PhraseEnv['columnValue'];
   } = {},
 ): PhraseEnv {
   return {
@@ -204,7 +203,7 @@ export function fixtureEnv(
     check: opts.check ?? (() => true),
     subject: opts.subject,
     announce: opts.announce,
-    valueOf: opts.columnValue,
+    columnValue: opts.columnValue,
   };
 }
 
