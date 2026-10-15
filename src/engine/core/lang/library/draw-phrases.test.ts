@@ -186,6 +186,21 @@ describe('using a kept card', () => {
     expect([zoneCards(s, 'lucky-pile')[0].id, zoneCards(s, 'fate-pile')[0].id]).toEqual([lucky, fate]);
     expect(s.cards.filter((c) => c.id === lucky || c.id === fate).every((c) => !c.faceUp)).toBe(true);
   });
+  it('reads “have” as well as “has”, for a zone named in the plural, with the same effect', () => {
+    const have = decks([HEAD, DIVIDEND, PASS], [HEAD, '| Calm | They get 0 money. |', PASS], USE.map((line) => line.replace('kept cards has', 'kept cards have')));
+    const keeping = (g: CompiledGame, ...ids: string[]) => started(g, [1, 1], { arrange: (s) => relocate(s, ids, 'kept-cards-p0', g) });
+    for (const [g, said] of [[game, 'their kept cards has a Free Pass'], [have, 'their kept cards have a Free Pass']] as const) {
+      expect(started(g, [1, 1]).canDispatch({ type: 'use a free pass', by: 'p0' }), said).toBe(said);
+      expect(keeping(g, passOf('lucky-pile')).canDispatch({ type: 'use a free pass', by: 'p0' }), said).toBe(true);
+    }
+    // The same condition, whichever way it is said, and for the player it is about.
+    const subject = { player: 'p0', space: null, card: null };
+    const env = (g: CompiledGame, ...ids: string[]) => fixtureEnv(keeping(g, ...ids).getState(), { game: g, seats: ['p0', 'p1'], subject });
+    for (const said of ['their kept cards has a Free Pass', 'their kept cards have a Free Pass']) {
+      expect(runPhrase(lib, 'condition', said, env(game, passOf('fate-pile'))), said).toBe(true);
+      expect(runPhrase(lib, 'condition', said, env(game)), said).toBe(false);
+    }
+  });
   it('says there is no such card when they keep none', () => {
     const state = started(game, [1, 1]).getState();
     const env = fixtureEnv(state, { game, seats: ['p0', 'p1'], subject: { player: 'p0', space: null, card: null } });

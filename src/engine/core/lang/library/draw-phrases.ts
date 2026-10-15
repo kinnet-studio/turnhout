@@ -76,6 +76,8 @@ const keptGoesBack: EffectFn = (env, [match, zone]) => {
 export function registerDrawPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
     .condition('their {perzone} has {card}', theyHaveKept, { needsPlayer: true })
+    // A zone named in the plural reads better with “have”: “their kept cards have a Free Pass”.
+    .condition('their {perzone} have {card}', theyHaveKept, { needsPlayer: true })
     .effect('they draw from {zone} and do what it says', theyDraw, { needsPlayer: true })
     .effect('they keep this card in their {perzone}', theyKeep, { needsPlayer: true, needsDrawnCard: true })
     .effect('{card} from their {perzone} goes to the bottom of the pile it came from', keptGoesBack, { needsPlayer: true });
