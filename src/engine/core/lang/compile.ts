@@ -234,7 +234,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   const onlyUnknownPhrases = diagnostics.every((d) => d.severity !== 'error' || d.kind === 'unknown-phrase');
   holdBack(diagnostics, [of('players'), of('table'), of('cards')]);
   if (name === null || players === null || phases.length === 0 || !onlyUnknownPhrases) return undefined;
-  return { name, players, zones, cards, setup, phases, end, examples };
+  return { name, players, zones, cards, setup, phases, end, examples, board: null };
 }
 
 /**

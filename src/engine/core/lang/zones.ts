@@ -1,5 +1,6 @@
 import { zoneCards, type GameState } from '../game-state';
 import type { CardState, PlayerId } from '../scene';
+import { endTurnLog } from './board-state';
 import { RuleError } from './diagnostics';
 import type { CardMatch, CompiledGame, PhraseEnv, SeatRef, ZoneRef, ZoneSpec } from './types';
 
@@ -102,7 +103,11 @@ export function relocate(state: GameState, cardIds: string[], toZoneId: string, 
   return { ...state, cards: state.cards.map((c) => moved.get(c.id) ?? c) };
 }
 
-/** Makes `seat` the next player; the flow then skips its usual end-of-turn step. */
+/**
+ * Makes `seat` the next player; the flow then skips its usual end-of-turn step. A board game's record of what the
+ * turn did ends with it, so the next player starts with a clean one.
+ */
 export function chooseNext(state: GameState, seat: PlayerId): GameState {
-  return { ...state, turn: { ...state.turn, current: seat, chosen: true } };
+  const chosen = { ...state, turn: { ...state.turn, current: seat, chosen: true } };
+  return endTurnLog(chosen);
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { standardDeckIdentities } from './cards';
 import { PhraseLibrary, STATIC_TYPES, emptyVocab, stubFor, suggestNames, vocabFrom } from './phrases';
 import { VOCAB_TYPES } from './refs';
+import { fixtureBoardGame } from './testing';
 import type { EffectFn, ParamType } from './types';
 
 const V = emptyVocab();
@@ -94,7 +95,7 @@ describe('PhraseLibrary.match', () => {
   it('looks a registered phrase up by kind and pattern', () => {
     const fn = () => true;
     const l = lib().condition('it is their move', fn, { needsMove: true }).condition('hearts are broken', () => true);
-    expect(l.get('condition', 'it is their move')).toEqual({ fn, needsMove: true });
+    expect(l.get('condition', 'it is their move')).toEqual({ fn, needsMove: true, needsPlayer: false, needsSpace: false, needsPayment: false });
     expect(l.get('condition', 'hearts are broken')?.needsMove).toBe(false);
     expect(l.get('effect', 'it is their move')).toBeUndefined();
   });
@@ -154,6 +155,15 @@ describe('stubFor', () => {
     );
   });
 
+  it('gives board and moment stubs the parameters their callbacks take', () => {
+    expect(stubFor('board', 'The board has 2 dice.', V, STATIC_TYPES, { game: 'G', line: 2 })).toContain(
+      "library.board('the board has {int} dice', ([a1], table) => {",
+    );
+    expect(stubFor('moment', 'A piece passes space 3', V, STATIC_TYPES, { game: 'G', line: 2 })).toContain(
+      "library.moment('a piece passes space {int}', (env, [a1], moment) => {",
+    );
+  });
+
   it('escapes apostrophes in the pattern', () => {
     expect(stubFor('condition', "It's their turn", V, STATIC_TYPES, { game: 'G', line: 2 })).toContain("library.condition('it\\'s their turn', (env) => {");
   });
@@ -174,6 +184,7 @@ describe('vocabFrom', () => {
       ],
     });
     expect(vocab).toEqual({
+      ...emptyVocab(),
       sharedZones: ['deck'], playerZones: ['hand'], maxPlayers: 4, phases: ['main'], verbs: ['play'],
       attributes: ['suit', 'rank', 'color', 'number'], standardDeck: true,
       cardValues: [{ attribute: 'color', value: 'red' }, { attribute: 'number', value: 1 }, { attribute: 'number', value: 2 }],
@@ -205,5 +216,22 @@ describe('suggestNames', () => {
   it('leaves out names with little in common', () => {
     expect(suggestNames('zzzz', ['main', 'placing'])).toEqual([]);
     expect(suggestNames('main', [])).toEqual([]);
+  });
+});
+
+describe('board vocabulary and phrase flags', () => {
+  it('builds space, counter and action words from a board game', () => {
+    const v = vocabFrom({ maxPlayers: 2, board: fixtureBoardGame().board, actions: [{ verb: 'roll', words: 'roll the dice' }] });
+    expect(v.spaces).toHaveLength(8);
+    expect(v.spaceAttributes).toEqual(['kind', 'color', 'price', 'rent', 'tax']);
+    expect(v.spaceValues).toContainEqual({ attribute: 'kind', value: 'street' });
+    expect(v.spaceValues.some((x) => x.attribute === 'price')).toBe(false);
+    expect(v.counters).toEqual(['money']);
+    expect(v.payWith).toBe('money');
+    expect(v.actions).toEqual([{ verb: 'roll', words: 'roll the dice' }]);
+  });
+  it('reports every flag a phrase was registered with', () => {
+    const l = new PhraseLibrary(STATIC_TYPES).effect('they rest', (env) => env.state, { needsPlayer: true });
+    expect(l.get('effect', 'they rest')).toMatchObject({ needsMove: false, needsPlayer: true, needsSpace: false, needsPayment: false });
   });
 });

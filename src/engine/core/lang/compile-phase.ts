@@ -183,7 +183,7 @@ function readAfter(node: OutlineNode, found: RegExpExecArray, declared: string[]
 export function compilePhase(node: OutlineNode, ctx: LineCtx): CompiledPhase {
   const phase: CompiledPhase = {
     id: phaseId(node), line: node.line, hint: null, actor: 'current', rearrange: [], moves: [], onEnter: [],
-    goTo: null, triggers: [], after: null,
+    goTo: null, triggers: [], after: null, actions: [], moments: [],
   };
   const moveLine = moveLineFor(ctx.vocab);
   // After lines are read last: they may come before the moves they name. A move with a problem still counts as named.
