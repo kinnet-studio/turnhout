@@ -1,7 +1,7 @@
 # Designer Rule Language — Design
 
 **Date:** 2026-10-15
-**Status:** Draft design, awaiting approval
+**Status:** Approved design, pending implementation plan
 **Builds on:** semantic zones, game-state engine, view projection, net sync, and the
 rule engine (game flow) — all merged to `main`.
 
