@@ -1,3 +1,4 @@
+import { MAX_FLOW_ITERATIONS } from '../flow';
 import type { GameState } from '../game-state';
 import type { Move } from '../moves';
 import type { PlayerId } from '../scene';
@@ -16,8 +17,9 @@ const KEEPS_MOVING = 'It keeps moving pieces without stopping.';
 /**
  * How many moment rules may run inside one another. A lands-on rule that moves the piece again announces another
  * landing, so a rule like that never stops on its own: past this depth it is refused instead of overflowing the stack.
+ * It is the cap the flow puts on rules that keep firing, so moment rules get as far as any other rule.
  */
-export const MAX_MOMENT_DEPTH = 20;
+export const MAX_MOMENT_DEPTH = MAX_FLOW_ITERATIONS;
 
 const isMissing = (ref: PhraseRef) => ref.kind === 'lang' && ref.phrase === 'missing';
 const notImplemented = (ref: PhraseRef) => new MissingPhraseError(`“${ref.text}” isn't implemented yet.`, ref.line, ref.text);

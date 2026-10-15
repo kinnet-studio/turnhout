@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MAX_FLOW_ITERATIONS } from '../flow';
 import { zoneCards, type GameState } from '../game-state';
 import type { MoveContext } from '../moves';
 import { RuleRegistry } from '../rules';
@@ -8,6 +9,7 @@ import { compileGame } from './compile';
 import { declaredActionHandler } from './declared-actions';
 import { friendlyError } from './friendly';
 import { createDefaultLibrary } from './library';
+import { MAX_MOMENT_DEPTH } from './runtime';
 import { TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD } from './testing';
 
 const lib = createDefaultLibrary();
@@ -138,6 +140,24 @@ describe('button actions on a board', () => {
     let thrown: unknown;
     try { engine.dispatch({ type: 'roll', by: 'p0' }); } catch (e) { thrown = e; }
     expect(friendlyError(thrown)).toMatch(/^Line \d+ \(“When a player lands on a tax space”\): It keeps moving pieces without stopping\.$/);
+  });
+
+  it('lets moment rules move a piece as many times in a row as the flow lets its rules fire', () => {
+    expect(MAX_MOMENT_DEPTH).toBe(MAX_FLOW_ITERATIONS);
+    // Every step space sends the piece on by the roll, so a roll of 1 from Go lands on each step in turn, then on Rest.
+    const steps = MAX_FLOW_ITERATIONS - 1;
+    const chain = [
+      'Game: Chain', 'Players: 2', '', 'Board:', '  The board is a loop of spaces, starting at Go:', '    | space | kind |', '    | Go | go |',
+      ...Array.from({ length: steps }, (_, i) => `    | Step ${i + 1} | step |`), '    | Rest | rest |',
+      '  Each player has a piece that starts on Go.', '  There is one six-sided die.', '',
+      'Phase: playing', '  Players take turns.',
+      '  A player may roll the dice.', '    Then:', '      Roll the dice.', '      Their piece moves forward by the roll.',
+      '  When a player lands on a step space:', '    Their piece moves forward by the roll.',
+    ].join('\n');
+    const g = compileGame(chain, lib).game!;
+    const engine = engineWith((s) => queueRoll(s, [1]), g);
+    expect(engine.dispatch({ type: 'roll', by: 'p0' }).ok).toBe(true);
+    expect(pieceAt(engine.getState(), 'p0')).toBe(steps + 1);
   });
 
   it('runs moment rules again once one has kept moving pieces', () => {
