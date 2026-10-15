@@ -7,8 +7,8 @@ import { makeRng } from '../core/rng';
 import type { GameState } from '../core/game-state';
 import { RuleRegistry } from '../core/rules';
 import { registerStarterRules } from '../core/rules-library';
-import type { CardState } from '../core/scene';
-import type { TableDef } from '../core/table-def';
+import type { CardState, PlayerId } from '../core/scene';
+import type { Json, TableDef } from '../core/table-def';
 import { FlowRegistry } from '../core/flow-registry';
 import { registerCoreFlow } from '../core/flow-library';
 import type { FlowDef } from '../core/flow';
@@ -32,7 +32,7 @@ const onlyMe: MoveHandler = {
   apply: (s) => s,
 };
 
-const build = () => {
+const build = (extras?: (state: GameState, seat: PlayerId) => Json) => {
   const moves = registerCoreMoves(new MoveRegistry()).register('onlyMe', onlyMe);
   const initial: GameState = {
     cards: [card('c0', 'hand-me', { data: { suit: 'S', rank: 1 } }), card('c1', 'hand-opp', { data: { suit: 'H', rank: 2 } })],
@@ -41,7 +41,7 @@ const build = () => {
     rng: makeRng(1),
   };
   const engine = new GameEngine({ tableDef: TABLE, rules: registerStarterRules(new RuleRegistry()), moves, initial });
-  return new GameServer({ engine, tableDef: TABLE, seats: ['me', 'opp'] });
+  return new GameServer({ engine, tableDef: TABLE, seats: ['me', 'opp'], extras });
 };
 
 describe('GameServer', () => {
@@ -84,6 +84,20 @@ describe('GameServer', () => {
   it('ClientView never leaks data or rng', () => {
     const view = build().viewFor('me');
     expect(Object.keys(view).sort()).toEqual(['result', 'scene', 'seat', 'turn']);
+  });
+
+  it('adds the extras the game computes for that seat, and only when it was given a way to', () => {
+    const s = build((_state, seat) => ({ seat }));
+    expect(s.viewFor('me').extras).toEqual({ seat: 'me' });
+    expect(s.viewFor('opp').extras).toEqual({ seat: 'opp' });
+    expect('extras' in build().viewFor('me')).toBe(false);
+  });
+
+  it('hands the extras callback the live state, so a move shows in the next view', () => {
+    const s = build((state) => ({ cardsInDeck: state.cards.filter((c) => c.zoneId === 'deck').length }));
+    expect(s.viewFor('me').extras).toEqual({ cardsInDeck: 0 });
+    s.submit('me', { type: 'move', cardId: 'c0', toZone: 'deck' });
+    expect(s.viewFor('opp').extras).toEqual({ cardsInDeck: 1 });
   });
 
   it('subscribe fires on a successful submit and unsubscribe stops it', () => {

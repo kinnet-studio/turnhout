@@ -9,6 +9,8 @@ export interface ClientView {
   turn?: TurnState;
   /** Game outcome, authored by the game's end-condition result effect. Undefined while live. */
   result?: Json;
+  /** What the game adds for this seat beyond the table, such as a board and buttons. Absent when the server has no way to compute it. */
+  extras?: Json;
 }
 
 export type ClientMessage = { type: 'move'; move: Move };
