@@ -2,10 +2,11 @@ import { MAX_FLOW_ITERATIONS } from '../flow';
 import type { GameState } from '../game-state';
 import type { Move } from '../moves';
 import type { PlayerId } from '../scene';
+import { numberIn } from './board';
 import { MissingPhraseError, RuleError } from './diagnostics';
 import type { PhraseLibrary } from './phrases';
 import type {
-  ActionFn, CompiledGame, CompiledMoment, CompiledTrigger, CondGroup, ConditionFn, EffectFn, ExampleEnv, ExpectFn, MomentFn, Moment, MoveInfo,
+  ActionFn, ColumnFn, CompiledGame, CompiledMoment, CompiledTrigger, CondGroup, ConditionFn, EffectFn, ExampleEnv, ExpectFn, MomentFn, Moment, MoveInfo,
   PhraseEnv, PhraseKind, PhraseRef, ScoreFn, Subject, TurnFn, WhoFn, WinnerFn,
 } from './types';
 
@@ -55,7 +56,7 @@ export class LangRuntime {
   /** What a phrase sees. A card move is about the player making it; `subject` names someone (or a space) else. */
   env(state: GameState, move?: MoveInfo, example?: ExampleEnv, subject?: Subject): PhraseEnv {
     const about = subject ?? (move ? { player: move.by, space: null, card: null } : undefined);
-    return { state, game: this.game, seats: this.seats, move, check: this.check, example, subject: about, announce: this.announce };
+    return { state, game: this.game, seats: this.seats, move, check: this.check, example, subject: about, announce: this.announce, valueOf: this.valueOf };
   }
 
   /** A condition, or the compiler's all / any / phase / always. */
@@ -144,6 +145,21 @@ export class LangRuntime {
       }
     }
     return s;
+  };
+
+  /**
+   * `env.valueOf`: what a column of the board's table comes to for a space. It starts from the table's cell and each line of
+   * the column's section then has its say in the order written, about that space and no player, seeing what the line before
+   * made of it. A column no section is about is just its cell.
+   */
+  readonly valueOf = (state: GameState, space: number, column: string): number | null => {
+    const spec = this.game.board?.spaces[space];
+    if (!spec) throw new Error(`There is no space ${space} on this board.`);
+    const subject: Subject = { player: null, space, card: null };
+    return (Object.hasOwn(this.game.columns, column) ? this.game.columns[column] : []).reduce(
+      (value, ref) => this.call<ColumnFn, number | null>(ref, ['column'], (fn) => fn(this.env(state, undefined, undefined, subject), ref.args, value)),
+      numberIn(spec, column),
+    );
   };
 
   /** The move an example's When step makes, and who makes it. */

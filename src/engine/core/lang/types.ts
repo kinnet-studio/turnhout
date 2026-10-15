@@ -4,8 +4,8 @@ import type { PlayerId } from '../scene';
 import type { Json } from '../table-def';
 
 export type PhraseKind =
-  | 'cards' | 'zone' | 'board' | 'declare' | 'condition' | 'effect' | 'turn' | 'who' | 'score' | 'winner' | 'moment' | 'given' | 'action'
-  | 'expect';
+  | 'cards' | 'zone' | 'board' | 'declare' | 'column' | 'condition' | 'effect' | 'turn' | 'who' | 'score' | 'winner' | 'moment' | 'given'
+  | 'action' | 'expect';
 /** kind 'lang' = compiler built-ins: all | any | phase | always | if | missing */
 export type PhraseRef = { kind: PhraseKind | 'lang'; phrase: string; args: Json[]; line: number; text: string };
 export type SeatRef = { seat: string } | { who: 'actor' | 'winner' };
@@ -63,6 +63,11 @@ export type CompiledGame = {
   name: string; players: { min: number; max: number }; zones: ZoneSpec[]; cards: CardSetSpec[];
   setup: PhraseRef[]; phases: CompiledPhase[]; end: CompiledEnd | null; examples: CompiledExample[];
   board: BoardSpec | null; facts: FactSpec[];
+  /**
+   * The lines of each section named after a column of the board's table, by column, in the order written: what that column
+   * means for a space once they have each had their say.
+   */
+  columns: { [column: string]: PhraseRef[] };
 };
 export type Vocab = {
   sharedZones: string[]; playerZones: string[]; maxPlayers: number; phases: string[]; verbs: string[];
@@ -94,6 +99,13 @@ export interface PhraseEnv {
   subject?: Subject;
   /** Runs the lands-on and passes rules for a moment; the runtime supplies it. */
   announce?: (state: GameState, moment: Moment) => GameState;
+  /**
+   * What a column of the board's table says for a space once the lines of its section have had their say; the runtime
+   * supplies it. Null for a blank cell no line fills. Without it a phrase reads the table's cell as it stands. Make an env with
+   * `LangRuntime.env` (or `fixtureEnv` in a test): an object written out by hand without this property does not satisfy the
+   * type, since every object already has a `valueOf` of another kind.
+   */
+  valueOf?: (state: GameState, space: number, column: string) => number | null;
 }
 export type ConditionFn = (env: PhraseEnv, args: Json[]) => boolean;
 export type EffectFn = (env: PhraseEnv, args: Json[]) => GameState;   // also 'given'
@@ -109,6 +121,11 @@ export type ZoneFn = (args: Json[]) => ZoneSpec;
 export type BoardFn = (args: Json[], table: CardTable | null) => BoardPart;
 /** A line that says what the game keeps facts about: the facts it declares, each already told which thing it is on. */
 export type DeclareFn = (args: Json[]) => FactSpec[];
+/**
+ * A line of a section named after a column: what the column means for the space the line is about, given what it came to
+ * so far (the table's cell for the first line, what the line before made of it for the next); null for nothing.
+ */
+export type ColumnFn = (env: PhraseEnv, args: Json[], value: number | null) => number | null;
 /** A name in a line that the game never defined, said for the designer, with the closest names it did define. */
 export type NameProblem = { message: string; suggestions: string[] };
 export interface ParamType {

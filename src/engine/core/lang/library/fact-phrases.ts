@@ -1,4 +1,5 @@
 import type { GameState } from '../../game-state';
+import type { PlayerId } from '../../scene';
 import { bankOf, ownerOf, setBank, setSpaceFact, spaceFact } from '../board-state';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
@@ -18,13 +19,13 @@ const cardIs: DeclareFn = ([name]) => [{ name: name as string, on: 'card', kind:
  * The board a phrase plays on. Each phrase that calls this says `needsBoard`, so the compiler only lets it into a game with
  * one: a missing board is a bug.
  */
-function boardOf(env: PhraseEnv): BoardSpec {
+export function boardOf(env: PhraseEnv): BoardSpec {
   if (!env.game.board) throw new Error('This phrase needs a board, but this game has none.');
   return env.game.board;
 }
 
 /** How many a space holds of a fact: its count, or 1 for a flag that is set. A fact nobody set holds none. */
-function heldBy(state: GameState, space: number, fact: string): number {
+export function heldBy(state: GameState, space: number, fact: string): number {
   const value = spaceFact(state, space, fact);
   return typeof value === 'number' ? value : value === true ? 1 : 0;
 }
@@ -66,20 +67,26 @@ const hasFewer: ConditionFn = (env, [n, fact]) => heldBy(env.state, itOf(env), f
 
 const bankHasOne: ConditionFn = (env, [name]) => bankOf(env.state, name as string) > 0;
 
-const isOfKind = (space: SpaceSpec, kind: SpaceClass): boolean => kind.values.includes(space.attrs[kind.attribute]);
+export const isOfKind = (space: SpaceSpec, kind: SpaceClass): boolean => kind.values.includes(space.attrs[kind.attribute]);
 
 /**
- * A set is the spaces of one kind that share a value in a column with the space the rule is about. A space with no value
- * in that column is in no set, and a set of nothing is not owned.
+ * A set is the spaces of one kind that share a value in a column with the space `at`. A space with no value in that column
+ * is in no set.
  */
-const ownsEverySpaceOfSet: ConditionFn = (env, [kind, attr]) => {
-  const { spaces } = boardOf(env);
-  const shared = spaces[itOf(env)].attrs[attr as string];
-  if (shared === undefined) return false;
-  const they = theyOf(env);
-  const set = spaces.flatMap((space, at) => (isOfKind(space, kind as SpaceClass) && space.attrs[attr as string] === shared ? [at] : []));
-  return set.length > 0 && set.every((at) => ownerOf(env.state, at) === they);
-};
+export function setOf(spaces: SpaceSpec[], at: number, kind: SpaceClass, attr: string): number[] {
+  const shared = spaces[at].attrs[attr];
+  if (shared === undefined) return [];
+  return spaces.flatMap((space, other) => (isOfKind(space, kind) && space.attrs[attr] === shared ? [other] : []));
+}
+
+/** Whether the seat owns every space of the set of `at`; a set of nothing is not owned. */
+export function ownsSet(state: GameState, spaces: SpaceSpec[], at: number, kind: SpaceClass, attr: string, seat: PlayerId): boolean {
+  const set = setOf(spaces, at, kind, attr);
+  return set.length > 0 && set.every((other) => ownerOf(state, other) === seat);
+}
+
+const ownsEverySpaceOfSet: ConditionFn = (env, [kind, attr]) =>
+  ownsSet(env.state, boardOf(env).spaces, itOf(env), kind as SpaceClass, attr as string, theyOf(env));
 
 // ---- moments ---------------------------------------------------------------------------------
 

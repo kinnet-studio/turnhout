@@ -197,6 +197,18 @@ describe('paying', () => {
     expect(() => runPhrase(lib, 'effect', 'they pay its rent to its owner', fixtureEnv(start, { game: textRent, ...as('p0', 1) }))).toThrow("Mill Lane's rent isn't a number.");
     expect(counterOf(start, 'money', 'p0')).toBe(1500);
   });
+  it('asks the env what a detail is when it can say, and reads the table’s cell when it cannot', () => {
+    const start = setOwner(fixtureBoardState(), 1, 'p1');
+    const asked: [number, string][] = [];
+    const through = env(start, {
+      ...as('p0', 1),
+      columnValue: (_state, space, column) => { asked.push([space, column]); return 7; },
+    });
+    const paid = runPhrase<GameState>(lib, 'effect', 'they pay its rent to its owner', through);
+    expect([counterOf(paid, 'money', 'p0'), counterOf(paid, 'money', 'p1'), asked]).toEqual([1493, 1507, [[1, 'rent']]]);
+    expect(() => runPhrase(lib, 'effect', 'they pay its rent to its owner', env(start, { ...as('p0', 1), columnValue: () => null }))).toThrow('Mill Lane has no rent.');
+    expect(counterOf(runPhrase<GameState>(lib, 'effect', 'they pay its rent to its owner', env(start, as('p0', 1))), 'money', 'p0')).toBe(1498);
+  });
 });
 
 describe('owning', () => {

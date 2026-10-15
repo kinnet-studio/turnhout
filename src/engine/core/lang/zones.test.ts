@@ -7,6 +7,7 @@ import { RuleError } from './diagnostics';
 import { makeRng } from '../rng';
 import type { CardState } from '../scene';
 import { zoneCards, type GameState } from '../game-state';
+import { fixtureEnv } from './testing';
 import type { CompiledGame, PhraseEnv, ZoneSpec } from './types';
 
 const TRICK: ZoneSpec = { name: 'trick', perPlayer: false, layout: 'row', visibility: 'public' };
@@ -16,7 +17,7 @@ const WON_PILE: ZoneSpec = { name: 'won pile', perPlayer: true, layout: 'pile', 
 
 const GAME: CompiledGame = {
   name: 'Fixture', players: { min: 2, max: 3 }, zones: [TRICK, DECK, HAND, WON_PILE],
-  cards: [], setup: [], phases: [], end: null, examples: [], board: null, facts: [],
+  cards: [], setup: [], phases: [], end: null, examples: [], board: null, facts: [], columns: {},
 };
 
 const card = (id: string, zoneId: string, slot?: number, over: Partial<CardState> = {}): CardState =>
@@ -25,7 +26,7 @@ const card = (id: string, zoneId: string, slot?: number, over: Partial<CardState
 const stateWith = (cards: CardState[], over: Partial<GameState> = {}): GameState => ({ cards, data: {}, rng: makeRng(1), ...over });
 
 const SEATS = ['p0', 'p1', 'p2'];
-const envFor = (state: GameState, move?: PhraseEnv['move']): PhraseEnv => ({ state, game: GAME, seats: SEATS, move, check: () => true });
+const envFor = (state: GameState, move?: PhraseEnv['move']): PhraseEnv => fixtureEnv(state, { game: GAME, seats: SEATS, move });
 const MOVE = { verb: 'play', by: 'p1', cardId: 'c1', from: 'hand-p1', to: 'trick' };
 
 describe('zone ids', () => {

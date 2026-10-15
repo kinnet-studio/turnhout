@@ -1,7 +1,7 @@
 import type { Json } from '../table-def';
 import type {
-  ActionFn, BoardFn, BoardSpec, CardSetSpec, CardsFn, ConditionFn, DeclareFn, EffectFn, ExpectFn, FactItem, FactSpec, MomentFn, NameProblem, ParamType,
-  PhraseKind, ScoreFn, TurnFn, Vocab, WhoFn, WinnerFn, ZoneFn, ZoneSpec,
+  ActionFn, BoardFn, BoardSpec, CardSetSpec, CardsFn, ColumnFn, ConditionFn, DeclareFn, EffectFn, ExpectFn, FactItem, FactSpec, MomentFn,
+  NameProblem, ParamType, PhraseKind, ScoreFn, TurnFn, Vocab, WhoFn, WinnerFn, ZoneFn, ZoneSpec,
 } from './types';
 
 const VISIBILITY: Record<string, string> = {
@@ -313,6 +313,7 @@ export class PhraseLibrary {
   zone(p: string, fn: ZoneFn): this { return this.add('zone', p, fn); }
   board(p: string, fn: BoardFn): this { return this.add('board', p, fn); }
   declare(p: string, fn: DeclareFn): this { return this.add('declare', p, fn); }
+  column(p: string, fn: ColumnFn, opts?: PhraseOpts): this { return this.add('column', p, fn, opts); }
   condition(p: string, fn: ConditionFn, opts?: PhraseOpts): this { return this.add('condition', p, fn, opts); }
   effect(p: string, fn: EffectFn, opts?: PhraseOpts): this { return this.add('effect', p, fn, opts); }
   turn(p: string, fn: TurnFn): this { return this.add('turn', p, fn); }
@@ -492,6 +493,7 @@ function stubParams(kind: PhraseKind, argNames: string[]): string {
     case 'board': return `${args}, table`;
     case 'declare': return args;
     case 'zone': return argNames.length > 0 ? args : '';
+    case 'column': return `env, ${args}, value`;
     case 'score': return `env, ${args}, seat`;
     case 'winner': return `env, ${args}, scores`;
     case 'moment': return `env, ${args}, moment`;

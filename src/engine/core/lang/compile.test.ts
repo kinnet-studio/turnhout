@@ -105,7 +105,7 @@ describe('compileGame header and sections', () => {
 
   it('flags unknown top-level lines', () => {
     expect(messages(`${BASE}\nRules:\n  Be nice.`)).toEqual([
-      [22, 'I don\'t understand this section. Sections are Game, Players, Cards, Table, Board, Setup, Phase, End and Example.'],
+      [22, 'I don\'t understand this section. Sections are Game, Players, Cards, Table, Board, Setup, Phase, End and Example, or a column of the board\'s table.'],
     ]);
   });
 
@@ -494,7 +494,7 @@ describe('compileGame after a broken Players:, Cards: or Table: line', () => {
   it('still reports structure problems below a broken line', () => {
     expect(messages(`${BASE.replace('Players: 2 to 3', 'Players: four')}\nRules:\n  Be nice.`)).toEqual([
       [2, 'Say how many players, like “Players: 4” or “Players: 2 to 5”.'],
-      [22, 'I don\'t understand this section. Sections are Game, Players, Cards, Table, Board, Setup, Phase, End and Example.'],
+      [22, 'I don\'t understand this section. Sections are Game, Players, Cards, Table, Board, Setup, Phase, End and Example, or a column of the board\'s table.'],
     ]);
   });
 });
@@ -747,5 +747,83 @@ describe('declaring facts and the bank', () => {
   });
   it('does not make a declaration of a line that is some other board sentence', () => {
     expect(errors(withFacts('  Players pay with gold.'))).toEqual([[15, 'There is no counter called “gold”.']]);
+  });
+});
+
+describe('a section named after a table column', () => {
+  const UNKNOWN = "I don't understand this section. Sections are Game, Players, Cards, Table, Board, Setup, Phase, End and Example, or a column of the board's table.";
+  const DOUBLE = 'A street in a full set with no buildings has double rent.';
+  const compiled = (text: string) => compileGame(text, createDefaultLibrary());
+  const errors = (text: string) => compiled(text).diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message]);
+  /** The board head with a section called `name` and its lines (already indented) after it. */
+  const withSection = (name: string, ...lines: string[]) => `${TINY_BOARD_HEAD}\n\n${name}:\n${lines.join('\n')}`;
+
+  it('keeps the lines of a section named after a column, in the order written', () => {
+    const { game, diagnostics } = compiled(withSection('Rent', `  ${DOUBLE}`));
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(game!.columns.rent).toEqual([expect.objectContaining({ kind: 'column', phrase: 'a street in a full set with no buildings has double rent', line: 20 })]);
+    expect(Object.keys(game!.columns)).toEqual(['rent']);
+  });
+  it('gives a game with no such section no columns', () => {
+    expect(compiled(TINY_BOARD_HEAD).game!.columns).toEqual({});
+    expect(compileGame(BASE, lib).game!.columns).toEqual({});
+  });
+  it('knows a column whatever the capitals, and any column of the table, not only the one with amounts', () => {
+    expect(errors(withSection('RENT', `  ${DOUBLE}`))).toEqual([]);
+    expect(Object.keys(compiled(withSection('Tax', `  ${DOUBLE}`)).game!.columns)).toEqual(['tax']);
+  });
+  it('reads a section wherever it stands, even above the Board: that has the column', () => {
+    const lines = TINY_BOARD_HEAD.split('\n');
+    const text = [...lines.slice(0, 3), 'Rent:', `  ${DOUBLE}`, '', ...lines.slice(3)].join('\n');
+    const { game, diagnostics } = compiled(text);
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(game!.columns.rent).toEqual([expect.objectContaining({ phrase: 'a street in a full set with no buildings has double rent', line: 5 })]);
+  });
+  it('joins two sections of one column, the second after the first', () => {
+    const text = `${withSection('Rent', `  ${DOUBLE}`)}\n\nrent:\n  A street's rent depends on its houses and hotel.`;
+    expect(compiled(text).game!.columns.rent.map((ref) => [ref.line, ref.phrase])).toEqual([
+      [20, 'a street in a full set with no buildings has double rent'], [23, "a street's rent depends on its houses and hotel"],
+    ]);
+  });
+  it('keeps an empty section as a column with no lines', () => {
+    expect(compiled(`${TINY_BOARD_HEAD}\n\nRent:`).game!.columns).toEqual({ rent: [] });
+  });
+  it('gives a line nobody has written a phrase for a placeholder, a hint and a stub, as in any other section', () => {
+    const { game, diagnostics } = compiled(withSection('Rent', '  A street in a half set has double rent.'));
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([expect.objectContaining({
+      line: 20, kind: 'unknown-phrase', stub: expect.stringContaining("library.column('a street in a half set has double rent', (env, _args, value) =>"),
+    })]);
+    expect(game!.columns.rent[0]).toMatchObject({ kind: 'lang', phrase: 'missing', args: ['column'], line: 20 });
+  });
+  it('says what is wrong with a name in a line of the section, as in any other section', () => {
+    // “things” is no kind of space of the board, and the line is shaped like the lines of this section.
+    const library = createDefaultLibrary().column('every {spacekind} counts double', (_env, _args, value) => value);
+    const { diagnostics } = compileGame(withSection('Rent', '  Every thing counts double.'), library);
+    expect(diagnostics).toContainEqual(expect.objectContaining({ line: 20, message: 'There is no kind of space called “thing”.' }));
+  });
+  it('refuses lines indented under a line of the section', () => {
+    expect(errors(withSection('Rent', `  ${DOUBLE}`, '    more'))).toEqual([[21, "This line shouldn't be indented under the line above."]]);
+  });
+
+  it('suggests the sections and the columns when a header is neither', () => {
+    const problems = (name: string) => compiled(withSection(name, `  ${DOUBLE}`)).diagnostics.filter((d) => d.severity === 'error');
+    expect(problems('Rnt')).toEqual([expect.objectContaining({ line: 19, message: UNKNOWN, text: 'Rnt:', suggestions: ['Rent'] })]);
+    // Where a name is close to a section's and to a column's, both are offered.
+    expect(problems('Prise')[0].suggestions).toEqual(['Price']);
+    expect(problems('Phse')[0].suggestions).toEqual(['Phase']);
+  });
+  it('is no column section when the header is the column that names the spaces, or says more than the name', () => {
+    expect(errors(withSection('Space', `  ${DOUBLE}`))).toEqual([[19, UNKNOWN]]);
+    expect(errors(`${TINY_BOARD_HEAD}\n\nRent: ${DOUBLE}`)).toEqual([[19, UNKNOWN]]);
+  });
+  it('says the same of a header in a game with no board, and no column is to be had there', () => {
+    expect(errors(`${BASE}\nRent:\n  ${DOUBLE}`)).toEqual([[22, UNKNOWN]]);
+  });
+  it('waits for the board when the board has a problem, since the columns are not known then', () => {
+    const noTable = TINY_BOARD_HEAD.split('\n').filter((_, i) => i < 5 || i > 9).join('\n');
+    const text = `${noTable}\n\nRent:\n  ${DOUBLE}`;
+    const header = text.split('\n').indexOf('Rent:') + 1;
+    expect(errors(text)).toContainEqual([5, 'Add a table of spaces under this line.']);
+    expect(compiled(text).diagnostics.filter((d) => d.line >= header)).toEqual([]);
   });
 });

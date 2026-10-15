@@ -1,7 +1,7 @@
 import type { GameState } from '../../game-state';
 import { nextInt } from '../../rng';
 import type { PlayerId } from '../../scene';
-import { readSpaceTable } from '../board';
+import { numberIn, readSpaceTable } from '../board';
 import {
   addToCounter, counterOf, didThisTurn, isOut, latestRoll, markOut, nextIn, ownerOf, pieceAt, placePiece, playersIn, queueRoll, recordAction,
   setCounter, setOwner, setRoll, takeQueuedRoll,
@@ -75,17 +75,19 @@ function boardIn(env: PhraseEnv): BoardSpec {
 
 const nameOfSpace = (env: PhraseEnv, space: number): string => boardIn(env).spaces[space].name;
 
-/** The number a space's cell holds, or the sentence that says why it holds none. */
+/**
+ * The number a detail of the space comes to, or the sentence that says why it comes to none. It is what the game's own lines
+ * make of the table's cell when the runtime can say (`env.valueOf`), else the cell.
+ */
 function amountOf(env: PhraseEnv, attr: string): number {
   const space = itOf(env);
-  const value = boardIn(env).spaces[space].attrs[attr];
-  if (value === undefined || value === null) throw new RuleError(`${nameOfSpace(env, space)} has no ${attr}.`);
-  if (typeof value !== 'number') throw new RuleError(`${nameOfSpace(env, space)}'s ${attr} isn't a number.`);
+  const value = env.valueOf ? env.valueOf(env.state, space, attr) : numberIn(boardIn(env).spaces[space], attr);
+  if (value === null) throw new RuleError(`${nameOfSpace(env, space)} has no ${attr}.`);
   return value;
 }
 
 /** What the dice showed last, added up. */
-function rollTotal(state: GameState): number {
+export function rollTotal(state: GameState): number {
   const faces = latestRoll(state);
   if (!faces) throw new RuleError('Nobody has rolled the dice yet.');
   return faces.reduce((sum, face) => sum + face, 0);

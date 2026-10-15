@@ -362,3 +362,60 @@ describe('LangRuntime on a board', () => {
     });
   });
 });
+
+describe('LangRuntime.valueOf', () => {
+  // The lines of a column's section each take what the line before made of the table's cell, about the space and no player.
+  const seen: unknown[] = [];
+  const library = createDefaultLibrary()
+    .column('add {int}', (_env, [n], value) => (value ?? 0) + (n as number))
+    .column('double it', (_env, _args, value) => (value === null ? null : value * 2))
+    .column('add its place', (env, _args, value) => {
+      seen.push(env.subject);
+      return (value ?? 0) + (env.subject?.space ?? 0);
+    })
+    .column('give up', () => {
+      throw new RuleError('Not for this space.');
+    });
+  const withSection = (...lines: string[]) => compiled(`${TINY_BOARD}\n\nTax:\n${lines.map((line) => `  ${line}`).join('\n')}`, library);
+  const start = (rules: CompiledGame): GameState => ({ ...withBoardData(initialState(rules, 1), rules, ['p0', 'p1']), turn: { current: 'p0', phase: 'playing' } });
+  const rules = withSection('Add 5.', 'Double it.', 'Add its place.');
+  const runtime = new LangRuntime(rules, library, ['p0', 'p1']);
+
+  it('runs the lines of the column in order, each on what the one before made of the cell', () => {
+    // Income Tax is the third space and has a tax of 200.
+    expect(runtime.valueOf(start(rules), 2, 'tax')).toBe((200 + 5) * 2 + 2);
+    // A blank cell starts from nothing.
+    expect(runtime.valueOf(start(rules), 1, 'tax')).toBe(5 * 2 + 1);
+  });
+  it('gives each line the space and no one else, whatever the state', () => {
+    seen.length = 0;
+    runtime.valueOf(start(rules), 3, 'tax');
+    expect(seen).toEqual([{ player: null, space: 3, card: null }]);
+  });
+  it('is the table’s cell for a column no section is about: a number, or nothing when it is blank', () => {
+    expect(runtime.valueOf(start(rules), 1, 'price')).toBe(60);
+    expect(runtime.valueOf(start(rules), 0, 'price')).toBeNull();
+    expect(runtime.valueOf(start(rules), 0, 'nothing')).toBeNull();
+  });
+  it('names the space when the cell is text', () => {
+    expect(() => runtime.valueOf(start(rules), 1, 'color')).toThrow("Mill Lane's color isn't a number.");
+  });
+  it('reads a game with no columns at all as its cells', () => {
+    const plain = compiled(TINY_BOARD);
+    expect(new LangRuntime(plain, library, ['p0', 'p1']).valueOf(start(plain), 2, 'tax')).toBe(200);
+  });
+  it('says on which line of the section a line gave up', () => {
+    const failing = withSection('Add 5.', 'Give up.');
+    const attempt = () => new LangRuntime(failing, library, ['p0', 'p1']).valueOf(start(failing), 2, 'tax');
+    expect(attempt).toThrow('Not for this space.');
+    expect(attempt).toThrow(expect.objectContaining({ line: failing.columns.tax[1].line, text: 'Give up' }));
+  });
+  it('refuses a line nobody has written a phrase for when it is reached', () => {
+    const missing = withSection('Add 5.', 'Halve it.');
+    const attempt = () => new LangRuntime(missing, library, ['p0', 'p1']).valueOf(start(missing), 2, 'tax');
+    expect(attempt).toThrow(MissingPhraseError);
+  });
+  it('is what a phrase sees as its own way of reading a space’s details', () => {
+    expect(runtime.env(start(rules)).valueOf?.(start(rules), 2, 'tax')).toBe((200 + 5) * 2 + 2);
+  });
+});
