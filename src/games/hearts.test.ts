@@ -88,6 +88,14 @@ describe('Hearts with a mistake in it', () => {
     expect(canPlay(result).ok).toBe(false);
   });
 
+  it('reports a mistyped move line on that line as a card move, and makes no button of it', () => {
+    const result = compiled('A player may pass a card from their hand to their pass pile.', 'A player may pass a card form their hand to their pass pile.');
+    expect(result.diagnostics.map((d) => [d.line, d.severity, d.message])).toEqual([
+      [22, 'error', 'I can\'t read this card move. Write it as “A player may <verb> a card from <zone> to <zone>.”'],
+    ]);
+    expect(result.game).toBeUndefined();
+  });
+
   it('reports a broken deck line once, and holds back the card names it leaves undefined', () => {
     const result = compiled('A standard 52-card deck', 'A standard 52 card deck');
     expect(result.diagnostics.map((d) => [d.line, d.severity, d.message])).toEqual([

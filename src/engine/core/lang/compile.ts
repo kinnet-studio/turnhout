@@ -1,6 +1,6 @@
 import { MAX_CARDS, TOO_MANY_CARDS } from './cards';
 import { compileExample } from './compile-example';
-import { actionLine, actionOf, compilePhase } from './compile-phase';
+import { actionLine, actionOf, cardMoveVerb, compilePhase, type VerbUses } from './compile-phase';
 import { addProblem, attempt, matchEffectLine, matchLine, phaseId, phraseFn, rejectChildren, type LineCtx } from './compile-util';
 import type { Diagnostic } from './diagnostics';
 import { parseOutline, type OutlineNode } from './outline';
@@ -13,7 +13,6 @@ export type CompileResult = { game?: CompiledGame; diagnostics: Diagnostic[] };
 
 const SECTION = /^(game|players|cards|table|board|setup|phase|end|example)\s*:\s*(.*)$/i;
 const PLAYERS = /^(\d+)(?:\s+to\s+(\d+))?$/i;
-const MOVE_VERB = /^a player may (\w+) a card from /i;
 const GAME_ENDS = /^the game ends when\s+(.+)$/i;
 const SAYS_WINS = /\bwins\b/i;
 const LOOP_LINE = /^the\s+board\s+is\s+a\s+loop\b/i;
@@ -74,7 +73,7 @@ function holdBack(diagnostics: Diagnostic[], stages: Section[][]): void {
   addProblem(diagnostics, Math.min(...heldLines), HOLD_BACK(root), { severity: 'warning' });
 }
 
-/** The buttons the phase lines declare, one for each wording; lines that move a card are not buttons. */
+/** The buttons the phase lines declare, one for each wording; a line that mentions a card moves one, even mistyped, and is no button. */
 function readActions(lines: string[]): Vocab['actions'] {
   const byWords = new Map<string, Vocab['actions'][number]>();
   for (const line of lines) {
@@ -278,7 +277,8 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   const named = phaseNodes.filter((node) => phaseId(node) !== '');
   const phaseIds = [...new Set(named.map(phaseId))];
   const phaseLines = named.flatMap((node) => node.children).map((c) => normalizeLine(c.text));
-  const verbs = [...new Set(phaseLines.flatMap((line) => MOVE_VERB.exec(line)?.[1].toLowerCase() ?? []))];
+  // A card move that has a mistake still names its verb, so the examples that make it are not blamed for that mistake.
+  const verbs = [...new Set(phaseLines.flatMap((line) => cardMoveVerb(line) ?? []))];
   // Buttons are read ahead too: “they have not rolled this turn” may come before the action that rolls.
   const actions = readActions(phaseLines);
 
@@ -292,8 +292,9 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
 
   const phases: CompiledPhase[] = [];
   const seen = new Set<string>();
+  const uses: VerbUses = { moves: new Set(), actions: new Set() };
   for (const node of named) {
-    const phase = compilePhase(node, ctx);
+    const phase = compilePhase(node, ctx, uses);
     if (seen.has(phase.id)) addProblem(diagnostics, node.line, `There are two phases called “${phase.id}”.`);
     seen.add(phase.id);
     phases.push(phase);

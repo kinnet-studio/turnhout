@@ -20,9 +20,10 @@ const THEN = /^then:?$/i;
 const AFTER = /^after a player (.+)$/i;
 const VERB_SEPARATOR = /, or |, | or /i;
 const COMMA = /, /g;
-/** `A player may <verb> <the rest>` where the line does not move a card: a button the player presses. */
+/** `A player may <verb> <the rest>`: a card move when it mentions a card, else a button the player presses. */
 const ACTION_LINE = /^a player may (\w+)(?:\s+(.+))?$/i;
-const CARD_MOVE_WORDS = / a card from /i;
+/** “card” or “cards” as a word of its own: “discard” does not count. */
+const MENTIONS_CARD = /\bcards?\b/i;
 /** Whole words of a button's text that name the player, as the player reads it. */
 const SECOND_PERSON = new Map([['their', 'your'], ["they're", "you're"], ['they', 'you'], ['them', 'you'], ['themselves', 'yourself']]);
 const THIRD_PERSON_WORD = /\b(?:they['‘’]re|themselves|their|they|them)\b/gi;
@@ -30,6 +31,7 @@ const THIRD_PERSON_WORD = /\b(?:they['‘’]re|themselves|their|they|them)\b/gi
 const RESERVED_VERB = 'reorder';
 const NOT_UNDERSTOOD = "I don't understand this line in a phase. Phase lines start with Hint:, A player may…, When…, After a player…, Players take turns or Everyone acts at once.";
 const NOT_UNDERSTOOD_IN_MOVE = "I don't understand this line under a move. Use Only if…, Only if one of: or Then:.";
+const MALFORMED_MOVE = 'I can\'t read this card move. Write it as “A player may <verb> a card from <zone> to <zone>.”';
 const ONE_ZONE = 'A move goes from one zone to one zone.';
 const ONE_GO_TO = 'A phase can have only one “go to” rule for now.';
 const ONE_AFTER = 'A phase can have only one “After a player …” rule.';
@@ -37,6 +39,14 @@ const EMPTY_ONE_OF = 'Add the conditions under “Only if one of:”, one on eac
 
 const MAX_SUGGESTIONS = 3;
 const sameVerb = (verb: string) => `Two rules in this phase start “A player may ${verb}”. Start one with another word.`;
+const moveElsewhere = (verb: string) => `“${verb}” is a card move in another phase, so it can't also be a button. Start one with another word.`;
+const buttonElsewhere = (verb: string) => `“${verb}” is a button in another phase, so it can't also be a card move. Start one with another word.`;
+
+/**
+ * The verbs the phases read so far use for card moves and for buttons. A verb is one move to the engine, so a card
+ * move in one phase and a button in another can't share it; the later line is the one reported.
+ */
+export type VerbUses = { moves: Set<string>; actions: Set<string> };
 
 /** The type that knows what a zone looks like in this game: a move line is built from its pattern. */
 const zoneType = ((): ParamType => {
@@ -141,9 +151,18 @@ function compileMove(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx): D
   return { verb, ...zones, fromText: found[2], conditions, effects, line: node.line };
 }
 
-/** An `A player may …` line that does not move a card, or null: a line that does is a move, even a wrong one. */
+/**
+ * The verb of an `A player may …` line that mentions a card, or null for any other line. Such a line moves a card even
+ * when the rest of it is mistyped, so it is reported as a move it can't read, never made into a button.
+ */
+export function cardMoveVerb(clean: string): string | null {
+  const found = ACTION_LINE.exec(clean);
+  return found && MENTIONS_CARD.test(clean) ? found[1].toLowerCase() : null;
+}
+
+/** An `A player may …` line that does not mention a card, or null: a line that does is a move, even a wrong one. */
 export function actionLine(clean: string): RegExpExecArray | null {
-  return CARD_MOVE_WORDS.test(clean) ? null : ACTION_LINE.exec(clean);
+  return cardMoveVerb(clean) === null ? ACTION_LINE.exec(clean) : null;
 }
 
 /**
@@ -260,8 +279,9 @@ function readAfter(node: OutlineNode, cuts: AfterCut[], names: Map<string, strin
 /**
  * One `Phase:` block: its hint and who acts, the moves and actions players may make with their conditions and effects,
  * what happens when it starts, the rules that fire while it lasts, where it goes next, and when the turn passes.
+ * `uses` holds the verbs of the phases above; this phase's are added to it.
  */
-export function compilePhase(node: OutlineNode, ctx: LineCtx): CompiledPhase {
+export function compilePhase(node: OutlineNode, ctx: LineCtx, uses: VerbUses = { moves: new Set(), actions: new Set() }): CompiledPhase {
   const phase: CompiledPhase = {
     id: phaseId(node), line: node.line, hint: null, actor: 'current', rearrange: [], moves: [], onEnter: [],
     goTo: null, triggers: [], after: null, actions: [], moments: [],
@@ -280,7 +300,8 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx): CompiledPhase {
     const hint = HINT.exec(child.text);
     const rearrange = REARRANGE.exec(clean);
     const move = moveLine.exec(clean) ?? LOOSE_MOVE_LINE.exec(clean);
-    const action = move ? null : actionLine(clean);
+    const unreadMove = move ? null : cardMoveVerb(clean);
+    const action = move || unreadMove !== null ? null : actionLine(clean);
     const goTo = GO_TO.exec(clean);
     const moment = MOMENT_LINE.exec(clean);
     const trigger = TRIGGER.exec(clean);
@@ -305,15 +326,23 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx): CompiledPhase {
     } else if (move) {
       const verb = move[1].toLowerCase();
       if (actionNames.some((a) => a.verb === verb)) addProblem(ctx.diagnostics, child.line, sameVerb(verb), { text: clean });
+      else if (uses.actions.has(verb)) addProblem(ctx.diagnostics, child.line, buttonElsewhere(verb), { text: clean });
       moveVerbs.push(verb);
       const declared = compileMove(child, move, ctx);
       if (declared) phase.moves.push(declared);
+      continue;
+    } else if (unreadMove !== null) {
+      // Its verb still counts as a move here, so an After line that names it is not blamed for this line's mistake.
+      moveVerbs.push(unreadMove);
+      addProblem(ctx.diagnostics, child.line, MALFORMED_MOVE, { text: clean });
+      readRuleBody(child, { ...ctx, inMove: true, player: true });
       continue;
     } else if (action) {
       const { verb, words: actionWords } = actionOf(action);
       const taken = moveVerbs.includes(verb) || actionNames.some((a) => a.verb === verb);
       if (taken) addProblem(ctx.diagnostics, child.line, sameVerb(verb), { text: clean });
-      else actionNames.push({ verb, words: actionWords });
+      else if (uses.moves.has(verb)) addProblem(ctx.diagnostics, child.line, moveElsewhere(verb), { text: clean });
+      if (!taken) actionNames.push({ verb, words: actionWords });
       const declared = compileAction(child, action, ctx);
       if (declared && !taken) phase.actions.push(declared);
       continue;
@@ -359,5 +388,7 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx): CompiledPhase {
     const after = readAfter(line, cuts, names, ctx, index > 0);
     if (index === 0) phase.after = after;
   });
+  for (const verb of moveVerbs) uses.moves.add(verb);
+  for (const { verb } of actionNames) uses.actions.add(verb);
   return phase;
 }

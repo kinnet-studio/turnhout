@@ -404,6 +404,12 @@ describe('compilePhase on its own', () => {
     expect(phase.moves).toEqual([]);
   });
 
+  it('makes no move and no button of a card move it cannot read', () => {
+    const { phase, diagnostics } = phaseFrom('Phase: main\n  A player may play a card form their hand to the deck.');
+    expect(diagnostics.map((d) => [d.line, d.message])).toEqual([[2, 'I can\'t read this card move. Write it as “A player may <verb> a card from <zone> to <zone>.”']]);
+    expect([phase.moves, phase.actions]).toEqual([[], []]);
+  });
+
   it('leaves out an action whose verb an action above already uses', () => {
     const { phase, diagnostics } = phaseFrom('Phase: main\n  A player may pay the fine.\n  A player may pay the toll.');
     expect(diagnostics.map((d) => [d.line, d.message])).toEqual([[3, 'Two rules in this phase start “A player may pay”. Start one with another word.']]);
@@ -428,6 +434,7 @@ describe('actions, moments and player rules on a board', () => {
   const NOT_UNDERSTOOD = "I don't understand this line in a phase. Phase lines start with Hint:, A player may…, When…, After a player…, Players take turns or Everyone acts at once.";
   const NEEDS_PLAYER = (line: string) => `“${line}” only makes sense in a rule about a player, such as a move, an action or a “When a player …” rule.`;
   const NEEDS_SPACE = (line: string) => `“${line}” only makes sense in a rule about a space, such as an action or a “lands on” rule.`;
+  const MALFORMED_MOVE = 'I can\'t read this card move. Write it as “A player may <verb> a card from <zone> to <zone>.”';
 
   it('compiles an action with its conditions, effects and button label', () => {
     const { game } = phase(['A player may roll the dice.', '  Only if they have not rolled this turn.', '  Then:', '    Roll the dice.', '    Their piece moves forward by the roll.']);
@@ -626,6 +633,20 @@ describe('actions, moments and player rules on a board', () => {
     const text = ['Phase: first', '  A player may roll the dice.', 'Phase: second', '  A player may roll the dice.'].join('\n');
     expect(compileGame(`${TINY_BOARD_HEAD}\n${text}`, lib).diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
   });
+  it('refuses a verb that is a card move in one phase and a button in another, on the later line', () => {
+    const errors = (first: string, second: string) => compileGame(withPhase([
+      'Phase: first', `  ${first}`, '  When the deck is empty, go to second.', '', 'Phase: second', `  ${second}`,
+    ].join('\n')), lib).diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message]);
+    const move = 'A player may play a card from their hand to the deck.';
+    const button = 'A player may play the fool.';
+    expect(errors(move, button)).toEqual([[20, '“play” is a card move in another phase, so it can\'t also be a button. Start one with another word.']]);
+    expect(errors(button, move)).toEqual([[20, '“play” is a button in another phase, so it can\'t also be a card move. Start one with another word.']]);
+    expect(errors('A player may play a card to the deck.', button)).toEqual([
+      [16, MALFORMED_MOVE], [20, '“play” is a card move in another phase, so it can\'t also be a button. Start one with another word.'],
+    ]);
+    expect(errors(move, move)).toEqual([]);
+    expect(errors(button, button)).toEqual([]);
+  });
   it('keeps “reorder” reserved for actions too', () => {
     expect(errorsOf(['A player may reorder the board.'])).toEqual([[18, '“reorder” is reserved; pick another word.']]);
     expect(phase(['A player may reorder the board.']).game).toBeUndefined();
@@ -635,8 +656,31 @@ describe('actions, moments and player rules on a board', () => {
       [19, 'I don\'t understand this line under a move. Use Only if…, Only if one of: or Then:.'],
     ]);
   });
-  it('leaves a card move that is missing its end not understood, not an action', () => {
-    expect(messages(rules('  A player may take a card from the deck.'))).toEqual([[17, NOT_UNDERSTOOD]]);
+  it('reads every “A player may …” line about a card as a card move, and says how to write one it cannot read', () => {
+    for (const line of [
+      'A player may take a card from the deck.', 'A player may play a card to the deck.', 'A player may draw the top card of the deck.',
+      'A player may pass a card form their hand to the deck.', 'A player may discard two CARDS.',
+    ]) {
+      expect(messages(rules(`  ${line}`)), line).toEqual([[17, MALFORMED_MOVE]]);
+    }
+  });
+  it('still reads the conditions and effects under a card move it cannot read', () => {
+    expect(messages(rules('  A player may play a card to the deck.', '    Only if the card is a heart.', '    Then:', '      Shuffle the dek.'))).toEqual([
+      [17, MALFORMED_MOVE], [20, 'There is no zone called “dek”.'],
+    ]);
+  });
+  it('lets an After line name a card move it cannot read, so only the move line is blamed', () => {
+    expect(messages(rules('  A player may play a card to the deck.', '  After a player plays, the turn passes to the left.'))).toEqual([[17, MALFORMED_MOVE]]);
+  });
+  it('never reads a line about a card as a button, not even ahead for what was done this turn', () => {
+    const errors = phase(['A player may play a card to the deck.', 'A player may end their turn.', '  Only if they have played this turn.'])
+      .diagnostics.filter((d) => d.severity === 'error');
+    // Had the move line been read as a button, “they have played this turn” would be a phrase the game knows.
+    expect(errors.map((d) => [d.line, d.kind])).toEqual([[18, 'structure'], [20, 'unknown-phrase']]);
+    expect(errors[0].message).toBe(MALFORMED_MOVE);
+  });
+  it('keeps a line that says card inside another word a button', () => {
+    expect(errorsOf(['A player may discard their hand.', '  Then:', '    Roll the dice.'])).toEqual([]);
   });
   it('allows no indentation under the lines of an action', () => {
     expect(errorsOf(['A player may roll the dice.', '  Then:', '    Roll the dice.', '      more'])).toEqual([[21, 'This line shouldn\'t be indented under the line above.']]);
