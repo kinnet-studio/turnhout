@@ -7,10 +7,11 @@ import { RuleRegistry } from '../rules';
 import type { CardState, PlayerId } from '../scene';
 import type { Json, ZoneDef } from '../table-def';
 import { placeZone } from '../zone-geometry';
+import { withBoardData } from './board-state';
 import { standardDeckIdentities, textFaceKey } from './cards';
 import { vocabFrom, type PhraseLibrary } from './phrases';
 import type {
-  CompiledGame, CompiledPhase, DeclaredMove, MoveInfo, PhraseEnv, PhraseKind, Vocab, ZoneRef, ZoneSpec,
+  CompiledGame, CompiledPhase, DeclaredMove, MoveInfo, PhraseEnv, PhraseKind, SpaceSpec, Subject, Vocab, ZoneRef, ZoneSpec,
 } from './types';
 
 const FIXTURE_ZONES: ZoneSpec[] = [
@@ -29,7 +30,7 @@ export function fixtureGame(over: Partial<CompiledGame> = {}): CompiledGame {
     players: { min: 2, max: 4 },
     zones: FIXTURE_ZONES.map((z) => ({ ...z })),
     cards: [{ kind: 'standard', identities: standardDeckIdentities(), start: 'deck', acesHigh: true }],
-    setup: [], phases: [], end: null, examples: [],
+    setup: [], phases: [], end: null, examples: [], board: null,
     ...over,
   };
 }
@@ -96,13 +97,101 @@ export const TEST_DUEL = [
   '  The player with an empty hand wins.',
 ].join('\n');
 
+/**
+ * A board game written the way a designer would, down to its first phase line: four spaces, a piece, a counter that
+ * pays for things and two dice. Line 4 is `Board:` and the last line is `  Players take turns.`; rules go below it.
+ */
+export const TINY_BOARD_HEAD = [
+  'Game: Tiny Board', 'Players: 2 to 4', '', 'Board:',
+  '  The board is a loop of spaces, starting at Go:',
+  '    | space      | kind   | color  | price | rent | tax |',
+  '    | Go         | go     |        |       |      |     |',
+  '    | Mill Lane  | street | brown  | 60    | 2    |     |',
+  '    | Income Tax | tax    |        |       |      | 200 |',
+  '    | Rose Lane  | street | orange | 180   | 14   |     |',
+  '  Each player has a piece that starts on Go.',
+  '  Each player has 1500 money that everyone can see.',
+  '  Players pay with money.',
+  '  There are two six-sided dice.',
+  '', 'Phase: playing', '  Players take turns.',
+].join('\n');
+
+/**
+ * TINY_BOARD_HEAD played to the end: rolling, buying and ending a turn, collecting on Go, rent, tax and going out.
+ * `When a player lands on a tax space:` is line 37 and `When a player has less than 0 money:` is line 39.
+ */
+export const TINY_BOARD = [
+  TINY_BOARD_HEAD,
+  '  A player may roll the dice.',
+  '    Only if they have not rolled this turn.',
+  '    Then:',
+  '      Roll the dice.',
+  '      Their piece moves forward by the roll.',
+  '  A player may buy the space they are on.',
+  '    Only if they have rolled this turn.',
+  '    Only if it has a price.',
+  '    Only if no one owns it.',
+  '    Only if they have at least its price in money.',
+  '    Then:',
+  '      They pay its price.',
+  '      They own it.',
+  '  A player may end their turn.',
+  '    Only if they have rolled this turn.',
+  '  When a piece passes Go:',
+  '    Its player gets 200 money.',
+  '  When a player lands on a street someone else owns:',
+  '    They pay its rent to its owner.',
+  '  When a player lands on a tax space:',
+  '    They pay its tax.',
+  '  When a player has less than 0 money:',
+  '    They are out.',
+  '    Their spaces go back to the bank.',
+  '  After a player ends their turn, the turn passes to the left.',
+  '',
+  'End:',
+  '  The game ends when one player is left.',
+  '  That player wins.',
+].join('\n');
+
+/** The loop of the board fixtures: a start, two streets, a tax, a station, a utility and two chance spaces. */
+export const FIXTURE_SPACES: SpaceSpec[] = [
+  { name: 'Go', attrs: { kind: 'go' } },
+  { name: 'Mill Lane', attrs: { kind: 'street', color: 'brown', price: 60, rent: 2 } },
+  { name: 'Income Tax', attrs: { kind: 'tax', tax: 200 } },
+  { name: 'North Station', attrs: { kind: 'station', price: 200, rent: 25 } },
+  { name: 'Chance', attrs: { kind: 'chance' } },
+  { name: 'Rose Lane', attrs: { kind: 'street', color: 'orange', price: 180, rent: 14 } },
+  { name: 'Power Works', attrs: { kind: 'utility', price: 150 } },
+  { name: 'Chance', attrs: { kind: 'chance' } },
+];
+
+/** A board game with no cards: eight spaces, a piece each, two dice and a public counter that pays for things. */
+export function fixtureBoardGame(over: Partial<CompiledGame> = {}): CompiledGame {
+  return fixtureGame({
+    name: 'Board Fixture',
+    players: { min: 2, max: 4 },
+    zones: [],
+    cards: [],
+    board: {
+      spaces: FIXTURE_SPACES,
+      pieces: { start: 0 },
+      counters: [{ name: 'money', start: 1500, visibility: 'public' }],
+      dice: { count: 2, sides: 6 },
+      payWith: 'money',
+    },
+    ...over,
+  });
+}
+
 export function fixtureState(cards: CardState[], over: Partial<GameState> = {}): GameState {
   return { cards, data: {}, rng: makeRng(1), ...over };
 }
 
 export function fixtureEnv(
   state: GameState,
-  opts: { game?: CompiledGame; seats?: PlayerId[]; move?: MoveInfo; check?: PhraseEnv['check'] } = {},
+  opts: {
+    game?: CompiledGame; seats?: PlayerId[]; move?: MoveInfo; check?: PhraseEnv['check']; subject?: Subject; announce?: PhraseEnv['announce'];
+  } = {},
 ): PhraseEnv {
   return {
     state,
@@ -110,7 +199,14 @@ export function fixtureEnv(
     seats: opts.seats ?? ['p0', 'p1', 'p2', 'p3'],
     move: opts.move,
     check: opts.check ?? (() => true),
+    subject: opts.subject,
+    announce: opts.announce,
   };
+}
+
+/** A board game's state as a new game starts: pieces on the start space, counters at their start values, p0 to move. */
+export function fixtureBoardState(game: CompiledGame = fixtureBoardGame(), seats: PlayerId[] = ['p0', 'p1']): GameState {
+  return { ...withBoardData(fixtureState([]), game, seats), turn: { current: 'p0', phase: 'playing' } };
 }
 
 export function fixtureCard(id: string, zoneId: string, data: Record<string, Json>, over: Partial<CardState> = {}): CardState {
@@ -124,6 +220,7 @@ export function fixtureMove(verb: string, from: ZoneRef, to: ZoneRef, over: Part
 export function fixturePhase(id: string, moves: DeclaredMove[], over: Partial<CompiledPhase> = {}): CompiledPhase {
   return {
     id, line: 1, hint: null, actor: 'current', rearrange: [], moves, onEnter: [], goTo: null, triggers: [], after: null,
+    actions: [], moments: [],
     ...over,
   };
 }
@@ -136,6 +233,8 @@ export function vocabFor(game: CompiledGame, players: number = game.players.max)
     cards: game.cards,
     phases: game.phases.map((p) => p.id),
     verbs: [...new Set(game.phases.flatMap((p) => p.moves.map((m) => m.verb)))],
+    board: game.board,
+    actions: game.phases.flatMap((p) => p.actions.map((a) => ({ verb: a.verb, words: a.words }))),
   });
 }
 

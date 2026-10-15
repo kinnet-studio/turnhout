@@ -1,7 +1,7 @@
 import type { Json } from '../table-def';
 import type {
-  ActionFn, CardSetSpec, CardsFn, ConditionFn, EffectFn, ExpectFn, NameProblem, ParamType, PhraseKind, ScoreFn, TurnFn, Vocab, WinnerFn, ZoneFn,
-  ZoneSpec,
+  ActionFn, BoardFn, BoardSpec, CardSetSpec, CardsFn, ConditionFn, EffectFn, ExpectFn, MomentFn, NameProblem, ParamType, PhraseKind,
+  ScoreFn, TurnFn, Vocab, WhoFn, WinnerFn, ZoneFn, ZoneSpec,
 } from './types';
 
 const VISIBILITY: Record<string, string> = {
@@ -10,9 +10,18 @@ const VISIBILITY: Record<string, string> = {
   'everyone can see': 'public',
 };
 
+const COUNT_WORDS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+
 /** Parameter types that need no game vocabulary. */
 export const STATIC_TYPES: ParamType[] = [
   { name: 'int', label: '[number]', stubOrder: 5, source: () => '-?\\d+', resolve: (t) => ({ value: Number(t) }) },
+  // Small counts read the way people say them ("two dice"); no stubOrder, since a stub should keep a digit as an {int}.
+  {
+    name: 'count',
+    label: '[number]',
+    source: () => `\\d+|${COUNT_WORDS.join('|')}`,
+    resolve: (t) => ({ value: /^\d/.test(t) ? Number(t) : COUNT_WORDS.indexOf(t.toLowerCase()) + 1 }),
+  },
   { name: 'string', label: '[text]', stubOrder: 1, source: () => '["“”][^"“”]*["“”]', resolve: (t) => ({ value: t.slice(1, -1) }) },
   { name: 'word', label: '[word]', source: () => '\\S+', resolve: (t) => ({ value: t }) },
   { name: 'name', label: '[name]', source: () => '.+?', resolve: (t) => ({ value: t.toLowerCase() }) },
@@ -26,17 +35,22 @@ export const STATIC_TYPES: ParamType[] = [
 ];
 
 export function emptyVocab(): Vocab {
-  return { sharedZones: [], playerZones: [], maxPlayers: 0, phases: [], verbs: [], attributes: [], cardValues: [], standardDeck: false };
+  return {
+    sharedZones: [], playerZones: [], maxPlayers: 0, phases: [], verbs: [], attributes: [], cardValues: [], standardDeck: false,
+    spaces: [], spaceAttributes: [], spaceValues: [], counters: [], payWith: null, actions: [], dice: false,
+  };
 }
 
 /**
- * The words a designer may use about a game: its zones, card attributes and values, phases and move verbs.
+ * The words a designer may use about a game: its zones, card attributes and values, phases and move verbs, and for a
+ * board game its spaces, the words of their table, its counters and the actions a player may take.
  * Always make a new one per compile stage: the library caches what it builds from a Vocab by object.
  */
 export function vocabFrom(game: {
   maxPlayers: number; zones?: ZoneSpec[]; cards?: CardSetSpec[]; phases?: string[]; verbs?: string[];
+  board?: BoardSpec | null; actions?: { verb: string; words: string }[];
 }): Vocab {
-  const { zones = [], cards = [] } = game;
+  const { zones = [], cards = [], board = null } = game;
   const attributes = new Set<string>();
   const cardValues: Vocab['cardValues'] = [];
   for (const set of cards) {
@@ -46,6 +60,16 @@ export function vocabFrom(game: {
         if (set.kind === 'table' && !cardValues.some((v) => v.attribute === attribute && v.value === value)) {
           cardValues.push({ attribute, value });
         }
+      }
+    }
+  }
+  const spaceAttributes = new Set<string>();
+  const spaceValues: Vocab['spaceValues'] = [];
+  for (const { attrs } of board?.spaces ?? []) {
+    for (const [attribute, value] of Object.entries(attrs)) {
+      spaceAttributes.add(attribute);
+      if (typeof value === 'string' && !spaceValues.some((v) => v.attribute === attribute && v.value === value)) {
+        spaceValues.push({ attribute, value });
       }
     }
   }
@@ -59,6 +83,13 @@ export function vocabFrom(game: {
     attributes: [...attributes],
     cardValues,
     standardDeck: cards.some((s) => s.kind === 'standard'),
+    spaces: (board?.spaces ?? []).map((s) => s.name),
+    spaceAttributes: [...spaceAttributes],
+    spaceValues,
+    counters: (board?.counters ?? []).map((c) => c.name),
+    payWith: board?.payWith ?? null,
+    actions: game.actions ?? [],
+    dice: (board?.dice ?? null) !== null,
   };
 }
 
@@ -73,6 +104,14 @@ export type MatchResult =
   | { status: 'ambiguous'; patterns: string[] }
   | { status: 'invalid'; message: string };
 
+/**
+ * What a phrase needs, checked when a game is compiled: from the rule around it, a move being made, a player the rule
+ * is about or a space; from the game, something to pay with, a board (a Board: loop of spaces) or dice.
+ */
+export type PhraseOpts = {
+  needsMove?: boolean; needsPlayer?: boolean; needsSpace?: boolean; needsPayment?: boolean; needsBoard?: boolean; needsDice?: boolean;
+};
+
 type Part = { literal: string } | { type: ParamType };
 type Entry = {
   pattern: string;
@@ -81,8 +120,7 @@ type Entry = {
   literal: string; // pattern text with the parameters removed, for suggestions
   specificity: number; // how many letters of the pattern are its own words rather than parameters
   fn: unknown;
-  needsMove: boolean;
-};
+} & Required<PhraseOpts>;
 
 /** Regexes built for one vocabulary: each phrase strictly and loosely (null: nothing to loosen), and each whole parameter. */
 type VocabCache = { strict: Map<Entry, RegExp>; loose: Map<Entry, RegExp | null>; whole: Map<ParamType, RegExp> };
@@ -95,6 +133,11 @@ const MIN_SUGGESTION_SCORE = 0.4;
 /** Names this much less alike than the closest one are left out of suggestions. */
 const CLOSE_TO_BEST = 0.2;
 const MAX_SUGGESTIONS = 3;
+/**
+ * What a name read by a narrow loose shape adds to a phrase's specificity when choosing which phrase a misnamed line
+ * meant: less than one letter of the phrase's own words, so it only settles a tie.
+ */
+const NARROW_BONUS = 0.5;
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -176,18 +219,24 @@ export class PhraseLibrary {
 
   cards(p: string, fn: CardsFn): this { return this.add('cards', p, fn); }
   zone(p: string, fn: ZoneFn): this { return this.add('zone', p, fn); }
-  condition(p: string, fn: ConditionFn, opts?: { needsMove?: boolean }): this { return this.add('condition', p, fn, opts?.needsMove); }
-  effect(p: string, fn: EffectFn, opts?: { needsMove?: boolean }): this { return this.add('effect', p, fn, opts?.needsMove); }
+  board(p: string, fn: BoardFn): this { return this.add('board', p, fn); }
+  condition(p: string, fn: ConditionFn, opts?: PhraseOpts): this { return this.add('condition', p, fn, opts); }
+  effect(p: string, fn: EffectFn, opts?: PhraseOpts): this { return this.add('effect', p, fn, opts); }
   turn(p: string, fn: TurnFn): this { return this.add('turn', p, fn); }
+  who(p: string, fn: WhoFn, opts?: PhraseOpts): this { return this.add('who', p, fn, opts); }
   score(p: string, fn: ScoreFn): this { return this.add('score', p, fn); }
   winner(p: string, fn: WinnerFn): this { return this.add('winner', p, fn); }
+  moment(p: string, fn: MomentFn): this { return this.add('moment', p, fn); }
   given(p: string, fn: EffectFn): this { return this.add('given', p, fn); }
   action(p: string, fn: ActionFn): this { return this.add('action', p, fn); }
   expect(p: string, fn: ExpectFn): this { return this.add('expect', p, fn); }
 
-  get(kind: PhraseKind, pattern: string): { fn: unknown; needsMove: boolean } | undefined {
+  get(kind: PhraseKind, pattern: string): ({ fn: unknown } & Required<PhraseOpts>) | undefined {
     const entry = this.entries.get(kind)?.get(pattern.toLowerCase());
-    return entry && { fn: entry.fn, needsMove: entry.needsMove };
+    return entry && {
+      fn: entry.fn, needsMove: entry.needsMove, needsPlayer: entry.needsPlayer, needsSpace: entry.needsSpace, needsPayment: entry.needsPayment,
+      needsBoard: entry.needsBoard, needsDice: entry.needsDice,
+    };
   }
 
   types(): ParamType[] {
@@ -228,19 +277,21 @@ export class PhraseLibrary {
    */
   misnamed(kinds: PhraseKind[], text: string, vocab: Vocab): Misnamed | null {
     const line = normalizeLine(text);
-    let best: (Misnamed & { specificity: number }) | null = null;
+    let best: (Misnamed & { rank: number }) | null = null;
     for (const kind of kinds) {
       for (const entry of this.entries.get(kind)?.values() ?? []) {
-        if (best && best.specificity >= entry.specificity) continue;
+        if (best && best.rank >= entry.specificity + NARROW_BONUS) continue;
         const found = this.looseRegexFor(entry, vocab)?.exec(line);
-        const problem = found ? this.firstMisnamed(entry, found, vocab) : null;
-        if (problem) best = { kind, problem, specificity: entry.specificity };
+        const named = found ? this.firstMisnamed(entry, found, vocab) : null;
+        if (!named) continue;
+        const rank = entry.specificity + (named.narrow ? NARROW_BONUS : 0);
+        if (!best || rank > best.rank) best = { kind, problem: named.problem, rank };
       }
     }
     return best && { kind: best.kind, problem: best.problem };
   }
 
-  private add(kind: PhraseKind, p: string, fn: unknown, needsMove = false): this {
+  private add(kind: PhraseKind, p: string, fn: unknown, opts: PhraseOpts = {}): this {
     const pattern = p.toLowerCase();
     const parts: Part[] = [];
     let display = '';
@@ -265,7 +316,11 @@ export class PhraseLibrary {
     let ofKind = this.entries.get(kind);
     if (!ofKind) this.entries.set(kind, (ofKind = new Map()));
     const specificity = parts.reduce((n, part) => n + ('literal' in part ? part.literal.replace(/\s+/g, '').length : 0), 0);
-    ofKind.set(pattern, { pattern, parts, display, literal: literal.replace(/\s+/g, ' ').trim(), specificity, fn, needsMove });
+    ofKind.set(pattern, {
+      pattern, parts, display, literal: literal.replace(/\s+/g, ' ').trim(), specificity, fn,
+      needsMove: opts.needsMove ?? false, needsPlayer: opts.needsPlayer ?? false, needsSpace: opts.needsSpace ?? false,
+      needsPayment: opts.needsPayment ?? false, needsBoard: opts.needsBoard ?? false, needsDice: opts.needsDice ?? false,
+    });
     return this;
   }
 
@@ -306,9 +361,12 @@ export class PhraseLibrary {
     return re.test(text);
   }
 
-  /** The first name in a loose match the game never defined; null when there is none, or some text is no name at all. */
-  private firstMisnamed(entry: Entry, found: RegExpExecArray, vocab: Vocab): NameProblem | null {
-    let problem: NameProblem | null = null;
+  /**
+   * The first name in a loose match the game never defined, and whether its loose shape is a narrow one; null when there
+   * is none, or some text is no name at all.
+   */
+  private firstMisnamed(entry: Entry, found: RegExpExecArray, vocab: Vocab): { problem: NameProblem; narrow: boolean } | null {
+    let first: { problem: NameProblem; narrow: boolean } | null = null;
     let group = 1;
     for (const part of entry.parts) {
       if (!('type' in part)) continue;
@@ -316,9 +374,9 @@ export class PhraseLibrary {
       if (!part.type.loose || this.isWhole(part.type, text, vocab)) continue;
       const named = part.type.loose.explain(text, vocab);
       if (named === null) return null;
-      problem ??= named;
+      first ??= { problem: named, narrow: part.type.loose.narrow ?? false };
     }
-    return problem;
+    return first;
   }
 
   private suggest(entries: Entry[], line: string): string[] {
@@ -335,10 +393,12 @@ export class PhraseLibrary {
 function stubParams(kind: PhraseKind, argNames: string[]): string {
   const args = argNames.length > 0 ? `[${argNames.join(', ')}]` : '_args';
   switch (kind) {
-    case 'cards': return `${args}, table`;
+    case 'cards':
+    case 'board': return `${args}, table`;
     case 'zone': return argNames.length > 0 ? args : '';
     case 'score': return `env, ${args}, seat`;
     case 'winner': return `env, ${args}, scores`;
+    case 'moment': return `env, ${args}, moment`;
     default: return argNames.length > 0 ? `env, ${args}` : 'env';
   }
 }

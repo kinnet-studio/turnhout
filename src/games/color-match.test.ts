@@ -46,3 +46,18 @@ describe('Color Match (designer language)', () => {
     expect(unreachableZones(tableDefFor(game!, seatsFor(n)).zones, 7)).toEqual([]);
   });
 });
+
+describe('Color Match with a mistake in it', () => {
+  const MALFORMED = 'I can\'t read this card move. Write it as “A player may <verb> a card from <zone> to <zone>.”';
+
+  it.each([
+    ['A player may play a card from their hand to the discard pile.', 'A player may play a card form their hand to the discard pile.', 26],
+    ['A player may play a card from their hand to the discard pile.', 'A player may play a card to the discard pile.', 26],
+    ['A player may draw a card from the draw pile to their hand.', 'A player may draw the top card of the draw pile.', 30],
+  ])('reports a mistyped move line on that line as a card move, never as a button: %s', (from, to, line) => {
+    expect(COLOR_MATCH).toContain(from);
+    const result = compileGame(COLOR_MATCH.replace(from, to), lib);
+    expect(result.diagnostics.map((d) => [d.line, d.severity, d.message])).toEqual([[line, 'error', MALFORMED]]);
+    expect(result.game).toBeUndefined();
+  });
+});

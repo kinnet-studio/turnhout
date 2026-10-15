@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fixtureColorGame, fixtureGame, vocabFor } from '../testing';
+import { fixtureBoardGame, fixtureColorGame, fixtureGame, vocabFor } from '../testing';
 import type { PhraseKind } from '../types';
 import { createDefaultLibrary } from './index';
 
@@ -56,5 +56,18 @@ describe('the default library', () => {
     ['condition', 'they hold only red cards', 'they hold only {cardclass}'],
   ])('reads a Color Match sentence exactly one way: %s “%s”', (kind, text, pattern) => {
     expect(lib.match(kind, text, colorMatch)).toEqual(expect.objectContaining({ status: 'ok', pattern }));
+  });
+
+  it.each<[text: string, pattern: string, args: unknown[]]>([
+    ['The board is a loop of spaces, starting at Go', 'the board is a loop of spaces, starting at {name}', ['go']],
+    ['Each player has a piece that starts on Go', 'each player has a piece that starts on {space}', [0]],
+    ['Each player has 1500 money that everyone can see', 'each player has {int} {name} that {visibility}', [1500, 'money', 'public']],
+    ['Each player has 3 lives that only they can see', 'each player has {int} {name} that {visibility}', [3, 'lives', 'owner']],
+    ['Players pay with money', 'players pay with {counter}', ['money']],
+    ['There are two six-sided dice', 'there are {count} {count}-sided dice', [2, 6]],
+    ['There are 3 20-sided dice', 'there are {count} {count}-sided dice', [3, 20]],
+    ['There is one six-sided die', 'there is one {count}-sided die', [6]],
+  ])('reads a board sentence exactly one way: “%s”', (text, pattern, args) => {
+    expect(lib.match('board', text, vocabFor(fixtureBoardGame()))).toEqual({ status: 'ok', pattern, args });
   });
 });

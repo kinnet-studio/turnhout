@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Wrapper } from '@/components/PixiCanvas';
 import { CardTable } from '@/engine/react';
+import { seatExtras, readSeatExtras } from '@/engine/core/lang/board-view';
 import { createEngine, initialState } from '@/engine/core/lang/build';
 import { moveForDrop } from '@/engine/core/lang/drops';
 import { friendlyError, friendlyReason } from '@/engine/core/lang/friendly';
@@ -16,6 +17,8 @@ import { loopbackChannel } from '@/engine/net/loopback';
 import type { ClientChannel, ClientView } from '@/engine/net/protocol';
 import { designerFaceRenderer } from '@/engine/pixi/text-faces';
 import { makeInitApp } from '@/utils/init-app';
+import { ActionButtons, MoneyLine } from './board-controls';
+import { BoardGrid } from './board-grid';
 import { seatStatus } from './seat-status';
 
 const initAppWithFaces = makeInitApp(designerFaceRenderer, { showEmptyZones: true });
@@ -25,17 +28,19 @@ const NOTICE_DISPLAY_MS = 2500;
 
 const NO_RULE = 'No rule lets you move a card there.';
 
-// Fixed 800x600 per seat, like the Hearts demo page.
+// Fixed 800x600 per seat, like the Hearts demo page; a board seat is as tall as its board, money line and buttons need.
 const SEAT_WIDTH = 800;
 const SEAT_HEIGHT = 600;
+const PANEL_STYLE = { width: SEAT_WIDTH, flex: '0 0 auto', border: '1px solid #ccc' } as const;
 
 type Started = { server: GameServer; session: GameSession; tableDef: TableDef; seats: PlayerId[] } | { error: string };
 
 /** Everything one playtest runs on, or why the rules cannot start (wrong player count, rules that never settle). */
 function start(game: CompiledGame, library: PhraseLibrary, players: number, seed: number): Started {
   try {
-    const { engine, tableDef, seats } = createEngine(game, library, players, initialState(game, seed));
-    const server = new GameServer({ engine, tableDef, seats });
+    const { engine, runtime, tableDef, seats } = createEngine(game, library, players, initialState(game, seed));
+    // The board and each seat's buttons are not on the table, so the server adds them to every view it sends.
+    const server = new GameServer({ engine, tableDef, seats, extras: (state, seat) => seatExtras(engine, runtime, state, seat) });
     return { server, session: new GameSession(server), tableDef, seats };
   } catch (e) {
     return { error: friendlyError(e) };
@@ -107,15 +112,37 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError }: {
     // A card let go outside every zone, or back where it came from, just snaps back: nothing to explain.
     else if (intent.toZoneId !== null && intent.toZoneId !== intent.fromZoneId) flash(NO_RULE);
   };
+  const status = `seat: ${seat} — ${seatStatus(game, view, seat)}`;
+  const canvas = tableDef.zones.length > 0 && (
+    <Wrapper option={option} initFunction={initAppWithFaces}>
+      <CardTable tableDef={tableDef} placement={placement} viewer={undefined} onDrop={submit} />
+    </Wrapper>
+  );
+  const extras = readSeatExtras(view?.extras);
+  if (extras?.board) {
+    const press = (verb: string) => {
+      onError(null);
+      send({ type: verb });
+    };
+    return (
+      <div style={{ ...PANEL_STYLE, boxSizing: 'content-box', padding: 8, display: 'flex', flexDirection: 'column', gap: 8, font: '14px sans-serif', color: '#eee' }}>
+        <div>{status}</div>
+        {/* Room for the notice is kept, so the board does not jump when one appears. */}
+        <div style={{ minHeight: 20, color: '#ff8a65' }}>{notice}</div>
+        <BoardGrid board={extras.board} />
+        <MoneyLine board={extras.board} />
+        <ActionButtons actions={extras.actions} onPress={press} onRefused={flash} />
+        {canvas && <div style={{ position: 'relative', height: SEAT_HEIGHT }}>{canvas}</div>}
+      </div>
+    );
+  }
   return (
-    <div style={{ width: SEAT_WIDTH, height: SEAT_HEIGHT, flex: '0 0 auto', position: 'relative', border: '1px solid #ccc' }}>
+    <div style={{ ...PANEL_STYLE, height: SEAT_HEIGHT, position: 'relative' }}>
       <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 10, pointerEvents: 'none', font: '14px sans-serif', color: '#eee' }}>
-        <div>{`seat: ${seat} — ${seatStatus(game, view, seat)}`}</div>
+        <div>{status}</div>
         {notice && <div style={{ color: '#ff8a65' }}>{notice}</div>}
       </div>
-      <Wrapper option={option} initFunction={initAppWithFaces}>
-        <CardTable tableDef={tableDef} placement={placement} viewer={undefined} onDrop={submit} />
-      </Wrapper>
+      {canvas}
     </div>
   );
 }

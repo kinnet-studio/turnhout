@@ -1,14 +1,22 @@
 import type { Json } from '../table-def';
 import { RuleError, type Diagnostic } from './diagnostics';
 import type { OutlineNode } from './outline';
-import { normalizeLine, stubFor, type MatchResult, type Misnamed, type PhraseLibrary } from './phrases';
+import { normalizeLine, stubFor, type MatchResult, type Misnamed, type PhraseLibrary, type PhraseOpts } from './phrases';
 import type { ParamType, PhraseKind, PhraseRef, Vocab } from './types';
 
-/** What every line of one compile stage shares. Never change `vocab` after a line has been matched with it. */
-export type LineCtx = { library: PhraseLibrary; vocab: Vocab; gameName: string; inMove: boolean; diagnostics: Diagnostic[] };
+/**
+ * What every line of one compile stage shares. Never change `vocab` after a line has been matched with it. `inMove`,
+ * `player` and `space` say what the rule around a line is about: a card move, a player ("they"), a space ("it").
+ */
+export type LineCtx = {
+  library: PhraseLibrary; vocab: Vocab; gameName: string; inMove: boolean; player: boolean; space: boolean; diagnostics: Diagnostic[];
+};
 
 const MAX_SUGGESTIONS = 3;
 const NOT_INDENTED = "This line shouldn't be indented under the line above.";
+const NEEDS_PAYMENT = 'Say what players pay with, like “Players pay with money.” under Board:.';
+const NEEDS_BOARD = (clean: string) => `“${clean}” needs a board. Add a Board: section with a line like “The board is a loop of spaces, starting at Go:”.`;
+const NEEDS_DICE = (clean: string) => `“${clean}” needs dice. Add a line like “There are two six-sided dice.” under Board:.`;
 const IF_FRAME = /^if\s+(.+)$/i;
 const COMMA = /, /g;
 const PHASE_NAME = /^phase\s*:\s*(.*)$/i;
@@ -78,6 +86,11 @@ function tryMatch(kind: PhraseKind, text: string, ctx: LineCtx): MatchResult {
   }
 }
 
+/** True when a phrase of `kind` reads `text` as it stands, with no diagnostics recorded. */
+export function canRead(kind: PhraseKind, text: string, ctx: LineCtx): boolean {
+  return tryMatch(kind, text, ctx).status === 'ok';
+}
+
 /** A name in a line no phrase matched that the game never defined; a library that fails here just says nothing. */
 function tryMisnamed(kinds: PhraseKind[], text: string, ctx: LineCtx): Misnamed | null {
   try {
@@ -85,6 +98,25 @@ function tryMisnamed(kinds: PhraseKind[], text: string, ctx: LineCtx): Misnamed 
   } catch {
     return null;
   }
+}
+
+/**
+ * What a phrase needs that the game or the rule around it does not give, said for the designer; null when it has all it
+ * needs. The first lack is the one reported, and a board or dice comes first: no rule can make up for a game without them.
+ */
+function unmetNeed(entry: Required<PhraseOpts> | undefined, args: Json[], clean: string, ctx: LineCtx): string | null {
+  // A game has a board when its Board: section has a loop of spaces, and dice only come with a board.
+  if (entry?.needsBoard && ctx.vocab.spaces.length === 0) return NEEDS_BOARD(clean);
+  if (entry?.needsDice && !ctx.vocab.dice) return NEEDS_DICE(clean);
+  const aboutPlayer = ctx.inMove || ctx.player;
+  if (!ctx.inMove && entry?.needsMove) return `“${clean}” only makes sense in a rule about a player's move.`;
+  if (!aboutPlayer && entry?.needsPlayer) {
+    return `“${clean}” only makes sense in a rule about a player, such as a move, an action or a “When a player …” rule.`;
+  }
+  if (!aboutPlayer && args.some(mentionsActor)) return `“${clean}” only makes sense in a rule about a player's move.`;
+  if (!ctx.space && entry?.needsSpace) return `“${clean}” only makes sense in a rule about a space, such as an action or a “lands on” rule.`;
+  if (entry?.needsPayment && ctx.vocab.payWith === null) return NEEDS_PAYMENT;
+  return null;
 }
 
 /**
@@ -109,9 +141,10 @@ export function matchLine(kind: PhraseKind, text: string, line: number, ctx: Lin
 
   switch (result.status) {
     case 'ok': {
-      const needsMove = ctx.library.get(found, result.pattern)?.needsMove ?? false;
-      if (!ctx.inMove && (needsMove || result.args.some(mentionsActor))) {
-        addProblem(ctx.diagnostics, line, `“${clean}” only makes sense in a rule about a player's move.`, { kind: 'invalid', text: clean });
+      const entry = ctx.library.get(found, result.pattern);
+      const problem = unmetNeed(entry, result.args, clean, ctx);
+      if (problem) {
+        addProblem(ctx.diagnostics, line, problem, { kind: 'invalid', text: clean });
         return missingRef(found, clean, line);
       }
       return { kind: found, phrase: result.pattern, args: result.args, line, text: clean };
@@ -158,7 +191,7 @@ export function matchEffectLine(text: string, line: number, ctx: LineCtx): Phras
 
   const body = frame[1];
   const splits = [...body.matchAll(COMMA)].map((m) => ({ condition: body.slice(0, m.index), effect: body.slice(m.index + 2) }));
-  const reads = (kind: PhraseKind, part: string) => tryMatch(kind, part, ctx).status === 'ok';
+  const reads = (kind: PhraseKind, part: string) => canRead(kind, part, ctx);
   const chosen = splits.find((s) => reads('condition', s.condition) && reads('effect', s.effect))
     ?? splits.find((s) => reads('condition', s.condition))
     ?? splits[0];

@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { canPlay, compileGame } from './compile';
-import { compilePhase } from './compile-phase';
+import { actionLabel, compilePhase } from './compile-phase';
 import { createDefaultLibrary } from './library';
 import { parseOutline } from './outline';
 import { vocabFrom } from './phrases';
+import { TINY_BOARD_HEAD } from './testing';
 
 const lib = createDefaultLibrary();
 const BASE = [
@@ -17,6 +18,7 @@ const BASE = [
 /** BASE with its one phase replaced; the first phase line is line 15. */
 const withPhase = (phase: string) => BASE.replace(/Phase: main[\s\S]*?\n\nEnd:/, `${phase}\n\nEnd:`);
 const messages = (text: string) => compileGame(text, lib).diagnostics.map((d) => [d.line, d.message]);
+const MALFORMED_MOVE = 'I can\'t read this card move. Write it as “A player may <verb> a card from <zone> to <zone>.”';
 
 const PHASE = [
   'Phase: main',
@@ -386,7 +388,7 @@ describe('compilePhase on its own', () => {
       maxPlayers: 2, phases: ['main'], verbs: ['play', 'reorder'],
       zones: [{ name: 'deck', perPlayer: false, layout: 'pile', visibility: 'secret' }, { name: 'hand', perPlayer: true, layout: 'hand', visibility: 'owner' }],
     });
-    const phase = compilePhase(parseOutline(text).roots[0], { library: lib, vocab, gameName: 'Tiny', inMove: false, diagnostics });
+    const phase = compilePhase(parseOutline(text).roots[0], { library: lib, vocab, gameName: 'Tiny', inMove: false, player: false, space: false, diagnostics });
     return { phase, diagnostics };
   };
 
@@ -403,6 +405,18 @@ describe('compilePhase on its own', () => {
     expect(phase.moves).toEqual([]);
   });
 
+  it('makes no move and no button of a card move it cannot read', () => {
+    const { phase, diagnostics } = phaseFrom('Phase: main\n  A player may play a card form their hand to the deck.');
+    expect(diagnostics.map((d) => [d.line, d.message])).toEqual([[2, MALFORMED_MOVE]]);
+    expect([phase.moves, phase.actions]).toEqual([[], []]);
+  });
+
+  it('leaves out an action whose verb an action above already uses', () => {
+    const { phase, diagnostics } = phaseFrom('Phase: main\n  A player may pay the fine.\n  A player may pay the toll.');
+    expect(diagnostics.map((d) => [d.line, d.message])).toEqual([[3, 'Two rules in this phase start “A player may pay”. Start one with another word.']]);
+    expect(phase.actions.map((a) => a.words)).toEqual(['pay the fine']);
+  });
+
   it('keeps the first After line when a second one is refused', () => {
     const { phase, diagnostics } = phaseFrom([
       'Phase: main', '  A player may play a card from their hand to the deck.',
@@ -410,5 +424,302 @@ describe('compilePhase on its own', () => {
     ].join('\n'));
     expect(diagnostics.map((d) => [d.line, d.message])).toEqual([[4, 'A phase can have only one “After a player …” rule.']]);
     expect(phase.after).toMatchObject({ verbs: ['play'], line: 3 });
+  });
+});
+
+describe('actions, moments and player rules on a board', () => {
+  /** The board head, then `lines` as the phase's own lines; the first of them is line 18. */
+  const phase = (lines: string[]) => compileGame(`${TINY_BOARD_HEAD}\n${lines.map((l) => `  ${l}`).join('\n')}`, lib);
+  const errorsOf = (lines: string[]) => phase(lines).diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message]);
+  const TURN_ACTIONS = ['A player may roll the dice.', 'A player may end their turn.'];
+  const NOT_UNDERSTOOD = "I don't understand this line in a phase. Phase lines start with Hint:, A player may…, When…, After a player…, Players take turns or Everyone acts at once.";
+  const NEEDS_PLAYER = (line: string) => `“${line}” only makes sense in a rule about a player, such as a move, an action or a “When a player …” rule.`;
+  const NEEDS_SPACE = (line: string) => `“${line}” only makes sense in a rule about a space, such as an action or a “lands on” rule.`;
+
+  it('compiles an action with its conditions, effects and button label', () => {
+    const { game } = phase(['A player may roll the dice.', '  Only if they have not rolled this turn.', '  Then:', '    Roll the dice.', '    Their piece moves forward by the roll.']);
+    expect(game!.phases[0].actions).toEqual([expect.objectContaining({
+      verb: 'roll', words: 'roll the dice', label: 'Roll the dice', line: 18,
+      conditions: [expect.objectContaining({ text: 'they have not rolled this turn' })],
+      effects: [expect.objectContaining({ phrase: 'roll the dice' }), expect.objectContaining({ phrase: 'their piece moves forward by the roll' })],
+    })]);
+  });
+  it('reads the actions of the whole game first, so a rule can say what was done before the action is written', () => {
+    expect(errorsOf(['When a player has less than 0 money:', '  Only if they have not rolled this turn.', '  They are out.', ...TURN_ACTIONS])).toEqual([]);
+    expect(errorsOf(['A player may roll the dice.', '  Only if they have not bought this turn.'])).toEqual([
+      [19, '“they have not bought this turn” isn\'t in the phrase library yet.'],
+    ]);
+  });
+  it('labels buttons in the second person', () => {
+    expect(actionLabel('end their turn')).toBe('End your turn');
+    expect(actionLabel('buy the space they are on')).toBe('Buy the space you are on');
+    expect(actionLabel('roll the dice')).toBe('Roll the dice');
+    expect(actionLabel("skip a go if they're broke")).toBe("Skip a go if you're broke");
+    expect(actionLabel('swap with them')).toBe('Swap with you');
+    expect(actionLabel('save themselves')).toBe('Save yourself');
+    expect(actionLabel('wait for Their friends')).toBe('Wait for your friends');
+  });
+  it('swaps whole words only', () => {
+    expect(actionLabel('thank theirs then')).toBe('Thank theirs then');
+    expect(actionLabel('gather them there')).toBe('Gather you there');
+  });
+  it('keeps the words in lowercase and the designer\'s capitals on the button', () => {
+    const { game } = phase(['A player may Buy the space they are on.']);
+    expect(game!.phases[0].actions[0]).toMatchObject({ verb: 'buy', words: 'buy the space they are on', label: 'Buy the space you are on' });
+    expect(phase(['A player may Go to Rose Lane.']).game!.phases[0].actions[0]).toMatchObject({ verb: 'go', words: 'go to rose lane', label: 'Go to Rose Lane' });
+    expect(phase(['A player may end their turn.']).game!.phases[0].actions[0]).toMatchObject({ words: 'end their turn', label: 'End your turn' });
+  });
+  it('lets a rule name an action in any capitals', () => {
+    const lines = ['A player may Go to Rose Lane.', 'After a player GOES TO ROSE LANE, the turn passes to the left.'];
+    expect(errorsOf(lines)).toEqual([]);
+    expect(phase(lines).game!.phases[0].after).toMatchObject({ verbs: ['go'] });
+  });
+  it('lets a one-word action stand alone', () => {
+    const { game } = phase(['A player may pass.']);
+    expect(errorsOf(['A player may pass.'])).toEqual([]);
+    expect(game!.phases[0].actions[0]).toMatchObject({ verb: 'pass', words: 'pass', label: 'Pass' });
+  });
+  it('compiles a moment rule and a player rule', () => {
+    const { game, diagnostics } = phase(['When a piece passes Go:', '  Its player gets 200 money.', 'When a player has less than 0 money:', '  They are out.', '  Their spaces go back to the bank.']);
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(game!.phases[0].moments[0].when).toMatchObject({ kind: 'moment', phrase: 'a piece passes {space}', args: [0] });
+    expect(game!.phases[0].triggers[0].when).toMatchObject({ kind: 'who' });
+  });
+  it('keeps a moment rule apart from the other rules, with its line, text, conditions and effects', () => {
+    const lines = [
+      'When a player lands on a tax space:', '  Only if they have at least 10 money.', '  They pay its tax.', '  Only if no one owns it.',
+      'When one player is left:', '  Roll the dice.',
+    ];
+    const { game } = phase(lines);
+    expect(errorsOf(lines)).toEqual([]);
+    const p = game!.phases[0];
+    expect(p.moments).toHaveLength(1);
+    expect(p.moments[0]).toMatchObject({
+      line: 18, text: 'When a player lands on a tax space', when: { kind: 'moment', phrase: 'a player lands on {spaceclass}' },
+      conditions: [{ text: 'they have at least 10 money', line: 19 }, { text: 'no one owns it', line: 21 }],
+      effects: [{ phrase: 'they pay its {spaceattr}', line: 20 }],
+    });
+    expect(p.triggers.map((t) => t.text)).toEqual(['When one player is left']);
+  });
+  it('names a misspelt kind of space in a moment rule, with the words of the board\'s table', () => {
+    const typo = (when: string) => phase([when, '  They pay its tax.']).diagnostics.filter((d) => d.severity === 'error');
+    expect(typo('When a player lands on a taks space:')).toEqual([
+      expect.objectContaining({ line: 18, kind: 'invalid', message: 'There is no kind of space called “taks”.', suggestions: ['tax'] }),
+    ]);
+    expect(typo('When a player lands on a stret someone else owns:')).toEqual([
+      expect.objectContaining({ line: 18, message: 'There is no kind of space called “stret”.', suggestions: ['street'] }),
+    ]);
+    expect(typo('When a player lands on Rose Lan:')).toEqual([
+      expect.objectContaining({ line: 18, message: 'There is no space called “Rose Lan”.', suggestions: ['Rose Lane'] }),
+    ]);
+  });
+  it('lets a moment rule talk about the player and the space', () => {
+    expect(errorsOf([
+      'When a player lands on Rose Lane:', '  Only if no one owns it.', '  They own it.', '  Their piece moves forward by the roll.',
+      'When a player lands on a street someone else owns:', '  They pay its rent to its owner.',
+    ])).toEqual([]);
+  });
+  it('names the space a moment rule is about', () => {
+    const { diagnostics } = phase(['When a piece passes Goo:', '  Its player gets 200 money.']);
+    expect(diagnostics).toContainEqual(expect.objectContaining({ line: 18, message: 'There is no space called “Goo”.', suggestions: ['Go'] }));
+  });
+  it('lets an action talk about the player and the space', () => {
+    expect(errorsOf([
+      'A player may buy the space they are on.', '  Only if no one owns it.', '  Only if they have at least its price in money.',
+      '  Then:', '    They pay its price.', '    They own it.',
+    ])).toEqual([]);
+  });
+  it('lets an action in a card game name their zones', () => {
+    const { diagnostics } = compileGame(BASE.replace('Phase: main', 'Phase: main\n  A player may tidy up.\n    Then:\n      Shuffle their hand.'), lib);
+    expect(diagnostics).toEqual([]);
+  });
+  it('reads an After line that names an action', () => {
+    const { game } = phase(['A player may end their turn.', 'After a player ends their turn, the turn passes to the left.']);
+    expect(game!.phases[0].after).toMatchObject({ verbs: ['end'] });
+  });
+  it('names an action by its verb or by all its words, in the third person', () => {
+    for (const named of ['ends', 'ends their turn', 'Ends Their Turn']) {
+      const lines = [...TURN_ACTIONS, `After a player ${named}, the turn passes to the left.`];
+      const { game } = phase(lines);
+      expect(errorsOf(lines)).toEqual([]);
+      expect(game!.phases[0].after).toMatchObject({ verbs: ['end'], line: 20 });
+    }
+  });
+  it('lets an After line list several actions, each of several words', () => {
+    const lines = [...TURN_ACTIONS, 'A player may buy the space they are on.'];
+    const cases: [string, string[]][] = [
+      ['rolls the dice or ends their turn', ['roll', 'end']],
+      ['rolls, buys the space they are on, or ends their turn', ['roll', 'buy', 'end']],
+      ['rolls, buys or ends', ['roll', 'buy', 'end']],
+    ];
+    for (const [named, verbs] of cases) {
+      const all = [...lines, `After a player ${named}, the turn passes to the left.`];
+      const { game } = phase(all);
+      expect(errorsOf(all)).toEqual([]);
+      expect(game!.phases[0].after).toMatchObject({ verbs, next: { kind: 'turn', phrase: 'the turn passes to the left' } });
+    }
+  });
+  it('names card moves and actions in one After line', () => {
+    const { game, diagnostics } = compileGame(rules(
+      '  A player may play a card from their hand to the deck.', '  A player may pass.', '  After a player plays or passes, the turn passes to the left.',
+    ), lib);
+    expect(diagnostics).toEqual([]);
+    expect(game!.phases[0].after).toMatchObject({ verbs: ['play', 'pass'] });
+  });
+  it('cuts an After line at the best comma: names known and a turn phrase after, else a turn phrase after, else names known, else the first', () => {
+    // No comma leaves a turn phrase: the first cut that names known actions stands, and what follows it is read as the phrase.
+    const loose = phase([...TURN_ACTIONS, 'After a player rolls, ends their turn, the turn goes nowhere.']);
+    expect(loose.game!.phases[0].after).toMatchObject({ verbs: ['roll'], next: { phrase: 'missing', text: 'ends their turn, the turn goes nowhere' } });
+    // A turn phrase follows the second comma, so the names before it are the ones reported.
+    const unknown = phase([...TURN_ACTIONS, 'After a player dances, sings, the turn passes to the left.']);
+    expect(unknown.diagnostics.filter((d) => d.message.includes('isn\'t a move')).map((d) => [d.line, d.text, d.message])).toEqual([
+      [20, 'dances', '“dances” isn\'t a move in this phase. The moves here are: rolls, rolls the dice, ends, ends their turn.'],
+      [20, 'sings', '“sings” isn\'t a move in this phase. The moves here are: rolls, rolls the dice, ends, ends their turn.'],
+    ]);
+    expect(unknown.diagnostics.filter((d) => d.kind === 'unknown-phrase')).toEqual([]);
+    expect(unknown.game).toBeUndefined();
+  });
+  it('reports a typo in a list of moves as a move that is not there, not as an unknown turn phrase', () => {
+    const lines = [
+      '  A player may play a card from their hand to the deck.', '  A player may draw a card from the deck to their hand.',
+      '  After a player plays, drawz, the turn passes to the left.',
+    ];
+    const result = compileGame(rules(...lines), lib);
+    expect(result.diagnostics).toEqual([expect.objectContaining({
+      line: 19, kind: 'structure', text: 'drawz', message: '“drawz” isn\'t a move in this phase. The moves here are: plays, draws.',
+    })]);
+    expect(result.game).toBeUndefined();
+  });
+  it('lists the actions among the moves an After line can name', () => {
+    expect(errorsOf(['A player may end their turn.', 'After a player plays, the turn passes to the left.'])).toEqual([
+      [19, '“plays” isn\'t a move in this phase. The moves here are: ends, ends their turn.'],
+    ]);
+  });
+  it('knows the actions of the phase an After line is in', () => {
+    const text = ['Phase: first', '  A player may roll the dice.', 'Phase: second', '  A player may end their turn.', '  After a player rolls, the turn passes to the left.'].join('\n');
+    expect(compileGame(`${TINY_BOARD_HEAD}\n${text}`, lib).diagnostics.map((d) => d.message)).toContain(
+      '“rolls” isn\'t a move in this phase. The moves here are: ends, ends their turn.',
+    );
+  });
+  it('still wants a comma and a turn phrase after the names of an After line', () => {
+    for (const line of ['After a player ends their turn', 'After a player ends their turn,', 'After a player, the turn passes to the left.']) {
+      expect(errorsOf([...TURN_ACTIONS, line])).toEqual([[20, NOT_UNDERSTOOD]]);
+    }
+  });
+  it('refuses “they” outside a rule about a player, “it” outside a rule about a space, and pay lines with nothing to pay with', () => {
+    const they = compileGame(TINY_BOARD_HEAD.replace('Phase: playing', 'Setup:\n  They are out.\n\nPhase: playing'), lib);
+    expect(they.diagnostics).toContainEqual(expect.objectContaining({ line: 17, kind: 'invalid', message: NEEDS_PLAYER('They are out') }));
+    const it2 = phase(['When a player has less than 0 money:', '  They own it.']);
+    expect(it2.diagnostics).toContainEqual(expect.objectContaining({ message: NEEDS_SPACE('They own it') }));
+    const pay = compileGame(`${TINY_BOARD_HEAD.replace('  Players pay with money.\n', '')}\n  A player may buy the space they are on.\n    Then:\n      They pay its price.`, lib);
+    expect(pay.diagnostics).toContainEqual(expect.objectContaining({ message: 'Say what players pay with, like “Players pay with money.” under Board:.' }));
+  });
+  it('refuses board phrases in a game with no board, and rolling in a game with no dice', () => {
+    const NEEDS_BOARD = (line: string) => `“${line}” needs a board. Add a Board: section with a line like “The board is a loop of spaces, starting at Go:”.`;
+    const NEEDS_DICE = (line: string) => `“${line}” needs dice. Add a line like “There are two six-sided dice.” under Board:.`;
+    // A card game whose one button runs `line`, on line 18.
+    const inCardGame = (line: string) => messages(BASE.replace('Phase: main', `Phase: main\n  A player may tidy up.\n    Then:\n      ${line}`));
+    expect(inCardGame('Roll the dice.')).toEqual([[18, NEEDS_DICE('Roll the dice')]]);
+    expect(inCardGame('Their piece moves forward by the roll.')).toEqual([[18, NEEDS_BOARD('Their piece moves forward by the roll')]]);
+    expect(inCardGame('Their spaces go back to the bank.')).toEqual([[18, NEEDS_BOARD('Their spaces go back to the bank')]]);
+    expect(inCardGame('They own it.')).toEqual([[18, NEEDS_BOARD('They own it')]]);
+    // What the game lacks is said before what the rule lacks: a rule about a player won't help a game with no board.
+    expect(messages(BASE.replace('  Shuffle the deck.', '  Their piece moves forward by the roll.'))).toEqual([
+      [12, NEEDS_BOARD('Their piece moves forward by the roll')],
+    ]);
+
+    // A board with no dice, whose phase lines start on line 17.
+    const noDice = (lines: string[]) => compileGame(`${TINY_BOARD_HEAD.replace('  There are two six-sided dice.\n', '')}\n${lines.map((l) => `  ${l}`).join('\n')}`, lib)
+      .diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message]);
+    expect(noDice(['A player may roll the dice.', '  Then:', '    Roll the dice.', '    Their piece moves forward by the roll.'])).toEqual([
+      [19, NEEDS_DICE('Roll the dice')], [20, NEEDS_DICE('Their piece moves forward by the roll')],
+    ]);
+    expect(noDice(['When a player lands on a street someone else owns:', '  They pay 4 times the roll to its owner.'])).toEqual([
+      [18, NEEDS_DICE('They pay 4 times the roll to its owner')],
+    ]);
+    expect(noDice(['A player may give up.', '  Then:', '    Their spaces go back to the bank.', '    They own it.'])).toEqual([]);
+  });
+  it('reports a line that lacks several things once, naming the first: a player, then a space, then something to pay with', () => {
+    expect(errorsOf(['When one player is left:', '  They pay its price.'])).toEqual([[19, NEEDS_PLAYER('They pay its price')]]);
+    expect(errorsOf(['When a player has less than 0 money:', '  They pay its price.'])).toEqual([[19, NEEDS_SPACE('They pay its price')]]);
+    expect(phase(['When one player is left:', '  They pay its price.']).game).toBeUndefined();
+  });
+  it('gives conditions the player and the space of the rule they are in', () => {
+    expect(errorsOf(['A player may buy the space they are on.', '  Only if no one owns it.'])).toEqual([]);
+    expect(errorsOf(['When a player has less than 0 money:', '  Only if they have at least 10 money.'])).toEqual([]);
+    expect(errorsOf(['When a player has less than 0 money:', '  Only if no one owns it.'])).toEqual([[19, NEEDS_SPACE('no one owns it')]]);
+    expect(errorsOf(['When one player is left:', '  Only if they have at least 10 money.'])).toEqual([[19, NEEDS_PLAYER('they have at least 10 money')]]);
+    expect(errorsOf(['Only if they have at least 10 money.'])).toEqual([[18, NOT_UNDERSTOOD]]);
+  });
+  it('does not blame the lines of a player rule for a player rule it could not read', () => {
+    expect(errorsOf(['When a player has less than 0 gold:', '  They are out.'])).toEqual([[18, 'There is no counter called “gold”.']]);
+  });
+  it('refuses two actions that start with the same verb', () => {
+    const { diagnostics, game } = phase(['A player may pay the fine.', 'A player may pay the toll.']);
+    expect(diagnostics).toContainEqual(expect.objectContaining({ line: 19, message: 'Two rules in this phase start “A player may pay”. Start one with another word.' }));
+    expect(game).toBeUndefined();
+  });
+  it('refuses an action whose verb a card move uses, whichever comes first, but not two moves', () => {
+    const move = '  A player may play a card from their hand to the deck.';
+    const clash = 'Two rules in this phase start “A player may play”. Start one with another word.';
+    expect(messages(rules(move, '  A player may play the fool.'))).toEqual([[18, clash]]);
+    expect(messages(rules('  A player may play the fool.', move))).toEqual([[18, clash]]);
+    expect(messages(rules(move, move))).toEqual([]);
+  });
+  it('allows the same verb in different phases', () => {
+    const text = ['Phase: first', '  A player may roll the dice.', 'Phase: second', '  A player may roll the dice.'].join('\n');
+    expect(compileGame(`${TINY_BOARD_HEAD}\n${text}`, lib).diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+  });
+  it('refuses a verb that is a card move in one phase and a button in another, on the later line', () => {
+    const errors = (first: string, second: string) => compileGame(withPhase([
+      'Phase: first', `  ${first}`, '  When the deck is empty, go to second.', '', 'Phase: second', `  ${second}`,
+    ].join('\n')), lib).diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message]);
+    const move = 'A player may play a card from their hand to the deck.';
+    const button = 'A player may play the fool.';
+    expect(errors(move, button)).toEqual([[20, '“play” is a card move in another phase, so it can\'t also be a button. Start one with another word.']]);
+    expect(errors(button, move)).toEqual([[20, '“play” is a button in another phase, so it can\'t also be a card move. Start one with another word.']]);
+    expect(errors('A player may play a card to the deck.', button)).toEqual([
+      [16, MALFORMED_MOVE], [20, '“play” is a card move in another phase, so it can\'t also be a button. Start one with another word.'],
+    ]);
+    expect(errors(move, move)).toEqual([]);
+    expect(errors(button, button)).toEqual([]);
+  });
+  it('keeps “reorder” reserved for actions too', () => {
+    expect(errorsOf(['A player may reorder the board.'])).toEqual([[18, '“reorder” is reserved; pick another word.']]);
+    expect(phase(['A player may reorder the board.']).game).toBeUndefined();
+  });
+  it('says what it does not understand under an action', () => {
+    expect(errorsOf(['A player may roll the dice.', '  Dance.'])).toEqual([
+      [19, 'I don\'t understand this line under a move. Use Only if…, Only if one of: or Then:.'],
+    ]);
+  });
+  it('reads every “A player may …” line about a card as a card move, and says how to write one it cannot read', () => {
+    for (const line of [
+      'A player may take a card from the deck.', 'A player may play a card to the deck.', 'A player may draw the top card of the deck.',
+      'A player may pass a card form their hand to the deck.', 'A player may discard two CARDS.',
+    ]) {
+      expect(messages(rules(`  ${line}`)), line).toEqual([[17, MALFORMED_MOVE]]);
+    }
+  });
+  it('still reads the conditions and effects under a card move it cannot read', () => {
+    expect(messages(rules('  A player may play a card to the deck.', '    Only if the card is a heart.', '    Then:', '      Shuffle the dek.'))).toEqual([
+      [17, MALFORMED_MOVE], [20, 'There is no zone called “dek”.'],
+    ]);
+  });
+  it('lets an After line name a card move it cannot read, so only the move line is blamed', () => {
+    expect(messages(rules('  A player may play a card to the deck.', '  After a player plays, the turn passes to the left.'))).toEqual([[17, MALFORMED_MOVE]]);
+  });
+  it('never reads a line about a card as a button, not even ahead for what was done this turn', () => {
+    const errors = phase(['A player may play a card to the deck.', 'A player may end their turn.', '  Only if they have played this turn.'])
+      .diagnostics.filter((d) => d.severity === 'error');
+    // Had the move line been read as a button, “they have played this turn” would be a phrase the game knows.
+    expect(errors.map((d) => [d.line, d.kind])).toEqual([[18, 'structure'], [20, 'unknown-phrase']]);
+    expect(errors[0].message).toBe(MALFORMED_MOVE);
+  });
+  it('keeps a line that says card inside another word a button', () => {
+    expect(errorsOf(['A player may discard their hand.', '  Then:', '    Roll the dice.'])).toEqual([]);
+  });
+  it('allows no indentation under the lines of an action', () => {
+    expect(errorsOf(['A player may roll the dice.', '  Then:', '    Roll the dice.', '      more'])).toEqual([[21, 'This line shouldn\'t be indented under the line above.']]);
   });
 });

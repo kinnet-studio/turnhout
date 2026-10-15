@@ -63,11 +63,24 @@ bun run dev        # then open http://localhost:5173/#designer
 
 The designer page is a text editor for the rule language, with a line-numbered editor, a list of problems (each with a hint), and the results of the game's own `Example:`s. It checks the text as you type and keeps it in your browser.
 
-- Start from a sample: **Load sample** has Hearts and Color Match (`src/games/hearts.rules`, `src/games/color-match.rules`).
+- Start from a sample: **Load sample** has Hearts, Color Match and Rent Day (`src/games/hearts.rules`, `src/games/color-match.rules`, `src/games/rent-day.rules`).
 - A phrase the language doesn't know yet is flagged with the closest phrases it does know. **Copy for developer** copies a stub for a developer to implement; designers don't write code.
 - A name the rules never defined (a zone, phase, move, card value or attribute) is flagged with the closest names they do define, for the designer to fix.
 - **Play** is available once the rules read cleanly. It puts every seat on one screen (pick the player count first when the game allows a range), with undo and restart. Editing the rules ends the playtest; Play starts a fresh game under the new rules.
 - **Download** and **Upload** move the text to and from a `.rules` file.
+
+**Board games.** A game can have a `Board:` section: a table of spaces for the pieces to loop round (a `color` column is drawn as a band on the space), a piece for each player, numbers each player holds (money, say) and dice. In a phase, each `A player may …` line becomes a button on that seat's panel, greyed with the reason on hover while it is not allowed. `When a piece passes …` and `When a player lands on …` rules run as pieces move. Each seat's panel in the playtest draws the board with its pieces and owners, a line with everyone's numbers, and the seat's buttons. `src/games/rent-day.rules` is a 2 to 8 player property-trading game written this way, with 16 examples:
+
+```
+Phase: playing
+  A player may roll the dice.
+    Only if they have not rolled this turn.
+    Then:
+      Roll the dice.
+      Their piece moves forward by the roll.
+  When a player lands on a tax space:
+    They pay its tax.
+```
 
 A taste of the language (from `src/games/color-match.rules`):
 
@@ -199,7 +212,7 @@ turnhout is built as dependency-ordered sub-projects, each with its own design s
 **Next:**
 
 - **Online play** — a real transport and rooms on top of the net core (a Cloudflare Durable Object per room is the intended fit).
-- **Tokens and meeples** — non-card pieces, in the engine and in the designer language (the language is cards-only today).
+- **Tokens and meeples** — 🚧 in progress: non-card pieces, in the engine and in the designer language. Slice 1 has shipped (a board to loop round, pieces, dice, numbers such as money, buttons, and the Rent Day sample to play it); the slices after it are laid out in [the board games overview](docs/superpowers/specs/2026-10-15-board-games-overview-design.md).
 
 ## Tech stack
 

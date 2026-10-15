@@ -1,5 +1,6 @@
 import { zoneCards, type GameState } from '../../game-state';
 import { shuffleWithRng } from '../../rng';
+import { nextIn } from '../board-state';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import type { CardMatch, ConditionFn, EffectFn, PhraseEnv, ScoreFn, TurnFn, WinnerFn, ZoneRef } from '../types';
@@ -109,7 +110,11 @@ const holderGoesFirst: EffectFn = (env, args) => {
 
 const passesLeft: TurnFn = (env) => {
   if (!env.state.turn) throw new RuleError('There is no turn to pass.');
-  return leftOf(env.state.turn.current, env.seats);
+  const { current } = env.state.turn;
+  // A lone player is their own left, as before; `nextIn` would find no one else.
+  if (env.seats.length === 1) return leftOf(current, env.seats);
+  // `nextIn` is `leftOf` until a board game has players out, so card games pass the turn just as before.
+  return nextIn(env.state, current, env.seats);
 };
 
 const everyCardScores: ScoreFn = (env, args, seat) => {

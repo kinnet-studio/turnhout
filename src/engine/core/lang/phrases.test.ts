@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { standardDeckIdentities } from './cards';
 import { PhraseLibrary, STATIC_TYPES, emptyVocab, stubFor, suggestNames, vocabFrom } from './phrases';
 import { VOCAB_TYPES } from './refs';
+import { fixtureBoardGame } from './testing';
 import type { EffectFn, ParamType } from './types';
 
 const V = emptyVocab();
@@ -17,6 +18,15 @@ describe('PhraseLibrary.match', () => {
     const l = lib().score('scores {int} point(s)', () => 0);
     expect(l.match('score', 'scores 1 point', V).status).toBe('ok');
     expect(l.match('score', 'scores 2 points', V).status).toBe('ok');
+  });
+
+  it('{count} reads digits or a number word', () => {
+    const l = lib().effect('there are {count} dice', (env) => env.state);
+    expect(l.match('effect', 'There are two dice', V)).toEqual({ status: 'ok', pattern: 'there are {count} dice', args: [2] });
+    expect(l.match('effect', 'There are 3 dice', V)).toEqual({ status: 'ok', pattern: 'there are {count} dice', args: [3] });
+    expect(l.match('effect', 'There are Twelve dice', V)).toMatchObject({ status: 'ok', args: [12] });
+    expect(l.match('effect', 'There are eleven dice', V)).toMatchObject({ status: 'ok', args: [11] });
+    expect(l.match('effect', 'There are lots dice', V).status).toBe('unknown');
   });
 
   it('{string} accepts straight and curly quotes and keeps case', () => {
@@ -94,7 +104,9 @@ describe('PhraseLibrary.match', () => {
   it('looks a registered phrase up by kind and pattern', () => {
     const fn = () => true;
     const l = lib().condition('it is their move', fn, { needsMove: true }).condition('hearts are broken', () => true);
-    expect(l.get('condition', 'it is their move')).toEqual({ fn, needsMove: true });
+    expect(l.get('condition', 'it is their move')).toEqual({
+      fn, needsMove: true, needsPlayer: false, needsSpace: false, needsPayment: false, needsBoard: false, needsDice: false,
+    });
     expect(l.get('condition', 'hearts are broken')?.needsMove).toBe(false);
     expect(l.get('effect', 'it is their move')).toBeUndefined();
   });
@@ -133,6 +145,20 @@ describe('PhraseLibrary.misnamed', () => {
   it('leaves the strict answer alone', () => {
     expect(named().match('effect', 'Shuffle the dek', vocab).status).toBe('unknown');
   });
+
+  it('prefers a misspelt kind of space to a space name, whichever phrase was registered first', () => {
+    const board = vocabFrom({ maxPlayers: 2, board: fixtureBoardGame().board });
+    const spaceFirst = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
+      .moment('a player lands on {space}', () => true).moment('a player lands on {spaceclass}', () => true);
+    const kindFirst = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
+      .moment('a player lands on {spaceclass}', () => true).moment('a player lands on {space}', () => true);
+    for (const l of [spaceFirst, kindFirst]) {
+      expect(l.misnamed(['moment'], 'a player lands on a taks space', board)?.problem)
+        .toEqual({ message: 'There is no kind of space called “taks”.', suggestions: ['tax'] });
+      expect(l.misnamed(['moment'], 'a player lands on Rose Lan', board)?.problem)
+        .toEqual({ message: 'There is no space called “Rose Lan”.', suggestions: ['Rose Lane'] });
+    }
+  });
 });
 
 describe('stubFor', () => {
@@ -151,6 +177,15 @@ describe('stubFor', () => {
   it('replaces quoted text before numbers and matches the callback to the kind', () => {
     expect(stubFor('score', 'Scores 3 points for "Hearts".', V, STATIC_TYPES, { game: 'G', line: 2 })).toContain(
       "library.score('scores {int} points for {string}', (env, [a1, a2], seat) => {",
+    );
+  });
+
+  it('gives board and moment stubs the parameters their callbacks take', () => {
+    expect(stubFor('board', 'The board has 2 dice.', V, STATIC_TYPES, { game: 'G', line: 2 })).toContain(
+      "library.board('the board has {int} dice', ([a1], table) => {",
+    );
+    expect(stubFor('moment', 'A piece passes space 3', V, STATIC_TYPES, { game: 'G', line: 2 })).toContain(
+      "library.moment('a piece passes space {int}', (env, [a1], moment) => {",
     );
   });
 
@@ -174,6 +209,7 @@ describe('vocabFrom', () => {
       ],
     });
     expect(vocab).toEqual({
+      ...emptyVocab(),
       sharedZones: ['deck'], playerZones: ['hand'], maxPlayers: 4, phases: ['main'], verbs: ['play'],
       attributes: ['suit', 'rank', 'color', 'number'], standardDeck: true,
       cardValues: [{ attribute: 'color', value: 'red' }, { attribute: 'number', value: 1 }, { attribute: 'number', value: 2 }],
@@ -205,5 +241,32 @@ describe('suggestNames', () => {
   it('leaves out names with little in common', () => {
     expect(suggestNames('zzzz', ['main', 'placing'])).toEqual([]);
     expect(suggestNames('main', [])).toEqual([]);
+  });
+});
+
+describe('board vocabulary and phrase flags', () => {
+  it('builds space, counter and action words from a board game', () => {
+    const v = vocabFrom({ maxPlayers: 2, board: fixtureBoardGame().board, actions: [{ verb: 'roll', words: 'roll the dice' }] });
+    expect(v.spaces).toHaveLength(8);
+    expect(v.spaceAttributes).toEqual(['kind', 'color', 'price', 'rent', 'tax']);
+    expect(v.spaceValues).toContainEqual({ attribute: 'kind', value: 'street' });
+    expect(v.spaceValues.some((x) => x.attribute === 'price')).toBe(false);
+    expect(v.counters).toEqual(['money']);
+    expect(v.payWith).toBe('money');
+    expect(v.actions).toEqual([{ verb: 'roll', words: 'roll the dice' }]);
+    expect(v.dice).toBe(true);
+  });
+  it('knows whether the board has dice', () => {
+    expect(vocabFrom({ maxPlayers: 2, board: { ...fixtureBoardGame().board!, dice: null } }).dice).toBe(false);
+    expect(vocabFrom({ maxPlayers: 2 }).dice).toBe(false);
+  });
+  it('reports every flag a phrase was registered with', () => {
+    const l = new PhraseLibrary(STATIC_TYPES)
+      .effect('they rest', (env) => env.state, { needsPlayer: true })
+      .effect('they roll', (env) => env.state, { needsBoard: true, needsDice: true });
+    expect(l.get('effect', 'they rest')).toMatchObject({
+      needsMove: false, needsPlayer: true, needsSpace: false, needsPayment: false, needsBoard: false, needsDice: false,
+    });
+    expect(l.get('effect', 'they roll')).toMatchObject({ needsPlayer: false, needsBoard: true, needsDice: true });
   });
 });

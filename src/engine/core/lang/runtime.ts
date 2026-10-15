@@ -1,16 +1,25 @@
+import { MAX_FLOW_ITERATIONS } from '../flow';
 import type { GameState } from '../game-state';
 import type { Move } from '../moves';
 import type { PlayerId } from '../scene';
 import { MissingPhraseError, RuleError } from './diagnostics';
 import type { PhraseLibrary } from './phrases';
 import type {
-  ActionFn, CompiledGame, ConditionFn, EffectFn, ExampleEnv, ExpectFn, MoveInfo, PhraseEnv, PhraseKind, PhraseRef, ScoreFn,
-  TurnFn, WinnerFn,
+  ActionFn, CompiledGame, CompiledMoment, CompiledTrigger, CondGroup, ConditionFn, EffectFn, ExampleEnv, ExpectFn, MomentFn, Moment, MoveInfo,
+  PhraseEnv, PhraseKind, PhraseRef, ScoreFn, Subject, TurnFn, WhoFn, WinnerFn,
 } from './types';
 
 type Checker = (state: GameState, move: Move) => true | string;
 
 const DEPEND_ON_EACH_OTHER = 'Two moves depend on each other through “they have no card they could play”.';
+const KEEPS_MOVING = 'It keeps moving pieces without stopping.';
+
+/**
+ * How many moment rules may run inside one another. A lands-on rule that moves the piece again announces another
+ * landing, so a rule like that never stops on its own: past this depth it is refused instead of overflowing the stack.
+ * It is the cap the flow puts on rules that keep firing, so moment rules get as far as any other rule.
+ */
+export const MAX_MOMENT_DEPTH = MAX_FLOW_ITERATIONS;
 
 const isMissing = (ref: PhraseRef) => ref.kind === 'lang' && ref.phrase === 'missing';
 const notImplemented = (ref: PhraseRef) => new MissingPhraseError(`“${ref.text}” isn't implemented yet.`, ref.line, ref.text);
@@ -29,6 +38,8 @@ function located(error: unknown, ref: PhraseRef): RuleError {
 export class LangRuntime {
   private checker: Checker | null = null;
   private checking = false;
+  /** The moment rules whose lines are running right now, each inside the one before it. */
+  private readonly runningMoments: CompiledMoment[] = [];
 
   constructor(
     readonly game: CompiledGame,
@@ -41,14 +52,16 @@ export class LangRuntime {
     this.checker = check;
   }
 
-  env(state: GameState, move?: MoveInfo, example?: ExampleEnv): PhraseEnv {
-    return { state, game: this.game, seats: this.seats, move, check: this.check, example };
+  /** What a phrase sees. A card move is about the player making it; `subject` names someone (or a space) else. */
+  env(state: GameState, move?: MoveInfo, example?: ExampleEnv, subject?: Subject): PhraseEnv {
+    const about = subject ?? (move ? { player: move.by, space: null } : undefined);
+    return { state, game: this.game, seats: this.seats, move, check: this.check, example, subject: about, announce: this.announce };
   }
 
   /** A condition, or the compiler's all / any / phase / always. */
-  test(ref: PhraseRef, state: GameState, move?: MoveInfo, example?: ExampleEnv): boolean {
+  test(ref: PhraseRef, state: GameState, move?: MoveInfo, example?: ExampleEnv, subject?: Subject): boolean {
     if (ref.kind === 'lang') {
-      const holds = (r: PhraseRef) => this.test(r, state, move, example);
+      const holds = (r: PhraseRef) => this.test(r, state, move, example, subject);
       switch (ref.phrase) {
         case 'all': return (ref.args as PhraseRef[]).every(holds);
         case 'any': return (ref.args as PhraseRef[]).some(holds);
@@ -56,22 +69,82 @@ export class LangRuntime {
         case 'always': return true;
       }
     }
-    return this.call<ConditionFn, boolean>(ref, ['condition'], (fn) => fn(this.env(state, move, example), ref.args));
+    return this.call<ConditionFn, boolean>(ref, ['condition'], (fn) => fn(this.env(state, move, example, subject), ref.args));
   }
 
   /** An effect or a Given step, or the compiler's “If …, …”. */
-  run(ref: PhraseRef, state: GameState, move?: MoveInfo, example?: ExampleEnv): GameState {
+  run(ref: PhraseRef, state: GameState, move?: MoveInfo, example?: ExampleEnv, subject?: Subject): GameState {
     if (ref.kind === 'lang' && ref.phrase === 'if') {
       const [condition, effect] = ref.args as PhraseRef[];
-      return this.test(condition, state, move, example) ? this.run(effect, state, move, example) : state;
+      return this.test(condition, state, move, example, subject) ? this.run(effect, state, move, example, subject) : state;
     }
-    return this.call<EffectFn, GameState>(ref, ['effect', 'given'], (fn) => fn(this.env(state, move, example), ref.args));
+    return this.call<EffectFn, GameState>(ref, ['effect', 'given'], (fn) => fn(this.env(state, move, example, subject), ref.args));
+  }
+
+  /** The words of the first `Only if` group that does not hold, or null when they all do. Later groups are not asked. */
+  failedGroup(groups: CondGroup[], state: GameState, move?: MoveInfo, subject?: Subject): string | null {
+    const holds = (ref: PhraseRef) => this.test(ref, state, move, undefined, subject);
+    return groups.find((g) => !(g.mode === 'all' ? g.refs.every(holds) : g.refs.some(holds)))?.text ?? null;
   }
 
   /** Who plays next. */
   pick(ref: PhraseRef, state: GameState): PlayerId {
     return this.call<TurnFn, PlayerId>(ref, ['turn'], (fn) => fn(this.env(state), ref.args));
   }
+
+  /** The players a `When a player …:` rule picks out, in seat order. */
+  who(ref: PhraseRef, state: GameState): PlayerId[] {
+    return this.call<WhoFn, PlayerId[]>(ref, ['who'], (fn) => fn(this.env(state), ref.args));
+  }
+
+  /**
+   * Who a `When …:` rule of `phaseId` is about if it fires now, or null when it does not. A rule about a player is
+   * about the first one it picks out whose `Only if` lines hold; any other rule is about no one in particular.
+   */
+  triggerSubject(phaseId: string, trigger: CompiledTrigger, state: GameState): Subject | null {
+    if (state.turn?.phase !== phaseId) return null;
+    const holdsFor = (subject: Subject) => this.failedGroup(trigger.conditions, state, undefined, subject) === null;
+    if (trigger.when.kind === 'who') {
+      const player = this.who(trigger.when, state).find((seat) => holdsFor({ player: seat, space: null }));
+      return player === undefined ? null : { player, space: null };
+    }
+    const nobody: Subject = { player: null, space: null };
+    return this.test(trigger.when, state, undefined, undefined, nobody) && holdsFor(nobody) ? nobody : null;
+  }
+
+  /** Runs a `When …:` rule's lines about whoever it is about now. The flow only fires a rule that holds. */
+  fireTrigger(phaseId: string, trigger: CompiledTrigger, state: GameState): GameState {
+    const subject = this.triggerSubject(phaseId, trigger, state);
+    if (subject === null) throw new Error(`The rule on line ${trigger.line} was run although it does not hold.`);
+    return trigger.effects.reduce((s, ref) => this.run(ref, s, undefined, undefined, subject), state);
+  }
+
+  /**
+   * `env.announce`: a piece passed or landed on a space. Runs the current phase's passes and lands-on rules in the
+   * order written, each about the piece's player and that space, each seeing what the rules before it did. A rule's
+   * lines may move a piece again and so announce again, inside this one.
+   */
+  readonly announce = (state: GameState, moment: Moment): GameState => {
+    const rules = this.game.phases.find((p) => p.id === state.turn?.phase)?.moments ?? [];
+    const subject: Subject = { player: moment.seat, space: moment.space };
+    let s = state;
+    for (const rule of rules) {
+      const env = this.env(s, undefined, undefined, subject);
+      const happens = this.call<MomentFn, boolean>(rule.when, ['moment'], (fn) => fn(env, rule.when.args, moment));
+      if (!happens || this.failedGroup(rule.conditions, s, undefined, subject) !== null) continue;
+      // The rule to blame is the one whose lines moved the piece this time, not whichever rule the move set off first.
+      const mover = this.runningMoments.at(-1);
+      if (mover && this.runningMoments.length >= MAX_MOMENT_DEPTH) throw new RuleError(KEEPS_MOVING, mover.line, mover.text);
+      this.runningMoments.push(rule);
+      try {
+        s = rule.effects.reduce((acc, ref) => this.run(ref, acc, undefined, undefined, subject), s);
+      } finally {
+        // A rule that throws must not leave the runtime thinking it is still that deep.
+        this.runningMoments.pop();
+      }
+    }
+    return s;
+  };
 
   /** The move an example's When step makes, and who makes it. */
   act(ref: PhraseRef, state: GameState, example: ExampleEnv): { by: PlayerId; move: Move } {

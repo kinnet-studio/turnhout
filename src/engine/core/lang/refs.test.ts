@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { STANDARD_RANKS, STANDARD_SUITS, VOCAB_TYPES, parseParam, thirdPerson } from './refs';
-import { PhraseLibrary, STATIC_TYPES, emptyVocab, stubFor } from './phrases';
+import { STANDARD_RANKS, STANDARD_SUITS, VOCAB_TYPES, parseParam, participle, thirdPerson, thirdPersonWords } from './refs';
+import { PhraseLibrary, STATIC_TYPES, emptyVocab, stubFor, vocabFrom } from './phrases';
+import { FIXTURE_SPACES, fixtureBoardGame } from './testing';
 import type { Vocab } from './types';
 
 const V: Vocab = {
@@ -10,17 +11,31 @@ const V: Vocab = {
   cardValues: [{ attribute: 'color', value: 'red' }, { attribute: 'color', value: 'blue' }, { attribute: 'number', value: 7 }, { attribute: 'number', value: 2 }],
 };
 
+// The fixture's loop plus Bishop's Row (index 8); "Chance" is two of the spaces.
+const BOARD = vocabFrom({
+  maxPlayers: 2,
+  board: {
+    ...fixtureBoardGame().board!,
+    spaces: [...FIXTURE_SPACES, { name: "Bishop's Row", attrs: { kind: 'street', color: 'green', price: 300, rent: 26 } }],
+  },
+  actions: [
+    { verb: 'roll', words: 'roll the dice' }, { verb: 'end', words: 'end their turn' }, { verb: 'buy', words: 'buy the space they are on' },
+  ],
+});
+
 describe('vocabulary types', () => {
   it('declares every type with its label and stub order', () => {
     expect(VOCAB_TYPES.map((t) => [t.name, t.label])).toEqual([
       ['zone', '[zone]'], ['zones', '[zones]'], ['perzone', '[zone]'], ['player', '[player]'], ['phase', '[phase]'],
       ['move', '[action]'], ['attribute', '[attribute]'], ['card', '[card]'], ['cardlist', '[cards]'], ['cardclass', '[kind of card]'],
+      ['space', '[space]'], ['spaceclass', '[kind of space]'], ['spaceattr', '[space detail]'], ['counter', '[counter]'],
+      ['action', '[action]'], ['done', '[action done]'],
     ]);
     const order = Object.fromEntries(VOCAB_TYPES.filter((t) => t.stubOrder !== undefined).map((t) => [t.name, t.stubOrder]));
-    expect(order).toEqual({ card: 2, zone: 3, player: 4 });
+    expect(order).toEqual({ card: 2, zone: 3, space: 3, player: 4 });
   });
 
-  it.each([V, emptyVocab()])('sources have no capture groups and do not match empty text', (vocab) => {
+  it.each([V, BOARD, emptyVocab()])('sources have no capture groups and do not match empty text', (vocab) => {
     for (const type of VOCAB_TYPES) {
       const source = type.source(vocab);
       expect(new RegExp(`${source}|`).exec('')).toHaveLength(1);
@@ -232,6 +247,99 @@ describe('cards', () => {
   });
 });
 
+describe('board references', () => {
+  const v = BOARD;
+
+  it('reads a space by name, whatever the capitals or apostrophes', () => {
+    expect(parseParam('space', 'Rose Lane', v)).toEqual({ value: 5 });
+    expect(parseParam('space', 'ROSE LANE', v)).toEqual({ value: 5 });
+    expect(parseParam('space', 'bishop’s row', v)).toEqual({ value: 8 });
+    expect(parseParam('space', 'BISHOP‘S ROW', v)).toEqual({ value: 8 });
+    expect(parseParam('space', 'Go', v)).toEqual({ value: 0 });
+  });
+  it('refuses a name two spaces share', () => {
+    expect(parseParam('space', 'Chance', v)).toEqual({ error: 'There are 2 spaces called “Chance”, so this can\'t tell which one.' });
+    expect(parseParam('space', 'chance', v)).toEqual({ error: 'There are 2 spaces called “Chance”, so this can\'t tell which one.' });
+  });
+  it('does not find a space inside a longer word, or in a game with no board', () => {
+    expect(parseParam('space', 'Gone', v)).toBeNull();
+    expect(parseParam('space', 'Rose Lanes', v)).toBeNull();
+    expect(parseParam('space', 'Go', emptyVocab())).toBeNull();
+  });
+
+  it('reads kinds of space from one column', () => {
+    expect(parseParam('spaceclass', 'a street or station', v)).toEqual({ value: { attribute: 'kind', values: ['street', 'station'] } });
+    expect(parseParam('spaceclass', 'a tax space', v)).toEqual({ value: { attribute: 'kind', values: ['tax'] } });
+    expect(parseParam('spaceclass', 'an utility', v)).toEqual({ value: { attribute: 'kind', values: ['utility'] } });
+    expect(parseParam('spaceclass', 'A Brown or Green space', v)).toEqual({ value: { attribute: 'color', values: ['brown', 'green'] } });
+  });
+  it('says when kinds of space come from different columns', () => {
+    expect(parseParam('spaceclass', 'a street or brown', v)).toEqual({ error: '“a street or brown” mixes kind and color.' });
+    expect(parseParam('spaceclass', 'a brown or station or orange', v)).toEqual({ error: '“a brown or station or orange” mixes color and kind.' });
+  });
+  it('says when one value belongs to two columns', () => {
+    const both = vocabFrom({
+      maxPlayers: 2,
+      board: { ...fixtureBoardGame().board!, spaces: [{ name: 'A', attrs: { kind: 'green', color: 'green' } }, { name: 'B', attrs: { kind: 'tax' } }] },
+    });
+    expect(parseParam('spaceclass', 'a green space', both)).toEqual({ error: '“green” could be kind or color.' });
+    expect(parseParam('spaceclass', 'a tax or green', both)).toEqual({ error: '“green” could be kind or color.' });
+  });
+  it('only reads the text cells of the table as kinds of space', () => {
+    expect(parseParam('spaceclass', 'a 60 space', v)).toBeNull();
+    expect(parseParam('spaceclass', 'street', v)).toBeNull();
+    expect(parseParam('spaceclass', 'a street', emptyVocab())).toBeNull();
+  });
+
+  it('reads counters, space details, actions and what was done', () => {
+    expect(parseParam('counter', 'money', v)).toEqual({ value: 'money' });
+    expect(parseParam('counter', 'Money', v)).toEqual({ value: 'money' });
+    expect(parseParam('spaceattr', 'rent', v)).toEqual({ value: 'rent' });
+    expect(parseParam('action', 'ends their turn', v)).toEqual({ value: 'end' });
+    expect(parseParam('action', 'rolls the dice', v)).toEqual({ value: 'roll' });
+    expect(parseParam('action', 'Buys the space they are on', v)).toEqual({ value: 'buy' });
+    expect(parseParam('done', 'rolled', v)).toEqual({ value: 'roll' });
+    expect(parseParam('done', 'bought', v)).toEqual({ value: 'buy' });
+    expect(parseParam('done', 'ended', v)).toEqual({ value: 'end' });
+  });
+  it('does not read what the game does not have', () => {
+    expect(parseParam('counter', 'gold', v)).toBeNull();
+    expect(parseParam('spaceattr', 'colour', v)).toBeNull();
+    expect(parseParam('action', 'roll the dice', v)).toBeNull();
+    expect(parseParam('done', 'sold', v)).toBeNull();
+    for (const type of ['space', 'spaceclass', 'spaceattr', 'counter', 'action', 'done']) {
+      expect(parseParam(type, 'roll', emptyVocab())).toBeNull();
+    }
+  });
+});
+
+describe('verb forms', () => {
+  it('makes participles', () => {
+    expect(['roll', 'end', 'buy', 'draw', 'trade', 'bury', 'play'].map(participle))
+      .toEqual(['rolled', 'ended', 'bought', 'drawn', 'traded', 'buried', 'played']);
+  });
+  it.each([
+    ['buy', 'bought'], ['draw', 'drawn'], ['pay', 'paid'], ['build', 'built'], ['sell', 'sold'], ['take', 'taken'], ['give', 'given'],
+    ['throw', 'thrown'], ['put', 'put'], ['go', 'gone'], ['make', 'made'], ['get', 'got'], ['win', 'won'], ['lose', 'lost'], ['hold', 'held'],
+    ['keep', 'kept'], ['leave', 'left'], ['bid', 'bid'], ['deal', 'dealt'], ['spend', 'spent'], ['choose', 'chosen'],
+  ])('knows that %s is %s', (verb, done) => expect(participle(verb)).toBe(done));
+  it('adds d after an e, turns a consonant and y into ied, and otherwise adds ed', () => {
+    expect(participle('use')).toBe('used');
+    expect(participle('carry')).toBe('carried');
+    expect(participle('stay')).toBe('stayed');
+    expect(participle('pass')).toBe('passed');
+  });
+
+  it('puts only the first word of an action in the third person', () => {
+    expect(thirdPersonWords('end their turn')).toBe('ends their turn');
+    expect(thirdPersonWords('roll the dice')).toBe('rolls the dice');
+    expect(thirdPersonWords('buy the space they are on')).toBe('buys the space they are on');
+    expect(thirdPersonWords('pass')).toBe('passes');
+    expect(thirdPersonWords('try again')).toBe('tries again');
+    expect(thirdPersonWords('')).toBe('');
+  });
+});
+
 describe('inside a phrase library', () => {
   const lib = () => new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES]);
 
@@ -255,6 +363,29 @@ describe('inside a phrase library', () => {
       status: 'ok', pattern: '{player} {move} {card}', args: ['p1', 'play', { suit: 'S', rank: 12 }],
     });
     expect(l.match('condition', 'p9 plays a red 7', V)).toEqual({ status: 'invalid', message: 'This game only has players p0 to p3.' });
+  });
+  it('matches spaces, kinds of space, counters, actions and what was done as arguments', () => {
+    const l = lib()
+      .moment('a player lands on {spaceclass} someone else owns', () => true)
+      .effect('they pay its {spaceattr} to {space}', (env) => env.state)
+      .condition('{player} has {done} this turn and at least {count} {counter}', () => true)
+      .action('{player} {action}', () => ({ by: 'p0', move: { type: 'end' } }));
+    expect(l.match('moment', 'A player lands on a street or station someone else owns', BOARD)).toEqual({
+      status: 'ok', pattern: 'a player lands on {spaceclass} someone else owns',
+      args: [{ attribute: 'kind', values: ['street', 'station'] }],
+    });
+    expect(l.match('effect', 'They pay its rent to Rose Lane', BOARD)).toMatchObject({ status: 'ok', args: ['rent', 5] });
+    expect(l.match('effect', 'They pay its rent to Chance', BOARD)).toEqual({
+      status: 'invalid', message: 'There are 2 spaces called “Chance”, so this can\'t tell which one.',
+    });
+    expect(l.match('condition', 'p1 has rolled this turn and at least two money', BOARD)).toMatchObject({ status: 'ok', args: ['p1', 'roll', 2, 'money'] });
+    expect(l.match('action', 'p0 ends their turn', BOARD)).toMatchObject({ status: 'ok', args: ['p0', 'end'] });
+  });
+  it('turns a space the game never defined into a designer message', () => {
+    const l = lib().effect('they pay its {spaceattr} to {space}', (env) => env.state);
+    expect(l.misnamed(['effect'], 'They pay its rent to Rose Lne', BOARD)).toEqual({
+      kind: 'effect', problem: { message: 'There is no space called “Rose Lne”.', suggestions: ['Rose Lane'] },
+    });
   });
   it('stubs do not find references inside longer words', () => {
     const types = [...STATIC_TYPES, ...VOCAB_TYPES];
@@ -280,8 +411,15 @@ describe('names the game never defined', () => {
   };
   const missing = (what: string, name: string, suggestions: string[]) => ({ message: `There is no ${what} called “${name}”.`, suggestions });
 
-  it.each([V, emptyVocab()])('every type has a loose source with no capture groups that does not match empty text', (vocab) => {
-    for (const type of VOCAB_TYPES) {
+  // Actions and what was done are phrases of their own, not names to misspell, so they have no loose shape.
+  const NAMES = VOCAB_TYPES.filter((t) => !['action', 'done'].includes(t.name));
+
+  it('gives every type of names a loose shape, and no other', () => {
+    expect(VOCAB_TYPES.filter((t) => t.loose).map((t) => t.name)).toEqual(NAMES.map((t) => t.name));
+  });
+
+  it.each([V, BOARD, emptyVocab()])('every type has a loose source with no capture groups that does not match empty text', (vocab) => {
+    for (const type of NAMES) {
       const source = type.loose!.source(vocab);
       expect(new RegExp(`${source}|`).exec('')).toHaveLength(1);
       expect(new RegExp(`^(?:${source})$`, 'i').test('')).toBe(false);
@@ -331,6 +469,42 @@ describe('names the game never defined', () => {
     expect(misnamed('cardlist', 'the 2 of clubs and the 3 of clbs')).toEqual(missing('suit', 'clbs', ['clubs']));
     expect(misnamed('cardclass', 'a hart')).toEqual(missing('suit', 'hart', ['heart', 'hearts']));
     expect(misnamed('cardclass', 'reed cards')).toEqual(missing('card value', 'reed', ['red']));
+  });
+
+  it('names a space with the closest names, counting a shared name once', () => {
+    const board = vocabFrom({ maxPlayers: 2, board: fixtureBoardGame().board });
+    expect(misnamed('space', 'Rose Lne', board)).toEqual(missing('space', 'Rose Lne', ['Rose Lane']));
+    expect(misnamed('space', 'Chanse', board)).toEqual(missing('space', 'Chanse', ['Chance']));
+    expect(misnamed('space', 'Boardwalk', board)).toEqual(missing('space', 'Boardwalk', ['Go', 'Mill Lane', 'Income Tax']));
+    expect(misnamed('space', 'Rose Lane twice', board)).toBeNull();
+    expect(misnamed('space', 'Chance twice', board)).toBeNull();
+  });
+
+  it('names a kind of space by the word that is no value in the board\'s table', () => {
+    const board = vocabFrom({ maxPlayers: 2, board: fixtureBoardGame().board });
+    expect(misnamed('spaceclass', 'a taks space', board)).toEqual(missing('kind of space', 'taks', ['tax']));
+    expect(misnamed('spaceclass', 'a street or stattion', board)).toEqual(missing('kind of space', 'stattion', ['station']));
+    expect(misnamed('spaceclass', 'an utilty space', board)).toEqual(missing('kind of space', 'utilty', ['utility']));
+    expect(misnamed('spaceclass', 'a street or station', board)).toBeNull();
+  });
+
+  it('gives a kind of space a loose shape of its own, only on a board that has words in its table', () => {
+    const board = vocabFrom({ maxPlayers: 2, board: fixtureBoardGame().board });
+    const shaped = (text: string, vocab: Vocab) => {
+      const loose = VOCAB_TYPES.find((t) => t.name === 'spaceclass')!.loose!;
+      return new RegExp(`^(?:${loose.source(vocab)})$`, 'i').test(text);
+    };
+    expect(['a taks space', 'an inn', 'a street or stattion', 'A Taks Space'].map((t) => shaped(t, board))).toEqual([true, true, true, true]);
+    expect(['Rose Lne', 'a free parking space', 'the taks space', 'a street, station'].map((t) => shaped(t, board))).toEqual([false, false, false, false]);
+    expect(shaped('a taks space', V)).toBe(false);
+  });
+
+  it('names counters and space details', () => {
+    const board = vocabFrom({ maxPlayers: 2, board: fixtureBoardGame().board });
+    expect(misnamed('counter', 'mony', board)).toEqual(missing('counter', 'mony', ['money']));
+    expect(misnamed('counter', 'money twice', board)).toBeNull();
+    expect(misnamed('spaceattr', 'rnt', board)).toEqual(missing('space detail', 'rnt', ['rent']));
+    expect(misnamed('spaceattr', 'rent twice', board)).toBeNull();
   });
 
   it('leaves text that is no card to other phrases', () => {

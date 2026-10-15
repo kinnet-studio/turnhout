@@ -1,5 +1,5 @@
 import { zoneCards, type GameState } from '../../game-state';
-import type { CardState, PlayerId } from '../../scene';
+import type { CardState } from '../../scene';
 import type { Json } from '../../table-def';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
@@ -7,8 +7,8 @@ import { STANDARD_RANKS, STANDARD_SUITS } from '../refs';
 import type {
   ActionFn, CardMatch, CompiledGame, DeclaredMove, EffectFn, ExampleEnv, ExpectFn, PhraseEnv, ZoneRef,
 } from '../types';
-import { BOX_ZONE, handZoneOf, matchesCard, relocate, resolveSeat, resolveZoneIds, topCard } from '../zones';
-import { describeZone, soleZone } from './support';
+import { BOX_ZONE, handZoneOf, matchesCard, relocate, resolveZoneIds, topCard } from '../zones';
+import { describeZone, seatOf, soleZone } from './support';
 
 /** Lets a reason written by a designer be compared with the friendly one the game gave. */
 export function normalizeReason(s: string): string {
@@ -16,9 +16,6 @@ export function normalizeReason(s: string): string {
 }
 
 // ---- reading the example's surroundings --------------------------------------------------------
-
-/** The seat a phrase names; it has to be sitting at the table. */
-const seatOf = (env: PhraseEnv, seat: Json): PlayerId => resolveSeat({ seat: seat as string }, env);
 
 function exampleOf(env: PhraseEnv): ExampleEnv {
   if (!env.example) throw new RuleError('This step only works inside an example.');
