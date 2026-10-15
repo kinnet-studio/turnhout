@@ -337,8 +337,9 @@ The page keeps Undo, Restart, Stop and the player-count picker (2 to 8 here).
    turns each with no errors. Money only changes through Go, rent, tax and purchases, and every owned
    space's owner is a player still in.
 4. **An ending test**: with base rents only, a real game rarely ends (that is what slice 2's sets and
-   houses are for). So a variant of the text with little starting money (for example 300) is played by
-   the auto-player to a winner at 2, 4 and 8 players, with fixed seeds.
+   houses are for). So a variant of the text with little starting money (300) and no Go salary is played
+   by the auto-player to a winner at 2, 4 and 8 players, with fixed seeds. Without the salary, money only
+   leaves the table (taxes and purchases), so every game ends.
 5. Same seed and same moves give the same game; undo and replay reproduce rolls and moments exactly.
 6. The designer page loads Rent Day as a sample, shows its examples passing, and plays it at a chosen count
    from 2 to 8, with layout B, the board, the money line, and greyed buttons with reasons.
