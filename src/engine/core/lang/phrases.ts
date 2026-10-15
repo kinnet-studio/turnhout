@@ -1,4 +1,5 @@
 import type { Json } from '../table-def';
+import { isSaysColumn } from './cards';
 import type {
   ActionFn, BoardFn, BoardSpec, CardSetSpec, CardsFn, ColumnFn, ConditionFn, DeclareFn, EffectFn, ExpectFn, FactItem, FactSpec, MomentFn,
   NameProblem, ParamType, PhraseKind, ScoreFn, TargetFn, TurnFn, Vocab, WhichFn, WhoFn, WinnerFn, ZoneFn, ZoneSpec,
@@ -154,6 +155,8 @@ export function vocabFrom(game: {
   for (const set of cards) {
     for (const { attrs } of set.identities) {
       for (const [attribute, value] of Object.entries(attrs)) {
+        // What a card says is a rule for its player, not a word a rule can use about the card.
+        if (isSaysColumn(attribute)) continue;
         attributes.add(attribute);
         if (set.kind === 'table' && !cardValues.some((v) => v.attribute === attribute && v.value === value)) {
           cardValues.push({ attribute, value });

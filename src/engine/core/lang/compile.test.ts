@@ -907,4 +907,34 @@ describe('cards that say what they do', () => {
   it('is empty for a game whose decks have no says column', () => {
     expect(compileGame(COLOR_MATCH_TEXT, lib).game!.says).toEqual({});
   });
+  it('gives a game to play only while every says problem is a sentence the library does not know', () => {
+    // An unknown sentence is a phrase a developer still has to write; an empty cell is a mistake in the rules.
+    expect(compileGame(deckGameText(['| name | says |', '| Jig | They dance a jig. |'], FATE), lib).game).toBeDefined();
+    expect(compileGame(deckGameText(['| name | says |', '| Blank | |'], FATE), lib).game).toBeUndefined();
+  });
+
+  describe('when an earlier section is broken', () => {
+    const SING = ['  When a player has less than 1 money:', '    They sing.'];
+    const PROBLEMS = ['| name | says |', '| Jig | They dance a jig. |', '| Blank | |'];
+    const lineOf = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+    const summary = (text: string) => compileGame(text, lib).diagnostics.map((d) => [d.line, d.severity, d.message]);
+
+    it('shows the problem on the Board: line, not the same problem again on every says row', () => {
+      const text = deckGameText(['| name | says |', '| Dividend | They get 50 money. |'], FATE, SING)
+        .split('\n').filter((line) => !line.startsWith('    | space ')).join('\n');
+      // Without the header row the board has no counters, so each says row would also name one the game seems not to have.
+      expect(summary(text)).toEqual([
+        [18, 'error', 'Add a “space” column naming each space.'],
+        [27, 'error', 'There is no space called “Go”.'],
+        [39, 'warning', 'Some lines below can\'t be checked until line 18 is fixed.'],
+      ]);
+    });
+    it('keeps the broken Cards: line first, holds back the rules, and leaves the says problems to be shown once it is fixed', () => {
+      const fixed = deckGameText(PROBLEMS, FATE, SING);
+      const text = fixed.replace('starting in the fate pile', 'starting in the nowhere pile');
+      expect(summary(text)).toEqual([[9, 'error', 'There is no zone called “nowhere pile”.'], [lineOf(text, '    They sing.'), 'warning', 'Some lines below can\'t be checked until line 9 is fixed.']]);
+      // Once the zone is fixed, the says problems and the rule's own are all shown.
+      expect(summary(fixed).map(([line]) => line)).toEqual([7, 8, lineOf(fixed, '    They sing.')]);
+    });
+  });
 });

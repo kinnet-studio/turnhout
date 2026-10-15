@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { standardDeckIdentities } from './cards';
+import { expandCardTable, standardDeckIdentities } from './cards';
 import { PhraseLibrary, STATIC_TYPES, emptyVocab, stubFor, suggestNames, vocabFrom } from './phrases';
 import { VOCAB_TYPES } from './refs';
 import { FIXTURE_SPACES, fixtureBoardGame } from './testing';
@@ -278,6 +278,16 @@ describe('vocabFrom', () => {
       attributes: ['suit', 'rank', 'color', 'number'], standardDeck: true,
       cardValues: [{ attribute: 'color', value: 'red' }, { attribute: 'number', value: 1 }, { attribute: 'number', value: 2 }],
     });
+  });
+
+  it('leaves the says column out of the words about cards, in any capitals', () => {
+    const identities = expandCardTable({
+      columns: ['name', 'Says'],
+      rows: [{ cells: ['Dividend', 'They get 50 money.'], line: 1 }, { cells: ['Fine', 'They pay 15.'], line: 2 }],
+    });
+    const vocab = vocabFrom({ maxPlayers: 2, cards: [{ kind: 'table', identities, start: 'deck', acesHigh: false }] });
+    expect(vocab.attributes).toEqual(['name']);
+    expect(vocab.cardValues).toEqual([{ attribute: 'name', value: 'Dividend' }, { attribute: 'name', value: 'Fine' }]);
   });
 
   it('lists the facts a game declares and the names of its bank', () => {
