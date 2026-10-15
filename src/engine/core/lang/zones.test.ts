@@ -16,7 +16,7 @@ const WON_PILE: ZoneSpec = { name: 'won pile', perPlayer: true, layout: 'pile', 
 
 const GAME: CompiledGame = {
   name: 'Fixture', players: { min: 2, max: 3 }, zones: [TRICK, DECK, HAND, WON_PILE],
-  cards: [], setup: [], phases: [], end: null, examples: [], board: null,
+  cards: [], setup: [], phases: [], end: null, examples: [], board: null, facts: [],
 };
 
 const card = (id: string, zoneId: string, slot?: number, over: Partial<CardState> = {}): CardState =>

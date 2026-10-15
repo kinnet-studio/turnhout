@@ -38,6 +38,7 @@ export function emptyVocab(): Vocab {
   return {
     sharedZones: [], playerZones: [], maxPlayers: 0, phases: [], verbs: [], attributes: [], cardValues: [], standardDeck: false,
     spaces: [], spaceAttributes: [], spaceValues: [], counters: [], payWith: null, actions: [], dice: false,
+    facts: [], bank: [],
   };
 }
 

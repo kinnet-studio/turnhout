@@ -30,7 +30,7 @@ export function fixtureGame(over: Partial<CompiledGame> = {}): CompiledGame {
     players: { min: 2, max: 4 },
     zones: FIXTURE_ZONES.map((z) => ({ ...z })),
     cards: [{ kind: 'standard', identities: standardDeckIdentities(), start: 'deck', acesHigh: true }],
-    setup: [], phases: [], end: null, examples: [], board: null,
+    setup: [], phases: [], end: null, examples: [], board: null, facts: [],
     ...over,
   };
 }
@@ -178,6 +178,7 @@ export function fixtureBoardGame(over: Partial<CompiledGame> = {}): CompiledGame
       counters: [{ name: 'money', start: 1500, visibility: 'public' }],
       dice: { count: 2, sides: 6 },
       payWith: 'money',
+      bank: [],
     },
     ...over,
   });

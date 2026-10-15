@@ -518,7 +518,7 @@ describe('the Board: section', () => {
         { name: 'Rose Lane', attrs: { kind: 'street', color: 'orange', price: 180, rent: 14 } },
       ],
       pieces: { start: 0 }, counters: [{ name: 'money', start: 1500, visibility: 'public' }],
-      dice: { count: 2, sides: 6 }, payWith: 'money',
+      dice: { count: 2, sides: 6 }, payWith: 'money', bank: [],
     });
   });
   it('needs neither a Cards: nor a Table: section, but a game without a board does', () => {

@@ -19,10 +19,14 @@ export type DeclaredMove = { verb: string; from: ZoneRef; to: ZoneRef; fromText:
 /** One row of a board's table: `attrs` holds every column but `space`, blank cells left out. */
 export type SpaceSpec = { name: string; attrs: { [k: string]: Json } };
 export type CounterSpec = { name: string; start: number; visibility: 'public' | 'owner' };
+/** What the box holds that is not any player's: `name` is plural ('tokens') and `start` is how many there are to begin with. */
+export type BankSpec = { name: string; start: number };
 export type BoardSpec = {
   spaces: SpaceSpec[]; pieces: { start: number } | null; counters: CounterSpec[]; dice: { count: number; sides: number } | null;
-  payWith: string | null;
+  payWith: string | null; bank: BankSpec[];
 };
+/** A fact the game keeps about every space, card or player: a count, or something that is either so or not. */
+export type FactSpec = { name: string; on: 'space' | 'card' | 'player'; kind: 'number' | 'flag' };
 /** What one line of a Board: section says; the compiler folds the parts into a BoardSpec. */
 export type BoardPart =
   | { kind: 'loop'; spaces: SpaceSpec[] }
@@ -54,7 +58,7 @@ export type CompiledExample = { name: string; line: number; players: number | nu
 export type CompiledGame = {
   name: string; players: { min: number; max: number }; zones: ZoneSpec[]; cards: CardSetSpec[];
   setup: PhraseRef[]; phases: CompiledPhase[]; end: CompiledEnd | null; examples: CompiledExample[];
-  board: BoardSpec | null;
+  board: BoardSpec | null; facts: FactSpec[];
 };
 export type Vocab = {
   sharedZones: string[]; playerZones: string[]; maxPlayers: number; phases: string[]; verbs: string[];
@@ -66,9 +70,11 @@ export type Vocab = {
   counters: string[]; payWith: string | null; actions: { verb: string; words: string }[];
   /** True when the board has dice: a line like “There are two six-sided dice.” under Board:. */
   dice: boolean;
+  /** The facts the game keeps, and the names of the bank's numbers. */
+  facts: FactSpec[]; bank: string[];
 };
-/** Who and which space a phrase is about, when a rule is about a player's piece or a space. */
-export type Subject = { player: PlayerId | null; space: number | null };
+/** Who, which space and which card a phrase is about, when a rule is about a player's piece, a space or a card. */
+export type Subject = { player: PlayerId | null; space: number | null; card: string | null };
 /** A piece passing over or landing on a space. */
 export type Moment = { kind: 'pass' | 'land'; seat: PlayerId; space: number };
 export interface MoveInfo { verb: string; by: PlayerId; cardId: string; from: string; to: string }

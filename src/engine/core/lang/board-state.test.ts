@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  TURN_KEY, addToCounter, clearTurnLog, counterOf, didThisTurn, endsTurn, isOut, markOut, nextIn, ownerOf, pieceAt, placePiece, playersIn,
-  queueRoll, recordAction, setOwner, takeQueuedRoll, withBoardData,
+  TURN_KEY, addToCounter, bankOf, clearTurnLog, counterOf, didThisTurn, endsTurn, isOut, markOut, nextIn, ownerOf, pieceAt, placePiece,
+  playerFact, playersIn, queueRoll, recordAction, setBank, setOwner, setPlayerFact, setSpaceFact, spaceFact, takeQueuedRoll, withBoardData,
 } from './board-state';
 import { fixtureBoardGame, fixtureGame, fixturePhase, fixtureState } from './testing';
 import { chooseNext } from './zones';
@@ -90,5 +90,57 @@ describe('board state', () => {
     const s = fresh();
     expect(clearTurnLog(s)).toBe(s);
     expect(s.data).not.toHaveProperty(TURN_KEY);
+  });
+  // The bank's names are whatever the designer calls the box's stock; the store only holds a number for each.
+  describe('the bank', () => {
+    const stocked = fixtureBoardGame({
+      board: { ...game.board!, bank: [{ name: 'houses', start: 32 }, { name: 'hotels', start: 12 }] },
+    });
+    it('starts every bank number at its start value', () => {
+      const s = withBoardData(fixtureState([]), stocked, seats);
+      expect([bankOf(s, 'houses'), bankOf(s, 'hotels')]).toEqual([32, 12]);
+    });
+    it('is 0 for a name that was never declared, and for a game without a bank', () => {
+      expect(bankOf(withBoardData(fixtureState([]), stocked, seats), 'castles')).toBe(0);
+      expect(bankOf(fresh(), 'houses')).toBe(0);
+      expect(bankOf(fixtureState([]), 'houses')).toBe(0);
+    });
+    it('sets a number, leaving the others', () => {
+      const s = setBank(withBoardData(fixtureState([]), stocked, seats), 'houses', 31);
+      expect([bankOf(s, 'houses'), bankOf(s, 'hotels')]).toEqual([31, 12]);
+    });
+    it('keeps what a state already has, like the rest of the board data', () => {
+      const s = setBank(withBoardData(fixtureState([]), stocked, seats), 'houses', 3);
+      expect(withBoardData(s, stocked, seats)).toBe(s);
+    });
+  });
+  describe('facts on spaces and players', () => {
+    it('reads null until a fact is set', () => {
+      expect(spaceFact(fresh(), 5, 'houses')).toBeNull();
+      expect(playerFact(fresh(), 'p0', 'in jail')).toBeNull();
+      expect(spaceFact(fixtureState([]), 5, 'houses')).toBeNull();
+    });
+    it('sets a number on one space and leaves the others, and the other facts of that space, alone', () => {
+      const s = setSpaceFact(setSpaceFact(fresh(), 5, 'houses', 2), 5, 'mortgaged', true);
+      expect(spaceFact(s, 5, 'houses')).toBe(2);
+      expect(spaceFact(s, 5, 'mortgaged')).toBe(true);
+      expect(spaceFact(s, 1, 'houses')).toBeNull();
+      expect(spaceFact(setSpaceFact(s, 5, 'houses', 3), 5, 'mortgaged')).toBe(true);
+    });
+    it('keeps a number of 0 and a flag of false as set, which is not the same as never set', () => {
+      const s = setSpaceFact(setSpaceFact(fresh(), 1, 'houses', 0), 1, 'mortgaged', false);
+      expect([spaceFact(s, 1, 'houses'), spaceFact(s, 1, 'mortgaged')]).toEqual([0, false]);
+    });
+    it('keeps facts of players apart from facts of spaces, and one seat from another', () => {
+      const s = setPlayerFact(setSpaceFact(fresh(), 1, 'in jail', 7), 'p1', 'in jail', true);
+      expect([playerFact(s, 'p1', 'in jail'), playerFact(s, 'p0', 'in jail'), spaceFact(s, 1, 'in jail')]).toEqual([true, null, 7]);
+      expect(playerFact(s, '1', 'in jail')).toBeNull();
+    });
+    it('does not change the state it was given', () => {
+      const before = fresh();
+      const after = setSpaceFact(before, 5, 'houses', 2);
+      expect(after).not.toBe(before);
+      expect(spaceFact(before, 5, 'houses')).toBeNull();
+    });
   });
 });

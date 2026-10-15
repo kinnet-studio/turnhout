@@ -54,7 +54,7 @@ export class LangRuntime {
 
   /** What a phrase sees. A card move is about the player making it; `subject` names someone (or a space) else. */
   env(state: GameState, move?: MoveInfo, example?: ExampleEnv, subject?: Subject): PhraseEnv {
-    const about = subject ?? (move ? { player: move.by, space: null } : undefined);
+    const about = subject ?? (move ? { player: move.by, space: null, card: null } : undefined);
     return { state, game: this.game, seats: this.seats, move, check: this.check, example, subject: about, announce: this.announce };
   }
 
@@ -105,10 +105,10 @@ export class LangRuntime {
     if (state.turn?.phase !== phaseId) return null;
     const holdsFor = (subject: Subject) => this.failedGroup(trigger.conditions, state, undefined, subject) === null;
     if (trigger.when.kind === 'who') {
-      const player = this.who(trigger.when, state).find((seat) => holdsFor({ player: seat, space: null }));
-      return player === undefined ? null : { player, space: null };
+      const player = this.who(trigger.when, state).find((seat) => holdsFor({ player: seat, space: null, card: null }));
+      return player === undefined ? null : { player, space: null, card: null };
     }
-    const nobody: Subject = { player: null, space: null };
+    const nobody: Subject = { player: null, space: null, card: null };
     return this.test(trigger.when, state, undefined, undefined, nobody) && holdsFor(nobody) ? nobody : null;
   }
 
@@ -126,7 +126,7 @@ export class LangRuntime {
    */
   readonly announce = (state: GameState, moment: Moment): GameState => {
     const rules = this.game.phases.find((p) => p.id === state.turn?.phase)?.moments ?? [];
-    const subject: Subject = { player: moment.seat, space: moment.space };
+    const subject: Subject = { player: moment.seat, space: moment.space, card: null };
     let s = state;
     for (const rule of rules) {
       const env = this.env(s, undefined, undefined, subject);

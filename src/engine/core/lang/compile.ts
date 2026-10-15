@@ -157,7 +157,7 @@ function compileCards(lines: OutlineNode[], ctx: LineCtx): CardSetSpec[] {
 /** What the Board: lines above a line have said, as a board the lines below can name spaces and counters of. */
 type BoardParts = { spaces: SpaceSpec[] | null; pieces: BoardSpec['pieces']; counters: BoardSpec['counters']; dice: BoardSpec['dice']; payWith: string | null };
 
-const boardOf = (parts: BoardParts): BoardSpec => ({ ...parts, spaces: parts.spaces ?? [] });
+const boardOf = (parts: BoardParts): BoardSpec => ({ ...parts, spaces: parts.spaces ?? [], bank: [] });
 
 /**
  * Reads the Board: lines in the order written. Every line is read with the words of the lines above it (a piece
@@ -309,7 +309,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   const onlyUnknownPhrases = diagnostics.every((d) => d.severity !== 'error' || d.kind === 'unknown-phrase');
   holdBack(diagnostics, [of('players'), of('board'), of('table'), of('cards')]);
   if (name === null || players === null || phases.length === 0 || !onlyUnknownPhrases) return undefined;
-  return { name, players, zones, cards, setup, phases, end, examples, board };
+  return { name, players, zones, cards, setup, phases, end, examples, board, facts: [] };
 }
 
 /**

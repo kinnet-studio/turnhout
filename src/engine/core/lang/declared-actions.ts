@@ -18,7 +18,7 @@ function choose(
   if (!phase || !action || typeof by !== 'string') return `You can't ${move} now.`;
   if (isOut(state, by)) return OUT;
   // An action is about the player who presses it and, through “it”, the space their piece is on.
-  const subject: Subject = { player: by, space: null };
+  const subject: Subject = { player: by, space: null, card: null };
   return runtime.failedGroup(action.conditions, state, undefined, subject) ?? { phase, action, by, subject };
 }
 

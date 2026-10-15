@@ -309,9 +309,9 @@ describe('LangRuntime on a board', () => {
   const broke = (state: GameState, ...seats: string[]) => seats.reduce((s, seat) => setCounter(s, 'money', seat, -1), state);
 
   it('says who and which space a phrase is about', () => {
-    expect(runtime.env(start, undefined, undefined, { player: 'p1', space: 2 }).subject).toEqual({ player: 'p1', space: 2 });
+    expect(runtime.env(start, undefined, undefined, { player: 'p1', space: 2, card: null }).subject).toEqual({ player: 'p1', space: 2, card: null });
     const move: MoveInfo = { verb: 'play', by: 'p1', cardId: 'c1', from: 'hand-p1', to: 'middle' };
-    expect(runtime.env(start, move).subject).toEqual({ player: 'p1', space: null });
+    expect(runtime.env(start, move).subject).toEqual({ player: 'p1', space: null, card: null });
     expect(runtime.env(start).subject).toBeUndefined();
   });
 
@@ -322,7 +322,7 @@ describe('LangRuntime on a board', () => {
 
   it('runs a rule about a player for the first player it picks out, only in its phase', () => {
     expect(runtime.triggerSubject('playing', goingOut, start)).toBeNull();
-    expect(runtime.triggerSubject('playing', goingOut, broke(start, 'p0', 'p1'))).toEqual({ player: 'p0', space: null });
+    expect(runtime.triggerSubject('playing', goingOut, broke(start, 'p0', 'p1'))).toEqual({ player: 'p0', space: null, card: null });
     expect(runtime.triggerSubject('elsewhere', goingOut, broke(start, 'p0', 'p1'))).toBeNull();
     const fired = runtime.fireTrigger('playing', goingOut, broke(start, 'p1'));
     expect([isOut(fired, 'p0'), isOut(fired, 'p1')]).toEqual([false, true]);
@@ -333,8 +333,8 @@ describe('LangRuntime on a board', () => {
     const [rule] = rules.phases[0].triggers;
     const choosy = new LangRuntime(rules, lib, ['p0', 'p1']);
     const both = broke(start, 'p0', 'p1');
-    expect(choosy.triggerSubject('playing', rule, both)).toEqual({ player: 'p0', space: null });
-    expect(choosy.triggerSubject('playing', rule, recordAction(both, 'p0', 'roll the dice'))).toEqual({ player: 'p1', space: null });
+    expect(choosy.triggerSubject('playing', rule, both)).toEqual({ player: 'p0', space: null, card: null });
+    expect(choosy.triggerSubject('playing', rule, recordAction(both, 'p0', 'roll the dice'))).toEqual({ player: 'p1', space: null, card: null });
     expect(choosy.triggerSubject('playing', rule, recordAction(broke(start, 'p0'), 'p0', 'roll the dice'))).toBeNull();
   });
 
@@ -342,7 +342,7 @@ describe('LangRuntime on a board', () => {
     const duel = new LangRuntime(game, lib, ['p0', 'p1']);
     const [full] = game.phases[0].triggers;
     const twoInMiddle = arrange('p0', {}, [['5C', 'p1'], ['7C', 'p0']]);
-    expect(duel.triggerSubject('play', full, twoInMiddle)).toEqual({ player: null, space: null });
+    expect(duel.triggerSubject('play', full, twoInMiddle)).toEqual({ player: null, space: null, card: null });
     expect(duel.triggerSubject('play', full, arrange('p0', {}, [['5C', 'p1']]))).toBeNull();
     expect(duel.triggerSubject('elsewhere', full, twoInMiddle)).toBeNull();
   });

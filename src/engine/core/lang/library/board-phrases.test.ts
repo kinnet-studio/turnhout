@@ -17,7 +17,7 @@ const ROLL: DeclaredAction = { verb: 'roll', words: 'roll the dice', label: 'Rol
 const game = fixtureBoardGame({ phases: [fixturePhase('playing', [], { actions: [ROLL] })] });
 const env = (state: GameState, over: Partial<Parameters<typeof fixtureEnv>[1]> = {}) =>
   fixtureEnv(state, { game, seats: ['p0', 'p1', 'p2'], ...over });
-const as = (player: string, space: number | null = null) => ({ subject: { player, space } });
+const as = (player: string, space: number | null = null) => ({ subject: { player, space, card: null } });
 
 describe('the subject of a rule', () => {
   it('they is the subject player, and a missing one is a bug in the compiler', () => {
