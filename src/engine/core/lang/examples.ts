@@ -1,6 +1,7 @@
 // Runs a game's `Example:` blocks on the real engine: Given lines arrange the table, When lines make moves and
 // Then lines check what came of them. Every result is in a designer's words.
 import type { GameState } from '../game-state';
+import { withBoardData } from './board-state';
 import { checkPlayers, createEngine, initialState, seatsFor } from './build';
 import { MissingPhraseError, RuleError } from './diagnostics';
 import { friendlyError, friendlyReason } from './friendly';
@@ -51,7 +52,9 @@ function runExample(game: CompiledGame, library: PhraseLibrary, example: Compile
     };
 
     // Cards are in their starting zones and the first phase is on, so Given lines can arrange the table.
-    let table: GameState = { ...initialState(game, SEED), turn: first ? { current: seats[0], phase: first.id } : undefined };
+    // A board game's pieces are on their start space and its counters are full, as in a new game.
+    const turn = first ? { current: seats[0], phase: first.id } : undefined;
+    let table: GameState = withBoardData({ ...initialState(game, SEED), turn }, game, seats);
     let built: ReturnType<typeof createEngine> | null = null;
     const arranging = new LangRuntime(game, library, seats);
 

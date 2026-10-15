@@ -4,7 +4,7 @@ import { compileGame } from './compile';
 import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import type { PhraseLibrary } from './phrases';
-import { TEST_DUEL } from './testing';
+import { TEST_DUEL, TINY_BOARD } from './testing';
 import type { CompiledGame } from './types';
 
 const lib = createDefaultLibrary();
@@ -335,5 +335,62 @@ describe('claiming cards', () => {
       'Example: second', '  Given p1 holds a red 7 and a red 7', '  Then p1 holds 2 cards',
     ].join('\n'));
     expect(runExamples(rules, lib).map((r) => r.status)).toEqual(['pass', 'pass']);
+  });
+});
+
+describe('board examples', () => {
+  /** The Tiny Board with these example blocks under it. */
+  const onBoard = (...blocks: string[]) => compileGame(`${TINY_BOARD}\n\n${blocks.join('\n\n')}`, lib);
+
+  it('runs a board example', () => {
+    const { game } = onBoard([
+      'Example: rent goes to the owner', '  Given p1 owns Rose Lane', '  And p0 is on Mill Lane', '  And the next roll is 1 and 1',
+      '  When p0 rolls the dice', '  Then p0 is on Rose Lane', '  And p0 has 1486 money', '  And p1 has 1514 money',
+    ].join('\n'));
+    expect(runExamples(game!, lib)).toEqual([expect.objectContaining({ status: 'pass' })]);
+  });
+
+  it('says what a board example found instead', () => {
+    const { game } = onBoard([
+      'Example: wrong amount', '  Given p0 is on Mill Lane', '  And the next roll is 1 and 1', '  When p0 rolls the dice', '  Then p0 has 1 money',
+    ].join('\n'));
+    expect(runExamples(game!, lib)[0]).toMatchObject({ status: 'fail', message: 'Expected p0 to have 1 money, but they have 1500.' });
+  });
+
+  it('refuses a fixed roll with the wrong number of dice or an impossible face, on its own line', () => {
+    const { game } = onBoard(
+      ['Example: one number', '  Given the next roll is 3', '  When p0 rolls the dice', '  Then p0 has 1500 money'].join('\n'),
+      ['Example: a seven', '  Given the next roll is 7 and 1', '  When p0 rolls the dice', '  Then p0 has 1500 money'].join('\n'),
+    );
+    const [one, seven] = runExamples(game!, lib);
+    expect(one).toMatchObject({ status: 'fail', message: expect.stringContaining('This game rolls 2 dice, so give 2 numbers.') });
+    expect(seven).toMatchObject({ status: 'fail', message: expect.stringContaining("A 6-sided die can't roll 7.") });
+    expect(one.atLine).toBe(seven.atLine! - 5);
+  });
+
+  it('starts a board example with the pieces and counters of a new game, and keeps what Given lines changed', () => {
+    const { game } = onBoard([
+      'Example: arranged before the game starts', '  Given p1 has 100 money', '  And p1 is out',
+      '  When p0 rolls the dice', '  Then p1 has 100 money', '  And p0 has 1500 money', '  And p1 is out',
+    ].join('\n'));
+    expect(runExamples(game!, lib)).toEqual([expect.objectContaining({ status: 'pass' })]);
+  });
+
+  it('buys the space a player is on after they have rolled, and ends their turn', () => {
+    const { game } = onBoard(
+      [
+        'Example: buying', '  Given p0 is on Mill Lane', '  And p0 has rolled this turn',
+        '  When p0 buys the space they are on', '  Then p0 owns Mill Lane', '  And no one owns Rose Lane', '  And p0 has 1440 money',
+      ].join('\n'),
+      [
+        'Example: ending the turn', '  Given p0 has rolled this turn', '  When p0 ends their turn', "  Then it is p1's turn",
+      ].join('\n'),
+    );
+    expect(runExamples(game!, lib).map((r) => r.status)).toEqual(['pass', 'pass']);
+  });
+
+  it('refuses a player who is not at the table, on its own line', () => {
+    const { game } = onBoard(['Example: a stranger', '  Given p3 is on Mill Lane', '  Then p0 has 1500 money'].join('\n'));
+    expect(runExamples(game!, lib)[0]).toMatchObject({ status: 'fail', message: expect.stringContaining('There is no player p3 at this table.') });
   });
 });

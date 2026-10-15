@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { GameState } from '../../game-state';
 import {
   addToCounter, counterOf, isOut, latestRoll, markOut, ownerOf, pieceAt, placePiece, queueRoll, recordAction, setCounter, setOwner, setRoll,
+  takeQueuedRoll,
 } from '../board-state';
-import { FIXTURE_SPACES, fixtureBoardGame, fixtureBoardState, fixtureEnv, fixturePhase, runPhrase } from '../testing';
+import {
+  FIXTURE_SPACES, fixtureBoardGame, fixtureBoardState, fixtureEnv, fixtureGame, fixturePhase, fixtureState, runPhrase,
+} from '../testing';
 import type { DeclaredAction, Moment } from '../types';
 import { createDefaultLibrary } from './index';
 import { itOf, theyOf } from './support';
@@ -277,5 +280,132 @@ describe('moments', () => {
     expect(runPhrase(lib, 'moment', 'a player lands on a tax space', e, { kind: 'land', seat: 'p0', space: 1 })).toBe(false);
     expect(runPhrase(lib, 'moment', 'a player lands on a street or station', e, { kind: 'land', seat: 'p0', space: 3 })).toBe(true);
     expect(runPhrase(lib, 'moment', 'a player lands on a street or station', e, { kind: 'pass', seat: 'p0', space: 3 })).toBe(false);
+  });
+});
+
+describe('example phrases', () => {
+  // The buttons of the phase give `{action}` and `{done}` their words.
+  const BUY: DeclaredAction = { verb: 'buy', words: 'buy the space they are on', label: 'Buy', conditions: [], effects: [], line: 2 };
+  const END: DeclaredAction = { verb: 'end', words: 'end their turn', label: 'End turn', conditions: [], effects: [], line: 3 };
+  const playing = fixtureBoardGame({ phases: [fixturePhase('playing', [], { actions: [ROLL, BUY, END] })] });
+  const at = (state: GameState) => env(state, { game: playing });
+  const given = (text: string, state: GameState = fixtureBoardState(playing)) => runPhrase<GameState>(lib, 'given', text, at(state));
+  const expectThat = (text: string, state: GameState) => runPhrase<true | string>(lib, 'expect', text, at(state));
+  const base = fixtureBoardGame().board!;
+  const withDice = (dice: { count: number; sides: number } | null) => {
+    const g = fixtureBoardGame({ board: { ...base, dice }, phases: playing.phases });
+    return fixtureEnv(fixtureBoardState(g), { game: g, seats: ['p0', 'p1'] });
+  };
+  const rollGiven = (text: string, e: ReturnType<typeof withDice>) => runPhrase<GameState>(lib, 'given', text, e);
+
+  describe('given', () => {
+    it('puts a piece on a space', () => {
+      expect(pieceAt(given('p1 is on Rose Lane'), 'p1')).toBe(5);
+      expect(pieceAt(given('p1 is on Go'), 'p1')).toBe(0);
+    });
+    it('gives a space to a player', () => {
+      expect(ownerOf(given('p1 owns Rose Lane'), 5)).toBe('p1');
+    });
+    it('sets how many of a counter a player has', () => {
+      const s = given('p1 has 1486 money');
+      expect([counterOf(s, 'money', 'p0'), counterOf(s, 'money', 'p1')]).toEqual([1500, 1486]);
+    });
+    it('puts a player out without moving the turn', () => {
+      const start = fixtureBoardState(playing);
+      const s = given('p0 is out');
+      expect(isOut(s, 'p0')).toBe(true);
+      expect(pieceAt(s, 'p0')).toBeNull();
+      expect(s.turn).toEqual(start.turn);
+    });
+    it('notes what a player has done this turn, without ending the turn', () => {
+      const s = given('p0 has rolled this turn');
+      const they = (text: string, player: string) => runPhrase(lib, 'condition', text, env(s, { game: playing, ...as(player) }));
+      expect(they('they have rolled this turn', 'p0')).toBe(true);
+      expect(they('they have not rolled this turn', 'p0')).toBe(false);
+      expect(they('they have rolled this turn', 'p1')).toBe(false);
+      expect(s.turn).toEqual(fixtureBoardState(playing).turn);
+    });
+    it('refuses a player who is not at the table', () => {
+      expect(() => given('p3 is on Rose Lane')).toThrow('There is no player p3 at this table.');
+      expect(() => given('p3 owns Rose Lane')).toThrow('There is no player p3 at this table.');
+      expect(() => given('p3 has 5 money')).toThrow('There is no player p3 at this table.');
+      expect(() => given('p3 is out')).toThrow('There is no player p3 at this table.');
+      expect(() => given('p3 has rolled this turn')).toThrow('There is no player p3 at this table.');
+    });
+    it('fixes the next roll, so rolling gives exactly it', () => {
+      const queued = rollGiven('the next roll is 3 and 4', withDice({ count: 2, sides: 6 }));
+      expect(latestRoll(runPhrase<GameState>(lib, 'effect', 'roll the dice', env(queued, { game: playing })))).toEqual([3, 4]);
+    });
+    it('fixes the roll of a game with one die', () => {
+      const queued = rollGiven('the next roll is 20', withDice({ count: 1, sides: 20 }));
+      expect(takeQueuedRoll(queued).faces).toEqual([20]);
+    });
+    it('says how many numbers the dice need', () => {
+      expect(() => rollGiven('the next roll is 3', withDice({ count: 2, sides: 6 }))).toThrow('This game rolls 2 dice, so give 2 numbers.');
+      expect(() => rollGiven('the next roll is 3 and 4', withDice({ count: 1, sides: 6 }))).toThrow('This game rolls 1 die, so give 1 number.');
+    });
+    it('says which face a die cannot show', () => {
+      const six = withDice({ count: 2, sides: 6 });
+      expect(() => rollGiven('the next roll is 7 and 1', six)).toThrow("A 6-sided die can't roll 7.");
+      expect(() => rollGiven('the next roll is 1 and 0', six)).toThrow("A 6-sided die can't roll 0.");
+      expect(() => rollGiven('the next roll is 1 and -2', six)).toThrow("A 6-sided die can't roll -2.");
+      expect(() => rollGiven('the next roll is 21', withDice({ count: 1, sides: 20 }))).toThrow("A 20-sided die can't roll 21.");
+      // The highest face is fine.
+      expect(takeQueuedRoll(rollGiven('the next roll is 6 and 6', six)).faces).toEqual([6, 6]);
+    });
+    it('says when the game has no dice', () => {
+      expect(() => rollGiven('the next roll is 3 and 4', withDice(null)))
+        .toThrow('This game has no dice. Add a line like “There are two six-sided dice.” under Board:');
+      expect(() => rollGiven('the next roll is 3', withDice(null))).toThrow('This game has no dice.');
+      // A card game has no board at all, and says the same.
+      const cards = fixtureEnv(fixtureState([]), { game: fixtureGame() });
+      expect(() => rollGiven('the next roll is 3', cards)).toThrow('This game has no dice. Add a line like');
+    });
+  });
+
+  describe('action', () => {
+    it('is a player pressing one of the buttons', () => {
+      const run = (text: string) => runPhrase(lib, 'action', text, at(fixtureBoardState(playing)));
+      expect(run('p0 rolls the dice')).toEqual({ by: 'p0', move: { type: 'roll' } });
+      expect(run('p1 buys the space they are on')).toEqual({ by: 'p1', move: { type: 'buy' } });
+      expect(run('p0 ends their turn')).toEqual({ by: 'p0', move: { type: 'end' } });
+    });
+    it('refuses a player who is not at the table', () => {
+      expect(() => runPhrase(lib, 'action', 'p3 rolls the dice', at(fixtureBoardState(playing)))).toThrow('There is no player p3 at this table.');
+    });
+  });
+
+  describe('expect', () => {
+    const start = fixtureBoardState(playing);
+    it('says where a piece is', () => {
+      const onRose = placePiece(start, 'p0', 5);
+      expect(expectThat('p0 is on Rose Lane', onRose)).toBe(true);
+      expect(expectThat('p0 is on Rose Lane', placePiece(start, 'p0', 1))).toBe('Expected p0 to be on Rose Lane, but they are on Mill Lane.');
+      expect(expectThat('p0 is on Rose Lane', placePiece(start, 'p0', null))).toBe('Expected p0 to be on Rose Lane, but they have no piece on the board.');
+    });
+    it('says who owns a space', () => {
+      const owned = setOwner(start, 5, 'p1');
+      expect(expectThat('p1 owns Rose Lane', owned)).toBe(true);
+      expect(expectThat('p0 owns Rose Lane', owned)).toBe('Expected p0 to own Rose Lane, but p1 owns it.');
+      expect(expectThat('p0 owns Rose Lane', start)).toBe('Expected p0 to own Rose Lane, but no one owns it.');
+    });
+    it('says that no one owns a space', () => {
+      expect(expectThat('no one owns Rose Lane', start)).toBe(true);
+      expect(expectThat('no one owns Rose Lane', setOwner(start, 5, 'p1'))).toBe('Expected no one to own Rose Lane, but p1 owns it.');
+    });
+    it('counts what a player has', () => {
+      expect(expectThat('p0 has 1500 money', start)).toBe(true);
+      expect(expectThat('p0 has 1486 money', start)).toBe('Expected p0 to have 1486 money, but they have 1500.');
+      expect(expectThat('p1 has 1486 money', setCounter(start, 'money', 'p1', 1486))).toBe(true);
+    });
+    it('says whether a player is out', () => {
+      expect(expectThat('p0 is out', markOut(start, 'p0'))).toBe(true);
+      expect(expectThat('p0 is out', start)).toBe('Expected p0 to be out, but they are still in.');
+    });
+    it('refuses a player who is not at the table', () => {
+      for (const text of ['p3 is on Rose Lane', 'p3 owns Rose Lane', 'p3 has 5 money', 'p3 is out']) {
+        expect(() => expectThat(text, start)).toThrow('There is no player p3 at this table.');
+      }
+    });
   });
 });

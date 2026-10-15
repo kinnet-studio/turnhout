@@ -1,9 +1,10 @@
 import { cardById } from '../../game-state';
 import type { CardState, PlayerId } from '../../scene';
+import type { Json } from '../../table-def';
 import { pieceAt } from '../board-state';
 import { RuleError } from '../diagnostics';
 import type { MoveInfo, PhraseEnv, ZoneRef } from '../types';
-import { resolveZoneIds } from '../zones';
+import { resolveSeat, resolveZoneIds } from '../zones';
 
 /** How a designer would say the zone: “the trick”, “each hand”, “their hand”. */
 export function describeZone(ref: ZoneRef): string {
@@ -40,6 +41,9 @@ export function theyOf(env: PhraseEnv): PlayerId {
   if (player === undefined || player === null) throw new Error('This phrase needs a player, but none is being judged.');
   return player;
 }
+
+/** The seat an example line names; it has to be sitting at the table. */
+export const seatOf = (env: PhraseEnv, seat: Json): PlayerId => resolveSeat({ seat: seat as string }, env);
 
 /** The space a rule is about: the one it names, else the one their piece is on. Space 0 is a space, so no `||`. */
 export function itOf(env: PhraseEnv): number {

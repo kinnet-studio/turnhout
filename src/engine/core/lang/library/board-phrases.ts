@@ -3,19 +3,23 @@ import { nextInt } from '../../rng';
 import type { PlayerId } from '../../scene';
 import { readSpaceTable } from '../board';
 import {
-  addToCounter, counterOf, didThisTurn, latestRoll, markOut, nextIn, ownerOf, pieceAt, placePiece, playersIn, setOwner, setRoll, takeQueuedRoll,
+  addToCounter, counterOf, didThisTurn, isOut, latestRoll, markOut, nextIn, ownerOf, pieceAt, placePiece, playersIn, queueRoll, recordAction,
+  setCounter, setOwner, setRoll, takeQueuedRoll,
 } from '../board-state';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import { canon } from '../refs';
-import type { BoardFn, BoardSpec, ConditionFn, EffectFn, MomentFn, PhraseEnv, SpaceClass, WhoFn, WinnerFn } from '../types';
+import type { ActionFn, BoardFn, BoardSpec, ConditionFn, EffectFn, ExpectFn, MomentFn, PhraseEnv, SpaceClass, WhoFn, WinnerFn } from '../types';
 import { chooseNext } from '../zones';
-import { itOf, theyOf } from './support';
+import { itOf, seatOf, theyOf } from './support';
 
 const MIN_DICE = 1;
 const MAX_DICE = 10;
 const MIN_SIDES = 2;
 const MAX_SIDES = 100;
+
+/** Said by anything that rolls or fixes a roll in a game that has no dice. */
+const NO_DICE = 'This game has no dice. Add a line like “There are two six-sided dice.” under Board:';
 
 /** A `{name}` arrives in lowercase; to show it back the way a space is usually written, each word gets a capital. */
 const titled = (name: string): string => name.replace(/(^|\s)(\S)/g, (_, space: string, letter: string) => space + letter.toUpperCase());
@@ -137,7 +141,7 @@ const landsOnClassOwnedByOther: MomentFn = (env, args, moment) => {
 
 const rollDice: EffectFn = (env) => {
   const { dice } = boardIn(env);
-  if (!dice) throw new RuleError('This game has no dice. Add a line like “There are two six-sided dice.” under Board:');
+  if (!dice) throw new RuleError(NO_DICE);
   const queued = takeQueuedRoll(env.state);
   // An example that fixed the roll gets exactly it, and the rng stays where it was.
   if (queued.faces) return setRoll(queued.state, queued.faces);
@@ -204,7 +208,76 @@ const lastOneStanding: WinnerFn = (env) => {
   return winner;
 };
 
-/** The sentences under Board: that say what the board is, who plays on it and what they roll and pay with, and the ones that play a board game. */
+// ---- examples: given ---------------------------------------------------------------------------
+
+const isOnGiven: EffectFn = (env, [seat, space]) => placePiece(env.state, seatOf(env, seat), space as number);
+
+const ownsGiven: EffectFn = (env, [seat, space]) => setOwner(env.state, space as number, seatOf(env, seat));
+
+const hasGiven: EffectFn = (env, [seat, n, counter]) => setCounter(env.state, counter as string, seatOf(env, seat), n as number);
+
+// Going out in an example only arranges the table: whose turn it is stays as the example set it.
+const isOutGiven: EffectFn = (env, [seat]) => markOut(env.state, seatOf(env, seat));
+
+const hasDoneGiven: EffectFn = (env, [seat, verb]) => recordAction(env.state, seatOf(env, seat), verb as string, false);
+
+const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+
+/** The next roll an example fixes has to be one these dice could show, or the example would test something that cannot happen. */
+const nextRollIs: EffectFn = (env, faces) => {
+  // A card game has no board to read, but it can still be told about the dice it lacks.
+  const dice = env.game.board?.dice ?? null;
+  if (!dice) throw new RuleError(NO_DICE);
+  if (faces.length !== dice.count) {
+    throw new RuleError(`This game rolls ${plural(dice.count, 'die', 'dice')}, so give ${plural(dice.count, 'number', 'numbers')}.`);
+  }
+  const impossible = (faces as number[]).find((face) => face < 1 || face > dice.sides);
+  if (impossible !== undefined) throw new RuleError(`A ${dice.sides}-sided die can't roll ${impossible}.`);
+  return queueRoll(env.state, faces as number[]);
+};
+
+// ---- examples: action --------------------------------------------------------------------------
+
+/** A player presses one of the phase's buttons: the move is the button's verb. */
+const pressesButton: ActionFn = (env, [seat, verb]) => ({ by: seatOf(env, seat), move: { type: verb as string } });
+
+// ---- examples: expect --------------------------------------------------------------------------
+
+const isOnExpected: ExpectFn = (env, [seat, space]) => {
+  const who = seatOf(env, seat);
+  const at = pieceAt(env.state, who);
+  if (at === space) return true;
+  const instead = at === null ? 'they have no piece on the board' : `they are on ${nameOfSpace(env, at)}`;
+  return `Expected ${who} to be on ${nameOfSpace(env, space as number)}, but ${instead}.`;
+};
+
+const ownsExpected: ExpectFn = (env, [seat, space]) => {
+  const who = seatOf(env, seat);
+  const owner = ownerOf(env.state, space as number);
+  if (owner === who) return true;
+  return `Expected ${who} to own ${nameOfSpace(env, space as number)}, but ${owner === null ? 'no one' : owner} owns it.`;
+};
+
+const noOneOwnsExpected: ExpectFn = (env, [space]) => {
+  const owner = ownerOf(env.state, space as number);
+  return owner === null ? true : `Expected no one to own ${nameOfSpace(env, space as number)}, but ${owner} owns it.`;
+};
+
+const hasExpected: ExpectFn = (env, [seat, n, counter]) => {
+  const who = seatOf(env, seat);
+  const have = counterOf(env.state, counter as string, who);
+  return have === n ? true : `Expected ${who} to have ${n} ${counter}, but they have ${have}.`;
+};
+
+const isOutExpected: ExpectFn = (env, [seat]) => {
+  const who = seatOf(env, seat);
+  return isOut(env.state, who) ? true : `Expected ${who} to be out, but they are still in.`;
+};
+
+/**
+ * The sentences under Board: that say what the board is, who plays on it and what they roll and pay with, the ones that play
+ * a board game, and the Given, When and Then lines of its examples.
+ */
 export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
     .board('the board is a loop of spaces, starting at {name}', loop)
@@ -238,5 +311,18 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('they own it', owns, { needsPlayer: true, needsSpace: true })
     .effect('they are out', goesOut, { needsPlayer: true })
     .effect('their spaces go back to the bank', returnToBank, { needsPlayer: true })
-    .winner('that player wins', lastOneStanding);
+    .winner('that player wins', lastOneStanding)
+    .given('{player} is on {space}', isOnGiven)
+    .given('{player} owns {space}', ownsGiven)
+    .given('{player} has {int} {counter}', hasGiven)
+    .given('{player} is out', isOutGiven)
+    .given('{player} has {done} this turn', hasDoneGiven)
+    .given('the next roll is {int} and {int}', nextRollIs)
+    .given('the next roll is {int}', nextRollIs)
+    .action('{player} {action}', pressesButton)
+    .expect('{player} is on {space}', isOnExpected)
+    .expect('{player} owns {space}', ownsExpected)
+    .expect('no one owns {space}', noOneOwnsExpected)
+    .expect('{player} has {int} {counter}', hasExpected)
+    .expect('{player} is out', isOutExpected);
 }
