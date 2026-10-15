@@ -4,6 +4,7 @@ import { markOut, queueRoll, setBank, setCounter, setOwner, setSpaceFact, withBo
 import { readSeatExtras, seatExtras } from './board-view';
 import { createEngine, initialState } from './build';
 import { compileGame } from './compile';
+import { RuleError } from './diagnostics';
 import { createDefaultLibrary } from './library';
 import { TEST_DUEL, TINY_BOARD } from './testing';
 
@@ -191,6 +192,33 @@ describe('seat views of a board with houses and a bank', () => {
     expect(action.allowed).toBe(true);
     const noneOwned = createEngine(careless, lib, 2, initialState(careless, 1));
     expect(seatExtras(noneOwned.engine, noneOwned.runtime, noneOwned.engine.getState(), 'p0').actions.find((a) => a.target !== null)!.allowed).toBe('There is no space you own.');
+  });
+
+  it('greys a button whose target cannot be answered with that sentence, with nothing to pick, instead of failing the view', () => {
+    // A phrase only this test has, whose code fails as a careless one might.
+    const cursedLib = createDefaultLibrary().target('a cursed street', () => {
+      throw new RuleError('Nobody knows which street is cursed.');
+    });
+    const source = BUILDING.replace(BUILD, 'build a house on a cursed street');
+    const cursed = compileGame(source, cursedLib);
+    expect(cursed.diagnostics).toEqual([]);
+    const { engine, runtime } = createEngine(cursed.game!, cursedLib, 2, initialState(cursed.game!, 1));
+    const line = source.split('\n').findIndex((text) => text.includes('cursed')) + 1;
+    const { actions } = seatExtras(engine, runtime, engine.getState(), 'p0');
+    expect(actions.find((a) => a.move === 'build a house on a cursed street')).toEqual({
+      move: 'build a house on a cursed street', label: 'Build a house', allowed: `Line ${line} (“a cursed street”): Nobody knows which street is cursed.`,
+      target: { prompt: 'Pick a cursed street', spaces: {} },
+    });
+    // The other buttons are as they would be.
+    expect(actions.find((a) => a.move === 'roll the dice')!.allowed).toBe(true);
+    // Once the game is over, that is what it says, as every button does: p0 rolls onto Income Tax with too little to pay it.
+    const broke = queueRoll(setCounter(withBoardData(initialState(cursed.game!, 1), cursed.game!, ['p0', 'p1']), 'money', 'p0', 100), [1, 1]);
+    const over = createEngine(cursed.game!, cursedLib, 2, broke);
+    over.engine.dispatch({ type: 'roll the dice', by: 'p0' });
+    expect(over.engine.getState().result).toBeDefined();
+    expect(seatExtras(over.engine, over.runtime, over.engine.getState(), 'p0').actions.find((a) => a.target !== null)).toMatchObject({
+      allowed: 'The game is over.', target: { spaces: {} },
+    });
   });
 
   it('greys a button that picks a space like every other once the game is over', () => {

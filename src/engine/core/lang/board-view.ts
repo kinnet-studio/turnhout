@@ -97,16 +97,25 @@ function allowedNow(engine: GameEngine, state: GameState, seat: PlayerId, move: 
 /**
  * Which spaces a button that picks one may be pointed at, and the button's own verdict from them. A space the target phrase
  * allows is offered as pickable only when the move itself accepts it, so each one is asked of the engine; the button works when
- * any of them does, and otherwise says why the first does not, or that the player has nothing of the kind to pick.
+ * any of them does, and otherwise says why the first does not, or that the player has nothing of the kind to pick, or why
+ * the target phrase itself could not say.
  */
 function pickingView(
   engine: GameEngine, runtime: LangRuntime, state: GameState, seat: PlayerId, action: DeclaredAction, target: NonNullable<DeclaredAction['target']>,
 ): { target: TargetView; allowed: true | string } {
   const view: TargetView = { prompt: pickPrompt(target), spaces: {} };
-  for (const space of targetCandidates(runtime, action, state, seat)) view.spaces[space] = allowedNow(engine, state, seat, action.words, space);
-  const verdicts = Object.values(view.spaces);
   // Once the game is over every button says so, as the ones that pick nothing do, whatever the player owns.
-  if (verdicts.length === 0) return { target: view, allowed: state.result === undefined ? `There is no ${noneWords(target)}.` : friendlyReason('game is over') };
+  const over = state.result === undefined ? null : friendlyReason('game is over');
+  let candidates: number[];
+  try {
+    candidates = targetCandidates(runtime, action, state, seat);
+  } catch (e) {
+    // A target that cannot be answered greys the button with that sentence, as a rule that cannot be answered does.
+    return { target: view, allowed: over ?? friendlyError(e) };
+  }
+  for (const space of candidates) view.spaces[space] = allowedNow(engine, state, seat, action.words, space);
+  const verdicts = Object.values(view.spaces);
+  if (verdicts.length === 0) return { target: view, allowed: over ?? `There is no ${noneWords(target)}.` };
   return { target: view, allowed: verdicts.includes(true) ? true : verdicts[0] };
 }
 
