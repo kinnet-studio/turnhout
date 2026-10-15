@@ -46,35 +46,50 @@ export function splitList<T>(text: string, parseItem: (item: string) => T | null
 }
 
 /**
+ * Splits 'a, b and c' into items at its separators before reading any item, for items that can never hold a separator: a
+ * text that does read as one list reads as it, with no position to try. Null when some item is none.
+ */
+export function splitAtSeparators<T>(text: string, parseItem: (item: string) => T | null, separators = SEPARATORS): T[] | null {
+  const items = text.split(new RegExp(separatorSource(separators), 'i')).map(parseItem);
+  return items.every((item): item is T => item !== null) ? items : null;
+}
+
+/**
  * A type whose text is a list of items; `parse` reads one item, null for text that is none. The source and the reading
- * share `item` so that a list matches exactly when every item reads.
+ * share `item` so that a list matches exactly when every item reads. `split` says where one item ends: `splitList` for items
+ * that may hold a separator, `splitAtSeparators` for those that may not.
  */
 function listType<T extends Json>(
-  name: string, label: string, item: string, parse: (item: string) => T | null, separators = SEPARATORS,
+  name: string, label: string, item: string, parse: (item: string) => T | null, separators = SEPARATORS, split = splitList,
 ): ParamType {
   return {
     name, label,
     source: () => listSource(item, separators),
     resolve: (text) => {
-      const items = splitList(text, parse, separators);
+      const items = split(text, parse, separators);
       return items === null ? { error: `I don't understand “${text}” here.` } : { value: items };
     },
   };
 }
 
-/** One word naming a fact or a bank item: not a number, and not "a" or "an" on its own. */
+/** One word naming a bank item: not a number, and not "a" or "an" on its own. */
 const NOUN = '(?!\\d)(?!an?(?:\\s|,|$))[^\\s,]+';
-const FACT_ITEM = `(?:(?:a|an) ${NOUN}|${NOUN})`;
 const BANK_ITEM = `\\d+ ${NOUN}`;
-const A_NOUN = new RegExp(`^(?:a|an) (${NOUN})$`, 'i');
-const BARE_NOUN = new RegExp(`^${NOUN}$`, 'i');
 const COUNTED_NOUN = new RegExp(`^(\\d+) (${NOUN})$`, 'i');
 
-/** A plural noun is a number a thing has, and "a" or "an" and a noun is something it has or has not. */
+/** A word of a fact's name: no comma, and not "and", which is what separates one fact from the next. */
+const NAME_WORD = '(?!and(?![^\\s,]))[^\\s,]+';
+/** One or more words, the first of them not a number and not "a" or "an", which say what kind of fact a name is. */
+const FACT_NAME = `(?!\\d)(?!an?(?![^\\s,]))${NAME_WORD}(?: ${NAME_WORD})*`;
+const FACT_ITEM = `(?:(?:a|an) ${FACT_NAME}|${FACT_NAME})`;
+const A_FACT = new RegExp(`^(?:a|an) (${FACT_NAME})$`, 'i');
+const BARE_FACT = new RegExp(`^${FACT_NAME}$`, 'i');
+
+/** A name on its own is a number a thing has, and "a" or "an" and a name is something it has or has not. */
 function factItem(text: string): FactItem | null {
-  const flag = A_NOUN.exec(text)?.[1];
+  const flag = A_FACT.exec(text)?.[1];
   if (flag !== undefined) return { name: flag.toLowerCase(), kind: 'flag' };
-  return BARE_NOUN.test(text) ? { name: text.toLowerCase(), kind: 'number' } : null;
+  return BARE_FACT.test(text) ? { name: text.toLowerCase(), kind: 'number' } : null;
 }
 
 /** One thing the bank has, as "32 tokens" says it. */
@@ -110,7 +125,7 @@ export const STATIC_TYPES: ParamType[] = [
     resolve: (t) => ({ value: VISIBILITY[t.toLowerCase()] }),
   },
   // Lists never get a stubOrder: a stub keeps "tokens and a coin" as words, and a developer decides what they are.
-  listType('factlist', '[facts]', FACT_ITEM, factItem),
+  listType('factlist', '[facts]', FACT_ITEM, factItem, SEPARATORS, splitAtSeparators),
   listType('banklist', '[amounts]', BANK_ITEM, bankItem),
   listType('ints', '[numbers]', INT_ITEM, (text) => (WHOLE_NUMBER.test(text) ? Number(text) : null), OR_SEPARATORS),
 ];

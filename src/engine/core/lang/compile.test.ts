@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import COLOR_MATCH_TEXT from '@/games/color-match.rules?raw';
 import { canPlay, compileGame } from './compile';
+import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
@@ -638,6 +639,31 @@ describe('declaring facts and the bank', () => {
   it('declares a card fact under Cards:', () => {
     const text = COLOR_MATCH_TEXT.replace('    | blue   | 1 to 9 | 2      |', '    | blue   | 1 to 9 | 2      |\n  Cards can be poisoned.');
     expect(compileGame(text, createDefaultLibrary()).game!.facts).toEqual([{ name: 'poisoned', on: 'card', kind: 'flag' }]);
+  });
+
+  it('declares facts about players, with names of several words', () => {
+    const { game, diagnostics } = compiled(withFacts('  Players can be in jail.', '  Players can have jail turns and a crown.'));
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(game!.facts).toEqual([
+      { name: 'in jail', on: 'player', kind: 'flag' }, { name: 'jail turns', on: 'player', kind: 'number' }, { name: 'crown', on: 'player', kind: 'flag' },
+    ]);
+  });
+  it('refuses a fact about players that a counter or “out” already names', () => {
+    expect(errors(withFacts('  Players can have money.'))).toEqual([[15, '“money” is already a number each player has.']]);
+    expect(errors(withFacts('  Players can be out.'))).toEqual([[15, '“out” is already how a player leaves the game.']]);
+    expect(errors(withFacts('  Players can have OUT.'))).toEqual([[15, '“out” is already how a player leaves the game.']]);
+    // Only a fact about players is refused those names: a space may still have money and an “out”.
+    expect(errors(withFacts('  Spaces can have money and an out.'))).toEqual([]);
+    expect(errors(withFacts('  Spaces can have tokens.', '  Players can have tokens.'))).toEqual([[16, 'There are two facts called “tokens”.']]);
+  });
+  it('reads player facts in any capitals, and a count of one in the singular', () => {
+    const text = `${withFacts('  Players can be In Jail.', '  Players can have Jail Turns.')}\n${[
+      '  A player may wait.', '    Only if They Are In Jail.', '    Then:', '      They gain 1 Jail Turn.',
+      '', 'Example: waiting in jail', '  Given p0 is in jail', '  When p0 waits', '  Then p0 has 1 jail turn', '  And p0 is in jail',
+    ].join('\n')}`;
+    const { game, diagnostics } = compiled(text);
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(runExamples(game!, createDefaultLibrary())).toEqual([expect.objectContaining({ status: 'pass' })]);
   });
 
   it('has no facts and no bank unless the game declares them', () => {

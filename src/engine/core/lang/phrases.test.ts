@@ -386,9 +386,20 @@ describe('the declare phrases', () => {
       expect(read(`Spaces can have ${list}`)).toMatchObject({ status: 'ok', args: [three] });
     }
   });
-  it('wants one word for each fact, and no count', () => {
-    for (const list of ['3 houses', 'a', 'a hotel inn', 'houses and', 'houses,, a hotel', 'a a', 'hit points', 'a big hotel']) {
-      expect(read(`Spaces can have ${list}`).status).toBe('unknown');
+  it('takes names of several words, splitting at commas and “and” first', () => {
+    expect(read('Spaces can have jail turns')).toMatchObject({ args: [[{ name: 'jail turns', kind: 'number' }]] });
+    expect(read('Spaces can have hit points, a big hotel and an Old Inn')).toMatchObject({ args: [[
+      { name: 'hit points', kind: 'number' }, { name: 'big hotel', kind: 'flag' }, { name: 'old inn', kind: 'flag' },
+    ]] });
+  });
+  it('keeps “and” inside a longer word, and a lone “a” inside a name', () => {
+    expect(read('Spaces can have android parts and a band, a hit a day')).toMatchObject({ args: [[
+      { name: 'android parts', kind: 'number' }, { name: 'band', kind: 'flag' }, { name: 'hit a day', kind: 'flag' },
+    ]] });
+  });
+  it('wants no count, no lone article and no empty name', () => {
+    for (const list of ['3 houses', 'a', 'houses and', 'houses,, a hotel', 'a a', 'and', 'an and']) {
+      expect(read(`Spaces can have ${list}`).status, list).toBe('unknown');
     }
   });
 });

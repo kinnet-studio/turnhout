@@ -24,6 +24,8 @@ const LOOP_LINE = /^the\s+board\s+is\s+a\s+loop\b/i;
 const BLOCK_SECTIONS = new Set(['cards', 'table', 'board', 'setup', 'end']);
 
 const MAX_PLAYERS = 12;
+/** “They are out” already says a player has left the game, so a fact about players may not be called that. */
+const LEAVES_THE_GAME = 'out';
 
 const MISSING_GAME = 'Start with a line like “Game: My Game”.';
 const BAD_PLAYERS = 'Say how many players, like “Players: 4” or “Players: 2 to 5”.';
@@ -186,8 +188,9 @@ function declareFacts(ref: PhraseRef, ctx: LineCtx, declared: Declared[]): void 
 
 /**
  * The facts the game declares, in the order written. A fact's name is its own in the whole game, and is not a column of the
- * board's table or of a set of cards: a space's details and a card's face already say something under that name. A
- * declaration with either problem is reported on its own line and left out.
+ * board's table or of a set of cards: a space's details and a card's face already say something under that name. A fact
+ * about players is neither a counter of the board nor “out”, for players already have something under those names. A
+ * declaration with any of these problems is reported on its own line and left out.
  */
 function acceptFacts(declared: Declared[], board: BoardSpec | null, cards: CardSetSpec[], diagnostics: Diagnostic[]): FactSpec[] {
   const columns = new Set(
@@ -196,9 +199,12 @@ function acceptFacts(declared: Declared[], board: BoardSpec | null, cards: CardS
       ...cards.flatMap((set) => set.identities.flatMap((identity) => Object.keys(identity.attrs))),
     ].map((column) => column.toLowerCase()),
   );
+  const counters = new Set((board?.counters ?? []).map((counter) => counter.name));
   const facts: FactSpec[] = [];
   for (const { line, ...fact } of [...declared].sort((a, b) => a.line - b.line)) {
-    if (columns.has(fact.name)) addProblem(diagnostics, line, `“${fact.name}” is already a column of the table; give the fact another name.`);
+    if (fact.on === 'player' && counters.has(fact.name)) addProblem(diagnostics, line, `“${fact.name}” is already a number each player has.`);
+    else if (fact.on === 'player' && fact.name === LEAVES_THE_GAME) addProblem(diagnostics, line, `“${fact.name}” is already how a player leaves the game.`);
+    else if (columns.has(fact.name)) addProblem(diagnostics, line, `“${fact.name}” is already a column of the table; give the fact another name.`);
     else if (facts.some((other) => other.name === fact.name)) addProblem(diagnostics, line, `There are two facts called “${fact.name}”.`);
     else facts.push(fact);
   }
