@@ -146,18 +146,29 @@ describe('DesignerPage', () => {
     expect(screen.getByText('playtest 3')).toBeTruthy();
   });
 
-  it('loads Rent Day with no problems, all 16 examples passing, 2 to 8 players and Play on', () => {
+  it('loads Rent Day with no problems, all 31 examples passing, 2 to 8 players and Play on', () => {
     render(<DesignerPage />);
     loadSample('Rent Day');
     expect(rules().value).toBe(SAMPLES.find((s) => s.name === 'Rent Day')!.text);
     expect(screen.getByText('No problems found.')).toBeTruthy();
-    expect(screen.getByText('16 of 16 examples pass')).toBeTruthy();
+    expect(screen.getByText('31 of 31 examples pass')).toBeTruthy();
     const select = screen.getByLabelText('Players') as HTMLSelectElement;
     expect([...select.options].map((o) => o.value)).toEqual(['2', '3', '4', '5', '6', '7', '8']);
     expect(playButton().disabled).toBe(false);
     fireEvent.change(select, { target: { value: '4' } });
     play();
     expect(screen.getByText('playtest 4')).toBeTruthy();
+  });
+
+  it('loads Venom with no problems, all 7 examples passing, and Play on', () => {
+    render(<DesignerPage />);
+    loadSample('Venom');
+    expect(rules().value).toBe(SAMPLES.find((s) => s.name === 'Venom')!.text);
+    expect(screen.getByText('No problems found.')).toBeTruthy();
+    expect(screen.getByText('7 of 7 examples pass')).toBeTruthy();
+    expect(playButton().disabled).toBe(false);
+    play();
+    expect(screen.getByText('playtest 2')).toBeTruthy();
   });
 
   it('has no player count to pick for a game with a fixed number of players', () => {

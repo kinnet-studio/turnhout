@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Wrapper } from '@/components/PixiCanvas';
 import { CardTable } from '@/engine/react';
-import { seatExtras, readSeatExtras } from '@/engine/core/lang/board-view';
+import type { GameState } from '@/engine/core/game-state';
+import { seatExtras, readSeatExtras, type ActionView } from '@/engine/core/lang/board-view';
 import { createEngine, initialState } from '@/engine/core/lang/build';
 import { moveForDrop } from '@/engine/core/lang/drops';
 import { friendlyError, friendlyReason } from '@/engine/core/lang/friendly';
@@ -36,9 +37,9 @@ const PANEL_STYLE = { width: SEAT_WIDTH, flex: '0 0 auto', border: '1px solid #c
 type Started = { server: GameServer; session: GameSession; tableDef: TableDef; seats: PlayerId[] } | { error: string };
 
 /** Everything one playtest runs on, or why the rules cannot start (wrong player count, rules that never settle). */
-function start(game: CompiledGame, library: PhraseLibrary, players: number, seed: number): Started {
+function start(game: CompiledGame, library: PhraseLibrary, players: number, seed: number, initial?: GameState): Started {
   try {
-    const { engine, runtime, tableDef, seats } = createEngine(game, library, players, initialState(game, seed));
+    const { engine, runtime, tableDef, seats } = createEngine(game, library, players, initial ?? initialState(game, seed));
     // The board and each seat's buttons are not on the table, so the server adds them to every view it sends.
     const server = new GameServer({ engine, tableDef, seats, extras: (state, seat) => seatExtras(engine, runtime, state, seat) });
     return { server, session: new GameSession(server), tableDef, seats };
@@ -103,6 +104,17 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError }: {
   onError: (message: string | null) => void;
 }) {
   const { view, send, notice, flash } = useSeat(session, seat, onError);
+  // The move type of the button this seat is choosing a space for, until a space is picked or it is cancelled.
+  const [picking, setPicking] = useState<string | null>(null);
+  const extras = readSeatExtras(view?.extras);
+  // What may be picked is read from the seat's latest view, so a button that has since been greyed (an Undo took the turn
+  // back, say) ends the picking instead of leaving a stale board to click.
+  const action = picking === null ? undefined : extras?.actions.find((a) => a.move === picking);
+  const choosing = action?.allowed === true && action.target !== null ? { move: action.move, ...action.target } : null;
+  const stale = picking !== null && choosing === null;
+  useEffect(() => {
+    if (stale) setPicking(null);
+  }, [stale]);
   const option = useMemo(() => ({ fullScreen: false, limitEntireViewPort: false }), []);
   const placement: Placement = { cards: view?.scene.cards ?? [] };
   const submit = (intent: DropIntent) => {
@@ -118,20 +130,42 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError }: {
       <CardTable tableDef={tableDef} placement={placement} viewer={undefined} onDrop={submit} />
     </Wrapper>
   );
-  const extras = readSeatExtras(view?.extras);
   if (extras?.board) {
-    const press = (verb: string) => {
+    const press = (move: string) => {
       onError(null);
-      send({ type: verb });
+      setPicking(null);
+      send({ type: move });
     };
+    const startPicking = ({ move }: ActionView) => {
+      onError(null);
+      setPicking(move);
+    };
+    const picker = choosing ? {
+      prompt: choosing.prompt,
+      spaces: choosing.spaces,
+      onPick: (space: number) => {
+        onError(null);
+        setPicking(null);
+        send({ type: choosing.move, target: space });
+      },
+      onRefused: flash,
+    } : undefined;
     return (
       <div style={{ ...PANEL_STYLE, boxSizing: 'content-box', padding: 8, display: 'flex', flexDirection: 'column', gap: 8, font: '14px sans-serif', color: '#eee' }}>
         <div>{status}</div>
-        {/* Room for the notice is kept, so the board does not jump when one appears. */}
-        <div style={{ minHeight: 20, color: '#ff8a65' }}>{notice}</div>
-        <BoardGrid board={extras.board} />
+        {/* Room for the notice and the banner is kept, so the board does not jump when either appears. */}
+        <div style={{ minHeight: 28, display: 'flex', alignItems: 'center', gap: 12 }}>
+          {choosing && (
+            <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 8px', background: '#78350f', color: '#fff' }}>
+              <span>{choosing.prompt}</span>
+              <button type="button" onClick={() => setPicking(null)}>Cancel</button>
+            </div>
+          )}
+          <span style={{ color: '#ff8a65' }}>{notice}</span>
+        </div>
+        <BoardGrid board={extras.board} picking={picker} />
         <MoneyLine board={extras.board} />
-        <ActionButtons actions={extras.actions} onPress={press} onRefused={flash} />
+        <ActionButtons actions={extras.actions} onPress={press} onPick={startPicking} onRefused={flash} />
         {canvas && <div style={{ position: 'relative', height: SEAT_HEIGHT }}>{canvas}</div>}
       </div>
     );
@@ -148,16 +182,18 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError }: {
 }
 
 /** Every seat of a game on one screen, played over loopback channels exactly as an online table would be. */
-export function Playtest({ game, library, players, seed, onRestart, onStop }: {
+export function Playtest({ game, library, players, seed, initial, onRestart, onStop }: {
   game: CompiledGame;
   library: PhraseLibrary;
   players: number;
   seed: number;
+  /** A game state to start from instead of the shuffled start; for tests, which arrange who owns what. */
+  initial?: GameState;
   onRestart(): void;
   onStop(): void;
 }) {
   // Page-lifetime session — no dispose effect (StrictMode would unsubscribe it; see hearts-demo-page).
-  const started = useMemo(() => start(game, library, players, seed), [game, library, players, seed]);
+  const started = useMemo(() => start(game, library, players, seed, initial), [game, library, players, seed, initial]);
   const [problem, setProblem] = useState<string | null>(null);
   const running = 'error' in started ? null : started;
   const banner = 'error' in started ? started.error : problem;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { compileGame } from './compile';
+import { moveZoneId } from './declared-moves';
 import { moveForDrop } from './drops';
 import { createDefaultLibrary } from './library';
 import { TEST_DUEL } from './testing';
@@ -34,5 +35,24 @@ describe('moveForDrop', () => {
 
   it('maps nothing before a phase has started', () => {
     expect(moveForDrop(game, seats, undefined, 'p0', { cardId: 'c1', fromZoneId: 'hand-p0', toZoneId: 'middle', slot: 0 })).toBeNull();
+  });
+});
+
+describe('moveZoneId', () => {
+  it('says which zone a move line names for the player making it', () => {
+    expect(moveZoneId({ of: { who: 'actor' }, zone: 'hand' }, seats, 'p1')).toBe('hand-p1');
+    expect(moveZoneId({ of: { seat: 'p0' }, zone: 'hand' }, seats, 'p1')).toBe('hand-p0');
+    expect(moveZoneId({ shared: 'middle' }, seats, 'p1')).toBe('middle');
+    expect(moveZoneId({ each: 'hand' }, seats, 'p1')).toBeNull();
+    expect(moveZoneId({ of: { who: 'winner' }, zone: 'won pile' }, seats, 'p1')).toBeNull();
+  });
+  it("names the other seat for “the other player's”, at a table of two", () => {
+    expect(moveZoneId({ of: { who: 'other' }, zone: 'hand' }, seats, 'p0')).toBe('hand-p1');
+    expect(moveZoneId({ of: { who: 'other' }, zone: 'hand' }, seats, 'p1')).toBe('hand-p0');
+  });
+  it("names no zone for “the other player's” when there is not exactly one other, or the mover is not seated", () => {
+    expect(moveZoneId({ of: { who: 'other' }, zone: 'hand' }, ['p0', 'p1', 'p2'], 'p0')).toBeNull();
+    expect(moveZoneId({ of: { who: 'other' }, zone: 'hand' }, ['p0'], 'p0')).toBeNull();
+    expect(moveZoneId({ of: { who: 'other' }, zone: 'hand' }, seats, 'p9')).toBeNull();
   });
 });

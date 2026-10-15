@@ -4,14 +4,19 @@ import { actionLine, actionOf, cardMoveVerb, compilePhase, type VerbUses } from 
 import { addProblem, attempt, matchEffectLine, matchLine, phaseId, phraseFn, rejectChildren, type LineCtx } from './compile-util';
 import type { Diagnostic } from './diagnostics';
 import { parseOutline, type OutlineNode } from './outline';
-import { normalizeLine, vocabFrom, type PhraseLibrary } from './phrases';
+import { normalizeLine, suggestNames, vocabFrom, type PhraseLibrary } from './phrases';
+import { canon } from './refs';
 import type {
-  BoardFn, BoardSpec, CardSetSpec, CardsFn, CompiledEnd, CompiledGame, CompiledPhase, PhraseRef, SpaceSpec, Vocab, ZoneFn, ZoneSpec,
+  BankSpec, BoardFn, BoardSpec, CardSetSpec, CardsFn, CompiledEnd, CompiledGame, CompiledPhase, DeclareFn, FactSpec, PhraseRef, SpaceSpec, Vocab,
+  ZoneFn, ZoneSpec,
 } from './types';
 
 export type CompileResult = { game?: CompiledGame; diagnostics: Diagnostic[] };
 
-const SECTION = /^(game|players|cards|table|board|setup|phase|end|example)\s*:\s*(.*)$/i;
+const SECTION_NAMES = ['Game', 'Players', 'Cards', 'Table', 'Board', 'Setup', 'Phase', 'End', 'Example'];
+const SECTION = new RegExp(`^(${SECTION_NAMES.join('|')})\\s*:\\s*(.*)$`, 'i');
+/** A top-level line that is only a name and a colon: a section that holds lines, whatever it is named. */
+const HEADER = /^([^:]+?)\s*:$/;
 const PLAYERS = /^(\d+)(?:\s+to\s+(\d+))?$/i;
 const GAME_ENDS = /^the game ends when\s+(.+)$/i;
 const SAYS_WINS = /\bwins\b/i;
@@ -23,27 +28,62 @@ const MAX_PLAYERS = 12;
 const MISSING_GAME = 'Start with a line like “Game: My Game”.';
 const BAD_PLAYERS = 'Say how many players, like “Players: 4” or “Players: 2 to 5”.';
 const TOO_MANY_PLAYERS = `This game can have at most ${MAX_PLAYERS} players.`;
-const UNKNOWN_SECTION = "I don't understand this section. Sections are Game, Players, Cards, Table, Board, Setup, Phase, End and Example.";
+const UNKNOWN_SECTION = `I don't understand this section. Sections are ${SECTION_NAMES.slice(0, -1).join(', ')} and ${SECTION_NAMES.at(-1)}, or a column of the board's table.`;
 const NO_LOOP = 'Add a line like “The board is a loop of spaces, starting at Go:” under Board:.';
 const HOLD_BACK = (line: number) => `Some lines below can't be checked until line ${line} is fixed.`;
 
 type Section = { keyword: string; rest: string; node: OutlineNode };
 
-/** The top-level lines that start a section; anything else is reported. */
-function readSections(roots: OutlineNode[], diagnostics: Diagnostic[]): Section[] {
+/**
+ * The top-level lines that start one of the fixed sections, and the other top-level lines, which are left for later: a line
+ * naming a column of the board's table is a section too, but which names those are is only known once the board is read.
+ */
+function readSections(roots: OutlineNode[], diagnostics: Diagnostic[]): { sections: Section[]; others: OutlineNode[] } {
   const sections: Section[] = [];
+  const others: OutlineNode[] = [];
   for (const node of roots) {
     const found = SECTION.exec(node.text);
-    const keyword = found?.[1].toLowerCase() ?? '';
-    const rest = found?.[2].trim() ?? '';
+    if (!found) {
+      others.push(node);
+      continue;
+    }
+    const keyword = found[1].toLowerCase();
+    const rest = found[2].trim();
     // Sections that hold lines take them on the lines below, not after the colon.
-    if (!found || (BLOCK_SECTIONS.has(keyword) && rest !== '')) {
+    if (BLOCK_SECTIONS.has(keyword) && rest !== '') {
       addProblem(diagnostics, node.line, UNKNOWN_SECTION, { text: node.text });
       continue;
     }
     sections.push({ keyword, rest, node });
   }
-  return sections;
+  return { sections, others };
+}
+
+const capitalised = (name: string) => name.charAt(0).toUpperCase() + name.slice(1);
+
+/** Every column of a board's table that holds something for some space, as the designer's table spells it; the `space` column only names them. */
+const columnsOf = (board: BoardSpec): string[] => [...new Set(board.spaces.flatMap((space) => Object.keys(space.attrs)))];
+
+/**
+ * The sections named after a column of the board's table, each with the column it is about. A line that is neither one of
+ * those nor a fixed section is reported, with the closest names of both kinds. While the board has a problem the columns
+ * are not known, so such lines are left alone: the board's own problem is already on screen, and fixing it may show they
+ * were columns.
+ */
+function readColumnSections(others: OutlineNode[], board: BoardSpec | null, boardFailed: boolean, diagnostics: Diagnostic[]): Section[] {
+  const columns = board ? columnsOf(board) : [];
+  const found: Section[] = [];
+  for (const node of others) {
+    const header = HEADER.exec(node.text)?.[1].replace(/\s+/g, ' ');
+    const column = header === undefined ? undefined : columns.find((name) => canon(name) === canon(header));
+    if (column !== undefined) {
+      found.push({ keyword: column, rest: '', node });
+    } else if (!boardFailed) {
+      const suggestions = header === undefined ? [] : suggestNames(header, [...SECTION_NAMES, ...columns.map(capitalised)]);
+      addProblem(diagnostics, node.line, UNKNOWN_SECTION, { text: node.text, suggestions });
+    }
+  }
+  return found;
 }
 
 /** Every line a section takes up: its own, the lines under it and the rows of their tables. */
@@ -79,8 +119,8 @@ function readActions(lines: string[]): Vocab['actions'] {
   for (const line of lines) {
     const found = actionLine(line);
     if (!found) continue;
-    const { verb, words } = actionOf(found);
-    if (!byWords.has(words)) byWords.set(words, { verb, words });
+    const { verb, words, base, target } = actionOf(found);
+    if (!byWords.has(words)) byWords.set(words, { verb, words, base, targeted: target !== null });
   }
   return [...byWords.values()];
 }
@@ -135,12 +175,46 @@ function compileTable(lines: OutlineNode[], ctx: LineCtx): ZoneSpec[] {
   return zones;
 }
 
-function compileCards(lines: OutlineNode[], ctx: LineCtx): CardSetSpec[] {
+/** A fact a line declares and the line it is on, kept until the columns of every table are known. */
+type Declared = FactSpec & { line: number };
+
+/** Reads what a line that declares facts says, and keeps each fact in `declared`. */
+function declareFacts(ref: PhraseRef, ctx: LineCtx, declared: Declared[]): void {
+  const facts = attempt(ctx, ref.line, ref.text, () => phraseFn<DeclareFn>(ctx, ref)(ref.args));
+  for (const fact of facts ?? []) declared.push({ ...fact, line: ref.line });
+}
+
+/**
+ * The facts the game declares, in the order written. A fact's name is its own in the whole game, and is not a column of the
+ * board's table or of a set of cards: a space's details and a card's face already say something under that name. A
+ * declaration with either problem is reported on its own line and left out.
+ */
+function acceptFacts(declared: Declared[], board: BoardSpec | null, cards: CardSetSpec[], diagnostics: Diagnostic[]): FactSpec[] {
+  const columns = new Set(
+    [
+      ...(board ? ['space', ...columnsOf(board)] : []),
+      ...cards.flatMap((set) => set.identities.flatMap((identity) => Object.keys(identity.attrs))),
+    ].map((column) => column.toLowerCase()),
+  );
+  const facts: FactSpec[] = [];
+  for (const { line, ...fact } of [...declared].sort((a, b) => a.line - b.line)) {
+    if (columns.has(fact.name)) addProblem(diagnostics, line, `“${fact.name}” is already a column of the table; give the fact another name.`);
+    else if (facts.some((other) => other.name === fact.name)) addProblem(diagnostics, line, `There are two facts called “${fact.name}”.`);
+    else facts.push(fact);
+  }
+  return facts;
+}
+
+function compileCards(lines: OutlineNode[], ctx: LineCtx, declared: Declared[]): CardSetSpec[] {
   const sets: CardSetSpec[] = [];
   let total = 0;
   for (const node of lines) {
     rejectChildren(node, ctx.diagnostics);
-    const ref = matchLine('cards', node.text.replace(/:$/, ''), node.line, ctx);
+    const ref = matchLine('cards', node.text.replace(/:$/, ''), node.line, ctx, 'declare');
+    if (ref.kind === 'declare') {
+      declareFacts(ref, ctx, declared);
+      continue;
+    }
     if (ref.kind !== 'cards') continue;
     const set = attempt(ctx, node.line, ref.text, () => phraseFn<CardsFn>(ctx, ref)(ref.args, node.table));
     if (!set) continue;
@@ -155,24 +229,32 @@ function compileCards(lines: OutlineNode[], ctx: LineCtx): CardSetSpec[] {
 }
 
 /** What the Board: lines above a line have said, as a board the lines below can name spaces and counters of. */
-type BoardParts = { spaces: SpaceSpec[] | null; pieces: BoardSpec['pieces']; counters: BoardSpec['counters']; dice: BoardSpec['dice']; payWith: string | null };
+type BoardParts = {
+  spaces: SpaceSpec[] | null; pieces: BoardSpec['pieces']; counters: BoardSpec['counters']; dice: BoardSpec['dice']; payWith: string | null;
+  bank: BankSpec[] | null;
+};
 
-const boardOf = (parts: BoardParts): BoardSpec => ({ ...parts, spaces: parts.spaces ?? [] });
+const boardOf = (parts: BoardParts): BoardSpec => ({ ...parts, spaces: parts.spaces ?? [], bank: parts.bank ?? [] });
 
 /**
  * Reads the Board: lines in the order written. Every line is read with the words of the lines above it (a piece
  * starts on a space the table already named), so each gets a vocabulary of its own. A line that repeats one above
- * is reported and the first one stands. Null when there is no Board: section, or no loop of spaces in it.
+ * is reported and the first one stands. A line that declares facts goes to `declared`. Null when there is no Board:
+ * section, or no loop of spaces in it.
  */
-function compileBoard(sections: Section[], maxPlayers: number, stage: (vocab: Vocab) => LineCtx): BoardSpec | null {
+function compileBoard(sections: Section[], maxPlayers: number, stage: (vocab: Vocab) => LineCtx, declared: Declared[]): BoardSpec | null {
   if (sections.length === 0) return null;
-  const parts: BoardParts = { spaces: null, pieces: null, counters: [], dice: null, payWith: null };
+  const parts: BoardParts = { spaces: null, pieces: null, counters: [], dice: null, payWith: null, bank: null };
   const ctxFor = () => stage(vocabFrom({ maxPlayers, board: boardOf(parts) }));
   const { diagnostics } = ctxFor();
   for (const node of linesOf(sections)) {
     const ctx = ctxFor();
     rejectChildren(node, diagnostics);
-    const ref = matchLine('board', node.text.replace(/:$/, ''), node.line, ctx);
+    const ref = matchLine('board', node.text.replace(/:$/, ''), node.line, ctx, 'declare');
+    if (ref.kind === 'declare') {
+      declareFacts(ref, ctx, declared);
+      continue;
+    }
     if (ref.kind !== 'board') continue;
     const part = attempt(ctx, node.line, ref.text, () => phraseFn<BoardFn>(ctx, ref)(ref.args, node.table));
     if (!part) continue;
@@ -198,12 +280,34 @@ function compileBoard(sections: Section[], maxPlayers: number, stage: (vocab: Vo
         if (parts.payWith) already('There is already a “Players pay with …” line above.');
         else parts.payWith = part.counter;
         break;
+      case 'bank':
+        if (parts.bank) already('There is already a “The bank has …” line above.');
+        else parts.bank = part.bank;
+        break;
     }
   }
   if (parts.spaces) return boardOf(parts);
   // A loop line with a problem has said so already; this is for a Board: that never had one.
   if (!linesOf(sections).some((node) => LOOP_LINE.test(node.text))) addProblem(diagnostics, sections[0].node.line, NO_LOOP);
   return null;
+}
+
+/**
+ * What the sections named after a column say, by column and in the order written. Each line is about a space, so it may use
+ * phrases that need one.
+ */
+function compileColumns(sections: Section[], ctx: LineCtx): CompiledGame['columns'] {
+  const about: LineCtx = { ...ctx, space: true };
+  const lines = new Map<string, PhraseRef[]>();
+  for (const { keyword, node } of sections) {
+    const refs = lines.get(keyword) ?? [];
+    lines.set(keyword, refs);
+    for (const line of node.children) {
+      rejectChildren(line, ctx.diagnostics);
+      refs.push(matchLine('column', line.text, line.line, about));
+    }
+  }
+  return Object.fromEntries(lines);
 }
 
 /** A phase that is not the first needs a `go to` from some other phase, or the game can never reach it. */
@@ -255,20 +359,21 @@ function compileEnd(sections: Section[], ctx: LineCtx): CompiledEnd | null {
 function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]): CompiledGame | undefined {
   const outline = parseOutline(text);
   diagnostics.push(...outline.diagnostics);
-  const sections = readSections(outline.roots, diagnostics);
+  const { sections, others } = readSections(outline.roots, diagnostics);
   const of = (keyword: string) => sections.filter((s) => s.keyword === keyword);
 
   const name = readGameName(of('game'), diagnostics);
   const players = readPlayers(of('players'), diagnostics);
   const maxPlayers = players?.max ?? 0;
-  const stage = (vocab: Vocab): LineCtx => ({ library, vocab, gameName: name ?? 'Untitled', inMove: false, player: false, space: false, diagnostics });
+  const stage = (vocab: Vocab): LineCtx => ({ library, vocab, gameName: name ?? 'Untitled', inMove: false, player: false, space: false, card: false, diagnostics });
 
   // A board game may have no cards and no zones at all.
   if (of('board').length === 0) {
     if (of('cards').length === 0) addProblem(diagnostics, 1, 'Add a Cards: section.');
     if (of('table').length === 0) addProblem(diagnostics, 1, 'Add a Table: section.');
   }
-  const board = compileBoard(of('board'), maxPlayers, stage);
+  const declared: Declared[] = [];
+  const board = compileBoard(of('board'), maxPlayers, stage, declared);
   const zones = compileTable(linesOf(of('table')), stage(vocabFrom({ maxPlayers })));
 
   // Phases and move verbs are read ahead, so a rule may name a phase that comes later in the text.
@@ -282,13 +387,18 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   // Buttons are read ahead too: “they have not rolled this turn” may come before the action that rolls.
   const actions = readActions(phaseLines);
 
-  const cards = compileCards(linesOf(of('cards')), stage(vocabFrom({ maxPlayers, zones, phases: phaseIds, verbs, actions })));
+  const cards = compileCards(linesOf(of('cards')), stage(vocabFrom({ maxPlayers, zones, phases: phaseIds, verbs, actions })), declared);
+  // Facts are checked once both tables are read, since a fact may be named like a column of either.
+  const facts = acceptFacts(declared, board, cards, diagnostics);
 
-  const ctx = stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board, actions }));
+  const ctx = stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board, actions, facts }));
   const setup = linesOf(of('setup')).map((node) => {
     rejectChildren(node, diagnostics);
     return matchEffectLine(node.text, node.line, ctx);
   });
+  // Which headers name a column is only known now that the board is, wherever in the text they stand.
+  const boardFailed = board === null && of('board').length > 0;
+  const columns = compileColumns(readColumnSections(others, board, boardFailed, diagnostics), ctx);
 
   const phases: CompiledPhase[] = [];
   const seen = new Set<string>();
@@ -309,7 +419,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   const onlyUnknownPhrases = diagnostics.every((d) => d.severity !== 'error' || d.kind === 'unknown-phrase');
   holdBack(diagnostics, [of('players'), of('board'), of('table'), of('cards')]);
   if (name === null || players === null || phases.length === 0 || !onlyUnknownPhrases) return undefined;
-  return { name, players, zones, cards, setup, phases, end, examples, board };
+  return { name, players, zones, cards, setup, phases, end, examples, board, facts, columns };
 }
 
 /**

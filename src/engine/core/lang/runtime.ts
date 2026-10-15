@@ -2,11 +2,13 @@ import { MAX_FLOW_ITERATIONS } from '../flow';
 import type { GameState } from '../game-state';
 import type { Move } from '../moves';
 import type { PlayerId } from '../scene';
+import { numberIn } from './board';
+import { isMissing } from './compile-util';
 import { MissingPhraseError, RuleError } from './diagnostics';
 import type { PhraseLibrary } from './phrases';
 import type {
-  ActionFn, CompiledGame, CompiledMoment, CompiledTrigger, CondGroup, ConditionFn, EffectFn, ExampleEnv, ExpectFn, MomentFn, Moment, MoveInfo,
-  PhraseEnv, PhraseKind, PhraseRef, ScoreFn, Subject, TurnFn, WhoFn, WinnerFn,
+  ActionFn, ColumnFn, CompiledGame, CompiledMoment, CompiledTrigger, CondGroup, ConditionFn, EffectFn, ExampleEnv, ExpectFn, MomentFn, Moment, MoveInfo,
+  PhraseEnv, PhraseKind, PhraseRef, ScoreFn, Subject, TargetFn, TurnFn, WhichFn, WhoFn, WinnerFn,
 } from './types';
 
 type Checker = (state: GameState, move: Move) => true | string;
@@ -21,7 +23,6 @@ const KEEPS_MOVING = 'It keeps moving pieces without stopping.';
  */
 export const MAX_MOMENT_DEPTH = MAX_FLOW_ITERATIONS;
 
-const isMissing = (ref: PhraseRef) => ref.kind === 'lang' && ref.phrase === 'missing';
 const notImplemented = (ref: PhraseRef) => new MissingPhraseError(`“${ref.text}” isn't implemented yet.`, ref.line, ref.text);
 
 /** What a phrase threw, as a RuleError that says which line of the rules it came from. */
@@ -54,8 +55,8 @@ export class LangRuntime {
 
   /** What a phrase sees. A card move is about the player making it; `subject` names someone (or a space) else. */
   env(state: GameState, move?: MoveInfo, example?: ExampleEnv, subject?: Subject): PhraseEnv {
-    const about = subject ?? (move ? { player: move.by, space: null } : undefined);
-    return { state, game: this.game, seats: this.seats, move, check: this.check, example, subject: about, announce: this.announce };
+    const about = subject ?? (move ? { player: move.by, space: null, card: null } : undefined);
+    return { state, game: this.game, seats: this.seats, move, check: this.check, example, subject: about, announce: this.announce, columnValue: this.columnValue };
   }
 
   /** A condition, or the compiler's all / any / phase / always. */
@@ -87,6 +88,11 @@ export class LangRuntime {
     return groups.find((g) => !(g.mode === 'all' ? g.refs.every(holds) : g.refs.some(holds)))?.text ?? null;
   }
 
+  /** Whether a button's target phrase allows the player in `subject` to pick `space`. */
+  allowsTarget(ref: PhraseRef, state: GameState, subject: Subject, space: number): boolean {
+    return this.call<TargetFn, boolean>(ref, ['target'], (fn) => fn(this.env(state, undefined, undefined, subject), ref.args, space));
+  }
+
   /** Who plays next. */
   pick(ref: PhraseRef, state: GameState): PlayerId {
     return this.call<TurnFn, PlayerId>(ref, ['turn'], (fn) => fn(this.env(state), ref.args));
@@ -97,22 +103,32 @@ export class LangRuntime {
     return this.call<WhoFn, PlayerId[]>(ref, ['who'], (fn) => fn(this.env(state), ref.args));
   }
 
+  /** The ids of the cards a `When a card …:` rule picks out, in the order the phrase gives them. */
+  which(ref: PhraseRef, state: GameState): string[] {
+    return this.call<WhichFn, string[]>(ref, ['which'], (fn) => fn(this.env(state), ref.args));
+  }
+
   /**
    * Who a `When …:` rule of `phaseId` is about if it fires now, or null when it does not. A rule about a player is
-   * about the first one it picks out whose `Only if` lines hold; any other rule is about no one in particular.
+   * about the first one it picks out whose `Only if` lines hold, and a rule about a card the first such card; any other
+   * rule is about no one in particular.
    */
   triggerSubject(phaseId: string, trigger: CompiledTrigger, state: GameState): Subject | null {
     if (state.turn?.phase !== phaseId) return null;
     const holdsFor = (subject: Subject) => this.failedGroup(trigger.conditions, state, undefined, subject) === null;
     if (trigger.when.kind === 'who') {
-      const player = this.who(trigger.when, state).find((seat) => holdsFor({ player: seat, space: null }));
-      return player === undefined ? null : { player, space: null };
+      const player = this.who(trigger.when, state).find((seat) => holdsFor({ player: seat, space: null, card: null }));
+      return player === undefined ? null : { player, space: null, card: null };
     }
-    const nobody: Subject = { player: null, space: null };
+    if (trigger.when.kind === 'which') {
+      const card = this.which(trigger.when, state).find((id) => holdsFor({ player: null, space: null, card: id }));
+      return card === undefined ? null : { player: null, space: null, card };
+    }
+    const nobody: Subject = { player: null, space: null, card: null };
     return this.test(trigger.when, state, undefined, undefined, nobody) && holdsFor(nobody) ? nobody : null;
   }
 
-  /** Runs a `When …:` rule's lines about whoever it is about now. The flow only fires a rule that holds. */
+  /** Runs a `When …:` rule's lines about whoever or whichever card it is about now. The flow only fires a rule that holds. */
   fireTrigger(phaseId: string, trigger: CompiledTrigger, state: GameState): GameState {
     const subject = this.triggerSubject(phaseId, trigger, state);
     if (subject === null) throw new Error(`The rule on line ${trigger.line} was run although it does not hold.`);
@@ -126,7 +142,7 @@ export class LangRuntime {
    */
   readonly announce = (state: GameState, moment: Moment): GameState => {
     const rules = this.game.phases.find((p) => p.id === state.turn?.phase)?.moments ?? [];
-    const subject: Subject = { player: moment.seat, space: moment.space };
+    const subject: Subject = { player: moment.seat, space: moment.space, card: null };
     let s = state;
     for (const rule of rules) {
       const env = this.env(s, undefined, undefined, subject);
@@ -144,6 +160,21 @@ export class LangRuntime {
       }
     }
     return s;
+  };
+
+  /**
+   * `env.columnValue`: what a column of the board's table comes to for a space. It starts from the table's cell and each line of
+   * the column's section then has its say in the order written, about that space and no player, seeing what the line before
+   * made of it. A column no section is about is just its cell.
+   */
+  readonly columnValue = (state: GameState, space: number, column: string): number | null => {
+    const spec = this.game.board?.spaces[space];
+    if (!spec) throw new Error(`There is no space ${space} on this board.`);
+    const subject: Subject = { player: null, space, card: null };
+    return (Object.hasOwn(this.game.columns, column) ? this.game.columns[column] : []).reduce(
+      (value, ref) => this.call<ColumnFn, number | null>(ref, ['column'], (fn) => fn(this.env(state, undefined, undefined, subject), ref.args, value)),
+      numberIn(spec, column),
+    );
   };
 
   /** The move an example's When step makes, and who makes it. */

@@ -1,7 +1,7 @@
 import type { Json } from '../table-def';
 import type {
-  ActionFn, BoardFn, BoardSpec, CardSetSpec, CardsFn, ConditionFn, EffectFn, ExpectFn, MomentFn, NameProblem, ParamType, PhraseKind,
-  ScoreFn, TurnFn, Vocab, WhoFn, WinnerFn, ZoneFn, ZoneSpec,
+  ActionFn, BoardFn, BoardSpec, CardSetSpec, CardsFn, ColumnFn, ConditionFn, DeclareFn, EffectFn, ExpectFn, FactItem, FactSpec, MomentFn,
+  NameProblem, ParamType, PhraseKind, ScoreFn, TargetFn, TurnFn, Vocab, WhichFn, WhoFn, WinnerFn, ZoneFn, ZoneSpec,
 } from './types';
 
 const VISIBILITY: Record<string, string> = {
@@ -11,6 +11,80 @@ const VISIBILITY: Record<string, string> = {
 };
 
 const COUNT_WORDS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+
+// ---- lists -------------------------------------------------------------------------------------
+
+/** How the items of a list are separated: "a, b and c", with or without a comma before the last "and". */
+export const SEPARATORS = [', and ', ', ', ' and '];
+/** Numbers are said as alternatives: "25, 50 or 100". */
+const OR_SEPARATORS = [', or ', ', ', ' or '];
+
+export const separatorSource = (separators: string[]): string => `(?:${separators.join('|')})`;
+
+/** One or more items joined by the separators. */
+export const listSource = (item: string, separators = SEPARATORS): string => `${item}(?:${separatorSource(separators)}${item})*`;
+
+/** Splits 'a, b and c' into items, trying every separator position so names containing 'and' still work. */
+export function splitList<T>(text: string, parseItem: (item: string) => T | null, separators = SEPARATORS): T[] | null {
+  const lower = text.toLowerCase();
+  const seps: { at: number; len: number }[] = [];
+  for (let at = 0; at < lower.length; at++) {
+    for (const sep of separators) if (lower.startsWith(sep, at)) seps.push({ at, len: sep.length });
+  }
+  const from = (start: number): T[] | null => {
+    const last = parseItem(text.slice(start));
+    if (last !== null) return [last];
+    for (const sep of seps) {
+      if (sep.at <= start) continue;
+      const head = parseItem(text.slice(start, sep.at));
+      const rest = head === null ? null : from(sep.at + sep.len);
+      if (head !== null && rest !== null) return [head, ...rest];
+    }
+    return null;
+  };
+  return from(0);
+}
+
+/**
+ * A type whose text is a list of items; `parse` reads one item, null for text that is none. The source and the reading
+ * share `item` so that a list matches exactly when every item reads.
+ */
+function listType<T extends Json>(
+  name: string, label: string, item: string, parse: (item: string) => T | null, separators = SEPARATORS,
+): ParamType {
+  return {
+    name, label,
+    source: () => listSource(item, separators),
+    resolve: (text) => {
+      const items = splitList(text, parse, separators);
+      return items === null ? { error: `I don't understand “${text}” here.` } : { value: items };
+    },
+  };
+}
+
+/** One word naming a fact or a bank item: not a number, and not "a" or "an" on its own. */
+const NOUN = '(?!\\d)(?!an?(?:\\s|,|$))[^\\s,]+';
+const FACT_ITEM = `(?:(?:a|an) ${NOUN}|${NOUN})`;
+const BANK_ITEM = `\\d+ ${NOUN}`;
+const A_NOUN = new RegExp(`^(?:a|an) (${NOUN})$`, 'i');
+const BARE_NOUN = new RegExp(`^${NOUN}$`, 'i');
+const COUNTED_NOUN = new RegExp(`^(\\d+) (${NOUN})$`, 'i');
+
+/** A plural noun is a number a thing has, and "a" or "an" and a noun is something it has or has not. */
+function factItem(text: string): FactItem | null {
+  const flag = A_NOUN.exec(text)?.[1];
+  if (flag !== undefined) return { name: flag.toLowerCase(), kind: 'flag' };
+  return BARE_NOUN.test(text) ? { name: text.toLowerCase(), kind: 'number' } : null;
+}
+
+/** One thing the bank has, as "32 tokens" says it. */
+function bankItem(text: string): { name: string; start: number } | null {
+  const found = COUNTED_NOUN.exec(text);
+  return found ? { name: found[2].toLowerCase(), start: Number(found[1]) } : null;
+}
+
+const WHOLE_NUMBER = /^-?\d+$/;
+const INT_ITEM = '-?\\d+';
 
 /** Parameter types that need no game vocabulary. */
 export const STATIC_TYPES: ParamType[] = [
@@ -25,6 +99,9 @@ export const STATIC_TYPES: ParamType[] = [
   { name: 'string', label: '[text]', stubOrder: 1, source: () => '["“”][^"“”]*["“”]', resolve: (t) => ({ value: t.slice(1, -1) }) },
   { name: 'word', label: '[word]', source: () => '\\S+', resolve: (t) => ({ value: t }) },
   { name: 'name', label: '[name]', source: () => '.+?', resolve: (t) => ({ value: t.toLowerCase() }) },
+  // The name of a per-player zone that is not a row: a trailing "row" is the word that says it is one, so that “each player has a
+  // camp row that …” is read only as a row called camp, and never also as a pile called “camp row”.
+  { name: 'unrowedname', label: '[name]', source: () => '.+?(?<! row)', resolve: (t) => ({ value: t.toLowerCase() }) },
   { name: 'layout', label: '[layout]', source: () => 'pile|row|hand', resolve: (t) => ({ value: t.toLowerCase() }) },
   {
     name: 'visibility',
@@ -32,25 +109,31 @@ export const STATIC_TYPES: ParamType[] = [
     source: () => Object.keys(VISIBILITY).join('|'),
     resolve: (t) => ({ value: VISIBILITY[t.toLowerCase()] }),
   },
+  // Lists never get a stubOrder: a stub keeps "tokens and a coin" as words, and a developer decides what they are.
+  listType('factlist', '[facts]', FACT_ITEM, factItem),
+  listType('banklist', '[amounts]', BANK_ITEM, bankItem),
+  listType('ints', '[numbers]', INT_ITEM, (text) => (WHOLE_NUMBER.test(text) ? Number(text) : null), OR_SEPARATORS),
 ];
 
 export function emptyVocab(): Vocab {
   return {
     sharedZones: [], playerZones: [], maxPlayers: 0, phases: [], verbs: [], attributes: [], cardValues: [], standardDeck: false,
     spaces: [], spaceAttributes: [], spaceValues: [], counters: [], payWith: null, actions: [], dice: false,
+    facts: [], bank: [],
   };
 }
 
 /**
  * The words a designer may use about a game: its zones, card attributes and values, phases and move verbs, and for a
- * board game its spaces, the words of their table, its counters and the actions a player may take.
+ * board game its spaces, the words of their table, its counters, the actions a player may take, the facts it declares
+ * and what its bank holds.
  * Always make a new one per compile stage: the library caches what it builds from a Vocab by object.
  */
 export function vocabFrom(game: {
   maxPlayers: number; zones?: ZoneSpec[]; cards?: CardSetSpec[]; phases?: string[]; verbs?: string[];
-  board?: BoardSpec | null; actions?: { verb: string; words: string }[];
+  board?: BoardSpec | null; actions?: Vocab['actions']; facts?: FactSpec[];
 }): Vocab {
-  const { zones = [], cards = [], board = null } = game;
+  const { zones = [], cards = [], board = null, facts = [] } = game;
   const attributes = new Set<string>();
   const cardValues: Vocab['cardValues'] = [];
   for (const set of cards) {
@@ -63,6 +146,8 @@ export function vocabFrom(game: {
       }
     }
   }
+  // A count declared on cards is a number a card has, read and changed in the same words as a number of its table.
+  for (const fact of facts) if (fact.on === 'card' && fact.kind === 'number') attributes.add(fact.name);
   const spaceAttributes = new Set<string>();
   const spaceValues: Vocab['spaceValues'] = [];
   for (const { attrs } of board?.spaces ?? []) {
@@ -90,6 +175,8 @@ export function vocabFrom(game: {
     payWith: board?.payWith ?? null,
     actions: game.actions ?? [],
     dice: (board?.dice ?? null) !== null,
+    facts,
+    bank: (board?.bank ?? []).map((b) => b.name),
   };
 }
 
@@ -105,11 +192,12 @@ export type MatchResult =
   | { status: 'invalid'; message: string };
 
 /**
- * What a phrase needs, checked when a game is compiled: from the rule around it, a move being made, a player the rule
- * is about or a space; from the game, something to pay with, a board (a Board: loop of spaces) or dice.
+ * What a phrase needs, checked when a game is compiled: from the rule around it, a move being made, a player, a space or
+ * a card the rule is about; from the game, something to pay with, a board (a Board: loop of spaces) or dice.
  */
 export type PhraseOpts = {
-  needsMove?: boolean; needsPlayer?: boolean; needsSpace?: boolean; needsPayment?: boolean; needsBoard?: boolean; needsDice?: boolean;
+  needsMove?: boolean; needsPlayer?: boolean; needsSpace?: boolean; needsCard?: boolean; needsPayment?: boolean; needsBoard?: boolean;
+  needsDice?: boolean;
 };
 
 type Part = { literal: string } | { type: ParamType };
@@ -138,6 +226,16 @@ const MAX_SUGGESTIONS = 3;
  * meant: less than one letter of the phrase's own words, so it only settles a tie.
  */
 const NARROW_BONUS = 0.5;
+
+/**
+ * How alike a misnamed text is to the name closest to it among the suggestions, 0 when none is alike enough to have been
+ * meant. Where two phrases have the same words of their own, the one whose names the text is nearer to is the one meant:
+ * “it has a hotl” is a fact misspelt, and “it has a prise” a detail.
+ */
+function nearness(text: string, suggestions: string[]): number {
+  const closest = Math.max(0, ...suggestions.map((name) => nameScore(text.toLowerCase(), name.toLowerCase())));
+  return closest >= MIN_SUGGESTION_SCORE ? closest : 0;
+}
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -220,22 +318,26 @@ export class PhraseLibrary {
   cards(p: string, fn: CardsFn): this { return this.add('cards', p, fn); }
   zone(p: string, fn: ZoneFn): this { return this.add('zone', p, fn); }
   board(p: string, fn: BoardFn): this { return this.add('board', p, fn); }
+  declare(p: string, fn: DeclareFn): this { return this.add('declare', p, fn); }
+  column(p: string, fn: ColumnFn, opts?: PhraseOpts): this { return this.add('column', p, fn, opts); }
   condition(p: string, fn: ConditionFn, opts?: PhraseOpts): this { return this.add('condition', p, fn, opts); }
   effect(p: string, fn: EffectFn, opts?: PhraseOpts): this { return this.add('effect', p, fn, opts); }
   turn(p: string, fn: TurnFn): this { return this.add('turn', p, fn); }
   who(p: string, fn: WhoFn, opts?: PhraseOpts): this { return this.add('who', p, fn, opts); }
+  which(p: string, fn: WhichFn, opts?: PhraseOpts): this { return this.add('which', p, fn, opts); }
   score(p: string, fn: ScoreFn): this { return this.add('score', p, fn); }
   winner(p: string, fn: WinnerFn): this { return this.add('winner', p, fn); }
   moment(p: string, fn: MomentFn): this { return this.add('moment', p, fn); }
   given(p: string, fn: EffectFn): this { return this.add('given', p, fn); }
   action(p: string, fn: ActionFn): this { return this.add('action', p, fn); }
+  target(p: string, fn: TargetFn, opts?: PhraseOpts): this { return this.add('target', p, fn, opts); }
   expect(p: string, fn: ExpectFn): this { return this.add('expect', p, fn); }
 
   get(kind: PhraseKind, pattern: string): ({ fn: unknown } & Required<PhraseOpts>) | undefined {
     const entry = this.entries.get(kind)?.get(pattern.toLowerCase());
     return entry && {
-      fn: entry.fn, needsMove: entry.needsMove, needsPlayer: entry.needsPlayer, needsSpace: entry.needsSpace, needsPayment: entry.needsPayment,
-      needsBoard: entry.needsBoard, needsDice: entry.needsDice,
+      fn: entry.fn, needsMove: entry.needsMove, needsPlayer: entry.needsPlayer, needsSpace: entry.needsSpace, needsCard: entry.needsCard,
+      needsPayment: entry.needsPayment, needsBoard: entry.needsBoard, needsDice: entry.needsDice,
     };
   }
 
@@ -272,20 +374,22 @@ export class PhraseLibrary {
   /**
    * For a line `match` found no phrase for: whether it has the shape of a phrase of one of `kinds` once the names in it
    * are let loose, with a name the game never defined (“Shuffle the dek” is “shuffle {zone}” and there is no zone
-   * “dek”). The phrase with the most words of its own wins. Null when no phrase has the line's shape that way: then it is
-   * a phrase nobody has written yet. Only says what is wrong; it never makes a line match.
+   * “dek”). The phrase with the most words of its own wins; of phrases with as many, the one whose names the misnamed text
+   * is nearest to, else the one registered first. Null when no phrase has the line's shape that way: then it is a phrase
+   * nobody has written yet. Only says what is wrong; it never makes a line match.
    */
   misnamed(kinds: PhraseKind[], text: string, vocab: Vocab): Misnamed | null {
     const line = normalizeLine(text);
-    let best: (Misnamed & { rank: number }) | null = null;
+    let best: (Misnamed & { rank: number; near: number }) | null = null;
     for (const kind of kinds) {
       for (const entry of this.entries.get(kind)?.values() ?? []) {
-        if (best && best.rank >= entry.specificity + NARROW_BONUS) continue;
+        // A phrase that could only tie is still read: it may name something nearer.
+        if (best && best.rank > entry.specificity + NARROW_BONUS) continue;
         const found = this.looseRegexFor(entry, vocab)?.exec(line);
         const named = found ? this.firstMisnamed(entry, found, vocab) : null;
         if (!named) continue;
         const rank = entry.specificity + (named.narrow ? NARROW_BONUS : 0);
-        if (!best || rank > best.rank) best = { kind, problem: named.problem, rank };
+        if (!best || rank > best.rank || (rank === best.rank && named.near > best.near)) best = { kind, problem: named.problem, rank, near: named.near };
       }
     }
     return best && { kind: best.kind, problem: best.problem };
@@ -319,7 +423,8 @@ export class PhraseLibrary {
     ofKind.set(pattern, {
       pattern, parts, display, literal: literal.replace(/\s+/g, ' ').trim(), specificity, fn,
       needsMove: opts.needsMove ?? false, needsPlayer: opts.needsPlayer ?? false, needsSpace: opts.needsSpace ?? false,
-      needsPayment: opts.needsPayment ?? false, needsBoard: opts.needsBoard ?? false, needsDice: opts.needsDice ?? false,
+      needsCard: opts.needsCard ?? false, needsPayment: opts.needsPayment ?? false, needsBoard: opts.needsBoard ?? false,
+      needsDice: opts.needsDice ?? false,
     });
     return this;
   }
@@ -362,11 +467,11 @@ export class PhraseLibrary {
   }
 
   /**
-   * The first name in a loose match the game never defined, and whether its loose shape is a narrow one; null when there
-   * is none, or some text is no name at all.
+   * The first name in a loose match the game never defined, whether its loose shape is a narrow one and how near the text is
+   * to the names suggested for it; null when there is none, or some text is no name at all.
    */
-  private firstMisnamed(entry: Entry, found: RegExpExecArray, vocab: Vocab): { problem: NameProblem; narrow: boolean } | null {
-    let first: { problem: NameProblem; narrow: boolean } | null = null;
+  private firstMisnamed(entry: Entry, found: RegExpExecArray, vocab: Vocab): { problem: NameProblem; narrow: boolean; near: number } | null {
+    let first: { problem: NameProblem; narrow: boolean; near: number } | null = null;
     let group = 1;
     for (const part of entry.parts) {
       if (!('type' in part)) continue;
@@ -374,7 +479,7 @@ export class PhraseLibrary {
       if (!part.type.loose || this.isWhole(part.type, text, vocab)) continue;
       const named = part.type.loose.explain(text, vocab);
       if (named === null) return null;
-      first ??= { problem: named, narrow: part.type.loose.narrow ?? false };
+      first ??= { problem: named, narrow: part.type.loose.narrow ?? false, near: nearness(text, named.suggestions) };
     }
     return first;
   }
@@ -395,10 +500,13 @@ function stubParams(kind: PhraseKind, argNames: string[]): string {
   switch (kind) {
     case 'cards':
     case 'board': return `${args}, table`;
+    case 'declare': return args;
     case 'zone': return argNames.length > 0 ? args : '';
+    case 'column': return `env, ${args}, value`;
     case 'score': return `env, ${args}, seat`;
     case 'winner': return `env, ${args}, scores`;
     case 'moment': return `env, ${args}, moment`;
+    case 'target': return `env, ${args}, space`;
     default: return argNames.length > 0 ? `env, ${args}` : 'env';
   }
 }

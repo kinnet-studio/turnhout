@@ -1,4 +1,5 @@
 import type { ActionView, BoardView } from '@/engine/core/lang/board-view';
+import { counted } from '@/engine/core/lang/refs';
 import { seatColor } from './seat-colors';
 
 /** The seat's number, so p10 comes after p9; anything that is not `p<n>` goes last. */
@@ -21,38 +22,47 @@ function entryFor(board: BoardView, seat: string): string {
   return numbers.length === 0 ? seat : `${seat} ${numbers.join(', ')}`;
 }
 
-/** Everyone's numbers on one line, each in its seat's color. */
+/** Everyone's numbers on one line, each in its seat's color, and under it what the bank has left: "bank: 31 houses, 12 hotels". */
 export function MoneyLine({ board }: { board: BoardView }) {
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', font: 'bold 14px sans-serif' }}>
-      {seatsOf(board).map((seat) => <span key={seat} style={{ color: seatColor(seat) }}>{entryFor(board, seat)}</span>)}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, font: 'bold 14px sans-serif' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px' }}>
+        {seatsOf(board).map((seat) => <span key={seat} style={{ color: seatColor(seat) }}>{entryFor(board, seat)}</span>)}
+      </div>
+      {board.bank.length > 0 && <div style={{ color: '#d1d5db' }}>bank: {board.bank.map(({ name, count }) => counted(count, name)).join(', ')}</div>}
     </div>
   );
 }
 
 /**
  * The seat's buttons. A button that may not be pressed stays on the page, greyed, with the reason on hover; pressing it
- * explains instead of sending (a real `disabled` button would say nothing on a tap).
+ * explains instead of sending (a real `disabled` button would say nothing on a tap). A button that picks a space does not
+ * send when pressed: it asks to pick, and the move goes once a space is.
  */
-export function ActionButtons({ actions, onPress, onRefused }: {
+export function ActionButtons({ actions, onPress, onPick, onRefused }: {
   actions: ActionView[];
-  onPress(verb: string): void;
+  onPress(move: string): void;
+  onPick(action: ActionView): void;
   onRefused(reason: string): void;
 }) {
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-      {actions.map(({ verb, label, allowed }, i) => (
-        <button
-          key={`${i}-${verb}`}
-          type="button"
-          aria-disabled={allowed !== true}
-          title={allowed === true ? undefined : allowed}
-          onClick={() => (allowed === true ? onPress(verb) : onRefused(allowed))}
-          style={{ padding: '6px 12px', font: '14px sans-serif', opacity: allowed === true ? 1 : 0.5, cursor: allowed === true ? 'pointer' : 'not-allowed' }}
-        >
-          {label}
-        </button>
-      ))}
+      {actions.map((action, i) => {
+        const { move, label, allowed, target } = action;
+        const press = () => (target !== null ? onPick(action) : onPress(move));
+        return (
+          <button
+            key={`${i}-${move}`}
+            type="button"
+            aria-disabled={allowed !== true}
+            title={allowed === true ? undefined : allowed}
+            onClick={() => (allowed === true ? press() : onRefused(allowed))}
+            style={{ padding: '6px 12px', font: '14px sans-serif', opacity: allowed === true ? 1 : 0.5, cursor: allowed === true ? 'pointer' : 'not-allowed' }}
+          >
+            {label}
+          </button>
+        );
+      })}
     </div>
   );
 }

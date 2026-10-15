@@ -7,6 +7,7 @@ import { RuleError } from './diagnostics';
 import { makeRng } from '../rng';
 import type { CardState } from '../scene';
 import { zoneCards, type GameState } from '../game-state';
+import { fixtureEnv } from './testing';
 import type { CompiledGame, PhraseEnv, ZoneSpec } from './types';
 
 const TRICK: ZoneSpec = { name: 'trick', perPlayer: false, layout: 'row', visibility: 'public' };
@@ -16,7 +17,7 @@ const WON_PILE: ZoneSpec = { name: 'won pile', perPlayer: true, layout: 'pile', 
 
 const GAME: CompiledGame = {
   name: 'Fixture', players: { min: 2, max: 3 }, zones: [TRICK, DECK, HAND, WON_PILE],
-  cards: [], setup: [], phases: [], end: null, examples: [], board: null,
+  cards: [], setup: [], phases: [], end: null, examples: [], board: null, facts: [], columns: {},
 };
 
 const card = (id: string, zoneId: string, slot?: number, over: Partial<CardState> = {}): CardState =>
@@ -25,7 +26,7 @@ const card = (id: string, zoneId: string, slot?: number, over: Partial<CardState
 const stateWith = (cards: CardState[], over: Partial<GameState> = {}): GameState => ({ cards, data: {}, rng: makeRng(1), ...over });
 
 const SEATS = ['p0', 'p1', 'p2'];
-const envFor = (state: GameState, move?: PhraseEnv['move']): PhraseEnv => ({ state, game: GAME, seats: SEATS, move, check: () => true });
+const envFor = (state: GameState, move?: PhraseEnv['move']): PhraseEnv => fixtureEnv(state, { game: GAME, seats: SEATS, move });
 const MOVE = { verb: 'play', by: 'p1', cardId: 'c1', from: 'hand-p1', to: 'trick' };
 
 describe('zone ids', () => {
@@ -85,6 +86,32 @@ describe('seats and zone references', () => {
   it('explains “their” outside a move', () => {
     expect(() => resolveSeat({ who: 'actor' }, envFor(state))).toThrow(RuleError);
     expect(() => resolveSeat({ who: 'actor' }, envFor(state))).toThrow('Only a rule about a player\'s move can say “their”.');
+  });
+  it('resolves the other player as the seat that is not the actor, at a table of two', () => {
+    const two = { ...envFor(state), seats: ['p0', 'p1'] };
+    expect(resolveSeat({ who: 'other' }, { ...two, move: MOVE })).toBe('p0');
+    expect(resolveSeat({ who: 'other' }, two, 'p0')).toBe('p1');
+    expect(resolveSeat({ who: 'other' }, two, 'p1')).toBe('p0');
+    expect(resolveZoneIds({ of: { who: 'other' }, zone: 'hand' }, { ...two, move: MOVE })).toEqual(['hand-p0']);
+    // Who the seats are does not matter, only that there is one other.
+    expect(resolveSeat({ who: 'other' }, { ...two, seats: ['p3', 'p1'] }, 'p3')).toBe('p1');
+  });
+  it('takes the player a rule is about when no move is being made, for “their” and “the other player” alike', () => {
+    const rule = (player: string, seats = SEATS) => fixtureEnv(state, { game: GAME, seats, subject: { player, space: null, card: null } });
+    expect(resolveSeat({ who: 'actor' }, rule('p2'))).toBe('p2');
+    expect(resolveSeat({ who: 'other' }, rule('p1', ['p0', 'p1']))).toBe('p0');
+    // A move's player comes first, then whoever the rule is about.
+    expect(resolveSeat({ who: 'actor' }, { ...rule('p2'), move: MOVE })).toBe('p1');
+    // A rule about a card is about no player.
+    const aboutCard = fixtureEnv(state, { game: GAME, seats: SEATS, subject: { player: null, space: null, card: 'c1' } });
+    expect(() => resolveSeat({ who: 'actor' }, aboutCard)).toThrow('Only a rule about a player\'s move can say “their”.');
+  });
+  it('explains “the other player” in a game that is not for two, and outside a rule about a player', () => {
+    expect(() => resolveSeat({ who: 'other' }, envFor(state, MOVE))).toThrow(RuleError);
+    expect(() => resolveSeat({ who: 'other' }, envFor(state, MOVE))).toThrow('“the other player” needs a game for two players.');
+    expect(() => resolveSeat({ who: 'other' }, { ...envFor(state, MOVE), seats: ['p1'] })).toThrow('“the other player” needs a game for two players.');
+    expect(() => resolveSeat({ who: 'other' }, { ...envFor(state), seats: ['p0', 'p1'] }, 'p5')).toThrow('There is no player p5 at this table.');
+    expect(() => resolveSeat({ who: 'other' }, { ...envFor(state), seats: ['p0', 'p1'] })).toThrow('Only a rule about a player can say “the other player”.');
   });
   it('rejects a seat that is not at the table', () => {
     const twoSeats = { ...envFor(state), seats: ['p0', 'p1'] };

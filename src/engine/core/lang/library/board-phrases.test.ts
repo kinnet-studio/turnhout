@@ -4,8 +4,9 @@ import {
   addToCounter, clearTurnLog, counterOf, isOut, latestRoll, markOut, ownerOf, pieceAt, placePiece, queueRoll, recordAction, setCounter, setOwner,
   setRoll, takeQueuedRoll,
 } from '../board-state';
+import { RuleError } from '../diagnostics';
 import {
-  FIXTURE_SPACES, fixtureBoardGame, fixtureBoardState, fixtureEnv, fixtureGame, fixturePhase, fixtureState, runPhrase,
+  FIXTURE_SPACES, fixtureBoardGame, fixtureBoardState, fixtureEnv, fixtureGame, fixturePhase, fixtureState, runPhrase, vocabFor,
 } from '../testing';
 import type { DeclaredAction, Moment } from '../types';
 import { createDefaultLibrary } from './index';
@@ -13,11 +14,13 @@ import { itOf, theyOf } from './support';
 
 const lib = createDefaultLibrary();
 // The phase's roll action gives `{done}` its word, "rolled".
-const ROLL: DeclaredAction = { verb: 'roll', words: 'roll the dice', label: 'Roll the dice', conditions: [], effects: [], line: 1 };
+const ROLL: DeclaredAction = {
+  verb: 'roll', words: 'roll the dice', base: 'roll the dice', label: 'Roll the dice', target: null, conditions: [], effects: [], line: 1,
+};
 const game = fixtureBoardGame({ phases: [fixturePhase('playing', [], { actions: [ROLL] })] });
 const env = (state: GameState, over: Partial<Parameters<typeof fixtureEnv>[1]> = {}) =>
   fixtureEnv(state, { game, seats: ['p0', 'p1', 'p2'], ...over });
-const as = (player: string, space: number | null = null) => ({ subject: { player, space } });
+const as = (player: string, space: number | null = null) => ({ subject: { player, space, card: null } });
 
 describe('the subject of a rule', () => {
   it('they is the subject player, and a missing one is a bug in the compiler', () => {
@@ -82,6 +85,25 @@ describe('moving', () => {
       { kind: 'pass', seat: 'p0', space: 7 }, { kind: 'pass', seat: 'p0', space: 0 },
       { kind: 'pass', seat: 'p0', space: 1 }, { kind: 'land', seat: 'p0', space: 1 },
     ]);
+  });
+  it('stops walking when a passes rule moves the piece elsewhere, and announces no landing', () => {
+    const seen: Moment[] = [];
+    const announce = (s: GameState, m: Moment) => {
+      seen.push(m);
+      return seen.length === 1 ? placePiece(s, 'p0', 2) : s;
+    };
+    const start = setRoll(placePiece(fixtureBoardState(), 'p0', 6), [1, 2]);
+    const s = runPhrase<GameState>(lib, 'effect', 'their piece moves forward by the roll', env(start, { ...as('p0'), announce }));
+    expect(seen).toEqual([{ kind: 'pass', seat: 'p0', space: 7 }]);
+    expect(pieceAt(s, 'p0')).toBe(2);
+  });
+  it('stops walking when a passes rule takes the player out, and announces no landing', () => {
+    const seen: Moment[] = [];
+    const announce = (s: GameState, m: Moment) => { seen.push(m); return markOut(s, 'p0'); };
+    const start = setRoll(placePiece(fixtureBoardState(), 'p0', 6), [1, 2]);
+    const s = runPhrase<GameState>(lib, 'effect', 'their piece moves forward by the roll', env(start, { ...as('p0'), announce }));
+    expect(seen).toEqual([{ kind: 'pass', seat: 'p0', space: 7 }]);
+    expect(isOut(s, 'p0')).toBe(true);
   });
   it('has the piece on the space it is announced for', () => {
     const where: (number | null)[] = [];
@@ -177,6 +199,18 @@ describe('paying', () => {
     expect(() => runPhrase(lib, 'effect', 'they pay its rent to its owner', fixtureEnv(start, { game: textRent, ...as('p0', 1) }))).toThrow("Mill Lane's rent isn't a number.");
     expect(counterOf(start, 'money', 'p0')).toBe(1500);
   });
+  it('asks the env what a detail is when it can say, and reads the table’s cell when it cannot', () => {
+    const start = setOwner(fixtureBoardState(), 1, 'p1');
+    const asked: [number, string][] = [];
+    const through = env(start, {
+      ...as('p0', 1),
+      columnValue: (_state, space, column) => { asked.push([space, column]); return 7; },
+    });
+    const paid = runPhrase<GameState>(lib, 'effect', 'they pay its rent to its owner', through);
+    expect([counterOf(paid, 'money', 'p0'), counterOf(paid, 'money', 'p1'), asked]).toEqual([1493, 1507, [[1, 'rent']]]);
+    expect(() => runPhrase(lib, 'effect', 'they pay its rent to its owner', env(start, { ...as('p0', 1), columnValue: () => null }))).toThrow('Mill Lane has no rent.');
+    expect(counterOf(runPhrase<GameState>(lib, 'effect', 'they pay its rent to its owner', env(start, as('p0', 1))), 'money', 'p0')).toBe(1498);
+  });
 });
 
 describe('owning', () => {
@@ -187,7 +221,7 @@ describe('owning', () => {
     expect(runPhrase(lib, 'condition', 'no one owns it', env(onRose, as('p0')))).toBe(true);
     expect(runPhrase(lib, 'condition', 'they have at least its price in money', env(setCounter(onRose, 'money', 'p0', 179), as('p0')))).toBe(false);
     expect(runPhrase(lib, 'condition', 'they have at least its price in money', env(setCounter(onRose, 'money', 'p0', 180), as('p0')))).toBe(true);
-    expect(runPhrase(lib, 'condition', 'they have rolled this turn', env(recordAction(onRose, 'p0', 'roll'), as('p0')))).toBe(true);
+    expect(runPhrase(lib, 'condition', 'they have rolled this turn', env(recordAction(onRose, 'p0', 'roll the dice'), as('p0')))).toBe(true);
   });
   it('accepts either article before the detail', () => {
     const onRose = placePiece(fixtureBoardState(), 'p0', 5);
@@ -197,7 +231,7 @@ describe('owning', () => {
     const start = fixtureBoardState();
     expect(runPhrase(lib, 'condition', 'they have rolled this turn', env(start, as('p0')))).toBe(false);
     expect(runPhrase(lib, 'condition', 'they have not rolled this turn', env(start, as('p0')))).toBe(true);
-    const rolled = recordAction(start, 'p0', 'roll');
+    const rolled = recordAction(start, 'p0', 'roll the dice');
     expect(runPhrase(lib, 'condition', 'they have not rolled this turn', env(rolled, as('p0')))).toBe(false);
     expect(runPhrase(lib, 'condition', 'they have rolled this turn', env(rolled, as('p1')))).toBe(false);
     expect(runPhrase(lib, 'condition', 'they have rolled this turn', env(clearTurnLog(rolled), as('p0')))).toBe(false);
@@ -285,9 +319,19 @@ describe('moments', () => {
 
 describe('example phrases', () => {
   // The buttons of the phase give `{action}` and `{done}` their words.
-  const BUY: DeclaredAction = { verb: 'buy', words: 'buy the space they are on', label: 'Buy', conditions: [], effects: [], line: 2 };
-  const END: DeclaredAction = { verb: 'end', words: 'end their turn', label: 'End turn', conditions: [], effects: [], line: 3 };
-  const playing = fixtureBoardGame({ phases: [fixturePhase('playing', [], { actions: [ROLL, BUY, END] })] });
+  const BUY: DeclaredAction = {
+    verb: 'buy', words: 'buy the space they are on', base: 'buy the space they are on', label: 'Buy', target: null, conditions: [], effects: [], line: 2,
+  };
+  const END: DeclaredAction = {
+    verb: 'end', words: 'end their turn', base: 'end their turn', label: 'End turn', target: null, conditions: [], effects: [], line: 3,
+  };
+  // A button that picks where: its move is the whole wording, and an example names the space after the base.
+  const BUILD: DeclaredAction = {
+    verb: 'build', words: 'build a house on a street they own', base: 'build a house', label: 'Build a house',
+    target: { kind: 'target', phrase: 'a {spacekind} they own', args: [{ attribute: 'kind', values: ['street'] }], line: 4, text: 'a street they own' },
+    conditions: [], effects: [], line: 4,
+  };
+  const playing = fixtureBoardGame({ phases: [fixturePhase('playing', [], { actions: [ROLL, BUY, END, BUILD] })] });
   const at = (state: GameState) => env(state, { game: playing });
   const given = (text: string, state: GameState = fixtureBoardState(playing)) => runPhrase<GameState>(lib, 'given', text, at(state));
   const expectThat = (text: string, state: GameState) => runPhrase<true | string>(lib, 'expect', text, at(state));
@@ -378,12 +422,30 @@ describe('example phrases', () => {
   describe('action', () => {
     it('is a player pressing one of the buttons', () => {
       const run = (text: string) => runPhrase(lib, 'action', text, at(fixtureBoardState(playing)));
-      expect(run('p0 rolls the dice')).toEqual({ by: 'p0', move: { type: 'roll' } });
-      expect(run('p1 buys the space they are on')).toEqual({ by: 'p1', move: { type: 'buy' } });
-      expect(run('p0 ends their turn')).toEqual({ by: 'p0', move: { type: 'end' } });
+      expect(run('p0 rolls the dice')).toEqual({ by: 'p0', move: { type: 'roll the dice' } });
+      expect(run('p1 buys the space they are on')).toEqual({ by: 'p1', move: { type: 'buy the space they are on' } });
+      expect(run('p0 ends their turn')).toEqual({ by: 'p0', move: { type: 'end their turn' } });
     });
     it('refuses a player who is not at the table', () => {
       expect(() => runPhrase(lib, 'action', 'p3 rolls the dice', at(fixtureBoardState(playing)))).toThrow('There is no player p3 at this table.');
+    });
+    it('is a player pressing a button that picks a space, and the space they pick', () => {
+      const run = (text: string) => runPhrase(lib, 'action', text, at(fixtureBoardState(playing)));
+      expect(run('p0 builds a house on Rose Lane')).toEqual({ by: 'p0', move: { type: 'build a house on a street they own', target: 5 } });
+      expect(run('p1 Builds a House on mill lane')).toEqual({ by: 'p1', move: { type: 'build a house on a street they own', target: 1 } });
+      // Space 0 is a space too.
+      expect(run('p0 builds a house on Go')).toEqual({ by: 'p0', move: { type: 'build a house on a street they own', target: 0 } });
+    });
+    it('does not take a button that picks a space without one, or one that picks none with one', () => {
+      const m = (text: string) => lib.match('action', text, vocabFor(playing));
+      expect(m('p0 builds a house').status).toBe('unknown');
+      expect(m('p0 builds a house on a street they own').status).toBe('unknown');
+      expect(m('p0 rolls the dice on Rose Lane').status).toBe('unknown');
+      expect(m('p0 rolls the dice')).toMatchObject({ status: 'ok', pattern: '{player} {action}' });
+      expect(m('p0 builds a house on Rose Lane')).toMatchObject({ status: 'ok', pattern: '{player} {targetaction} on {space}' });
+    });
+    it('refuses a player who is not at the table when they build', () => {
+      expect(() => runPhrase(lib, 'action', 'p3 builds a house on Rose Lane', at(fixtureBoardState(playing)))).toThrow('There is no player p3 at this table.');
     });
   });
 
@@ -419,5 +481,25 @@ describe('example phrases', () => {
         expect(() => expectThat(text, start)).toThrow('There is no player p3 at this table.');
       }
     });
+  });
+});
+
+describe('the bank line', () => {
+  const read = (text: string) => {
+    const found = lib.match('board', text, vocabFor(game));
+    if (found.status !== 'ok') throw new Error(`“${text}” → ${JSON.stringify(found)}`);
+    return (lib.get('board', found.pattern)!.fn as (args: unknown[], table: null) => unknown)(found.args, null);
+  };
+
+  it('says what the bank holds, each name with how many to begin with', () => {
+    expect(read('The bank has 32 houses and 12 hotels')).toEqual({
+      kind: 'bank', bank: [{ name: 'houses', start: 32 }, { name: 'hotels', start: 12 }],
+    });
+  });
+  it('lets the bank start with none of something', () => {
+    expect(read('The bank has 0 tokens')).toEqual({ kind: 'bank', bank: [{ name: 'tokens', start: 0 }] });
+  });
+  it('refuses a name the line lists twice, whatever the capitals', () => {
+    expect(() => read('The bank has 32 houses and 12 Houses')).toThrow(new RuleError('There are two bank items called “houses”.'));
   });
 });

@@ -6,12 +6,14 @@ import { RuleError } from '../diagnostics';
 import type { MoveInfo, PhraseEnv, ZoneRef } from '../types';
 import { resolveSeat, resolveZoneIds } from '../zones';
 
-/** How a designer would say the zone: “the trick”, “each hand”, “their hand”. */
+const OWNER_WORDS = { actor: 'their', winner: "the winner's", other: "the other player's" };
+
+/** How a designer would say the zone: “the trick”, “each hand”, “their hand”, “the other player's camp”. */
 export function describeZone(ref: ZoneRef): string {
   if ('shared' in ref) return `the ${ref.shared}`;
   if ('each' in ref) return `each ${ref.each}`;
   if ('seat' in ref.of) return `${ref.of.seat}'s ${ref.zone}`;
-  return ref.of.who === 'actor' ? `their ${ref.zone}` : `the winner's ${ref.zone}`;
+  return `${OWNER_WORDS[ref.of.who]} ${ref.zone}`;
 }
 
 /** The one zone a rule is about; “each hand” names several, which this rule cannot use. `actor` is who “their” means. */
@@ -40,6 +42,13 @@ export function theyOf(env: PhraseEnv): PlayerId {
   const player = env.subject?.player;
   if (player === undefined || player === null) throw new Error('This phrase needs a player, but none is being judged.');
   return player;
+}
+
+/** The card a `needsCard` phrase is about, by its id. The compiler only lets such phrases into rules that have one, so a missing one is a bug. */
+export function cardOf(env: PhraseEnv): string {
+  const card = env.subject?.card;
+  if (card === undefined || card === null) throw new Error('This phrase needs a card, but none is being judged.');
+  return card;
 }
 
 /** The seat an example line names; it has to be sitting at the table. */

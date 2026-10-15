@@ -1,7 +1,7 @@
 import type { GameState } from '../../game-state';
 import { nextInt } from '../../rng';
 import type { PlayerId } from '../../scene';
-import { readSpaceTable } from '../board';
+import { numberIn, readSpaceTable } from '../board';
 import {
   addToCounter, counterOf, didThisTurn, isOut, latestRoll, markOut, nextIn, ownerOf, pieceAt, placePiece, playersIn, queueRoll, recordAction,
   setCounter, setOwner, setRoll, takeQueuedRoll,
@@ -9,7 +9,7 @@ import {
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import { canon } from '../refs';
-import type { ActionFn, BoardFn, BoardSpec, ConditionFn, EffectFn, ExpectFn, MomentFn, PhraseEnv, SpaceClass, WhoFn, WinnerFn } from '../types';
+import type { ActionFn, BankSpec, BoardFn, BoardSpec, ConditionFn, EffectFn, ExpectFn, MomentFn, PhraseEnv, SpaceClass, WhoFn, WinnerFn } from '../types';
 import { chooseNext } from '../zones';
 import { itOf, seatOf, theyOf } from './support';
 
@@ -46,6 +46,14 @@ const counter: BoardFn = ([start, name, visibility]) => {
 
 const payWith: BoardFn = ([name]) => ({ kind: 'pay-with', counter: name as string });
 
+const bank: BoardFn = ([items]) => {
+  const things = items as BankSpec[];
+  // A name listed twice would leave the bank with only the last count, so the designer is told instead.
+  const twice = things.find((thing, at) => things.findIndex((other) => other.name === thing.name) !== at);
+  if (twice) throw new RuleError(`There are two bank items called “${twice.name}”.`);
+  return { kind: 'bank', bank: things };
+};
+
 function diceOf(count: number, sides: number) {
   if (count < MIN_DICE || count > MAX_DICE || sides < MIN_SIDES || sides > MAX_SIDES) {
     throw new RuleError(`Dice need ${MIN_DICE} to ${MAX_DICE} dice of ${MIN_SIDES} to ${MAX_SIDES} sides.`);
@@ -67,17 +75,19 @@ function boardIn(env: PhraseEnv): BoardSpec {
 
 const nameOfSpace = (env: PhraseEnv, space: number): string => boardIn(env).spaces[space].name;
 
-/** The number a space's cell holds, or the sentence that says why it holds none. */
+/**
+ * The number a detail of the space comes to, or the sentence that says why it comes to none. It is what the game's own lines
+ * make of the table's cell when the runtime can say (`env.columnValue`), else the cell.
+ */
 function amountOf(env: PhraseEnv, attr: string): number {
   const space = itOf(env);
-  const value = boardIn(env).spaces[space].attrs[attr];
-  if (value === undefined || value === null) throw new RuleError(`${nameOfSpace(env, space)} has no ${attr}.`);
-  if (typeof value !== 'number') throw new RuleError(`${nameOfSpace(env, space)}'s ${attr} isn't a number.`);
+  const value = env.columnValue ? env.columnValue(env.state, space, attr) : numberIn(boardIn(env).spaces[space], attr);
+  if (value === null) throw new RuleError(`${nameOfSpace(env, space)} has no ${attr}.`);
   return value;
 }
 
 /** What the dice showed last, added up. */
-function rollTotal(state: GameState): number {
+export function rollTotal(state: GameState): number {
   const faces = latestRoll(state);
   if (!faces) throw new RuleError('Nobody has rolled the dice yet.');
   return faces.reduce((sum, face) => sum + face, 0);
@@ -101,7 +111,7 @@ function transfer(env: PhraseEnv, from: PlayerId, to: PlayerId | null, amount: n
 
 // ---- conditions ------------------------------------------------------------------------------
 
-const hasDoneThisTurn = (done: boolean): ConditionFn => (env, [verb]) => didThisTurn(env.state, theyOf(env), verb as string) === done;
+const hasDoneThisTurn = (done: boolean): ConditionFn => (env, [move]) => didThisTurn(env.state, theyOf(env), move as string) === done;
 
 const spaceHas: ConditionFn = (env, [attr]) => boardIn(env).spaces[itOf(env)].attrs[attr as string] !== undefined;
 
@@ -162,7 +172,10 @@ const rollDice: EffectFn = (env) => {
   return setRoll({ ...env.state, rng }, faces);
 };
 
-/** One space at a time, so a rule about passing a space (like collecting on the way) sees every space on the way. */
+/**
+ * One space at a time, so a rule about passing a space (like collecting on the way) sees every space on the way. If such a
+ * rule moves the piece somewhere else, or takes the player out, the walk ends there: the move is over and nothing lands.
+ */
 const moveByRoll: EffectFn = (env) => {
   const they = theyOf(env);
   const steps = rollTotal(env.state);
@@ -175,6 +188,7 @@ const moveByRoll: EffectFn = (env) => {
   for (let step = 1; step <= steps; step++) {
     space = (from + step) % count;
     state = env.announce(placePiece(state, they, space), { kind: 'pass', seat: they, space });
+    if (pieceAt(state, they) !== space || isOut(state, they)) return state;
   }
   return env.announce(state, { kind: 'land', seat: they, space });
 };
@@ -226,7 +240,7 @@ const hasGiven: EffectFn = (env, [seat, n, counter]) => setCounter(env.state, co
 // Going out in an example only arranges the table: whose turn it is stays as the example set it.
 const isOutGiven: EffectFn = (env, [seat]) => markOut(env.state, seatOf(env, seat));
 
-const hasDoneGiven: EffectFn = (env, [seat, verb]) => recordAction(env.state, seatOf(env, seat), verb as string);
+const hasDoneGiven: EffectFn = (env, [seat, move]) => recordAction(env.state, seatOf(env, seat), move as string);
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 
@@ -247,8 +261,11 @@ const nextRollIs: EffectFn = (env, faces) => {
 
 // ---- examples: action --------------------------------------------------------------------------
 
-/** A player presses one of the phase's buttons: the move is the button's verb. */
-const pressesButton: ActionFn = (env, [seat, verb]) => ({ by: seatOf(env, seat), move: { type: verb as string } });
+/** A player presses one of the phase's buttons: the move type is the button's whole wording. */
+const pressesButton: ActionFn = (env, [seat, move]) => ({ by: seatOf(env, seat), move: { type: move as string } });
+
+/** A player presses a button that picks a space and names it: the move carries the space's index as its target. */
+const pressesButtonOn: ActionFn = (env, [seat, move, space]) => ({ by: seatOf(env, seat), move: { type: move as string, target: space as number } });
 
 // ---- examples: expect --------------------------------------------------------------------------
 
@@ -284,8 +301,8 @@ const isOutExpected: ExpectFn = (env, [seat]) => {
 };
 
 /**
- * The sentences under Board: that say what the board is, who plays on it and what they roll and pay with, the ones that play
- * a board game, and the Given, When and Then lines of its examples.
+ * The sentences under Board: that say what the board is, who plays on it, what they roll and pay with and what the bank
+ * holds, the ones that play a board game, and the Given, When and Then lines of its examples.
  */
 export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
@@ -293,6 +310,7 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .board('each player has a piece that starts on {space}', pieces)
     .board('each player has {int} {name} that {visibility}', counter)
     .board('players pay with {counter}', payWith)
+    .board('the bank has {banklist}', bank)
     .board('there are {count} {count}-sided dice', ([count, sides]) => diceOf(count as number, sides as number))
     .board('there is one {count}-sided die', ([sides]) => diceOf(1, sides as number))
     .condition('they have {done} this turn', hasDoneThisTurn(true), { needsPlayer: true })
@@ -329,6 +347,7 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .given('the next roll is {int} and {int}', nextRollIs)
     .given('the next roll is {int}', nextRollIs)
     .action('{player} {action}', pressesButton)
+    .action('{player} {targetaction} on {space}', pressesButtonOn)
     .expect('{player} is on {space}', isOnExpected)
     .expect('{player} owns {space}', ownsExpected)
     .expect('no one owns {space}', noOneOwnsExpected)

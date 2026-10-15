@@ -11,6 +11,12 @@ describe('friendlyReason', () => {
     ['move play not allowed in phase __setup', undefined, "You can't play during setup."],
     ['move reorder not allowed in phase __setup', undefined, "You can't rearrange cards during setup."],
     ['move reorder not allowed in phase passing', undefined, "You can't rearrange cards during passing."],
+    // A button's move type is its whole wording, so the move is several words.
+    ['move roll the dice not allowed in phase __setup', undefined, "You can't roll the dice during setup."],
+    // Said to the player who pressed it.
+    ['move end their turn not allowed in phase the last round', undefined, "You can't end your turn during the last round."],
+    ['move buy the space they are on not allowed in phase __setup', undefined, "You can't buy the space you are on during setup."],
+    ['move thank theirs not allowed in phase playing', undefined, "You can't thank theirs during playing."],
     ['the card is not a heart', undefined, 'the card is not a heart'],
   ])('%s', (reason, current, out) => expect(friendlyReason(reason, current)).toBe(out));
 });

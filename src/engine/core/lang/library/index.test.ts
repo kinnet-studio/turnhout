@@ -13,7 +13,8 @@ describe('the default library', () => {
 
   it.each<Row>([
     ['cards', 'A standard 52-card deck, aces high, starting in the deck.', 'a standard 52-card deck, aces high, starting in {zone}'],
-    ['zone', 'Each player has a pass pile that only they can see.', 'each player has a {name} that {visibility}'],
+    ['zone', 'Each player has a pass pile that only they can see.', 'each player has a {unrowedname} that {visibility}'],
+    ['zone', 'Each player has a camp row that everyone can see.', 'each player has a {name} row that {visibility}'],
     ['effect', 'Shuffle the deck.', 'shuffle {zone}'],
     ['effect', 'Deal 13 cards from the deck to each hand.', 'deal {int} cards from {zone} to {zone}'],
     ['condition', 'every pass pile has 3 cards', '{zone} has {int} card(s)'],
@@ -67,7 +68,17 @@ describe('the default library', () => {
     ['There are two six-sided dice', 'there are {count} {count}-sided dice', [2, 6]],
     ['There are 3 20-sided dice', 'there are {count} {count}-sided dice', [3, 20]],
     ['There is one six-sided die', 'there is one {count}-sided die', [6]],
+    ['The bank has 32 houses and 12 hotels', 'the bank has {banklist}', [[{ name: 'houses', start: 32 }, { name: 'hotels', start: 12 }]]],
   ])('reads a board sentence exactly one way: “%s”', (text, pattern, args) => {
     expect(lib.match('board', text, vocabFor(fixtureBoardGame()))).toEqual({ status: 'ok', pattern, args });
+  });
+
+  it.each<[text: string, pattern: string, args: unknown[]]>([
+    ['Spaces can have houses and a hotel', 'spaces can have {factlist}', [[{ name: 'houses', kind: 'number' }, { name: 'hotel', kind: 'flag' }]]],
+    ['Cards can have health and a shield', 'cards can have {factlist}', [[{ name: 'health', kind: 'number' }, { name: 'shield', kind: 'flag' }]]],
+    ['Cards can be poisoned', 'cards can be {name}', ['poisoned']],
+    ['Cards can be in the box', 'cards can be {name}', ['in the box']],
+  ])('reads a declaration exactly one way: “%s”', (text, pattern, args) => {
+    expect(lib.match('declare', text, vocabFor(fixtureBoardGame()))).toEqual({ status: 'ok', pattern, args });
   });
 });

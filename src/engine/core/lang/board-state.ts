@@ -19,17 +19,28 @@ export const ROLL_KEY = 'lang:roll';
 /** Rolls an example fixed ahead of time, taken first in first out: `number[][]`. */
 export const NEXT_ROLLS_KEY = 'lang:next-rolls';
 /**
- * What each seat has done this turn: `{ [seat]: verbs }`, emptied whenever the turn passes. It is written only when a
+ * What each seat has done this turn: `{ [seat]: move types }`, emptied whenever the turn passes. It is written only when a
  * button is pressed (or an example says what was done), so a card game without buttons never gets it.
  */
 export const TURN_KEY = 'lang:turn';
 /** Seats that have left the game, in the order they went: `PlayerId[]`. */
 export const OUT_KEY = 'lang:out';
+/**
+ * Facts that change during play, on spaces and on players: `{ spaces: { [space index]: { [fact]: value } }, players: { [seat]:
+ * { [fact]: value } } }`. A fact nobody set has no entry. Facts on cards live in the card's own `data`, not here.
+ */
+export const FACTS_KEY = 'lang:facts';
+/** What is left in the bank, by name: `{ [name]: number }`. */
+export const BANK_KEY = 'lang:bank';
 
 type Pieces = { [seat: string]: number };
 type Owners = { [space: string]: PlayerId };
 type Counters = { [counter: string]: { [seat: string]: number } };
 type TurnLog = { [seat: string]: string[] };
+type FactValue = number | boolean;
+type FactTable = { [who: string]: { [fact: string]: FactValue } };
+type Facts = { spaces: FactTable; players: FactTable };
+type Bank = { [name: string]: number };
 
 const withData = (state: GameState, key: string, value: Json): GameState => ({ ...state, data: { ...state.data, [key]: value } });
 
@@ -38,9 +49,11 @@ const ownersOf = (state: GameState): Owners => (state.data[OWNERS_KEY] ?? {}) as
 const countersOf = (state: GameState): Counters => (state.data[COUNTERS_KEY] ?? {}) as Counters;
 const outOf = (state: GameState): PlayerId[] => (state.data[OUT_KEY] ?? []) as PlayerId[];
 const turnLogOf = (state: GameState): TurnLog => (state.data[TURN_KEY] ?? {}) as TurnLog;
+const factsOf = (state: GameState): Facts => ({ spaces: {}, players: {}, ...(state.data[FACTS_KEY] as Partial<Facts> | undefined) });
+const bankTable = (state: GameState): Bank => (state.data[BANK_KEY] ?? {}) as Bank;
 
 /**
- * Puts a board game's pieces, owners and counters in the state the first time it is needed. A card game, or a state
+ * Puts a board game's pieces, owners, counters and bank in the state the first time it is needed. A card game, or a state
  * that already has them, comes back as it is, so every caller may call this without checking.
  */
 export function withBoardData(state: GameState, game: CompiledGame, seats: PlayerId[]): GameState {
@@ -52,9 +65,10 @@ export function withBoardData(state: GameState, game: CompiledGame, seats: Playe
   for (const { name, start } of board.counters) {
     counters[name] = Object.fromEntries(seats.map((seat) => [seat, start]));
   }
+  const bank: Bank = Object.fromEntries(board.bank.map(({ name, start }) => [name, start]));
   return {
     ...state,
-    data: { ...state.data, [PIECES_KEY]: pieces, [OWNERS_KEY]: {}, [COUNTERS_KEY]: counters, [OUT_KEY]: [] },
+    data: { ...state.data, [PIECES_KEY]: pieces, [OWNERS_KEY]: {}, [COUNTERS_KEY]: counters, [BANK_KEY]: bank, [OUT_KEY]: [] },
   };
 }
 
@@ -89,6 +103,38 @@ export function setCounter(state: GameState, counter: string, seat: PlayerId, va
 
 export function addToCounter(state: GameState, counter: string, seat: PlayerId, delta: number): GameState {
   return setCounter(state, counter, seat, counterOf(state, counter, seat) + delta);
+}
+
+function setFact(state: GameState, table: keyof Facts, who: string, fact: string, value: FactValue): GameState {
+  const facts = factsOf(state);
+  return withData(state, FACTS_KEY, { ...facts, [table]: { ...facts[table], [who]: { ...facts[table][who], [fact]: value } } });
+}
+
+/** A fact of a space; null when it was never set, which is not the same as 0 or false. */
+export function spaceFact(state: GameState, space: number, fact: string): FactValue | null {
+  return factsOf(state).spaces[space]?.[fact] ?? null;
+}
+
+export function setSpaceFact(state: GameState, space: number, fact: string, value: FactValue): GameState {
+  return setFact(state, 'spaces', String(space), fact, value);
+}
+
+/** A fact of a seat; null when it was never set. */
+export function playerFact(state: GameState, seat: PlayerId, fact: string): FactValue | null {
+  return factsOf(state).players[seat]?.[fact] ?? null;
+}
+
+export function setPlayerFact(state: GameState, seat: PlayerId, fact: string, value: FactValue): GameState {
+  return setFact(state, 'players', seat, fact, value);
+}
+
+/** How many the bank has of something; 0 when the game has no such thing. */
+export function bankOf(state: GameState, name: string): number {
+  return bankTable(state)[name] ?? 0;
+}
+
+export function setBank(state: GameState, name: string, value: number): GameState {
+  return withData(state, BANK_KEY, { ...bankTable(state), [name]: value });
 }
 
 export function latestRoll(state: GameState): number[] | null {
@@ -137,14 +183,14 @@ export function nextIn(state: GameState, seat: PlayerId, seats: PlayerId[]): Pla
 }
 
 /** Whether the seat has already done this since the turn last passed. */
-export function didThisTurn(state: GameState, seat: PlayerId, verb: string): boolean {
-  return turnLogOf(state)[seat]?.includes(verb) ?? false;
+export function didThisTurn(state: GameState, seat: PlayerId, move: string): boolean {
+  return turnLogOf(state)[seat]?.includes(move) ?? false;
 }
 
 /** Notes that the seat has done this; what the other seats did stays as it was, since everyone may act at once. */
-export function recordAction(state: GameState, seat: PlayerId, verb: string): GameState {
+export function recordAction(state: GameState, seat: PlayerId, move: string): GameState {
   const log = turnLogOf(state);
-  return withData(state, TURN_KEY, { ...log, [seat]: [...(log[seat] ?? []), verb] });
+  return withData(state, TURN_KEY, { ...log, [seat]: [...(log[seat] ?? []), move] });
 }
 
 /**
@@ -155,7 +201,7 @@ export function clearTurnLog(state: GameState): GameState {
   return Object.keys(turnLogOf(state)).length === 0 ? state : withData(state, TURN_KEY, {});
 }
 
-/** Whether the phase's After line names the verb: making that move or pressing that button passes the turn. */
-export function endsTurn(phase: CompiledPhase, verb: string): boolean {
-  return phase.after?.verbs.includes(verb) ?? false;
+/** Whether the phase's After line names the move type: making that move or pressing that button passes the turn. */
+export function endsTurn(phase: CompiledPhase, move: string): boolean {
+  return phase.after?.moves.includes(move) ?? false;
 }

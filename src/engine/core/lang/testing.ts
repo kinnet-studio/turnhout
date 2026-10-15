@@ -30,7 +30,7 @@ export function fixtureGame(over: Partial<CompiledGame> = {}): CompiledGame {
     players: { min: 2, max: 4 },
     zones: FIXTURE_ZONES.map((z) => ({ ...z })),
     cards: [{ kind: 'standard', identities: standardDeckIdentities(), start: 'deck', acesHigh: true }],
-    setup: [], phases: [], end: null, examples: [], board: null,
+    setup: [], phases: [], end: null, examples: [], board: null, facts: [], columns: {},
     ...over,
   };
 }
@@ -178,6 +178,7 @@ export function fixtureBoardGame(over: Partial<CompiledGame> = {}): CompiledGame
       counters: [{ name: 'money', start: 1500, visibility: 'public' }],
       dice: { count: 2, sides: 6 },
       payWith: 'money',
+      bank: [],
     },
     ...over,
   });
@@ -191,6 +192,7 @@ export function fixtureEnv(
   state: GameState,
   opts: {
     game?: CompiledGame; seats?: PlayerId[]; move?: MoveInfo; check?: PhraseEnv['check']; subject?: Subject; announce?: PhraseEnv['announce'];
+    columnValue?: PhraseEnv['columnValue'];
   } = {},
 ): PhraseEnv {
   return {
@@ -201,6 +203,7 @@ export function fixtureEnv(
     check: opts.check ?? (() => true),
     subject: opts.subject,
     announce: opts.announce,
+    columnValue: opts.columnValue,
   };
 }
 
@@ -225,7 +228,7 @@ export function fixturePhase(id: string, moves: DeclaredMove[], over: Partial<Co
   };
 }
 
-/** The words a designer could use about this game: its zones, move verbs, card attributes and values. */
+/** The words a designer could use about this game: its zones, move verbs, card attributes and values, and its facts. */
 export function vocabFor(game: CompiledGame, players: number = game.players.max): Vocab {
   return vocabFrom({
     maxPlayers: players,
@@ -234,7 +237,8 @@ export function vocabFor(game: CompiledGame, players: number = game.players.max)
     phases: game.phases.map((p) => p.id),
     verbs: [...new Set(game.phases.flatMap((p) => p.moves.map((m) => m.verb)))],
     board: game.board,
-    actions: game.phases.flatMap((p) => p.actions.map((a) => ({ verb: a.verb, words: a.words }))),
+    actions: game.phases.flatMap((p) => p.actions.map((a) => ({ verb: a.verb, words: a.words, base: a.base, targeted: a.target !== null }))),
+    facts: game.facts,
   });
 }
 

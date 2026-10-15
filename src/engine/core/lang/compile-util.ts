@@ -6,15 +6,17 @@ import type { ParamType, PhraseKind, PhraseRef, Vocab } from './types';
 
 /**
  * What every line of one compile stage shares. Never change `vocab` after a line has been matched with it. `inMove`,
- * `player` and `space` say what the rule around a line is about: a card move, a player ("they"), a space ("it").
+ * `player`, `space` and `card` say what the rule around a line is about: a card move, a player ("they"), a space or a
+ * card ("it").
  */
 export type LineCtx = {
-  library: PhraseLibrary; vocab: Vocab; gameName: string; inMove: boolean; player: boolean; space: boolean; diagnostics: Diagnostic[];
+  library: PhraseLibrary; vocab: Vocab; gameName: string; inMove: boolean; player: boolean; space: boolean; card: boolean;
+  diagnostics: Diagnostic[];
 };
 
 const MAX_SUGGESTIONS = 3;
 const NOT_INDENTED = "This line shouldn't be indented under the line above.";
-const NEEDS_PAYMENT = 'Say what players pay with, like “Players pay with money.” under Board:.';
+const NEEDS_PAYMENT = 'Say what players pay with, like “Players pay with coins.” under Board:.';
 const NEEDS_BOARD = (clean: string) => `“${clean}” needs a board. Add a Board: section with a line like “The board is a loop of spaces, starting at Go:”.`;
 const NEEDS_DICE = (clean: string) => `“${clean}” needs dice. Add a line like “There are two six-sided dice.” under Board:.`;
 const IF_FRAME = /^if\s+(.+)$/i;
@@ -65,15 +67,18 @@ export function missingRef(kind: PhraseKind, text: string, line: number): Phrase
   return { kind: 'lang', phrase: 'missing', args: [kind], line, text };
 }
 
+/** True for the placeholder `missingRef` makes: a line no phrase could be found for. */
+export const isMissing = (ref: PhraseRef): boolean => ref.kind === 'lang' && ref.phrase === 'missing';
+
 /** A pattern the way a designer reads it: `{zone}` shown as `[zone]`. */
 function displayPattern(pattern: string, types: ParamType[]): string {
   return pattern.replace(/\{([^{}]+)\}/g, (whole, name: string) => types.find((t) => t.name === name)?.label ?? whole);
 }
 
-/** True when a value names the player making the move, as in “their hand”. */
+/** True when a value names the player making the move, as in “their hand” or “the other player's hand”. */
 function mentionsActor(value: Json): boolean {
   if (Array.isArray(value)) return value.some(mentionsActor);
-  if (value !== null && typeof value === 'object') return value.who === 'actor' || Object.values(value).some(mentionsActor);
+  if (value !== null && typeof value === 'object') return value.who === 'actor' || value.who === 'other' || Object.values(value).some(mentionsActor);
   return false;
 }
 
@@ -115,27 +120,32 @@ function unmetNeed(entry: Required<PhraseOpts> | undefined, args: Json[], clean:
   }
   if (!aboutPlayer && args.some(mentionsActor)) return `“${clean}” only makes sense in a rule about a player's move.`;
   if (!ctx.space && entry?.needsSpace) return `“${clean}” only makes sense in a rule about a space, such as an action or a “lands on” rule.`;
+  if (!ctx.card && entry?.needsCard) return `“${clean}” only makes sense in a rule about a card, such as “When a card …”.`;
   if (entry?.needsPayment && ctx.vocab.payWith === null) return NEEDS_PAYMENT;
   return null;
 }
 
 /**
- * Reads one line as a phrase of `kind` (`text` has no leading keyword); `fallback` is a second kind to try. A line no
- * phrase matches becomes a placeholder. When it is shaped like a phrase but names something the game never defined, the
- * designer is told which name, with the closest real ones; otherwise it gets an unknown-phrase diagnostic with
- * suggestions and a stub for a developer.
+ * Reads one line as a phrase of `kind` (`text` has no leading keyword); `fallback` is the kinds to try, in order, when no
+ * phrase of `kind` fits. A line no phrase matches becomes a placeholder. When it is shaped like a phrase but names
+ * something the game never defined, the designer is told which name, with the closest real ones; otherwise it gets an
+ * unknown-phrase diagnostic with suggestions and a stub for a developer.
  */
-export function matchLine(kind: PhraseKind, text: string, line: number, ctx: LineCtx, fallback?: PhraseKind): PhraseRef {
+export function matchLine(
+  kind: PhraseKind, text: string, line: number, ctx: LineCtx, fallback: PhraseKind | PhraseKind[] = [],
+): PhraseRef {
   const clean = normalizeLine(text);
+  const others = typeof fallback === 'string' ? [fallback] : fallback;
   let found = kind;
   let result = tryMatch(kind, clean, ctx);
-  if (result.status === 'unknown' && fallback) {
-    const second = tryMatch(fallback, clean, ctx);
-    if (second.status === 'unknown') {
-      result = { status: 'unknown', suggestions: [...new Set([...result.suggestions, ...second.suggestions])].slice(0, MAX_SUGGESTIONS) };
+  for (const other of others) {
+    if (result.status !== 'unknown') break;
+    const next = tryMatch(other, clean, ctx);
+    if (next.status === 'unknown') {
+      result = { status: 'unknown', suggestions: [...new Set([...result.suggestions, ...next.suggestions])].slice(0, MAX_SUGGESTIONS) };
     } else {
-      result = second;
-      found = fallback;
+      result = next;
+      found = other;
     }
   }
 
@@ -150,7 +160,7 @@ export function matchLine(kind: PhraseKind, text: string, line: number, ctx: Lin
       return { kind: found, phrase: result.pattern, args: result.args, line, text: clean };
     }
     case 'unknown': {
-      const misnamed = tryMisnamed(fallback ? [kind, fallback] : [kind], clean, ctx);
+      const misnamed = tryMisnamed([kind, ...others], clean, ctx);
       if (misnamed) {
         const { message, suggestions } = misnamed.problem;
         addProblem(ctx.diagnostics, line, message, { kind: 'invalid', text: clean, suggestions });

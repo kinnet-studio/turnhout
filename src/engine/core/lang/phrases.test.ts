@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { standardDeckIdentities } from './cards';
 import { PhraseLibrary, STATIC_TYPES, emptyVocab, stubFor, suggestNames, vocabFrom } from './phrases';
 import { VOCAB_TYPES } from './refs';
-import { fixtureBoardGame } from './testing';
+import { FIXTURE_SPACES, fixtureBoardGame } from './testing';
 import type { EffectFn, ParamType } from './types';
 
 const V = emptyVocab();
@@ -105,10 +105,19 @@ describe('PhraseLibrary.match', () => {
     const fn = () => true;
     const l = lib().condition('it is their move', fn, { needsMove: true }).condition('hearts are broken', () => true);
     expect(l.get('condition', 'it is their move')).toEqual({
-      fn, needsMove: true, needsPlayer: false, needsSpace: false, needsPayment: false, needsBoard: false, needsDice: false,
+      fn, needsMove: true, needsPlayer: false, needsSpace: false, needsCard: false, needsPayment: false, needsBoard: false, needsDice: false,
     });
     expect(l.get('condition', 'hearts are broken')?.needsMove).toBe(false);
     expect(l.get('effect', 'it is their move')).toBeUndefined();
+  });
+
+  it('registers the phrases that pick out the cards a rule is about, which may need a card too', () => {
+    const fn = () => ['c1'];
+    const l = lib().which('a card has {int} health', fn).condition('it is marked', () => true, { needsCard: true });
+    expect(l.get('which', 'a card has {int} health')).toMatchObject({ fn, needsCard: false });
+    expect(l.get('condition', 'it is marked')?.needsCard).toBe(true);
+    expect(l.match('which', 'A card has 3 health', V)).toEqual({ status: 'ok', pattern: 'a card has {int} health', args: [3] });
+    expect(l.match('condition', 'A card has 3 health', V)).toMatchObject({ status: 'unknown' });
   });
 });
 
@@ -161,6 +170,28 @@ describe('PhraseLibrary.misnamed', () => {
   });
 });
 
+describe('PhraseLibrary.misnamed between phrases with the same words', () => {
+  // A detail of a space and a fact on it are read the same way: “it has a …”.
+  const board = vocabFrom({ maxPlayers: 2, board: fixtureBoardGame().board, facts: [{ name: 'hotel', on: 'space', kind: 'flag' }] });
+  const detailFirst = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
+    .condition('it has a {spaceattr}', () => true).condition('it has a {spaceflag}', () => true);
+  const factFirst = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
+    .condition('it has a {spaceflag}', () => true).condition('it has a {spaceattr}', () => true);
+
+  it('prefers the one whose names the text is nearest to, whichever was registered first', () => {
+    for (const l of [detailFirst, factFirst]) {
+      expect(l.misnamed(['condition'], 'it has a hotl', board)?.problem)
+        .toEqual({ message: 'There is no space fact called “hotl”.', suggestions: ['hotel'] });
+      expect(l.misnamed(['condition'], 'it has a prise', board)?.problem)
+        .toEqual({ message: 'There is no space detail called “prise”.', suggestions: ['price'] });
+    }
+  });
+  it('keeps the one registered first when the text is near no name of either', () => {
+    expect(detailFirst.misnamed(['condition'], 'it has a zzz', board)?.problem.message).toBe('There is no space detail called “zzz”.');
+    expect(factFirst.misnamed(['condition'], 'it has a zzz', board)?.problem.message).toBe('There is no space fact called “zzz”.');
+  });
+});
+
 describe('stubFor', () => {
   it('writes a ready-to-paste stub with typed parameters', () => {
     expect(stubFor('effect', 'The winner draws 2 cards.', V, STATIC_TYPES, { game: 'Hearts', line: 31 })).toBe(
@@ -189,8 +220,40 @@ describe('stubFor', () => {
     );
   });
 
+  it('gives a target stub the space it is asked about', () => {
+    expect(stubFor('target', 'a street they love', V, STATIC_TYPES, { game: 'G', line: 2 })).toContain(
+      "library.target('a street they love', (env, _args, space) => {",
+    );
+    expect(stubFor('target', 'a 3 they love', V, STATIC_TYPES, { game: 'G', line: 2 })).toContain(
+      "library.target('a {int} they love', (env, [a1], space) => {",
+    );
+  });
+
+  it('never turns words into a space name, even one that reads like a sentence', () => {
+    const boardVocab = vocabFrom({
+      maxPlayers: 2,
+      board: { ...fixtureBoardGame().board!, spaces: [...FIXTURE_SPACES, { name: 'Go To Jail', attrs: { kind: 'jail' } }] },
+    });
+    expect(stubFor('effect', 'They go to jail.', boardVocab, [...STATIC_TYPES, ...VOCAB_TYPES], { game: 'G', line: 2 })).toContain(
+      "library.effect('they go to jail', (env) => {",
+    );
+  });
+
   it('escapes apostrophes in the pattern', () => {
     expect(stubFor('condition', "It's their turn", V, STATIC_TYPES, { game: 'G', line: 2 })).toContain("library.condition('it\\'s their turn', (env) => {");
+  });
+});
+
+describe('stubFor a declaration', () => {
+  it('takes the arguments alone, as a card or board phrase does without its table', () => {
+    expect(stubFor('declare', 'Spaces can have 3 houses.', V, STATIC_TYPES, { game: 'G', line: 2 })).toBe([
+      '// Requested by a designer — game "G", line 2:',
+      '//   "Spaces can have 3 houses"',
+      "library.declare('spaces can have {int} houses', ([a1]) => {",
+      "  throw new Error('not implemented yet');",
+      '});',
+    ].join('\n'));
+    expect(stubFor('declare', 'Players can be out', V, STATIC_TYPES, { game: 'G', line: 2 })).toContain("library.declare('players can be out', (_args) => {");
   });
 });
 
@@ -214,6 +277,16 @@ describe('vocabFrom', () => {
       attributes: ['suit', 'rank', 'color', 'number'], standardDeck: true,
       cardValues: [{ attribute: 'color', value: 'red' }, { attribute: 'number', value: 1 }, { attribute: 'number', value: 2 }],
     });
+  });
+
+  it('lists the facts a game declares and the names of its bank', () => {
+    const facts = [{ name: 'houses', on: 'space', kind: 'number' }, { name: 'poisoned', on: 'card', kind: 'flag' }] as const;
+    const board = { ...fixtureBoardGame().board!, bank: [{ name: 'houses', start: 32 }, { name: 'hotels', start: 12 }] };
+    const vocab = vocabFrom({ maxPlayers: 2, board, facts: [...facts] });
+    expect(vocab.facts).toEqual(facts);
+    expect(vocab.bank).toEqual(['houses', 'hotels']);
+    expect(vocabFrom({ maxPlayers: 2, board: fixtureBoardGame().board }).bank).toEqual([]);
+    expect(vocabFrom({ maxPlayers: 2 }).facts).toEqual([]);
   });
 
   it('makes a new object each time and defaults to an empty game', () => {
@@ -246,14 +319,23 @@ describe('suggestNames', () => {
 
 describe('board vocabulary and phrase flags', () => {
   it('builds space, counter and action words from a board game', () => {
-    const v = vocabFrom({ maxPlayers: 2, board: fixtureBoardGame().board, actions: [{ verb: 'roll', words: 'roll the dice' }] });
+    const v = vocabFrom({
+      maxPlayers: 2, board: fixtureBoardGame().board,
+      actions: [
+        { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false },
+        { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true },
+      ],
+    });
     expect(v.spaces).toHaveLength(8);
     expect(v.spaceAttributes).toEqual(['kind', 'color', 'price', 'rent', 'tax']);
     expect(v.spaceValues).toContainEqual({ attribute: 'kind', value: 'street' });
     expect(v.spaceValues.some((x) => x.attribute === 'price')).toBe(false);
     expect(v.counters).toEqual(['money']);
     expect(v.payWith).toBe('money');
-    expect(v.actions).toEqual([{ verb: 'roll', words: 'roll the dice' }]);
+    expect(v.actions).toEqual([
+      { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false },
+      { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true },
+    ]);
     expect(v.dice).toBe(true);
   });
   it('knows whether the board has dice', () => {
@@ -268,5 +350,77 @@ describe('board vocabulary and phrase flags', () => {
       needsMove: false, needsPlayer: true, needsSpace: false, needsPayment: false, needsBoard: false, needsDice: false,
     });
     expect(l.get('effect', 'they roll')).toMatchObject({ needsPlayer: false, needsBoard: true, needsDice: true });
+  });
+});
+
+describe('the target phrases', () => {
+  const targets = () => new PhraseLibrary(STATIC_TYPES).target('a space they own', () => true, { needsPlayer: true, needsBoard: true });
+
+  it('is a kind of its own: where a button points is no condition', () => {
+    expect(targets().get('target', 'a space they own')).toMatchObject({ needsPlayer: true, needsBoard: true, needsSpace: false });
+    expect(targets().match('target', 'A space they own', V)).toEqual({ status: 'ok', pattern: 'a space they own', args: [] });
+    expect(targets().match('condition', 'a space they own', V).status).toBe('unknown');
+  });
+});
+
+describe('the declare phrases', () => {
+  const declares = () => new PhraseLibrary(STATIC_TYPES).declare('spaces can have {factlist}', () => []);
+  const read = (text: string) => declares().match('declare', text, V);
+
+  it('is a kind of its own: a declaration is no board sentence and no card sentence', () => {
+    expect(declares().get('declare', 'spaces can have {factlist}')).toMatchObject({ needsMove: false, needsBoard: false });
+    expect(declares().match('board', 'Spaces can have houses', V).status).toBe('unknown');
+    expect(declares().match('cards', 'Spaces can have houses', V).status).toBe('unknown');
+  });
+  it('reads a plural noun as a number and "a" or "an" and a noun as a yes/no fact', () => {
+    expect(read('Spaces can have houses and a hotel.')).toEqual({
+      status: 'ok', pattern: 'spaces can have {factlist}',
+      args: [[{ name: 'houses', kind: 'number' }, { name: 'hotel', kind: 'flag' }]],
+    });
+    expect(read('Spaces can have an inn')).toMatchObject({ args: [[{ name: 'inn', kind: 'flag' }]] });
+    expect(read('Spaces can have An Inn')).toMatchObject({ args: [[{ name: 'inn', kind: 'flag' }]] });
+  });
+  it('separates the facts as cards in a list are separated', () => {
+    const three = [{ name: 'houses', kind: 'number' }, { name: 'hotel', kind: 'flag' }, { name: 'inn', kind: 'flag' }];
+    for (const list of ['houses, a hotel and an inn', 'houses, a hotel, and an inn', 'houses and a hotel and an inn']) {
+      expect(read(`Spaces can have ${list}`)).toMatchObject({ status: 'ok', args: [three] });
+    }
+  });
+  it('wants one word for each fact, and no count', () => {
+    for (const list of ['3 houses', 'a', 'a hotel inn', 'houses and', 'houses,, a hotel', 'a a', 'hit points', 'a big hotel']) {
+      expect(read(`Spaces can have ${list}`).status).toBe('unknown');
+    }
+  });
+});
+
+describe('lists of bank things and numbers', () => {
+  const bank = new PhraseLibrary(STATIC_TYPES).board('the bank has {banklist}', () => ({ kind: 'bank', bank: [] }));
+  const ints = new PhraseLibrary(STATIC_TYPES).condition('the price is {ints} here', () => true);
+
+  it('reads a count and a noun for each thing the bank has', () => {
+    expect(bank.match('board', 'The bank has 32 houses and 12 hotels.', V)).toEqual({
+      status: 'ok', pattern: 'the bank has {banklist}', args: [[{ name: 'houses', start: 32 }, { name: 'hotels', start: 12 }]],
+    });
+    expect(bank.match('board', 'The bank has 12 Hotels, 0 houses, and 5 tokens', V)).toMatchObject({
+      args: [[{ name: 'hotels', start: 12 }, { name: 'houses', start: 0 }, { name: 'tokens', start: 5 }]],
+    });
+  });
+  it('wants a whole count before each noun', () => {
+    for (const list of ['houses', 'a house', '32', '32 houses and hotels', 'two houses', '-1 houses', '3.5 houses', '3 big houses']) {
+      expect(bank.match('board', `The bank has ${list}`, V).status).toBe('unknown');
+    }
+  });
+  it('reads whole numbers joined by commas and "or"', () => {
+    expect(ints.match('condition', 'The price is 25, 50, 100 or 200 here', V)).toEqual({
+      status: 'ok', pattern: 'the price is {ints} here', args: [[25, 50, 100, 200]],
+    });
+    expect(ints.match('condition', 'The price is 25, 50, or 100 here', V)).toMatchObject({ args: [[25, 50, 100]] });
+    expect(ints.match('condition', 'The price is 7 here', V)).toMatchObject({ args: [[7]] });
+    expect(ints.match('condition', 'The price is 25 or 50 here', V)).toMatchObject({ args: [[25, 50]] });
+  });
+  it('does not read other lists as numbers', () => {
+    for (const list of ['25 and', '25 50', 'a or b', '25, or', 'or 25']) {
+      expect(ints.match('condition', `The price is ${list} here`, V).status).toBe('unknown');
+    }
   });
 });

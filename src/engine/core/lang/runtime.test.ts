@@ -12,6 +12,7 @@ import { LangRuntime } from './runtime';
 import { TEST_DUEL, TINY_BOARD } from './testing';
 import type { CompiledGame, ExampleEnv, MoveInfo, PhraseRef } from './types';
 import { matchesCard } from './zones';
+import RENT_DAY from '@/games/rent-day.rules?raw';
 
 const lib = createDefaultLibrary();
 const LINES = TEST_DUEL.split('\n');
@@ -309,9 +310,9 @@ describe('LangRuntime on a board', () => {
   const broke = (state: GameState, ...seats: string[]) => seats.reduce((s, seat) => setCounter(s, 'money', seat, -1), state);
 
   it('says who and which space a phrase is about', () => {
-    expect(runtime.env(start, undefined, undefined, { player: 'p1', space: 2 }).subject).toEqual({ player: 'p1', space: 2 });
+    expect(runtime.env(start, undefined, undefined, { player: 'p1', space: 2, card: null }).subject).toEqual({ player: 'p1', space: 2, card: null });
     const move: MoveInfo = { verb: 'play', by: 'p1', cardId: 'c1', from: 'hand-p1', to: 'middle' };
-    expect(runtime.env(start, move).subject).toEqual({ player: 'p1', space: null });
+    expect(runtime.env(start, move).subject).toEqual({ player: 'p1', space: null, card: null });
     expect(runtime.env(start).subject).toBeUndefined();
   });
 
@@ -322,7 +323,7 @@ describe('LangRuntime on a board', () => {
 
   it('runs a rule about a player for the first player it picks out, only in its phase', () => {
     expect(runtime.triggerSubject('playing', goingOut, start)).toBeNull();
-    expect(runtime.triggerSubject('playing', goingOut, broke(start, 'p0', 'p1'))).toEqual({ player: 'p0', space: null });
+    expect(runtime.triggerSubject('playing', goingOut, broke(start, 'p0', 'p1'))).toEqual({ player: 'p0', space: null, card: null });
     expect(runtime.triggerSubject('elsewhere', goingOut, broke(start, 'p0', 'p1'))).toBeNull();
     const fired = runtime.fireTrigger('playing', goingOut, broke(start, 'p1'));
     expect([isOut(fired, 'p0'), isOut(fired, 'p1')]).toEqual([false, true]);
@@ -333,16 +334,16 @@ describe('LangRuntime on a board', () => {
     const [rule] = rules.phases[0].triggers;
     const choosy = new LangRuntime(rules, lib, ['p0', 'p1']);
     const both = broke(start, 'p0', 'p1');
-    expect(choosy.triggerSubject('playing', rule, both)).toEqual({ player: 'p0', space: null });
-    expect(choosy.triggerSubject('playing', rule, recordAction(both, 'p0', 'roll'))).toEqual({ player: 'p1', space: null });
-    expect(choosy.triggerSubject('playing', rule, recordAction(broke(start, 'p0'), 'p0', 'roll'))).toBeNull();
+    expect(choosy.triggerSubject('playing', rule, both)).toEqual({ player: 'p0', space: null, card: null });
+    expect(choosy.triggerSubject('playing', rule, recordAction(both, 'p0', 'roll the dice'))).toEqual({ player: 'p1', space: null, card: null });
+    expect(choosy.triggerSubject('playing', rule, recordAction(broke(start, 'p0'), 'p0', 'roll the dice'))).toBeNull();
   });
 
   it('runs a rule about no one in particular with no player', () => {
     const duel = new LangRuntime(game, lib, ['p0', 'p1']);
     const [full] = game.phases[0].triggers;
     const twoInMiddle = arrange('p0', {}, [['5C', 'p1'], ['7C', 'p0']]);
-    expect(duel.triggerSubject('play', full, twoInMiddle)).toEqual({ player: null, space: null });
+    expect(duel.triggerSubject('play', full, twoInMiddle)).toEqual({ player: null, space: null, card: null });
     expect(duel.triggerSubject('play', full, arrange('p0', {}, [['5C', 'p1']]))).toBeNull();
     expect(duel.triggerSubject('elsewhere', full, twoInMiddle)).toBeNull();
   });
@@ -357,6 +358,197 @@ describe('LangRuntime on a board', () => {
 
   it('lets players press the phase’s buttons and passes the turn after the ones that end it', () => {
     const playing = flowDefFor(board, ['p0', 'p1']).phases[1];
-    expect(playing).toMatchObject({ allow: ['roll', 'buy', 'end'], endTurn: { after: ['end'] } });
+    expect(playing).toMatchObject({
+      allow: ['roll the dice', 'buy the space they are on', 'end their turn'], endTurn: { after: ['end their turn'] },
+    });
+  });
+});
+
+describe('LangRuntime on rules about a card', () => {
+  const CARD_GAME = (...rule: string[]) => [
+    'Game: Camps', 'Players: 2', '', 'Cards:', '  A deck called creatures, starting in the deck:', '    | name   | health | copies |',
+    '    | Knight | 3      | 4      |', '    | Viper  | 1      | 4      |', '  Cards can be poisoned.', '',
+    'Table:', '  The deck is a pile in the center that no one can see.', '  The discard pile is a pile in the center that everyone can see.',
+    '  Each player has a hand that only they can see.', '  Each player has a camp that everyone can see.', '',
+    'Phase: playing', '  Players take turns.', '  A player may play a card from their hand to their camp.', ...rule.map((line) => `  ${line}`),
+    '  After a player plays, the turn passes to the left.', '', 'End:', '  The game ends when the deck and every hand are empty.',
+    '  The player with the most cards in their camp wins.',
+  ].join('\n');
+  const rules = compiled(CARD_GAME('When a card in a camp has 0 health:', '  Move it to the discard pile.'));
+  const [rule] = rules.phases[0].triggers;
+  const runtime = new LangRuntime(rules, lib, ['p0', 'p1']);
+
+  /** Cards c0 to c5 put in camps with what they have; every other card stays in the deck, and it is p0's turn to play. */
+  const camps = (cards: [id: string, zoneId: string, slot: number, data: { [k: string]: Json }][], over: CompiledGame = rules): GameState => {
+    const start = initialState(over, 1);
+    const placed = new Map(cards.map(([id, zoneId, slot, data]) => [id, { zoneId, slot, data }] as const));
+    return {
+      ...start,
+      turn: { current: 'p0', phase: 'playing' },
+      cards: start.cards.map((card) => {
+        const at = placed.get(card.id);
+        return at ? { ...card, zoneId: at.zoneId, slot: at.slot, faceUp: true, data: { ...card.data, ...at.data } } : card;
+      }),
+    };
+  };
+  const spent = camps([
+    ['c0', 'camp-p0', 0, { health: 2 }], ['c1', 'camp-p0', 1, { health: 0, poisoned: true }], ['c2', 'camp-p1', 0, { health: 0 }],
+    ['c3', 'camp-p1', 1, { health: 0, poisoned: true }], ['c4', 'hand-p0', 0, { health: 0 }], ['c5', 'discard-pile', 0, { health: 0 }],
+  ]);
+  const zoneOf = (state: GameState, id: string) => cardById(state, id)!.zoneId;
+
+  it('picks out the cards a rule about cards is about, camp by camp', () => {
+    expect(rule.when).toMatchObject({ kind: 'which' });
+    expect(runtime.which(rule.when, spent)).toEqual(['c1', 'c2', 'c3']);
+    expect(runtime.which(rule.when, camps([]))).toEqual([]);
+  });
+
+  it('runs a rule about cards for the first card it picks out, and for no player or space', () => {
+    expect(runtime.triggerSubject('playing', rule, spent)).toEqual({ player: null, space: null, card: 'c1' });
+    expect(runtime.triggerSubject('playing', rule, camps([]))).toBeNull();
+    expect(runtime.triggerSubject('elsewhere', rule, spent)).toBeNull();
+    expect(runtime.triggerSubject('playing', rule, { ...spent, turn: undefined })).toBeNull();
+  });
+
+  it('fires about that card only, which moves it with its facts', () => {
+    const fired = runtime.fireTrigger('playing', rule, spent);
+    expect(['c1', 'c2', 'c3'].map((id) => zoneOf(fired, id))).toEqual(['discard-pile', 'camp-p1', 'camp-p1']);
+    expect(cardById(fired, 'c1')!.data).toMatchObject({ health: 0, poisoned: true });
+    expect(runtime.triggerSubject('playing', rule, fired)).toEqual({ player: null, space: null, card: 'c2' });
+    expect(() => runtime.fireTrigger('playing', rule, camps([]))).toThrow('The rule on line 20 was run although it does not hold.');
+  });
+
+  it('passes over a card whose Only if lines do not hold', () => {
+    const choosy = compiled(CARD_GAME('When a card in a camp has 0 health:', '  Only if it is poisoned.', '  Move it to the discard pile.'));
+    const [only] = choosy.phases[0].triggers;
+    const asked = new LangRuntime(choosy, lib, ['p0', 'p1']);
+    expect(asked.triggerSubject('playing', only, camps([['c2', 'camp-p1', 0, { health: 0 }], ['c3', 'camp-p1', 1, { health: 0, poisoned: true }]], choosy))).toEqual({ player: null, space: null, card: 'c3' });
+    expect(asked.triggerSubject('playing', only, camps([['c2', 'camp-p1', 0, { health: 0 }]], choosy))).toBeNull();
+  });
+
+  it('lets the flow run the rule for every card until no card is left that it picks out', () => {
+    const { engine } = createEngine(rules, lib, 2, spent);
+    const settled = engine.getState();
+    expect(['c1', 'c2', 'c3', 'c4', 'c5', 'c0'].map((id) => zoneOf(settled, id))).toEqual([
+      'discard-pile', 'discard-pile', 'discard-pile', 'hand-p0', 'discard-pile', 'camp-p0',
+    ]);
+    // In the order the rule found them: c5 was already there.
+    expect(zoneCards(settled, 'discard-pile').map((c) => c.id)).toEqual(['c5', 'c1', 'c2', 'c3']);
+  });
+
+  it('runs the rule after a play, and the card that was played is judged as it is then', () => {
+    const state = camps([['c0', 'hand-p0', 0, { health: 0 }], ['c1', 'camp-p1', 0, { health: 1 }]]);
+    const { engine } = createEngine(rules, lib, 2, state);
+    expect(engine.dispatch({ type: 'play', cardId: 'c0', by: 'p0' }).ok).toBe(true);
+    expect([zoneOf(engine.getState(), 'c0'), zoneOf(engine.getState(), 'c1')]).toEqual(['discard-pile', 'camp-p1']);
+  });
+
+  it('lets a move put a card in the other player\'s zone, and in no other', () => {
+    const giving = compiled(CARD_GAME("A player may give a card from their hand to the other player's camp."));
+    const state = camps([['c0', 'hand-p0', 0, {}], ['c1', 'hand-p1', 0, {}]], giving);
+    const { engine } = createEngine(giving, lib, 2, state);
+    expect(engine.dispatch({ type: 'give', cardId: 'c0', by: 'p0', toZone: 'camp-p0' })).toMatchObject({ ok: false, reason: "You can't give a card there." });
+    expect(engine.dispatch({ type: 'give', cardId: 'c0', by: 'p0', toZone: 'camp-p1' }).ok).toBe(true);
+    expect(zoneOf(engine.getState(), 'c0')).toBe('camp-p1');
+    // On p1's turn it is the other way round.
+    const second = createEngine(giving, lib, 2, { ...state, turn: { current: 'p1', phase: 'playing' } }).engine;
+    expect(second.dispatch({ type: 'give', cardId: 'c1', by: 'p1', toZone: 'camp-p0' }).ok).toBe(true);
+    expect(zoneOf(second.getState(), 'c1')).toBe('camp-p0');
+  });
+
+  describe('a game ends only once its rules about cards have settled', () => {
+    // Every card is somewhere but the deck and p1's hand, which are empty: once p0 plays c0 the End line holds. p0 then has
+    // c1 and c0 in their camp, p1 has c2 and c3, and a tie goes to p0, unless c0 is at 0 health and the rule moves it away.
+    const lastPlay = (health: number): GameState => camps([
+      ['c0', 'hand-p0', 0, { health }], ['c1', 'camp-p0', 0, {}], ['c2', 'camp-p1', 0, {}], ['c3', 'camp-p1', 1, {}],
+      ['c4', 'discard-pile', 0, {}], ['c5', 'discard-pile', 1, {}], ['c6', 'discard-pile', 2, {}], ['c7', 'discard-pile', 3, {}],
+    ]);
+
+    it('counts the table as the rule left it: the card it moved is not in the camp that decides the game', () => {
+      const { engine } = createEngine(rules, lib, 2, lastPlay(0));
+      expect(engine.dispatch({ type: 'play', cardId: 'c0', by: 'p0' }).ok).toBe(true);
+      expect(zoneOf(engine.getState(), 'c0')).toBe('discard-pile');
+      expect(engine.getState().result).toEqual({ winner: 'p1' });
+    });
+
+    it('ends at once when no card is left for the rule to move', () => {
+      const { engine } = createEngine(rules, lib, 2, lastPlay(3));
+      expect(engine.dispatch({ type: 'play', cardId: 'c0', by: 'p0' }).ok).toBe(true);
+      expect(zoneOf(engine.getState(), 'c0')).toBe('camp-p0');
+      expect(engine.getState().result).toEqual({ winner: 'p0' });
+    });
+
+    it('waits only for rules about cards: other games keep their plain End condition', () => {
+      const params = { when: rules.end!.when, rules: [{ phase: 'playing', trigger: rule }] };
+      expect(flowDefFor(rules, ['p0', 'p1']).end).toEqual([{ when: { name: 'lang:end-when', params }, result: 'lang:result' }]);
+      // A plain rule (the Test Duel's) and a rule about a player (Rent Day's) do not hold the End back.
+      expect(flowDefFor(game, ['p0', 'p1']).end![0].when).toEqual({ name: 'lang:cond', params: game.end!.when });
+      const rentDay = compiled(RENT_DAY);
+      expect(rentDay.phases.some((p) => p.triggers.some((t) => t.when.kind === 'who'))).toBe(true);
+      expect(flowDefFor(rentDay, ['p0', 'p1']).end![0].when).toEqual({ name: 'lang:cond', params: rentDay.end!.when });
+    });
+  });
+
+  it('reports a rule whose lines never stop it holding in plain words', () => {
+    const stuck = compiled(CARD_GAME('When a card in a camp has 0 health:', '  Every card in each camp is poisoned.'));
+    const error = thrown(() => createEngine(stuck, lib, 2, camps([['c0', 'camp-p0', 0, { health: 0 }]], stuck)));
+    expect(friendlyError(error)).toBe('The rule on line 20 (“When a card in a camp has 0 health”) keeps firing. Its effects must change what it checks.');
+  });
+});
+
+describe('LangRuntime.columnValue', () => {
+  // The lines of a column's section each take what the line before made of the table's cell, about the space and no player.
+  const seen: unknown[] = [];
+  const library = createDefaultLibrary()
+    .column('add {int}', (_env, [n], value) => (value ?? 0) + (n as number))
+    .column('double it', (_env, _args, value) => (value === null ? null : value * 2))
+    .column('add its place', (env, _args, value) => {
+      seen.push(env.subject);
+      return (value ?? 0) + (env.subject?.space ?? 0);
+    })
+    .column('give up', () => {
+      throw new RuleError('Not for this space.');
+    });
+  const withSection = (...lines: string[]) => compiled(`${TINY_BOARD}\n\nTax:\n${lines.map((line) => `  ${line}`).join('\n')}`, library);
+  const start = (rules: CompiledGame): GameState => ({ ...withBoardData(initialState(rules, 1), rules, ['p0', 'p1']), turn: { current: 'p0', phase: 'playing' } });
+  const rules = withSection('Add 5.', 'Double it.', 'Add its place.');
+  const runtime = new LangRuntime(rules, library, ['p0', 'p1']);
+
+  it('runs the lines of the column in order, each on what the one before made of the cell', () => {
+    // Income Tax is the third space and has a tax of 200.
+    expect(runtime.columnValue(start(rules), 2, 'tax')).toBe((200 + 5) * 2 + 2);
+    // A blank cell starts from nothing.
+    expect(runtime.columnValue(start(rules), 1, 'tax')).toBe(5 * 2 + 1);
+  });
+  it('gives each line the space and no one else, whatever the state', () => {
+    seen.length = 0;
+    runtime.columnValue(start(rules), 3, 'tax');
+    expect(seen).toEqual([{ player: null, space: 3, card: null }]);
+  });
+  it('is the table’s cell for a column no section is about: a number, or nothing when it is blank', () => {
+    expect(runtime.columnValue(start(rules), 1, 'price')).toBe(60);
+    expect(runtime.columnValue(start(rules), 0, 'price')).toBeNull();
+    expect(runtime.columnValue(start(rules), 0, 'nothing')).toBeNull();
+  });
+  it('names the space when the cell is text', () => {
+    expect(() => runtime.columnValue(start(rules), 1, 'color')).toThrow("Mill Lane's color isn't a number.");
+  });
+  it('reads a game with no columns at all as its cells', () => {
+    const plain = compiled(TINY_BOARD);
+    expect(new LangRuntime(plain, library, ['p0', 'p1']).columnValue(start(plain), 2, 'tax')).toBe(200);
+  });
+  it('says on which line of the section a line gave up', () => {
+    const failing = withSection('Add 5.', 'Give up.');
+    const attempt = () => new LangRuntime(failing, library, ['p0', 'p1']).columnValue(start(failing), 2, 'tax');
+    expect(attempt).toThrow('Not for this space.');
+    expect(attempt).toThrow(expect.objectContaining({ line: failing.columns.tax[1].line, text: 'Give up' }));
+  });
+  it('refuses a line nobody has written a phrase for when it is reached', () => {
+    const missing = withSection('Add 5.', 'Halve it.');
+    const attempt = () => new LangRuntime(missing, library, ['p0', 'p1']).columnValue(start(missing), 2, 'tax');
+    expect(attempt).toThrow(MissingPhraseError);
+  });
+  it('is what a phrase sees as its own way of reading a space’s details', () => {
+    expect(runtime.env(start(rules)).columnValue?.(start(rules), 2, 'tax')).toBe((200 + 5) * 2 + 2);
   });
 });

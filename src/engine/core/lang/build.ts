@@ -43,6 +43,8 @@ const cond = (ref: PhraseRef): NamedRef => ({ name: 'lang:cond', params: ref });
 const effect = (ref: PhraseRef): NamedRef => ({ name: 'lang:effect', params: ref });
 /** A `When …:` rule and the phase it is written under, as the flow hands it back to the runtime. */
 type TriggerParams = { phase: string; trigger: CompiledTrigger };
+/** The End condition and the rules about a card that it waits for. */
+type EndParams = { when: PhraseRef; rules: TriggerParams[] };
 
 export function flowDefFor(game: CompiledGame, seats: PlayerId[]): FlowDef {
   const first = game.phases[0];
@@ -50,17 +52,17 @@ export function flowDefFor(game: CompiledGame, seats: PlayerId[]): FlowDef {
   const setup: PhaseDef = { id: SETUP_PHASE, allow: [], onEnter: game.setup.map(effect), advance: { when: 'lang:always', to: first.id } };
 
   const phases = game.phases.map((phase): PhaseDef => {
-    const verbs = [...new Set([...phase.moves.map((m) => m.verb), ...phase.actions.map((a) => a.verb)])];
+    const moveTypes = [...new Set([...phase.moves.map((m) => m.verb), ...phase.actions.map((a) => a.words)])];
     const rearranging = phase.rearrange.length > 0;
     const { goTo, after } = phase;
     return {
       id: phase.id,
-      allow: rearranging ? [...verbs, 'reorder'] : verbs,
+      allow: rearranging ? [...moveTypes, 'reorder'] : moveTypes,
       actor: phase.actor,
       ...(rearranging ? { anyActor: ['reorder'] } : {}),
       onEnter: phase.onEnter.map(effect),
       ...(goTo ? { advance: { when: cond(goTo.when), to: goTo.to } } : {}),
-      ...(after ? { endTurn: { when: 'lang:always', after: after.verbs, next: { name: 'lang:turn', params: after.next } } } : {}),
+      ...(after ? { endTurn: { when: 'lang:always', after: after.moves, next: { name: 'lang:turn', params: after.next } } } : {}),
     };
   });
 
@@ -71,17 +73,34 @@ export function flowDefFor(game: CompiledGame, seats: PlayerId[]): FlowDef {
     return { id: `line ${t.line}: ${t.text}`, when: { name: 'lang:trigger-when', params }, then: [{ name: 'lang:trigger-then', params }] };
   }));
 
-  const end = game.end ? [{ when: cond(game.end.when), result: 'lang:result' }] : [];
+  // A rule about a card tidies the table, and the game is decided on the tidied table: the flow checks End before it fires any
+  // rule, so End would otherwise count a card (at 0 health, say) that such a rule is about to move away. Every rule the flow
+  // fires re-checks End, so End holds as soon as no card rule has a card left. Rules about a player or about nothing in
+  // particular do not tidy anything the winner depends on, so they never hold End back.
+  const cardRules = game.phases.flatMap((phase) => phase.triggers
+    .filter((t) => t.when.kind === 'which')
+    .map((trigger): TriggerParams => ({ phase: phase.id, trigger })));
+  const endWhen = (when: PhraseRef): NamedRef => {
+    if (cardRules.length === 0) return cond(when);
+    const params: EndParams = { when, rules: cardRules };
+    return { name: 'lang:end-when', params };
+  };
+  const end = game.end ? [{ when: endWhen(game.end.when), result: 'lang:result' }] : [];
   return { turn: { order: seats }, phases: [setup, ...phases], triggers, end };
 }
 
 function flowRegistryFor(runtime: LangRuntime): FlowRegistry {
   const ref = (params: Json | undefined) => params as PhraseRef;
   const rule = (params: Json | undefined) => params as TriggerParams;
+  const ending = (params: Json | undefined) => params as EndParams;
   return new FlowRegistry()
     .registerPredicate('lang:always', () => true)
     .registerPredicate('lang:cond', (state, _ctx, params) => runtime.test(ref(params), state))
     .registerEffect('lang:effect', (state, _ctx, params) => runtime.run(ref(params), state))
+    .registerPredicate('lang:end-when', (state, _ctx, params) => {
+      const { when, rules } = ending(params);
+      return runtime.test(when, state) && rules.every(({ phase, trigger }) => runtime.triggerSubject(phase, trigger, state) === null);
+    })
     .registerPredicate('lang:trigger-when', (state, _ctx, params) => {
       const { phase, trigger } = rule(params);
       return runtime.triggerSubject(phase, trigger, state) !== null;
@@ -116,8 +135,9 @@ export function createEngine(
   const moves = registerCoreMoves(new MoveRegistry());
   const verbs = new Set(game.phases.flatMap((p) => p.moves.map((m) => m.verb)));
   for (const verb of verbs) moves.register(verb, declaredMoveHandler(verb, runtime));
-  const actionVerbs = new Set(game.phases.flatMap((p) => p.actions.map((a) => a.verb)));
-  for (const verb of actionVerbs) moves.register(verb, declaredActionHandler(verb, runtime));
+  // A button's move type is its whole wording, so “pay the fine” and “pay the toll” are two moves.
+  const buttonMoves = new Set(game.phases.flatMap((p) => p.actions.map((a) => a.words)));
+  for (const move of buttonMoves) moves.register(move, declaredActionHandler(move, runtime));
 
   const flow = flowDefFor(game, seats);
   const rules = new RuleRegistry();

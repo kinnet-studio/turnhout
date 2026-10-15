@@ -4,21 +4,53 @@ import type { GameEngine } from '../game-engine';
 import type { GameState } from '../game-state';
 import type { PlayerId } from '../scene';
 import type { Json } from '../table-def';
-import { counterOf, isOut, latestRoll, ownerOf, pieceAt } from './board-state';
+import { bankOf, counterOf, isOut, latestRoll, ownerOf, pieceAt, spaceFact } from './board-state';
+import { targetCandidates } from './declared-actions';
 import { friendlyError, friendlyReason } from './friendly';
+import { secondPersonWords } from './refs';
 import type { LangRuntime } from './runtime';
+import type { DeclaredAction } from './types';
 
-/** `color` is the space's color when it is written as text; `details` is every other thing the table says about it. */
-export type SpaceView = { name: string; color: string | null; details: { [k: string]: Json }; owner: PlayerId | null };
+/**
+ * `color` is the space's color when it is written as text; `details` is every other thing the table says about it. `facts` is
+ * what has come to be true of it in play, only the ones that are set: a count other than 0, a flag that is on.
+ */
+export type SpaceView = {
+  name: string; color: string | null; details: { [k: string]: Json }; facts: { [fact: string]: number | boolean }; owner: PlayerId | null;
+};
 /** One number per seat; null where the seat looking may not see it. */
 export type CounterView = { name: string; values: { [seat: string]: number | null } };
-/** `pieces` lists the seats that still have a piece, so a player who is out is absent. */
-export type BoardView = { spaces: SpaceView[]; pieces: { [seat: string]: number }; roll: number[] | null; counters: CounterView[]; out: PlayerId[] };
-/** `allowed` is true when the button works now, otherwise the sentence to show for why it does not. */
-export type ActionView = { verb: string; label: string; allowed: true | string };
+/** What the bank has left of one thing; `name` is plural ('tokens'). */
+export type BankView = { name: string; count: number };
+/** `pieces` lists the seats that still have a piece, so a player who is out is absent; `bank` is in the order the game declares it. */
+export type BoardView = {
+  spaces: SpaceView[]; pieces: { [seat: string]: number }; roll: number[] | null; counters: CounterView[]; out: PlayerId[]; bank: BankView[];
+};
+/**
+ * For a button that picks a space: what to ask the player, and every space its target phrase allows, by the space's place on
+ * the board, each `true` when the move accepts it and otherwise the sentence for why it does not.
+ */
+export type TargetView = { prompt: string; spaces: { [space: string]: true | string } };
+/**
+ * `move` is the move type to send when the button is pressed. `allowed` is true when the button works now, otherwise the
+ * sentence to show for why it does not; for a button that picks a space it is true when any space may be picked. `target` is
+ * null for a button that picks no space.
+ */
+export type ActionView = { move: string; label: string; allowed: true | string; target: TargetView | null };
 export type SeatExtras = { board: BoardView | null; actions: ActionView[] };
 
 const OUT_OF_GAME = "You're out of the game.";
+
+/** The facts of a space that are set: a fact never given a value, a count of 0 and a flag that is off are all left out. */
+function factsOf(runtime: LangRuntime, state: GameState, space: number): SpaceView['facts'] {
+  const set: SpaceView['facts'] = {};
+  for (const fact of runtime.game.facts) {
+    if (fact.on !== 'space') continue;
+    const value = spaceFact(state, space, fact.name);
+    if (value !== null && value !== 0 && value !== false) set[fact.name] = value;
+  }
+  return set;
+}
 
 function boardView(runtime: LangRuntime, state: GameState, seat: PlayerId): BoardView | null {
   const { board } = runtime.game;
@@ -28,7 +60,7 @@ function boardView(runtime: LangRuntime, state: GameState, seat: PlayerId): Boar
     // A color that is not text (a number, say) is not one to paint with, but it is still something the table says.
     const painted = typeof color === 'string';
     const details = painted || color === undefined ? rest : { ...rest, color };
-    return { name: space.name, color: painted ? color : null, details, owner: ownerOf(state, index) };
+    return { name: space.name, color: painted ? color : null, details, facts: factsOf(runtime, state, index), owner: ownerOf(state, index) };
   });
   const pieces: { [seat: string]: number } = {};
   for (const s of runtime.seats) {
@@ -39,17 +71,52 @@ function boardView(runtime: LangRuntime, state: GameState, seat: PlayerId): Boar
     name: counter.name,
     values: Object.fromEntries(runtime.seats.map((s) => [s, counter.visibility === 'public' || s === seat ? counterOf(state, counter.name, s) : null])),
   }));
-  return { spaces, pieces, roll: latestRoll(state), counters, out: runtime.seats.filter((s) => isOut(state, s)) };
+  const bank = board.bank.map(({ name }): BankView => ({ name, count: bankOf(state, name) }));
+  return { spaces, pieces, roll: latestRoll(state), counters, out: runtime.seats.filter((s) => isOut(state, s)), bank };
 }
 
-/** Whether `seat` may press the button now; a rule that cannot be answered (“Go has no price.”) greys it with that sentence. */
-function allowedNow(engine: GameEngine, state: GameState, seat: PlayerId, verb: string): true | string {
+/** What a rule says about the space a button picks, said to the player: 'a field they own' is 'a field you own'. */
+const targetWords = (target: NonNullable<DeclaredAction['target']>): string => secondPersonWords(target.text.toLowerCase());
+/** The same without its “a”, for saying there is none: “There is no field you own.” A target always starts with “a” or “an”. */
+const noneWords = (target: NonNullable<DeclaredAction['target']>): string => targetWords(target).replace(/^an? /, '');
+const pickPrompt = (target: NonNullable<DeclaredAction['target']>): string => `Pick ${targetWords(target)}`;
+
+/**
+ * Whether `seat` may press the button now, with the space it picks when it picks one; a rule that cannot be answered
+ * (“Go has no price.”) greys it with that sentence.
+ */
+function allowedNow(engine: GameEngine, state: GameState, seat: PlayerId, move: string, target?: number): true | string {
   try {
-    const verdict = engine.canDispatch({ type: verb, by: seat });
+    const verdict = engine.canDispatch({ type: move, by: seat, ...(target === undefined ? {} : { target }) });
     return verdict === true ? true : friendlyReason(verdict, state.turn?.current);
   } catch (e) {
     return friendlyError(e);
   }
+}
+
+/**
+ * Which spaces a button that picks one may be pointed at, and the button's own verdict from them. A space the target phrase
+ * allows is offered as pickable only when the move itself accepts it, so each one is asked of the engine; the button works when
+ * any of them does, and otherwise says why the first does not, or that the player has nothing of the kind to pick, or why
+ * the target phrase itself could not say.
+ */
+function pickingView(
+  engine: GameEngine, runtime: LangRuntime, state: GameState, seat: PlayerId, action: DeclaredAction, target: NonNullable<DeclaredAction['target']>,
+): { target: TargetView; allowed: true | string } {
+  const view: TargetView = { prompt: pickPrompt(target), spaces: {} };
+  // Once the game is over every button says so, as the ones that pick nothing do, whatever the player owns.
+  const over = state.result === undefined ? null : friendlyReason('game is over');
+  let candidates: number[];
+  try {
+    candidates = targetCandidates(runtime, action, state, seat);
+  } catch (e) {
+    // A target that cannot be answered greys the button with that sentence, as a rule that cannot be answered does.
+    return { target: view, allowed: over ?? friendlyError(e) };
+  }
+  for (const space of candidates) view.spaces[space] = allowedNow(engine, state, seat, action.words, space);
+  const verdicts = Object.values(view.spaces);
+  if (verdicts.length === 0) return { target: view, allowed: over ?? `There is no ${noneWords(target)}.` };
+  return { target: view, allowed: verdicts.includes(true) ? true : verdicts[0] };
 }
 
 /** The current phase's buttons in written order, each saying whether this seat may press it right now and if not why. */
@@ -59,8 +126,11 @@ function actionViews(engine: GameEngine, runtime: LangRuntime, state: GameState,
   // A seat that is out has nothing to press while the others play on; once the game is over the engine's own word wins.
   const out = isOut(state, seat) && state.result === undefined;
   return phase.actions.map((action): ActionView => {
-    if (out) return { verb: action.verb, label: action.label, allowed: OUT_OF_GAME };
-    return { verb: action.verb, label: action.label, allowed: allowedNow(engine, state, seat, action.verb) };
+    const { words: move, label, target } = action;
+    if (target === null) return { move, label, allowed: out ? OUT_OF_GAME : allowedNow(engine, state, seat, move), target: null };
+    if (out) return { move, label, allowed: OUT_OF_GAME, target: { prompt: pickPrompt(target), spaces: {} } };
+    const picking = pickingView(engine, runtime, state, seat, action, target);
+    return { move, label, allowed: picking.allowed, target: picking.target };
   });
 }
 
@@ -75,15 +145,20 @@ const isNumber = (v: unknown): v is number => typeof v === 'number';
 const isList = (v: unknown, each: (item: unknown) => boolean): boolean => Array.isArray(v) && v.every(each);
 const isMap = (v: unknown, each: (item: unknown) => boolean): boolean => isRecord(v) && Object.values(v).every(each);
 
+const isFact = (v: unknown): boolean => isNumber(v) || typeof v === 'boolean';
 const isSpace = (v: unknown): boolean =>
-  isRecord(v) && isText(v.name) && (v.color === null || isText(v.color)) && isRecord(v.details) && (v.owner === null || isText(v.owner));
+  isRecord(v) && isText(v.name) && (v.color === null || isText(v.color)) && isRecord(v.details) && isMap(v.facts, isFact)
+  && (v.owner === null || isText(v.owner));
+const isBankLine = (v: unknown): boolean => isRecord(v) && isText(v.name) && isNumber(v.count);
 const isCounter = (v: unknown): boolean =>
   isRecord(v) && isText(v.name) && isMap(v.values, (n) => n === null || isNumber(n));
 const isBoard = (v: unknown): boolean =>
   isRecord(v) && isList(v.spaces, isSpace) && isMap(v.pieces, isNumber) && (v.roll === null || isList(v.roll, isNumber))
-  && isList(v.counters, isCounter) && isList(v.out, isText);
+  && isList(v.counters, isCounter) && isList(v.out, isText) && isList(v.bank, isBankLine);
+const isVerdict = (v: unknown): boolean => v === true || isText(v);
+const isTarget = (v: unknown): boolean => isRecord(v) && isText(v.prompt) && isMap(v.spaces, isVerdict);
 const isAction = (v: unknown): boolean =>
-  isRecord(v) && isText(v.verb) && isText(v.label) && (v.allowed === true || isText(v.allowed));
+  isRecord(v) && isText(v.move) && isText(v.label) && isVerdict(v.allowed) && (v.target === null || isTarget(v.target));
 
 /** For the page: the extras of a view when they have the shape `seatExtras` makes, null for anything else. */
 export function readSeatExtras(extras: Json | undefined): SeatExtras | null {

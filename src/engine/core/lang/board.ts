@@ -45,3 +45,11 @@ export function readSpaceTable(table: CardTable): SpaceSpec[] {
   if (spaces.length < MIN_SPACES) throw new RuleError(`A board needs at least ${MIN_SPACES} spaces.`);
   return spaces;
 }
+
+/** The number a space's cell holds; null when the cell is blank, and the sentence that says so when it holds anything but a number. */
+export function numberIn(space: SpaceSpec, column: string): number | null {
+  const cell = space.attrs[column];
+  if (cell === undefined || cell === null) return null;
+  if (typeof cell !== 'number') throw new RuleError(`${space.name}'s ${column} isn't a number.`);
+  return cell;
+}

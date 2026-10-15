@@ -1,6 +1,7 @@
 import type { Json } from '../table-def';
-import { suggestNames } from './phrases';
-import type { NameProblem, ParamType, SpaceClass, Vocab } from './types';
+import { SEPARATORS, listSource, separatorSource, splitList, suggestNames } from './phrases';
+import type { FactSpec, NameProblem, ParamType, SpaceClass, Vocab } from './types';
+import { NEEDS_TWO } from './zones';
 
 type Parsed = { value: Json } | { error: string };
 
@@ -20,20 +21,56 @@ export function thirdPerson(verb: string): string {
   return /(?:s|sh|ch|x|z|o)$/i.test(verb) ? `${verb}es` : `${verb}s`;
 }
 
+/** A noun's plural: `-ies` for a consonant and y (penny), `+es` after s/sh/ch/x/z (box), else `+s`. */
+export function plural(noun: string): string {
+  if (/[^aeiou]y$/i.test(noun)) return `${noun.slice(0, -1)}ies`;
+  return /(?:s|sh|ch|x|z)$/i.test(noun) ? `${noun}es` : `${noun}s`;
+}
+
+/**
+ * The words a plural noun may be the plural of. English does not say whether "boxes" comes from box or boxe, or "caches"
+ * from cache or cach, so every way that makes a word is given; the odd one among them is only ever an odd name.
+ */
+export function singularForms(noun: string): string[] {
+  const forms: string[] = [];
+  if (/[^s]s$/i.test(noun)) forms.push(noun.slice(0, -1));
+  if (/(?:ss|sh|ch|x|z)es$/i.test(noun)) forms.push(noun.slice(0, -2));
+  if (/[^aeiou]ies$/i.test(noun)) forms.push(`${noun.slice(0, -3)}y`);
+  return forms;
+}
+
+/** "1 token" or "3 tokens": a name the game declares is plural, and of the singulars it may come from, the last has the most taken off. */
+export function counted(n: number, name: string): string {
+  const singulars = singularForms(name);
+  return `${n} ${n === 1 && singulars.length > 0 ? singulars[singulars.length - 1] : name}`;
+}
+
 /** The first word of an action in the third person: 'end their turn' is 'ends their turn'. */
 export const thirdPersonWords = (words: string): string => words.replace(/^\S+/, (first) => thirdPerson(first));
+
+/** Whole words of a rule's text that name the player, and what the player reads in their place. */
+const SECOND_PERSON = new Map([['their', 'your'], ["they're", "you're"], ['they', 'you'], ['them', 'you'], ['themselves', 'yourself']]);
+const THIRD_PERSON_WORD = /\b(?:they['‘’]re|themselves|their|they|them)\b/gi;
+
+/** What a rule says about the player, said to the player: 'end their turn' is 'end your turn', 'a field they own' is 'a field you own'. */
+export const secondPersonWords = (words: string): string =>
+  words.replace(THIRD_PERSON_WORD, (word) => SECOND_PERSON.get(word.toLowerCase().replace(/[‘’]/g, "'")) ?? word);
 
 const IRREGULAR_PARTICIPLES = new Map(Object.entries({
   buy: 'bought', draw: 'drawn', pay: 'paid', build: 'built', sell: 'sold', take: 'taken', give: 'given', throw: 'thrown', put: 'put',
   go: 'gone', make: 'made', get: 'got', win: 'won', lose: 'lost', hold: 'held', keep: 'kept', leave: 'left', bid: 'bid', deal: 'dealt',
-  spend: 'spent', choose: 'chosen',
+  spend: 'spent', choose: 'chosen', run: 'run',
 }));
 
-/** What a player has done by the end of the turn: 'rolled', 'bought'. Regular verbs only add `d`, `ied` or `ed`. */
+/** One vowel then one consonant ends a short verb that doubles it (stop, skip, plan); w, x and y never double (show, fix). */
+const DOUBLES_LAST = /^[^aeiou]*[aeiou][^aeiouwxy]$/i;
+
+/** What a player has done by the end of the turn: 'rolled', 'bought'. Regular verbs only add `d`, `ied`, `ed` or a doubled letter and `ed`. */
 export function participle(verb: string): string {
   const irregular = IRREGULAR_PARTICIPLES.get(verb.toLowerCase());
   if (irregular !== undefined) return irregular;
   if (/e$/i.test(verb)) return `${verb}d`;
+  if (DOUBLES_LAST.test(verb)) return `${verb}${verb.slice(-1)}ed`;
   return /[^aeiou]y$/i.test(verb) ? `${verb.slice(0, -1)}ied` : `${verb}ed`;
 }
 
@@ -43,8 +80,6 @@ export function participle(verb: string): string {
 const NEVER = '(?!)';
 /** Straight and curly apostrophes: designers paste text from word processors. */
 const APOSTROPHE = "['‘’]";
-const SEPARATORS = [', and ', ', ', ' and '];
-const SEPARATOR_SOURCE = `(?:${SEPARATORS.join('|')})`;
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -65,7 +100,7 @@ const bounded = (source: string) => `(?<!\\w)(?:${source})(?!\\w)`;
 
 const joinWith = (conjunction: string) => (words: string[]) =>
   (words.length < 2 ? words.join('') : `${words.slice(0, -1).join(', ')} ${conjunction} ${words.at(-1)}`);
-const joinOr = joinWith('or');
+export const joinOr = joinWith('or');
 const joinAnd = joinWith('and');
 
 const unknownText = (text: string): { error: string } => ({ error: `I don't understand “${text}” here.` });
@@ -85,30 +120,6 @@ function memo<T>(vocab: Vocab, key: string, make: () => T): T {
 function fullMatch(type: ParamType, text: string, vocab: Vocab): boolean {
   return memo(vocab, `full:${type.name}`, () => new RegExp(`^(?:${type.source(vocab)})$`, 'i')).test(text);
 }
-
-/** Splits 'a, b and c' into items, trying every separator position so names containing 'and' still work. */
-function splitList<T>(text: string, parseItem: (item: string) => T | null): T[] | null {
-  const lower = text.toLowerCase();
-  const seps: { at: number; len: number }[] = [];
-  for (let at = 0; at < lower.length; at++) {
-    for (const sep of SEPARATORS) if (lower.startsWith(sep, at)) seps.push({ at, len: sep.length });
-  }
-  const from = (start: number): T[] | null => {
-    const last = parseItem(text.slice(start));
-    if (last !== null) return [last];
-    for (const sep of seps) {
-      if (sep.at <= start) continue;
-      const head = parseItem(text.slice(start, sep.at));
-      const rest = head === null ? null : from(sep.at + sep.len);
-      if (head !== null && rest !== null) return [head, ...rest];
-    }
-    return null;
-  };
-  return from(0);
-}
-
-/** One or more items joined by the separators. */
-const listSource = (item: string) => `${item}(?:${SEPARATOR_SOURCE}${item})*`;
 
 /** The list's value, or its first error. */
 function listResult(items: Parsed[] | null, text: string): Parsed {
@@ -144,7 +155,7 @@ function closestOrFirst(name: string, names: string[]): string[] {
 const holdsName = (text: string, names: string[]): boolean =>
   names.some((name) => new RegExp(bounded(wordSource(name)), 'i').test(canon(text)));
 
-const LIST_SEPARATOR = new RegExp(SEPARATOR_SOURCE, 'i');
+const LIST_SEPARATOR = new RegExp(separatorSource(SEPARATORS), 'i');
 
 /** The first misnamed item of a list; null when an item is not meant as one at all, or when none is misnamed. */
 function misnamedItem(text: string, vocab: Vocab, item: ParamType): NameProblem | null {
@@ -198,11 +209,11 @@ const zoneTable = (vocab: Vocab): ZoneTable =>
 
 const zoneSource = (vocab: Vocab): string => {
   const names = anyOf([...vocab.sharedZones, ...vocab.playerZones]);
-  return `(?:(?:the |their |each |every )?${names}|the winner${APOSTROPHE}s ${names}|p\\d+${APOSTROPHE}s ${names})`;
+  return `(?:(?:the |their |each |every )?${names}|the (?:winner|other player)${APOSTROPHE}s ${names}|p\\d+${APOSTROPHE}s ${names})`;
 };
 
 /** group 1 = the whole prefix, group 2 = a seat ('p2'), group 3 = the zone name */
-const OWNER_PREFIX = /^(the winner's|(p\d+)'s|the|their|each|every) (.+)$/;
+const OWNER_PREFIX = /^(the winner's|the other player's|(p\d+)'s|the|their|each|every) (.+)$/;
 
 function resolveZone(text: string, vocab: Vocab): Parsed {
   const table = zoneTable(vocab);
@@ -222,6 +233,8 @@ function resolveZone(text: string, vocab: Vocab): Parsed {
   }
   if (!table.player.has(key)) return { error: `“the ${name}” is shared, so it has no owner.` };
   if (prefix === 'their') return { value: { of: { who: 'actor' }, zone: name } };
+  // There is one other player only at a table of two, so a game that allows more or fewer can never say it.
+  if (prefix === "the other player's") return vocab.maxPlayers === 2 ? { value: { of: { who: 'other' }, zone: name } } : { error: NEEDS_TWO };
   if (prefix === 'each' || prefix === 'every') return { value: { each: name } };
   if (seat === undefined) return { value: { of: { who: 'winner' }, zone: name } };
   const owner = seatResult(seat, vocab);
@@ -229,7 +242,7 @@ function resolveZone(text: string, vocab: Vocab): Parsed {
 }
 
 /** The same owner words as OWNER_PREFIX, read from the text as written; group 1 = the zone name. */
-const OWNED_NAME = /^(?:the winner['‘’]s|p\d+['‘’]s|the|their|each|every) (.+)$/i;
+const OWNED_NAME = /^(?:the winner['‘’]s|the other player['‘’]s|p\d+['‘’]s|the|their|each|every) (.+)$/i;
 
 const allZones = (vocab: Vocab): string[] => [...vocab.sharedZones, ...vocab.playerZones];
 
@@ -303,12 +316,14 @@ const PLAYER: ParamType = {
 
 type ValueTable = { texts: string[]; owners: Map<string, { attribute: string; value: Json }[]> };
 
-/** Every value of a table, by its text; `texts` is longest first. */
-function tableOf(values: { attribute: string; value: Json }[]): ValueTable {
+/** Every value of a table, by its text or by each of the `forms` it may be written in; `texts` is longest first. */
+function tableOf(values: { attribute: string; value: Json }[], forms: (text: string) => string[] = (text) => [text]): ValueTable {
   const owners = new Map<string, { attribute: string; value: Json }[]>();
   for (const { attribute, value } of values) {
-    const key = canon(String(value));
-    owners.set(key, [...(owners.get(key) ?? []), { attribute, value }]);
+    for (const form of forms(String(value))) {
+      const key = canon(form);
+      owners.set(key, [...(owners.get(key) ?? []), { attribute, value }]);
+    }
   }
   return { texts: [...owners.keys()].sort((a, b) => b.length - a.length || (a < b ? -1 : 1)), owners };
 }
@@ -324,7 +339,7 @@ const valuesSource = (vocab: Vocab): string => {
 const STANDARD_CARD = new RegExp(`^(?:the )?(${anyOf(Object.keys(STANDARD_RANKS))}) of (${anyOf(Object.keys(STANDARD_SUITS))})$`, 'i');
 const STANDARD_SOURCE = `(?:the )?${anyOf(Object.keys(STANDARD_RANKS))} of ${anyOf(Object.keys(STANDARD_SUITS))}`;
 
-/** Splits 'red 7' into its values (or 'street or station', with ' or ' between them), trying longer values first; null if some word is not a value. */
+/** Splits 'red 7' into its values (or 'field or forest', with ' or ' between them), trying longer values first; null if some word is not a value. */
 function tokenize(body: string, texts: string[], separator = ' '): string[] | null {
   const lower = canon(body);
   const from = (pos: number): string[] | null => {
@@ -504,7 +519,7 @@ function resolveSpace(text: string, vocab: Vocab): Parsed {
 }
 
 const SPACE: ParamType = {
-  name: 'space', label: '[space]', stubOrder: 3,
+  name: 'space', label: '[space]',
   source: (vocab) => bounded(anyOf(vocab.spaces)),
   resolve: resolveSpace,
   loose: looseAs(ANY_TEXT, misnamedWord('space', spaceNames)),
@@ -521,7 +536,7 @@ function spaceClassSource(vocab: Vocab): string {
   return `(?:a|an) ${value}(?: or ${value})*(?: space)?`;
 }
 
-/** “a street or station”: spaces whose value in one column is any of those. */
+/** “a field or forest”: spaces whose value in one column is any of those. */
 function resolveSpaceClass(text: string, vocab: Vocab): Parsed {
   const body = A_OR_AN.exec(text)?.[1] ?? text;
   const { texts, owners } = spaceValueTable(vocab);
@@ -546,7 +561,7 @@ function resolveSpaceClass(text: string, vocab: Vocab): Parsed {
 const LOOSE_SPACE_CLASS = '(?:a|an) \\S+(?: or \\S+)*(?: space)?';
 const OR = / or /i;
 
-/** “a taks space” or “a street or stattion”: the first word that is no word of the board's table, with the closest that are. */
+/** “a taks space” or “a field or forrest”: the first word that is no word of the board's table, with the closest that are. */
 function misnamedSpaceClass(text: string, vocab: Vocab): NameProblem | null {
   const body = (A_OR_AN.exec(text)?.[1] ?? text).replace(SPACE_SUFFIX, '');
   const values = [...new Set(vocab.spaceValues.map((v) => v.value))];
@@ -563,6 +578,33 @@ const SPACECLASS: ParamType = {
   loose: { source: (vocab) => (vocab.spaceValues.length === 0 ? NEVER : LOOSE_SPACE_CLASS), explain: misnamedSpaceClass, narrow: true },
 };
 
+const spaceKindTable = (vocab: Vocab): ValueTable => memo(vocab, 'space-kind-table', () => tableOf(vocab.spaceValues, (text) => [text, plural(text)]));
+
+/** “tax” or “taxes”: the spaces whose value in one column is that, with no article and no “space” to follow it. */
+function resolveSpaceKind(text: string, vocab: Vocab): Parsed {
+  const options = spaceKindTable(vocab).owners.get(canon(text)) ?? [];
+  const attributes = [...new Set(options.map((o) => o.attribute))];
+  if (attributes.length === 0) return unknownText(text);
+  if (attributes.length > 1) return { error: `“${text}” could be ${joinOr(attributes)}.` };
+  const kind: SpaceClass = { attribute: attributes[0], values: [...new Set(options.map((o) => o.value))] };
+  return { value: kind };
+}
+
+/** A word that is no value of the board's table, with the values closest to it; a real value among other words is some other phrase. */
+function misnamedSpaceKind(text: string, vocab: Vocab): NameProblem | null {
+  if (holdsName(text, spaceKindTable(vocab).texts)) return null;
+  const values = [...new Set(vocab.spaceValues.map((v) => v.value))];
+  return missing('kind of space', text, closestOrFirst(text, values));
+}
+
+const SPACEKIND: ParamType = {
+  name: 'spacekind', label: '[kind of space]',
+  source: (vocab) => bounded(anyOf(spaceKindTable(vocab).texts)),
+  resolve: resolveSpaceKind,
+  // Any text may be a misspelt kind, but only on a board with words in its table: elsewhere the line is some other phrase.
+  loose: { source: (vocab) => (vocab.spaceValues.length === 0 ? NEVER : ANY_TEXT), explain: misnamedSpaceKind },
+};
+
 const SPACEATTR = wordType(
   'spaceattr', '[space detail]', (v) => v.spaceAttributes.map((a) => [a, a]),
   looseAs(ANY_TEXT, misnamedWord('space detail', (v) => v.spaceAttributes)),
@@ -571,15 +613,65 @@ const COUNTER = wordType(
   'counter', '[counter]', (v) => v.counters.map((c) => [c, c]),
   looseAs(ANY_TEXT, misnamedWord('counter', (v) => v.counters)),
 );
+
+/**
+ * A type whose text is a name the game declares. With `singulars` the text may also be the singular of a plural name
+ * ("token" for "tokens"), as a count of one is said; either way it resolves to the declared name.
+ */
+function declaredWord(name: string, label: string, what: string, names: (vocab: Vocab) => string[], singulars: boolean): ParamType {
+  const forms = (vocab: Vocab): [text: string, value: string][] =>
+    names(vocab).flatMap((declared) => [declared, ...(singulars ? singularForms(declared) : [])].map((form): [string, string] => [form, declared]));
+  return wordType(name, label, forms, {
+    // Any text may be a misspelt name, but only in a game that declares some: elsewhere the line is some other phrase.
+    source: (vocab) => (names(vocab).length === 0 ? NEVER : ANY_TEXT),
+    explain: (text, vocab) => (holdsName(text, forms(vocab).map(([form]) => form)) ? null : missing(what, text, closestOrFirst(text, names(vocab)))),
+  });
+}
+
+/** The names of the facts a game declares on something, of one kind: a count it has, or something it has or has not. */
+const factNames = (on: FactSpec['on'], kind: FactSpec['kind']) => (vocab: Vocab): string[] =>
+  vocab.facts.filter((fact) => fact.on === on && fact.kind === kind).map((fact) => fact.name);
+
+const SPACEFLAG = declaredWord('spaceflag', '[space fact]', 'space fact', factNames('space', 'flag'), false);
+const SPACENUMBER = declaredWord('spacenumber', '[space fact]', 'space fact', factNames('space', 'number'), true);
+const CARDFLAG = declaredWord('cardflag', '[card fact]', 'card fact', factNames('card', 'flag'), false);
+const BANKED = declaredWord('banked', '[bank item]', 'bank item', (vocab) => vocab.bank, true);
+
 // Actions and what was done are whole phrases ("ends their turn", "rolled") with a fixed form, not names to misspell.
-const ACTION = wordType('action', '[action]', (v) => v.actions.map((a) => [thirdPersonWords(a.words), a.verb]), undefined);
-const DONE = wordType('done', '[action done]', (v) => v.actions.map((a) => [participle(a.verb), a.verb]), undefined);
+// An action is its wording, which is the move a button sends. A button that picks a space is not one an example can press
+// by its wording: it names the space after the base (“plants a flag” on Rose Lane), so that is a type of its own.
+const ACTION = wordType('action', '[action]', (v) => v.actions.filter((a) => !a.targeted).map((a) => [thirdPersonWords(a.words), a.words]), undefined);
+
+/** The base of a button that picks a space, in the third person; two such buttons with one base could not be told apart by it. */
+const TARGETACTION: ParamType = {
+  name: 'targetaction', label: '[action]',
+  source: (vocab) => bounded(anyOf(vocab.actions.filter((a) => a.targeted).map((a) => thirdPersonWords(a.base)))),
+  resolve: (text, vocab) => {
+    const wordings = [...new Set(vocab.actions.filter((a) => a.targeted && canon(thirdPersonWords(a.base)) === canon(text)).map((a) => a.words))];
+    if (wordings.length === 0) return unknownText(text);
+    if (wordings.length > 1) return { error: `“${text}” could mean ${joinOr(wordings.map((w) => `“${w}”`))}.` };
+    return { value: wordings[0] };
+  },
+};
+
+/** What was done is one word, so it names a button only when no other button has the verb it comes from. */
+const DONE: ParamType = {
+  name: 'done', label: '[action done]',
+  source: (vocab) => bounded(anyOf(vocab.actions.map((a) => participle(a.verb)))),
+  resolve: (text, vocab) => {
+    const wordings = [...new Set(vocab.actions.filter((a) => canon(participle(a.verb)) === canon(text)).map((a) => a.words))];
+    if (wordings.length === 0) return unknownText(text);
+    if (wordings.length > 1) return { error: `“${text}” could mean ${joinOr(wordings.map((w) => `“${w}”`))}.` };
+    return { value: wordings[0] };
+  },
+};
 
 // ---- the list ----------------------------------------------------------------------------------
 
 /** Parameter types whose text depends on the game being compiled. */
 export const VOCAB_TYPES: ParamType[] = [
-  ZONE, ZONES, PERZONE, PLAYER, PHASE, MOVE, ATTRIBUTE, CARD, CARDLIST, CARDCLASS, SPACE, SPACECLASS, SPACEATTR, COUNTER, ACTION, DONE,
+  ZONE, ZONES, PERZONE, PLAYER, PHASE, MOVE, ATTRIBUTE, CARD, CARDLIST, CARDCLASS, SPACE, SPACECLASS, SPACEATTR, COUNTER, ACTION, TARGETACTION,
+  DONE, SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, BANKED,
 ];
 
 const TYPES_BY_NAME = new Map(VOCAB_TYPES.map((t) => [t.name, t] as const));

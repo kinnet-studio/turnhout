@@ -83,6 +83,17 @@ describe('the card matches the top card of a zone', () => {
     const each = () => cond('the card has the same color as the top card of each hand', at(hand, 'r2'));
     expect(each).toThrow(RuleError);
   });
+  it('reads a count declared on cards as 0 on a card never given any', () => {
+    const charged = { ...game, facts: [{ name: 'charges', on: 'card' as const, kind: 'number' as const }] };
+    const sameCharges = 'the card has the same charges as the top card of the discard pile';
+    const topWith = (charges: number | null) => fixtureEnv(
+      fixtureState([colored('r2', 'hand-p0', 'red', 2), fixtureCard('r7', 'discard-pile', { color: 'red', number: 7, ...(charges === null ? {} : { charges }) })]),
+      { game: charged, move: play('p0', 'r2') },
+    );
+    expect(cond(sameCharges, topWith(null))).toBe(true);
+    expect(cond(sameCharges, topWith(0))).toBe(true);
+    expect(cond(sameCharges, topWith(1))).toBe(false);
+  });
 });
 
 describe('they hold only', () => {

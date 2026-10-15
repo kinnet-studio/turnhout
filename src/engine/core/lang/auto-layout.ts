@@ -13,6 +13,15 @@ const SEAT_RY = 290;
  * cards of the top hand, whose fan curls toward the centre. 0.62 to 0.70 keeps Hearts reachable at 2 to 5 seats.
  */
 const INNER_RADIUS = 0.66;
+/**
+ * A seat's row, where the seat is straight above or below the middle, sits nearer the middle than its piles. A row is a card
+ * tall (140) and the hand's drop box reaches 75 above its seat and 103 below, so at INNER_RADIUS the bottom seat's row hides the
+ * tops of its hand's cards and takes drops meant for the hand, and the top seat's does worse (its box is not turned over). At
+ * 0.40 the row ends where the hand's box begins. What it gives up is a strip of 24 where it overlaps the shared piles in the
+ * middle, which costs less than the hand: a pile still shows its top card and takes a drop at its centre. A seat at the side
+ * has no such room, so its rows stay where its piles go.
+ */
+const ROW_RADIUS = 0.4;
 /** Distance between a seat's other zones, along the edge of the table. */
 const ZONE_SPREAD = 120;
 
@@ -65,7 +74,8 @@ export function autoLayout(zones: ZoneSpec[], seats: PlayerId[]): ZoneDef[] {
     const tangent = { x: -Math.sin(theta), y: Math.cos(theta) };
     others.forEach((spec, i) => {
       const along = (i - (others.length - 1) / 2) * ZONE_SPREAD;
-      const where = { x: at.x * INNER_RADIUS + tangent.x * along, y: at.y * INNER_RADIUS + tangent.y * along };
+      const radius = spec.layout === 'row' && Math.abs(at.x) < 1 ? ROW_RADIUS : INNER_RADIUS;
+      const where = { x: at.x * radius + tangent.x * along, y: at.y * radius + tangent.y * along };
       out.push(def(spec, zoneIdFor(spec.name, seat), where, seat));
     });
   }
