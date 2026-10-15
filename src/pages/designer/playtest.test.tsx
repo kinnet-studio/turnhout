@@ -3,10 +3,12 @@ import { StrictMode, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import COLOR_MATCH from '@/games/color-match.rules?raw';
 import RENT_DAY from '@/games/rent-day.rules?raw';
-import { placePiece, setOwner, setPlayerFact, withBoardData } from '@/engine/core/lang/board-state';
+import { zoneCards } from '@/engine/core/game-state';
+import { placePiece, queueRoll, setOwner, setPlayerFact, withBoardData } from '@/engine/core/lang/board-state';
 import { createEngine, initialState } from '@/engine/core/lang/build';
 import { compileGame } from '@/engine/core/lang/compile';
 import { createDefaultLibrary } from '@/engine/core/lang/library';
+import { relocate } from '@/engine/core/lang/zones';
 import type { DropIntent } from '@/engine/input/table-input-context';
 import { GameServer } from '@/engine/net/game-server';
 import type { CardTableProps } from '@/engine/react';
@@ -156,6 +158,10 @@ describe('Playtest of a board game', () => {
     expect(p1Roll.getAttribute('title')).toBe("It's p0's turn.");
     expect(screen.getAllByText('p0 1,500 money')).toHaveLength(3);
     expect(screen.getAllByTitle(/^Rose Lane — /)).toHaveLength(3);
+    // The button that gives a kept card back is on every seat's panel from the start, greyed while there is nothing to give back.
+    const useCard = screen.getAllByRole('button', { name: 'Use a Get Out Of Jail Free' });
+    expect(useCard).toHaveLength(3);
+    expect(useCard[0].getAttribute('aria-disabled')).toBe('true');
   });
 
   it('keeps the status line of each seat, and draws no card table for a board game whose phases move no cards', () => {
@@ -373,6 +379,38 @@ describe('Playtest: a player in jail', () => {
     fireEvent.click(p0Pay);
     expect(screen.getAllByText('p0 1,450 money')).toHaveLength(2);
     expect(screen.queryAllByTitle(/^p0 \(/)).toHaveLength(0);
+    expect(rollButtons()[0].getAttribute('aria-disabled')).toBe('false');
+  });
+});
+
+describe('Playtest: drawing a card', () => {
+  const start = { ...withBoardData(initialState(rentDay, SEED), rentDay, ['p0', 'p1']), turn: { current: 'p0', phase: 'playing' } };
+  const named = (name: string) => start.cards.find((c) => c.zoneId === 'chance-pile' && c.data?.name === name)!.id;
+  // A dealt pile has no slots, so a card moved alone inside it would tie with the one above it: lay the whole pile out again, that one last.
+  const toTop = (state: typeof start, id: string) =>
+    relocate(state, [...zoneCards(state, 'chance-pile').map((c) => c.id).filter((other) => other !== id), id], 'chance-pile', rentDay);
+  /** p0 on Go with the named card on top of the chance pile and 3 and 4 to roll, onto Chance. */
+  const onTop = (name: string) => queueRoll(toTop(start, named(name)), [3, 4]);
+
+  it('shows the card drawn in the middle of every board', () => {
+    mountRentDay({ players: 2, initial: onTop('Bank Pays A Dividend') });
+    expect(screen.queryAllByTestId('last-drawn')).toHaveLength(0);
+    fireEvent.click(rollButtons()[0]);
+    expect(screen.getAllByText('p0 drew from the chance pile: Bank Pays A Dividend — They get 50 money.')).toHaveLength(2);
+    expect(screen.getAllByText('p0 1,550 money')).toHaveLength(2);
+  });
+  it('lists a kept card on every money line, and the button greys with its reason', () => {
+    mountRentDay({ players: 2, initial: onTop('Get Out Of Jail Free') });
+    fireEvent.click(rollButtons()[0]);
+    expect(screen.getAllByText('p0 1,500 money · Get Out Of Jail Free')).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Use a Get Out Of Jail Free' })[0].getAttribute('title')).toBe('they are in jail');
+  });
+  it('frees a player in jail who keeps one, and the card leaves their money line', () => {
+    const jailed = setPlayerFact(placePiece(relocate(start, [named('Get Out Of Jail Free')], 'kept-cards-p0', rentDay), 'p0', 10), 'p0', 'in jail', true);
+    mountRentDay({ players: 2, initial: jailed });
+    expect(screen.getAllByText('p0 1,500 money · in jail · Get Out Of Jail Free')).toHaveLength(2);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Use a Get Out Of Jail Free' })[0]);
+    expect(screen.getAllByText('p0 1,500 money')).toHaveLength(2);
     expect(rollButtons()[0].getAttribute('aria-disabled')).toBe('false');
   });
 });

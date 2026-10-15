@@ -14,8 +14,9 @@ function seatsOf(board: BoardView): string[] {
 }
 
 /**
- * One text for the seat: "p0 1,500 money · asleep · 2 naps", "p1 ? money" where the number is hidden from this
- * viewer, or "p2 out" with no facts: what is true of a player who is out no longer matters.
+ * One text for the seat: "p0 1,500 money · asleep · 2 naps · Free Pass", its numbers, then its facts, then the names of the
+ * cards it keeps; "p1 ? money" where the number is hidden from this viewer, or "p2 out" with nothing after it: what is true of
+ * a player who is out no longer matters.
  */
 function entryFor(board: BoardView, seat: string): string {
   if (board.out.includes(seat)) return `${seat} out`;
@@ -24,7 +25,7 @@ function entryFor(board: BoardView, seat: string): string {
     return typeof value === 'number' ? `${value.toLocaleString('en-US')} ${name}` : `? ${name}`;
   });
   const base = numbers.length === 0 ? seat : `${seat} ${numbers.join(', ')}`;
-  return [base, ...factWords(board.playerFacts[seat] ?? {})].join(' · ');
+  return [base, ...factWords(board.playerFacts[seat] ?? {}), ...(board.playerCards[seat] ?? [])].join(' · ');
 }
 
 /** Everyone's numbers on one line, each in its seat's color, and under it what the bank has left: "bank: 31 houses, 12 hotels". */

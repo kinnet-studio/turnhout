@@ -52,6 +52,24 @@ describe('BoardGrid', () => {
   });
 });
 
+describe('cards on a board', () => {
+  it('shows the last card drawn in the middle of the board, and nothing before a draw', () => {
+    const spaces = Array.from({ length: 12 }, (_, i) => space(`Space ${i}`));
+    const { rerender } = render(<BoardGrid board={board({ spaces })} />);
+    expect(screen.queryByTestId('last-drawn')).toBeNull();
+    rerender(<BoardGrid board={board({ spaces, lastDrawn: { seat: 'p0', zone: 'the lucky pile', name: 'Dividend', says: 'They get 50 money.' } })} />);
+    expect(screen.getByTestId('last-drawn').textContent).toBe('p0 drew from the lucky pile: Dividend — They get 50 money.');
+    // The picking banner is the page's status; a card drawn is not.
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+  it('lists the cards a seat keeps after its numbers and facts, and nothing after a seat that is out', () => {
+    render(<MoneyLine board={board({ out: ['p2'], playerFacts: { p0: { asleep: true } }, playerCards: { p0: ['Free Pass'], p1: ['Free Pass', 'Lucky Charm'], p2: ['Free Pass'] } })} />);
+    expect(screen.getByText('p0 1,500 money · asleep · Free Pass')).toBeTruthy();
+    expect(screen.getByText('p1 1,234,567 money · Free Pass · Lucky Charm')).toBeTruthy();
+    expect(screen.getByText('p2 out')).toBeTruthy();
+  });
+});
+
 describe('BoardGrid facts', () => {
   const rose = (facts: BoardView['spaces'][number]['facts']) =>
     board({ spaces: [space('Go'), space('Rose Lane', { color: 'orange', details: { price: 180 }, facts }), space('Treasury'), space('Ferry Row')] });

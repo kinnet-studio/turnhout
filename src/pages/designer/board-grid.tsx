@@ -159,6 +159,25 @@ function Space({ space, seats, playerFacts, row, col, index, picking }: {
   );
 }
 
+/**
+ * The card drawn last, as one sentence, in the middle of the board until the next draw. It scrolls when the middle is too small
+ * for it rather than pushing the board out of shape, and it is no `status`: the picking banner is the page's status.
+ */
+function LastDrawn({ drawn }: { drawn: NonNullable<BoardView['lastDrawn']> }) {
+  return (
+    <div
+      data-testid="last-drawn"
+      style={{
+        boxSizing: 'border-box', maxWidth: '90%', maxHeight: '45%', overflowY: 'auto', padding: '6px 10px', textAlign: 'center',
+        background: '#fffdf5', color: '#1f2937', border: '2px solid #111827', borderLeft: `6px solid ${seatColor(drawn.seat)}`, borderRadius: 6,
+        font: '13px/1.3 sans-serif', overflowWrap: 'anywhere',
+      }}
+    >
+      {`${drawn.seat} drew from ${drawn.zone}: ${drawn.name} — ${drawn.says}`}
+    </div>
+  );
+}
+
 function Dice({ roll }: { roll: number[] }) {
   return (
     <div role="img" aria-label={`Rolled ${roll.join(' and ')}`} style={{ display: 'flex', gap: 10 }}>
@@ -178,8 +197,9 @@ function Dice({ roll }: { roll: number[] }) {
 }
 
 /**
- * The board as a square loop, clockwise from the bottom-right corner, with the latest roll in the middle. While the player
- * picks a space, the ones they may pick are outlined, the ones the game refuses are dashed, and the rest fade.
+ * The board as a square loop, clockwise from the bottom-right corner, with the latest roll and the card drawn last in the
+ * middle. While the player picks a space, the ones they may pick are outlined, the ones the game refuses are dashed, and the
+ * rest fade.
  */
 export function BoardGrid({ board, picking }: { board: BoardView; picking?: Picking }) {
   const size = ringSize(board.spaces.length);
@@ -196,9 +216,10 @@ export function BoardGrid({ board, picking }: { board: BoardView; picking?: Pick
         <Space key={i} space={space} seats={bySpace.get(i) ?? []} playerFacts={board.playerFacts} row={cells[i].row} col={cells[i].col} index={i} picking={picking} />
       ))}
       {size > 2 && (
-        <div style={{ gridRow: `2 / ${size}`, gridColumn: `2 / ${size}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, background: '#cfe3d2' }}>
+        <div style={{ gridRow: `2 / ${size}`, gridColumn: `2 / ${size}`, minWidth: 0, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, background: '#cfe3d2' }}>
           {picking && <div style={{ padding: '0 12px', textAlign: 'center', font: 'bold 16px sans-serif', color: '#14532d' }}>{picking.prompt}</div>}
           {board.roll !== null && <Dice roll={board.roll} />}
+          {board.lastDrawn !== null && <LastDrawn drawn={board.lastDrawn} />}
         </div>
       )}
     </div>
