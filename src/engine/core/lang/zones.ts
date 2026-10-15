@@ -123,6 +123,24 @@ export function relocate(state: GameState, cardIds: string[], toZoneId: string, 
 }
 
 /**
+ * Puts a card under every other card of a zone and numbers the zone's slots 0 to n-1 with it first, so a pile that is drawn
+ * from the top comes round to the card again only after all the others. Like `relocate`, it ends up face up only in a public zone.
+ */
+export function toBottom(state: GameState, cardId: string, zoneId: string, game: CompiledGame): GameState {
+  if (!state.cards.some((c) => c.id === cardId)) throw new Error(`No card ${cardId} to move.`);
+  const faceUp = zoneInfo(game, zoneId)?.spec.visibility === 'public';
+  const slots = new Map([cardId, ...zoneCards(state, zoneId).filter((c) => c.id !== cardId).map((c) => c.id)].map((id, slot) => [id, slot] as const));
+  return {
+    ...state,
+    cards: state.cards.map((c) => {
+      if (c.id === cardId) return { ...c, zoneId, slot: 0, faceUp };
+      const slot = slots.get(c.id);
+      return slot === undefined ? c : { ...c, slot };
+    }),
+  };
+}
+
+/**
  * Makes `seat` the next player; the flow then skips its usual end-of-turn step. The turn passes, so what every seat
  * did in it stops counting.
  */

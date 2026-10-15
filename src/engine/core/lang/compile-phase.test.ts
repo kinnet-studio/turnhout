@@ -389,7 +389,7 @@ describe('compilePhase on its own', () => {
       maxPlayers: 2, phases: ['main'], verbs: ['play', 'reorder'],
       zones: [{ name: 'deck', perPlayer: false, layout: 'pile', visibility: 'secret' }, { name: 'hand', perPlayer: true, layout: 'hand', visibility: 'owner' }],
     });
-    const phase = compilePhase(parseOutline(text).roots[0], { library: lib, vocab, gameName: 'Tiny', inMove: false, player: false, space: false, card: false, diagnostics });
+    const phase = compilePhase(parseOutline(text).roots[0], { library: lib, vocab, gameName: 'Tiny', inMove: false, player: false, space: false, card: false, drawn: false, diagnostics });
     return { phase, diagnostics };
   };
 
@@ -926,7 +926,7 @@ describe('buttons that pick a target', () => {
     const vocab = vocabFrom({ maxPlayers: 2, phases: ['main'], board: fixtureBoardGame().board });
     const built = compilePhase(
       parseOutline('Phase: main\n  A player may build a house on a stret they own.').roots[0],
-      { library: lib, vocab, gameName: 'Tiny', inMove: false, player: false, space: false, card: false, diagnostics },
+      { library: lib, vocab, gameName: 'Tiny', inMove: false, player: false, space: false, card: false, drawn: false, diagnostics },
     );
     expect(diagnostics.map((d) => [d.line, d.message])).toEqual([[2, 'There is no kind of space called “stret”.']]);
     expect(built.actions).toEqual([]);
@@ -962,7 +962,7 @@ describe('buttons that pick a target', () => {
     ]);
     const compiled = compilePhase(
       parseOutline('Phase: main\n  A player may build a house on a street they own.\n  A player may build a house on a street.').roots[0],
-      { library: lib, vocab: vocabFrom({ maxPlayers: 2, phases: ['main'], board: fixtureBoardGame().board }), gameName: 'Tiny', inMove: false, player: false, space: false, card: false, diagnostics: [] },
+      { library: lib, vocab: vocabFrom({ maxPlayers: 2, phases: ['main'], board: fixtureBoardGame().board }), gameName: 'Tiny', inMove: false, player: false, space: false, card: false, drawn: false, diagnostics: [] },
     );
     expect(compiled.actions.map((a) => a.words)).toEqual(['build a house on a street they own']);
     expect(errorsOf(['A player may build a house on a street they own.', 'A player may Build a House on a Street they own.'])).toEqual([

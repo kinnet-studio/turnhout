@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BOX_ZONE, WINNER_KEY, chooseNext, handZoneOf, leftOf, matchesCard, relocate, resolveSeat, resolveZoneIds, slug, topCard,
-  zoneIdFor, zoneInfo,
+  BOX_ZONE, WINNER_KEY, chooseNext, handZoneOf, leftOf, matchesCard, relocate, resolveSeat, resolveZoneIds, slug, toBottom,
+  topCard, zoneIdFor, zoneInfo,
 } from './zones';
 import { RuleError } from './diagnostics';
 import { makeRng } from '../rng';
 import type { CardState } from '../scene';
 import { zoneCards, type GameState } from '../game-state';
-import { fixtureEnv } from './testing';
+import { fixtureColorGame, fixtureEnv } from './testing';
 import type { CompiledGame, PhraseEnv, ZoneSpec } from './types';
 
 const TRICK: ZoneSpec = { name: 'trick', perPlayer: false, layout: 'row', visibility: 'public' };
@@ -234,5 +234,33 @@ describe('relocate', () => {
   });
   it('rejects a card that is not in the game', () => {
     expect(() => relocate(stateWith([]), ['c9'], 'trick', GAME)).toThrow('c9');
+  });
+});
+
+describe('toBottom', () => {
+  const game = fixtureColorGame();
+  const slots = (state: GameState, zoneId: string) => zoneCards(state, zoneId).map((c) => [c.id, c.slot, c.faceUp]);
+  it('puts the card under every other card of a secret pile, face down, with the slots 0 to n-1', () => {
+    const pile = stateWith([card('a', 'draw-pile', 0), card('b', 'draw-pile', 1), card('c', 'draw-pile', 2, { faceUp: true })]);
+    expect(slots(toBottom(pile, 'c', 'draw-pile', game), 'draw-pile')).toEqual([['c', 0, false], ['a', 1, false], ['b', 2, false]]);
+  });
+  it('turns the card face up only in a public pile', () => {
+    expect(slots(toBottom(stateWith([card('b', 'discard-pile', 7)]), 'b', 'discard-pile', game), 'discard-pile')).toEqual([['b', 0, true]]);
+  });
+  it('brings a card from another zone to the bottom, and renumbers a pile whose slots had gaps', () => {
+    const state = stateWith([card('a', 'draw-pile', 3), card('b', 'draw-pile', 9), card('x', 'discard-pile', 0)]);
+    const out = toBottom(state, 'x', 'draw-pile', game);
+    expect(slots(out, 'draw-pile')).toEqual([['x', 0, false], ['a', 1, false], ['b', 2, false]]);
+    expect(zoneCards(out, 'discard-pile')).toEqual([]);
+  });
+  it('leaves other cards and zones alone, and does not change the state it was given', () => {
+    const other = card('o', 'discard-pile', 4);
+    const state = stateWith([card('a', 'draw-pile', 0), card('b', 'draw-pile', 1), other]);
+    const out = toBottom(state, 'b', 'draw-pile', game);
+    expect(out.cards.find((c) => c.id === 'o')).toBe(other);
+    expect(state.cards[1]).toEqual(card('b', 'draw-pile', 1));
+  });
+  it('rejects a card that is not in the game', () => {
+    expect(() => toBottom(stateWith([]), 'c9', 'draw-pile', game)).toThrow('c9');
   });
 });

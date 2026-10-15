@@ -6,7 +6,8 @@ import type { CompiledGame, CompiledPhase } from './types';
 import { leftOf } from './zones';
 
 // The state of a board game lives in `GameState.data` under these keys, so it travels with the engine's state
-// (saved games, the network) without the engine knowing a board exists. Card games never get any of them.
+// (saved games, the network) without the engine knowing a board exists. Card games never get any of them, except the
+// last card drawn, which a card game gets as soon as a card is drawn to do what it says.
 
 /** `{ [seat]: space index }`; a seat with no piece on the board is absent. */
 export const PIECES_KEY = 'lang:pieces';
@@ -37,6 +38,11 @@ export const OUT_KEY = 'lang:out';
 export const FACTS_KEY = 'lang:facts';
 /** What is left in the bank, by name: `{ [name]: number }`. */
 export const BANK_KEY = 'lang:bank';
+/** The card drawn last, for the page to show: a `LastDrawn`. Written only when a card is drawn, so a game with no such cards never gets it. */
+export const LAST_DRAWN_KEY = 'lang:last-drawn';
+
+/** Who drew the card, from which pile (said with its owner, “the lucky pile” or “p1's deck”), the card's name and what it said. */
+export type LastDrawn = { seat: PlayerId; zone: string; name: string; says: string };
 
 type Pieces = { [seat: string]: number };
 type Owners = { [space: string]: PlayerId };
@@ -142,6 +148,15 @@ export function bankOf(state: GameState, name: string): number {
 
 export function setBank(state: GameState, name: string, value: number): GameState {
   return withData(state, BANK_KEY, { ...bankTable(state), [name]: value });
+}
+
+/** The card drawn last; null until one is. */
+export function lastDrawn(state: GameState): LastDrawn | null {
+  return (state.data[LAST_DRAWN_KEY] ?? null) as LastDrawn | null;
+}
+
+export function setLastDrawn(state: GameState, drawn: LastDrawn): GameState {
+  return withData(state, LAST_DRAWN_KEY, drawn);
 }
 
 export function latestRoll(state: GameState): number[] | null {

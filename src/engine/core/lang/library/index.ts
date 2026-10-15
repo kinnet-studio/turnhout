@@ -1,6 +1,7 @@
 import { PhraseLibrary, STATIC_TYPES } from '../phrases';
 import { VOCAB_TYPES } from '../refs';
 import { registerBoardPhrases } from './board-phrases';
+import { registerDrawPhrases } from './draw-phrases';
 import { registerExamplePhrases } from './example-phrases';
 import { registerFactPhrases } from './fact-phrases';
 import { registerFlowPhrases } from './flow-phrases';
@@ -17,6 +18,7 @@ const REGISTRARS: ((lib: PhraseLibrary) => PhraseLibrary)[] = [
   registerBoardPhrases,
   registerFactPhrases,
   registerPlayerFactPhrases,
+  registerDrawPhrases,
   registerMovePhrases,
   registerStandardDeckPhrases,
   registerHeartsPhrases,

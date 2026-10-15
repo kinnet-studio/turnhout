@@ -113,6 +113,8 @@ export interface PhraseEnv {
   subject?: Subject;
   /** Runs the lands-on and passes rules for a moment; the runtime supplies it. */
   announce?: (state: GameState, moment: Moment) => GameState;
+  /** Runs one compiled line about a subject, as a rule's line runs, for a phrase that does what a card says; the runtime supplies it. */
+  runLine?: (state: GameState, ref: PhraseRef, subject: Subject) => GameState;
   /**
    * What a column of the board's table says for a space once the lines of its section have had their say; the runtime
    * supplies it. Null for a blank cell no line fills. Without it a phrase reads the table's cell as it stands.

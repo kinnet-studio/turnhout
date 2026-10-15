@@ -15,11 +15,13 @@ type Checker = (state: GameState, move: Move) => true | string;
 
 const DEPEND_ON_EACH_OTHER = 'Two moves depend on each other through “they have no card they could play”.';
 const KEEPS_MOVING = 'It keeps moving pieces without stopping.';
+const KEEPS_DRAWING = 'Cards keep drawing cards without stopping.';
 
 /**
  * How many moment rules may run inside one another. A lands-on rule that moves the piece again announces another
  * landing, so a rule like that never stops on its own: past this depth it is refused instead of overflowing the stack.
- * It is the cap the flow puts on rules that keep firing, so moment rules get as far as any other rule.
+ * It is the cap the flow puts on rules that keep firing, so moment rules get as far as any other rule. Cards that draw
+ * cards run inside one another the same way, and get as far.
  */
 export const MAX_MOMENT_DEPTH = MAX_FLOW_ITERATIONS;
 
@@ -41,6 +43,8 @@ export class LangRuntime {
   private checking = false;
   /** The moment rules whose lines are running right now, each inside the one before it. */
   private readonly runningMoments: CompiledMoment[] = [];
+  /** How many card lines are running inside one another: a card that draws a card runs that card's lines in its own. */
+  private cardDepth = 0;
 
   constructor(
     readonly game: CompiledGame,
@@ -56,7 +60,10 @@ export class LangRuntime {
   /** What a phrase sees. A card move is about the player making it; `subject` names someone (or a space) else. */
   env(state: GameState, move?: MoveInfo, example?: ExampleEnv, subject?: Subject): PhraseEnv {
     const about = subject ?? (move ? { player: move.by, space: null, card: null } : undefined);
-    return { state, game: this.game, seats: this.seats, move, check: this.check, example, subject: about, announce: this.announce, columnValue: this.columnValue };
+    return {
+      state, game: this.game, seats: this.seats, move, check: this.check, example, subject: about, announce: this.announce, runLine: this.runLine,
+      columnValue: this.columnValue,
+    };
   }
 
   /** A condition, or the compiler's all / any / phase / always. */
@@ -160,6 +167,21 @@ export class LangRuntime {
       }
     }
     return s;
+  };
+
+  /**
+   * `env.runLine`: one line of a card, run about the player who drew it. A card whose line draws another card runs that card's
+   * lines inside its own, so past the cap on that it is refused rather than overflowing the stack, like moment rules are.
+   */
+  readonly runLine = (state: GameState, ref: PhraseRef, subject: Subject): GameState => {
+    if (this.cardDepth >= MAX_MOMENT_DEPTH) throw new RuleError(KEEPS_DRAWING);
+    this.cardDepth++;
+    try {
+      return this.run(ref, state, undefined, undefined, subject);
+    } finally {
+      // A line that throws must not leave the runtime thinking it is still that deep.
+      this.cardDepth--;
+    }
   };
 
   /**

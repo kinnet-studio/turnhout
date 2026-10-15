@@ -212,12 +212,13 @@ export type MatchResult =
 
 /**
  * What a phrase needs, checked when a game is compiled: from the rule around it, a move being made, a player, a space or
- * a card the rule is about; from the game, something to pay with, a board (a Board: loop of spaces), dice or, for a double,
- * exactly two of them. A phrase that sets `needsTwoDice` sets `needsDice` too, so a game with no dice hears about that first.
+ * a card the rule is about, or a card that has just been drawn (only a card's says column has one); from the game, something to
+ * pay with, a board (a Board: loop of spaces), dice or, for a double, exactly two of them. A phrase that sets `needsTwoDice`
+ * sets `needsDice` too, so a game with no dice hears about that first.
  */
 export type PhraseOpts = {
-  needsMove?: boolean; needsPlayer?: boolean; needsSpace?: boolean; needsCard?: boolean; needsPayment?: boolean; needsBoard?: boolean;
-  needsDice?: boolean; needsTwoDice?: boolean;
+  needsMove?: boolean; needsPlayer?: boolean; needsSpace?: boolean; needsCard?: boolean; needsDrawnCard?: boolean; needsPayment?: boolean;
+  needsBoard?: boolean; needsDice?: boolean; needsTwoDice?: boolean;
 };
 
 type Part = { literal: string } | { type: ParamType };
@@ -357,7 +358,8 @@ export class PhraseLibrary {
     const entry = this.entries.get(kind)?.get(pattern.toLowerCase());
     return entry && {
       fn: entry.fn, needsMove: entry.needsMove, needsPlayer: entry.needsPlayer, needsSpace: entry.needsSpace, needsCard: entry.needsCard,
-      needsPayment: entry.needsPayment, needsBoard: entry.needsBoard, needsDice: entry.needsDice, needsTwoDice: entry.needsTwoDice,
+      needsDrawnCard: entry.needsDrawnCard, needsPayment: entry.needsPayment, needsBoard: entry.needsBoard, needsDice: entry.needsDice,
+      needsTwoDice: entry.needsTwoDice,
     };
   }
 
@@ -443,8 +445,8 @@ export class PhraseLibrary {
     ofKind.set(pattern, {
       pattern, parts, display, literal: literal.replace(/\s+/g, ' ').trim(), specificity, fn,
       needsMove: opts.needsMove ?? false, needsPlayer: opts.needsPlayer ?? false, needsSpace: opts.needsSpace ?? false,
-      needsCard: opts.needsCard ?? false, needsPayment: opts.needsPayment ?? false, needsBoard: opts.needsBoard ?? false,
-      needsDice: opts.needsDice ?? false, needsTwoDice: opts.needsTwoDice ?? false,
+      needsCard: opts.needsCard ?? false, needsDrawnCard: opts.needsDrawnCard ?? false, needsPayment: opts.needsPayment ?? false,
+      needsBoard: opts.needsBoard ?? false, needsDice: opts.needsDice ?? false, needsTwoDice: opts.needsTwoDice ?? false,
     });
     return this;
   }

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  TURN_KEY, TURN_ROLLS_KEY, addToCounter, bankOf, clearTurnLog, counterOf, didThisTurn, endsTurn, isOut, markOut, nextIn, ownerOf, pieceAt,
-  placePiece, playerFact, playersIn, queueRoll, recordAction, recordRoll, rollsThisTurn, setBank, setOwner, setPlayerFact, setSpaceFact, spaceFact,
-  takeQueuedRoll, withBoardData,
+  LAST_DRAWN_KEY, TURN_KEY, TURN_ROLLS_KEY, addToCounter, bankOf, clearTurnLog, counterOf, didThisTurn, endsTurn, isOut, lastDrawn, markOut,
+  nextIn, ownerOf, pieceAt, placePiece, playerFact, playersIn, queueRoll, recordAction, recordRoll, rollsThisTurn, setBank, setLastDrawn,
+  setOwner, setPlayerFact, setSpaceFact, spaceFact, takeQueuedRoll, withBoardData,
 } from './board-state';
 import { fixtureBoardGame, fixtureGame, fixturePhase, fixtureState } from './testing';
 import { chooseNext } from './zones';
@@ -154,5 +154,24 @@ describe('board state', () => {
       expect(after).not.toBe(before);
       expect(spaceFact(before, 5, 'houses')).toBeNull();
     });
+  });
+});
+
+describe('the last card drawn', () => {
+  const drawn = { seat: 'p0', zone: 'the lucky pile', name: 'Dividend', says: 'They get 50 money.' };
+  it('is none until a card is drawn, and then the card drawn last', () => {
+    expect(lastDrawn(fresh())).toBeNull();
+    expect(lastDrawn(setLastDrawn(fresh(), drawn))).toEqual(drawn);
+    expect(lastDrawn(setLastDrawn(setLastDrawn(fresh(), drawn), { ...drawn, seat: 'p1', name: 'Fine' }))).toMatchObject({ seat: 'p1', name: 'Fine' });
+  });
+  it('is kept for a card game too, and survives being saved and loaded', () => {
+    const cards = setLastDrawn(fixtureState([]), drawn);
+    expect(lastDrawn(JSON.parse(JSON.stringify(cards)))).toEqual(drawn);
+    expect(JSON.parse(JSON.stringify(cards.data[LAST_DRAWN_KEY]))).toEqual(drawn);
+  });
+  it('does not change the state it was given', () => {
+    const before = fresh();
+    setLastDrawn(before, drawn);
+    expect(lastDrawn(before)).toBeNull();
   });
 });

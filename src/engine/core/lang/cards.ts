@@ -109,16 +109,39 @@ export function expandCardTable(table: CardTable): CardIdentity[] {
   return identities;
 }
 
-/** Every card of every set, shuffled before ids are handed out so an id says nothing about its face. */
+/**
+ * Every card of every set. Each set is shuffled on its own, in the order listed with the rng threaded from one to the next,
+ * before its ids are handed out; the sets get the next runs of ids in turn. An id says nothing about its face, only which set
+ * the card came from (see `deckOf`). A game with one set is shuffled exactly as a game always was.
+ */
 export function buildCards(sets: CardSetSpec[], rng: RngState): { cards: CardState[]; rng: RngState } {
-  const all = sets.flatMap((set) => set.identities.map((identity) => ({ identity, zoneId: zoneIdFor(set.start) })));
-  const shuffled = shuffleWithRng(all, rng);
-  const cards = shuffled.items.map(({ identity, zoneId }, i): CardState => ({
-    id: `c${i}`,
-    zoneId,
-    faceUp: false,
-    faceKey: identity.faceKey,
-    data: { ...identity.attrs },
-  }));
-  return { cards, rng: shuffled.rng };
+  const cards: CardState[] = [];
+  let next = rng;
+  for (const set of sets) {
+    const shuffled = shuffleWithRng(set.identities, next);
+    next = shuffled.rng;
+    const zoneId = zoneIdFor(set.start);
+    for (const identity of shuffled.items) {
+      cards.push({ id: `c${cards.length}`, zoneId, faceUp: false, faceKey: identity.faceKey, data: { ...identity.attrs } });
+    }
+  }
+  return { cards, rng: next };
+}
+
+/** An id as `buildCards` writes it: `c` and a whole number with no leading zeros. */
+const CARD_ID = /^c(0|[1-9]\d*)$/;
+
+/**
+ * The set a card was dealt from, by its id: the one whose run of ids holds the id's number. Null for an id `buildCards`
+ * never handed out. The set's `start` is the card's home pile.
+ */
+export function deckOf(sets: CardSetSpec[], cardId: string): CardSetSpec | null {
+  const found = CARD_ID.exec(cardId);
+  if (!found) return null;
+  let rest = Number(found[1]);
+  for (const set of sets) {
+    if (rest < set.identities.length) return set;
+    rest -= set.identities.length;
+  }
+  return null;
 }

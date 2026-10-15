@@ -11,10 +11,11 @@ const library = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
   .condition('the bank is empty', () => true)
   .condition('it is flagged', () => true, { needsCard: true })
   .effect('move it away', (env) => env.state, { needsCard: true })
+  .effect('they keep this card', (env) => env.state, { needsPlayer: true, needsDrawnCard: true })
   .which('a card in a {perzone} has {int} {attribute}', () => []);
 
 const ctx = (): LineCtx & { diagnostics: Diagnostic[] } =>
-  ({ library, vocab: emptyVocab(), gameName: 'Test', inMove: false, player: false, space: false, card: false, diagnostics: [] });
+  ({ library, vocab: emptyVocab(), gameName: 'Test', inMove: false, player: false, space: false, card: false, drawn: false, diagnostics: [] });
 
 describe('matchLine with other kinds to try', () => {
   it('reads a line as the kind asked for before any other', () => {
@@ -74,5 +75,27 @@ describe('matchLine and the rule around a line', () => {
       kind: 'which', phrase: 'a card in a {perzone} has {int} {attribute}', args: ['camp', 0, 'health'],
     });
     expect(one.diagnostics).toEqual([]);
+  });
+});
+
+describe('matchLine and a card that was just drawn', () => {
+  const NEEDS_DRAWN = '“They keep this card” only makes sense in a card\'s says column.';
+
+  it('refuses a phrase about the drawn card anywhere but in a card\'s says column, even in a rule about a player', () => {
+    for (const about of [{}, { player: true }, { card: true }, { inMove: true, player: true }]) {
+      const one = { ...ctx(), player: true, ...about };
+      expect(matchLine('effect', 'They keep this card', 4, one)).toMatchObject({ kind: 'lang', phrase: 'missing', args: ['effect'] });
+      expect(one.diagnostics.map((d) => [d.line, d.message]), JSON.stringify(about)).toEqual([[4, NEEDS_DRAWN]]);
+    }
+  });
+  it('reads it in a card\'s says column', () => {
+    const says = { ...ctx(), player: true, drawn: true };
+    expect(matchLine('effect', 'They keep this card', 4, says)).toMatchObject({ kind: 'effect', phrase: 'they keep this card' });
+    expect(says.diagnostics).toEqual([]);
+  });
+  it('asks for the player first, so a rule about no one hears about that', () => {
+    const none = { ...ctx(), drawn: false };
+    matchLine('effect', 'They keep this card', 4, none);
+    expect(none.diagnostics.map((d) => d.message)).toEqual([expect.stringContaining('only makes sense in a rule about a player')]);
   });
 });

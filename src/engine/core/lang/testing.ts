@@ -192,6 +192,8 @@ export function deckGameText(lucky: string[], fate: string[], rules: string[] = 
     '  When a piece passes Go:', '    Its player gets 200 money.',
     '  When a player lands on a space someone else owns:', '    They pay its rent to its owner.',
     '  When a player has less than 0 money:', '    They are out.', '    Their spaces go back to the bank.',
+    '  When a player lands on a lucky space:', '    They draw from the lucky pile and do what it says.',
+    '  When a player lands on a fate space:', '    They draw from the fate pile and do what it says.',
     ...rules,
     '  After a player ends their turn, the turn passes to the left.',
     '', 'End:', '  The game ends when one player is left.', '  That player wins.',
@@ -237,7 +239,7 @@ export function fixtureEnv(
   state: GameState,
   opts: {
     game?: CompiledGame; seats?: PlayerId[]; move?: MoveInfo; check?: PhraseEnv['check']; subject?: Subject; announce?: PhraseEnv['announce'];
-    columnValue?: PhraseEnv['columnValue'];
+    columnValue?: PhraseEnv['columnValue']; runLine?: PhraseEnv['runLine'];
   } = {},
 ): PhraseEnv {
   return {
@@ -249,6 +251,7 @@ export function fixtureEnv(
     subject: opts.subject,
     announce: opts.announce,
     columnValue: opts.columnValue,
+    runLine: opts.runLine,
   };
 }
 

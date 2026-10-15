@@ -105,11 +105,16 @@ describe('PhraseLibrary.match', () => {
     const fn = () => true;
     const l = lib().condition('it is their move', fn, { needsMove: true }).condition('hearts are broken', () => true);
     expect(l.get('condition', 'it is their move')).toEqual({
-      fn, needsMove: true, needsPlayer: false, needsSpace: false, needsCard: false, needsPayment: false, needsBoard: false, needsDice: false,
-      needsTwoDice: false,
+      fn, needsMove: true, needsPlayer: false, needsSpace: false, needsCard: false, needsDrawnCard: false, needsPayment: false, needsBoard: false,
+      needsDice: false, needsTwoDice: false,
     });
     expect(l.get('condition', 'hearts are broken')?.needsMove).toBe(false);
     expect(l.get('effect', 'it is their move')).toBeUndefined();
+  });
+
+  it('registers a phrase that needs a card that was just drawn, which no other phrase does', () => {
+    const l = lib().effect('keep it', (e) => e.state, { needsDrawnCard: true }).effect('toss it', (e) => e.state);
+    expect([l.get('effect', 'keep it')?.needsDrawnCard, l.get('effect', 'toss it')?.needsDrawnCard]).toEqual([true, false]);
   });
 
   it('registers the phrases that pick out the cards a rule is about, which may need a card too', () => {

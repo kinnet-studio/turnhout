@@ -7,10 +7,10 @@ import type { ParamType, PhraseKind, PhraseRef, Vocab } from './types';
 /**
  * What every line of one compile stage shares. Never change `vocab` after a line has been matched with it. `inMove`,
  * `player`, `space` and `card` say what the rule around a line is about: a card move, a player ("they"), a space or a
- * card ("it").
+ * card ("it"). `drawn` is true only for the sentences of a card's says column: they are run for a card that was just drawn.
  */
 export type LineCtx = {
-  library: PhraseLibrary; vocab: Vocab; gameName: string; inMove: boolean; player: boolean; space: boolean; card: boolean;
+  library: PhraseLibrary; vocab: Vocab; gameName: string; inMove: boolean; player: boolean; space: boolean; card: boolean; drawn: boolean;
   diagnostics: Diagnostic[];
 };
 
@@ -123,6 +123,7 @@ function unmetNeed(entry: Required<PhraseOpts> | undefined, args: Json[], clean:
   if (!aboutPlayer && args.some(mentionsActor)) return `“${clean}” only makes sense in a rule about a player's move.`;
   if (!ctx.space && entry?.needsSpace) return `“${clean}” only makes sense in a rule about a space, such as an action or a “lands on” rule.`;
   if (!ctx.card && entry?.needsCard) return `“${clean}” only makes sense in a rule about a card, such as “When a card …”.`;
+  if (!ctx.drawn && entry?.needsDrawnCard) return `“${clean}” only makes sense in a card's says column.`;
   if (entry?.needsPayment && ctx.vocab.payWith === null) return NEEDS_PAYMENT;
   return null;
 }
