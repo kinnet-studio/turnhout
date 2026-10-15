@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import VENOM_TEXT from '@/games/venom.rules?raw';
 import { expandCardTable, standardDeckIdentities } from './cards';
+import { compileGame } from './compile';
+import { createDefaultLibrary } from './library';
 import { PhraseLibrary, STATIC_TYPES, emptyVocab, stubFor, suggestNames, vocabFrom } from './phrases';
 import { VOCAB_TYPES } from './refs';
-import { FIXTURE_SPACES, fixtureBoardGame } from './testing';
+import { FIXTURE_SPACES, TINY_BOARD_HEAD, fixtureBoardGame } from './testing';
 import type { EffectFn, ParamType } from './types';
 
 const V = emptyVocab();
@@ -211,6 +214,31 @@ describe('PhraseLibrary.misnamed beside a phrase with words of its own where the
     expect(l.misnamed(['expect', 'condition'], 'it is mortgagd', board)?.problem)
       .toEqual({ message: 'There is no space fact called “mortgagd”.', suggestions: ['mortgaged'] });
     expect(l.misnamed(['expect', 'condition'], 'it is xyz', board)?.problem.message).toBe('There is no space fact called “xyz”.');
+  });
+});
+
+describe('a misspelt example line with a quoted reason, in a game that declares a fact', () => {
+  const full = createDefaultLibrary();
+  // The quoted reason is not the line's own words: it must not pull the line away from the phrase it was meant to be.
+  const LINE = 'it is rejeted because "no player has less than 0 money"';
+  const SLIP = `  Then ${LINE}`;
+  const problems = (text: string) => compileGame(text, full).diagnostics.filter((d) => d.severity === 'error');
+  const notInTheLibrary = expect.objectContaining({
+    kind: 'unknown-phrase', message: `“${LINE}” isn't in the phrase library yet.`,
+    suggestions: expect.arrayContaining(['it is rejected because [text]']),
+  });
+
+  it('is not blamed on a space fact', () => {
+    const text = [
+      TINY_BOARD_HEAD.replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  Spaces can be mortgaged.'),
+      '  A player may mortgage the space they are on.', '    Only if it is not mortgaged.', '    Then:', '      It is mortgaged.', '',
+      'Example: a slip', '  Given p0 is on Rose Lane', '  When p0 mortgages the space they are on', SLIP,
+    ].join('\n');
+    expect(problems(text)).toEqual([notInTheLibrary]);
+  });
+  it('is not blamed on a card fact', () => {
+    const text = [VENOM_TEXT, '', 'Example: a slip', "  Given p0's camp has a Knight", '  When p0 plays a Knight', SLIP].join('\n');
+    expect(problems(text)).toEqual([notInTheLibrary]);
   });
 });
 

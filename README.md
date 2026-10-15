@@ -84,7 +84,7 @@ Phase: playing
 
 **Things that change during play.** A game can say what its spaces and cards may come to have, and then rules and examples can use it:
 
-- `Spaces can have houses and a hotel.` A plural noun is a count that starts at 0; "a hotel", or an adjective such as "poisoned", is a yes or no that starts at no. On the board, a space's counts are drawn as small squares (up to 4, then one square and the number). A yes-or-no the bank holds, like the hotel, is drawn as a red block; a yes-or-no on a space that the bank doesn't hold, like mortgaged (`Spaces can be mortgaged.`), is drawn as stripes across the space. Pointing at the space lists them all.
+- `Spaces can have houses and a hotel.` A plural noun is a count that starts at 0; "a hotel", or an adjective such as "poisoned", is a yes or no that starts at no. On the board, a space's counts are drawn as small squares (up to 4, then one square and the number). A yes-or-no the bank holds, like the hotel, is drawn as a red block; a yes-or-no the bank has no supply of, like mortgaged (`Spaces can be mortgaged.`), is drawn as stripes across the space. Pointing at the space lists them all.
 - `Cards can be poisoned.` The same for cards: a card's face shows what is set, so a card's health and "poisoned" show on it without anything else written. `src/games/venom.rules`, a two-player card game, is built on this: a Viper poisons the other camp, and a poisoned card loses health each time its owner plays.
 - `The bank has 32 houses and 12 hotels.` Supplies the game takes from and gives back to; the playtest shows what is left (`bank: 31 houses, 12 hotels`).
 
@@ -102,7 +102,7 @@ Phase: playing
 - **Giving everything up.** `Everything they own goes to the player they owe.` hands a player their spaces, facts and all, and the cards they keep in view. To the bank, spaces become unowned and cards go under their own piles.
 - **Percentages and yes-or-no facts on spaces.** Percentages round down: `They get 50% of its price.`, `They pay 55% of its price.` and `they have at least 55% of its price in money`. After `Spaces can be mortgaged.`, rules say `It is mortgaged.`, `It is not mortgaged.` and `Their spaces are no longer mortgaged.`, and ask `it is mortgaged`; an example says `Rose Lane is mortgaged`.
 - **The bank and buildings.** `the bank has at least 4 houses`, `it gets 4 houses from the bank`, `one of its houses goes back to the bank`, `its hotel goes back to the bank`, `it has a house` and `no street of its color is mortgaged`.
-- **In the playtest.** A debt follows the player's numbers (`p0 -4 money · owes p1`). A yes-or-no on a space that the bank doesn't hold, like mortgaged, is drawn as stripes on every board. An "Any player may" button is live on every seat that may press it.
+- **In the playtest.** A debt follows the player's numbers (`p0 -4 money · owes p1`). A yes-or-no the bank has no supply of, like mortgaged, is drawn as stripes on every board. An "Any player may" button is live on every seat that may press it.
 
 **Saying a button was pressed.** `they have rolled this turn` means any roll button was pressed, so a game with `A player may roll the dice.` and `A player may roll for a double.` reads "rolled" as either. To name one, write its whole wording in the past: `they have rolled for a double this turn`.
 

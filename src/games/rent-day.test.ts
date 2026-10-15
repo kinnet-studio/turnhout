@@ -567,6 +567,7 @@ describe('Rent Day (designer language)', () => {
       rules(before, move, after);
       if (move.by !== before.turn!.current) outOfTurn[move.type] = (outOfTurn[move.type] ?? 0) + 1;
     });
+    expect(table.engine.getState().result, `no winner after ${turns} turns`).toBeDefined();
     if (turns < 60 * n) expect(playersIn(table.engine.getState(), seats)).toHaveLength(1);
     // Only the buttons any player may press are ever pressed out of turn, and the three ways of settling a debt all were.
     expect(Object.keys(outOfTurn).filter((type) => ![SELL, MORTGAGE, PAY_OFF, GIVE_UP].includes(type))).toEqual([]);

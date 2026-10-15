@@ -521,10 +521,12 @@ export class PhraseLibrary {
 
   /**
    * True when `line` is very like the words of some phrase of `kinds`, and more like them than the words `literal` of the
-   * phrase that read a name in it.
+   * phrase that read a name in it. Text in straight quotes is left out of the line: it is a designer's own words (a reason, a
+   * label), never part of a phrase's, and a long one would pull the score of the very phrase the line was meant to be under
+   * the floor.
    */
   private isNearerToOther(kinds: PhraseKind[], line: string, literal: string): boolean {
-    const lower = line.toLowerCase();
+    const lower = line.toLowerCase().replace(/"[^"]*"/g, '').replace(/\s+/g, ' ').trim();
     const blamed = dice(lower, literal);
     return kinds.some((kind) => [...(this.entries.get(kind)?.values() ?? [])].some((entry) => {
       const score = dice(lower, entry.literal);
