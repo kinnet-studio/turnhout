@@ -1,7 +1,7 @@
 # Board Games, Slice 5: Raising Money
 
 **Date:** 2026-10-15
-**Status:** Ready to build. The user delegated the design calls under the goal to finish every slice (see Decisions).
+**Status:** Ready to build. The user delegated the design calls under the goal to finish every slice (see Decisions); a builder check was run and its six questions are settled in *Builder-check rulings*.
 **Part of:** `2026-10-15-board-games-overview-design.md`. Its decisions, calls, anti-goals and constraints apply
 here.
 **Builds on:** slices 1–4 (slices 3 and 4 are on the same branch, ahead of `main`).
@@ -18,7 +18,7 @@ Rent Day stops putting a player out the moment their money goes below 0. Instead
   - Its owner can pay the mortgage off for 55% of its price, which is half plus a tenth.
   - Nobody can build on a color set while one of its spaces is mortgaged.
   - Buildings must be sold off a color before any of its spaces can be mortgaged.
-- **Selling evenly:** a street can't lose a building while another street of its color has fewer. A hotel sells
+- **Selling evenly:** a building comes off a street only when no street of its color has more (classic). A hotel sells
   back as four houses, if the bank has four to give.
 - **Giving up is proper bankruptcy.** A player who can't or won't raise enough presses "Give up":
   - their buildings go back to the bank;
@@ -94,6 +94,46 @@ To get there, the language gains:
 - **Flags drawn on the board:** a space flag that pairs with a bank item (the hotel) is still drawn as a block. Any
   other space flag (mortgaged) draws the space with a diagonal stripe and names the flag in its title. This is a
   general page rule; no page code names "mortgaged".
+
+## Builder-check rulings
+
+A builder check (a fresh engineer planning from this document) raised six questions; the builder settled them:
+
+1. **A mortgaged space's rent is 0, through the `Rent:` section,** not a lands-on `Only if`. Slice 4's nearest-station
+   card charges rent a second time with its own sentence, and an `If` line takes only one condition. Rent Day's
+   `Rent:` section gains a last line, "A mortgaged space's rent is 0." It is a column phrase in `library/rent-day.ts`
+   that returns 0 for a space with that flag, so every rent path (landing, cards) charges nothing. The lands-on rule
+   stays as it is.
+2. **Debts are recorded on every payment path of the pay-with counter:**
+   - the shared transfer;
+   - the each-other-player payments, when their counter is the pay-with one. A line naming another counter, such as
+     "points", records no debt.
+   - "they owe …" and "the player they owe" are read only while the player's money is below 0, so money coming back
+     by any route (salary, card gains, sales) ends the debt without having to clear it.
+3. **The auto-player takes both bankruptcy paths.**
+   - Even seats raise money fully (sell, then mortgage) before giving up.
+   - Odd seats give up as soon as they are in debt, so players go out holding buildings and the "buildings return
+     through giving up" checks, and slice 2's "someone goes out holding buildings" assertion, keep their teeth.
+4. **"Any player may" presses are not turn actions:** they are not recorded in the turn's log, so "they have … this
+   turn" never names one, and slice 3's "only the current seat has turn entries" invariant holds.
+5. **General phrases the text needs are added** in the same shapes as existing ones:
+   - "it has a house" (at least one of a space number);
+   - "it is mortgaged" / "it is not mortgaged" as conditions;
+   - Given/Then "Rose Lane is (not) mortgaged";
+   - Then "p0 owes p1" / "p0 owes the bank";
+   - Then "the bottom card of the chance pile is …".
+6. **Selling evenly follows the phrase and the classic rule:** sell from the street with the most buildings ("no street
+   of its color has more buildings"). The hotel-sale lines run in this order:
+   - "If it has no hotel, one of its houses goes back to the bank.";
+   - "If it has a hotel, it gets 4 houses from the bank.";
+   - "If it has a hotel, its hotel goes back to the bank.".
+
+Also: three earlier examples change, because going out now needs "Give up". They are "going below 0 puts you out",
+"the last player left wins", and "going out returns your buildings" (where "no one owns Rose Lane" becomes "p1 owns
+Rose Lane"). The long runs:
+- act for seats whose turn it isn't;
+- read rent through the `Rent:` section, which makes it 0 on a mortgaged space;
+- make "no player has less than 0 money" skip players who are out.
 
 ## Goals
 
