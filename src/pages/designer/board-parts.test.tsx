@@ -6,7 +6,7 @@ import { BoardGrid } from './board-grid';
 import { seatColor } from './seat-colors';
 
 const space = (name: string, over: Partial<BoardView['spaces'][number]> = {}): BoardView['spaces'][number] =>
-  ({ name, color: null, details: {}, owner: null, ...over });
+  ({ name, color: null, details: {}, facts: {}, owner: null, ...over });
 
 const board = (over: Partial<BoardView> = {}): BoardView => ({
   spaces: [space('Go'), space('Mill Lane', { color: 'brown', details: { price: 60, rent: 2 }, owner: 'p1' }), space('Treasury'), space('Ferry Row', { color: 'brown' })],
@@ -14,6 +14,7 @@ const board = (over: Partial<BoardView> = {}): BoardView => ({
   roll: null,
   counters: [{ name: 'money', values: { p0: 1500, p1: 1234567, p2: 40 } }],
   out: [],
+  bank: [],
   ...over,
 });
 
@@ -76,8 +77,8 @@ describe('MoneyLine', () => {
 
 describe('ActionButtons', () => {
   const actions = [
-    { move: 'roll the dice', label: 'Roll the dice', allowed: true as const },
-    { move: 'end their turn', label: 'End your turn', allowed: 'they have rolled this turn' },
+    { move: 'roll the dice', label: 'Roll the dice', allowed: true as const, target: null },
+    { move: 'end their turn', label: 'End your turn', allowed: 'they have rolled this turn', target: null },
   ];
 
   it('presses an allowed button and greys the others with the reason', () => {
@@ -101,7 +102,7 @@ describe('ActionButtons', () => {
   it('sends nothing from a button greyed because the game is over', () => {
     const onPress = vi.fn();
     const onRefused = vi.fn();
-    render(<ActionButtons actions={[{ move: 'roll the dice', label: 'Roll the dice', allowed: 'The game is over.' }]} onPress={onPress} onRefused={onRefused} />);
+    render(<ActionButtons actions={[{ move: 'roll the dice', label: 'Roll the dice', allowed: 'The game is over.', target: null }]} onPress={onPress} onRefused={onRefused} />);
     fireEvent.click(screen.getByRole('button', { name: 'Roll the dice' }));
     expect(onPress).not.toHaveBeenCalled();
     expect(onRefused).toHaveBeenCalledWith('The game is over.');
