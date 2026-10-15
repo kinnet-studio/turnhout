@@ -6,7 +6,7 @@ import { runExamples } from '@/engine/core/lang/examples';
 import { createEngine, initialState, seatsFor } from '@/engine/core/lang/build';
 import {
   bankOf, counterOf, isOut, latestRoll, ownerOf, pieceAt, playerFact, playersIn, rollsThisTurn, setOwner, setRoll, spaceFact,
-  withBoardData,
+  TURN_KEY, TURN_ROLLS_KEY, withBoardData,
 } from '@/engine/core/lang/board-state';
 import { targetCandidates } from '@/engine/core/lang/declared-actions';
 import { isDouble } from '@/engine/core/lang/library/board-phrases';
@@ -102,7 +102,8 @@ const totalMoney = (state: GameState, seats: PlayerId[]) => seats.reduce((sum, s
 /**
  * The rules of money, of the bank and of jail, checked around every move. Money only comes in through Go and only leaves
  * through tax, purchases, building and leaving jail; rent moves it between players. Houses and hotels only move between the
- * bank and the board. A player in jail is on Jail, and only a player in jail has jail turns, never more than two.
+ * bank and the board. A player in jail is on Jail, and only a player in jail has jail turns, never more than two. What a
+ * player did and rolled this turn is forgotten as the turn passes, so only the player whose turn it is has any.
  */
 function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
   const { spaces } = runtime.game.board!;
@@ -206,6 +207,13 @@ function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
     for (const seat of seats) {
       if (isOut(after, seat)) expect(pieceAt(after, seat)).toBeNull();
       else expect(pieceAt(after, seat)).not.toBeNull();
+    }
+
+    // Both are read as the engine keeps them, by seat, so a roll that lingered into the next turn would show here at once.
+    const current = after.turn!.current;
+    for (const key of [TURN_KEY, TURN_ROLLS_KEY]) {
+      const kept = Object.entries((after.data[key] ?? {}) as Record<string, unknown[]>).filter(([seat, list]) => seat !== current && list.length > 0);
+      expect(kept.map(([seat]) => seat), `${key} kept for a seat whose turn it is not, after ${by} ${move.type}`).toEqual([]);
     }
 
     for (const seat of playersIn(after, seats)) {
