@@ -7,7 +7,7 @@ import { createEngine, initialState, seatsFor } from './build';
 import { compileGame } from './compile';
 import { RuleError } from './diagnostics';
 import { createDefaultLibrary } from './library';
-import { ANY_PLAYER_BOARD, deckGameText, TEST_DUEL, TINY_BOARD } from './testing';
+import { ANY_PLAYER_BOARD, deckGameText, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD } from './testing';
 import type { CompiledGame } from './types';
 import { relocate } from './zones';
 
@@ -41,7 +41,7 @@ describe('seat views of a board game', () => {
   it('shows the board and the buttons from each seat', () => {
     const { engine, runtime } = createEngine(game, lib, 2, initialState(game, 1));
     const p0 = seatExtras(engine, runtime, engine.getState(), 'p0');
-    expect(p0.board!.spaces[1]).toEqual({ name: 'Mill Lane', color: 'brown', details: { kind: 'street', price: 60, rent: 2 }, facts: {}, owner: null });
+    expect(p0.board!.spaces[1]).toEqual({ name: 'Mill Lane', color: 'brown', details: { kind: 'street', price: 60, rent: 2 }, facts: {}, stripes: [], owner: null });
     expect(p0.board!.pieces).toEqual({ p0: 0, p1: 0 });
     expect(p0.board!.counters).toEqual([{ name: 'money', values: { p0: 1500, p1: 1500 } }]);
     expect(p0.actions).toEqual([
@@ -75,8 +75,8 @@ describe('seat views of a board game', () => {
     const { engine, runtime } = createEngine(game, lib, 2, initialState(game, 1));
     const { board } = seatExtras(engine, runtime, engine.getState(), 'p0');
     expect(board!.spaces.map((s) => s.name)).toEqual(['Go', 'Mill Lane', 'Income Tax', 'Rose Lane']);
-    expect(board!.spaces[0]).toEqual({ name: 'Go', color: null, details: { kind: 'go' }, facts: {}, owner: null });
-    expect(board!.spaces[2]).toEqual({ name: 'Income Tax', color: null, details: { kind: 'tax', tax: 200 }, facts: {}, owner: null });
+    expect(board!.spaces[0]).toEqual({ name: 'Go', color: null, details: { kind: 'go' }, facts: {}, stripes: [], owner: null });
+    expect(board!.spaces[2]).toEqual({ name: 'Income Tax', color: null, details: { kind: 'tax', tax: 200 }, facts: {}, stripes: [], owner: null });
     expect(board!.roll).toBeNull();
     expect(board!.out).toEqual([]);
   });
@@ -417,6 +417,84 @@ describe('seat views of a board with cards', () => {
   });
 });
 
+describe('seat views of debts and of flags no bank item goes with', () => {
+  // A hotel goes with the bank's hotels; mortgaged goes with nothing, so the page stripes it.
+  const TEXT = ANY_PLAYER_BOARD.replace(
+    '  There are two six-sided dice.',
+    '  There are two six-sided dice.\n  Spaces can have a hotel.\n  Spaces can be mortgaged.\n  The bank has 12 hotels.',
+  );
+  const built = compileGame(TEXT, lib);
+  const g = built.game!;
+  /** p1 owns Rose Lane (3); p0 has 10 money and a 1 and a 2 to roll, which land on it and cost 14. */
+  const arranged = queueRoll(setCounter(setOwner(withBoardData(initialState(g, 1), g, ['p0', 'p1']), ROSE, 'p1'), 'money', 'p0', 10), [1, 2]);
+  const table = (start = arranged) => createEngine(g, lib, 2, start);
+  const view = ({ engine, runtime }: ReturnType<typeof table>, seat: string) => seatExtras(engine, runtime, engine.getState(), seat);
+
+  it('compiles with no diagnostics', () => expect(built.diagnostics).toEqual([]));
+
+  it('shows every seat whom each player owes, from the payment that took them below 0 until they are back to 0', () => {
+    const t = table();
+    for (const seat of ['p0', 'p1']) expect(view(t, seat).board!.owes, seat).toEqual({});
+    expect(t.engine.dispatch({ type: 'roll the dice', by: 'p0' }).ok).toBe(true);
+    for (const seat of ['p0', 'p1']) expect(view(t, seat).board!.owes, seat).toEqual({ p0: 'p1' });
+    expect(t.engine.dispatch({ type: 'wave', by: 'p0' }).ok).toBe(true);
+    for (const seat of ['p0', 'p1']) expect(view(t, seat).board!.owes, seat).toEqual({});
+  });
+
+  it('has no debts for a board with no pay-with counter', () => {
+    // Nothing on this board takes a payment, so no counter is the one a debt is kept against.
+    const free = compileGame([
+      TINY_BOARD_HEAD.replace('  Players pay with money.\n', ''), '  A player may roll the dice.', '    Then:', '      Roll the dice.',
+      '  A player may end their turn.', '  After a player ends their turn, the turn passes to the left.',
+      '', 'End:', '  The game ends when one player is left.', '  That player wins.',
+    ].join('\n'), lib);
+    expect(free.diagnostics).toEqual([]);
+    const { engine, runtime } = createEngine(free.game!, lib, 2, initialState(free.game!, 1));
+    expect(seatExtras(engine, runtime, engine.getState(), 'p0').board!.owes).toEqual({});
+  });
+
+  it('lists the flags no bank item goes with as stripes, and still keeps them in facts', () => {
+    const flagged = setSpaceFact(setSpaceFact(arranged, ROSE, 'hotel', true), ROSE, 'mortgaged', true);
+    for (const seat of ['p0', 'p1']) {
+      const { spaces } = view(table(flagged), seat).board!;
+      expect(spaces[ROSE].facts, seat).toEqual({ hotel: true, mortgaged: true });
+      expect(spaces[ROSE].stripes, seat).toEqual(['mortgaged']);
+      expect(spaces[1].stripes, seat).toEqual([]);
+    }
+  });
+
+  it('has no stripes on a space with nothing set, or with only a flag a bank item goes with', () => {
+    expect(view(table(), 'p0').board!.spaces.map((s) => s.stripes)).toEqual([[], [], [], []]);
+    const hotelled = setSpaceFact(arranged, ROSE, 'hotel', true);
+    expect(view(table(hotelled), 'p0').board!.spaces[ROSE].stripes).toEqual([]);
+  });
+
+  it('is plain data, and readSeatExtras reads it back while a player owes', () => {
+    const t = table();
+    t.engine.dispatch({ type: 'roll the dice', by: 'p0' });
+    const extras = view(t, 'p1');
+    expect(extras.board!.owes).toEqual({ p0: 'p1' });
+    expect(readSeatExtras(JSON.parse(JSON.stringify(extras)))).toEqual(extras);
+  });
+
+  it('refuses debts that are not a map of text, or are missing, and stripes that are not a list of text, or are missing', () => {
+    const t = table();
+    t.engine.dispatch({ type: 'roll the dice', by: 'p0' });
+    const extras = JSON.parse(JSON.stringify(view(t, 'p0')));
+    const withBoard = (over: { [k: string]: Json }) => ({ ...extras, board: { ...extras.board, ...over } });
+    const withSpace = (over: { [k: string]: Json }) => withBoard({ spaces: extras.board.spaces.map((s: object, i: number) => (i === ROSE ? { ...s, ...over } : s)) });
+    const { owes: _owes, ...noOwes } = extras.board;
+    const { stripes: _stripes, ...noStripes } = extras.board.spaces[ROSE];
+    expect(readSeatExtras(extras)).not.toBeNull();
+    expect(readSeatExtras(withBoard({ owes: { p0: 3 } }))).toBeNull();
+    expect(readSeatExtras(withBoard({ owes: [] }))).toBeNull();
+    expect(readSeatExtras({ ...extras, board: noOwes })).toBeNull();
+    expect(readSeatExtras(withSpace({ stripes: [1] }))).toBeNull();
+    expect(readSeatExtras(withSpace({ stripes: 'mortgaged' }))).toBeNull();
+    expect(readSeatExtras(withBoard({ spaces: extras.board.spaces.map((s: object, i: number) => (i === ROSE ? noStripes : s)) }))).toBeNull();
+  });
+});
+
 describe('readSeatExtras', () => {
   it('reads extras back, and nothing else', () => {
     expect(readSeatExtras(undefined)).toBeNull();
@@ -429,15 +507,21 @@ describe('readSeatExtras', () => {
     expect(readSeatExtras(JSON.parse(JSON.stringify(extras)))).toEqual(extras);
   });
 
-  const space = { name: 'Go', color: null, details: {}, facts: {}, owner: null };
+  const space = { name: 'Go', color: null, details: {}, facts: {}, stripes: [], owner: null };
   const board = (over: { [k: string]: Json } = {}) => ({
-    spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {}, lastDrawn: null, playerCards: {}, ...over,
+    spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {}, lastDrawn: null, playerCards: {}, owes: {}, ...over,
   });
   const action = (over: { [k: string]: Json } = {}) => ({ move: 'roll the dice', label: 'Roll', allowed: true, target: null, ...over });
   const picking = (over: { [k: string]: Json } = {}) => action({ target: { prompt: 'Pick a street you own', spaces: { 3: true }, ...over } });
 
-  it('reads a board with facts, a bank and a button that picks a space', () => {
-    const extras = { board: board({ spaces: [{ ...space, facts: { houses: 2, hotel: true } }], bank: [{ name: 'houses', count: 32 }] }), actions: [picking({ spaces: { 3: true, 4: 'not yours' } })] };
+  it('reads a board with facts, stripes, debts, a bank and a button that picks a space', () => {
+    const extras = {
+      board: board({
+        spaces: [{ ...space, facts: { houses: 2, hotel: true, mortgaged: true }, stripes: ['mortgaged'] }], bank: [{ name: 'houses', count: 32 }],
+        owes: { p0: 'p1', p2: 'bank' },
+      }),
+      actions: [picking({ spaces: { 3: true, 4: 'not yours' } })],
+    };
     expect(readSeatExtras(extras)).toEqual(extras);
   });
 
@@ -457,19 +541,19 @@ describe('readSeatExtras', () => {
     ['a target space that is neither true nor a reason', { board: null, actions: [picking({ spaces: { 3: false } })] }],
     ['a target space that is a number', { board: null, actions: [picking({ spaces: { 3: 1 } })] }],
     ['a board that is not an object', { board: 3, actions: [] }],
-    ['a board with no spaces', { board: { pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {}, lastDrawn: null, playerCards: {} }, actions: [] }],
-    ['a space with no name', { board: board({ spaces: [{ color: null, details: {}, facts: {}, owner: null }] }), actions: [] }],
-    ['a space with no facts', { board: board({ spaces: [{ name: 'Go', color: null, details: {}, owner: null }] }), actions: [] }],
+    ['a board with no spaces', { board: { pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {}, lastDrawn: null, playerCards: {}, owes: {} }, actions: [] }],
+    ['a space with no name', { board: board({ spaces: [{ color: null, details: {}, facts: {}, stripes: [], owner: null }] }), actions: [] }],
+    ['a space with no facts', { board: board({ spaces: [{ name: 'Go', color: null, details: {}, stripes: [], owner: null }] }), actions: [] }],
     ['a fact that is text', { board: board({ spaces: [{ ...space, facts: { houses: 'two' } }] }), actions: [] }],
     ['a fact that is null', { board: board({ spaces: [{ ...space, facts: { houses: null } }] }), actions: [] }],
-    ['a board with no bank', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [], playerFacts: {}, lastDrawn: null, playerCards: {} }, actions: [] }],
+    ['a board with no bank', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [], playerFacts: {}, lastDrawn: null, playerCards: {}, owes: {} }, actions: [] }],
     ['a bank that is not a list', { board: board({ bank: {} }), actions: [] }],
     ['a bank entry with no count', { board: board({ bank: [{ name: 'houses' }] }), actions: [] }],
     ['a bank entry with no name', { board: board({ bank: [{ count: 3 }] }), actions: [] }],
     ['a piece that is not a number', { board: board({ pieces: { p0: 'x' } }), actions: [] }],
     ['a roll of text', { board: board({ roll: 'six' }), actions: [] }],
     ['a counter value that is text', { board: board({ counters: [{ name: 'm', values: { p0: 'x' } }] }), actions: [] }],
-    ['a board with no player facts', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [], lastDrawn: null, playerCards: {} }, actions: [] }],
+    ['a board with no player facts', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [], lastDrawn: null, playerCards: {}, owes: {} }, actions: [] }],
     ['player facts that are not a map', { board: board({ playerFacts: [] }), actions: [] }],
     ['a seat whose facts are not a map', { board: board({ playerFacts: { p0: true } }), actions: [] }],
     ['a player fact that is text', { board: board({ playerFacts: { p0: { 'in jail': 'yes' } } }), actions: [] }],

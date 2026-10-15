@@ -7,7 +7,7 @@ import { BoardGrid, factWords } from './board-grid';
 import { seatColor } from './seat-colors';
 
 const space = (name: string, over: Partial<BoardView['spaces'][number]> = {}): BoardView['spaces'][number] =>
-  ({ name, color: null, details: {}, facts: {}, owner: null, ...over });
+  ({ name, color: null, details: {}, facts: {}, stripes: [], owner: null, ...over });
 
 const board = (over: Partial<BoardView> = {}): BoardView => ({
   spaces: [space('Go'), space('Mill Lane', { color: 'brown', details: { price: 60, rent: 2 }, owner: 'p1' }), space('Treasury'), space('Ferry Row', { color: 'brown' })],
@@ -19,6 +19,7 @@ const board = (over: Partial<BoardView> = {}): BoardView => ({
   playerFacts: {},
   lastDrawn: null,
   playerCards: {},
+  owes: {},
   ...over,
 });
 

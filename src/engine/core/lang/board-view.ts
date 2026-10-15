@@ -4,7 +4,8 @@ import type { GameEngine } from '../game-engine';
 import { zoneCards, type GameState } from '../game-state';
 import type { PlayerId } from '../scene';
 import type { Json } from '../table-def';
-import { bankOf, counterOf, isOut, lastDrawn, latestRoll, ownerOf, pieceAt, playerFact, spaceFact, type LastDrawn } from './board-state';
+import { bankItemOf } from './board';
+import { bankOf, counterOf, isOut, lastDrawn, latestRoll, owedTo, ownerOf, pieceAt, playerFact, spaceFact, type Creditor, type LastDrawn } from './board-state';
 import { cardName } from './card-facts';
 import { targetCandidates } from './declared-actions';
 import { friendlyError, friendlyReason } from './friendly';
@@ -15,10 +16,12 @@ import { zoneIdFor } from './zones';
 
 /**
  * `color` is the space's color when it is written as text; `details` is every other thing the table says about it. `facts` is
- * what has come to be true of it in play, only the ones that are set: a count other than 0, a flag that is on.
+ * what has come to be true of it in play, only the ones that are set: a count other than 0, a flag that is on. `stripes` names the
+ * flags among those that no bank item goes with, in the order the game declares them, for the page to stripe the space with; they
+ * stay in `facts` too, so the space's title still names them.
  */
 export type SpaceView = {
-  name: string; color: string | null; details: { [k: string]: Json }; facts: FactsView; owner: PlayerId | null;
+  name: string; color: string | null; details: { [k: string]: Json }; facts: FactsView; stripes: string[]; owner: PlayerId | null;
 };
 /** One number per seat; null where the seat looking may not see it. */
 export type CounterView = { name: string; values: { [seat: string]: number | null } };
@@ -32,10 +35,13 @@ type FactsView = { [fact: string]: number | boolean };
  * `lastDrawn` is the card drawn last, null until one is; every seat sees the same one, since a drawn card is shown to the table.
  * `playerCards` has every seat of the game too, with the names of the cards the seat keeps in zones of its own that everyone can
  * see, `[]` for none. Nothing else about a card or a pile is in a view, least of all the order of a pile.
+ * `owes` has an entry for each seat still in that owes someone, whom it owes; `{}` while no one does, and for a board with no
+ * counter to pay with. Whom a player owes is public, so every seat sees the same.
  */
 export type BoardView = {
   spaces: SpaceView[]; pieces: { [seat: string]: number }; roll: number[] | null; counters: CounterView[]; out: PlayerId[]; bank: BankView[];
   playerFacts: { [seat: string]: FactsView }; lastDrawn: LastDrawn | null; playerCards: { [seat: string]: string[] };
+  owes: { [seat: string]: Creditor };
 };
 /**
  * For a button that picks a space: what to ask the player, and every space its target phrase allows, by the space's place on
@@ -77,6 +83,27 @@ function cardsInView(runtime: LangRuntime, state: GameState): { [seat: string]: 
   ]));
 }
 
+/**
+ * The flags set on a space that no bank item goes with, in the order the game declares them: the ones that are only ever set and
+ * cleared, which the page shows on the space itself instead of counting them out of the bank.
+ */
+function stripesOf(runtime: LangRuntime, facts: FactsView): string[] {
+  const bank = runtime.game.board?.bank ?? [];
+  return runtime.game.facts.filter((fact) => fact.on === 'space' && fact.name in facts && bankItemOf(fact, bank) === null).map((fact) => fact.name);
+}
+
+/** Whom each seat still in owes, for the seats that owe anyone: the board's counter to pay with is the one a debt is kept against. */
+function debtsIn(runtime: LangRuntime, state: GameState): { [seat: string]: Creditor } {
+  const counter = runtime.game.board?.payWith ?? null;
+  const owes: { [seat: string]: Creditor } = {};
+  if (counter === null) return owes;
+  for (const seat of runtime.seats) {
+    const to = isOut(state, seat) ? null : owedTo(state, seat, counter);
+    if (to !== null) owes[seat] = to;
+  }
+  return owes;
+}
+
 function boardView(runtime: LangRuntime, state: GameState, seat: PlayerId): BoardView | null {
   const { board } = runtime.game;
   if (!board) return null;
@@ -85,7 +112,8 @@ function boardView(runtime: LangRuntime, state: GameState, seat: PlayerId): Boar
     // A color that is not text (a number, say) is not one to paint with, but it is still something the table says.
     const painted = typeof color === 'string';
     const details = painted || color === undefined ? rest : { ...rest, color };
-    return { name: space.name, color: painted ? color : null, details, facts: setFacts(runtime, 'space', (fact) => spaceFact(state, index, fact)), owner: ownerOf(state, index) };
+    const facts = setFacts(runtime, 'space', (fact) => spaceFact(state, index, fact));
+    return { name: space.name, color: painted ? color : null, details, facts, stripes: stripesOf(runtime, facts), owner: ownerOf(state, index) };
   });
   const pieces: { [seat: string]: number } = {};
   for (const s of runtime.seats) {
@@ -100,7 +128,7 @@ function boardView(runtime: LangRuntime, state: GameState, seat: PlayerId): Boar
   const playerFacts = Object.fromEntries(runtime.seats.map((s) => [s, setFacts(runtime, 'player', (fact) => playerFact(state, s, fact))]));
   return {
     spaces, pieces, roll: latestRoll(state), counters, out: runtime.seats.filter((s) => isOut(state, s)), bank, playerFacts,
-    lastDrawn: lastDrawn(state), playerCards: cardsInView(runtime, state),
+    lastDrawn: lastDrawn(state), playerCards: cardsInView(runtime, state), owes: debtsIn(runtime, state),
   };
 }
 
@@ -177,7 +205,7 @@ const isMap = (v: unknown, each: (item: unknown) => boolean): boolean => isRecor
 const isFact = (v: unknown): boolean => isNumber(v) || typeof v === 'boolean';
 const isSpace = (v: unknown): boolean =>
   isRecord(v) && isText(v.name) && (v.color === null || isText(v.color)) && isRecord(v.details) && isMap(v.facts, isFact)
-  && (v.owner === null || isText(v.owner));
+  && isList(v.stripes, isText) && (v.owner === null || isText(v.owner));
 const isDrawn = (v: unknown): boolean => isRecord(v) && isText(v.seat) && isText(v.zone) && isText(v.name) && isText(v.says);
 const isBankLine = (v: unknown): boolean => isRecord(v) && isText(v.name) && isNumber(v.count);
 const isCounter = (v: unknown): boolean =>
@@ -185,7 +213,8 @@ const isCounter = (v: unknown): boolean =>
 const isBoard = (v: unknown): boolean =>
   isRecord(v) && isList(v.spaces, isSpace) && isMap(v.pieces, isNumber) && (v.roll === null || isList(v.roll, isNumber))
   && isList(v.counters, isCounter) && isList(v.out, isText) && isList(v.bank, isBankLine) && isMap(v.playerFacts, (facts) => isMap(facts, isFact))
-  && (v.lastDrawn === null || isDrawn(v.lastDrawn)) && isMap(v.playerCards, (names) => isList(names, isText));
+  && (v.lastDrawn === null || isDrawn(v.lastDrawn)) && isMap(v.playerCards, (names) => isList(names, isText))
+  && isMap(v.owes, isText);
 const isVerdict = (v: unknown): boolean => v === true || isText(v);
 const isTarget = (v: unknown): boolean => isRecord(v) && isText(v.prompt) && isMap(v.spaces, isVerdict);
 const isAction = (v: unknown): boolean =>
