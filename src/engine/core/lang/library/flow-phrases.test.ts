@@ -3,7 +3,8 @@ import { zoneCards, type GameState } from '../../game-state';
 import { shuffleWithRng } from '../../rng';
 import type { CardState } from '../../scene';
 import { RuleError } from '../diagnostics';
-import { fixtureCard, fixtureEnv, fixtureState, runPhrase } from '../testing';
+import { markOut } from '../board-state';
+import { fixtureBoardGame, fixtureBoardState, fixtureCard, fixtureEnv, fixtureState, runPhrase } from '../testing';
 import type { PhraseKind, PhraseEnv } from '../types';
 import { WINNER_KEY } from '../zones';
 import { createDefaultLibrary } from './index';
@@ -275,6 +276,15 @@ describe('who goes next', () => {
     const at = (current: string) => fixtureEnv(fixtureState([], { turn: { current } }));
     expect(run('turn', 'The turn passes to the left', at('p1'))).toBe('p2');
     expect(run('turn', 'the turn passes to the left', at('p3'))).toBe('p0');
+  });
+  it('skips a player who is out', () => {
+    const game = fixtureBoardGame();
+    const seats = ['p0', 'p1', 'p2'];
+    const state = markOut(fixtureBoardState(game, seats), 'p1');
+    expect(run('turn', 'the turn passes to the left', fixtureEnv(state, { game, seats }))).toBe('p2');
+  });
+  it('gives a lone player the turn again', () => {
+    expect(run('turn', 'the turn passes to the left', fixtureEnv(fixtureState([], { turn: { current: 'p0' } }), { seats: ['p0'] }))).toBe('p0');
   });
   it('cannot pass a turn nobody has', () => {
     expect(() => run('turn', 'the turn passes to the left', fixtureEnv(fixtureState([])))).toThrow(RuleError);
