@@ -23,7 +23,8 @@ export function parseOutline(text: string): { roots: OutlineNode[]; diagnostics:
   const diagnostics: Diagnostic[] = [];
   const open: Open[] = [];
 
-  text.split(/\r?\n/).forEach((raw, index) => {
+  // A leading byte-order mark is an encoding marker, not part of the first line's indentation.
+  text.replace(/^\uFEFF/, '').split(/\r?\n/).forEach((raw, index) => {
     const line = index + 1;
     const expanded = raw.replace(/\t/g, '  ').trimEnd();
     const trimmed = expanded.trim();
@@ -53,7 +54,7 @@ export function parseOutline(text: string): { roots: OutlineNode[]; diagnostics:
           line,
           severity: 'error',
           kind: 'structure',
-          message: `This row has ${cells.length} cells but the header has ${owner.table.columns.length}.`,
+          message: `This row has ${cells.length} ${cells.length === 1 ? 'cell' : 'cells'} but the header has ${owner.table.columns.length}.`,
         });
       }
       owner.table.rows.push({ cells, line });
