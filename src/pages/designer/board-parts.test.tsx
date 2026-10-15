@@ -110,6 +110,12 @@ describe('BoardGrid picking', () => {
     expect(picking.onRefused).not.toHaveBeenCalled();
   });
 
+  it('outlines a space that may be picked and dashes one that is refused', () => {
+    render(<BoardGrid board={board()} picking={choosing()} />);
+    expect(screen.getByRole('button', { name: 'Pick Mill Lane' }).style.outline).toContain('solid');
+    expect(screen.getByRole('button', { name: 'Pick Ferry Row' }).style.outline).toContain('dashed');
+  });
+
   it('picks with the keyboard too', () => {
     const picking = choosing();
     render(<BoardGrid board={board()} picking={picking} />);
@@ -144,6 +150,7 @@ describe('BoardGrid picking', () => {
     expect(picking.onPick).not.toHaveBeenCalled();
     expect(picking.onRefused).not.toHaveBeenCalled();
     expect(screen.getByTitle('Go').style.opacity).toBe('0.35');
+    expect(screen.getByTitle('Go').style.outline).toBe('');
     expect(screen.getByRole('button', { name: 'Pick Mill Lane' }).style.opacity).not.toBe('0.35');
   });
 
@@ -180,6 +187,14 @@ describe('MoneyLine', () => {
   it('says what the bank has left, in its own words, after the seats', () => {
     render(<MoneyLine board={board({ bank: [{ name: 'houses', count: 31 }, { name: 'hotels', count: 12 }] })} />);
     expect(screen.getByText('bank: 31 houses, 12 hotels')).toBeTruthy();
+  });
+
+  it('puts the bank on a line of its own under the seats', () => {
+    render(<MoneyLine board={board({ bank: [{ name: 'houses', count: 31 }] })} />);
+    const bank = screen.getByText('bank: 31 houses');
+    const seat = screen.getByText('p0 1,500 money');
+    expect(bank.parentElement).not.toBe(seat.parentElement);
+    expect(seat.compareDocumentPosition(bank) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('puts a bank of one in its singular, and says nothing of a bank the game does not have', () => {

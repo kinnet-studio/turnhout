@@ -4,7 +4,7 @@ import { bankOf, ownerOf, setBank, setSpaceFact, spaceFact } from '../board-stat
 import { cardFact, changeCard } from '../card-facts';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
-import { singularForms } from '../refs';
+import { counted, singularForms } from '../refs';
 import type {
   BoardSpec, CardMatch, ConditionFn, DeclareFn, EffectFn, ExpectFn, FactItem, FactSpec, MomentFn, PhraseEnv, SpaceClass, SpaceSpec, TargetFn,
   WhichFn, WinnerFn, ZoneRef,
@@ -47,12 +47,6 @@ function factForBank(env: PhraseEnv, name: string): FactItem {
 function giveBack(state: GameState, space: number, fact: FactItem, bank: string): GameState {
   const returned = setBank(state, bank, bankOf(state, bank) + heldBy(state, space, fact.name));
   return setSpaceFact(returned, space, fact.name, fact.kind === 'flag' ? false : 0);
-}
-
-/** "1 token" or "3 tokens": a name the game declares is plural, and of the singulars it may come from, the last has the most taken off. */
-function counted(n: number, name: string): string {
-  const singulars = singularForms(name);
-  return `${n} ${n === 1 && singulars.length > 0 ? singulars[singulars.length - 1] : name}`;
 }
 
 const withArticle = (noun: string): string => `${/^[aeiou]/i.test(noun) ? 'an' : 'a'} ${noun}`;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  STANDARD_RANKS, STANDARD_SUITS, VOCAB_TYPES, parseParam, participle, plural, secondPersonWords, singularForms, thirdPerson, thirdPersonWords,
+  STANDARD_RANKS, STANDARD_SUITS, VOCAB_TYPES, counted, parseParam, participle, plural, secondPersonWords, singularForms, thirdPerson, thirdPersonWords,
 } from './refs';
 import { PhraseLibrary, STATIC_TYPES, emptyVocab, stubFor, vocabFrom } from './phrases';
 import { FIXTURE_SPACES, fixtureBoardGame } from './testing';
@@ -484,6 +484,13 @@ describe('plurals', () => {
     expect(singularForms('glasses')).toEqual(['glasse', 'glass']);
     expect(singularForms('moss')).toEqual([]);
     expect(singularForms('money')).toEqual([]);
+  });
+  it('counts a plural name, in its singular for one', () => {
+    expect([counted(3, 'tokens'), counted(1, 'tokens'), counted(0, 'tokens')]).toEqual(['3 tokens', '1 token', '0 tokens']);
+    // Of the singulars "boxes" may come from, the one with the most taken off.
+    expect([counted(1, 'boxes'), counted(1, 'pennies'), counted(1, 'glasses')]).toEqual(['1 box', '1 penny', '1 glass']);
+    // A name no singular comes from is left as it is.
+    expect(counted(1, 'money')).toBe('1 money');
   });
 });
 

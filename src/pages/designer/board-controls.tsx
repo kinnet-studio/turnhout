@@ -1,5 +1,5 @@
 import type { ActionView, BoardView } from '@/engine/core/lang/board-view';
-import { counted } from './counted';
+import { counted } from '@/engine/core/lang/refs';
 import { seatColor } from './seat-colors';
 
 /** The seat's number, so p10 comes after p9; anything that is not `p<n>` goes last. */
@@ -22,12 +22,14 @@ function entryFor(board: BoardView, seat: string): string {
   return numbers.length === 0 ? seat : `${seat} ${numbers.join(', ')}`;
 }
 
-/** Everyone's numbers on one line, each in its seat's color, then what the bank has left: "bank: 31 houses, 12 hotels". */
+/** Everyone's numbers on one line, each in its seat's color, and under it what the bank has left: "bank: 31 houses, 12 hotels". */
 export function MoneyLine({ board }: { board: BoardView }) {
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', font: 'bold 14px sans-serif' }}>
-      {seatsOf(board).map((seat) => <span key={seat} style={{ color: seatColor(seat) }}>{entryFor(board, seat)}</span>)}
-      {board.bank.length > 0 && <span style={{ color: '#d1d5db' }}>bank: {board.bank.map(({ name, count }) => counted(count, name)).join(', ')}</span>}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, font: 'bold 14px sans-serif' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px' }}>
+        {seatsOf(board).map((seat) => <span key={seat} style={{ color: seatColor(seat) }}>{entryFor(board, seat)}</span>)}
+      </div>
+      {board.bank.length > 0 && <div style={{ color: '#d1d5db' }}>bank: {board.bank.map(({ name, count }) => counted(count, name)).join(', ')}</div>}
     </div>
   );
 }

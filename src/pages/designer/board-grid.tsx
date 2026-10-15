@@ -1,7 +1,7 @@
 import type { KeyboardEvent } from 'react';
 import type { BoardView, SpaceView } from '@/engine/core/lang/board-view';
+import { counted } from '@/engine/core/lang/refs';
 import { ringCells, ringSize } from './board-ring';
-import { counted } from './counted';
 import { seatColor } from './seat-colors';
 import { spaceColor } from './space-colors';
 
