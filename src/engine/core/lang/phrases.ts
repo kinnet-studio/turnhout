@@ -1,7 +1,7 @@
 import type { Json } from '../table-def';
 import type {
   ActionFn, BoardFn, BoardSpec, CardSetSpec, CardsFn, ColumnFn, ConditionFn, DeclareFn, EffectFn, ExpectFn, FactItem, FactSpec, MomentFn,
-  NameProblem, ParamType, PhraseKind, ScoreFn, TurnFn, Vocab, WhoFn, WinnerFn, ZoneFn, ZoneSpec,
+  NameProblem, ParamType, PhraseKind, ScoreFn, TargetFn, TurnFn, Vocab, WhoFn, WinnerFn, ZoneFn, ZoneSpec,
 } from './types';
 
 const VISIBILITY: Record<string, string> = {
@@ -128,7 +128,7 @@ export function emptyVocab(): Vocab {
  */
 export function vocabFrom(game: {
   maxPlayers: number; zones?: ZoneSpec[]; cards?: CardSetSpec[]; phases?: string[]; verbs?: string[];
-  board?: BoardSpec | null; actions?: { verb: string; words: string }[]; facts?: FactSpec[];
+  board?: BoardSpec | null; actions?: Vocab['actions']; facts?: FactSpec[];
 }): Vocab {
   const { zones = [], cards = [], board = null } = game;
   const attributes = new Set<string>();
@@ -323,6 +323,7 @@ export class PhraseLibrary {
   moment(p: string, fn: MomentFn): this { return this.add('moment', p, fn); }
   given(p: string, fn: EffectFn): this { return this.add('given', p, fn); }
   action(p: string, fn: ActionFn): this { return this.add('action', p, fn); }
+  target(p: string, fn: TargetFn, opts?: PhraseOpts): this { return this.add('target', p, fn, opts); }
   expect(p: string, fn: ExpectFn): this { return this.add('expect', p, fn); }
 
   get(kind: PhraseKind, pattern: string): ({ fn: unknown } & Required<PhraseOpts>) | undefined {
@@ -497,6 +498,7 @@ function stubParams(kind: PhraseKind, argNames: string[]): string {
     case 'score': return `env, ${args}, seat`;
     case 'winner': return `env, ${args}, scores`;
     case 'moment': return `env, ${args}, moment`;
+    case 'target': return `env, ${args}, space`;
     default: return argNames.length > 0 ? `env, ${args}` : 'env';
   }
 }

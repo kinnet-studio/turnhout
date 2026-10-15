@@ -4,7 +4,7 @@ import { actionLabel, compilePhase } from './compile-phase';
 import { createDefaultLibrary } from './library';
 import { parseOutline } from './outline';
 import { vocabFrom } from './phrases';
-import { TINY_BOARD_HEAD } from './testing';
+import { TINY_BOARD_HEAD, fixtureBoardGame } from './testing';
 
 const lib = createDefaultLibrary();
 const BASE = [
@@ -767,5 +767,113 @@ describe('actions, moments and player rules on a board', () => {
   });
   it('allows no indentation under the lines of an action', () => {
     expect(errorsOf(['A player may roll the dice.', '  Then:', '    Roll the dice.', '      more'])).toEqual([[21, 'This line shouldn\'t be indented under the line above.']]);
+  });
+});
+
+describe('buttons that pick a target', () => {
+  /** The board head with houses and a hotel to build and a bank to take them from, then `lines` as the phase's own; the first is line 20. */
+  const BUILDING_HEAD = TINY_BOARD_HEAD.replace(
+    '  There are two six-sided dice.', '  There are two six-sided dice.\n  Spaces can have houses and a hotel.\n  The bank has 32 houses and 12 hotels.',
+  );
+  const phase = (lines: string[]) => compileGame(`${BUILDING_HEAD}\n${lines.map((l) => `  ${l}`).join('\n')}`, lib);
+  const problems = (result: ReturnType<typeof phase>) => result.diagnostics.filter((d) => d.severity === 'error');
+  const errorsOf = (lines: string[]) => problems(phase(lines)).map((d) => [d.line, d.message]);
+  const BUILD = ['A player may build a house on a street they own.', '  Then:', '    It gets a house from the bank.'];
+
+  it('compiles a button whose line ends in “on a …”: the wording stays the move, the base is the words before “on”', () => {
+    const built = phase(BUILD);
+    const { game } = built;
+    expect(problems(built)).toEqual([]);
+    expect(game!.phases[0].actions).toEqual([expect.objectContaining({
+      verb: 'build', words: 'build a house on a street they own', base: 'build a house', label: 'Build a house', line: 20,
+      target: expect.objectContaining({ kind: 'target', phrase: 'a {spacekind} they own', line: 20 }),
+      effects: [expect.objectContaining({ phrase: 'it gets a {banked} from the bank' })],
+    })]);
+  });
+  it('keeps the designer\'s capitals on the button, and reads the target in any capitals', () => {
+    const built = phase(['A player may Build a House on A Street they own.']);
+    const { game } = built;
+    expect(problems(built)).toEqual([]);
+    expect(game!.phases[0].actions[0]).toMatchObject({
+      words: 'build a house on a street they own', base: 'build a house', label: 'Build a House', target: { phrase: 'a {spacekind} they own' },
+    });
+  });
+  it('reads “on an …” as a target too, though only “a” targets are phrases so far', () => {
+    expect(errorsOf(['A player may build a house on an orange street.'])).toEqual([[20, '“an orange street” isn\'t in the phrase library yet.']]);
+  });
+  it('reads each way of saying where: a kind of space they own, any space of a kind, any space they own', () => {
+    const phrases = ['a street they own', 'a street', 'a space they own'].map((target) => {
+      const built = phase([`A player may build a house on ${target}.`]);
+      expect(problems(built)).toEqual([]);
+      return built.game!.phases[0].actions[0].target!.phrase;
+    });
+    expect(phrases).toEqual(['a {spacekind} they own', 'a {spacekind}', 'a space they own']);
+  });
+  it('makes a button that takes no target have the base of its words, and no target', () => {
+    const { game } = phase(['A player may buy the space they are on.', 'A player may end their turn.']);
+    expect(game!.phases[0].actions).toEqual([
+      expect.objectContaining({ words: 'buy the space they are on', base: 'buy the space they are on', label: 'Buy the space you are on', target: null }),
+      expect.objectContaining({ words: 'end their turn', base: 'end their turn', label: 'End your turn', target: null }),
+    ]);
+  });
+  it('is no target when the text after “on” is not “a …” or “an …”, so a rule may still end in “…they are on”', () => {
+    for (const line of ['A player may buy the space they are on.', 'A player may roll on doubles.', 'A player may carry on.']) {
+      const built = phase([line]);
+      expect(problems(built), line).toEqual([]);
+      expect(built.game!.phases[0].actions[0].target, line).toBeNull();
+    }
+  });
+  it('splits at the last “on”, so a base may hold one', () => {
+    const { game } = phase(['A player may turn on a light on a street they own.']);
+    expect(game!.phases[0].actions[0]).toMatchObject({ base: 'turn on a light', target: { phrase: 'a {spacekind} they own' } });
+  });
+  it('names a misspelt kind of space in the target, and makes no button of the line, not even a plain one', () => {
+    expect(errorsOf(['A player may build a house on a stret they own.', '  Then:', '    It gets a house from the bank.'])).toEqual([
+      [20, 'There is no kind of space called “stret”.'],
+    ]);
+    expect(phase(['A player may build a house on a stret they own.']).game).toBeUndefined();
+
+    const diagnostics: Parameters<typeof compilePhase>[1]['diagnostics'] = [];
+    const vocab = vocabFrom({ maxPlayers: 2, phases: ['main'], board: fixtureBoardGame().board });
+    const built = compilePhase(
+      parseOutline('Phase: main\n  A player may build a house on a stret they own.').roots[0],
+      { library: lib, vocab, gameName: 'Tiny', inMove: false, player: false, space: false, diagnostics },
+    );
+    expect(diagnostics.map((d) => [d.line, d.message])).toEqual([[2, 'There is no kind of space called “stret”.']]);
+    expect(built.actions).toEqual([]);
+  });
+  it('suggests the kinds the board has for a misspelt one', () => {
+    expect(problems(phase(['A player may build a house on a stret they own.']))[0].suggestions).toEqual(['street']);
+  });
+  it('asks a developer for a target nobody has written a phrase for, and makes no button of it', () => {
+    const built = phase(['A player may build a house on a street they love.']);
+    const { game } = built;
+    expect(problems(built)).toEqual([expect.objectContaining({
+      line: 20, kind: 'unknown-phrase', message: '“a street they love” isn\'t in the phrase library yet.',
+      stub: expect.stringContaining("library.target('a street they love', (env, _args, space) => {"),
+    })]);
+    expect(game!.phases[0].actions).toEqual([]);
+  });
+  it('lets an After line name the button by its whole wording, since a button that picks a target is a move like any other', () => {
+    const built = phase([...BUILD, 'After a player builds a house on a street they own, the turn passes to the left.']);
+    const { game } = built;
+    expect(problems(built)).toEqual([]);
+    expect(game!.phases[0].after).toMatchObject({ moves: ['build a house on a street they own'] });
+  });
+  it('still reads “it” as the space of the rule in the lines under the button, and “they” as the player', () => {
+    expect(errorsOf([
+      'A player may build a house on a street they own.', '  Only if it has fewer than 4 houses.', '  Only if they have at least its price in money.',
+      '  Then:', '    It gets a house from the bank.',
+    ])).toEqual([]);
+  });
+  it('allows two buttons with the same base and different targets, and refuses the same wording twice', () => {
+    const both = phase(['A player may build a house on a street they own.', 'A player may build a house on a street.']);
+    expect(problems(both)).toEqual([]);
+    expect(both.game!.phases[0].actions.map((a) => [a.base, a.words])).toEqual([
+      ['build a house', 'build a house on a street they own'], ['build a house', 'build a house on a street'],
+    ]);
+    expect(errorsOf(['A player may build a house on a street they own.', 'A player may Build a House on a Street they own.'])).toEqual([
+      [21, 'Two rules in this phase say “A player may build a house on a street they own”.'],
+    ]);
   });
 });

@@ -211,6 +211,15 @@ describe('stubFor', () => {
     );
   });
 
+  it('gives a target stub the space it is asked about', () => {
+    expect(stubFor('target', 'a street they love', V, STATIC_TYPES, { game: 'G', line: 2 })).toContain(
+      "library.target('a street they love', (env, _args, space) => {",
+    );
+    expect(stubFor('target', 'a 3 they love', V, STATIC_TYPES, { game: 'G', line: 2 })).toContain(
+      "library.target('a {int} they love', (env, [a1], space) => {",
+    );
+  });
+
   it('never turns words into a space name, even one that reads like a sentence', () => {
     const boardVocab = vocabFrom({
       maxPlayers: 2,
@@ -301,14 +310,23 @@ describe('suggestNames', () => {
 
 describe('board vocabulary and phrase flags', () => {
   it('builds space, counter and action words from a board game', () => {
-    const v = vocabFrom({ maxPlayers: 2, board: fixtureBoardGame().board, actions: [{ verb: 'roll', words: 'roll the dice' }] });
+    const v = vocabFrom({
+      maxPlayers: 2, board: fixtureBoardGame().board,
+      actions: [
+        { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false },
+        { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true },
+      ],
+    });
     expect(v.spaces).toHaveLength(8);
     expect(v.spaceAttributes).toEqual(['kind', 'color', 'price', 'rent', 'tax']);
     expect(v.spaceValues).toContainEqual({ attribute: 'kind', value: 'street' });
     expect(v.spaceValues.some((x) => x.attribute === 'price')).toBe(false);
     expect(v.counters).toEqual(['money']);
     expect(v.payWith).toBe('money');
-    expect(v.actions).toEqual([{ verb: 'roll', words: 'roll the dice' }]);
+    expect(v.actions).toEqual([
+      { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false },
+      { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true },
+    ]);
     expect(v.dice).toBe(true);
   });
   it('knows whether the board has dice', () => {
@@ -323,6 +341,16 @@ describe('board vocabulary and phrase flags', () => {
       needsMove: false, needsPlayer: true, needsSpace: false, needsPayment: false, needsBoard: false, needsDice: false,
     });
     expect(l.get('effect', 'they roll')).toMatchObject({ needsPlayer: false, needsBoard: true, needsDice: true });
+  });
+});
+
+describe('the target phrases', () => {
+  const targets = () => new PhraseLibrary(STATIC_TYPES).target('a space they own', () => true, { needsPlayer: true, needsBoard: true });
+
+  it('is a kind of its own: where a button points is no condition', () => {
+    expect(targets().get('target', 'a space they own')).toMatchObject({ needsPlayer: true, needsBoard: true, needsSpace: false });
+    expect(targets().match('target', 'A space they own', V)).toEqual({ status: 'ok', pattern: 'a space they own', args: [] });
+    expect(targets().match('condition', 'a space they own', V).status).toBe('unknown');
   });
 });
 

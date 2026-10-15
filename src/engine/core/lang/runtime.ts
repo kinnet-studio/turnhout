@@ -7,7 +7,7 @@ import { MissingPhraseError, RuleError } from './diagnostics';
 import type { PhraseLibrary } from './phrases';
 import type {
   ActionFn, ColumnFn, CompiledGame, CompiledMoment, CompiledTrigger, CondGroup, ConditionFn, EffectFn, ExampleEnv, ExpectFn, MomentFn, Moment, MoveInfo,
-  PhraseEnv, PhraseKind, PhraseRef, ScoreFn, Subject, TurnFn, WhoFn, WinnerFn,
+  PhraseEnv, PhraseKind, PhraseRef, ScoreFn, Subject, TargetFn, TurnFn, WhoFn, WinnerFn,
 } from './types';
 
 type Checker = (state: GameState, move: Move) => true | string;
@@ -86,6 +86,11 @@ export class LangRuntime {
   failedGroup(groups: CondGroup[], state: GameState, move?: MoveInfo, subject?: Subject): string | null {
     const holds = (ref: PhraseRef) => this.test(ref, state, move, undefined, subject);
     return groups.find((g) => !(g.mode === 'all' ? g.refs.every(holds) : g.refs.some(holds)))?.text ?? null;
+  }
+
+  /** Whether a button's target phrase allows the player in `subject` to pick `space`. */
+  allowsTarget(ref: PhraseRef, state: GameState, subject: Subject, space: number): boolean {
+    return this.call<TargetFn, boolean>(ref, ['target'], (fn) => fn(this.env(state, undefined, undefined, subject), ref.args, space));
   }
 
   /** Who plays next. */

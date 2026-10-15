@@ -237,7 +237,7 @@ export function vocabFor(game: CompiledGame, players: number = game.players.max)
     phases: game.phases.map((p) => p.id),
     verbs: [...new Set(game.phases.flatMap((p) => p.moves.map((m) => m.verb)))],
     board: game.board,
-    actions: game.phases.flatMap((p) => p.actions.map((a) => ({ verb: a.verb, words: a.words }))),
+    actions: game.phases.flatMap((p) => p.actions.map((a) => ({ verb: a.verb, words: a.words, base: a.base, targeted: a.target !== null }))),
     facts: game.facts,
   });
 }

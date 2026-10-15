@@ -2,10 +2,36 @@ import type { GameState } from '../game-state';
 import type { Move, MoveHandler } from '../moves';
 import type { PlayerId } from '../scene';
 import { clearTurnLog, endsTurn, isOut, recordAction } from './board-state';
+import { secondPersonWords } from './refs';
 import type { LangRuntime } from './runtime';
 import type { CompiledPhase, DeclaredAction, Subject } from './types';
 
 const OUT = "You're out of the game.";
+
+/** What a refusal calls a button: its wording without the space it picks, in the second person. A move no phase declares is called by itself. */
+function calledBy(move: string, runtime: LangRuntime): string {
+  const declared = runtime.game.phases.flatMap((p) => p.actions).find((a) => a.words === move);
+  return secondPersonWords(declared?.base ?? move);
+}
+
+/** The space the move picks, or null when it carries none that the board has. */
+function pickedBy(m: Move, runtime: LangRuntime): number | null {
+  const { target } = m;
+  const spaces = runtime.game.board?.spaces.length ?? 0;
+  return typeof target === 'number' && Number.isInteger(target) && target >= 0 && target < spaces ? target : null;
+}
+
+/**
+ * Who a button is about: the player who presses it and, through “it”, the space it picks, else the space their piece is on.
+ * A button that picks a space is refused, in the player's words, when the move names none or one its target does not allow.
+ */
+function aboutPress(action: DeclaredAction, runtime: LangRuntime, state: GameState, m: Move, by: PlayerId): Subject | string {
+  if (action.target === null) return { player: by, space: null, card: null };
+  const space = pickedBy(m, runtime);
+  if (space === null) return `Pick where to ${secondPersonWords(action.base)}.`;
+  const subject: Subject = { player: by, space, card: null };
+  return runtime.allowsTarget(action.target, state, subject, space) ? subject : `That isn't ${secondPersonWords(action.target.text.toLowerCase())}.`;
+}
 
 /** The current phase's button whose move type is `move` and that allows it, with who it is about; else why not. */
 function choose(
@@ -15,17 +41,19 @@ function choose(
   const action = phase?.actions.find((a) => a.words === move);
   // Nobody can press a button without being someone: a move with no player is refused as if the button were not there.
   const by = m.by as PlayerId | undefined;
-  if (!phase || !action || typeof by !== 'string') return `You can't ${move} now.`;
+  if (!phase || !action || typeof by !== 'string') return `You can't ${calledBy(move, runtime)} now.`;
   if (isOut(state, by)) return OUT;
-  // An action is about the player who presses it and, through “it”, the space their piece is on.
-  const subject: Subject = { player: by, space: null, card: null };
+  const subject = aboutPress(action, runtime, state, m, by);
+  if (typeof subject === 'string') return subject;
   return runtime.failedGroup(action.conditions, state, undefined, subject) ?? { phase, action, by, subject };
 }
 
 /**
  * The move handler for one button the designer declared, like “A player may roll the dice.” It refuses in the
  * designer's own words, then notes the action for the player (so “they have rolled this turn” holds) and runs its Then
- * lines. A button the After line names passes the turn, and with it everything done in the turn stops counting.
+ * lines. A button the After line names passes the turn, and with it everything done in the turn stops counting. A button
+ * that picks a space (“A player may plant a flag on a field they own.”) takes it from the move's `target`, the index of
+ * the space on the board, and its lines are about that space.
  */
 export function declaredActionHandler(move: string, runtime: LangRuntime): MoveHandler {
   return {
@@ -42,4 +70,15 @@ export function declaredActionHandler(move: string, runtime: LangRuntime): MoveH
       return endsTurn(phase, move) ? clearTurnLog(done) : done;
     },
   };
+}
+
+/**
+ * The spaces the button's target phrase allows `seat` to pick, in board order; none for a button that picks no space. It
+ * asks only the target phrase: the button's `Only if` lines may still refuse a space it lists.
+ */
+export function targetCandidates(runtime: LangRuntime, action: DeclaredAction, state: GameState, seat: PlayerId): number[] {
+  const { target } = action;
+  if (target === null) return [];
+  const spaces = Array.from({ length: runtime.game.board?.spaces.length ?? 0 }, (_, space) => space);
+  return spaces.filter((space) => runtime.allowsTarget(target, state, { player: seat, space, card: null }, space));
 }

@@ -2,6 +2,7 @@
 import type { PlayerId } from '../scene';
 import { SETUP_PHASE } from './build';
 import { MissingPhraseError, RuleError } from './diagnostics';
+import { secondPersonWords } from './refs';
 
 const NOT_YOUR_TURN = /^not .+'s turn$/;
 // A button's move is its whole wording, so the move may be several words; the first “not allowed in phase” ends it.
@@ -20,7 +21,9 @@ export function friendlyReason(reason: string, current?: PlayerId): string {
   const notInPhase = NOT_IN_PHASE.exec(reason);
   if (notInPhase) {
     const [, move, phase] = notInPhase;
-    return move === 'reorder' ? `You can't rearrange cards during ${phaseName(phase)}.` : `You can't ${move} during ${phaseName(phase)}.`;
+    return move === 'reorder'
+      ? `You can't rearrange cards during ${phaseName(phase)}.`
+      : `You can't ${secondPersonWords(move)} during ${phaseName(phase)}.`;
   }
   return reason;
 }

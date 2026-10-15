@@ -5,7 +5,7 @@ import type { Json } from '../table-def';
 
 export type PhraseKind =
   | 'cards' | 'zone' | 'board' | 'declare' | 'column' | 'condition' | 'effect' | 'turn' | 'who' | 'score' | 'winner' | 'moment' | 'given'
-  | 'action' | 'expect';
+  | 'action' | 'target' | 'expect';
 /** kind 'lang' = compiler built-ins: all | any | phase | always | if | missing */
 export type PhraseRef = { kind: PhraseKind | 'lang'; phrase: string; args: Json[]; line: number; text: string };
 export type SeatRef = { seat: string } | { who: 'actor' | 'winner' };
@@ -44,8 +44,12 @@ export type SpaceClass = { attribute: string; values: Json[] };
  * `words` is the lowercase text after "a player may" ('roll the dice'); `label` is the button text in the second person,
  * with the designer's capitals ('Roll the dice', 'Go to Rose Lane'). `words` is also the button's move type, so that
  * “pay the fine” and “pay the toll” are two buttons although they start with the same `verb`.
+ * A button whose line ends in “on a …” picks a space on the board: `base` is the lowercase wording before “on” ('plant a
+ * flag') and `target` the phrase that says which spaces it may pick. Any other button has `base` equal to `words`, no target.
  */
-export type DeclaredAction = { verb: string; words: string; label: string; conditions: CondGroup[]; effects: PhraseRef[]; line: number };
+export type DeclaredAction = {
+  verb: string; words: string; base: string; label: string; target: PhraseRef | null; conditions: CondGroup[]; effects: PhraseRef[]; line: number;
+};
 export type CompiledMoment = { line: number; text: string; when: PhraseRef; conditions: CondGroup[]; effects: PhraseRef[] };
 export type CompiledTrigger = { line: number; text: string; when: PhraseRef; conditions: CondGroup[]; effects: PhraseRef[] };
 export type CompiledPhase = {
@@ -76,7 +80,9 @@ export type Vocab = {
   spaces: string[]; spaceAttributes: string[];
   /** The text cells of the board's table, not the numbers. */
   spaceValues: { attribute: string; value: string }[];
-  counters: string[]; payWith: string | null; actions: { verb: string; words: string }[];
+  counters: string[]; payWith: string | null;
+  /** Every button the phases declare, one for each wording; `targeted` ones pick a space, so an example names it after their `base`. */
+  actions: { verb: string; words: string; base: string; targeted: boolean }[];
   /** True when the board has dice: a line like “There are two six-sided dice.” under Board:. */
   dice: boolean;
   /** The facts the game keeps, and the names of the bank's numbers. */
@@ -113,6 +119,8 @@ export type ScoreFn = (env: PhraseEnv, args: Json[], seat: PlayerId) => number;
 export type WinnerFn = (env: PhraseEnv, args: Json[], scores: Record<PlayerId, number>) => PlayerId;
 export type MomentFn = (env: PhraseEnv, args: Json[], moment: Moment) => boolean;
 export type ActionFn = (env: PhraseEnv, args: Json[]) => { by: PlayerId; move: Move };
+/** Whether a button may pick `space`; `env.subject.player` is the player pressing it. */
+export type TargetFn = (env: PhraseEnv, args: Json[], space: number) => boolean;
 export type ExpectFn = (env: PhraseEnv, args: Json[]) => true | string;
 export type CardsFn = (args: Json[], table: CardTable | null) => CardSetSpec;
 export type ZoneFn = (args: Json[]) => ZoneSpec;

@@ -14,7 +14,9 @@ import { itOf, theyOf } from './support';
 
 const lib = createDefaultLibrary();
 // The phase's roll action gives `{done}` its word, "rolled".
-const ROLL: DeclaredAction = { verb: 'roll', words: 'roll the dice', label: 'Roll the dice', conditions: [], effects: [], line: 1 };
+const ROLL: DeclaredAction = {
+  verb: 'roll', words: 'roll the dice', base: 'roll the dice', label: 'Roll the dice', target: null, conditions: [], effects: [], line: 1,
+};
 const game = fixtureBoardGame({ phases: [fixturePhase('playing', [], { actions: [ROLL] })] });
 const env = (state: GameState, over: Partial<Parameters<typeof fixtureEnv>[1]> = {}) =>
   fixtureEnv(state, { game, seats: ['p0', 'p1', 'p2'], ...over });
@@ -317,9 +319,19 @@ describe('moments', () => {
 
 describe('example phrases', () => {
   // The buttons of the phase give `{action}` and `{done}` their words.
-  const BUY: DeclaredAction = { verb: 'buy', words: 'buy the space they are on', label: 'Buy', conditions: [], effects: [], line: 2 };
-  const END: DeclaredAction = { verb: 'end', words: 'end their turn', label: 'End turn', conditions: [], effects: [], line: 3 };
-  const playing = fixtureBoardGame({ phases: [fixturePhase('playing', [], { actions: [ROLL, BUY, END] })] });
+  const BUY: DeclaredAction = {
+    verb: 'buy', words: 'buy the space they are on', base: 'buy the space they are on', label: 'Buy', target: null, conditions: [], effects: [], line: 2,
+  };
+  const END: DeclaredAction = {
+    verb: 'end', words: 'end their turn', base: 'end their turn', label: 'End turn', target: null, conditions: [], effects: [], line: 3,
+  };
+  // A button that picks where: its move is the whole wording, and an example names the space after the base.
+  const BUILD: DeclaredAction = {
+    verb: 'build', words: 'build a house on a street they own', base: 'build a house', label: 'Build a house',
+    target: { kind: 'target', phrase: 'a {spacekind} they own', args: [{ attribute: 'kind', values: ['street'] }], line: 4, text: 'a street they own' },
+    conditions: [], effects: [], line: 4,
+  };
+  const playing = fixtureBoardGame({ phases: [fixturePhase('playing', [], { actions: [ROLL, BUY, END, BUILD] })] });
   const at = (state: GameState) => env(state, { game: playing });
   const given = (text: string, state: GameState = fixtureBoardState(playing)) => runPhrase<GameState>(lib, 'given', text, at(state));
   const expectThat = (text: string, state: GameState) => runPhrase<true | string>(lib, 'expect', text, at(state));
@@ -416,6 +428,24 @@ describe('example phrases', () => {
     });
     it('refuses a player who is not at the table', () => {
       expect(() => runPhrase(lib, 'action', 'p3 rolls the dice', at(fixtureBoardState(playing)))).toThrow('There is no player p3 at this table.');
+    });
+    it('is a player pressing a button that picks a space, and the space they pick', () => {
+      const run = (text: string) => runPhrase(lib, 'action', text, at(fixtureBoardState(playing)));
+      expect(run('p0 builds a house on Rose Lane')).toEqual({ by: 'p0', move: { type: 'build a house on a street they own', target: 5 } });
+      expect(run('p1 Builds a House on mill lane')).toEqual({ by: 'p1', move: { type: 'build a house on a street they own', target: 1 } });
+      // Space 0 is a space too.
+      expect(run('p0 builds a house on Go')).toEqual({ by: 'p0', move: { type: 'build a house on a street they own', target: 0 } });
+    });
+    it('does not take a button that picks a space without one, or one that picks none with one', () => {
+      const m = (text: string) => lib.match('action', text, vocabFor(playing));
+      expect(m('p0 builds a house').status).toBe('unknown');
+      expect(m('p0 builds a house on a street they own').status).toBe('unknown');
+      expect(m('p0 rolls the dice on Rose Lane').status).toBe('unknown');
+      expect(m('p0 rolls the dice')).toMatchObject({ status: 'ok', pattern: '{player} {action}' });
+      expect(m('p0 builds a house on Rose Lane')).toMatchObject({ status: 'ok', pattern: '{player} {targetaction} on {space}' });
+    });
+    it('refuses a player who is not at the table when they build', () => {
+      expect(() => runPhrase(lib, 'action', 'p3 builds a house on Rose Lane', at(fixtureBoardState(playing)))).toThrow('There is no player p3 at this table.');
     });
   });
 

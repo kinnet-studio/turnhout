@@ -5,7 +5,7 @@ import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import { singularForms } from '../refs';
 import type {
-  BoardSpec, ConditionFn, DeclareFn, EffectFn, ExpectFn, FactItem, FactSpec, MomentFn, PhraseEnv, SpaceClass, SpaceSpec,
+  BoardSpec, ConditionFn, DeclareFn, EffectFn, ExpectFn, FactItem, FactSpec, MomentFn, PhraseEnv, SpaceClass, SpaceSpec, TargetFn,
 } from '../types';
 import { itOf, theyOf } from './support';
 
@@ -88,6 +88,14 @@ export function ownsSet(state: GameState, spaces: SpaceSpec[], at: number, kind:
 const ownsEverySpaceOfSet: ConditionFn = (env, [kind, attr]) =>
   ownsSet(env.state, boardOf(env).spaces, itOf(env), kind as SpaceClass, attr as string, theyOf(env));
 
+// ---- targets: the spaces a button may pick --------------------------------------------------
+
+const ofKind: TargetFn = (env, [kind], space) => isOfKind(boardOf(env).spaces[space], kind as SpaceClass);
+
+const theyOwn: TargetFn = (env, _args, space) => ownerOf(env.state, space) === theyOf(env);
+
+const ofKindTheyOwn: TargetFn = (env, args, space) => ofKind(env, args, space) && theyOwn(env, args, space);
+
 // ---- moments ---------------------------------------------------------------------------------
 
 /** Whatever the space is, so that a rule about owned spaces need not name each kind of them. */
@@ -163,7 +171,8 @@ const bankHasExpected: ExpectFn = (env, [n, name]) => {
 /**
  * The sentences that say what a game keeps facts about: what a space or a card can have, or be, while the game is played.
  * A plural noun is a count (starting at 0) and “a” or “an” and a noun, or an adjective, is a yes/no (starting at no). Then the
- * sentences that read and change what a space has, and what the bank holds, and that ask whether a player owns a whole set.
+ * sentences that read and change what a space has, and what the bank holds, that ask whether a player owns a whole set, and
+ * that say which spaces a button may pick.
  */
 export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
@@ -178,6 +187,9 @@ export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
     .condition('the bank has a {banked}', bankHasOne)
     .condition('the bank has an {banked}', bankHasOne)
     .condition('they own every {spacekind} of its {spaceattr}', ownsEverySpaceOfSet, { needsPlayer: true, needsSpace: true, needsBoard: true })
+    .target('a {spacekind} they own', ofKindTheyOwn, { needsPlayer: true, needsBoard: true })
+    .target('a {spacekind}', ofKind, { needsBoard: true })
+    .target('a space they own', theyOwn, { needsPlayer: true, needsBoard: true })
     .moment('a player lands on a space someone else owns', landsOnSpaceOwnedByOther)
     .effect('it gets a {banked} from the bank', getsFromBank, { needsSpace: true })
     .effect('it gets an {banked} from the bank', getsFromBank, { needsSpace: true })

@@ -41,6 +41,14 @@ export function singularForms(noun: string): string[] {
 /** The first word of an action in the third person: 'end their turn' is 'ends their turn'. */
 export const thirdPersonWords = (words: string): string => words.replace(/^\S+/, (first) => thirdPerson(first));
 
+/** Whole words of a rule's text that name the player, and what the player reads in their place. */
+const SECOND_PERSON = new Map([['their', 'your'], ["they're", "you're"], ['they', 'you'], ['them', 'you'], ['themselves', 'yourself']]);
+const THIRD_PERSON_WORD = /\b(?:they['‘’]re|themselves|their|they|them)\b/gi;
+
+/** What a rule says about the player, said to the player: 'end their turn' is 'end your turn', 'a field they own' is 'a field you own'. */
+export const secondPersonWords = (words: string): string =>
+  words.replace(THIRD_PERSON_WORD, (word) => SECOND_PERSON.get(word.toLowerCase().replace(/[‘’]/g, "'")) ?? word);
+
 const IRREGULAR_PARTICIPLES = new Map(Object.entries({
   buy: 'bought', draw: 'drawn', pay: 'paid', build: 'built', sell: 'sold', take: 'taken', give: 'given', throw: 'thrown', put: 'put',
   go: 'gone', make: 'made', get: 'got', win: 'won', lose: 'lost', hold: 'held', keep: 'kept', leave: 'left', bid: 'bid', deal: 'dealt',
@@ -621,8 +629,21 @@ const CARDFLAG = declaredWord('cardflag', '[card fact]', 'card fact', factNames(
 const BANKED = declaredWord('banked', '[bank item]', 'bank item', (vocab) => vocab.bank, true);
 
 // Actions and what was done are whole phrases ("ends their turn", "rolled") with a fixed form, not names to misspell.
-// An action is its wording, which is the move a button sends.
-const ACTION = wordType('action', '[action]', (v) => v.actions.map((a) => [thirdPersonWords(a.words), a.words]), undefined);
+// An action is its wording, which is the move a button sends. A button that picks a space is not one an example can press
+// by its wording: it names the space after the base (“plants a flag” on Rose Lane), so that is a type of its own.
+const ACTION = wordType('action', '[action]', (v) => v.actions.filter((a) => !a.targeted).map((a) => [thirdPersonWords(a.words), a.words]), undefined);
+
+/** The base of a button that picks a space, in the third person; two such buttons with one base could not be told apart by it. */
+const TARGETACTION: ParamType = {
+  name: 'targetaction', label: '[action]',
+  source: (vocab) => bounded(anyOf(vocab.actions.filter((a) => a.targeted).map((a) => thirdPersonWords(a.base)))),
+  resolve: (text, vocab) => {
+    const wordings = [...new Set(vocab.actions.filter((a) => a.targeted && canon(thirdPersonWords(a.base)) === canon(text)).map((a) => a.words))];
+    if (wordings.length === 0) return unknownText(text);
+    if (wordings.length > 1) return { error: `“${text}” could mean ${joinOr(wordings.map((w) => `“${w}”`))}.` };
+    return { value: wordings[0] };
+  },
+};
 
 /** What was done is one word, so it names a button only when no other button has the verb it comes from. */
 const DONE: ParamType = {
@@ -640,8 +661,8 @@ const DONE: ParamType = {
 
 /** Parameter types whose text depends on the game being compiled. */
 export const VOCAB_TYPES: ParamType[] = [
-  ZONE, ZONES, PERZONE, PLAYER, PHASE, MOVE, ATTRIBUTE, CARD, CARDLIST, CARDCLASS, SPACE, SPACECLASS, SPACEATTR, COUNTER, ACTION, DONE,
-  SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, BANKED,
+  ZONE, ZONES, PERZONE, PLAYER, PHASE, MOVE, ATTRIBUTE, CARD, CARDLIST, CARDCLASS, SPACE, SPACECLASS, SPACEATTR, COUNTER, ACTION, TARGETACTION,
+  DONE, SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, BANKED,
 ];
 
 const TYPES_BY_NAME = new Map(VOCAB_TYPES.map((t) => [t.name, t] as const));

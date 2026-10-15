@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { STANDARD_RANKS, STANDARD_SUITS, VOCAB_TYPES, parseParam, participle, plural, singularForms, thirdPerson, thirdPersonWords } from './refs';
+import {
+  STANDARD_RANKS, STANDARD_SUITS, VOCAB_TYPES, parseParam, participle, plural, secondPersonWords, singularForms, thirdPerson, thirdPersonWords,
+} from './refs';
 import { PhraseLibrary, STATIC_TYPES, emptyVocab, stubFor, vocabFrom } from './phrases';
 import { FIXTURE_SPACES, fixtureBoardGame } from './testing';
 import type { Vocab } from './types';
@@ -19,7 +21,10 @@ const BOARD = vocabFrom({
     spaces: [...FIXTURE_SPACES, { name: "Bishop's Row", attrs: { kind: 'street', color: 'green', price: 300, rent: 26 } }],
   },
   actions: [
-    { verb: 'roll', words: 'roll the dice' }, { verb: 'end', words: 'end their turn' }, { verb: 'buy', words: 'buy the space they are on' },
+    { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false },
+    { verb: 'end', words: 'end their turn', base: 'end their turn', targeted: false },
+    { verb: 'buy', words: 'buy the space they are on', base: 'buy the space they are on', targeted: false },
+    { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true },
   ],
 });
 
@@ -39,7 +44,7 @@ describe('vocabulary types', () => {
       ['zone', '[zone]'], ['zones', '[zones]'], ['perzone', '[zone]'], ['player', '[player]'], ['phase', '[phase]'],
       ['move', '[action]'], ['attribute', '[attribute]'], ['card', '[card]'], ['cardlist', '[cards]'], ['cardclass', '[kind of card]'],
       ['space', '[space]'], ['spaceclass', '[kind of space]'], ['spaceattr', '[space detail]'], ['counter', '[counter]'],
-      ['action', '[action]'], ['done', '[action done]'],
+      ['action', '[action]'], ['targetaction', '[action]'], ['done', '[action done]'],
       ['spacekind', '[kind of space]'], ['spaceflag', '[space fact]'], ['spacenumber', '[space fact]'], ['cardflag', '[card fact]'],
       ['banked', '[bank item]'],
     ]);
@@ -318,14 +323,45 @@ describe('board references', () => {
   it('reads what was done as a button only when one button has the verb', () => {
     const building = vocabFrom({
       maxPlayers: 2,
-      actions: [{ verb: 'build', words: 'build a house' }, { verb: 'build', words: 'build a hotel' }, { verb: 'end', words: 'end their turn' }],
+      actions: [
+        { verb: 'build', words: 'build a house', base: 'build a house', targeted: false },
+        { verb: 'build', words: 'build a hotel', base: 'build a hotel', targeted: false },
+        { verb: 'end', words: 'end their turn', base: 'end their turn', targeted: false },
+      ],
     });
     expect(parseParam('done', 'built', building)).toEqual({ error: '“built” could mean “build a house” or “build a hotel”.' });
     expect(parseParam('done', 'ended', building)).toEqual({ value: 'end their turn' });
     expect(parseParam('action', 'builds a hotel', building)).toEqual({ value: 'build a hotel' });
     // The same wording in two phases is still one button.
-    const twice = vocabFrom({ maxPlayers: 2, actions: [{ verb: 'roll', words: 'roll the dice' }, { verb: 'roll', words: 'roll the dice' }] });
+    const roll = { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false };
+    const twice = vocabFrom({ maxPlayers: 2, actions: [roll, roll] });
     expect(parseParam('done', 'rolled', twice)).toEqual({ value: 'roll the dice' });
+  });
+  it('reads a button that picks a target as {targetaction}, by the third person of its base, and never as {action}', () => {
+    expect(parseParam('targetaction', 'builds a house', v)).toEqual({ value: 'build a house on a street they own' });
+    expect(parseParam('targetaction', 'Builds a House', v)).toEqual({ value: 'build a house on a street they own' });
+    // Its whole wording is not what an example says: it says the base, then where.
+    expect(parseParam('targetaction', 'builds a house on a street they own', v)).toBeNull();
+    expect(parseParam('action', 'builds a house', v)).toBeNull();
+    expect(parseParam('action', 'builds a house on a street they own', v)).toBeNull();
+    // A plain button is not one that takes a target.
+    expect(parseParam('targetaction', 'rolls the dice', v)).toBeNull();
+    expect(parseParam('targetaction', 'builds a house', emptyVocab())).toBeNull();
+  });
+  it('says so when two buttons that pick a target share a base, since an example could not tell them apart', () => {
+    const both = vocabFrom({
+      maxPlayers: 2,
+      actions: [
+        { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true },
+        { verb: 'build', words: 'build a house on a station they own', base: 'build a house', targeted: true },
+      ],
+    });
+    expect(parseParam('targetaction', 'builds a house', both)).toEqual({
+      error: '“builds a house” could mean “build a house on a street they own” or “build a house on a station they own”.',
+    });
+  });
+  it('reads what was done by a button that picks a target as the button, by its whole wording', () => {
+    expect(parseParam('done', 'built', v)).toEqual({ value: 'build a house on a street they own' });
   });
   it('does not read what the game does not have', () => {
     expect(parseParam('counter', 'gold', v)).toBeNull();
@@ -459,6 +495,21 @@ describe('verb forms', () => {
     expect(thirdPersonWords('try again')).toBe('tries again');
     expect(thirdPersonWords('')).toBe('');
   });
+  it('speaks to the player: they, their, them and themselves become you, your, you and yourself', () => {
+    expect(secondPersonWords('end their turn')).toBe('end your turn');
+    expect(secondPersonWords('buy the space they are on')).toBe('buy the space you are on');
+    expect(secondPersonWords('a street they own')).toBe('a street you own');
+    expect(secondPersonWords('swap with them')).toBe('swap with you');
+    expect(secondPersonWords('save themselves')).toBe('save yourself');
+    expect(secondPersonWords("skip a go if they're broke")).toBe("skip a go if you're broke");
+    expect(secondPersonWords('build a house')).toBe('build a house');
+  });
+  it('swaps whole words only when speaking to the player, and keeps the other words as they are', () => {
+    expect(secondPersonWords('thank theirs then')).toBe('thank theirs then');
+    expect(secondPersonWords('gather them there')).toBe('gather you there');
+    expect(secondPersonWords('Rose Lane')).toBe('Rose Lane');
+    expect(secondPersonWords('')).toBe('');
+  });
 });
 
 describe('inside a phrase library', () => {
@@ -533,7 +584,7 @@ describe('names the game never defined', () => {
   const missing = (what: string, name: string, suggestions: string[]) => ({ message: `There is no ${what} called “${name}”.`, suggestions });
 
   // Actions and what was done are phrases of their own, not names to misspell, so they have no loose shape.
-  const NAMES = VOCAB_TYPES.filter((t) => !['action', 'done'].includes(t.name));
+  const NAMES = VOCAB_TYPES.filter((t) => !['action', 'targetaction', 'done'].includes(t.name));
 
   it('gives every type of names a loose shape, and no other', () => {
     expect(VOCAB_TYPES.filter((t) => t.loose).map((t) => t.name)).toEqual(NAMES.map((t) => t.name));

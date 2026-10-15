@@ -225,6 +225,48 @@ describe('the moment someone lands on a space someone else owns', () => {
   });
 });
 
+describe('the spaces a button may point at', () => {
+  const MILL = 1;
+  const STATION = 3;
+  /** Whether the target phrase allows `space` for `player`, who has the owners it is given. */
+  const allows = (text: string, space: number, owners: [number, string][] = [], player = 'p0') =>
+    runPhrase<boolean>(lib, 'target', text, about(owners.reduce((state, [at, seat]) => setOwner(state, at, seat), fresh()), null, game, player), space);
+
+  it('“a street they own” is a street, and one they own', () => {
+    const owners: [number, string][] = [[MILL, 'p0'], [ROSE, 'p1'], [STATION, 'p0']];
+    expect(allows('a street they own', MILL, owners)).toBe(true);
+    // Someone else's, no one's, and not a street at all.
+    expect(allows('a street they own', ROSE, owners)).toBe(false);
+    expect(allows('a street they own', LILY, owners)).toBe(false);
+    expect(allows('a street they own', STATION, owners)).toBe(false);
+    expect(allows('a street they own', 0, owners)).toBe(false);
+  });
+  it('is about the player who presses the button', () => {
+    const owners: [number, string][] = [[MILL, 'p0']];
+    expect(allows('a street they own', MILL, owners, 'p1')).toBe(false);
+    expect(allows('a street they own', MILL, [[MILL, 'p1']], 'p1')).toBe(true);
+  });
+  it('“a street” is any street, whoever owns it or none', () => {
+    expect(allows('a street', MILL)).toBe(true);
+    expect(allows('a street', ROSE, [[ROSE, 'p1']])).toBe(true);
+    expect(allows('a street', STATION, [[STATION, 'p0']])).toBe(false);
+    expect(allows('a street', 0)).toBe(false);
+  });
+  it('“a space they own” is any space they own, of any kind', () => {
+    const owners: [number, string][] = [[STATION, 'p0'], [ROSE, 'p1']];
+    expect(allows('a space they own', STATION, owners)).toBe(true);
+    expect(allows('a space they own', ROSE, owners)).toBe(false);
+    expect(allows('a space they own', 0, owners)).toBe(false);
+    // Space 0 is a space too.
+    expect(allows('a space they own', 0, [[0, 'p0']])).toBe(true);
+  });
+  it('needs a board and a player, so the compiler keeps it out of a game that has none', () => {
+    for (const phrase of ['a {spacekind} they own', 'a {spacekind}', 'a space they own']) {
+      expect(lib.get('target', phrase), phrase).toMatchObject({ needsBoard: true, needsPlayer: phrase !== 'a {spacekind}' });
+    }
+  });
+});
+
 describe('example phrases', () => {
   describe('given', () => {
     it('sets what a space has, without touching the bank', () => {

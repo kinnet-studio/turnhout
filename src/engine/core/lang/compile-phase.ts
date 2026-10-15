@@ -1,7 +1,7 @@
 import { addProblem, canRead, matchEffectLine, matchLine, phaseId, rejectChildren, type LineCtx } from './compile-util';
 import type { OutlineNode } from './outline';
 import { normalizeLine, suggestNames } from './phrases';
-import { joinOr, parseParam, thirdPerson, thirdPersonWords, VOCAB_TYPES } from './refs';
+import { joinOr, parseParam, secondPersonWords, thirdPerson, thirdPersonWords, VOCAB_TYPES } from './refs';
 import type {
   CompiledMoment, CompiledPhase, CompiledTrigger, CondGroup, DeclaredAction, DeclaredMove, ParamType, PhraseRef, Vocab, ZoneRef,
 } from './types';
@@ -24,9 +24,11 @@ const COMMA = /, /g;
 const ACTION_LINE = /^a player may (\w+)(?:\s+(.+))?$/i;
 /** “card” or “cards” as a word of its own: “discard” does not count. */
 const MENTIONS_CARD = /\bcards?\b/i;
-/** Whole words of a button's text that name the player, as the player reads it. */
-const SECOND_PERSON = new Map([['their', 'your'], ["they're", "you're"], ['they', 'you'], ['them', 'you'], ['themselves', 'yourself']]);
-const THIRD_PERSON_WORD = /\b(?:they['‘’]re|themselves|their|they|them)\b/gi;
+/**
+ * A button that picks a space ends in “on a …” or “on an …”: group 1 is what comes before the last “ on ”, group 2 what the
+ * player may pick. A line whose last “on” has no “a” or “an” after it (“buy the space they are on”) picks nothing.
+ */
+const TARGETED = /^(.+) on ((?:a|an) (?:(?! on ).)+)$/i;
 
 const RESERVED_VERB = 'reorder';
 const NOT_UNDERSTOOD = "I don't understand this line in a phase. Phase lines start with Hint:, A player may…, When…, After a player…, Players take turns or Everyone acts at once.";
@@ -173,27 +175,43 @@ export function actionLine(clean: string): RegExpExecArray | null {
 /**
  * What follows “a player may” in an action line: the verb, and all the words (lowercase, so rules and examples can
  * repeat them in any capitals). `written` keeps the designer's capitals for the button, so “Go to Rose Lane” stays one.
+ * A line that ends in “on a …” picks a space: `base` and `baseWritten` are the words before that “on”, and `target` is what
+ * follows it as written. Any other line has `base` equal to `words` and no target.
  */
-export function actionOf(found: RegExpExecArray): { verb: string; words: string; written: string } {
+export function actionOf(found: RegExpExecArray): {
+  verb: string; words: string; written: string; base: string; baseWritten: string; target: string | null;
+} {
   const written = found[2] === undefined ? found[1] : `${found[1]} ${found[2]}`;
-  return { verb: found[1].toLowerCase(), words: written.toLowerCase(), written };
+  const targeted = TARGETED.exec(written);
+  const baseWritten = targeted ? targeted[1] : written;
+  return {
+    verb: found[1].toLowerCase(), words: written.toLowerCase(), written, base: baseWritten.toLowerCase(), baseWritten, target: targeted ? targeted[2] : null,
+  };
 }
 
 /** What an action's button says: its words in the second person, as the player reads them. */
 export function actionLabel(words: string): string {
-  const spoken = words.replace(THIRD_PERSON_WORD, (word) => SECOND_PERSON.get(word.toLowerCase().replace(/[‘’]/g, "'")) ?? word);
+  const spoken = secondPersonWords(words);
   return spoken.charAt(0).toUpperCase() + spoken.slice(1);
 }
 
-/** One button a player may press, with its `Only if` conditions and `Then:` effects; null when its verb is reserved. */
+/** True for the placeholder a line that could not be read becomes. */
+const isMissing = (ref: PhraseRef) => ref.kind === 'lang' && ref.phrase === 'missing';
+
+/**
+ * One button a player may press, with its `Only if` conditions and `Then:` effects; null when its verb is reserved or the
+ * space it picks is not something the language can read (a mistyped target is reported and never makes a plain button).
+ */
 function compileAction(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx): DeclaredAction | null {
-  const { verb, words, written } = actionOf(found);
+  const { verb, words, base, baseWritten, target: targetText } = actionOf(found);
   const reserved = verb === RESERVED_VERB;
   if (reserved) addProblem(ctx.diagnostics, node.line, `“${RESERVED_VERB}” is reserved; pick another word.`, { text: found[1] });
-  // An action is about the player who presses it and the space their piece is on.
+  // The player who presses the button is the one the target is about ("a field they own").
+  const target = targetText === null ? null : matchLine('target', targetText, node.line, { ...ctx, player: true });
+  // An action is about the player who presses it and the space it picks, else the space their piece is on.
   const { conditions, effects } = readRuleBody(node, { ...ctx, player: true, space: true });
-  if (reserved) return null;
-  return { verb, words, label: actionLabel(written), conditions, effects, line: node.line };
+  if (reserved || (target !== null && isMissing(target))) return null;
+  return { verb, words, base, label: actionLabel(baseWritten), target, conditions, effects, line: node.line };
 }
 
 /** The `Only if` groups and the effects under a `When …:` rule; every line that is not an `Only if` is an effect. */

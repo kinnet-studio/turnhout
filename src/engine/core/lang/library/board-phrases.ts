@@ -264,6 +264,9 @@ const nextRollIs: EffectFn = (env, faces) => {
 /** A player presses one of the phase's buttons: the move type is the button's whole wording. */
 const pressesButton: ActionFn = (env, [seat, move]) => ({ by: seatOf(env, seat), move: { type: move as string } });
 
+/** A player presses a button that picks a space and names it: the move carries the space's index as its target. */
+const pressesButtonOn: ActionFn = (env, [seat, move, space]) => ({ by: seatOf(env, seat), move: { type: move as string, target: space as number } });
+
 // ---- examples: expect --------------------------------------------------------------------------
 
 const isOnExpected: ExpectFn = (env, [seat, space]) => {
@@ -344,6 +347,7 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .given('the next roll is {int} and {int}', nextRollIs)
     .given('the next roll is {int}', nextRollIs)
     .action('{player} {action}', pressesButton)
+    .action('{player} {targetaction} on {space}', pressesButtonOn)
     .expect('{player} is on {space}', isOnExpected)
     .expect('{player} owns {space}', ownsExpected)
     .expect('no one owns {space}', noOneOwnsExpected)
