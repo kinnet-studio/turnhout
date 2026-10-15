@@ -120,7 +120,7 @@ const played: EffectFn = (env, args) => {
 const CARD_NUMBER = /^c(\d+)$/;
 
 /** Card ids in numeric order: c3 comes before c12. */
-function byCardId(a: CardState, b: CardState): number {
+export function byCardId(a: CardState, b: CardState): number {
   const [x, y] = [CARD_NUMBER.exec(a.id), CARD_NUMBER.exec(b.id)];
   if (x && y) return Number(x[1]) - Number(y[1]);
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;

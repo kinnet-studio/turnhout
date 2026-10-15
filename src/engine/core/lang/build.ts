@@ -83,6 +83,13 @@ function flowRegistryFor(runtime: LangRuntime): FlowRegistry {
     .registerEffect('lang:result', (state) => runtime.result(state));
 }
 
+/** Throws a RuleError when the game is not for that many players. */
+export function checkPlayers(game: CompiledGame, players: number): void {
+  if (!Number.isInteger(players) || players < game.players.min || players > game.players.max) {
+    throw new RuleError(gameIsFor(game.players));
+  }
+}
+
 /**
  * An engine playing the game with `players` seats, starting from `initial` (from `initialState`, or a state arranged
  * with a turn already set, which skips Setup). Throws a RuleError when the game is not for that many players.
@@ -90,9 +97,7 @@ function flowRegistryFor(runtime: LangRuntime): FlowRegistry {
 export function createEngine(
   game: CompiledGame, library: PhraseLibrary, players: number, initial: GameState,
 ): { engine: GameEngine; runtime: LangRuntime; tableDef: TableDef; seats: PlayerId[] } {
-  if (!Number.isInteger(players) || players < game.players.min || players > game.players.max) {
-    throw new RuleError(gameIsFor(game.players));
-  }
+  checkPlayers(game, players);
   const seats = seatsFor(players);
   const tableDef = tableDefFor(game, seats);
   const runtime = new LangRuntime(game, library, seats);
