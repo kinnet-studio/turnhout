@@ -36,6 +36,7 @@ const UNKNOWN_SECTION = `I don't understand this section. Sections are ${SECTION
 const NO_LOOP = 'Add a line like “The board is a loop of spaces, starting at Go:” under Board:.';
 const NO_BOARD_FOR_PLAYER_FACTS = 'Facts about players need a Board: section for now.';
 const HOLD_BACK = (line: number) => `Some lines below can't be checked until line ${line} is fixed.`;
+const HOLD_BACK_SAYS = (line: number) => `Some card lines can't be checked until line ${line} is fixed.`;
 // The example uses one of the game's own counters, so the compiler needs no word of its own for a thing players have.
 const SAYS_NOTHING = (counter: string) => `Say what this card does, like “They get 50 ${counter}.”`;
 const SAYS_EXAMPLE_COUNTER = 'coins';
@@ -104,22 +105,22 @@ function linesIn(node: OutlineNode): number[] {
  * the zones and the cards. While one of their lines has an error, what the rule lines below it say about those words
  * is held back, and one warning stands in for it; the problems on their own lines are always shown. The line to fix is
  * the first error in the order those words are read (cards name the zones they start in), so that fixing it cannot be
- * blocked by another. Says whether a line has such an error, whether or not any line was held back for it.
+ * blocked by another. Gives that line, or null when none has an error, whether or not any line was held back for it.
  */
-function holdBack(diagnostics: Diagnostic[], stages: Section[][]): boolean {
+function holdBack(diagnostics: Diagnostic[], stages: Section[][]): number | null {
   const lineSet = (sections: Section[]) => new Set(sections.flatMap((s) => linesIn(s.node)));
   const errorLines = (lines: Set<number>) => diagnostics.filter((d) => d.severity === 'error' && lines.has(d.line)).map((d) => d.line);
   const failing = stages.map((stage) => errorLines(lineSet(stage))).find((lines) => lines.length > 0);
-  if (!failing) return false;
+  if (!failing) return null;
   const root = Math.min(...failing);
   const ownLines = lineSet(stages.flat());
   const held = (d: Diagnostic) => (d.kind === 'unknown-phrase' || d.kind === 'invalid') && d.line > root && !ownLines.has(d.line);
   const heldLines = diagnostics.filter(held).map((d) => d.line);
-  if (heldLines.length === 0) return true;
+  if (heldLines.length === 0) return root;
   const kept = diagnostics.filter((d) => !held(d));
   diagnostics.splice(0, diagnostics.length, ...kept);
   addProblem(diagnostics, Math.min(...heldLines), HOLD_BACK(root), { severity: 'warning' });
-  return true;
+  return root;
 }
 
 /** The buttons the phase lines declare, one for each wording; a line that mentions a card moves one, even mistyped, and is no button. */
@@ -473,11 +474,15 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   // Decided before anything is held back: a game whose held-back lines have problems is not one to play, and neither is one
   // whose says cells have.
   const onlyUnknownPhrases = [...diagnostics, ...saysDiagnostics].every((d) => d.severity !== 'error' || d.kind === 'unknown-phrase');
-  const brokenWords = holdBack(diagnostics, [of('players'), of('board'), of('table'), of('cards')]);
+  const brokenAt = holdBack(diagnostics, [of('players'), of('board'), of('table'), of('cards')]);
   // The says problems sit on lines of the Cards: section, so holding back is not run on them: they would hold back the
   // lines below them. They wait, like those lines, while a section the words come from is broken: they are probably
-  // only that, and are shown once it is fixed.
-  if (!brokenWords) diagnostics.push(...saysDiagnostics);
+  // only that, and are shown once it is fixed. One warning on the first of their rows says they are waiting, for a
+  // game with a problem there cannot be played and the designer would see no reason for it.
+  if (brokenAt === null) diagnostics.push(...saysDiagnostics);
+  else if (saysDiagnostics.length > 0) {
+    addProblem(diagnostics, Math.min(...saysDiagnostics.map((d) => d.line)), HOLD_BACK_SAYS(brokenAt), { severity: 'warning' });
+  }
   if (name === null || players === null || phases.length === 0 || !onlyUnknownPhrases) return undefined;
   return { name, players, zones, cards, setup, phases, end, examples, board, facts, columns, says };
 }

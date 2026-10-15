@@ -923,16 +923,48 @@ describe('cards that say what they do', () => {
       const text = deckGameText(['| name | says |', '| Dividend | They get 50 money. |'], FATE, SING)
         .split('\n').filter((line) => !line.startsWith('    | space ')).join('\n');
       // Without the header row the board has no counters, so each says row would also name one the game seems not to have.
+      // One warning on the first of those rows says they are waiting.
       expect(summary(text)).toEqual([
+        [7, 'warning', 'Some card lines can\'t be checked until line 18 is fixed.'],
         [18, 'error', 'Add a “space” column naming each space.'],
         [27, 'error', 'There is no space called “Go”.'],
         [39, 'warning', 'Some lines below can\'t be checked until line 18 is fixed.'],
       ]);
     });
-    it('keeps the broken Cards: line first, holds back the rules, and leaves the says problems to be shown once it is fixed', () => {
+    it('says that card lines are waiting when their problems are held back, so a game that cannot be played has a reason', () => {
+      // An unknown Board: line is a phrase for a developer, but the empty cell is a mistake: the game is not to be played, and the
+      // cell's own problem is not shown while the Board: line is, so one warning on its row says what is waiting for what.
+      const text = deckGameText(['| name | says |', '| Blank | |'], FATE).replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  There is a gong.');
+      const result = compileGame(text, lib);
+      const gong = lineOf(text, '  There is a gong.');
+      expect(result.game).toBeUndefined();
+      expect(result.diagnostics.map((d) => [d.line, d.severity, d.kind, d.message])).toEqual([
+        [7, 'warning', 'structure', `Some card lines can't be checked until line ${gong} is fixed.`],
+        [gong, 'error', 'unknown-phrase', '“There is a gong” isn\'t in the phrase library yet.'],
+      ]);
+      expect(canPlay(result)).toEqual({ ok: false, reason: 'Fix 1 problem in the rules first.' });
+    });
+    it('puts that warning on the first row that had a problem, once, however many were held back', () => {
+      const text = deckGameText(PROBLEMS, ['| name | says |', '| Blank | |'])
+        .replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  There is a gong.');
+      const gong = lineOf(text, '  There is a gong.');
+      expect(compileGame(text, lib).diagnostics.map((d) => [d.line, d.severity, d.message])).toEqual([
+        [7, 'warning', `Some card lines can't be checked until line ${gong} is fixed.`],
+        [gong, 'error', '“There is a gong” isn\'t in the phrase library yet.'],
+      ]);
+    });
+    it('adds no such warning when no card line had a problem', () => {
+      const text = deckGameText(['| name | says |', '| Dividend | They get 50 money. |'], FATE).replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  There is a gong.');
+      expect(compileGame(text, lib).diagnostics.map((d) => [d.severity, d.message])).toEqual([['error', '“There is a gong” isn\'t in the phrase library yet.']]);
+    });
+    it('keeps the broken Cards: line first, holds back the rules, and leaves the says problems to be shown once it is fixed, with a warning that they wait', () => {
       const fixed = deckGameText(PROBLEMS, FATE, SING);
       const text = fixed.replace('starting in the fate pile', 'starting in the nowhere pile');
-      expect(summary(text)).toEqual([[9, 'error', 'There is no zone called “nowhere pile”.'], [lineOf(text, '    They sing.'), 'warning', 'Some lines below can\'t be checked until line 9 is fixed.']]);
+      expect(summary(text)).toEqual([
+        [7, 'warning', 'Some card lines can\'t be checked until line 9 is fixed.'],
+        [9, 'error', 'There is no zone called “nowhere pile”.'],
+        [lineOf(text, '    They sing.'), 'warning', 'Some lines below can\'t be checked until line 9 is fixed.'],
+      ]);
       // Once the zone is fixed, the says problems and the rule's own are all shown.
       expect(summary(fixed).map(([line]) => line)).toEqual([7, 8, lineOf(fixed, '    They sing.')]);
     });
