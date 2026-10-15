@@ -1,5 +1,6 @@
 import { zoneCards } from '../../game-state';
 import type { CardState } from '../../scene';
+import { cardAttribute } from '../card-facts';
 import type { PhraseLibrary } from '../phrases';
 import type { CardMatch, ConditionFn, PhraseEnv, ZoneRef } from '../types';
 import { handZoneOf, matchesCard, resolveZoneIds, topCard, zoneInfo } from '../zones';
@@ -7,12 +8,13 @@ import { currentMove, movedCard, soleZone } from './support';
 
 const cardIs = (wanted: boolean): ConditionFn => (env, args) => matchesCard(movedCard(env), args[0] as CardMatch) === wanted;
 
+/** A count declared on cards is 0 on a card nothing has changed it on, so two such cards have the same of it. */
 const sameAsTop: ConditionFn = (env, args) => {
   const [attribute, ref] = args as [string, ZoneRef];
   const top = topCard(env.state, soleZone(ref, env));
   if (!top) return true;
-  const mine = movedCard(env).data?.[attribute];
-  return mine !== undefined && mine === top.data?.[attribute];
+  const mine = cardAttribute(movedCard(env), attribute, env.game);
+  return mine !== null && mine === cardAttribute(top, attribute, env.game);
 };
 
 const holdsOnly: ConditionFn = (env, args) =>

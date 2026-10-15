@@ -133,7 +133,7 @@ export function vocabFrom(game: {
   maxPlayers: number; zones?: ZoneSpec[]; cards?: CardSetSpec[]; phases?: string[]; verbs?: string[];
   board?: BoardSpec | null; actions?: Vocab['actions']; facts?: FactSpec[];
 }): Vocab {
-  const { zones = [], cards = [], board = null } = game;
+  const { zones = [], cards = [], board = null, facts = [] } = game;
   const attributes = new Set<string>();
   const cardValues: Vocab['cardValues'] = [];
   for (const set of cards) {
@@ -146,6 +146,8 @@ export function vocabFrom(game: {
       }
     }
   }
+  // A count declared on cards is a number a card has, read and changed in the same words as a number of its table.
+  for (const fact of facts) if (fact.on === 'card' && fact.kind === 'number') attributes.add(fact.name);
   const spaceAttributes = new Set<string>();
   const spaceValues: Vocab['spaceValues'] = [];
   for (const { attrs } of board?.spaces ?? []) {
@@ -173,7 +175,7 @@ export function vocabFrom(game: {
     payWith: board?.payWith ?? null,
     actions: game.actions ?? [],
     dice: (board?.dice ?? null) !== null,
-    facts: game.facts ?? [],
+    facts,
     bank: (board?.bank ?? []).map((b) => b.name),
   };
 }

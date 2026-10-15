@@ -1,7 +1,7 @@
 import { cardById, zoneCards, type GameState } from '../../game-state';
 import type { CardState, PlayerId } from '../../scene';
 import { bankOf, ownerOf, setBank, setSpaceFact, spaceFact } from '../board-state';
-import { cardFact, changeCard } from '../card-facts';
+import { cardAttribute, cardFact, changeCard } from '../card-facts';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import { counted, singularForms } from '../refs';
@@ -82,11 +82,14 @@ const theCardIsFlagged: ConditionFn = (env, [fact]) => isFlagged(movedCard(env),
 
 // ---- which: the cards a rule is about ---------------------------------------------------------
 
-/** The cards in every seat's zone of that name that have that much of an attribute: seat by seat, slot by slot. */
+/**
+ * The cards in every seat's zone of that name that have that much of an attribute: seat by seat, slot by slot. A count the
+ * game declares on cards is 0 on a card nothing has changed it on, so such a card is one of those with 0.
+ */
 const cardsWithNumber: WhichFn = (env, [zone, n, attribute]) =>
   env.seats
     .flatMap((seat) => zoneCards(env.state, zoneIdFor(zone as string, seat)))
-    .filter((card) => cardFact(card, attribute as string) === n)
+    .filter((card) => cardAttribute(card, attribute as string, env.game) === n)
     .map((card) => card.id);
 
 export const isOfKind = (space: SpaceSpec, kind: SpaceClass): boolean => kind.values.includes(space.attrs[kind.attribute]);
@@ -172,13 +175,13 @@ const everyCardIsFlagged: EffectFn = (env, [zone, fact]) =>
 
 /**
  * Each card with the flag loses that much of a number it has, down to 0 and no lower, so that a rule about cards at 0 still
- * finds it. A card that has no such number has nothing to lose.
+ * finds it. A card that has no such number has nothing to lose; a declared count it was never given is 0, and stays there.
  */
 const eachFlaggedLoses: EffectFn = (env, [fact, zone, n, attribute]) =>
   cardsInZones(env, zone as ZoneRef)
     .filter((card) => isFlagged(card, fact as string))
     .reduce((state, card) => {
-      const have = cardFact(card, attribute as string);
+      const have = cardAttribute(card, attribute as string, env.game);
       return typeof have === 'number' ? changeCard(state, card.id, { [attribute as string]: Math.max(0, have - (n as number)) }, env.game) : state;
     }, env.state);
 
@@ -231,7 +234,7 @@ const cardInZoneHasExpected: ExpectFn = (env, [match, zone, n, attribute]) => {
   const card = namedCardIn(env, named, where);
   const expected = `Expected ${theCard(named)} in ${describeZone(where)} to have ${n} ${attribute}`;
   if (!card) return `${expected}, but there is ${noCardIn(named, where)}.`;
-  const have = cardFact(card, attribute as string);
+  const have = cardAttribute(card, attribute as string, env.game);
   if (have === n) return true;
   return `${expected}, but it has ${typeof have === 'number' ? have : `no ${attribute}`}.`;
 };

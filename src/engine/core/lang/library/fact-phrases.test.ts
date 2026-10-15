@@ -690,6 +690,38 @@ describe('facts on cards', () => {
       expect(expectThat("the Knight in p0's camp has 1 health", state)).toBe("Expected the Knight in p0's camp to have 1 health, but it has no health.");
     });
   });
+
+  describe('a count declared on cards', () => {
+    // The same creatures, which can also have charges: no card starts with any written down, so each has 0.
+    const charged: CompiledGame = { ...creatures, facts: [...creatures.facts, { name: 'charges', on: 'card', kind: 'number' }] };
+    const envOf = (state: GameState, subject?: Subject) => fixtureEnv(state, { game: charged, seats: SEATS, subject });
+    const chargesOf = (state: GameState, ...ids: string[]) => ids.map((id) => cardFact(cardOf(state, id), 'charges'));
+    /** The table, with c0 and c1 (poisoned) in p0's camp given 2 charges each. */
+    const withCharges = () => changeCard(changeCard(table(), 'c0', { charges: 2 }, charged), 'c1', { charges: 2 }, charged);
+
+    it('lists a card never given any as one with 0', () => {
+      const which = (text: string, state: GameState) => runPhrase<string[]>(lib, 'which', text, envOf(state));
+      expect(which('a card in a camp has 0 charges', table())).toEqual(['c0', 'c1', 'c6', 'c2', 'c3', 'c4', 'c5']);
+      expect(which('a card in a camp has 0 charges', withCharges())).toEqual(['c6', 'c2', 'c3', 'c4', 'c5']);
+      expect(which('a card in a camp has 2 charges', withCharges())).toEqual(['c0', 'c1']);
+    });
+    it('loses from what a card has, and its face shows what is left; a card with none stays at 0, which no face shows', () => {
+      const lose = (state: GameState, player: string) =>
+        runPhrase<GameState>(lib, 'effect', 'each poisoned card in their camp loses 1 charges', envOf(state, byPlayer(player)));
+      const spent = lose(withCharges(), 'p0');
+      expect(chargesOf(spent, 'c0', 'c1')).toEqual([2, 1]);
+      expect(cardOf(spent, 'c1').faceKey).toBe(textFaceKey({ name: 'Archer', health: 2, poisoned: 'yes', charges: 1 }));
+      const none = lose(table(), 'p1');
+      expect(chargesOf(none, 'c3', 'c4', 'c2')).toEqual([0, 0, null]);
+      expect(cardOf(none, 'c3').faceKey).toBe(faceOf('Viper', 1, true));
+    });
+    it('expects a count, which a card never given any has 0 of', () => {
+      const expectOf = (text: string, state: GameState) => runPhrase<true | string>(lib, 'expect', text, envOf(state));
+      expect(expectOf("the Knight in p1's camp has 0 charges", table())).toBe(true);
+      expect(expectOf("the Knight in p1's camp has 1 charges", table())).toBe("Expected the Knight in p1's camp to have 1 charges, but it has 0.");
+      expect(expectOf("the Knight in p0's camp has 2 charges", withCharges())).toBe(true);
+    });
+  });
 });
 
 describe('a small card game with facts, played from a designer\'s words', () => {
@@ -736,5 +768,36 @@ describe('a small card game with facts, played from a designer\'s words', () => 
     expect(runExamples(game!, lib).map((r) => [r.status, r.message])).toEqual([
       ['pass', null], ['pass', null], ['fail', "Expected the Knight in p1's camp to have 2 health, but it has 3."], ['pass', null],
     ]);
+  });
+
+  describe('with a count declared on cards', () => {
+    // Charges are declared, not a column: every card starts with 0 of them, so a poisoned card has none to spare.
+    const CHARGES = VENOM
+      .replace('  Cards can be poisoned.', '  Cards can be poisoned.\n  Cards can have charges.')
+      .replace('Each poisoned card in their camp loses 1 health.', 'Each poisoned card in their camp loses 1 charges.')
+      .replace('When a card in a camp has 0 health:', 'When a card in a camp has 0 charges:');
+    const CHARGE_EXAMPLES = [
+      '', 'Example: a card with no charges that is poisoned goes', '  Given p0 holds a Viper', "  And p1's camp has a Knight", '  When p0 plays a Viper',
+      '  Then the discard pile has a Knight', '',
+      'Example: a card nobody poisoned keeps its 0 charges', "  Given it is p1's turn", '  And p1 holds an Archer', "  And p1's camp has a Knight",
+      '  When p1 plays an Archer', "  Then the Knight in p1's camp has 0 charges", '',
+      'Example: a wrong count says what there was', "  Given it is p1's turn", '  And p1 holds an Archer', "  And p1's camp has a Knight",
+      '  When p1 plays an Archer', "  Then the Knight in p1's camp has 2 charges",
+    ].join('\n');
+
+    it('reads every line that names them, with no problem', () => {
+      expect(CHARGES).not.toBe(VENOM);
+      const { game, diagnostics } = compileGame(`${CHARGES}${CHARGE_EXAMPLES}`, lib);
+      expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+      expect(game!.facts).toContainEqual({ name: 'charges', on: 'card', kind: 'number' });
+      expect(game!.phases[0].moves[0].effects[0]).toMatchObject({ phrase: 'each {cardflag} card in {zone} loses {int} {attribute}', args: ['poisoned', expect.anything(), 1, 'charges'] });
+      expect(game!.phases[0].triggers[0].when).toMatchObject({ kind: 'which', args: ['camp', 0, 'charges'] });
+    });
+    it('plays its examples, a card never given any having 0', () => {
+      const { game } = compileGame(`${CHARGES}${CHARGE_EXAMPLES}`, lib);
+      expect(runExamples(game!, lib).map((r) => [r.status, r.message])).toEqual([
+        ['pass', null], ['pass', null], ['fail', "Expected the Knight in p1's camp to have 2 charges, but it has 0."],
+      ]);
+    });
   });
 });
