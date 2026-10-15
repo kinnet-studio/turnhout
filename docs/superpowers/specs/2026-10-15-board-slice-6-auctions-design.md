@@ -79,11 +79,14 @@ To get there, the language gains:
   `{ phase, current, turn log, turn rolls }` in `lang:interrupted`, sets the phase, and makes the player on the
   left current. "Go back to the interrupted turn." restores all four and clears the record. Only one interruption
   can be open at a time; starting another is an error.
+  - The kept turn log includes the press that started the interruption. After the auction, "they have auctioned
+    this turn" holds for the lander, however the press is recorded today (before or after its lines run).
+  - Presses made during the interruption are not in the restored turn log.
 - **Turn passing that skips players:** the turn phrase "the next player on the left who is {playerflag}". If no
   such player is left, the turn stays where it is, and the phase's own rules then end it.
 - **Ending a turn needs the space dealt with.** Rent Day's end-turn button gains
-  `Only if one of: it has no price / someone owns it`. "it" is the space they are on, as in the buy button, so
-  the lander must buy or auction it.
+  `Only if one of: it has no price / someone owns it / they have auctioned this turn`. "it" is the space they are
+  on, as in the buy button, so the lander must buy or auction it. The third choice covers an auction nobody won.
 - **Debt and auctions.** You can only bid money you have. Raising money ("Any player may" buttons) stays in the
   playing phase only; this is a recorded simplification.
 - **The auto-player:**
@@ -149,6 +152,7 @@ Phase: playing
     Only if one of:
       it has no price
       someone owns it
+      they have auctioned this turn
 
 Phase: auction
   Hint: Bid more than the high bid, or drop out.
@@ -194,7 +198,7 @@ Notes:
 | A bid must beat the high bid | p1 bids 0 → refused; p1 bids 50 → accepted, the high bid is 50 |
 | You can't bid more than you have | refused |
 | The last bidder wins and pays | 2 players: p1 bids 50, p0 drops out: p1 owns the street, has 1450, and it is p0's turn in playing |
-| Nobody bids | every player drops out: no one owns it, and it is p0's turn in playing |
+| Nobody bids | every player drops out: no one owns it, it is p0's turn in playing, and p0 may end their turn |
 | The lander's turn resumes as it was | p0 rolled a double before auctioning: after the auction p0 may roll again |
 | The high bidder can't drop out | refused |
 | Three players skip the one who dropped out | p1 drops out, p2 bids, then it is p0's turn, not p1's |
