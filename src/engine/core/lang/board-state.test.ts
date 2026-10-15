@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  TURN_KEY, addToCounter, bankOf, clearTurnLog, counterOf, didThisTurn, endsTurn, isOut, markOut, nextIn, ownerOf, pieceAt, placePiece,
-  playerFact, playersIn, queueRoll, recordAction, setBank, setOwner, setPlayerFact, setSpaceFact, spaceFact, takeQueuedRoll, withBoardData,
+  TURN_KEY, TURN_ROLLS_KEY, addToCounter, bankOf, clearTurnLog, counterOf, didThisTurn, endsTurn, isOut, markOut, nextIn, ownerOf, pieceAt,
+  placePiece, playerFact, playersIn, queueRoll, recordAction, recordRoll, rollsThisTurn, setBank, setOwner, setPlayerFact, setSpaceFact, spaceFact,
+  takeQueuedRoll, withBoardData,
 } from './board-state';
 import { fixtureBoardGame, fixtureGame, fixturePhase, fixtureState } from './testing';
 import { chooseNext } from './zones';
@@ -60,6 +61,17 @@ describe('board state', () => {
     const s = chooseNext(recordAction(recordAction(fresh(), 'p0', 'roll the dice'), 'p1', 'roll the dice'), 'p0');
     expect([didThisTurn(s, 'p0', 'roll the dice'), didThisTurn(s, 'p1', 'roll the dice')]).toEqual([false, false]);
     expect(chooseNext(fixtureState([]), 'p0').data).toEqual({});
+  });
+  it('keeps each roll of a seat this turn, apart from the other seats', () => {
+    const s = recordRoll(recordRoll(recordRoll(fresh(), 'p0', [3, 3]), 'p1', [2, 5]), 'p0', [1, 2]);
+    expect([rollsThisTurn(s, 'p0'), rollsThisTurn(s, 'p1'), rollsThisTurn(s, 'p2')]).toEqual([[[3, 3], [1, 2]], [[2, 5]], []]);
+    expect(s.data[TURN_ROLLS_KEY]).toEqual({ p0: [[3, 3], [1, 2]], p1: [[2, 5]] });
+  });
+  it('forgets the rolls with the turn log, and adds no key a state never had', () => {
+    const rolled = recordRoll(fresh(), 'p0', [3, 3]);
+    expect(rollsThisTurn(clearTurnLog(rolled), 'p0')).toEqual([]);
+    expect(rollsThisTurn(chooseNext(rolled, 'p1'), 'p0')).toEqual([]);
+    expect(clearTurnLog(recordAction(fresh(), 'p0', 'roll the dice')).data).not.toHaveProperty(TURN_ROLLS_KEY);
   });
   it('knows which moves pass the turn: the ones the phase\'s After line names', () => {
     const after = { moves: ['play', 'end their turn'], next: { kind: 'turn' as const, phrase: 'the turn passes to the left', args: [], line: 9, text: '' }, line: 9 };

@@ -133,7 +133,7 @@ export const STATIC_TYPES: ParamType[] = [
 export function emptyVocab(): Vocab {
   return {
     sharedZones: [], playerZones: [], maxPlayers: 0, phases: [], verbs: [], attributes: [], cardValues: [], standardDeck: false,
-    spaces: [], spaceAttributes: [], spaceValues: [], counters: [], payWith: null, actions: [], dice: false,
+    spaces: [], spaceAttributes: [], spaceValues: [], counters: [], payWith: null, actions: [], dice: false, diceCount: 0,
     facts: [], bank: [],
   };
 }
@@ -190,6 +190,7 @@ export function vocabFrom(game: {
     payWith: board?.payWith ?? null,
     actions: game.actions ?? [],
     dice: (board?.dice ?? null) !== null,
+    diceCount: board?.dice?.count ?? 0,
     facts,
     bank: (board?.bank ?? []).map((b) => b.name),
   };
@@ -208,11 +209,12 @@ export type MatchResult =
 
 /**
  * What a phrase needs, checked when a game is compiled: from the rule around it, a move being made, a player, a space or
- * a card the rule is about; from the game, something to pay with, a board (a Board: loop of spaces) or dice.
+ * a card the rule is about; from the game, something to pay with, a board (a Board: loop of spaces), dice or, for a double,
+ * exactly two of them. A phrase that sets `needsTwoDice` sets `needsDice` too, so a game with no dice hears about that first.
  */
 export type PhraseOpts = {
   needsMove?: boolean; needsPlayer?: boolean; needsSpace?: boolean; needsCard?: boolean; needsPayment?: boolean; needsBoard?: boolean;
-  needsDice?: boolean;
+  needsDice?: boolean; needsTwoDice?: boolean;
 };
 
 type Part = { literal: string } | { type: ParamType };
@@ -343,7 +345,7 @@ export class PhraseLibrary {
   score(p: string, fn: ScoreFn): this { return this.add('score', p, fn); }
   winner(p: string, fn: WinnerFn): this { return this.add('winner', p, fn); }
   moment(p: string, fn: MomentFn): this { return this.add('moment', p, fn); }
-  given(p: string, fn: EffectFn): this { return this.add('given', p, fn); }
+  given(p: string, fn: EffectFn, opts?: PhraseOpts): this { return this.add('given', p, fn, opts); }
   action(p: string, fn: ActionFn): this { return this.add('action', p, fn); }
   target(p: string, fn: TargetFn, opts?: PhraseOpts): this { return this.add('target', p, fn, opts); }
   expect(p: string, fn: ExpectFn): this { return this.add('expect', p, fn); }
@@ -352,7 +354,7 @@ export class PhraseLibrary {
     const entry = this.entries.get(kind)?.get(pattern.toLowerCase());
     return entry && {
       fn: entry.fn, needsMove: entry.needsMove, needsPlayer: entry.needsPlayer, needsSpace: entry.needsSpace, needsCard: entry.needsCard,
-      needsPayment: entry.needsPayment, needsBoard: entry.needsBoard, needsDice: entry.needsDice,
+      needsPayment: entry.needsPayment, needsBoard: entry.needsBoard, needsDice: entry.needsDice, needsTwoDice: entry.needsTwoDice,
     };
   }
 
@@ -439,7 +441,7 @@ export class PhraseLibrary {
       pattern, parts, display, literal: literal.replace(/\s+/g, ' ').trim(), specificity, fn,
       needsMove: opts.needsMove ?? false, needsPlayer: opts.needsPlayer ?? false, needsSpace: opts.needsSpace ?? false,
       needsCard: opts.needsCard ?? false, needsPayment: opts.needsPayment ?? false, needsBoard: opts.needsBoard ?? false,
-      needsDice: opts.needsDice ?? false,
+      needsDice: opts.needsDice ?? false, needsTwoDice: opts.needsTwoDice ?? false,
     });
     return this;
   }

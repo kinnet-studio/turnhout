@@ -86,6 +86,8 @@ export type Vocab = {
   actions: { verb: string; words: string; base: string; targeted: boolean }[];
   /** True when the board has dice: a line like “There are two six-sided dice.” under Board:. */
   dice: boolean;
+  /** How many dice the board rolls: 0 without dice. */
+  diceCount: number;
   /** The facts the game keeps, and the names of the bank's numbers. */
   facts: FactSpec[]; bank: string[];
 };

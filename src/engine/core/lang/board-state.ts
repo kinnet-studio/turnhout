@@ -23,6 +23,11 @@ export const NEXT_ROLLS_KEY = 'lang:next-rolls';
  * button is pressed (or an example says what was done), so a card game without buttons never gets it.
  */
 export const TURN_KEY = 'lang:turn';
+/**
+ * The faces of every roll each seat made this turn, in the order rolled: `{ [seat]: number[][] }`. Emptied whenever the turn
+ * passes, with the log above. It is written only when a player rolls, so a game without dice never gets it.
+ */
+export const TURN_ROLLS_KEY = 'lang:turn-rolls';
 /** Seats that have left the game, in the order they went: `PlayerId[]`. */
 export const OUT_KEY = 'lang:out';
 /**
@@ -37,6 +42,7 @@ type Pieces = { [seat: string]: number };
 type Owners = { [space: string]: PlayerId };
 type Counters = { [counter: string]: { [seat: string]: number } };
 type TurnLog = { [seat: string]: string[] };
+type TurnRolls = { [seat: string]: number[][] };
 type FactValue = number | boolean;
 type FactTable = { [who: string]: { [fact: string]: FactValue } };
 type Facts = { spaces: FactTable; players: FactTable };
@@ -49,6 +55,7 @@ const ownersOf = (state: GameState): Owners => (state.data[OWNERS_KEY] ?? {}) as
 const countersOf = (state: GameState): Counters => (state.data[COUNTERS_KEY] ?? {}) as Counters;
 const outOf = (state: GameState): PlayerId[] => (state.data[OUT_KEY] ?? []) as PlayerId[];
 const turnLogOf = (state: GameState): TurnLog => (state.data[TURN_KEY] ?? {}) as TurnLog;
+const turnRollsOf = (state: GameState): TurnRolls => (state.data[TURN_ROLLS_KEY] ?? {}) as TurnRolls;
 const factsOf = (state: GameState): Facts => ({ spaces: {}, players: {}, ...(state.data[FACTS_KEY] as Partial<Facts> | undefined) });
 const bankTable = (state: GameState): Bank => (state.data[BANK_KEY] ?? {}) as Bank;
 
@@ -193,12 +200,33 @@ export function recordAction(state: GameState, seat: PlayerId, move: string): Ga
   return withData(state, TURN_KEY, { ...log, [seat]: [...(log[seat] ?? []), move] });
 }
 
+/** The faces of each roll the seat made since the turn last passed, in the order rolled; none when they have not rolled. */
+export function rollsThisTurn(state: GameState, seat: PlayerId): number[][] {
+  return turnRollsOf(state)[seat] ?? [];
+}
+
+/** Replaces what a seat rolled this turn; the other seats' rolls stay as they were, since everyone may act at once. */
+export function setRollsThisTurn(state: GameState, seat: PlayerId, rolls: number[][]): GameState {
+  return withData(state, TURN_ROLLS_KEY, { ...turnRollsOf(state), [seat]: rolls });
+}
+
+/** Notes the faces the seat just rolled, behind the rolls it made earlier this turn. */
+export function recordRoll(state: GameState, seat: PlayerId, faces: number[]): GameState {
+  return setRollsThisTurn(state, seat, [...rollsThisTurn(state, seat), faces]);
+}
+
 /**
- * Forgets what every seat did, as the turn passes. A state with no log, or an empty one, comes back as it is, so a
- * card game's state never gets one.
+ * Forgets what every seat did and rolled, as the turn passes. Each is emptied only when it has entries, so a state with
+ * neither comes back as it is: a card game's state never gets a log, and a board game without dice never gets rolls.
  */
 export function clearTurnLog(state: GameState): GameState {
-  return Object.keys(turnLogOf(state)).length === 0 ? state : withData(state, TURN_KEY, {});
+  const forgetsActions = Object.keys(turnLogOf(state)).length > 0;
+  const forgetsRolls = Object.keys(turnRollsOf(state)).length > 0;
+  if (!forgetsActions && !forgetsRolls) return state;
+  const data = { ...state.data };
+  if (forgetsActions) data[TURN_KEY] = {};
+  if (forgetsRolls) data[TURN_ROLLS_KEY] = {};
+  return { ...state, data };
 }
 
 /** Whether the phase's After line names the move type: making that move or pressing that button passes the turn. */

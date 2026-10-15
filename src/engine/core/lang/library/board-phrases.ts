@@ -5,12 +5,14 @@ import type { Json } from '../../table-def';
 import { numberIn, readSpaceTable } from '../board';
 import {
   addToCounter, counterOf, didThisTurn, isOut, latestRoll, markOut, nextIn, ownerOf, pieceAt, placePiece, playersIn, queueRoll, recordAction,
-  setCounter, setOwner, setRoll, takeQueuedRoll,
+  recordRoll, rollsThisTurn, setCounter, setOwner, setRoll, setRollsThisTurn, takeQueuedRoll,
 } from '../board-state';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import { canon, joinOr, participle } from '../refs';
-import type { ActionFn, BankSpec, BoardFn, BoardSpec, ConditionFn, EffectFn, ExpectFn, MomentFn, PhraseEnv, SpaceClass, WhoFn, WinnerFn } from '../types';
+import type {
+  ActionFn, BankSpec, BoardFn, BoardSpec, ConditionFn, EffectFn, ExpectFn, MomentFn, PhraseEnv, PhraseRef, SpaceClass, WhoFn, WinnerFn,
+} from '../types';
 import { chooseNext } from '../zones';
 import { itOf, seatOf, theyOf } from './support';
 
@@ -24,6 +26,9 @@ const MAX_FIXED_DICE = 2;
 
 /** Said by anything that rolls or fixes a roll in a game that has no dice. */
 const NO_DICE = 'This game has no dice. Add a line like “There are two six-sided dice.” under Board:';
+
+/** The wording of the effect that rolls the dice: a button whose lines say it is the button that rolls. */
+const ROLL_THE_DICE = 'roll the dice';
 
 /** A `{name}` arrives in lowercase; to show it back the way a space is usually written, each word gets a capital. */
 const titled = (name: string): string => name.replace(/(^|\s)(\S)/g, (_, space: string, letter: string) => space + letter.toUpperCase());
@@ -94,6 +99,13 @@ export function rollTotal(state: GameState): number {
   return faces.reduce((sum, face) => sum + face, 0);
 }
 
+/** A double is exactly two dice that show the same face: one die, or three alike, is not a double. */
+export function isDouble(faces: number[]): boolean {
+  return faces.length === 2 && faces[0] === faces[1];
+}
+
+const doublesRolled = (state: GameState, seat: PlayerId): number => rollsThisTurn(state, seat).filter(isDouble).length;
+
 /** The seat that owns the space the rule is about; whoever is owed must exist. */
 function ownerOfIt(env: PhraseEnv): PlayerId {
   const space = itOf(env);
@@ -115,6 +127,16 @@ function transfer(env: PhraseEnv, from: PlayerId, to: PlayerId | null, amount: n
 /** Any of the move types the wording names counts: “rolled” holds once either roll button has been pressed. */
 const hasDoneThisTurn = (done: boolean): ConditionFn => (env, [moves]) =>
   (moves as string[]).some((move) => didThisTurn(env.state, theyOf(env), move)) === done;
+
+/** Reads the player's own latest roll this turn, so another seat's double, or one from an earlier turn, never counts. */
+const rolledADouble = (expected: boolean): ConditionFn => (env) => {
+  const last = rollsThisTurn(env.state, theyOf(env)).at(-1);
+  return (last !== undefined && isDouble(last)) === expected;
+};
+
+const hasRolledDoubles: ConditionFn = (env, [n]) => doublesRolled(env.state, theyOf(env)) === n;
+
+const hasRolledFewerDoubles: ConditionFn = (env, [n]) => doublesRolled(env.state, theyOf(env)) < (n as number);
 
 const spaceHas: ConditionFn = (env, [attr]) => boardIn(env).spaces[itOf(env)].attrs[attr as string] !== undefined;
 
@@ -140,6 +162,8 @@ const oneLeft: ConditionFn = (env) => playersIn(env.state, env.seats).length ===
 const lessThan: WhoFn = (env, [n, counter]) =>
   playersIn(env.state, env.seats).filter((seat) => counterOf(env.state, counter as string, seat) < (n as number));
 
+const rolledDoubles: WhoFn = (env, [n]) => playersIn(env.state, env.seats).filter((seat) => doublesRolled(env.state, seat) === n);
+
 // ---- moments ---------------------------------------------------------------------------------
 
 const passes: MomentFn = (_env, [space], moment) => moment.kind === 'pass' && moment.space === space;
@@ -159,20 +183,27 @@ const landsOnClassOwnedByOther: MomentFn = (env, args, moment) => {
 
 // ---- effects ---------------------------------------------------------------------------------
 
-const rollDice: EffectFn = (env) => {
-  const { dice } = boardIn(env);
-  if (!dice) throw new RuleError(NO_DICE);
-  const queued = takeQueuedRoll(env.state);
-  // An example that fixed the roll gets exactly it, and the rng stays where it was.
-  if (queued.faces) return setRoll(queued.state, queued.faces);
-  let { rng } = env.state;
+/** Rolls every die from the rng; the state comes back with the rng moved on. */
+function drawFaces(state: GameState, dice: { count: number; sides: number }): { faces: number[]; state: GameState } {
+  let { rng } = state;
   const faces: number[] = [];
   for (let die = 0; die < dice.count; die++) {
     const drawn = nextInt(rng, dice.sides);
     rng = drawn.rng;
     faces.push(drawn.value + 1);
   }
-  return setRoll({ ...env.state, rng }, faces);
+  return { faces, state: { ...state, rng } };
+}
+
+const rollDice: EffectFn = (env) => {
+  const { dice } = boardIn(env);
+  if (!dice) throw new RuleError(NO_DICE);
+  const queued = takeQueuedRoll(env.state);
+  // An example that fixed the roll gets exactly it, and the rng stays where it was.
+  const { faces, state } = queued.faces ? { faces: queued.faces, state: queued.state } : drawFaces(env.state, dice);
+  const seat = env.subject?.player ?? null;
+  // Whoever rolls, by any button, has it counted; a roll that is nobody's in particular is only the latest roll.
+  return setRoll(seat === null ? state : recordRoll(state, seat, faces), faces);
 };
 
 /**
@@ -281,6 +312,27 @@ function fixedFaces(env: PhraseEnv, faces: Json[]): number[] {
   return faces as number[];
 }
 
+/** Whether a button's Then line rolls the dice, alone or as the effect of an If line. */
+const rollsTheDice = (ref: PhraseRef): boolean => {
+  const effect = ref.kind === 'lang' && ref.phrase === 'if' ? (ref.args as PhraseRef[])[1] : ref;
+  return effect.kind === 'effect' && effect.phrase === ROLL_THE_DICE;
+};
+
+/**
+ * Every roll is `[1, 1]`: only that they were doubles matters to a rule. The first button of the phase that rolls is noted as
+ * done too, so “they have rolled this turn” holds along with the doubles; for no doubles nothing was rolled, so nothing is noted.
+ */
+const rolledDoublesGiven: EffectFn = (env, [seat, n]) => {
+  const who = seatOf(env, seat);
+  const count = n as number;
+  const rolled = setRollsThisTurn(env.state, who, Array.from({ length: Math.max(count, 0) }, () => [1, 1]));
+  if (count <= 0) return rolled;
+  const phase = env.game.phases.find((p) => p.id === env.state.turn?.phase);
+  const button = phase?.actions.find((action) => action.effects.some(rollsTheDice));
+  if (!button) throw new RuleError('No button in this phase rolls the dice.');
+  return recordAction(rolled, who, button.words);
+};
+
 const nextRollIs: EffectFn = (env, faces) => queueRoll(env.state, fixedFaces(env, faces));
 
 /** Goes behind the rolls already fixed, so it needs one: a lone “roll after that” would be the next roll under another name. */
@@ -331,6 +383,10 @@ const isOutExpected: ExpectFn = (env, [seat]) => {
   return isOut(env.state, who) ? true : `Expected ${who} to be out, but they are still in.`;
 };
 
+// A double is two equal faces, so every phrase about one needs dice, and exactly two of them.
+const ABOUT_DOUBLES = { needsDice: true, needsTwoDice: true };
+const THEIR_DOUBLES = { needsPlayer: true, ...ABOUT_DOUBLES };
+
 /**
  * The sentences under Board: that say what the board is, who plays on it, what they roll and pay with and what the bank
  * holds, the ones that play a board game, and the Given, When and Then lines of its examples.
@@ -346,6 +402,10 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .board('there is one {count}-sided die', ([sides]) => diceOf(1, sides as number))
     .condition('they have {done} this turn', hasDoneThisTurn(true), { needsPlayer: true })
     .condition('they have not {done} this turn', hasDoneThisTurn(false), { needsPlayer: true })
+    .condition('they rolled a double', rolledADouble(true), THEIR_DOUBLES)
+    .condition('they did not roll a double', rolledADouble(false), THEIR_DOUBLES)
+    .condition('they have rolled {int} double(s) this turn', hasRolledDoubles, THEIR_DOUBLES)
+    .condition('they have rolled fewer than {int} double(s) this turn', hasRolledFewerDoubles, THEIR_DOUBLES)
     .condition('it has a {spaceattr}', spaceHas, { needsSpace: true })
     .condition('it has an {spaceattr}', spaceHas, { needsSpace: true })
     .condition('no one owns it', noOneOwns, { needsSpace: true, needsBoard: true })
@@ -355,11 +415,12 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .condition('they have at least {int} {counter}', haveAtLeast, { needsPlayer: true })
     .condition('one player is left', oneLeft)
     .who('a player has less than {int} {counter}', lessThan)
+    .who('a player has rolled {int} double(s) this turn', rolledDoubles, ABOUT_DOUBLES)
     .moment('a piece passes {space}', passes)
     .moment('a player lands on {space}', landsOn)
     .moment('a player lands on {spaceclass}', landsOnClass)
     .moment('a player lands on {spaceclass} someone else owns', landsOnClassOwnedByOther)
-    .effect('roll the dice', rollDice, { needsDice: true })
+    .effect(ROLL_THE_DICE, rollDice, { needsDice: true })
     .effect('their piece moves forward by the roll', moveByRoll, { needsPlayer: true, needsBoard: true, needsDice: true })
     .effect('their piece goes straight to {space}', goesStraightTo, { needsPlayer: true, needsBoard: true })
     .effect('its player gets {int} {counter}', gets, { needsPlayer: true })
@@ -377,6 +438,7 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .given('{player} has {int} {counter}', hasGiven)
     .given('{player} is out', isOutGiven)
     .given('{player} has {done} this turn', hasDoneGiven)
+    .given('{player} has rolled {int} double(s) this turn', rolledDoublesGiven, ABOUT_DOUBLES)
     .given('the next roll is {int} and {int}', nextRollIs)
     .given('the next roll is {int}', nextRollIs)
     .given('the roll after that is {int} and {int}', rollAfterThat)

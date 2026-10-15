@@ -644,6 +644,16 @@ describe('actions, moments and player rules on a board', () => {
     ]);
     expect(noDice(['A player may give up.', '  Then:', '    Their spaces go back to the bank.', '    They own it.'])).toEqual([]);
   });
+  it('refuses a double in a game without exactly two dice, on the line that says it', () => {
+    const withDice = (dice: string, lines: string[]) =>
+      compileGame(`${TINY_BOARD_HEAD.replace('  There are two six-sided dice.', dice)}\n${lines.map((l) => `  ${l}`).join('\n')}`, lib)
+        .diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message]);
+    const lines = ['A player may roll the dice.', '  Only if they rolled a double.', 'When a player has rolled 3 doubles this turn:', '  They are out.'];
+    for (const dice of ['  There is one six-sided die.', '  There are three six-sided dice.']) {
+      expect(withDice(dice, lines), dice).toEqual([[19, 'A double needs exactly two dice.'], [20, 'A double needs exactly two dice.']]);
+    }
+    expect(withDice('  There are two six-sided dice.', lines)).toEqual([]);
+  });
   it('reports a line that lacks several things once, naming the first: a player, then a space, then something to pay with', () => {
     expect(errorsOf(['When one player is left:', '  They pay its price.'])).toEqual([[19, NEEDS_PLAYER('They pay its price')]]);
     expect(errorsOf(['When a player has less than 0 money:', '  They pay its price.'])).toEqual([[19, NEEDS_SPACE('They pay its price')]]);

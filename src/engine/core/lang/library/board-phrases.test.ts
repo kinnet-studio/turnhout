@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { GameState } from '../../game-state';
 import {
-  TURN_KEY, addToCounter, clearTurnLog, counterOf, isOut, latestRoll, markOut, ownerOf, pieceAt, placePiece, queueRoll, recordAction, setCounter, setOwner,
-  setRoll, takeQueuedRoll,
+  TURN_KEY, TURN_ROLLS_KEY, addToCounter, clearTurnLog, counterOf, isOut, latestRoll, markOut, ownerOf, pieceAt, placePiece, queueRoll, recordAction,
+  rollsThisTurn, setCounter, setOwner, setRoll, setRollsThisTurn, takeQueuedRoll,
 } from '../board-state';
 import { RuleError } from '../diagnostics';
 import {
   FIXTURE_SPACES, fixtureBoardGame, fixtureBoardState, fixtureEnv, fixtureGame, fixturePhase, fixtureState, runPhrase, vocabFor,
 } from '../testing';
 import type { DeclaredAction, Moment } from '../types';
+import { chooseNext } from '../zones';
+import { isDouble } from './board-phrases';
 import { createDefaultLibrary } from './index';
 import { itOf, theyOf } from './support';
 
@@ -71,6 +73,63 @@ describe('dice', () => {
     const diceless = fixtureBoardGame({ board: { ...base, dice: null }, phases: game.phases });
     expect(() => runPhrase(lib, 'effect', 'roll the dice', fixtureEnv(fixtureBoardState(diceless), { game: diceless, seats: ['p0', 'p1'] })))
       .toThrow('This game has no dice. Add a line like “There are two six-sided dice.” under Board:');
+  });
+});
+
+describe('doubles', () => {
+  const rolledBy = (seat: string, faces: number[], s: GameState = fixtureBoardState()) =>
+    runPhrase<GameState>(lib, 'effect', 'roll the dice', env(queueRoll(s, faces), as(seat)));
+  const holds = (text: string, seat: string, s: GameState) => runPhrase<boolean>(lib, 'condition', text, env(s, as(seat)));
+
+  it('is two equal faces and nothing else', () => {
+    expect([isDouble([4, 4]), isDouble([4]), isDouble([4, 4, 4]), isDouble([4, 5])]).toEqual([true, false, false, false]);
+  });
+  it("keeps each roll of the player who rolled, queued or from the rng, and none when nobody in particular rolls", () => {
+    expect(rollsThisTurn(rolledBy('p0', [3, 3]), 'p0')).toEqual([[3, 3]]);
+    const random = runPhrase<GameState>(lib, 'effect', 'roll the dice', env(fixtureBoardState(), as('p1')));
+    expect(rollsThisTurn(random, 'p1')).toEqual([latestRoll(random)]);
+    const nobody = runPhrase<GameState>(lib, 'effect', 'roll the dice', env(queueRoll(fixtureBoardState(), [3, 3])));
+    expect(nobody.data).not.toHaveProperty(TURN_ROLLS_KEY);
+  });
+  it('says whether the last roll was a double, and how many doubles there were', () => {
+    const s = rolledBy('p0', [1, 2], rolledBy('p0', [3, 3]));
+    const says = [
+      'they rolled a double', 'they did not roll a double', 'they have rolled 1 double this turn', 'they have rolled 2 doubles this turn',
+      'they have rolled fewer than 2 doubles this turn',
+    ].map((text) => holds(text, 'p0', s));
+    expect(says).toEqual([false, true, true, false, true]);
+  });
+  it('is not a double before anyone has rolled', () => {
+    expect(holds('they rolled a double', 'p0', fixtureBoardState())).toBe(false);
+    expect(holds('they did not roll a double', 'p0', fixtureBoardState())).toBe(true);
+    expect(holds('they have rolled 0 doubles this turn', 'p0', fixtureBoardState())).toBe(true);
+    expect(holds('they have rolled fewer than 1 double this turn', 'p0', fixtureBoardState())).toBe(true);
+  });
+  it("never counts another seat's double, or one from a turn that has passed", () => {
+    const s = rolledBy('p0', [3, 3]);
+    expect([holds('they rolled a double', 'p0', s), holds('they rolled a double', 'p1', s)]).toEqual([true, false]);
+    const passed = chooseNext(s, 'p1');
+    expect(latestRoll(passed)).toEqual([3, 3]);
+    expect([holds('they rolled a double', 'p1', passed), holds('they have rolled 0 doubles this turn', 'p1', passed), holds('they rolled a double', 'p0', passed)])
+      .toEqual([false, true, false]);
+  });
+  it('picks the players still in who have rolled exactly that many doubles, in seat order', () => {
+    const three = [[1, 1], [2, 2], [3, 3]];
+    const s = markOut(setRollsThisTurn(setRollsThisTurn(fixtureBoardState(), 'p1', three), 'p2', three), 'p2');
+    expect(runPhrase<string[]>(lib, 'who', 'a player has rolled 3 doubles this turn', env(s))).toEqual(['p1']);
+    // A roll that was not a double does not count, and a player who rolled none has rolled 0 doubles.
+    const mixed = setRollsThisTurn(fixtureBoardState(), 'p1', [[1, 1], [2, 3]]);
+    expect(runPhrase<string[]>(lib, 'who', 'a player has rolled 1 double this turn', env(mixed))).toEqual(['p1']);
+    expect(runPhrase<string[]>(lib, 'who', 'a player has rolled 0 doubles this turn', env(mixed))).toEqual(['p0', 'p2']);
+  });
+  it('needs a player, dice and exactly two of them, as the library says', () => {
+    const needs = (kind: 'condition' | 'who', pattern: string) => lib.get(kind, pattern);
+    expect(needs('condition', 'they rolled a double')).toMatchObject({ needsPlayer: true, needsDice: true, needsTwoDice: true });
+    expect(needs('condition', 'they did not roll a double')).toMatchObject({ needsPlayer: true, needsDice: true, needsTwoDice: true });
+    expect(needs('condition', 'they have rolled {int} double(s) this turn')).toMatchObject({ needsPlayer: true, needsDice: true, needsTwoDice: true });
+    expect(needs('condition', 'they have rolled fewer than {int} double(s) this turn'))
+      .toMatchObject({ needsPlayer: true, needsDice: true, needsTwoDice: true });
+    expect(needs('who', 'a player has rolled {int} double(s) this turn')).toMatchObject({ needsPlayer: false, needsDice: true, needsTwoDice: true });
   });
 });
 
@@ -394,6 +453,53 @@ describe('example phrases', () => {
       const s = given('p1 has rolled this turn', given('p0 has rolled this turn'));
       const they = (player: string) => runPhrase(lib, 'condition', 'they have rolled this turn', env(s, { game: playing, ...as(player) }));
       expect([they('p0'), they('p1'), they('p2')]).toEqual([true, true, false]);
+    });
+    describe('doubles rolled this turn', () => {
+      // A button that rolls the dice in its Then lines, which is how an example says a player has rolled.
+      const rollEffect = { kind: 'effect' as const, phrase: 'roll the dice', args: [], line: 1, text: 'Roll the dice' };
+      const ROLLING: DeclaredAction = { ...ROLL, effects: [rollEffect] };
+      const rolling = fixtureBoardGame({ phases: [fixturePhase('playing', [], { actions: [BUY, ROLLING, END] })] });
+      const givenRolling = (text: string, g = rolling) => runPhrase<GameState>(lib, 'given', text, env(fixtureBoardState(g), { game: g }));
+
+      it('sets how many doubles the player has rolled, and notes the button that rolls as done', () => {
+        const s = givenRolling('p0 has rolled 2 doubles this turn');
+        expect(rollsThisTurn(s, 'p0')).toEqual([[1, 1], [1, 1]]);
+        expect(s.data[TURN_KEY]).toEqual({ p0: ['roll the dice'] });
+        const they = (text: string) => runPhrase(lib, 'condition', text, env(s, { game: rolling, ...as('p0') }));
+        expect([they('they have rolled this turn'), they('they have rolled 2 doubles this turn'), they('they rolled a double')]).toEqual([true, true, true]);
+      });
+      it('sets one roll for one double', () => {
+        expect(rollsThisTurn(givenRolling('p1 has rolled 1 double this turn'), 'p1')).toEqual([[1, 1]]);
+      });
+      it('notes no button for no doubles, so it needs none', () => {
+        const s = given('p0 has rolled 0 doubles this turn');
+        expect(rollsThisTurn(s, 'p0')).toEqual([]);
+        expect(s.data).not.toHaveProperty(TURN_KEY);
+      });
+      it('finds the button that rolls under an If, and the first of them', () => {
+        const effect = { ...rollEffect, line: 5 };
+        const test = { kind: 'condition' as const, phrase: 'they have not {done} this turn', args: [['roll for a double']], line: 5, text: '' };
+        const IFFY: DeclaredAction = {
+          ...ROLL, verb: 'roll', words: 'roll for a double', base: 'roll for a double', label: 'Roll for a double',
+          effects: [{ kind: 'lang', phrase: 'if', args: [test, effect], line: 5, text: 'If …' }],
+        };
+        const other = fixtureBoardGame({ phases: [fixturePhase('playing', [], { actions: [BUY, IFFY, ROLLING, END] })] });
+        expect(givenRolling('p0 has rolled 1 double this turn', other).data[TURN_KEY]).toEqual({ p0: ['roll for a double'] });
+      });
+      it('does not take a button whose lines roll nothing', () => {
+        const quiet: DeclaredAction = { ...ROLL, effects: [{ kind: 'effect', phrase: 'they get {int} {counter}', args: [1, 'money'], line: 1, text: '' }] };
+        const g = fixtureBoardGame({ phases: [fixturePhase('playing', [], { actions: [quiet, ROLLING] })] });
+        expect(givenRolling('p0 has rolled 1 double this turn', g).data[TURN_KEY]).toEqual({ p0: ['roll the dice'] });
+      });
+      it('says so when no button of the phase rolls the dice', () => {
+        expect(() => given('p0 has rolled 1 double this turn')).toThrow('No button in this phase rolls the dice.');
+      });
+      it('refuses a player who is not at the table', () => {
+        expect(() => givenRolling('p3 has rolled 1 double this turn')).toThrow('There is no player p3 at this table.');
+      });
+      it('needs dice, and exactly two of them', () => {
+        expect(lib.get('given', '{player} has rolled {int} double(s) this turn')).toMatchObject({ needsDice: true, needsTwoDice: true });
+      });
     });
     it('asks for the whole wording when “rolled” could be either roll button', () => {
       const FOR_DOUBLE: DeclaredAction = { ...ROLL, words: 'roll for a double', base: 'roll for a double', label: 'Roll for a double' };

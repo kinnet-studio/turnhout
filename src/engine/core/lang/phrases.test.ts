@@ -106,6 +106,7 @@ describe('PhraseLibrary.match', () => {
     const l = lib().condition('it is their move', fn, { needsMove: true }).condition('hearts are broken', () => true);
     expect(l.get('condition', 'it is their move')).toEqual({
       fn, needsMove: true, needsPlayer: false, needsSpace: false, needsCard: false, needsPayment: false, needsBoard: false, needsDice: false,
+      needsTwoDice: false,
     });
     expect(l.get('condition', 'hearts are broken')?.needsMove).toBe(false);
     expect(l.get('effect', 'it is their move')).toBeUndefined();
@@ -337,19 +338,25 @@ describe('board vocabulary and phrase flags', () => {
       { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true },
     ]);
     expect(v.dice).toBe(true);
+    expect(v.diceCount).toBe(2);
   });
-  it('knows whether the board has dice', () => {
+  it('knows whether the board has dice, and how many', () => {
     expect(vocabFrom({ maxPlayers: 2, board: { ...fixtureBoardGame().board!, dice: null } }).dice).toBe(false);
     expect(vocabFrom({ maxPlayers: 2 }).dice).toBe(false);
+    expect(vocabFrom({ maxPlayers: 2, board: { ...fixtureBoardGame().board!, dice: { count: 1, sides: 6 } } }).diceCount).toBe(1);
+    expect([vocabFrom({ maxPlayers: 2 }).diceCount, emptyVocab().diceCount]).toEqual([0, 0]);
   });
   it('reports every flag a phrase was registered with', () => {
     const l = new PhraseLibrary(STATIC_TYPES)
       .effect('they rest', (env) => env.state, { needsPlayer: true })
-      .effect('they roll', (env) => env.state, { needsBoard: true, needsDice: true });
+      .effect('they roll', (env) => env.state, { needsBoard: true, needsDice: true })
+      .given('they rolled a double', (env) => env.state, { needsDice: true, needsTwoDice: true });
     expect(l.get('effect', 'they rest')).toMatchObject({
       needsMove: false, needsPlayer: true, needsSpace: false, needsPayment: false, needsBoard: false, needsDice: false,
     });
-    expect(l.get('effect', 'they roll')).toMatchObject({ needsPlayer: false, needsBoard: true, needsDice: true });
+    expect(l.get('effect', 'they roll')).toMatchObject({ needsPlayer: false, needsBoard: true, needsDice: true, needsTwoDice: false });
+    // A Given line takes the same flags as any other phrase.
+    expect(l.get('given', 'they rolled a double')).toMatchObject({ needsDice: true, needsTwoDice: true, needsPlayer: false });
   });
 });
 
