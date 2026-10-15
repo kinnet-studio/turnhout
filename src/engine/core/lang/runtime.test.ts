@@ -12,6 +12,7 @@ import { LangRuntime } from './runtime';
 import { TEST_DUEL, TINY_BOARD } from './testing';
 import type { CompiledGame, ExampleEnv, MoveInfo, PhraseRef } from './types';
 import { matchesCard } from './zones';
+import RENT_DAY from '@/games/rent-day.rules?raw';
 
 const lib = createDefaultLibrary();
 const LINES = TEST_DUEL.split('\n');
@@ -453,6 +454,39 @@ describe('LangRuntime on rules about a card', () => {
     const second = createEngine(giving, lib, 2, { ...state, turn: { current: 'p1', phase: 'playing' } }).engine;
     expect(second.dispatch({ type: 'give', cardId: 'c1', by: 'p1', toZone: 'camp-p0' }).ok).toBe(true);
     expect(zoneOf(second.getState(), 'c1')).toBe('camp-p0');
+  });
+
+  describe('a game ends only once its rules about cards have settled', () => {
+    // Every card is somewhere but the deck and p1's hand, which are empty: once p0 plays c0 the End line holds. p0 then has
+    // c1 and c0 in their camp, p1 has c2 and c3, and a tie goes to p0, unless c0 is at 0 health and the rule moves it away.
+    const lastPlay = (health: number): GameState => camps([
+      ['c0', 'hand-p0', 0, { health }], ['c1', 'camp-p0', 0, {}], ['c2', 'camp-p1', 0, {}], ['c3', 'camp-p1', 1, {}],
+      ['c4', 'discard-pile', 0, {}], ['c5', 'discard-pile', 1, {}], ['c6', 'discard-pile', 2, {}], ['c7', 'discard-pile', 3, {}],
+    ]);
+
+    it('counts the table as the rule left it: the card it moved is not in the camp that decides the game', () => {
+      const { engine } = createEngine(rules, lib, 2, lastPlay(0));
+      expect(engine.dispatch({ type: 'play', cardId: 'c0', by: 'p0' }).ok).toBe(true);
+      expect(zoneOf(engine.getState(), 'c0')).toBe('discard-pile');
+      expect(engine.getState().result).toEqual({ winner: 'p1' });
+    });
+
+    it('ends at once when no card is left for the rule to move', () => {
+      const { engine } = createEngine(rules, lib, 2, lastPlay(3));
+      expect(engine.dispatch({ type: 'play', cardId: 'c0', by: 'p0' }).ok).toBe(true);
+      expect(zoneOf(engine.getState(), 'c0')).toBe('camp-p0');
+      expect(engine.getState().result).toEqual({ winner: 'p0' });
+    });
+
+    it('waits only for rules about cards: other games keep their plain End condition', () => {
+      const params = { when: rules.end!.when, rules: [{ phase: 'playing', trigger: rule }] };
+      expect(flowDefFor(rules, ['p0', 'p1']).end).toEqual([{ when: { name: 'lang:end-when', params }, result: 'lang:result' }]);
+      // A plain rule (the Test Duel's) and a rule about a player (Rent Day's) do not hold the End back.
+      expect(flowDefFor(game, ['p0', 'p1']).end![0].when).toEqual({ name: 'lang:cond', params: game.end!.when });
+      const rentDay = compiled(RENT_DAY);
+      expect(rentDay.phases.some((p) => p.triggers.some((t) => t.when.kind === 'who'))).toBe(true);
+      expect(flowDefFor(rentDay, ['p0', 'p1']).end![0].when).toEqual({ name: 'lang:cond', params: rentDay.end!.when });
+    });
   });
 
   it('reports a rule whose lines never stop it holding in plain words', () => {

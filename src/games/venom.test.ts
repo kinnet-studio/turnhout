@@ -51,6 +51,9 @@ describe('Venom (designer language)', () => {
     for (let step = 0; step < 200 && engine.getState().result === undefined; step++) takeTurn(engine);
     const result = engine.getState().result as { winner: string };
     expect(result?.winner).toBeDefined();
+    // The game is decided on the tidied table: no card at 0 health is left in a camp to be counted.
+    const camps = ['p0', 'p1'].flatMap((seat) => campOf(engine, seat));
+    expect(camps.filter((c) => c.data?.health === 0)).toEqual([]);
     // A tie goes to the earliest seat.
     expect(result.winner).toBe(campOf(engine, 'p1').length > campOf(engine, 'p0').length ? 'p1' : 'p0');
   });
