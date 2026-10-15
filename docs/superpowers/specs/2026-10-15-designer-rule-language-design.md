@@ -53,6 +53,11 @@ They run in the editor and in `bun run test`.
 5. **Purpose: quick playtesting in the browser** (and later in an app shell).
 6. **Cards only** in this project. Tokens/meeples are a separate project.
 7. **Order:** this project first; online play and non-card pieces after.
+8. **Two proof games.** Hearts, plus a second, non-Hearts game that exercises what
+   Hearts does not (custom cards, other player counts), so the language is not shaped
+   around one game.
+9. **Editing the rules during a playtest means a full restart.** The game in progress
+   is discarded; Play starts a fresh game under the edited rules.
 
 ## Calls made in this design
 
@@ -62,7 +67,7 @@ Proposed in conversation and accepted:
   can (see *Examples*).
 - **Developers add phrases in TypeScript**, registered by pattern the same way accept
   rules, moves and flow steps are registered today.
-- **The proof is Hearts**, rewritten in the language, behaving like the hand-coded
+- **Hearts is a proof**, rewritten in the language, behaving like the hand-coded
   version (existing Hearts tests are the yardstick).
 - **English only** to start.
 - **The language compiles to the existing engine.** `GameEngine`, `FlowDef`,
@@ -105,11 +110,18 @@ Made while writing this (the user has not yet weighed in):
   "game is over" → "The game is over".
 - **Examples run with the game's player count** (the smallest number when it is a
   range) unless a Given says otherwise ("Given 5 players").
+- **The second proof game is Color Match** (described under *Proofs*): an original,
+  unbranded shedding game — match the top discard's color or number, or draw — with
+  a custom deck and 2 to 5 players.
+- **Card tables allow a range in a cell** (`1 to 9`), expanding to one row per value,
+  so a 72-card deck is four lines rather than thirty-six.
+- **Each card set says where it starts** ("…, starting in the draw pile").
 
 ## Goals
 
 - A designer can write Hearts — every rule, from deck to scoring — in the language,
-  press Play, and play a full hand with four seats on one screen.
+  press Play, and play a full hand with four seats on one screen; and the same for
+  Color Match at any count from 2 to 5 players.
 - Every unknown phrase is pointed at precisely (line, phrase) with up to three
   closest known phrases and a code stub a developer can paste in.
 - A developer can add a phrase with one registration call and a pure function, and
@@ -126,6 +138,7 @@ Made while writing this (the user has not yet weighed in):
 - Designers writing code, or defining new phrases out of existing ones (phrase macros
   — a possible follow-up).
 - Click/tap actions; real-time or timed play.
+- Continuing a game in progress after the rules are edited (edits restart).
 - Languages other than English.
 - Multi-round matches with carried-over scores (e.g. Hearts to 100).
 - Accounts, cloud storage, sharing links, version history of rule texts.
@@ -174,7 +187,7 @@ Game: Hearts
 Players: 4
 
 Cards:
-  A standard 52-card deck, aces high.
+  A standard 52-card deck, aces high, starting in the deck.
 
 Table:
   The deck is a pile in the center that no one can see.
@@ -232,14 +245,19 @@ Example: must follow suit
   Then it is rejected because "they follow the led suit when they can"
 ```
 
-Custom cards use a table; every column becomes an attribute phrases can refer to:
+Custom cards use a table. Every column becomes an attribute phrases can refer to
+("the same color as…", "attack 3 or more"); `copies` (optional, default 1) is how many
+of that row to make; an optional `name` column gives cards a name phrases can use ("a
+Goblin"); a cell may hold a range (`1 to 9`), making one row per value:
 
 ```text
 Cards:
-  A deck called monsters:
-    | name   | attack | health | copies |
-    | Goblin | 2      | 1      | 4      |
-    | Troll  | 4      | 5      | 2      |
+  A deck called color cards, starting in the draw pile:
+    | color  | number | copies |
+    | red    | 1 to 9 | 2      |
+    | yellow | 1 to 9 | 2      |
+    | green  | 1 to 9 | 2      |
+    | blue   | 1 to 9 | 2      |
 ```
 
 ### Sections and what they compile to
@@ -414,20 +432,24 @@ A new page in the app:
   unknown phrase has a "Copy for developer" action that copies its stub and context.
 - **Examples panel** with pass / fail / blocked per example.
 - **Play** button, disabled while unknown phrases or errors remain (with the reason
-  shown). Play opens every seat on one screen via loopback, like the Hearts demo, with
-  restart and undo. Seat status shows the phase `Hint:` and whose turn it is; a
+  shown). For a player-count range, the designer picks the count before playing.
+  Play opens every seat on one screen via loopback, like the Hearts demo, with
+  restart and undo. Editing the rule text ends the playtest in progress; pressing
+  Play again starts a fresh game under the new rules. Seat status shows the phase `Hint:` and whose turn it is; a
   rejected move shows the designer's sentence.
 - Drags map to declared moves: a drag from zone A to zone B, by the seat that dragged,
   becomes the first declared move in the current phase whose zones match; no match →
   "no rule lets you move a card there". Dragging within a reorderable hand is a
   rearrange.
-- **Saving:** auto-save to browser storage; download/upload the text file; a "Load
-  Hearts" sample.
+- **Saving:** auto-save to browser storage; download/upload the text file; the
+  Hearts and Color Match texts available as samples to load.
 
 The app has no router today (`src/main.tsx` renders the Hearts page directly); the
 builder adds a minimal way to reach both pages.
 
-## The Hearts proof (acceptance)
+## Proofs (acceptance)
+
+### Hearts
 
 1. A checked-in Hearts game text compiles with **no diagnostics** against the phrase
    library (including any Hearts-specific phrases developers add as part of this
@@ -449,6 +471,70 @@ builder adds a minimal way to reach both pages.
 Equivalence with the hand-coded Hearts is **behavioural** (same rules, same kinds of
 outcomes), not state-identical — card ids and internal `data` keys may differ.
 
+### Color Match
+
+The second game exists to prove what Hearts does not: custom cards with attributes,
+a player-count range, automatic layout at 2, 3 and 5 seats, the text card face, a
+shared draw pile, and a trigger that refills it. Intended text (same caveat as the
+Hearts sample — the builder settles exact wording):
+
+```text
+Game: Color Match
+Players: 2 to 5
+
+Cards:
+  A deck called color cards, starting in the draw pile:
+    | color  | number | copies |
+    | red    | 1 to 9 | 2      |
+    | yellow | 1 to 9 | 2      |
+    | green  | 1 to 9 | 2      |
+    | blue   | 1 to 9 | 2      |
+
+Table:
+  The draw pile is a pile in the center that no one can see.
+  The discard pile is a pile in the center that everyone can see.
+  Each player has a hand that only they can see.
+
+Setup:
+  Shuffle the draw pile.
+  Deal 7 cards from the draw pile to each hand.
+  Move the top card of the draw pile to the discard pile.
+
+Phase: playing
+  Hint: Play a card matching the color or number, or draw one.
+  Players take turns.
+  Players may rearrange their hand at any time.
+  A player may play a card from their hand to the discard pile.
+    Only if one of:
+      the card has the same color as the top card of the discard pile
+      the card has the same number as the top card of the discard pile
+  A player may draw a card from the draw pile to their hand.
+    Only if they have no card they could play.
+  When the draw pile is empty:
+    Shuffle the discard pile, except its top card, into the draw pile.
+  After a player plays or draws, the turn passes to the left.
+
+End:
+  The game ends when a player's hand is empty.
+  That player wins.
+```
+
+1. The checked-in Color Match text compiles with no diagnostics.
+2. Its examples cover: a color match is accepted; a number match is accepted; a card
+   matching neither is rejected with the designer's sentence; drawing is rejected
+   while a playable card is held and accepted otherwise; the turn passes after a play
+   and after a draw; an empty draw pile is refilled from the discard pile, keeping its
+   top card; emptying your hand wins.
+3. An end-to-end test plays complete games with an auto-player at 2, 3, 4 and 5
+   players (fixed seeds) and reaches a result naming the winner.
+4. Automatic layout keeps every zone reachable by a drag at 2, 3, 4 and 5 seats
+   (a reachability test like Hearts' drop tests).
+5. The designer page plays it with a chosen count from 2 to 5, all seats on one
+   screen, cards drawn with the text face.
+
+Draw-only-when-stuck plus the refill trigger can make a game long; the end-to-end
+test may cap the number of moves, but each seeded game it uses must reach a result.
+
 ## Testing
 
 - **Parser:** sections, indentation blocks, tables, line numbers, malformed input
@@ -462,9 +548,11 @@ outcomes), not state-identical — card ids and internal `data` keys may differ.
   layout reachability (every zone has a reachable drop point — the Hearts drop tests
   are a model).
 - **Examples runner:** pass / fail / blocked; Given arrangements; Then assertions.
-- **Hearts proof** as above.
-- **Page:** a happy-dom test that the page compiles the sample, lists examples, and
-  enables Play; diagnostics render for an unknown phrase.
+- **Proofs:** Hearts and Color Match as above, including layout reachability at
+  every seat count Color Match allows.
+- **Page:** a happy-dom test that the page compiles each sample, lists examples, and
+  enables Play; diagnostics render for an unknown phrase; editing the text ends a
+  running playtest.
 
 ## Left to the builder
 
