@@ -221,6 +221,29 @@ describe('relocate', () => {
     const unslotted = stateWith([card('c1', 'trick'), card('c2', 'trick'), card('c3', 'deck', 0)]);
     expect(relocate(unslotted, ['c3'], 'trick', GAME).cards[2].slot).toBe(2);
   });
+  it('lands last in a zone of unslotted cards, such as a start pile that was never shuffled', () => {
+    // Unslotted cards sort by their place in state.cards, so a moved card must not tie with the last of them and lose.
+    const pile = stateWith([card('a', 'deck'), card('b', 'deck'), card('c', 'deck')]);
+    const within = relocate(pile, ['a'], 'deck', GAME);
+    expect(zoneCards(within, 'deck').map((c) => c.id)).toEqual(['b', 'c', 'a']);
+    expect(topCard(within, 'deck')?.id).toBe('a');
+    const toBack = relocate(stateWith([card('x', 'trick', 0), card('a', 'deck'), card('b', 'deck')]), ['x'], 'deck', GAME);
+    expect(zoneCards(toBack, 'deck').map((c) => c.id)).toEqual(['a', 'b', 'x']);
+    // Several cards at once keep the order given, after every card that was already there.
+    const several = relocate(stateWith([card('x', 'trick', 0), card('y', 'trick', 1), card('a', 'deck'), card('b', 'deck')]), ['y', 'x'], 'deck', GAME);
+    expect(zoneCards(several, 'deck').map((c) => c.id)).toEqual(['a', 'b', 'y', 'x']);
+  });
+  it('numbers the cards already in a zone of unslotted cards 0 to n-1 before it adds the moved ones', () => {
+    const out = relocate(stateWith([card('x', 'trick', 0), card('a', 'deck'), card('b', 'deck')]), ['x'], 'deck', GAME);
+    expect(zoneCards(out, 'deck').map((c) => [c.id, c.slot])).toEqual([['a', 0], ['b', 1], ['x', 2]]);
+  });
+  it('leaves the slots of a zone that is fully slotted as they were', () => {
+    const state = stateWith([card('x', 'trick', 0), card('a', 'deck', 3), card('b', 'deck', 7), card('c', 'deck', 4)]);
+    const out = relocate(state, ['x'], 'deck', GAME);
+    expect(out.cards.slice(1)).toEqual(state.cards.slice(1));
+    expect(out.cards.slice(1).every((c, i) => c === state.cards[i + 1])).toBe(true);
+    expect(zoneCards(out, 'deck').map((c) => [c.id, c.slot])).toEqual([['a', 3], ['c', 4], ['b', 7], ['x', 8]]);
+  });
   it('moves a card that is already there to the end', () => {
     const state = stateWith([card('c1', 'trick', 0), card('c2', 'trick', 1), card('c3', 'trick', 2)]);
     const out = relocate(state, ['c1'], 'trick', GAME);

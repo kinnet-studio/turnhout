@@ -3,7 +3,6 @@ import { StrictMode, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import COLOR_MATCH from '@/games/color-match.rules?raw';
 import RENT_DAY from '@/games/rent-day.rules?raw';
-import { zoneCards } from '@/engine/core/game-state';
 import { placePiece, queueRoll, setOwner, setPlayerFact, withBoardData } from '@/engine/core/lang/board-state';
 import { createEngine, initialState } from '@/engine/core/lang/build';
 import { compileGame } from '@/engine/core/lang/compile';
@@ -386,9 +385,7 @@ describe('Playtest: a player in jail', () => {
 describe('Playtest: drawing a card', () => {
   const start = { ...withBoardData(initialState(rentDay, SEED), rentDay, ['p0', 'p1']), turn: { current: 'p0', phase: 'playing' } };
   const named = (name: string) => start.cards.find((c) => c.zoneId === 'chance-pile' && c.data?.name === name)!.id;
-  // A dealt pile has no slots, so a card moved alone inside it would tie with the one above it: lay the whole pile out again, that one last.
-  const toTop = (state: typeof start, id: string) =>
-    relocate(state, [...zoneCards(state, 'chance-pile').map((c) => c.id).filter((other) => other !== id), id], 'chance-pile', rentDay);
+  const toTop = (state: typeof start, id: string) => relocate(state, [id], 'chance-pile', rentDay);
   /** p0 on Go with the named card on top of the chance pile and 3 and 4 to roll, onto Chance. */
   const onTop = (name: string) => queueRoll(toTop(start, named(name)), [3, 4]);
 

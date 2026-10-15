@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { zoneCards, type GameState } from '../game-state';
+import type { GameState } from '../game-state';
 import type { Json } from '../table-def';
 import { markOut, placePiece, queueRoll, setBank, setCounter, setOwner, setPlayerFact, setSpaceFact, withBoardData } from './board-state';
 import { readSeatExtras, seatExtras } from './board-view';
@@ -319,9 +319,7 @@ describe('seat views of a board with cards', () => {
   /** p0 to move on Go, the named lucky card on top of its pile and a 1 and a 1 to roll, which land on the first Lucky space. */
   function started(game: CompiledGame, top: string, arrange: (s: GameState) => GameState = (s) => s): Table {
     let s: GameState = { ...withBoardData(initialState(game, 1), game, seatsFor(2)), turn: { current: 'p0', phase: 'playing' } };
-    // Moving the whole pile, the named card last, numbers every slot afresh; moving it alone would tie it with a card never given a slot.
-    const pile = zoneCards(s, 'lucky-pile').map((c) => c.id).filter((id) => id !== idOf(s, top));
-    s = relocate(s, [...pile, idOf(s, top)], 'lucky-pile', game);
+    s = relocate(s, [idOf(s, top)], 'lucky-pile', game);
     return createEngine(game, lib, 2, arrange(queueRoll(placePiece(s, 'p0', 0), [1, 1])));
   }
   const view = ({ engine, runtime }: Table, seat: string) => seatExtras(engine, runtime, engine.getState(), seat);
