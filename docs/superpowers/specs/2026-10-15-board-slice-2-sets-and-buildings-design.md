@@ -1,7 +1,7 @@
 # Board Games, Slice 2: Sets and Buildings
 
 **Date:** 2026-10-15
-**Status:** Draft, reviewed; pending the user's approval
+**Status:** Approved. Implementation plan: `docs/superpowers/plans/2026-10-15-board-slice-2-sets-and-buildings.md`
 **Part of:** `2026-10-15-board-games-overview-design.md`. Its decisions, calls, anti-goals and constraints
 apply here.
 **Builds on:** slice 1 (`2026-10-15-board-slice-1-around-the-board-design.md`), merged to `main` as PR #8.
