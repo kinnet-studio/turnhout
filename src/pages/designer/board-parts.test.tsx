@@ -149,6 +149,28 @@ describe('facts about players', () => {
   });
 });
 
+describe('debts and flags no bank item goes with', () => {
+  it('names whom a seat owes right after its numbers', () => {
+    render(<MoneyLine board={board({
+      counters: [{ name: 'money', values: { p0: -4, p1: -20, p2: 40 } }], owes: { p0: 'p1', p1: 'bank' },
+      playerFacts: { p0: { asleep: true } }, playerCards: { p0: ['Free Pass'] },
+    })} />);
+    expect(screen.getByText('p0 -4 money · owes p1 · asleep · Free Pass')).toBeTruthy();
+    expect(screen.getByText('p1 -20 money · owes the bank')).toBeTruthy();
+    expect(screen.getByText('p2 40 money')).toBeTruthy();
+  });
+  it('stripes a space for a flag no bank item goes with, and still draws a block for one that does', () => {
+    const spaces = [space('Go'), space('Mill Lane', { facts: { pledged: true }, stripes: ['pledged'] }), space('Treasury'), space('Ferry Row', { facts: { hotel: true } })];
+    render(<BoardGrid board={board({ spaces })} />);
+    const mill = screen.getByTitle('Mill Lane — pledged');
+    expect(mill.getAttribute('data-stripes')).toBe('pledged');
+    expect(within(mill).queryAllByTestId('flag')).toHaveLength(0);
+    const ferry = screen.getByTitle('Ferry Row — hotel');
+    expect(ferry.getAttribute('data-stripes')).toBeNull();
+    expect(within(ferry).getAllByTestId('flag')).toHaveLength(1);
+  });
+});
+
 describe('BoardGrid picking', () => {
   const choosing = (over: Partial<NonNullable<ComponentProps<typeof BoardGrid>['picking']>> = {}) => ({
     prompt: 'Pick a street you own',

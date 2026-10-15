@@ -61,11 +61,22 @@ const PIECE_SHADOW = '0 0 0 1px #111827';
  */
 const RING_STYLE = { boxShadow: `${PIECE_SHADOW}, 0 0 0 3px #fff, 0 0 0 4px #111827`, margin: 2 } as const;
 
+/**
+ * Diagonal bars across a striped space's whole face: dark ones for a pale space, light ones between them so a dark color band
+ * shows them too. They pass clicks through to the space, and sit under its name and its row of owner and pieces.
+ */
+const STRIPE_FILL = 'repeating-linear-gradient(135deg, rgba(17, 24, 39, 0.3) 0 3px, rgba(255, 255, 255, 0.4) 3px 6px)';
+/** Above the stripes, so what the space says stays readable. */
+const ABOVE_STRIPES = { position: 'relative', zIndex: 2 } as const;
+
 const markStyle = { flex: '0 0 auto', height: '70%', boxSizing: 'border-box', border: '1px solid #111827' } as const;
 
-/** A count as small squares, a larger one as a single square and the number; a flag that is on as a red block. */
+/**
+ * A count as small squares, a larger one as a single square and the number; a flag that is on as a red block, unless no bank
+ * item goes with it: the space is striped for those (`stripes` in its view), and a block as well would say it twice.
+ */
 function factMarks(space: SpaceView) {
-  return factsOf(space).flatMap(([fact, value]) => {
+  return factsOf(space).filter(([fact]) => !space.stripes.includes(fact)).flatMap(([fact, value]) => {
     if (typeof value === 'boolean') {
       return [<span key={fact} data-testid="flag" style={{ ...markStyle, aspectRatio: '1.6 / 1', background: '#dc2626' }} />];
     }
@@ -125,13 +136,15 @@ function Space({ space, seats, playerFacts, row, col, index, picking }: {
 }) {
   const paint = spaceColor(space.color);
   const marks = factMarks(space);
+  const striped = space.stripes.length > 0;
   const { style: pickStyle, ...pick } = pickProps(index, space.name, picking);
   return (
     <div
       title={hoverText(space, seats, playerFacts)}
+      data-stripes={striped ? space.stripes.join(' ') : undefined}
       {...pick}
       style={{
-        gridRow: row + 1, gridColumn: col + 1, minWidth: 0, minHeight: 0, overflow: 'hidden', boxSizing: 'border-box',
+        position: 'relative', gridRow: row + 1, gridColumn: col + 1, minWidth: 0, minHeight: 0, overflow: 'hidden', boxSizing: 'border-box',
         display: 'flex', flexDirection: 'column', background: '#f4f1e6', color: '#1f2937', border: '1px solid #6b7280',
         font: '8px/1.1 sans-serif', ...pickStyle,
       }}
@@ -144,8 +157,9 @@ function Space({ space, seats, playerFacts, row, col, index, picking }: {
           {marks}
         </div>
       )}
-      <div style={{ flex: '1 1 auto', minHeight: 0, padding: '1px 2px', textAlign: 'center', overflow: 'hidden', overflowWrap: 'anywhere' }}>{space.name}</div>
-      <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 2, padding: 2, minHeight: MARK + 4 }}>
+      {striped && <div aria-hidden="true" style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none', backgroundImage: STRIPE_FILL }} />}
+      <div style={{ ...ABOVE_STRIPES, flex: '1 1 auto', minHeight: 0, padding: '1px 2px', textAlign: 'center', overflow: 'hidden', overflowWrap: 'anywhere' }}>{space.name}</div>
+      <div style={{ ...ABOVE_STRIPES, flex: '0 0 auto', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 2, padding: 2, minHeight: MARK + 4 }}>
         {space.owner !== null
           ? <span title={`Owned by ${space.owner}`} style={{ width: MARK, height: MARK, borderRadius: 2, boxSizing: 'border-box', border: '1px solid #111827', backgroundColor: seatColor(space.owner) }} />
           : <span />}

@@ -3,7 +3,7 @@ import { StrictMode, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import COLOR_MATCH from '@/games/color-match.rules?raw';
 import RENT_DAY from '@/games/rent-day.rules?raw';
-import { placePiece, queueRoll, setOwner, setPlayerFact, withBoardData } from '@/engine/core/lang/board-state';
+import { placePiece, queueRoll, setCounter, setOwner, setPlayerFact, withBoardData } from '@/engine/core/lang/board-state';
 import { createEngine, initialState } from '@/engine/core/lang/build';
 import { compileGame } from '@/engine/core/lang/compile';
 import { createDefaultLibrary } from '@/engine/core/lang/library';
@@ -423,5 +423,37 @@ describe('Playtest: drawing a card', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Use a Get Out Of Jail Free' })[0]);
     expect(screen.getAllByText('p0 1,500 money')).toHaveLength(2);
     expect(rollButtons()[0].getAttribute('aria-disabled')).toBe('false');
+  });
+});
+
+describe('Playtest: raising money', () => {
+  const start = { ...withBoardData(initialState(rentDay, SEED), rentDay, ['p0', 'p1', 'p2']), turn: { current: 'p0', phase: 'playing' } };
+  const named = (name: string) => screen.getAllByRole('button', { name });
+
+  it('offers a button any player may press to a seat whose turn it is not, and the space it picks is striped on every board', () => {
+    mountRentDay({ initial: setOwner(start, 16, 'p1') });
+    expect(named('Take a mortgage')[1].getAttribute('aria-disabled')).toBe('false');
+    expect(named('Take a mortgage')[0].getAttribute('title')).toBe('There is no space you own.');
+    expect(rollButtons()[1].getAttribute('title')).toBe("It's p0's turn.");
+    expect(named('Give up')[1].getAttribute('title')).toBe('they have less than 0 money');
+    fireEvent.click(named('Take a mortgage')[1]);
+    fireEvent.click(screen.getByRole('button', { name: 'Pick Rose Lane' }));
+    expect(screen.getAllByText('p1 1,590 money')).toHaveLength(3);
+    expect(screen.getAllByTitle(/^Rose Lane — mortgaged, /)).toHaveLength(3);
+    expect(document.querySelectorAll('[data-stripes="mortgaged"]')).toHaveLength(3);
+    expect(rollButtons()[0].getAttribute('aria-disabled')).toBe('false');
+  });
+  it('names whom a seat owes on every money line, and the turn waits until the debt is paid', () => {
+    // p0 on Cedar Avenue with 10 money rolls 3 and 4 onto p1's Rose Lane, whose rent is 14.
+    const owing = queueRoll(placePiece(setCounter(setOwner(setOwner(start, 16, 'p1'), 1, 'p0'), 'money', 'p0', 10), 'p0', 9), [3, 4]);
+    mountRentDay({ initial: owing });
+    fireEvent.click(rollButtons()[0]);
+    expect(screen.getAllByText('p0 -4 money · owes p1')).toHaveLength(3);
+    expect(named('End your turn')[0].getAttribute('title')).toBe('no player has less than 0 money');
+    expect(named('Give up')[0].getAttribute('aria-disabled')).toBe('false');
+    fireEvent.click(named('Take a mortgage')[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Pick Mill Lane' }));
+    expect(screen.getAllByText('p0 26 money')).toHaveLength(3);
+    expect(named('End your turn')[0].getAttribute('aria-disabled')).toBe('false');
   });
 });
