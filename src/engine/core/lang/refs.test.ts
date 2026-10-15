@@ -535,6 +535,10 @@ describe('plurals', () => {
     // A name no singular comes from is left as it is.
     expect(counted(1, 'money')).toBe('1 money');
   });
+  it('keeps a name that ends in “us” as it is, for one as for any other number', () => {
+    expect([counted(1, 'bonus'), counted(2, 'bonus'), counted(1, 'status'), counted(1, 'extra bonus')]).toEqual(['1 bonus', '2 bonus', '1 status', '1 extra bonus']);
+    expect(counted(1, 'Bonus')).toBe('1 Bonus');
+  });
 });
 
 describe('verb forms', () => {

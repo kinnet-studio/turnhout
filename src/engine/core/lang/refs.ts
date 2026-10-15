@@ -39,9 +39,12 @@ export function singularForms(noun: string): string[] {
   return forms;
 }
 
-/** "1 token" or "3 tokens": a name the game declares is plural, and of the singulars it may come from, the last has the most taken off. */
+/**
+ * "1 token" or "3 tokens": a name the game declares is plural, and of the singulars it may come from, the last has the most
+ * taken off. A name ending in “us” (bonus, status) is a singular already, and shortened it would read “1 bonu”, so it stays.
+ */
 export function counted(n: number, name: string): string {
-  const singulars = singularForms(name);
+  const singulars = /us$/i.test(name) ? [] : singularForms(name);
   return `${n} ${n === 1 && singulars.length > 0 ? singulars[singulars.length - 1] : name}`;
 }
 
