@@ -3,20 +3,28 @@ import type { Move, MoveHandler } from '../moves';
 import type { PlayerId } from '../scene';
 import { clearTurnLog, endsTurn } from './board-state';
 import type { LangRuntime } from './runtime';
-import type { CompiledPhase, DeclaredMove, MoveInfo, ZoneRef } from './types';
-import { relocate, topCard, zoneIdFor, zoneInfo } from './zones';
+import type { CompiledPhase, DeclaredMove, MoveInfo, SeatRef, ZoneRef } from './types';
+import { otherSeat, relocate, topCard, zoneIdFor, zoneInfo } from './zones';
 
 const NOT_ON_TABLE = "That card isn't on the table.";
 
 /**
- * The zone a move line names when `by` makes the move: “their hand” is the mover's own. Null when the line names a
- * seat that is not at this table (or several zones, which the compiler does not let a move do).
+ * The zone a move line names when `by` makes the move: “their hand” is the mover's own and “the other player's hand” the
+ * other seat's. Null when the line names a seat that is not at this table (or several zones, which the compiler does not
+ * let a move do).
  */
 export function moveZoneId(ref: ZoneRef, seats: PlayerId[], by: PlayerId): string | null {
   if ('shared' in ref) return zoneIdFor(ref.shared);
   if ('each' in ref) return null;
-  const seat = 'seat' in ref.of ? ref.of.seat : ref.of.who === 'actor' ? by : null;
+  const seat = seatOfMove(ref.of, seats, by);
   return seat !== null && seats.includes(seat) ? zoneIdFor(ref.zone, seat) : null;
+}
+
+/** The seat a zone's owner words name for a move by `by`; null for the winner, and for “the other player” where there is not exactly one. */
+function seatOfMove(of: SeatRef, seats: PlayerId[], by: PlayerId): PlayerId | null {
+  if ('seat' in of) return of.seat;
+  if (of.who === 'actor') return by;
+  return of.who === 'other' && seats.length === 2 && seats.includes(by) ? otherSeat(seats, by) : null;
 }
 
 /** The zone as the designer named it, said to the player making the move: “their hand” becomes “your hand”. */

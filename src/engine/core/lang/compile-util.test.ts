@@ -8,10 +8,13 @@ const library = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
   .cards('a deck called {name}', () => ({ kind: 'table', identities: [], start: 'deck', acesHigh: false }))
   .board('there are {count} dice', () => ({ kind: 'dice', count: 1, sides: 6 }))
   .declare('spaces can have {factlist}', () => [])
-  .condition('the bank is empty', () => true);
+  .condition('the bank is empty', () => true)
+  .condition('it is flagged', () => true, { needsCard: true })
+  .effect('move it away', (env) => env.state, { needsCard: true })
+  .which('a card in a {perzone} has {int} {attribute}', () => []);
 
 const ctx = (): LineCtx & { diagnostics: Diagnostic[] } =>
-  ({ library, vocab: emptyVocab(), gameName: 'Test', inMove: false, player: false, space: false, diagnostics: [] });
+  ({ library, vocab: emptyVocab(), gameName: 'Test', inMove: false, player: false, space: false, card: false, diagnostics: [] });
 
 describe('matchLine with other kinds to try', () => {
   it('reads a line as the kind asked for before any other', () => {
@@ -38,5 +41,38 @@ describe('matchLine with other kinds to try', () => {
     const none = ctx();
     expect(matchLine('board', 'The bank is empty', 1, none)).toMatchObject({ kind: 'lang', phrase: 'missing' });
     expect(none.diagnostics).toHaveLength(1);
+  });
+});
+
+describe('matchLine and the rule around a line', () => {
+  const NEEDS_CARD = (line: string) => `“${line}” only makes sense in a rule about a card, such as “When a card …”.`;
+
+  it('refuses a phrase about “it” the card outside a rule about a card, and says what the rule should be', () => {
+    const outside = ctx();
+    expect(matchLine('condition', 'It is flagged', 6, outside)).toMatchObject({ kind: 'lang', phrase: 'missing', args: ['condition'] });
+    expect(matchLine('effect', 'Move it away', 7, outside)).toMatchObject({ kind: 'lang', phrase: 'missing', args: ['effect'] });
+    expect(outside.diagnostics).toEqual([
+      expect.objectContaining({ line: 6, kind: 'invalid', severity: 'error', message: NEEDS_CARD('It is flagged'), text: 'It is flagged' }),
+      expect.objectContaining({ line: 7, kind: 'invalid', message: NEEDS_CARD('Move it away') }),
+    ]);
+  });
+  it('reads it in a rule about a card', () => {
+    const about = { ...ctx(), card: true };
+    expect(matchLine('condition', 'It is flagged', 6, about)).toMatchObject({ kind: 'condition', phrase: 'it is flagged' });
+    expect(about.diagnostics).toEqual([]);
+  });
+  it('is no help to a rule about a player or a space, or to a move', () => {
+    for (const about of [{ player: true }, { space: true }, { inMove: true }]) {
+      const one = { ...ctx(), ...about };
+      matchLine('condition', 'It is flagged', 6, one);
+      expect(one.diagnostics.map((d) => d.message), JSON.stringify(about)).toEqual([NEEDS_CARD('It is flagged')]);
+    }
+  });
+  it('reads the line of a rule about a card as the kind of the rule: tried after “who”', () => {
+    const one = { ...ctx(), vocab: { ...emptyVocab(), playerZones: ['camp'], attributes: ['health'] } };
+    expect(matchLine('condition', 'A card in a camp has 0 health', 3, one, ['who', 'which'])).toMatchObject({
+      kind: 'which', phrase: 'a card in a {perzone} has {int} {attribute}', args: ['camp', 0, 'health'],
+    });
+    expect(one.diagnostics).toEqual([]);
   });
 });

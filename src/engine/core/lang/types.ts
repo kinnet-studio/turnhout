@@ -4,11 +4,12 @@ import type { PlayerId } from '../scene';
 import type { Json } from '../table-def';
 
 export type PhraseKind =
-  | 'cards' | 'zone' | 'board' | 'declare' | 'column' | 'condition' | 'effect' | 'turn' | 'who' | 'score' | 'winner' | 'moment' | 'given'
+  | 'cards' | 'zone' | 'board' | 'declare' | 'column' | 'condition' | 'effect' | 'turn' | 'who' | 'which' | 'score' | 'winner' | 'moment' | 'given'
   | 'action' | 'target' | 'expect';
 /** kind 'lang' = compiler built-ins: all | any | phase | always | if | missing */
 export type PhraseRef = { kind: PhraseKind | 'lang'; phrase: string; args: Json[]; line: number; text: string };
-export type SeatRef = { seat: string } | { who: 'actor' | 'winner' };
+/** `other` is the one player who is not the actor, in a game for two. */
+export type SeatRef = { seat: string } | { who: 'actor' | 'winner' | 'other' };
 export type ZoneRef = { shared: string } | { each: string } | { of: SeatRef; zone: string };
 export type CardMatch = { [attr: string]: Json };
 export type ZoneSpec = { name: string; perPlayer: boolean; layout: 'pile' | 'row' | 'hand'; visibility: 'secret' | 'owner' | 'public' };
@@ -115,6 +116,8 @@ export type ConditionFn = (env: PhraseEnv, args: Json[]) => boolean;
 export type EffectFn = (env: PhraseEnv, args: Json[]) => GameState;   // also 'given'
 export type TurnFn = (env: PhraseEnv, args: Json[]) => PlayerId;
 export type WhoFn = (env: PhraseEnv, args: Json[]) => PlayerId[];
+/** The cards a `When a card …:` rule is about, as card ids in a fixed order: by zone, then by slot. */
+export type WhichFn = (env: PhraseEnv, args: Json[]) => string[];
 export type ScoreFn = (env: PhraseEnv, args: Json[], seat: PlayerId) => number;
 export type WinnerFn = (env: PhraseEnv, args: Json[], scores: Record<PlayerId, number>) => PlayerId;
 export type MomentFn = (env: PhraseEnv, args: Json[], moment: Moment) => boolean;

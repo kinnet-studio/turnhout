@@ -9,6 +9,9 @@ export const BOX_ZONE = '__box';
 /** `state.data` key holding the seat that won the last trick or round. */
 export const WINNER_KEY = 'lang:winner';
 
+/** What is said when “the other player” is asked of a game that is not for two. */
+export const NEEDS_TWO = '“the other player” needs a game for two players.';
+
 const SEAT_SUFFIX = /^p\d+$/;
 
 /** 'pass pile' → 'pass-pile': lowercase words joined by dashes. */
@@ -39,15 +42,31 @@ export function zoneInfo(game: CompiledGame, zoneId: string): { spec: ZoneSpec; 
   return null;
 }
 
+/** The one seat that is not `seat`, at a table of two. */
+export function otherSeat(seats: PlayerId[], seat: PlayerId): PlayerId {
+  if (seats.length !== 2) throw new RuleError(NEEDS_TWO);
+  const others = seats.filter((s) => s !== seat);
+  if (others.length !== 1) throw new RuleError(`There is no player ${seat} at this table.`);
+  return others[0];
+}
+
+/** Who “their” and “the other player” mean: who was asked for, else whoever makes the move, else whoever the rule is about. */
+const actorOf = (env: PhraseEnv, actor?: PlayerId): PlayerId | undefined => actor ?? env.move?.by ?? env.subject?.player ?? undefined;
+
 export function resolveSeat(ref: SeatRef, env: PhraseEnv, actor?: PlayerId): PlayerId {
   if ('seat' in ref) {
     if (!env.seats.includes(ref.seat)) throw new RuleError(`There is no player ${ref.seat} at this table.`);
     return ref.seat;
   }
   if (ref.who === 'actor') {
-    const by = actor ?? env.move?.by;
+    const by = actorOf(env, actor);
     if (by === undefined) throw new RuleError('Only a rule about a player\'s move can say “their”.');
     return by;
+  }
+  if (ref.who === 'other') {
+    const by = actorOf(env, actor);
+    if (by === undefined) throw new RuleError('Only a rule about a player can say “the other player”.');
+    return otherSeat(env.seats, by);
   }
   const winner = env.state.data[WINNER_KEY];
   if (typeof winner !== 'string') throw new RuleError('There is no winner yet.');

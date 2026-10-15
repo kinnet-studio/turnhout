@@ -363,6 +363,105 @@ describe('LangRuntime on a board', () => {
   });
 });
 
+describe('LangRuntime on rules about a card', () => {
+  const CARD_GAME = (...rule: string[]) => [
+    'Game: Camps', 'Players: 2', '', 'Cards:', '  A deck called creatures, starting in the deck:', '    | name   | health | copies |',
+    '    | Knight | 3      | 4      |', '    | Viper  | 1      | 4      |', '  Cards can be poisoned.', '',
+    'Table:', '  The deck is a pile in the center that no one can see.', '  The discard pile is a pile in the center that everyone can see.',
+    '  Each player has a hand that only they can see.', '  Each player has a camp that everyone can see.', '',
+    'Phase: playing', '  Players take turns.', '  A player may play a card from their hand to their camp.', ...rule.map((line) => `  ${line}`),
+    '  After a player plays, the turn passes to the left.', '', 'End:', '  The game ends when the deck and every hand are empty.',
+    '  The player with the most cards in their camp wins.',
+  ].join('\n');
+  const rules = compiled(CARD_GAME('When a card in a camp has 0 health:', '  Move it to the discard pile.'));
+  const [rule] = rules.phases[0].triggers;
+  const runtime = new LangRuntime(rules, lib, ['p0', 'p1']);
+
+  /** Cards c0 to c5 put in camps with what they have; every other card stays in the deck, and it is p0's turn to play. */
+  const camps = (cards: [id: string, zoneId: string, slot: number, data: { [k: string]: Json }][], over: CompiledGame = rules): GameState => {
+    const start = initialState(over, 1);
+    const placed = new Map(cards.map(([id, zoneId, slot, data]) => [id, { zoneId, slot, data }] as const));
+    return {
+      ...start,
+      turn: { current: 'p0', phase: 'playing' },
+      cards: start.cards.map((card) => {
+        const at = placed.get(card.id);
+        return at ? { ...card, zoneId: at.zoneId, slot: at.slot, faceUp: true, data: { ...card.data, ...at.data } } : card;
+      }),
+    };
+  };
+  const spent = camps([
+    ['c0', 'camp-p0', 0, { health: 2 }], ['c1', 'camp-p0', 1, { health: 0, poisoned: true }], ['c2', 'camp-p1', 0, { health: 0 }],
+    ['c3', 'camp-p1', 1, { health: 0, poisoned: true }], ['c4', 'hand-p0', 0, { health: 0 }], ['c5', 'discard-pile', 0, { health: 0 }],
+  ]);
+  const zoneOf = (state: GameState, id: string) => cardById(state, id)!.zoneId;
+
+  it('picks out the cards a rule about cards is about, camp by camp', () => {
+    expect(rule.when).toMatchObject({ kind: 'which' });
+    expect(runtime.which(rule.when, spent)).toEqual(['c1', 'c2', 'c3']);
+    expect(runtime.which(rule.when, camps([]))).toEqual([]);
+  });
+
+  it('runs a rule about cards for the first card it picks out, and for no player or space', () => {
+    expect(runtime.triggerSubject('playing', rule, spent)).toEqual({ player: null, space: null, card: 'c1' });
+    expect(runtime.triggerSubject('playing', rule, camps([]))).toBeNull();
+    expect(runtime.triggerSubject('elsewhere', rule, spent)).toBeNull();
+    expect(runtime.triggerSubject('playing', rule, { ...spent, turn: undefined })).toBeNull();
+  });
+
+  it('fires about that card only, which moves it with its facts', () => {
+    const fired = runtime.fireTrigger('playing', rule, spent);
+    expect(['c1', 'c2', 'c3'].map((id) => zoneOf(fired, id))).toEqual(['discard-pile', 'camp-p1', 'camp-p1']);
+    expect(cardById(fired, 'c1')!.data).toMatchObject({ health: 0, poisoned: true });
+    expect(runtime.triggerSubject('playing', rule, fired)).toEqual({ player: null, space: null, card: 'c2' });
+    expect(() => runtime.fireTrigger('playing', rule, camps([]))).toThrow('The rule on line 20 was run although it does not hold.');
+  });
+
+  it('passes over a card whose Only if lines do not hold', () => {
+    const choosy = compiled(CARD_GAME('When a card in a camp has 0 health:', '  Only if it is poisoned.', '  Move it to the discard pile.'));
+    const [only] = choosy.phases[0].triggers;
+    const asked = new LangRuntime(choosy, lib, ['p0', 'p1']);
+    expect(asked.triggerSubject('playing', only, camps([['c2', 'camp-p1', 0, { health: 0 }], ['c3', 'camp-p1', 1, { health: 0, poisoned: true }]], choosy))).toEqual({ player: null, space: null, card: 'c3' });
+    expect(asked.triggerSubject('playing', only, camps([['c2', 'camp-p1', 0, { health: 0 }]], choosy))).toBeNull();
+  });
+
+  it('lets the flow run the rule for every card until no card is left that it picks out', () => {
+    const { engine } = createEngine(rules, lib, 2, spent);
+    const settled = engine.getState();
+    expect(['c1', 'c2', 'c3', 'c4', 'c5', 'c0'].map((id) => zoneOf(settled, id))).toEqual([
+      'discard-pile', 'discard-pile', 'discard-pile', 'hand-p0', 'discard-pile', 'camp-p0',
+    ]);
+    // In the order the rule found them: c5 was already there.
+    expect(zoneCards(settled, 'discard-pile').map((c) => c.id)).toEqual(['c5', 'c1', 'c2', 'c3']);
+  });
+
+  it('runs the rule after a play, and the card that was played is judged as it is then', () => {
+    const state = camps([['c0', 'hand-p0', 0, { health: 0 }], ['c1', 'camp-p1', 0, { health: 1 }]]);
+    const { engine } = createEngine(rules, lib, 2, state);
+    expect(engine.dispatch({ type: 'play', cardId: 'c0', by: 'p0' }).ok).toBe(true);
+    expect([zoneOf(engine.getState(), 'c0'), zoneOf(engine.getState(), 'c1')]).toEqual(['discard-pile', 'camp-p1']);
+  });
+
+  it('lets a move put a card in the other player\'s zone, and in no other', () => {
+    const giving = compiled(CARD_GAME("A player may give a card from their hand to the other player's camp."));
+    const state = camps([['c0', 'hand-p0', 0, {}], ['c1', 'hand-p1', 0, {}]], giving);
+    const { engine } = createEngine(giving, lib, 2, state);
+    expect(engine.dispatch({ type: 'give', cardId: 'c0', by: 'p0', toZone: 'camp-p0' })).toMatchObject({ ok: false, reason: "You can't give a card there." });
+    expect(engine.dispatch({ type: 'give', cardId: 'c0', by: 'p0', toZone: 'camp-p1' }).ok).toBe(true);
+    expect(zoneOf(engine.getState(), 'c0')).toBe('camp-p1');
+    // On p1's turn it is the other way round.
+    const second = createEngine(giving, lib, 2, { ...state, turn: { current: 'p1', phase: 'playing' } }).engine;
+    expect(second.dispatch({ type: 'give', cardId: 'c1', by: 'p1', toZone: 'camp-p0' }).ok).toBe(true);
+    expect(zoneOf(second.getState(), 'c1')).toBe('camp-p0');
+  });
+
+  it('reports a rule whose lines never stop it holding in plain words', () => {
+    const stuck = compiled(CARD_GAME('When a card in a camp has 0 health:', '  Every card in each camp is poisoned.'));
+    const error = thrown(() => createEngine(stuck, lib, 2, camps([['c0', 'camp-p0', 0, { health: 0 }]], stuck)));
+    expect(friendlyError(error)).toBe('The rule on line 20 (“When a card in a camp has 0 health”) keeps firing. Its effects must change what it checks.');
+  });
+});
+
 describe('LangRuntime.columnValue', () => {
   // The lines of a column's section each take what the line before made of the table's cell, about the space and no player.
   const seen: unknown[] = [];

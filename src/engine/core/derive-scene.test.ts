@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { HIDDEN_FACE_KEY, deriveScene, isRevealed, keepPositionalOnly, projectCard } from './derive-scene';
+import { textFaceKey } from './lang/cards';
 import type { CardState } from './scene';
 import type { Placement, TableDef, ZoneDef } from './table-def';
 
@@ -136,5 +137,41 @@ describe('projectCard', () => {
   it('revealed → faceUp true; hidden → masked back', () => {
     expect(projectCard(card({ faceUp: true }), zone({ visibility: 'secret' }), 'opp').faceUp).toBe(true);
     expect(projectCard(card({ data: { suit: 'S' } }), zone({ visibility: 'secret' }), 'opp')).toMatchObject({ faceUp: false, faceKey: HIDDEN_FACE_KEY });
+  });
+});
+
+describe('a card that carries facts that change during play', () => {
+  // A creature poisoned in a hand, and one poisoned in a camp everyone can see; the face key is the refreshed one.
+  const faceKey = textFaceKey({ name: 'Knight', health: 3, poisoned: 'yes' });
+  const data = { name: 'Knight', health: 3, poisoned: true };
+  const table: TableDef = {
+    players: ['p0', 'p1'],
+    zones: [
+      { id: 'hand-p0', layout: 'fan', transform: { x: 0, y: 0 }, owner: 'p0', visibility: 'owner' },
+      { id: 'camp-p0', layout: 'row', transform: { x: 0, y: 0 }, owner: 'p0', visibility: 'public' },
+    ],
+  };
+  const cards: Placement = {
+    cards: [
+      { id: 'c1', zoneId: 'hand-p0', faceUp: false, faceKey, slot: 0, data },
+      { id: 'c2', zoneId: 'camp-p0', faceUp: true, faceKey, slot: 0, data },
+    ],
+  };
+  const seen = (viewer: string, id: string) => deriveScene(table, cards, viewer).cards.find((c) => c.id === id)!;
+
+  it('shows a card in a hand as a back, with no fact and no health, to the player who cannot see it', () => {
+    const hidden = seen('p1', 'c1');
+    expect(hidden.faceKey).toBe(HIDDEN_FACE_KEY);
+    expect(hidden.faceUp).toBe(false);
+    expect(hidden.data).toEqual({});
+    expect(hidden.data).not.toHaveProperty('poisoned');
+    expect(hidden.data).not.toHaveProperty('health');
+    expect(JSON.stringify(hidden)).not.toMatch(/poisoned|health|Knight/);
+  });
+  it('shows its owner the card as it is, facts and all', () => {
+    expect(seen('p0', 'c1')).toMatchObject({ faceUp: true, faceKey, data });
+  });
+  it('shows a card in a camp everyone can see to everyone, facts and all', () => {
+    expect(seen('p1', 'c2')).toMatchObject({ faceUp: true, faceKey, data });
   });
 });

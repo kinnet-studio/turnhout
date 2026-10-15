@@ -1,7 +1,7 @@
 import type { Json } from '../table-def';
 import type {
   ActionFn, BoardFn, BoardSpec, CardSetSpec, CardsFn, ColumnFn, ConditionFn, DeclareFn, EffectFn, ExpectFn, FactItem, FactSpec, MomentFn,
-  NameProblem, ParamType, PhraseKind, ScoreFn, TargetFn, TurnFn, Vocab, WhoFn, WinnerFn, ZoneFn, ZoneSpec,
+  NameProblem, ParamType, PhraseKind, ScoreFn, TargetFn, TurnFn, Vocab, WhichFn, WhoFn, WinnerFn, ZoneFn, ZoneSpec,
 } from './types';
 
 const VISIBILITY: Record<string, string> = {
@@ -187,11 +187,12 @@ export type MatchResult =
   | { status: 'invalid'; message: string };
 
 /**
- * What a phrase needs, checked when a game is compiled: from the rule around it, a move being made, a player the rule
- * is about or a space; from the game, something to pay with, a board (a Board: loop of spaces) or dice.
+ * What a phrase needs, checked when a game is compiled: from the rule around it, a move being made, a player, a space or
+ * a card the rule is about; from the game, something to pay with, a board (a Board: loop of spaces) or dice.
  */
 export type PhraseOpts = {
-  needsMove?: boolean; needsPlayer?: boolean; needsSpace?: boolean; needsPayment?: boolean; needsBoard?: boolean; needsDice?: boolean;
+  needsMove?: boolean; needsPlayer?: boolean; needsSpace?: boolean; needsCard?: boolean; needsPayment?: boolean; needsBoard?: boolean;
+  needsDice?: boolean;
 };
 
 type Part = { literal: string } | { type: ParamType };
@@ -318,6 +319,7 @@ export class PhraseLibrary {
   effect(p: string, fn: EffectFn, opts?: PhraseOpts): this { return this.add('effect', p, fn, opts); }
   turn(p: string, fn: TurnFn): this { return this.add('turn', p, fn); }
   who(p: string, fn: WhoFn, opts?: PhraseOpts): this { return this.add('who', p, fn, opts); }
+  which(p: string, fn: WhichFn, opts?: PhraseOpts): this { return this.add('which', p, fn, opts); }
   score(p: string, fn: ScoreFn): this { return this.add('score', p, fn); }
   winner(p: string, fn: WinnerFn): this { return this.add('winner', p, fn); }
   moment(p: string, fn: MomentFn): this { return this.add('moment', p, fn); }
@@ -329,8 +331,8 @@ export class PhraseLibrary {
   get(kind: PhraseKind, pattern: string): ({ fn: unknown } & Required<PhraseOpts>) | undefined {
     const entry = this.entries.get(kind)?.get(pattern.toLowerCase());
     return entry && {
-      fn: entry.fn, needsMove: entry.needsMove, needsPlayer: entry.needsPlayer, needsSpace: entry.needsSpace, needsPayment: entry.needsPayment,
-      needsBoard: entry.needsBoard, needsDice: entry.needsDice,
+      fn: entry.fn, needsMove: entry.needsMove, needsPlayer: entry.needsPlayer, needsSpace: entry.needsSpace, needsCard: entry.needsCard,
+      needsPayment: entry.needsPayment, needsBoard: entry.needsBoard, needsDice: entry.needsDice,
     };
   }
 
@@ -416,7 +418,8 @@ export class PhraseLibrary {
     ofKind.set(pattern, {
       pattern, parts, display, literal: literal.replace(/\s+/g, ' ').trim(), specificity, fn,
       needsMove: opts.needsMove ?? false, needsPlayer: opts.needsPlayer ?? false, needsSpace: opts.needsSpace ?? false,
-      needsPayment: opts.needsPayment ?? false, needsBoard: opts.needsBoard ?? false, needsDice: opts.needsDice ?? false,
+      needsCard: opts.needsCard ?? false, needsPayment: opts.needsPayment ?? false, needsBoard: opts.needsBoard ?? false,
+      needsDice: opts.needsDice ?? false,
     });
     return this;
   }

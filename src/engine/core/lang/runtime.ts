@@ -8,7 +8,7 @@ import { MissingPhraseError, RuleError } from './diagnostics';
 import type { PhraseLibrary } from './phrases';
 import type {
   ActionFn, ColumnFn, CompiledGame, CompiledMoment, CompiledTrigger, CondGroup, ConditionFn, EffectFn, ExampleEnv, ExpectFn, MomentFn, Moment, MoveInfo,
-  PhraseEnv, PhraseKind, PhraseRef, ScoreFn, Subject, TargetFn, TurnFn, WhoFn, WinnerFn,
+  PhraseEnv, PhraseKind, PhraseRef, ScoreFn, Subject, TargetFn, TurnFn, WhichFn, WhoFn, WinnerFn,
 } from './types';
 
 type Checker = (state: GameState, move: Move) => true | string;
@@ -103,9 +103,15 @@ export class LangRuntime {
     return this.call<WhoFn, PlayerId[]>(ref, ['who'], (fn) => fn(this.env(state), ref.args));
   }
 
+  /** The ids of the cards a `When a card …:` rule picks out, in the order the phrase gives them. */
+  which(ref: PhraseRef, state: GameState): string[] {
+    return this.call<WhichFn, string[]>(ref, ['which'], (fn) => fn(this.env(state), ref.args));
+  }
+
   /**
    * Who a `When …:` rule of `phaseId` is about if it fires now, or null when it does not. A rule about a player is
-   * about the first one it picks out whose `Only if` lines hold; any other rule is about no one in particular.
+   * about the first one it picks out whose `Only if` lines hold, and a rule about a card the first such card; any other
+   * rule is about no one in particular.
    */
   triggerSubject(phaseId: string, trigger: CompiledTrigger, state: GameState): Subject | null {
     if (state.turn?.phase !== phaseId) return null;
@@ -114,11 +120,15 @@ export class LangRuntime {
       const player = this.who(trigger.when, state).find((seat) => holdsFor({ player: seat, space: null, card: null }));
       return player === undefined ? null : { player, space: null, card: null };
     }
+    if (trigger.when.kind === 'which') {
+      const card = this.which(trigger.when, state).find((id) => holdsFor({ player: null, space: null, card: id }));
+      return card === undefined ? null : { player: null, space: null, card };
+    }
     const nobody: Subject = { player: null, space: null, card: null };
     return this.test(trigger.when, state, undefined, undefined, nobody) && holdsFor(nobody) ? nobody : null;
   }
 
-  /** Runs a `When …:` rule's lines about whoever it is about now. The flow only fires a rule that holds. */
+  /** Runs a `When …:` rule's lines about whoever or whichever card it is about now. The flow only fires a rule that holds. */
   fireTrigger(phaseId: string, trigger: CompiledTrigger, state: GameState): GameState {
     const subject = this.triggerSubject(phaseId, trigger, state);
     if (subject === null) throw new Error(`The rule on line ${trigger.line} was run although it does not hold.`);

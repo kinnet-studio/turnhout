@@ -6,10 +6,12 @@ import type { ParamType, PhraseKind, PhraseRef, Vocab } from './types';
 
 /**
  * What every line of one compile stage shares. Never change `vocab` after a line has been matched with it. `inMove`,
- * `player` and `space` say what the rule around a line is about: a card move, a player ("they"), a space ("it").
+ * `player`, `space` and `card` say what the rule around a line is about: a card move, a player ("they"), a space or a
+ * card ("it").
  */
 export type LineCtx = {
-  library: PhraseLibrary; vocab: Vocab; gameName: string; inMove: boolean; player: boolean; space: boolean; diagnostics: Diagnostic[];
+  library: PhraseLibrary; vocab: Vocab; gameName: string; inMove: boolean; player: boolean; space: boolean; card: boolean;
+  diagnostics: Diagnostic[];
 };
 
 const MAX_SUGGESTIONS = 3;
@@ -73,10 +75,10 @@ function displayPattern(pattern: string, types: ParamType[]): string {
   return pattern.replace(/\{([^{}]+)\}/g, (whole, name: string) => types.find((t) => t.name === name)?.label ?? whole);
 }
 
-/** True when a value names the player making the move, as in “their hand”. */
+/** True when a value names the player making the move, as in “their hand” or “the other player's hand”. */
 function mentionsActor(value: Json): boolean {
   if (Array.isArray(value)) return value.some(mentionsActor);
-  if (value !== null && typeof value === 'object') return value.who === 'actor' || Object.values(value).some(mentionsActor);
+  if (value !== null && typeof value === 'object') return value.who === 'actor' || value.who === 'other' || Object.values(value).some(mentionsActor);
   return false;
 }
 
@@ -118,6 +120,7 @@ function unmetNeed(entry: Required<PhraseOpts> | undefined, args: Json[], clean:
   }
   if (!aboutPlayer && args.some(mentionsActor)) return `“${clean}” only makes sense in a rule about a player's move.`;
   if (!ctx.space && entry?.needsSpace) return `“${clean}” only makes sense in a rule about a space, such as an action or a “lands on” rule.`;
+  if (!ctx.card && entry?.needsCard) return `“${clean}” only makes sense in a rule about a card, such as “When a card …”.`;
   if (entry?.needsPayment && ctx.vocab.payWith === null) return NEEDS_PAYMENT;
   return null;
 }

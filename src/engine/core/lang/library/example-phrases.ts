@@ -35,7 +35,7 @@ const RANK_NAMES = new Map(Object.entries(STANDARD_RANKS).map(([name, rank]) => 
 const SUIT_NAMES = new Map(Object.entries(STANDARD_SUITS).map(([name, letter]) => [letter, name] as const));
 
 /** “the queen of spades”, “a red 7”. */
-function describeCard(match: CardMatch): string {
+export function describeCard(match: CardMatch): string {
   const rank = RANK_NAMES.get(match.rank as number);
   const suit = SUIT_NAMES.get(match.suit as string);
   if (rank !== undefined && suit !== undefined && Object.keys(match).length === 2) return `the ${rank} of ${suit}`;

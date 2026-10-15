@@ -109,6 +109,28 @@ describe('zone references', () => {
     expect(parseParam('zone', "p3's hand", V)).toEqual({ value: { of: { seat: 'p3' }, zone: 'hand' } });
     expect(parseParam('zone', "p7's hand", V)).toEqual({ error: 'This game only has players p0 to p3.' });
   });
+  describe('the other player', () => {
+    const TWO: Vocab = { ...V, maxPlayers: 2 };
+    const NEEDS_TWO = { error: '“the other player” needs a game for two players.' };
+    it("is the other seat's zone, in a game for two, in any capitals and with either apostrophe", () => {
+      for (const text of ["the other player's hand", 'The Other Player’s hand', 'the other player‘s hand']) {
+        expect(parseParam('zone', text, TWO), text).toEqual({ value: { of: { who: 'other' }, zone: 'hand' } });
+      }
+      expect(parseParam('zones', "the trick and the other player's pass pile", TWO)).toEqual({ value: [{ shared: 'trick' }, { of: { who: 'other' }, zone: 'pass pile' }] });
+    });
+    it('is an error in a game that allows more than two players, or fewer', () => {
+      expect(parseParam('zone', "the other player's hand", V)).toEqual(NEEDS_TWO);
+      expect(parseParam('zone', "the other player's hand", { ...V, maxPlayers: 3 })).toEqual(NEEDS_TWO);
+      expect(parseParam('zone', "the other player's hand", { ...V, maxPlayers: 1 })).toEqual(NEEDS_TWO);
+    });
+    it('has no owner for a shared zone', () => {
+      expect(parseParam('zone', "the other player's trick", TWO)).toEqual({ error: '“the trick” is shared, so it has no owner.' });
+    });
+    it('is no zone of its own name', () => {
+      expect(parseParam('zone', 'the other player', TWO)).toBeNull();
+      expect(parseParam('zone', "the other players's hand", TWO)).toBeNull();
+    });
+  });
   it('parses zone lists', () => {
     expect(parseParam('zones', 'every hand and the trick', V)).toEqual({ value: [{ each: 'hand' }, { shared: 'trick' }] });
     expect(parseParam('zones', 'the trick', V)).toEqual({ value: [{ shared: 'trick' }] });
@@ -603,6 +625,11 @@ describe('names the game never defined', () => {
     expect(misnamed('zone', "the winner's wonpile")).toEqual(missing('zone', 'wonpile', ['won pile']));
     expect(misnamed('zone', 'Their Hnad')).toEqual(missing('zone', 'Hnad', ['hand']));
     expect(misnamed('zone', 'the graveyard')).toEqual(missing('zone', 'graveyard', ['trick', 'deck', 'draw pile']));
+  });
+
+  it("names a misspelt zone of the other player's, not “other player's hnad”", () => {
+    expect(misnamed('zone', "the other player's hnad")).toEqual(missing('zone', 'hnad', ['hand']));
+    expect(misnamed('zone', "the other player's hand twice")).toBeNull();
   });
 
   it('leaves text that holds a real zone among other words to other phrases', () => {

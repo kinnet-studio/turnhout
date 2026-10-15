@@ -105,10 +105,19 @@ describe('PhraseLibrary.match', () => {
     const fn = () => true;
     const l = lib().condition('it is their move', fn, { needsMove: true }).condition('hearts are broken', () => true);
     expect(l.get('condition', 'it is their move')).toEqual({
-      fn, needsMove: true, needsPlayer: false, needsSpace: false, needsPayment: false, needsBoard: false, needsDice: false,
+      fn, needsMove: true, needsPlayer: false, needsSpace: false, needsCard: false, needsPayment: false, needsBoard: false, needsDice: false,
     });
     expect(l.get('condition', 'hearts are broken')?.needsMove).toBe(false);
     expect(l.get('effect', 'it is their move')).toBeUndefined();
+  });
+
+  it('registers the phrases that pick out the cards a rule is about, which may need a card too', () => {
+    const fn = () => ['c1'];
+    const l = lib().which('a card has {int} health', fn).condition('it is marked', () => true, { needsCard: true });
+    expect(l.get('which', 'a card has {int} health')).toMatchObject({ fn, needsCard: false });
+    expect(l.get('condition', 'it is marked')?.needsCard).toBe(true);
+    expect(l.match('which', 'A card has 3 health', V)).toEqual({ status: 'ok', pattern: 'a card has {int} health', args: [3] });
+    expect(l.match('condition', 'A card has 3 health', V)).toMatchObject({ status: 'unknown' });
   });
 });
 

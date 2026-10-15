@@ -1,6 +1,7 @@
 import type { Json } from '../table-def';
 import { SEPARATORS, listSource, separatorSource, splitList, suggestNames } from './phrases';
 import type { FactSpec, NameProblem, ParamType, SpaceClass, Vocab } from './types';
+import { NEEDS_TWO } from './zones';
 
 type Parsed = { value: Json } | { error: string };
 
@@ -202,11 +203,11 @@ const zoneTable = (vocab: Vocab): ZoneTable =>
 
 const zoneSource = (vocab: Vocab): string => {
   const names = anyOf([...vocab.sharedZones, ...vocab.playerZones]);
-  return `(?:(?:the |their |each |every )?${names}|the winner${APOSTROPHE}s ${names}|p\\d+${APOSTROPHE}s ${names})`;
+  return `(?:(?:the |their |each |every )?${names}|the (?:winner|other player)${APOSTROPHE}s ${names}|p\\d+${APOSTROPHE}s ${names})`;
 };
 
 /** group 1 = the whole prefix, group 2 = a seat ('p2'), group 3 = the zone name */
-const OWNER_PREFIX = /^(the winner's|(p\d+)'s|the|their|each|every) (.+)$/;
+const OWNER_PREFIX = /^(the winner's|the other player's|(p\d+)'s|the|their|each|every) (.+)$/;
 
 function resolveZone(text: string, vocab: Vocab): Parsed {
   const table = zoneTable(vocab);
@@ -226,6 +227,8 @@ function resolveZone(text: string, vocab: Vocab): Parsed {
   }
   if (!table.player.has(key)) return { error: `“the ${name}” is shared, so it has no owner.` };
   if (prefix === 'their') return { value: { of: { who: 'actor' }, zone: name } };
+  // There is one other player only at a table of two, so a game that allows more or fewer can never say it.
+  if (prefix === "the other player's") return vocab.maxPlayers === 2 ? { value: { of: { who: 'other' }, zone: name } } : { error: NEEDS_TWO };
   if (prefix === 'each' || prefix === 'every') return { value: { each: name } };
   if (seat === undefined) return { value: { of: { who: 'winner' }, zone: name } };
   const owner = seatResult(seat, vocab);
@@ -233,7 +236,7 @@ function resolveZone(text: string, vocab: Vocab): Parsed {
 }
 
 /** The same owner words as OWNER_PREFIX, read from the text as written; group 1 = the zone name. */
-const OWNED_NAME = /^(?:the winner['‘’]s|p\d+['‘’]s|the|their|each|every) (.+)$/i;
+const OWNED_NAME = /^(?:the winner['‘’]s|the other player['‘’]s|p\d+['‘’]s|the|their|each|every) (.+)$/i;
 
 const allZones = (vocab: Vocab): string[] => [...vocab.sharedZones, ...vocab.playerZones];
 

@@ -388,7 +388,7 @@ describe('compilePhase on its own', () => {
       maxPlayers: 2, phases: ['main'], verbs: ['play', 'reorder'],
       zones: [{ name: 'deck', perPlayer: false, layout: 'pile', visibility: 'secret' }, { name: 'hand', perPlayer: true, layout: 'hand', visibility: 'owner' }],
     });
-    const phase = compilePhase(parseOutline(text).roots[0], { library: lib, vocab, gameName: 'Tiny', inMove: false, player: false, space: false, diagnostics });
+    const phase = compilePhase(parseOutline(text).roots[0], { library: lib, vocab, gameName: 'Tiny', inMove: false, player: false, space: false, card: false, diagnostics });
     return { phase, diagnostics };
   };
 
@@ -851,7 +851,7 @@ describe('buttons that pick a target', () => {
     const vocab = vocabFrom({ maxPlayers: 2, phases: ['main'], board: fixtureBoardGame().board });
     const built = compilePhase(
       parseOutline('Phase: main\n  A player may build a house on a stret they own.').roots[0],
-      { library: lib, vocab, gameName: 'Tiny', inMove: false, player: false, space: false, diagnostics },
+      { library: lib, vocab, gameName: 'Tiny', inMove: false, player: false, space: false, card: false, diagnostics },
     );
     expect(diagnostics.map((d) => [d.line, d.message])).toEqual([[2, 'There is no kind of space called “stret”.']]);
     expect(built.actions).toEqual([]);
@@ -888,6 +888,83 @@ describe('buttons that pick a target', () => {
     ]);
     expect(errorsOf(['A player may build a house on a street they own.', 'A player may Build a House on a Street they own.'])).toEqual([
       [21, 'Two rules in this phase say “A player may build a house on a street they own”.'],
+    ]);
+  });
+});
+
+describe('rules about a card, and the other player', () => {
+  /** A two-player game of creatures with the phase's own lines below `Players take turns.` (line 18), so the first of them is line 19. */
+  const creatures = (phase: string[], { players = '2', setup = [] as string[] } = {}) => [
+    'Game: Creatures', `Players: ${players}`, '', 'Cards:', '  A deck called creatures, starting in the deck:', '    | name   | health | copies |',
+    '    | Knight | 3      | 2      |', '    | Viper  | 1      | 2      |', '  Cards can be poisoned.', '',
+    'Table:', '  The deck is a pile in the center that no one can see.', '  The discard pile is a pile in the center that everyone can see.',
+    '  Each player has a hand that only they can see.', '  Each player has a camp that everyone can see.', '',
+    ...(setup.length > 0 ? ['Setup:', ...setup.map((l) => `  ${l}`), ''] : []),
+    'Phase: playing', '  Players take turns.', ...phase.map((l) => `  ${l}`),
+  ].join('\n');
+  const built = (phase: string[], over: Parameters<typeof creatures>[1] = {}) => compileGame(creatures(phase, over), lib);
+  const errorsOf = (phase: string[], over: Parameters<typeof creatures>[1] = {}) =>
+    built(phase, over).diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message]);
+  const WHEN = 'When a card in a camp has 0 health:';
+  const PLAY = 'A player may play a card from their hand to their camp.';
+  const NEEDS_CARD = (line: string) => `“${line}” only makes sense in a rule about a card, such as “When a card …”.`;
+  const NEEDS_TWO = '“the other player” needs a game for two players.';
+
+  it('compiles a rule about each card a phrase picks out, with the lines under it about “it”', () => {
+    const { game, diagnostics } = built([WHEN, '  Move it to the discard pile.']);
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(game!.phases[0].triggers).toEqual([expect.objectContaining({
+      line: 19, text: WHEN.slice(0, -1), conditions: [],
+      when: expect.objectContaining({ kind: 'which', phrase: 'a card in a {perzone} has {int} {attribute}', args: ['camp', 0, 'health'], line: 19 }),
+      effects: [expect.objectContaining({ kind: 'effect', phrase: 'move it to {zone}', args: [{ shared: 'discard pile' }], line: 20 })],
+    })]);
+  });
+  it('reads “Only if” lines about the card too', () => {
+    const { game, diagnostics } = built([WHEN, '  Only if it is poisoned.', '  Move it to the discard pile.']);
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(game!.phases[0].triggers[0].conditions).toEqual([
+      expect.objectContaining({ mode: 'all', text: 'it is poisoned', refs: [expect.objectContaining({ kind: 'condition', phrase: 'it is {cardflag}' })] }),
+    ]);
+  });
+  it('keeps a rule about a card and a rule about nothing in particular apart', () => {
+    const { game } = built([WHEN, '  Move it to the discard pile.', 'When the deck is empty:', '  Shuffle the discard pile.']);
+    expect(game!.phases[0].triggers.map((t) => t.when.kind)).toEqual(['which', 'condition']);
+  });
+  it('tells a rule about a card what it may not say: nothing about a player, a space or a move', () => {
+    expect(errorsOf([WHEN, '  Move it to their hand.'])).toEqual([[20, '“Move it to their hand” only makes sense in a rule about a player\'s move.']]);
+    expect(errorsOf([WHEN, '  Only if the card is poisoned.', '  Move it to the discard pile.'])).toEqual([[20, '“the card is poisoned” only makes sense in a rule about a player\'s move.']]);
+  });
+  it('refuses “it” the card anywhere but in a rule about a card', () => {
+    expect(errorsOf([], { setup: ['Move it to the discard pile.'] })).toEqual([[18, NEEDS_CARD('Move it to the discard pile')]]);
+    expect(errorsOf([PLAY, '  Only if it is poisoned.', '  Then:', '    Move it to the discard pile.'])).toEqual([
+      [20, NEEDS_CARD('it is poisoned')], [22, NEEDS_CARD('Move it to the discard pile')],
+    ]);
+    expect(errorsOf(['When the deck is empty:', '  Move it to the discard pile.'])).toEqual([[20, NEEDS_CARD('Move it to the discard pile')]]);
+  });
+  it('says which line is wrong with a misspelt attribute, and still reads the lines under it as about the card', () => {
+    const typo = built(['When a card in a camp has 0 helth:', '  Move it to the discard pile.']);
+    expect(typo.diagnostics.filter((d) => d.severity === 'error')).toEqual([
+      expect.objectContaining({ line: 19, kind: 'invalid', message: 'There is no card attribute called “helth”.', suggestions: ['health'] }),
+    ]);
+  });
+  it('reads the other player\'s zone in a game for two, as a move\'s zone and in an effect', () => {
+    const { game, diagnostics } = built([
+      'A player may give a card from their hand to the other player\'s camp.', '  Then:', '    Every card in the other player\'s camp is poisoned.',
+    ]);
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(game!.phases[0].moves[0]).toMatchObject({ verb: 'give', from: { of: { who: 'actor' }, zone: 'hand' }, to: { of: { who: 'other' }, zone: 'camp' } });
+    expect(game!.phases[0].moves[0].effects[0]).toMatchObject({ phrase: 'every card in {zone} is {cardflag}', args: [{ of: { who: 'other' }, zone: 'camp' }, 'poisoned'] });
+  });
+  it('is an error on the line in a game that allows more than two players', () => {
+    const more = { players: '2 to 4' };
+    expect(errorsOf(['A player may give a card from their hand to the other player\'s camp.'], more)).toEqual([[19, NEEDS_TWO]]);
+    expect(errorsOf([PLAY, '  Then:', '    Every card in the other player\'s camp is poisoned.'], more)).toEqual([[21, NEEDS_TWO]]);
+    expect(errorsOf([PLAY, '  Then:', '    Every card in the other player\'s camp is poisoned.'], { players: '1 to 2' })).toEqual([]);
+    expect(errorsOf([PLAY, '  Then:', '    Every card in the other player\'s camp is poisoned.'], { players: '1' })).toEqual([[21, NEEDS_TWO]]);
+  });
+  it('says “their” and “the other player\'s” only in a rule about a player', () => {
+    expect(errorsOf(['When the deck is empty:', '  Every card in the other player\'s camp is poisoned.'])).toEqual([
+      [20, '“Every card in the other player\'s camp is poisoned” only makes sense in a rule about a player\'s move.'],
     ]);
   });
 });

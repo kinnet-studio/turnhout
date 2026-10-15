@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import type { GameState } from '../../game-state';
+import { zoneCards, type GameState } from '../../game-state';
 import { bankOf, ownerOf, placePiece, setBank, setOwner, setSpaceFact, spaceFact } from '../board-state';
+import { cardFact, changeCard } from '../card-facts';
+import { textFaceKey } from '../cards';
 import { compileGame } from '../compile';
 import { runExamples } from '../examples';
 import { RuleError } from '../diagnostics';
-import { FIXTURE_SPACES, TINY_BOARD_HEAD, fixtureBoardGame, fixtureBoardState, fixtureEnv, runPhrase } from '../testing';
-import type { FactSpec, Moment, SpaceSpec } from '../types';
+import {
+  FIXTURE_SPACES, TINY_BOARD_HEAD, fixtureBoardGame, fixtureBoardState, fixtureCard, fixtureEnv, fixtureGame, fixtureState, runPhrase,
+} from '../testing';
+import type { CompiledGame, FactSpec, Moment, MoveInfo, SpaceSpec, Subject } from '../types';
 import { createDefaultLibrary } from './index';
 
 const lib = createDefaultLibrary();
@@ -449,6 +453,288 @@ describe('reading the lines of a game', () => {
     const results = runExamples(built.game!, lib);
     expect(results.map((r) => [r.status, r.message])).toEqual([
       ['pass', null], ['pass', null], ['fail', 'Expected Rose Lane to have 2 houses, but it has 1.'], ['pass', null],
+    ]);
+  });
+});
+
+describe('facts on cards', () => {
+  // Two creatures' camps (a public row each), a hand, the deck and the discard pile, for two players.
+  const creatures: CompiledGame = fixtureGame({
+    name: 'Venom Fixture',
+    players: { min: 2, max: 2 },
+    zones: [
+      { name: 'deck', perPlayer: false, layout: 'pile', visibility: 'secret' },
+      { name: 'discard pile', perPlayer: false, layout: 'pile', visibility: 'public' },
+      { name: 'hand', perPlayer: true, layout: 'hand', visibility: 'owner' },
+      { name: 'camp', perPlayer: true, layout: 'row', visibility: 'public' },
+    ],
+    cards: [{
+      kind: 'table', start: 'deck', acesHigh: false,
+      identities: [['Knight', 3], ['Archer', 2], ['Viper', 1]].map(([name, health]) => ({ attrs: { name, health }, faceKey: textFaceKey({ name, health }) })),
+    }],
+    facts: [{ name: 'poisoned', on: 'card', kind: 'flag' }],
+  });
+  const SEATS = ['p0', 'p1'];
+
+  const faceOf = (name: string, health: number, poisoned = false) => textFaceKey({ name, health, ...(poisoned ? { poisoned: 'yes' } : {}) });
+  const creature = (id: string, zoneId: string, slot: number, name: string, health: number, poisoned = false) =>
+    fixtureCard(id, zoneId, { name, health, ...(poisoned ? { poisoned: true } : {}) }, { slot, faceKey: faceOf(name, health, poisoned), faceUp: true });
+  /**
+   * p0's camp holds c0, c1 (poisoned) and c6 (no health left); p1's holds c2, c3 (poisoned), c4 (poisoned) and c5 (no health left).
+   * c7 is at 0 health in a hand and c8 in the discard pile, where no camp rule reaches them.
+   */
+  const table = (): GameState => fixtureState([
+    creature('c0', 'camp-p0', 0, 'Knight', 3), creature('c1', 'camp-p0', 1, 'Archer', 2, true), creature('c6', 'camp-p0', 2, 'Knight', 0),
+    creature('c2', 'camp-p1', 0, 'Knight', 3), creature('c3', 'camp-p1', 1, 'Viper', 1, true), creature('c4', 'camp-p1', 2, 'Knight', 3, true),
+    creature('c5', 'camp-p1', 3, 'Viper', 0), creature('c7', 'hand-p0', 0, 'Archer', 0), creature('c8', 'discard-pile', 0, 'Knight', 0),
+  ]);
+  const env = (state: GameState, subject: Subject | undefined, move?: MoveInfo) => fixtureEnv(state, { game: creatures, seats: SEATS, subject, move });
+  const byPlayer = (player: string): Subject => ({ player, space: null, card: null });
+  const aboutCard = (card: string): Subject => ({ player: null, space: null, card });
+  const cardOf = (state: GameState, id: string) => state.cards.find((c) => c.id === id)!;
+  const healthOf = (state: GameState, ...ids: string[]) => ids.map((id) => cardFact(cardOf(state, id), 'health'));
+
+  const effectAs = (text: string, subject: Subject, state = table()) => runPhrase<GameState>(lib, 'effect', text, env(state, subject));
+  const holdsFor = (text: string, subject: Subject, state = table(), move?: MoveInfo) =>
+    runPhrase<boolean>(lib, 'condition', text, env(state, subject, move));
+  const bare = (state: GameState) => env(state, undefined);
+
+  describe('every card in a zone is …', () => {
+    it('sets the fact on every card of the other player\'s camp, and on no other card', () => {
+      const s = effectAs("every card in the other player's camp is poisoned", byPlayer('p0'));
+      for (const id of ['c2', 'c3', 'c4', 'c5']) expect(cardFact(cardOf(s, id), 'poisoned'), id).toBe(true);
+      for (const id of ['c0', 'c6', 'c7', 'c8']) expect(cardFact(cardOf(s, id), 'poisoned'), id).toBeNull();
+      expect(cardFact(cardOf(s, 'c1'), 'poisoned')).toBe(true);
+    });
+    it('is the other seat for whoever the rule is about', () => {
+      const s = effectAs("every card in the other player's camp is poisoned", byPlayer('p1'));
+      expect(s.cards.filter((c) => c.zoneId === 'camp-p0').map((c) => cardFact(c, 'poisoned'))).toEqual([true, true, true]);
+      expect(cardFact(cardOf(s, 'c2'), 'poisoned')).toBeNull();
+    });
+    it('is about the player making the move, when a move is being made', () => {
+      const move: MoveInfo = { verb: 'play', by: 'p1', cardId: 'c3', from: 'hand-p1', to: 'camp-p1' };
+      const s = runPhrase<GameState>(lib, 'effect', "every card in the other player's camp is poisoned", env(table(), undefined, move));
+      expect(cardFact(cardOf(s, 'c0'), 'poisoned')).toBe(true);
+      expect(cardFact(cardOf(s, 'c2'), 'poisoned')).toBeNull();
+    });
+    it('refreshes the face of each card it changes, and leaves the rest as they were', () => {
+      const before = table();
+      const s = effectAs("every card in the other player's camp is poisoned", byPlayer('p0'), before);
+      expect(cardOf(s, 'c2').faceKey).toBe(faceOf('Knight', 3, true));
+      expect(cardOf(s, 'c5').faceKey).toBe(faceOf('Viper', 0, true));
+      expect(cardOf(s, 'c0')).toBe(cardOf(before, 'c0'));
+    });
+    it('takes a zone of its own name, and every one of the zones “each camp” names', () => {
+      const own = effectAs('every card in their camp is poisoned', byPlayer('p0'));
+      expect(cardFact(cardOf(own, 'c0'), 'poisoned')).toBe(true);
+      expect(cardFact(cardOf(own, 'c2'), 'poisoned')).toBeNull();
+      const all = effectAs('every card in each camp is poisoned', aboutCard('c0'));
+      expect(all.cards.filter((c) => c.zoneId.startsWith('camp-')).every((c) => cardFact(c, 'poisoned') === true)).toBe(true);
+      expect(cardFact(cardOf(all, 'c7'), 'poisoned')).toBeNull();
+    });
+    it('does nothing to an empty zone', () => {
+      const before = fixtureState([]);
+      expect(effectAs("every card in the other player's camp is poisoned", byPlayer('p0'), before)).toEqual(before);
+    });
+  });
+
+  describe('each … card in a zone loses …', () => {
+    it('lowers only the poisoned cards of the zone, and their faces show it', () => {
+      const s = effectAs('each poisoned card in their camp loses 1 health', byPlayer('p0'));
+      expect(healthOf(s, 'c0', 'c1', 'c6')).toEqual([3, 1, 0]);
+      expect(cardOf(s, 'c1').faceKey).toBe(faceOf('Archer', 1, true));
+      expect(cardOf(s, 'c0').faceKey).toBe(faceOf('Knight', 3));
+      // The other camp, a hand and the discard pile are not touched.
+      expect(healthOf(s, 'c2', 'c3', 'c4', 'c5', 'c7', 'c8')).toEqual([3, 1, 3, 0, 0, 0]);
+    });
+    it('is about the other camp for the other player', () => {
+      const s = effectAs('each poisoned card in their camp loses 1 health', byPlayer('p1'));
+      expect(healthOf(s, 'c2', 'c3', 'c4')).toEqual([3, 0, 2]);
+      expect(cardOf(s, 'c3').faceKey).toBe(textFaceKey({ name: 'Viper', health: 0, poisoned: 'yes' }));
+      expect(healthOf(s, 'c1')).toEqual([2]);
+    });
+    it('takes the whole amount, down to 0 and never below it, so a rule about 0 health still finds the card', () => {
+      expect(healthOf(effectAs('each poisoned card in their camp loses 3 health', byPlayer('p0')), 'c1')).toEqual([0]);
+      const dead = effectAs('each poisoned card in their camp loses 1 health', byPlayer('p1'), effectAs('each poisoned card in their camp loses 1 health', byPlayer('p1')));
+      expect(healthOf(dead, 'c3')).toEqual([0]);
+    });
+    it('leaves a poisoned card that has no health to lose as it is', () => {
+      const state = fixtureState([fixtureCard('c0', 'camp-p0', { name: 'Ghost', poisoned: true }, { faceKey: textFaceKey({ name: 'Ghost', poisoned: 'yes' }), slot: 0 })]);
+      expect(effectAs('each poisoned card in their camp loses 1 health', byPlayer('p0'), state)).toEqual(state);
+    });
+  });
+
+  describe('which cards a rule is about', () => {
+    it('lists the cards of the camps that have that much health, camp by camp and slot by slot', () => {
+      expect(runPhrase<string[]>(lib, 'which', 'a card in a camp has 0 health', bare(table()))).toEqual(['c6', 'c5']);
+      expect(runPhrase<string[]>(lib, 'which', 'a card in a camp has 1 health', bare(table()))).toEqual(['c3']);
+      expect(runPhrase<string[]>(lib, 'which', 'a card in a camp has 3 health', bare(table()))).toEqual(['c0', 'c2', 'c4']);
+    });
+    it('lists nothing when no card has it', () => {
+      expect(runPhrase<string[]>(lib, 'which', 'a card in a camp has 9 health', bare(table()))).toEqual([]);
+    });
+    it('follows the slots, not the order of the cards in the game', () => {
+      const state = fixtureState([creature('c0', 'camp-p1', 1, 'Viper', 0), creature('c1', 'camp-p1', 0, 'Viper', 0), creature('c2', 'camp-p0', 5, 'Viper', 0)]);
+      expect(runPhrase<string[]>(lib, 'which', 'a card in a camp has 0 health', bare(state))).toEqual(['c2', 'c1', 'c0']);
+    });
+    it('goes by what a card has now, so a card that lost its health is listed', () => {
+      const s = effectAs('each poisoned card in their camp loses 1 health', byPlayer('p1'));
+      expect(runPhrase<string[]>(lib, 'which', 'a card in a camp has 0 health', bare(s))).toEqual(['c6', 'c3', 'c5']);
+    });
+  });
+
+  describe('judging a card', () => {
+    it('“it is poisoned” is about the card the rule is about', () => {
+      expect(holdsFor('it is poisoned', aboutCard('c3'))).toBe(true);
+      expect(holdsFor('it is poisoned', aboutCard('c0'))).toBe(false);
+      expect(holdsFor('it is poisoned', aboutCard('c1'))).toBe(true);
+    });
+    it('is not so for a flag that was cleared or set to no', () => {
+      expect(holdsFor('it is poisoned', aboutCard('c3'), changeCard(table(), 'c3', { poisoned: false }, creatures))).toBe(false);
+      expect(holdsFor('it is poisoned', aboutCard('c3'), changeCard(table(), 'c3', { poisoned: null }, creatures))).toBe(false);
+    });
+    it('says so when the rule is about no card', () => {
+      expect(() => holdsFor('it is poisoned', byPlayer('p0'))).toThrow('This phrase needs a card, but none is being judged.');
+    });
+    it('“the card is poisoned” is about the card of the move', () => {
+      const move = (cardId: string): MoveInfo => ({ verb: 'play', by: 'p0', cardId, from: 'hand-p0', to: 'camp-p0' });
+      expect(holdsFor('the card is poisoned', byPlayer('p0'), table(), move('c1'))).toBe(true);
+      expect(holdsFor('the card is poisoned', byPlayer('p0'), table(), move('c0'))).toBe(false);
+    });
+    it('needs a card for “it”, and a move for “the card”, so the compiler keeps each to the rules it fits', () => {
+      expect(lib.get('condition', 'it is {cardflag}')).toMatchObject({ needsCard: true, needsMove: false });
+      expect(lib.get('condition', 'the card is {cardflag}')).toMatchObject({ needsMove: true, needsCard: false });
+      expect(lib.get('effect', 'move it to {zone}')).toMatchObject({ needsCard: true });
+      expect(lib.get('effect', 'every card in {zone} is {cardflag}')).toMatchObject({ needsCard: false });
+    });
+  });
+
+  describe('moving the card a rule is about', () => {
+    it('puts it at the end of the zone, with every fact it had', () => {
+      const s = effectAs('move it to the discard pile', aboutCard('c3'));
+      expect(cardOf(s, 'c3')).toMatchObject({ zoneId: 'discard-pile', slot: 1, faceUp: true, faceKey: faceOf('Viper', 1, true) });
+      expect(cardFact(cardOf(s, 'c3'), 'poisoned')).toBe(true);
+      expect(healthOf(s, 'c3')).toEqual([1]);
+      expect(zoneCards(s, 'camp-p1').map((c) => c.id)).toEqual(['c2', 'c4', 'c5']);
+      expect(zoneCards(s, 'discard-pile').map((c) => c.id)).toEqual(['c8', 'c3']);
+    });
+    it('moves only that card', () => {
+      const before = table();
+      const s = effectAs('move it to the discard pile', aboutCard('c5'), before);
+      expect(s.cards.filter((c, i) => c !== before.cards[i]).map((c) => c.id)).toEqual(['c5']);
+    });
+    it('says so when the rule is about no card', () => {
+      expect(() => effectAs('move it to the discard pile', byPlayer('p0'))).toThrow('This phrase needs a card, but none is being judged.');
+    });
+    it('says so when the zone is more than one', () => {
+      expect(() => effectAs('move it to each camp', aboutCard('c3'))).toThrow(new RuleError('each camp is more than one zone, but this rule needs just one.'));
+    });
+  });
+
+  describe('the player with the most cards', () => {
+    const MOST = 'the player with the most cards in their camp wins';
+    const winner = (state: GameState) => runPhrase<string>(lib, 'winner', MOST, bare(state), {});
+    it('is whose camp holds the most', () => {
+      expect(winner(table())).toBe('p1');
+      expect(winner(effectAs('move it to the discard pile', aboutCard('c6')))).toBe('p1');
+      expect(winner(effectAs('move it to the discard pile', aboutCard('c4'), effectAs('move it to the discard pile', aboutCard('c3'))))).toBe('p0');
+    });
+    it('is the earliest seat in a tie', () => {
+      const tied = effectAs('move it to the discard pile', aboutCard('c2'));
+      expect(winner(tied)).toBe('p0');
+      expect(runPhrase<string>(lib, 'winner', MOST, fixtureEnv(tied, { game: creatures, seats: ['p1', 'p0'] }), {})).toBe('p1');
+      expect(winner(fixtureState([]))).toBe('p0');
+    });
+    it('counts the cards of that zone only', () => {
+      const state = fixtureState([creature('c0', 'camp-p0', 0, 'Knight', 3), creature('c1', 'hand-p1', 0, 'Knight', 3), creature('c2', 'hand-p1', 1, 'Knight', 3)]);
+      expect(winner(state)).toBe('p0');
+    });
+  });
+
+  describe('example phrases', () => {
+    const given = (text: string, state = table()) => runPhrase<GameState>(lib, 'given', text, bare(state));
+    const expectThat = (text: string, state = table()) => runPhrase<true | string>(lib, 'expect', text, bare(state));
+
+    it('gives a card a fact, and its face shows it', () => {
+      const s = given("the Knight in p1's camp is poisoned");
+      expect(cardFact(cardOf(s, 'c2'), 'poisoned')).toBe(true);
+      expect(cardOf(s, 'c2').faceKey).toBe(faceOf('Knight', 3, true));
+      expect(cardFact(cardOf(s, 'c0'), 'poisoned')).toBeNull();
+    });
+    it('means the first card of the zone that is that card, and is just as sure of an article', () => {
+      expect(cardFact(cardOf(given("a Knight in p1's camp is poisoned", table()), 'c2'), 'poisoned')).toBe(true);
+      expect(cardFact(cardOf(given("the Archer in p0's camp is poisoned", table()), 'c1'), 'poisoned')).toBe(true);
+    });
+    it('says so when the zone has no such card', () => {
+      expect(() => given("the Viper in p0's camp is poisoned")).toThrow(new RuleError("There is no Viper in p0's camp."));
+    });
+
+    it('expects a fact', () => {
+      expect(expectThat("the Viper in p1's camp is poisoned")).toBe(true);
+      expect(expectThat("the Knight in p1's camp is poisoned")).toBe("Expected the Knight in p1's camp to be poisoned, but it isn't.");
+      expect(expectThat("the Knight in p1's camp is not poisoned")).toBe(true);
+      expect(expectThat("the Viper in p1's camp is not poisoned")).toBe("Expected the Viper in p1's camp not to be poisoned, but it is.");
+    });
+    it('expects a number a card has', () => {
+      expect(expectThat("the Knight in p1's camp has 3 health")).toBe(true);
+      expect(expectThat("the Knight in p1's camp has 2 health")).toBe("Expected the Knight in p1's camp to have 2 health, but it has 3.");
+      expect(expectThat("the Archer in p0's camp has 0 health", effectAs('each poisoned card in their camp loses 3 health', byPlayer('p0')))).toBe(true);
+    });
+    it('says what is missing when the zone has no such card', () => {
+      expect(expectThat("the Viper in p0's camp is poisoned")).toBe("Expected the Viper in p0's camp to be poisoned, but there is no Viper in p0's camp.");
+      expect(expectThat("the Viper in p0's camp is not poisoned")).toBe("Expected the Viper in p0's camp not to be poisoned, but there is no Viper in p0's camp.");
+      expect(expectThat("the Viper in p0's camp has 1 health")).toBe("Expected the Viper in p0's camp to have 1 health, but there is no Viper in p0's camp.");
+    });
+    it('says a card has no number it was never given', () => {
+      const state = fixtureState([fixtureCard('c0', 'camp-p0', { name: 'Knight' }, { slot: 0 })]);
+      expect(expectThat("the Knight in p0's camp has 1 health", state)).toBe("Expected the Knight in p0's camp to have 1 health, but it has no health.");
+    });
+  });
+});
+
+describe('a small card game with facts, played from a designer\'s words', () => {
+  const VENOM = [
+    'Game: Venom Rules', 'Players: 2', '', 'Cards:', '  A deck called creatures, starting in the deck:',
+    '    | name   | health | copies |', '    | Knight | 3      | 6      |', '    | Archer | 2      | 6      |', '    | Viper  | 1      | 4      |',
+    '  Cards can be poisoned.', '',
+    'Table:', '  The deck is a pile in the center that no one can see.', '  The discard pile is a pile in the center that everyone can see.',
+    '  Each player has a hand that only they can see.', '  Each player has a camp that everyone can see.', '',
+    'Setup:', '  Shuffle the deck.', '  Deal 4 cards from the deck to each hand.', '',
+    'Phase: playing', '  Players take turns.',
+    '  A player may play a card from their hand to their camp.', '    Then:',
+    '      Each poisoned card in their camp loses 1 health.', '      If the card is a Viper, every card in the other player\'s camp is poisoned.',
+    '  When a card in a camp has 0 health:', '    Only if it is poisoned.', '    Move it to the discard pile.',
+    '  A player may cure a card from their camp to their hand.', '    Only if the card is poisoned.',
+    '  After a player plays or cures, the turn passes to the left.', '',
+    'End:', '  The game ends when the deck and every hand are empty.', '  The player with the most cards in their camp wins.',
+  ].join('\n');
+  const EXAMPLES = [
+    '', 'Example: a Viper poisons the other camp', '  Given p0 holds a Viper', "  And p1's camp has a Knight", '  When p0 plays a Viper',
+    "  Then the Knight in p1's camp is poisoned", "  And the Knight in p1's camp has 3 health", '',
+    'Example: poisoned cards lose health when their owner plays and go when they have none', '  Given it is p1\'s turn', '  And p1 holds an Archer',
+    "  And p1's camp has a Viper", "  And the Viper in p1's camp is poisoned", '  When p1 plays an Archer',
+    '  Then the discard pile has a Viper', "  And p1's camp has an Archer", '',
+    'Example: a wrong health says what there was', "  Given p0 holds a Viper", "  And p1's camp has a Knight", '  When p0 plays a Viper',
+    "  Then the Knight in p1's camp has 2 health", '',
+    'Example: only a poisoned card can be cured', "  Given p0's camp has a Knight", '  When p0 cures a Knight', '  Then it is rejected because "the card is poisoned"',
+  ].join('\n');
+
+  it('reads every line, with the card rule bound to cards and no problem', () => {
+    const { game, diagnostics } = compileGame(`${VENOM}${EXAMPLES}`, lib);
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    const [play] = game!.phases[0].moves;
+    expect(play.effects.map((ref) => [ref.kind, ref.phrase])).toEqual([['effect', 'each {cardflag} card in {zone} loses {int} {attribute}'], ['lang', 'if']]);
+    const [, cure] = game!.phases[0].moves;
+    expect(cure.conditions[0].refs[0]).toMatchObject({ kind: 'condition', phrase: 'the card is {cardflag}' });
+    expect(game!.phases[0].triggers[0].conditions[0].refs[0]).toMatchObject({ kind: 'condition', phrase: 'it is {cardflag}' });
+    expect(game!.phases[0].triggers[0].effects[0]).toMatchObject({ kind: 'effect', phrase: 'move it to {zone}' });
+    expect(game!.phases[0].triggers[0].when).toMatchObject({ kind: 'which', phrase: 'a card in a {perzone} has {int} {attribute}', args: ['camp', 0, 'health'] });
+    expect(game!.end!.winner).toMatchObject({ kind: 'winner', phrase: 'the player with the most cards in their {perzone} wins' });
+  });
+  it('plays its examples: the card rule moves each card that ran out of health, and a wrong number is said', () => {
+    const { game } = compileGame(`${VENOM}${EXAMPLES}`, lib);
+    expect(runExamples(game!, lib).map((r) => [r.status, r.message])).toEqual([
+      ['pass', null], ['pass', null], ['fail', "Expected the Knight in p1's camp to have 2 health, but it has 3."], ['pass', null],
     ]);
   });
 });

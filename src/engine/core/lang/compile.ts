@@ -365,7 +365,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   const name = readGameName(of('game'), diagnostics);
   const players = readPlayers(of('players'), diagnostics);
   const maxPlayers = players?.max ?? 0;
-  const stage = (vocab: Vocab): LineCtx => ({ library, vocab, gameName: name ?? 'Untitled', inMove: false, player: false, space: false, diagnostics });
+  const stage = (vocab: Vocab): LineCtx => ({ library, vocab, gameName: name ?? 'Untitled', inMove: false, player: false, space: false, card: false, diagnostics });
 
   // A board game may have no cards and no zones at all.
   if (of('board').length === 0) {

@@ -3,7 +3,7 @@ import type { OutlineNode } from './outline';
 import { normalizeLine, suggestNames } from './phrases';
 import { joinOr, parseParam, secondPersonWords, thirdPerson, thirdPersonWords, VOCAB_TYPES } from './refs';
 import type {
-  CompiledMoment, CompiledPhase, CompiledTrigger, CondGroup, DeclaredAction, DeclaredMove, ParamType, PhraseRef, Vocab, ZoneRef,
+  CompiledMoment, CompiledPhase, CompiledTrigger, CondGroup, DeclaredAction, DeclaredMove, ParamType, PhraseKind, PhraseRef, Vocab, ZoneRef,
 } from './types';
 
 const HINT = /^hint:\s*(.*)$/i;
@@ -230,13 +230,22 @@ function readWhenBody(node: OutlineNode, ctx: LineCtx): { conditions: CondGroup[
 /** The rule's own line without its colon, as the designer wrote it. */
 const ruleText = (clean: string) => clean.slice(0, -1).trimEnd();
 
-/** A line placeholder or phrase that asked who a rule is about. */
-const isWho = (ref: PhraseRef) => ref.kind === 'who' || (ref.phrase === 'missing' && ref.args[0] === 'who');
+/** A line placeholder or phrase of this kind: a rule's first line asks who or which card it is about. */
+const isPhraseOf = (ref: PhraseRef, kind: PhraseKind) => ref.kind === kind || (ref.phrase === 'missing' && ref.args[0] === kind);
 
-/** A `When <condition>:` rule, or `When a player <who>:` (the rule is then about each player it picks out). */
+/** What a rule's lines are about, from the kind of phrase its `When` line is: each player it picks out, each card, or no one. */
+function aboutOf(when: PhraseRef, ctx: LineCtx): LineCtx {
+  if (isPhraseOf(when, 'who')) return { ...ctx, player: true };
+  return isPhraseOf(when, 'which') ? { ...ctx, card: true } : ctx;
+}
+
+/**
+ * A `When <condition>:` rule, `When a player <who>:` (the rule is then about each player it picks out) or `When a card
+ * <which>:` (about each card it picks out).
+ */
 function compileTrigger(node: OutlineNode, clean: string, whenText: string, ctx: LineCtx): CompiledTrigger {
-  const when = matchLine('condition', whenText, node.line, ctx, 'who');
-  return { line: node.line, text: ruleText(clean), when, ...readWhenBody(node, isWho(when) ? { ...ctx, player: true } : ctx) };
+  const when = matchLine('condition', whenText, node.line, ctx, ['who', 'which']);
+  return { line: node.line, text: ruleText(clean), when, ...readWhenBody(node, aboutOf(when, ctx)) };
 }
 
 /** A `When a piece passes …:` or `When a player lands on …:` rule, about the player whose piece it is and the space. */
