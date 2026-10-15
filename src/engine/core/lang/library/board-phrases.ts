@@ -244,6 +244,13 @@ const paysBank: EffectFn = (env, [attr]) => transfer(env, theyOf(env), null, amo
 
 const paysAmount: EffectFn = (env, [n]) => transfer(env, theyOf(env), null, n as number);
 
+/** Players pay with one counter, so naming another is no use; the way to say it is given in the game's own words. */
+const paysAmountOf: EffectFn = (env, [n, counter]) => {
+  const payWith = boardIn(env).payWith;
+  if (payWith !== null && counter !== payWith) throw new RuleError(`Players pay with ${payWith}, so say “They pay ${n} ${payWith}.”`);
+  return paysAmount(env, [n]);
+};
+
 const paysOwner: EffectFn = (env, [attr]) => {
   const owner = ownerOfIt(env);
   return transfer(env, theyOf(env), owner, amountOf(env, attr as string));
@@ -432,6 +439,7 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('its player gets {int} {counter}', gets, { needsPlayer: true })
     .effect('they get {int} {counter}', gets, { needsPlayer: true })
     .effect('they pay {int}', paysAmount, { needsPlayer: true, needsPayment: true })
+    .effect('they pay {int} {counter}', paysAmountOf, { needsPlayer: true, needsPayment: true })
     .effect('they pay its {spaceattr}', paysBank, { needsPlayer: true, needsSpace: true, needsPayment: true })
     .effect('they pay its {spaceattr} to its owner', paysOwner, { needsPlayer: true, needsSpace: true, needsPayment: true })
     .effect('they pay {int} times the roll to its owner', paysRollToOwner, { needsPlayer: true, needsSpace: true, needsPayment: true, needsDice: true })

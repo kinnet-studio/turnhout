@@ -244,6 +244,23 @@ describe('paying', () => {
     const s = runPhrase<GameState>(lib, 'effect', 'they pay 50', env(fixtureBoardState(), as('p0')));
     expect([counterOf(s, 'money', 'p0'), counterOf(s, 'money', 'p1')]).toEqual([1450, 1500]);
   });
+  describe('an amount with the counter named', () => {
+    const base = fixtureBoardGame().board!;
+    const twoCounters = fixtureBoardGame({ board: { ...base, counters: [...base.counters, { name: 'tokens', start: 5, visibility: 'public' }] } });
+    const pays = (text: string, g = twoCounters) => runPhrase<GameState>(lib, 'effect', text, env(fixtureBoardState(g), { game: g, ...as('p0') }));
+
+    it('pays the bank, as the plain amount does', () => {
+      const s = pays('they pay 50 money');
+      expect([counterOf(s, 'money', 'p0'), counterOf(s, 'money', 'p1')]).toEqual([1450, 1500]);
+      expect(pays('they pay 50 money', game)).toEqual(runPhrase<GameState>(lib, 'effect', 'they pay 50', env(fixtureBoardState(), as('p0'))));
+    });
+    it('is refused for a counter players do not pay with, in words that say how to put it', () => {
+      expect(() => pays('they pay 5 tokens')).toThrow('Players pay with money, so say “They pay 5 money.”');
+    });
+    it('needs something to pay with, and a player', () => {
+      expect(lib.get('effect', 'they pay {int} {counter}')).toMatchObject({ needsPlayer: true, needsPayment: true });
+    });
+  });
   it('pays 4 times the roll', () => {
     const start = setRoll(setOwner(placePiece(fixtureBoardState(), 'p0', 6), 6, 'p1'), [1, 2]);
     const s = runPhrase<GameState>(lib, 'effect', 'they pay 4 times the roll to its owner', env(start, as('p0')));

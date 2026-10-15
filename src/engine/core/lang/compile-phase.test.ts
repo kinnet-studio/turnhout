@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { canPlay, compileGame } from './compile';
 import { actionLabel, compilePhase } from './compile-phase';
+import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { parseOutline } from './outline';
 import { vocabFrom } from './phrases';
@@ -618,6 +619,21 @@ describe('actions, moments and player rules on a board', () => {
     expect(it2.diagnostics).toContainEqual(expect.objectContaining({ message: NEEDS_SPACE('They own it') }));
     const pay = compileGame(`${TINY_BOARD_HEAD.replace('  Players pay with money.\n', '')}\n  A player may buy the space they are on.\n    Then:\n      They pay its price.`, lib);
     expect(pay.diagnostics).toContainEqual(expect.objectContaining({ message: 'Say what players pay with, like “Players pay with coins.” under Board:.' }));
+  });
+  it('takes an amount with the counter named, and says how to put it when another counter is named', () => {
+    const fee = (counter: string) => [
+      '  A player may pay a fee.', '    Then:', `      They pay 50 ${counter}.`, '',
+      'Example: paying the fee', '  When p0 pays a fee', '  Then p0 has 1450 money',
+    ].join('\n');
+    const both = (text: string) => compileGame(text.replace('  Players pay with money.', '  Each player has 5 tokens that everyone can see.\n  Players pay with money.'), lib);
+    const ok = both(`${TINY_BOARD_HEAD}\n${fee('money')}`);
+    expect(ok.diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(runExamples(ok.game!, lib)).toEqual([expect.objectContaining({ status: 'pass' })]);
+    const wrong = both(`${TINY_BOARD_HEAD}\n${fee('tokens')}`);
+    expect(runExamples(wrong.game!, lib)).toEqual([expect.objectContaining({ status: 'fail', message: expect.stringContaining('Players pay with money, so say “They pay 50 money.”') })]);
+    // With nothing to pay with, the amount is refused as it is without the counter.
+    const none = compileGame(`${TINY_BOARD_HEAD.replace('  Players pay with money.\n', '')}\n${fee('money')}`, lib);
+    expect(none.diagnostics).toContainEqual(expect.objectContaining({ message: 'Say what players pay with, like “Players pay with coins.” under Board:.' }));
   });
   it('refuses board phrases in a game with no board, and rolling in a game with no dice', () => {
     const NEEDS_BOARD = (line: string) => `“${line}” needs a board. Add a Board: section with a line like “The board is a loop of spaces, starting at Go:”.`;
