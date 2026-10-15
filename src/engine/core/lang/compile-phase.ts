@@ -1,20 +1,31 @@
-import { addProblem, matchEffectLine, matchLine, phaseId, rejectChildren, type LineCtx } from './compile-util';
+import { addProblem, canRead, matchEffectLine, matchLine, phaseId, rejectChildren, type LineCtx } from './compile-util';
 import type { OutlineNode } from './outline';
 import { normalizeLine, suggestNames } from './phrases';
-import { parseParam, thirdPerson, VOCAB_TYPES } from './refs';
-import type { CompiledPhase, CompiledTrigger, CondGroup, DeclaredMove, ParamType, PhraseRef, Vocab, ZoneRef } from './types';
+import { parseParam, thirdPerson, thirdPersonWords, VOCAB_TYPES } from './refs';
+import type {
+  CompiledMoment, CompiledPhase, CompiledTrigger, CondGroup, DeclaredAction, DeclaredMove, ParamType, PhraseRef, Vocab, ZoneRef,
+} from './types';
 
 const HINT = /^hint:\s*(.*)$/i;
 const REARRANGE = /^players may rearrange their (.+) at any time$/i;
 const STARTS = /^when this phase starts:?$/i;
 const GO_TO = /^when (.+), go to ([^:]+)$/i;
+/** Moments come before triggers: “When a player lands on …:” is a rule about where a piece goes, not a condition. */
+const MOMENT_LINE = /^when (a piece passes .+|a player lands on .+):$/i;
 const TRIGGER = /^when (.+):$/i;
 const ONLY_IF_ONE_OF = /^only if one of:?$/i;
 const ONLY_IF = /^only if (.+)$/i;
 const THEN = /^then:?$/i;
-/** After a player <verbs>, <turn phrase>: the verbs are single words, so the list runs as long as a comma and the turn phrase still follow it. */
-const AFTER = /^after a player (\w+(?:(?:, or |, | or )\w+)*), (.+)$/i;
+/** After a player <names>, <turn phrase>: the names may hold commas themselves, so where they end is found by trying each comma. */
+const AFTER = /^after a player (.+)$/i;
 const VERB_SEPARATOR = /, or |, | or /i;
+const COMMA = /, /g;
+/** `A player may <verb> <the rest>` where the line does not move a card: a button the player presses. */
+const ACTION_LINE = /^a player may (\w+)(?:\s+(.+))?$/i;
+const CARD_MOVE_WORDS = / a card from /i;
+/** Whole words of a button's text that name the player, as the player reads it. */
+const SECOND_PERSON = new Map([['their', 'your'], ["they're", "you're"], ['they', 'you'], ['them', 'you'], ['themselves', 'yourself']]);
+const THIRD_PERSON_WORD = /\b(?:they['‘’]re|themselves|their|they|them)\b/gi;
 
 const RESERVED_VERB = 'reorder';
 const NOT_UNDERSTOOD = "I don't understand this line in a phase. Phase lines start with Hint:, A player may…, When…, After a player…, Players take turns or Everyone acts at once.";
@@ -25,6 +36,7 @@ const ONE_AFTER = 'A phase can have only one “After a player …” rule.';
 const EMPTY_ONE_OF = 'Add the conditions under “Only if one of:”, one on each line.';
 
 const MAX_SUGGESTIONS = 3;
+const sameVerb = (verb: string) => `Two rules in this phase start “A player may ${verb}”. Start one with another word.`;
 
 /** The type that knows what a zone looks like in this game: a move line is built from its pattern. */
 const zoneType = ((): ParamType => {
@@ -96,37 +108,69 @@ function readCondition(node: OutlineNode, clean: string, ctx: LineCtx): CondGrou
   return { mode: 'all', refs: [ref], text: ref.text, line: node.line };
 }
 
-/** One declared move with its `Only if` conditions and `Then:` effects; null when the move line itself is wrong. */
-function compileMove(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx): DeclaredMove | null {
-  const inMove: LineCtx = { ...ctx, inMove: true };
-  const verb = found[1].toLowerCase();
-  const reserved = verb === RESERVED_VERB;
-  if (reserved) addProblem(ctx.diagnostics, node.line, `“${RESERVED_VERB}” is reserved; pick another word.`, { text: found[1] });
-  const zones = moveZones(node, found, ctx);
-
+/** The `Only if` groups and the `Then:` effects under a card move or an action; any other line is reported. */
+function readRuleBody(node: OutlineNode, ctx: LineCtx): { conditions: CondGroup[]; effects: PhraseRef[] } {
   const conditions: CondGroup[] = [];
   const effects: PhraseRef[] = [];
   for (const child of node.children) {
     const clean = normalizeLine(child.text);
-    const group = readCondition(child, clean, inMove);
+    const group = readCondition(child, clean, ctx);
     if (group) {
       conditions.push(group);
     } else if (THEN.test(clean)) {
       for (const line of child.children) {
         rejectChildren(line, ctx.diagnostics);
-        effects.push(matchEffectLine(line.text, line.line, inMove));
+        effects.push(matchEffectLine(line.text, line.line, ctx));
       }
     } else {
       addProblem(ctx.diagnostics, child.line, NOT_UNDERSTOOD_IN_MOVE, { text: clean });
     }
   }
+  return { conditions, effects };
+}
+
+/** One declared move with its `Only if` conditions and `Then:` effects; null when the move line itself is wrong. */
+function compileMove(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx): DeclaredMove | null {
+  const inMove: LineCtx = { ...ctx, inMove: true, player: true };
+  const verb = found[1].toLowerCase();
+  const reserved = verb === RESERVED_VERB;
+  if (reserved) addProblem(ctx.diagnostics, node.line, `“${RESERVED_VERB}” is reserved; pick another word.`, { text: found[1] });
+  const zones = moveZones(node, found, ctx);
+  const { conditions, effects } = readRuleBody(node, inMove);
   if (reserved || !zones) return null;
   return { verb, ...zones, fromText: found[2], conditions, effects, line: node.line };
 }
 
-/** A `When <condition>:` rule: its `Only if` lines add conditions, every other line is an effect. */
-function compileTrigger(node: OutlineNode, clean: string, whenText: string, ctx: LineCtx): CompiledTrigger {
-  const when = matchLine('condition', whenText, node.line, ctx);
+/** An `A player may …` line that does not move a card, or null: a line that does is a move, even a wrong one. */
+export function actionLine(clean: string): RegExpExecArray | null {
+  return CARD_MOVE_WORDS.test(clean) ? null : ACTION_LINE.exec(clean);
+}
+
+/** The verb (lowercase) and the words after “a player may” of an action line: the verb, then the rest as written. */
+export function actionOf(found: RegExpExecArray): { verb: string; words: string } {
+  const verb = found[1].toLowerCase();
+  return { verb, words: found[2] === undefined ? verb : `${verb} ${found[2]}` };
+}
+
+/** What an action's button says: its words in the second person, as the player reads them. */
+export function actionLabel(words: string): string {
+  const spoken = words.replace(THIRD_PERSON_WORD, (word) => SECOND_PERSON.get(word.toLowerCase().replace(/[‘’]/g, "'")) ?? word);
+  return spoken.charAt(0).toUpperCase() + spoken.slice(1);
+}
+
+/** One button a player may press, with its `Only if` conditions and `Then:` effects; null when its verb is reserved. */
+function compileAction(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx): DeclaredAction | null {
+  const { verb, words } = actionOf(found);
+  const reserved = verb === RESERVED_VERB;
+  if (reserved) addProblem(ctx.diagnostics, node.line, `“${RESERVED_VERB}” is reserved; pick another word.`, { text: found[1] });
+  // An action is about the player who presses it and the space their piece is on.
+  const { conditions, effects } = readRuleBody(node, { ...ctx, player: true, space: true });
+  if (reserved) return null;
+  return { verb, words, label: actionLabel(words), conditions, effects, line: node.line };
+}
+
+/** The `Only if` groups and the effects under a `When …:` rule; every line that is not an `Only if` is an effect. */
+function readWhenBody(node: OutlineNode, ctx: LineCtx): { conditions: CondGroup[]; effects: PhraseRef[] } {
   const conditions: CondGroup[] = [];
   const effects: PhraseRef[] = [];
   for (const child of node.children) {
@@ -138,7 +182,25 @@ function compileTrigger(node: OutlineNode, clean: string, whenText: string, ctx:
       effects.push(matchEffectLine(child.text, child.line, ctx));
     }
   }
-  return { line: node.line, text: clean.slice(0, -1).trimEnd(), when, conditions, effects };
+  return { conditions, effects };
+}
+
+/** The rule's own line without its colon, as the designer wrote it. */
+const ruleText = (clean: string) => clean.slice(0, -1).trimEnd();
+
+/** A line placeholder or phrase that asked who a rule is about. */
+const isWho = (ref: PhraseRef) => ref.kind === 'who' || (ref.phrase === 'missing' && ref.args[0] === 'who');
+
+/** A `When <condition>:` rule, or `When a player <who>:` (the rule is then about each player it picks out). */
+function compileTrigger(node: OutlineNode, clean: string, whenText: string, ctx: LineCtx): CompiledTrigger {
+  const when = matchLine('condition', whenText, node.line, ctx, 'who');
+  return { line: node.line, text: ruleText(clean), when, ...readWhenBody(node, isWho(when) ? { ...ctx, player: true } : ctx) };
+}
+
+/** A `When a piece passes …:` or `When a player lands on …:` rule, about the player whose piece it is and the space. */
+function compileMoment(node: OutlineNode, clean: string, whenText: string, ctx: LineCtx): CompiledMoment {
+  const about: LineCtx = { ...ctx, player: true, space: true };
+  return { line: node.line, text: ruleText(clean), when: matchLine('moment', whenText, node.line, about), ...readWhenBody(node, about) };
 }
 
 /** The phase a `go to` names, or null (with suggestions given) when the game has no such phase. */
@@ -152,33 +214,46 @@ function targetPhase(name: string, line: number, ctx: LineCtx): string | null {
   return null;
 }
 
-/** An `After a player <verbs>, <turn phrase>` line. `declared` is every move verb the phase's move lines name. */
-function readAfter(node: OutlineNode, found: RegExpExecArray, declared: string[], ctx: LineCtx, seen: boolean): CompiledPhase['after'] {
+/** An After line cut at one of its commas: what comes before may name moves and actions, what comes after may be a turn phrase. */
+type AfterCut = { list: string; turn: string };
+
+/** Every way to cut the text of an After line at a comma, the first comma first. */
+function afterCuts(body: string): AfterCut[] {
+  return [...body.matchAll(COMMA)].map((m) => ({ list: body.slice(0, m.index), turn: body.slice(m.index + 2) }));
+}
+
+/**
+ * An `After a player <names>, <turn phrase>` line. `names` holds every way this phase's moves and actions can be named
+ * (“plays”, “ends their turn”), in lowercase, each for the verb it stands for. Names and phrase may both hold commas,
+ * so the line is cut where a turn phrase follows names that are all known; failing that, where the names are known.
+ */
+function readAfter(node: OutlineNode, cuts: AfterCut[], names: Map<string, string>, ctx: LineCtx, seen: boolean): CompiledPhase['after'] {
   rejectChildren(node, ctx.diagnostics);
   if (seen) {
     addProblem(ctx.diagnostics, node.line, ONE_AFTER, { text: normalizeLine(node.text) });
     return null;
   }
-  const byName = new Map(declared.map((verb) => [thirdPerson(verb), verb] as const));
+  const named = (list: string) => list.split(VERB_SEPARATOR).every((word) => names.has(word.toLowerCase()));
+  const cut = cuts.find((c) => named(c.list) && canRead('turn', c.turn, ctx)) ?? cuts.find((c) => named(c.list)) ?? cuts[0];
   const verbs: string[] = [];
   let known = true;
-  for (const word of found[1].split(VERB_SEPARATOR)) {
-    const verb = byName.get(word.toLowerCase());
+  for (const word of cut.list.split(VERB_SEPARATOR)) {
+    const verb = names.get(word.toLowerCase());
     if (verb === undefined) {
-      const moves = byName.size > 0 ? `The moves here are: ${[...byName.keys()].join(', ')}.` : 'This phase has no moves.';
+      const moves = names.size > 0 ? `The moves here are: ${[...names.keys()].join(', ')}.` : 'This phase has no moves.';
       addProblem(ctx.diagnostics, node.line, `“${word}” isn't a move in this phase. ${moves}`, { text: word });
       known = false;
     } else if (!verbs.includes(verb)) {
       verbs.push(verb);
     }
   }
-  const next = matchLine('turn', found[2], node.line, ctx);
+  const next = matchLine('turn', cut.turn, node.line, ctx);
   return known ? { verbs, next, line: node.line } : null;
 }
 
 /**
- * One `Phase:` block: its hint and who acts, the moves players may make with their conditions and effects, what
- * happens when it starts, the rules that fire while it lasts, where it goes next, and when the turn passes.
+ * One `Phase:` block: its hint and who acts, the moves and actions players may make with their conditions and effects,
+ * what happens when it starts, the rules that fire while it lasts, where it goes next, and when the turn passes.
  */
 export function compilePhase(node: OutlineNode, ctx: LineCtx): CompiledPhase {
   const phase: CompiledPhase = {
@@ -186,9 +261,10 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx): CompiledPhase {
     goTo: null, triggers: [], after: null, actions: [], moments: [],
   };
   const moveLine = moveLineFor(ctx.vocab);
-  // After lines are read last: they may come before the moves they name. A move with a problem still counts as named.
-  const afters: { node: OutlineNode; found: RegExpExecArray }[] = [];
+  // After lines are read last: they may come before the moves and actions they name. One with a problem still counts as named.
+  const afters: { node: OutlineNode; cuts: AfterCut[] }[] = [];
   const moveVerbs: string[] = [];
+  const actionNames: { verb: string; words: string }[] = [];
   let hinted = false;
   let sawGoTo = false;
 
@@ -198,9 +274,12 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx): CompiledPhase {
     const hint = HINT.exec(child.text);
     const rearrange = REARRANGE.exec(clean);
     const move = moveLine.exec(clean) ?? LOOSE_MOVE_LINE.exec(clean);
+    const action = move ? null : actionLine(clean);
     const goTo = GO_TO.exec(clean);
+    const moment = MOMENT_LINE.exec(clean);
     const trigger = TRIGGER.exec(clean);
     const after = AFTER.exec(clean);
+    const cuts = after ? afterCuts(after[1]) : [];
 
     if (hint) {
       if (hinted) addProblem(ctx.diagnostics, child.line, 'A phase can have only one Hint.');
@@ -218,9 +297,19 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx): CompiledPhase {
         phase.rearrange.push(zone.value as string);
       }
     } else if (move) {
-      moveVerbs.push(move[1].toLowerCase());
+      const verb = move[1].toLowerCase();
+      if (actionNames.some((a) => a.verb === verb)) addProblem(ctx.diagnostics, child.line, sameVerb(verb), { text: clean });
+      moveVerbs.push(verb);
       const declared = compileMove(child, move, ctx);
       if (declared) phase.moves.push(declared);
+      continue;
+    } else if (action) {
+      const { verb, words: actionWords } = actionOf(action);
+      const taken = moveVerbs.includes(verb) || actionNames.some((a) => a.verb === verb);
+      if (taken) addProblem(ctx.diagnostics, child.line, sameVerb(verb), { text: clean });
+      else actionNames.push({ verb, words: actionWords });
+      const declared = compileAction(child, action, ctx);
+      if (declared && !taken) phase.actions.push(declared);
       continue;
     } else if (STARTS.test(clean)) {
       for (const line of child.children) {
@@ -237,11 +326,14 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx): CompiledPhase {
         if (to !== null) phase.goTo = { when, to, line: child.line };
       }
       sawGoTo = true;
+    } else if (moment) {
+      phase.moments.push(compileMoment(child, clean, moment[1], ctx));
+      continue;
     } else if (trigger) {
       phase.triggers.push(compileTrigger(child, clean, trigger[1], ctx));
       continue;
-    } else if (after) {
-      afters.push({ node: child, found: after });
+    } else if (after && cuts.length > 0) {
+      afters.push({ node: child, cuts });
       continue;
     } else {
       addProblem(ctx.diagnostics, child.line, NOT_UNDERSTOOD, { text: clean });
@@ -250,8 +342,15 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx): CompiledPhase {
     rejectChildren(child, ctx.diagnostics);
   }
 
-  afters.forEach(({ node: line, found }, index) => {
-    const after = readAfter(line, found, moveVerbs, ctx, index > 0);
+  // “plays”, “ends” and “ends their turn” each name a verb.
+  const names = new Map<string, string>();
+  for (const verb of moveVerbs) names.set(thirdPerson(verb), verb);
+  for (const { verb, words: actionWords } of actionNames) {
+    names.set(thirdPerson(verb), verb);
+    names.set(thirdPersonWords(actionWords).toLowerCase(), verb);
+  }
+  afters.forEach(({ node: line, cuts }, index) => {
+    const after = readAfter(line, cuts, names, ctx, index > 0);
     if (index === 0) phase.after = after;
   });
   return phase;

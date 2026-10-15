@@ -1,6 +1,6 @@
 import { MAX_CARDS, TOO_MANY_CARDS } from './cards';
 import { compileExample } from './compile-example';
-import { compilePhase } from './compile-phase';
+import { actionLine, actionOf, compilePhase } from './compile-phase';
 import { addProblem, attempt, matchEffectLine, matchLine, phaseId, phraseFn, rejectChildren, type LineCtx } from './compile-util';
 import type { Diagnostic } from './diagnostics';
 import { parseOutline, type OutlineNode } from './outline';
@@ -72,6 +72,18 @@ function holdBack(diagnostics: Diagnostic[], stages: Section[][]): void {
   const kept = diagnostics.filter((d) => !held(d));
   diagnostics.splice(0, diagnostics.length, ...kept);
   addProblem(diagnostics, Math.min(...heldLines), HOLD_BACK(root), { severity: 'warning' });
+}
+
+/** The buttons the phase lines declare, one for each wording; lines that move a card are not buttons. */
+function readActions(lines: string[]): Vocab['actions'] {
+  const byWords = new Map<string, Vocab['actions'][number]>();
+  for (const line of lines) {
+    const found = actionLine(line);
+    if (!found) continue;
+    const action = actionOf(found);
+    if (!byWords.has(action.words.toLowerCase())) byWords.set(action.words.toLowerCase(), action);
+  }
+  return [...byWords.values()];
 }
 
 /** The lines inside every section of one kind, in the order written. */
@@ -250,7 +262,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   const name = readGameName(of('game'), diagnostics);
   const players = readPlayers(of('players'), diagnostics);
   const maxPlayers = players?.max ?? 0;
-  const stage = (vocab: Vocab): LineCtx => ({ library, vocab, gameName: name ?? 'Untitled', inMove: false, diagnostics });
+  const stage = (vocab: Vocab): LineCtx => ({ library, vocab, gameName: name ?? 'Untitled', inMove: false, player: false, space: false, diagnostics });
 
   // A board game may have no cards and no zones at all.
   if (of('board').length === 0) {
@@ -265,11 +277,14 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   for (const node of phaseNodes) if (phaseId(node) === '') addProblem(diagnostics, node.line, 'Give the phase a name, like “Phase: playing”.');
   const named = phaseNodes.filter((node) => phaseId(node) !== '');
   const phaseIds = [...new Set(named.map(phaseId))];
-  const verbs = [...new Set(named.flatMap((node) => node.children).flatMap((c) => MOVE_VERB.exec(normalizeLine(c.text))?.[1].toLowerCase() ?? []))];
+  const phaseLines = named.flatMap((node) => node.children).map((c) => normalizeLine(c.text));
+  const verbs = [...new Set(phaseLines.flatMap((line) => MOVE_VERB.exec(line)?.[1].toLowerCase() ?? []))];
+  // Buttons are read ahead too: “they have not rolled this turn” may come before the action that rolls.
+  const actions = readActions(phaseLines);
 
-  const cards = compileCards(linesOf(of('cards')), stage(vocabFrom({ maxPlayers, zones, phases: phaseIds, verbs })));
+  const cards = compileCards(linesOf(of('cards')), stage(vocabFrom({ maxPlayers, zones, phases: phaseIds, verbs, actions })));
 
-  const ctx = stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board }));
+  const ctx = stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board, actions }));
   const setup = linesOf(of('setup')).map((node) => {
     rejectChildren(node, diagnostics);
     return matchEffectLine(node.text, node.line, ctx);

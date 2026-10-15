@@ -97,6 +97,25 @@ export const TEST_DUEL = [
   '  The player with an empty hand wins.',
 ].join('\n');
 
+/**
+ * A board game written the way a designer would, down to its first phase line: four spaces, a piece, a counter that
+ * pays for things and two dice. Line 4 is `Board:` and the last line is `  Players take turns.`; rules go below it.
+ */
+export const TINY_BOARD_HEAD = [
+  'Game: Tiny Board', 'Players: 2 to 4', '', 'Board:',
+  '  The board is a loop of spaces, starting at Go:',
+  '    | space      | kind   | color  | price | rent | tax |',
+  '    | Go         | go     |        |       |      |     |',
+  '    | Mill Lane  | street | brown  | 60    | 2    |     |',
+  '    | Income Tax | tax    |        |       |      | 200 |',
+  '    | Rose Lane  | street | orange | 180   | 14   |     |',
+  '  Each player has a piece that starts on Go.',
+  '  Each player has 1500 money that everyone can see.',
+  '  Players pay with money.',
+  '  There are two six-sided dice.',
+  '', 'Phase: playing', '  Players take turns.',
+].join('\n');
+
 /** The loop of the board fixtures: a start, two streets, a tax, a station, a utility and two chance spaces. */
 export const FIXTURE_SPACES: SpaceSpec[] = [
   { name: 'Go', attrs: { kind: 'go' } },

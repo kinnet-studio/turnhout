@@ -3,6 +3,7 @@ import { canPlay, compileGame } from './compile';
 import { createDefaultLibrary } from './library';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
+import { TINY_BOARD_HEAD } from './testing';
 import type { ParamType } from './types';
 
 const lib = createDefaultLibrary();
@@ -498,21 +499,6 @@ describe('compileGame after a broken Players:, Cards: or Table: line', () => {
 });
 
 describe('the Board: section', () => {
-  const TINY_BOARD_HEAD = [
-    'Game: Tiny Board', 'Players: 2 to 4', '', 'Board:',
-    '  The board is a loop of spaces, starting at Go:',
-    '    | space      | kind   | color  | price | rent | tax |',
-    '    | Go         | go     |        |       |      |     |',
-    '    | Mill Lane  | street | brown  | 60    | 2    |     |',
-    '    | Income Tax | tax    |        |       |      | 200 |',
-    '    | Rose Lane  | street | orange | 180   | 14   |     |',
-    '  Each player has a piece that starts on Go.',
-    '  Each player has 1500 money that everyone can see.',
-    '  Players pay with money.',
-    '  There are two six-sided dice.',
-    '', 'Phase: playing', '  Players take turns.',
-  ].join('\n');
-
   /** The head with `extra` lines (already indented) put in after line `after`. */
   const withLines = (after: number, ...extra: string[]) => {
     const lines = TINY_BOARD_HEAD.split('\n');
