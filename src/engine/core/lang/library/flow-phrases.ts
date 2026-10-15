@@ -1,0 +1,162 @@
+import { zoneCards, type GameState } from '../../game-state';
+import { shuffleWithRng } from '../../rng';
+import { RuleError } from '../diagnostics';
+import type { PhraseLibrary } from '../phrases';
+import type { CardMatch, ConditionFn, EffectFn, PhraseEnv, ScoreFn, TurnFn, WinnerFn, ZoneRef } from '../types';
+import { chooseNext, leftOf, matchesCard, relocate, resolveSeat, resolveZoneIds, topCard, zoneIdFor, zoneInfo } from '../zones';
+import { describeZone, soleZone } from './support';
+
+const idsIn = (state: GameState, zoneId: string): string[] => zoneCards(state, zoneId).map((c) => c.id);
+
+// ---- conditions ------------------------------------------------------------------------------
+
+/** A condition on the size of a zone; “each hand” must pass in every one of the hands. */
+const sizeIs = (test: (have: number, n: number) => boolean): ConditionFn => (env, args) => {
+  const [ref, n] = args as [ZoneRef, number];
+  return resolveZoneIds(ref, env).every((id) => test(zoneCards(env.state, id).length, n));
+};
+
+const zonesEmpty: ConditionFn = (env, args) =>
+  (args[0] as ZoneRef[]).every((ref) => resolveZoneIds(ref, env).every((id) => zoneCards(env.state, id).length === 0));
+
+const someSeatEmpty: ConditionFn = (env, args) =>
+  env.seats.some((seat) => zoneCards(env.state, zoneIdFor(args[0] as string, seat)).length === 0);
+
+// ---- effects ---------------------------------------------------------------------------------
+
+/** Puts the zone's cards in a new order, slots rewritten 0…n-1. */
+function shuffleOne(state: GameState, zoneId: string): GameState {
+  const { items, rng } = shuffleWithRng(zoneCards(state, zoneId), state.rng);
+  const slotById = new Map(items.map((c, i) => [c.id, i] as const));
+  return {
+    ...state,
+    rng,
+    cards: state.cards.map((c) => {
+      const slot = slotById.get(c.id);
+      return slot === undefined ? c : { ...c, slot };
+    }),
+  };
+}
+
+const shuffle: EffectFn = (env, args) => resolveZoneIds(args[0] as ZoneRef, env).reduce(shuffleOne, env.state);
+
+function notEnoughCards(left: number, from: ZoneRef): RuleError {
+  const where = describeZone(from);
+  if (left === 0) return new RuleError(`There are no cards left in ${where}.`);
+  return new RuleError(`Only ${left} ${left === 1 ? 'card is' : 'cards are'} left in ${where}.`);
+}
+
+const deal: EffectFn = (env, args) => {
+  const [count, fromRef, toRef] = args as [number, ZoneRef, ZoneRef];
+  if (count < 0) throw new RuleError('A negative number of cards cannot be dealt.');
+  const from = soleZone(fromRef, env);
+  let state = env.state;
+  for (const to of resolveZoneIds(toRef, env)) {
+    const remaining = zoneCards(state, from);
+    if (remaining.length < count) throw notEnoughCards(remaining.length, fromRef);
+    const top = count > 0 ? remaining.slice(-count) : [];
+    state = relocate(state, top.map((c) => c.id), to, env.game);
+  }
+  return state;
+};
+
+const moveAll: EffectFn = (env, args) => {
+  const [fromRef, toRef] = args as [ZoneRef, ZoneRef];
+  const to = soleZone(toRef, env);
+  const ids = resolveZoneIds(fromRef, env).flatMap((id) => idsIn(env.state, id));
+  return relocate(env.state, ids, to, env.game);
+};
+
+const moveTop: EffectFn = (env, args) => {
+  const [fromRef, toRef] = args as [ZoneRef, ZoneRef];
+  const from = soleZone(fromRef, env);
+  const to = soleZone(toRef, env);
+  const top = topCard(env.state, from);
+  if (!top) throw new RuleError(`There is no card to move: ${describeZone(fromRef)} is empty.`);
+  return relocate(env.state, [top.id], to, env.game);
+};
+
+const shuffleRestInto: EffectFn = (env, args) => {
+  const [fromRef, toRef] = args as [ZoneRef, ZoneRef];
+  const from = soleZone(fromRef, env);
+  const to = soleZone(toRef, env);
+  const { items, rng } = shuffleWithRng(zoneCards(env.state, from).slice(0, -1), env.state.rng);
+  return relocate({ ...env.state, rng }, items.map((c) => c.id), to, env.game);
+};
+
+const passLeft: EffectFn = (env, args) => {
+  const [fromZone, toZone] = args as [string, string];
+  // Worked out for every seat first, so a zone that is both a source and a target passes the cards it started with.
+  const passes = env.seats.map((seat) => ({
+    ids: idsIn(env.state, zoneIdFor(fromZone, seat)),
+    to: zoneIdFor(toZone, leftOf(seat, env.seats)),
+  }));
+  return passes.reduce((state, { ids, to }) => relocate(state, ids, to, env.game), env.state);
+};
+
+const winnerGoesNext: EffectFn = (env) => chooseNext(env.state, resolveSeat({ who: 'winner' }, env));
+
+const holderGoesFirst: EffectFn = (env, args) => {
+  const match = args[0] as CardMatch;
+  const holds = (seat: string) =>
+    env.state.cards.some((c) => matchesCard(c, match) && zoneInfo(env.game, c.zoneId)?.seat === seat);
+  const holder = env.seats.find(holds);
+  if (holder === undefined) throw new RuleError('No player is holding that card.');
+  return chooseNext(env.state, holder);
+};
+
+// ---- turn order, scores and winners ----------------------------------------------------------
+
+const passesLeft: TurnFn = (env) => {
+  if (!env.state.turn) throw new RuleError('There is no turn to pass.');
+  return leftOf(env.state.turn.current, env.seats);
+};
+
+const everyCardScores: ScoreFn = (env, args, seat) => {
+  const [match, zone, points] = args as [CardMatch, string, number];
+  return zoneCards(env.state, zoneIdFor(zone, seat)).filter((c) => matchesCard(c, match)).length * points;
+};
+
+const oneCardScores: ScoreFn = (env, args, seat) => {
+  const [match, zone, points] = args as [CardMatch, string, number];
+  return zoneCards(env.state, zoneIdFor(zone, seat)).some((c) => matchesCard(c, match)) ? points : 0;
+};
+
+/** The seat whose score `better` prefers; a tie goes to the earlier seat. */
+const bestScore = (better: (score: number, best: number) => boolean): WinnerFn => (env: PhraseEnv, _args, scores) => {
+  const scoreOf = (seat: string) => scores[seat] ?? 0;
+  return env.seats.reduce((best, seat) => (better(scoreOf(seat), scoreOf(best)) ? seat : best));
+};
+
+const emptyZoneWins: WinnerFn = (env, args) => {
+  const zone = args[0] as string;
+  const winner = env.seats.find((seat) => zoneCards(env.state, zoneIdFor(zone, seat)).length === 0);
+  if (winner === undefined) throw new RuleError(`No player has an empty ${zone}.`);
+  return winner;
+};
+
+/** Counting zones, moving and shuffling cards, who goes next, scoring and winning. */
+export function registerFlowPhrases(lib: PhraseLibrary): PhraseLibrary {
+  return lib
+    .condition('{zone} has {int} card(s)', sizeIs((have, n) => have === n))
+    .condition('{zone} has fewer than {int} cards', sizeIs((have, n) => have < n))
+    .condition('{zone} has more than {int} card(s)', sizeIs((have, n) => have > n))
+    .condition('{zone} is empty', sizeIs((have) => have === 0))
+    .condition('{zone} is not empty', sizeIs((have) => have > 0))
+    .condition('{zones} are empty', zonesEmpty)
+    .condition("a player's {perzone} is empty", someSeatEmpty)
+    .effect('shuffle {zone}', shuffle)
+    .effect('deal {int} cards from {zone} to {zone}', deal)
+    .effect('move {zone} to {zone}', moveAll)
+    .effect('move the top card of {zone} to {zone}', moveTop)
+    .effect('shuffle {zone}, except its top card, into {zone}', shuffleRestInto)
+    .effect("each {perzone} goes to the {perzone} of the player on its owner's left", passLeft)
+    .effect('the winner goes next', winnerGoesNext)
+    .effect('the player holding {card} goes first', holderGoesFirst)
+    .turn('the turn passes to the left', passesLeft)
+    .score("each {cardclass} in a player's {perzone} scores {int} point(s)", everyCardScores)
+    .score("{card} in a player's {perzone} scores {int} point(s)", oneCardScores)
+    .winner('the lowest score wins', bestScore((score, best) => score < best))
+    .winner('the highest score wins', bestScore((score, best) => score > best))
+    .winner('the player with an empty {perzone} wins', emptyZoneWins);
+}
