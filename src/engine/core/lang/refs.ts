@@ -49,7 +49,7 @@ const SEPARATOR_SOURCE = `(?:${SEPARATORS.join('|')})`;
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** Comparison form of a word: lowercase, straight apostrophes. */
-const canon = (s: string) => s.toLowerCase().replace(/[‘’]/g, "'");
+export const canon = (s: string) => s.toLowerCase().replace(/[‘’]/g, "'");
 
 /** Regex source for a vocabulary word or phrase: escaped, with any apostrophe form accepted. */
 const wordSource = (word: string) => escapeRegex(canon(word)).replace(/'/g, APOSTROPHE);

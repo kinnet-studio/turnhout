@@ -6,24 +6,26 @@ import type { Diagnostic } from './diagnostics';
 import { parseOutline, type OutlineNode } from './outline';
 import { normalizeLine, vocabFrom, type PhraseLibrary } from './phrases';
 import type {
-  CardSetSpec, CardsFn, CompiledEnd, CompiledGame, CompiledPhase, PhraseRef, Vocab, ZoneFn, ZoneSpec,
+  BoardFn, BoardSpec, CardSetSpec, CardsFn, CompiledEnd, CompiledGame, CompiledPhase, PhraseRef, SpaceSpec, Vocab, ZoneFn, ZoneSpec,
 } from './types';
 
 export type CompileResult = { game?: CompiledGame; diagnostics: Diagnostic[] };
 
-const SECTION = /^(game|players|cards|table|setup|phase|end|example)\s*:\s*(.*)$/i;
+const SECTION = /^(game|players|cards|table|board|setup|phase|end|example)\s*:\s*(.*)$/i;
 const PLAYERS = /^(\d+)(?:\s+to\s+(\d+))?$/i;
 const MOVE_VERB = /^a player may (\w+) a card from /i;
 const GAME_ENDS = /^the game ends when\s+(.+)$/i;
 const SAYS_WINS = /\bwins\b/i;
-const BLOCK_SECTIONS = new Set(['cards', 'table', 'setup', 'end']);
+const LOOP_LINE = /^the\s+board\s+is\s+a\s+loop\b/i;
+const BLOCK_SECTIONS = new Set(['cards', 'table', 'board', 'setup', 'end']);
 
 const MAX_PLAYERS = 12;
 
 const MISSING_GAME = 'Start with a line like “Game: My Game”.';
 const BAD_PLAYERS = 'Say how many players, like “Players: 4” or “Players: 2 to 5”.';
 const TOO_MANY_PLAYERS = `This game can have at most ${MAX_PLAYERS} players.`;
-const UNKNOWN_SECTION = "I don't understand this section. Sections are Game, Players, Cards, Table, Setup, Phase, End and Example.";
+const UNKNOWN_SECTION = "I don't understand this section. Sections are Game, Players, Cards, Table, Board, Setup, Phase, End and Example.";
+const NO_LOOP = 'Add a line like “The board is a loop of spaces, starting at Go:” under Board:.';
 const HOLD_BACK = (line: number) => `Some lines below can't be checked until line ${line} is fixed.`;
 
 type Section = { keyword: string; rest: string; node: OutlineNode };
@@ -51,10 +53,11 @@ function linesIn(node: OutlineNode): number[] {
 }
 
 /**
- * The Players:, Table: and Cards: sections give every other line its words: the seats, the zones and the cards. While
- * one of their lines has an error, what the rule lines below it say about those words is held back, and one warning
- * stands in for it; the problems on their own lines are always shown. The line to fix is the first error in the order
- * those words are read (cards name the zones they start in), so that fixing it cannot be blocked by another.
+ * The Players:, Board:, Table: and Cards: sections give every other line its words: the seats, the spaces and counters,
+ * the zones and the cards. While one of their lines has an error, what the rule lines below it say about those words
+ * is held back, and one warning stands in for it; the problems on their own lines are always shown. The line to fix is
+ * the first error in the order those words are read (cards name the zones they start in), so that fixing it cannot be
+ * blocked by another.
  */
 function holdBack(diagnostics: Diagnostic[], stages: Section[][]): void {
   const lineSet = (sections: Section[]) => new Set(sections.flatMap((s) => linesIn(s.node)));
@@ -140,6 +143,58 @@ function compileCards(lines: OutlineNode[], ctx: LineCtx): CardSetSpec[] {
   return sets;
 }
 
+/** What the Board: lines above a line have said, as a board the lines below can name spaces and counters of. */
+type BoardParts = { spaces: SpaceSpec[] | null; pieces: BoardSpec['pieces']; counters: BoardSpec['counters']; dice: BoardSpec['dice']; payWith: string | null };
+
+const boardOf = (parts: BoardParts): BoardSpec => ({ ...parts, spaces: parts.spaces ?? [] });
+
+/**
+ * Reads the Board: lines in the order written. Every line is read with the words of the lines above it (a piece
+ * starts on a space the table already named), so each gets a vocabulary of its own. A line that repeats one above
+ * is reported and the first one stands. Null when there is no Board: section, or no loop of spaces in it.
+ */
+function compileBoard(sections: Section[], maxPlayers: number, stage: (vocab: Vocab) => LineCtx): BoardSpec | null {
+  if (sections.length === 0) return null;
+  const parts: BoardParts = { spaces: null, pieces: null, counters: [], dice: null, payWith: null };
+  const ctxFor = () => stage(vocabFrom({ maxPlayers, board: boardOf(parts) }));
+  const { diagnostics } = ctxFor();
+  for (const node of linesOf(sections)) {
+    const ctx = ctxFor();
+    rejectChildren(node, diagnostics);
+    const ref = matchLine('board', node.text.replace(/:$/, ''), node.line, ctx);
+    if (ref.kind !== 'board') continue;
+    const part = attempt(ctx, node.line, ref.text, () => phraseFn<BoardFn>(ctx, ref)(ref.args, node.table));
+    if (!part) continue;
+    const already = (message: string) => addProblem(diagnostics, node.line, message);
+    switch (part.kind) {
+      case 'loop':
+        if (parts.spaces) already('There is already a board line above.');
+        else parts.spaces = part.spaces;
+        break;
+      case 'pieces':
+        if (parts.pieces) already('Pieces are already described above.');
+        else parts.pieces = { start: part.start };
+        break;
+      case 'counter':
+        if (parts.counters.some((c) => c.name === part.counter.name)) already(`There are two counters called “${part.counter.name}”.`);
+        else parts.counters = [...parts.counters, part.counter];
+        break;
+      case 'dice':
+        if (parts.dice) already('The dice are already described above.');
+        else parts.dice = { count: part.count, sides: part.sides };
+        break;
+      case 'pay-with':
+        if (parts.payWith) already('There is already a “Players pay with …” line above.');
+        else parts.payWith = part.counter;
+        break;
+    }
+  }
+  if (parts.spaces) return boardOf(parts);
+  // A loop line with a problem has said so already; this is for a Board: that never had one.
+  if (!linesOf(sections).some((node) => LOOP_LINE.test(node.text))) addProblem(diagnostics, sections[0].node.line, NO_LOOP);
+  return null;
+}
+
 /** A phase that is not the first needs a `go to` from some other phase, or the game can never reach it. */
 function warnUnreachable(phases: CompiledPhase[], diagnostics: Diagnostic[]): void {
   phases.forEach((phase, index) => {
@@ -197,8 +252,12 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   const maxPlayers = players?.max ?? 0;
   const stage = (vocab: Vocab): LineCtx => ({ library, vocab, gameName: name ?? 'Untitled', inMove: false, diagnostics });
 
-  if (of('cards').length === 0) addProblem(diagnostics, 1, 'Add a Cards: section.');
-  if (of('table').length === 0) addProblem(diagnostics, 1, 'Add a Table: section.');
+  // A board game may have no cards and no zones at all.
+  if (of('board').length === 0) {
+    if (of('cards').length === 0) addProblem(diagnostics, 1, 'Add a Cards: section.');
+    if (of('table').length === 0) addProblem(diagnostics, 1, 'Add a Table: section.');
+  }
+  const board = compileBoard(of('board'), maxPlayers, stage);
   const zones = compileTable(linesOf(of('table')), stage(vocabFrom({ maxPlayers })));
 
   // Phases and move verbs are read ahead, so a rule may name a phase that comes later in the text.
@@ -210,7 +269,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
 
   const cards = compileCards(linesOf(of('cards')), stage(vocabFrom({ maxPlayers, zones, phases: phaseIds, verbs })));
 
-  const ctx = stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs }));
+  const ctx = stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board }));
   const setup = linesOf(of('setup')).map((node) => {
     rejectChildren(node, diagnostics);
     return matchEffectLine(node.text, node.line, ctx);
@@ -232,9 +291,9 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
 
   // Decided before anything is held back: a game whose held-back lines have problems is not one to play.
   const onlyUnknownPhrases = diagnostics.every((d) => d.severity !== 'error' || d.kind === 'unknown-phrase');
-  holdBack(diagnostics, [of('players'), of('table'), of('cards')]);
+  holdBack(diagnostics, [of('players'), of('board'), of('table'), of('cards')]);
   if (name === null || players === null || phases.length === 0 || !onlyUnknownPhrases) return undefined;
-  return { name, players, zones, cards, setup, phases, end, examples, board: null };
+  return { name, players, zones, cards, setup, phases, end, examples, board };
 }
 
 /**

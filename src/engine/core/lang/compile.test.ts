@@ -103,7 +103,7 @@ describe('compileGame header and sections', () => {
 
   it('flags unknown top-level lines', () => {
     expect(messages(`${BASE}\nRules:\n  Be nice.`)).toEqual([
-      [22, 'I don\'t understand this section. Sections are Game, Players, Cards, Table, Setup, Phase, End and Example.'],
+      [22, 'I don\'t understand this section. Sections are Game, Players, Cards, Table, Board, Setup, Phase, End and Example.'],
     ]);
   });
 
@@ -492,7 +492,142 @@ describe('compileGame after a broken Players:, Cards: or Table: line', () => {
   it('still reports structure problems below a broken line', () => {
     expect(messages(`${BASE.replace('Players: 2 to 3', 'Players: four')}\nRules:\n  Be nice.`)).toEqual([
       [2, 'Say how many players, like “Players: 4” or “Players: 2 to 5”.'],
-      [22, 'I don\'t understand this section. Sections are Game, Players, Cards, Table, Setup, Phase, End and Example.'],
+      [22, 'I don\'t understand this section. Sections are Game, Players, Cards, Table, Board, Setup, Phase, End and Example.'],
     ]);
+  });
+});
+
+describe('the Board: section', () => {
+  const TINY_BOARD_HEAD = [
+    'Game: Tiny Board', 'Players: 2 to 4', '', 'Board:',
+    '  The board is a loop of spaces, starting at Go:',
+    '    | space      | kind   | color  | price | rent | tax |',
+    '    | Go         | go     |        |       |      |     |',
+    '    | Mill Lane  | street | brown  | 60    | 2    |     |',
+    '    | Income Tax | tax    |        |       |      | 200 |',
+    '    | Rose Lane  | street | orange | 180   | 14   |     |',
+    '  Each player has a piece that starts on Go.',
+    '  Each player has 1500 money that everyone can see.',
+    '  Players pay with money.',
+    '  There are two six-sided dice.',
+    '', 'Phase: playing', '  Players take turns.',
+  ].join('\n');
+
+  /** The head with `extra` lines (already indented) put in after line `after`. */
+  const withLines = (after: number, ...extra: string[]) => {
+    const lines = TINY_BOARD_HEAD.split('\n');
+    lines.splice(after, 0, ...extra);
+    return lines.join('\n');
+  };
+  const errors = (text: string) => compileGame(text, createDefaultLibrary()).diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message]);
+
+  it('compiles a Board: section', () => {
+    const { game, diagnostics } = compileGame(TINY_BOARD_HEAD, createDefaultLibrary());
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(game!.board).toEqual({
+      spaces: [
+        { name: 'Go', attrs: { kind: 'go' } },
+        { name: 'Mill Lane', attrs: { kind: 'street', color: 'brown', price: 60, rent: 2 } },
+        { name: 'Income Tax', attrs: { kind: 'tax', tax: 200 } },
+        { name: 'Rose Lane', attrs: { kind: 'street', color: 'orange', price: 180, rent: 14 } },
+      ],
+      pieces: { start: 0 }, counters: [{ name: 'money', start: 1500, visibility: 'public' }],
+      dice: { count: 2, sides: 6 }, payWith: 'money',
+    });
+  });
+  it('needs neither a Cards: nor a Table: section, but a game without a board does', () => {
+    expect(errors(TINY_BOARD_HEAD)).toEqual([]);
+    const noBoard = ['Game: X', 'Players: 2', '', 'Phase: main', '  Players take turns.'].join('\n');
+    expect(errors(noBoard)).toEqual([[1, 'Add a Cards: section.'], [1, 'Add a Table: section.']]);
+    expect(compileGame(BASE, lib).game!.board).toBeNull();
+  });
+  it('reads the lines in the order written, whatever the capitals', () => {
+    const text = TINY_BOARD_HEAD.replace('starts on Go.', 'starts on GO.').replace('Rose Lane  |', 'ROSE LANE  |');
+    const { game, diagnostics } = compileGame(text, createDefaultLibrary());
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(game!.board!.pieces).toEqual({ start: 0 });
+    expect(game!.board!.spaces[3].name).toBe('ROSE LANE');
+  });
+  it('names a counter the board never declared', () => {
+    const { diagnostics } = compileGame(TINY_BOARD_HEAD.replace('pay with money', 'pay with gold'), createDefaultLibrary());
+    expect(diagnostics).toContainEqual(expect.objectContaining({ line: 13, message: 'There is no counter called “gold”.', suggestions: ['money'] }));
+  });
+  it('names a space the table never defined', () => {
+    const { diagnostics } = compileGame(TINY_BOARD_HEAD.replace('starts on Go.', 'starts on Goo.'), createDefaultLibrary());
+    expect(diagnostics).toContainEqual(expect.objectContaining({ line: 11, message: 'There is no space called “Goo”.', suggestions: ['Go'] }));
+  });
+  it('says when the loop line names another first space', () => {
+    const { diagnostics } = compileGame(TINY_BOARD_HEAD.replace('starting at Go:', 'starting at Start:'), createDefaultLibrary());
+    expect(diagnostics).toContainEqual(expect.objectContaining({ line: 5, message: 'The first space in the table is “Go”, but this line says the board starts at “Start”.' }));
+  });
+  it('quotes the name on the loop line with each word capitalised, and accepts another spelling of the first space', () => {
+    expect(errors(TINY_BOARD_HEAD.replace('starting at Go:', 'starting at mill lane:'))).toContainEqual(
+      [5, 'The first space in the table is “Go”, but this line says the board starts at “Mill Lane”.'],
+    );
+    expect(errors(TINY_BOARD_HEAD.replace('starting at Go:', 'starting at GO:'))).toEqual([]);
+  });
+  it('wants a table under the loop line', () => {
+    const text = TINY_BOARD_HEAD.split('\n').filter((_, i) => i < 5 || i > 9).join('\n');
+    expect(errors(text)).toContainEqual([5, 'Add a table of spaces under this line.']);
+  });
+  it('shows a problem in the table on its own row, and holds back what the rest of the game says about it', () => {
+    const text = `${TINY_BOARD_HEAD.replace('| Income Tax |', '| 1 to 9     |')}\n\nSetup:\n  Shuffle the deck.`;
+    const diagnostics = compileGame(text, createDefaultLibrary()).diagnostics;
+    expect(diagnostics.filter((d) => d.line === 9).map((d) => d.message)).toEqual(['A space table can\'t use ranges like “1 to 9”; give each space its own row.']);
+    expect(diagnostics.filter((d) => d.line === 20).map((d) => [d.severity, d.message])).toEqual([['warning', 'Some lines below can\'t be checked until line 9 is fixed.']]);
+  });
+  it('reports a Board: with no loop of spaces in it', () => {
+    const text = TINY_BOARD_HEAD.split('\n').filter((_, i) => i < 4 || i > 9).join('\n');
+    const { game, diagnostics } = compileGame(text, createDefaultLibrary());
+    expect(diagnostics.filter((d) => d.line === 4).map((d) => d.message)).toEqual(['Add a line like “The board is a loop of spaces, starting at Go:” under Board:.']);
+    expect(game?.board ?? null).toBeNull();
+  });
+  it('does not ask for a loop line when the one written has a problem', () => {
+    const text = TINY_BOARD_HEAD.replace('| space      |', '| place      |');
+    expect(errors(text).filter(([line]) => line === 4)).toEqual([]);
+    expect(errors(text)).toContainEqual([5, 'Add a “space” column naming each space.']);
+  });
+  it('reports a second loop, second piece line and second pay line on the later line', () => {
+    const loop = TINY_BOARD_HEAD.split('\n').slice(4, 10);
+    expect(errors(withLines(10, ...loop))).toContainEqual([11, 'There is already a board line above.']);
+    expect(errors(withLines(11, '  Each player has a piece that starts on Mill Lane.'))).toEqual([[12, 'Pieces are already described above.']]);
+    expect(errors(withLines(13, '  Players pay with money.'))).toEqual([[14, 'There is already a “Players pay with …” line above.']]);
+  });
+  it('reports two counters with one name, however they are written', () => {
+    expect(errors(withLines(12, '  Each player has 3 Money that only they can see.'))).toEqual([[13, 'There are two counters called “money”.']]);
+    const { game, diagnostics } = compileGame(withLines(12, '  Each player has 3 lives that only they can see.'), createDefaultLibrary());
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(game!.board!.counters).toEqual([
+      { name: 'money', start: 1500, visibility: 'public' }, { name: 'lives', start: 3, visibility: 'owner' },
+    ]);
+  });
+  it('lets no one hide a counter from everybody', () => {
+    expect(errors(TINY_BOARD_HEAD.replace('that everyone can see', 'that no one can see'))).toContainEqual([12, 'A number a player has can be seen by everyone or only by them.']);
+  });
+  it('reports a second dice line', () => {
+    const { diagnostics } = compileGame(TINY_BOARD_HEAD.replace('six-sided dice.', 'six-sided dice.\n  There is one six-sided die.'), createDefaultLibrary());
+    expect(diagnostics).toContainEqual(expect.objectContaining({ line: 15, message: 'The dice are already described above.' }));
+  });
+  it('reads one die and counts as digits', () => {
+    const dice = (line: string) => compileGame(TINY_BOARD_HEAD.replace('There are two six-sided dice.', line), createDefaultLibrary()).game!.board!.dice;
+    expect(dice('There is one 20-sided die.')).toEqual({ count: 1, sides: 20 });
+    expect(dice('There are 10 100-sided dice.')).toEqual({ count: 10, sides: 100 });
+    expect(dice('There are 3 two-sided dice.')).toEqual({ count: 3, sides: 2 });
+  });
+  it('limits the dice to 1 to 10 dice of 2 to 100 sides', () => {
+    const limit = 'Dice need 1 to 10 dice of 2 to 100 sides.';
+    for (const line of ['There are 11 six-sided dice.', 'There are 0 six-sided dice.', 'There are two 101-sided dice.', 'There is one 1-sided die.', 'There are two 0-sided dice.']) {
+      expect(errors(TINY_BOARD_HEAD.replace('There are two six-sided dice.', line))).toEqual([[14, limit]]);
+    }
+  });
+  it('lets a game leave out the piece, the counters and the dice', () => {
+    const text = TINY_BOARD_HEAD.split('\n').filter((_, i) => i < 10 || i > 13).join('\n');
+    const { game, diagnostics } = compileGame(text, createDefaultLibrary());
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(game!.board).toMatchObject({ pieces: null, counters: [], dice: null, payWith: null });
+  });
+  it('says so for a line under Board: that is not a board sentence', () => {
+    const { diagnostics } = compileGame(withLines(14, '  There is a bank.'), createDefaultLibrary());
+    expect(diagnostics).toContainEqual(expect.objectContaining({ line: 15, kind: 'unknown-phrase', message: '“There is a bank” isn\'t in the phrase library yet.' }));
   });
 });
