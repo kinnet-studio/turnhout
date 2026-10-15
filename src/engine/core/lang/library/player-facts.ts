@@ -29,6 +29,15 @@ const theyAreNot: ConditionFn = (env, args) => !theyAre(env, args);
 
 const theyHave: ConditionFn = (env, [n, fact]) => countOf(env.state, theyOf(env), fact as string) === n;
 
+/** Only players still in are asked: what a player had when they left counts for no one. */
+const noPlayerIs: ConditionFn = (env, [fact]) => !playersIn(env.state, env.seats).some((seat) => isSet(env.state, seat, fact as string));
+
+/** Not counting them, who the rule is about: the others still in are the ones asked. */
+const noOtherPlayerIs: ConditionFn = (env, [fact]) => {
+  const they = theyOf(env);
+  return !playersIn(env.state, env.seats).some((seat) => seat !== they && isSet(env.state, seat, fact as string));
+};
+
 // ---- effects ---------------------------------------------------------------------------------
 
 const theyBecome = (value: boolean): EffectFn => (env, [fact]) => setPlayerFact(env.state, theyOf(env), fact as string, value);
@@ -39,6 +48,10 @@ const theyGain: EffectFn = (env, [n, fact]) => {
 };
 
 const theirGoBackTo: EffectFn = (env, [fact, n]) => setPlayerFact(env.state, theyOf(env), fact as string, n as number);
+
+/** Every player still in; one who is out keeps what they had, and nothing reads it. */
+const everyPlayerBecomes = (value: boolean): EffectFn => (env, [fact]) =>
+  playersIn(env.state, env.seats).reduce((state, seat) => setPlayerFact(state, seat, fact as string, value), env.state);
 
 // ---- who -------------------------------------------------------------------------------------
 
@@ -74,8 +87,9 @@ const hasExpected: ExpectFn = (env, [seat, n, fact]) => {
 /**
  * The sentences for facts about players, which a game declares under Board: with “Players can have …” (a count, starting at 0)
  * and “Players can be …” (a yes/no, starting at no). A name may be several words. Then the sentences a rule uses: asking what
- * the player it is about has or is, changing it, and finding the players still in who have or are something. And the Given and
- * Then lines that set and check these in an example.
+ * the player it is about has or is, changing it, and finding the players still in who have or are something. Also a yes/no on every
+ * player still in at once, and whether none of them, or none but the player it is about, has it. And the Given and Then lines
+ * that set and check these in an example.
  */
 export function registerPlayerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
@@ -84,10 +98,14 @@ export function registerPlayerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
     .condition('they are {playerflag}', theyAre, { needsPlayer: true })
     .condition('they are not {playerflag}', theyAreNot, { needsPlayer: true })
     .condition('they have {int} {playernumber}', theyHave, { needsPlayer: true })
+    .condition('no player is {playerflag}', noPlayerIs)
+    .condition('no other player is {playerflag}', noOtherPlayerIs, { needsPlayer: true })
     .effect('they are {playerflag}', theyBecome(true), { needsPlayer: true })
     .effect('they are not {playerflag}', theyBecome(false), { needsPlayer: true })
     .effect('they gain {int} {playernumber}', theyGain, { needsPlayer: true })
     .effect('their {playernumber} go back to {int}', theirGoBackTo, { needsPlayer: true })
+    .effect('every player is {playerflag}', everyPlayerBecomes(true))
+    .effect('no player is {playerflag}', everyPlayerBecomes(false))
     .who('a player is {playerflag}', aPlayerIs)
     .who('a player has {int} {playernumber}', aPlayerHas)
     .given('{player} is {playerflag}', isGiven)

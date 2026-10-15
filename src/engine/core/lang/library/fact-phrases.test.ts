@@ -1182,3 +1182,23 @@ describe('a small card game with facts, played from a designer\'s words', () => 
     });
   });
 });
+
+describe('the one space with a flag', () => {
+  it('gives the one flagged space an owner, and clears a flag on it', () => {
+    const owned = effect('they own the space that is mortgaged', setSpaceFact(fresh(FLAGGED), ROSE, 'mortgaged', true), null, FLAGGED);
+    expect(ownerOf(owned, ROSE)).toBe('p0');
+    const cleared = effect('the space that is mortgaged is not mortgaged', owned, null, FLAGGED);
+    expect([spaceFact(cleared, ROSE, 'mortgaged'), ownerOf(cleared, ROSE)]).toEqual([false, 'p0']);
+  });
+  it('is an error when no space, or more than one, has the flag', () => {
+    expect(() => effect('they own the space that is mortgaged', fresh(FLAGGED), null, FLAGGED)).toThrow('No space is mortgaged.');
+    const two = setSpaceFact(setSpaceFact(fresh(FLAGGED), ROSE, 'mortgaged', true), 1, 'mortgaged', true);
+    expect(() => effect('they own the space that is mortgaged', two, null, FLAGGED)).toThrow('More than one space is mortgaged: Mill Lane and Rose Lane.');
+    expect(() => effect('the space that is mortgaged is not mortgaged', two, null, FLAGGED)).toThrow('More than one space is mortgaged: Mill Lane and Rose Lane.');
+  });
+  it('clears it on every space', () => {
+    const flagged = [1, ROSE, LILY].reduce((s, at) => setSpaceFact(s, at, 'mortgaged', true), fresh(FLAGGED));
+    const s = effect('no space is mortgaged', flagged, null, FLAGGED);
+    expect([1, ROSE, LILY].map((at) => spaceFact(s, at, 'mortgaged'))).toEqual([false, false, false]);
+  });
+});

@@ -104,7 +104,7 @@ const bounded = (source: string) => `(?<!\\w)(?:${source})(?!\\w)`;
 const joinWith = (conjunction: string) => (words: string[]) =>
   (words.length < 2 ? words.join('') : `${words.slice(0, -1).join(', ')} ${conjunction} ${words.at(-1)}`);
 export const joinOr = joinWith('or');
-const joinAnd = joinWith('and');
+export const joinAnd = joinWith('and');
 
 const unknownText = (text: string): { error: string } => ({ error: `I don't understand “${text}” here.` });
 

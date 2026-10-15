@@ -101,6 +101,34 @@ describe('rules about a player', () => {
   });
 });
 
+describe('a flag on every player at once', () => {
+  const jailed = (state: GameState, ...who: PlayerId[]) => who.reduce((s, seat) => setPlayerFact(s, seat, 'in jail', true), state);
+
+  it('Review Focus: sets it on every player still in, and never counts a player who is out', () => {
+    const s = effect('every player is in jail', markOut(fresh(), 'p2'));
+    expect(seats.map((seat) => playerFact(s, seat, 'in jail'))).toEqual([true, true, null]);
+    const stale = markOut(jailed(fresh(), 'p2'), 'p2');
+    expect(condition('no player is in jail', stale)).toBe(true);
+    expect(condition('no other player is in jail', jailed(stale, 'p0'), 'p0')).toBe(true);
+  });
+  it('clears it on every player still in', () => {
+    const s = effect('no player is in jail', jailed(fresh(), 'p0', 'p1'));
+    expect(seats.map((seat) => playerFact(s, seat, 'in jail'))).toEqual([false, false, false]);
+  });
+  it('judges whether no player, or no player but them, has it', () => {
+    expect(condition('no player is in jail', fresh())).toBe(true);
+    expect(condition('no player is in jail', jailed(fresh(), 'p1'))).toBe(false);
+    expect(condition('no other player is in jail', jailed(fresh(), 'p0'), 'p0')).toBe(true);
+    expect(condition('no other player is in jail', jailed(fresh(), 'p0', 'p1'), 'p0')).toBe(false);
+  });
+  it('needs a player only to say who the others are', () => {
+    expect(lib.get('condition', 'no other player is {playerflag}')).toMatchObject({ needsPlayer: true });
+    expect(lib.get('condition', 'no player is {playerflag}')).toMatchObject({ needsPlayer: false });
+    expect(lib.get('effect', 'every player is {playerflag}')).toMatchObject({ needsPlayer: false });
+    expect(lib.get('effect', 'no player is {playerflag}')).toMatchObject({ needsPlayer: false });
+  });
+});
+
 describe('examples about player facts', () => {
   it('gives a player the facts directly', () => {
     const s = given('p1 has 2 jail turns', given('p1 is in jail'));

@@ -1,11 +1,11 @@
 import { cardById, zoneCards, type GameState } from '../../game-state';
 import type { CardState, PlayerId } from '../../scene';
 import { bankItemOf } from '../board';
-import { bankOf, ownerOf, setBank, setSpaceFact, spaceFact } from '../board-state';
+import { bankOf, ownerOf, setBank, setOwner, setSpaceFact, spaceFact } from '../board-state';
 import { cardAttribute, cardFact, changeCard } from '../card-facts';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
-import { counted, singularForms } from '../refs';
+import { counted, joinAnd, singularForms } from '../refs';
 import type {
   BoardSpec, CardMatch, ConditionFn, DeclareFn, EffectFn, ExpectFn, FactItem, MomentFn, PhraseEnv, SpaceClass, SpaceSpec, TargetFn, ThingFact,
   WhichFn, WinnerFn, ZoneRef,
@@ -61,6 +61,15 @@ function bankItemFor(env: PhraseEnv, fact: FactItem): string {
 const withArticle = (noun: string): string => `${/^[aeiou]/i.test(noun) ? 'an' : 'a'} ${noun}`;
 
 const nameOfSpace = (env: PhraseEnv, space: number): string => boardOf(env).spaces[space].name;
+
+/** The one space that has the flag set. None, or several, is a mistake in the rule, said as one with the spaces in board order. */
+function theSpaceThatIs(env: PhraseEnv, flag: string): number {
+  const { spaces } = boardOf(env);
+  const flagged = spaces.flatMap((_space, at) => (spaceFact(env.state, at, flag) === true ? [at] : []));
+  if (flagged.length === 0) throw new RuleError(`No space is ${flag}.`);
+  if (flagged.length > 1) throw new RuleError(`More than one space is ${flag}: ${joinAnd(flagged.map((at) => spaces[at].name))}.`);
+  return flagged[0];
+}
 
 // ---- conditions ------------------------------------------------------------------------------
 
@@ -152,6 +161,18 @@ const landsOnSpaceOwnedByOther: MomentFn = (env, _args, moment) => {
 
 /** Sets the flag on the space the rule is about, or clears it. */
 const itBecomes = (value: boolean): EffectFn => (env, [fact]) => setSpaceFact(env.state, itOf(env), fact as string, value);
+
+const theyOwnTheSpaceThatIs: EffectFn = (env, [flag]) => setOwner(env.state, theSpaceThatIs(env, flag as string), theyOf(env));
+
+/** Clears a flag on the space the first one picks, which that flag itself may be. */
+const theSpaceThatIsIsNot: EffectFn = (env, [flag, cleared]) =>
+  setSpaceFact(env.state, theSpaceThatIs(env, flag as string), cleared as string, false);
+
+/** Clears the flag on every space that has it set; a space that never had it is left as it was. */
+const noSpaceIs: EffectFn = (env, [flag]) =>
+  boardOf(env).spaces.reduce(
+    (state, _space, at) => (spaceFact(state, at, flag as string) === true ? setSpaceFact(state, at, flag as string, false) : state), env.state,
+  );
 
 /** Clears the flag on every space they own, and on no one else's. */
 const theirAreNoLonger: EffectFn = (env, [fact]) => {
@@ -374,10 +395,10 @@ const bankHasExpected: ExpectFn = (env, [n, name]) => {
 /**
  * The sentences that say what a game keeps facts about: what a space or a card can have, or be, while the game is played.
  * A plural noun is a count (starting at 0) and “a” or “an” and a noun, or an adjective, is a yes/no (starting at no). Then the
- * sentences that read and change what a space has or is, and what the bank holds, that ask whether a player owns a whole set, and
- * that say which spaces a button may pick. And those about cards: which cards a rule is about, whether one has a flag,
- * changing every card of a zone, raising or lowering a number a card has, moving the card a rule is about, and the player
- * with the most cards.
+ * sentences that read and change what a space has or is, and what the bank holds, that ask whether a player owns a whole set, that
+ * say which spaces a button may pick, and that act on the one space with a flag set, or on every space with it. And those about
+ * cards: which cards a rule is about, whether one has a flag, changing every card of a zone, raising or lowering a number a card
+ * has, moving the card a rule is about, and the player with the most cards.
  */
 export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
@@ -414,6 +435,9 @@ export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('it is {spaceflag}', itBecomes(true), { needsSpace: true })
     .effect('it is not {spaceflag}', itBecomes(false), { needsSpace: true })
     .effect('their spaces are no longer {spaceflag}', theirAreNoLonger, { needsPlayer: true, needsBoard: true })
+    .effect('they own the space that is {spaceflag}', theyOwnTheSpaceThatIs, { needsPlayer: true, needsBoard: true })
+    .effect('the space that is {spaceflag} is not {spaceflag}', theSpaceThatIsIsNot, { needsBoard: true })
+    .effect('no space is {spaceflag}', noSpaceIs, { needsBoard: true })
     .effect('its {spacenumber} go back to the bank', countGoesBack, { needsSpace: true })
     .effect('one of its {spacenumber} goes back to the bank', oneGoesBack, { needsSpace: true })
     .effect('its {spaceflag} goes back to the bank', flagGoesBack, { needsSpace: true })

@@ -508,6 +508,28 @@ describe('owning', () => {
   });
 });
 
+describe('whether a space has an owner, or a detail', () => {
+  const GO = 0;
+  const MILL = 1;
+  const ROSE = 5;
+  const holds = (text: string, state: GameState, space: number) => runPhrase<boolean>(lib, 'condition', text, env(state, as('p0', space)));
+
+  it('says whether anyone owns it, the player the rule is about included', () => {
+    const start = fixtureBoardState();
+    expect(holds('someone owns it', setOwner(start, ROSE, 'p1'), ROSE)).toBe(true);
+    expect(holds('someone owns it', setOwner(start, ROSE, 'p0'), ROSE)).toBe(true);
+    expect(holds('someone owns it', start, ROSE)).toBe(false);
+  });
+  it('says whether it lacks a detail', () => {
+    expect(holds('it has no price', fixtureBoardState(), GO)).toBe(true);
+    expect(holds('it has no price', fixtureBoardState(), MILL)).toBe(false);
+  });
+  it('needs a space and a board to ask who owns it, and only a space to ask about a detail', () => {
+    expect(lib.get('condition', 'someone owns it')).toMatchObject({ needsSpace: true, needsBoard: true });
+    expect(lib.get('condition', 'it has no {spaceattr}')).toMatchObject({ needsSpace: true });
+  });
+});
+
 describe('going out', () => {
   it('takes a player out and passes the turn when it was theirs', () => {
     const s = runPhrase<GameState>(lib, 'effect', 'they are out', env(fixtureBoardState(), as('p0')));

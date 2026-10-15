@@ -157,7 +157,12 @@ const hasRolledFewerDoubles: ConditionFn = (env, [n]) => doublesRolled(env.state
 
 const spaceHas: ConditionFn = (env, [attr]) => boardIn(env).spaces[itOf(env)].attrs[attr as string] !== undefined;
 
+const spaceHasNo: ConditionFn = (env, args) => !spaceHas(env, args);
+
 const noOneOwns: ConditionFn = (env) => ownerOf(env.state, itOf(env)) === null;
+
+/** Anyone at all, the player the rule is about included, which “someone else owns it” leaves out. */
+const someoneOwns: ConditionFn = (env) => ownerOf(env.state, itOf(env)) !== null;
 
 /** “Else” is relative to the subject player; with no player in the rule, any owner is someone else. */
 const someoneElseOwns: ConditionFn = (env) => {
@@ -508,7 +513,9 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .condition('they have rolled fewer than {int} double(s) this turn', hasRolledFewerDoubles, THEIR_DOUBLES)
     .condition('it has a {spaceattr}', spaceHas, { needsSpace: true })
     .condition('it has an {spaceattr}', spaceHas, { needsSpace: true })
+    .condition('it has no {spaceattr}', spaceHasNo, { needsSpace: true })
     .condition('no one owns it', noOneOwns, { needsSpace: true, needsBoard: true })
+    .condition('someone owns it', someoneOwns, { needsSpace: true, needsBoard: true })
     .condition('someone else owns it', someoneElseOwns, { needsSpace: true, needsBoard: true })
     .condition('they own it', theyOwn, { needsPlayer: true, needsSpace: true, needsBoard: true })
     .condition('they have at least its {spaceattr} in {counter}', haveAtLeastItsAmount, { needsPlayer: true, needsSpace: true })
