@@ -50,6 +50,8 @@ Board:
   There are two six-sided dice.
   Spaces can have houses and a hotel.
   The bank has 32 houses and 12 hotels.
+  Players can be in jail.
+  Players can have jail turns.
 
 Rent:
   A street's rent depends on its houses and hotel.
@@ -58,13 +60,34 @@ Rent:
   A utility's rent is 4 times the roll, or 10 times when its owner has both.
 
 Phase: playing
-  Hint: Roll the dice, then buy, build, or end your turn.
+  Hint: Roll the dice, then buy, build, or end your turn. A double rolls again.
   Players take turns.
   A player may roll the dice.
+    Only if they are not in jail.
+    Only if they have not rolled for a double this turn.
+    Only if one of:
+      they have not rolled this turn
+      they rolled a double
+    Then:
+      Roll the dice.
+      If they have rolled fewer than 3 doubles this turn, their piece moves forward by the roll.
+  A player may pay to leave jail.
+    Only if they are in jail.
+    Only if they have not rolled this turn.
+    Only if they have at least 50 money.
+    Then:
+      They pay 50.
+      They are not in jail.
+      Their jail turns go back to 0.
+  A player may roll for a double.
+    Only if they are in jail.
     Only if they have not rolled this turn.
     Then:
       Roll the dice.
-      Their piece moves forward by the roll.
+      If they rolled a double, they are not in jail.
+      If they are in jail, they gain 1 jail turn.
+      If they are not in jail, their jail turns go back to 0.
+      If they are not in jail, their piece moves forward by the roll.
   A player may buy the space they are on.
     Only if they have rolled this turn.
     Only if it has a price.
@@ -91,6 +114,22 @@ Phase: playing
       If it has no hotel, it gets a house from the bank.
   A player may end their turn.
     Only if they have rolled this turn.
+    Only if one of:
+      they did not roll a double
+      they are in jail
+      they have rolled for a double this turn
+  When a player has rolled 3 doubles this turn:
+    Only if they are not in jail.
+    Their piece goes straight to Jail.
+    They are in jail.
+  When a player lands on a go to jail space:
+    Their piece goes straight to Jail.
+    They are in jail.
+  When a player has 3 jail turns:
+    They pay 50.
+    They are not in jail.
+    Their jail turns go back to 0.
+    Their piece moves forward by the roll.
   When a piece passes Go:
     Its player gets 200 money.
   When a player lands on a space someone else owns:
@@ -159,7 +198,7 @@ Example: you cannot roll twice in one turn
   And the next roll is 1 and 2
   When p0 rolls the dice
   And p0 rolls the dice
-  Then it is rejected because "they have not rolled this turn"
+  Then it is rejected because "they have not rolled this turn or they rolled a double"
 
 Example: you cannot end your turn before rolling
   When p0 ends their turn
@@ -400,3 +439,129 @@ Example: four stations charge 200
   When p0 rolls the dice
   Then p0 has 1300 money
   And p1 has 1700 money
+
+Example: a double rolls again
+  Given p0 is on Go
+  And the next roll is 3 and 3
+  And the roll after that is 1 and 2
+  When p0 rolls the dice
+  Then p0 is on Ash Street
+  When p0 rolls the dice
+  Then it is accepted
+  And p0 is on Cedar Avenue
+
+Example: you cannot end your turn on a double
+  Given p0 is on Go
+  And the next roll is 3 and 3
+  When p0 rolls the dice
+  And p0 ends their turn
+  Then it is rejected because "they did not roll a double or they are in jail or they have rolled for a double this turn"
+
+Example: a third double sends you to jail
+  Given p0 is on Go
+  And p0 has rolled 2 doubles this turn
+  And the next roll is 4 and 4
+  When p0 rolls the dice
+  Then p0 is on Jail
+  And p0 is in jail
+  And p0 has 1500 money
+
+Example: Go To Jail sends you to jail without passing Go
+  Given p0 is on Bell Square
+  And the next roll is 2 and 4
+  When p0 rolls the dice
+  Then p0 is on Jail
+  And p0 is in jail
+  And p0 has 1500 money
+
+Example: in jail you cannot roll the dice
+  Given p0 is on Jail
+  And p0 is in jail
+  When p0 rolls the dice
+  Then it is rejected because "they are not in jail"
+
+Example: paying to leave jail
+  Given p0 is on Jail
+  And p0 is in jail
+  When p0 pays to leave jail
+  Then it is accepted
+  And p0 is not in jail
+  And p0 has 1450 money
+
+Example: a double gets you out of jail
+  Given p0 is on Jail
+  And p0 is in jail
+  And the next roll is 2 and 2
+  When p0 rolls for a double
+  Then it is accepted
+  And p0 is not in jail
+  And p0 is on Harbour Way
+
+Example: leaving jail by a double does not roll again
+  Given p0 is on Jail
+  And p0 is in jail
+  And the next roll is 2 and 2
+  When p0 rolls for a double
+  And p0 rolls the dice
+  Then it is rejected because "they have not rolled for a double this turn"
+
+Example: a failed roll keeps you in jail
+  Given p0 is on Jail
+  And p0 is in jail
+  And the next roll is 1 and 2
+  When p0 rolls for a double
+  Then p0 is in jail
+  And p0 has 1 jail turn
+  And p0 is on Jail
+
+Example: the third failed roll pays and moves
+  Given p0 is on Jail
+  And p0 is in jail
+  And p0 has 2 jail turns
+  And the next roll is 1 and 2
+  When p0 rolls for a double
+  Then p0 is not in jail
+  And p0 has 1450 money
+  And p0 is on Quay Street
+  And p0 has 0 jail turns
+
+Example: landing on Jail is just visiting
+  Given p0 is on Ash Street
+  And the next roll is 1 and 3
+  When p0 rolls the dice
+  Then p0 is on Jail
+  And p0 is not in jail
+
+Example: a double that lands on Go To Jail still ends the turn
+  Given p0 is on Bell Square
+  And the next roll is 3 and 3
+  When p0 rolls the dice
+  And p0 ends their turn
+  Then it is accepted
+  And it is p1's turn
+
+Example: one house raises the rent
+  Given p1 owns Rose Lane
+  And p1 owns Lily Lane
+  And p1 owns Iris Road
+  And Rose Lane has 1 house
+  And Lily Lane has 1 house
+  And Iris Road has 1 house
+  And p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 has 1430 money
+  And p1 has 1570 money
+
+Example: four houses raise the rent
+  Given p1 owns Rose Lane
+  And p1 owns Lily Lane
+  And p1 owns Iris Road
+  And Rose Lane has 4 houses
+  And Lily Lane has 4 houses
+  And Iris Road has 4 houses
+  And p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 has 750 money
+  And p1 has 2250 money

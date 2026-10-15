@@ -5,9 +5,11 @@ import { createDefaultLibrary } from '@/engine/core/lang/library';
 import { runExamples } from '@/engine/core/lang/examples';
 import { createEngine, initialState, seatsFor } from '@/engine/core/lang/build';
 import {
-  bankOf, counterOf, isOut, latestRoll, ownerOf, pieceAt, playersIn, setOwner, setRoll, spaceFact, withBoardData,
+  bankOf, counterOf, isOut, latestRoll, ownerOf, pieceAt, playerFact, playersIn, rollsThisTurn, setOwner, setRoll, spaceFact,
+  withBoardData,
 } from '@/engine/core/lang/board-state';
 import { targetCandidates } from '@/engine/core/lang/declared-actions';
+import { isDouble } from '@/engine/core/lang/library/board-phrases';
 import type { LangRuntime } from '@/engine/core/lang/runtime';
 import type { GameEngine } from '@/engine/core/game-engine';
 import type { GameState } from '@/engine/core/game-state';
@@ -22,6 +24,12 @@ const ROLL = 'roll the dice';
 const BUY = 'buy the space they are on';
 const BUILD = 'build a house on a street they own';
 const END = 'end their turn';
+const PAY = 'pay to leave jail';
+const ROLL_FOR_DOUBLE = 'roll for a double';
+/** Where Jail and Go To Jail are on the board, and what leaving jail costs. */
+const JAIL = 10;
+const GO_TO_JAIL = 30;
+const FINE = 50;
 /** What the bank starts with, which the board and the bank always add up to between them. */
 const HOUSES = 32;
 const HOTELS = 12;
@@ -37,6 +45,10 @@ type Watch = (before: GameState, move: Move, after: GameState) => void;
 const housesOn = (state: GameState, space: number): number => (spaceFact(state, space, 'houses') ?? 0) as number;
 const hasHotel = (state: GameState, space: number): boolean => spaceFact(state, space, 'hotel') === true;
 const buildingsOn = (state: GameState, space: number): number => housesOn(state, space) + (hasHotel(state, space) ? HOTEL_WORTH : 0);
+const inJail = (state: GameState, seat: PlayerId): boolean => playerFact(state, seat, 'in jail') === true;
+/** How many rolls for a double the player has failed since going to jail; a player it was never set on has failed none. */
+const jailTurns = (state: GameState, seat: PlayerId): number => (playerFact(state, seat, 'jail turns') ?? 0) as number;
+const doublesThisTurn = (state: GameState, seat: PlayerId): number => rollsThisTurn(state, seat).filter(isDouble).length;
 
 /** The first street the build button may pick that the move itself accepts, or null when there is none. */
 function buildable({ engine, runtime }: Table, by: PlayerId): number | null {
@@ -48,8 +60,11 @@ function buildable({ engine, runtime }: Table, by: PlayerId): number | null {
 }
 
 /**
- * One turn of a player who always buys and builds when allowed: roll, buy if they may, build on the first street they may
- * until they can't, then end their turn, unless the roll put them out (the turn has passed already) or ended the game.
+ * One turn of a player who always buys and builds when allowed. In jail, an even seat pays to leave whenever it may; an odd
+ * seat never does, so it rolls for a double and sometimes reaches the third failed roll, and every way out of jail comes up
+ * even with two players. Then it rolls while it may (a double rolls again, until the third sends it to jail), buying after
+ * each roll if it may, builds on the first street it may until it can't, and ends its turn. It stops as soon as a move puts
+ * it out (the turn has passed already) or ends the game.
  */
 function playTurn(table: Table, watch: Watch = () => {}): void {
   const { engine } = table;
@@ -60,10 +75,17 @@ function playTurn(table: Table, watch: Watch = () => {}): void {
     expect(outcome.ok, `${by} could not ${move.type}: ${outcome.reason}`).toBe(true);
     watch(before, move, engine.getState());
   };
-  make({ type: ROLL, by });
   const stillTheirs = () => engine.getState().result === undefined && engine.getState().turn!.current === by;
+  const may = (type: string) => stillTheirs() && engine.canDispatch({ type, by }) === true;
+  const rollWith = (type: string) => {
+    make({ type, by });
+    if (may(BUY)) make({ type: BUY, by });
+  };
+  const evenSeat = Number(by.slice(1)) % 2 === 0;
+  if (evenSeat && may(PAY)) make({ type: PAY, by });
+  if (may(ROLL_FOR_DOUBLE)) rollWith(ROLL_FOR_DOUBLE);
+  while (may(ROLL)) rollWith(ROLL);
   if (!stillTheirs()) return;
-  if (engine.canDispatch({ type: BUY, by }) === true) make({ type: BUY, by });
   for (let target = buildable(table, by); target !== null; target = buildable(table, by)) make({ type: BUILD, by, target });
   make({ type: END, by });
 }
@@ -78,35 +100,78 @@ function playUpTo(table: Table, turns: number, watch?: Watch): number {
 const totalMoney = (state: GameState, seats: PlayerId[]) => seats.reduce((sum, seat) => sum + counterOf(state, 'money', seat), 0);
 
 /**
- * The rules of money and of the bank, checked around every move. Money only comes in through Go and only leaves through tax,
- * purchases and building; rent moves it between players. Houses and hotels only move between the bank and the board.
+ * The rules of money, of the bank and of jail, checked around every move. Money only comes in through Go and only leaves
+ * through tax, purchases, building and leaving jail; rent moves it between players. Houses and hotels only move between the
+ * bank and the board. A player in jail is on Jail, and only a player in jail has jail turns, never more than two.
  */
 function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
   const { spaces } = runtime.game.board!;
+
+  /** Each seat's money changed by what `moved` says for it, and nobody else's changed at all. */
+  const moneyMoves = (before: GameState, after: GameState, moved: Record<PlayerId, number>, why: string) => {
+    for (const seat of seats) {
+      const got = counterOf(after, 'money', seat) - counterOf(before, 'money', seat);
+      expect(got, `${seat}'s money after ${why}`).toBe(moved[seat] ?? 0);
+    }
+  };
+
+  /**
+   * The mover's piece walked from `from` by the roll the move made: Go's salary on passing it, the tax of the space it lands
+   * on or its rent to the owner, and on top a fine to the bank. Go To Jail has no tax and no owner, and no walk onto it passes
+   * Go, so landing there pays nothing; it sends the piece straight to Jail and the player into jail.
+   */
+  const walks = (before: GameState, after: GameState, by: PlayerId, from: number, fine: number) => {
+    const roll = latestRoll(after)!;
+    const to = from + roll[0] + roll[1];
+    const at = to % SPACES;
+    const landed = spaces[at].attrs;
+    const salary = to >= SPACES ? 200 : 0;
+    const tax = landed.kind === 'tax' ? (landed.tax as number) : 0;
+    // Rent only moves money from the mover to the owner of the space they landed on, as much as the Rent: section says.
+    const owner = ownerOf(before, at);
+    const charged = owner !== null && owner !== by;
+    const rent = charged ? runtime.columnValue(setRoll(before, roll), at, 'rent')! : 0;
+    const moved: Record<PlayerId, number> = { [by]: salary - tax - rent - fine };
+    if (charged) moved[owner] = rent;
+    moneyMoves(before, after, moved, `${by} rolled ${roll} from space ${from}`);
+    if (isOut(after, by)) return;
+    const sent = at === GO_TO_JAIL;
+    expect(pieceAt(after, by), `${by}'s piece after rolling ${roll} from space ${from}`).toBe(sent ? JAIL : at);
+    expect(inJail(after, by), `${by} in jail after rolling ${roll} from space ${from}`).toBe(sent);
+  };
+
   return (before, move, after) => {
     const by = move.by as PlayerId;
     const change = totalMoney(after, seats) - totalMoney(before, seats);
-    if (move.type === ROLL) {
-      const from = pieceAt(before, by)!;
+    if (move.type === ROLL || move.type === ROLL_FOR_DOUBLE) {
       const roll = latestRoll(after)!;
       expect(roll).toHaveLength(2);
       expect(roll.every((face) => Number.isInteger(face) && face >= 1 && face <= 6)).toBe(true);
-      const to = from + roll[0] + roll[1];
-      const landed = spaces[to % SPACES].attrs;
-      const salary = to >= SPACES ? 200 : 0;
-      const tax = landed.kind === 'tax' ? (landed.tax as number) : 0;
-      expect(change, `${by} rolled ${roll} from space ${from}`).toBe(salary - tax);
-      if (!isOut(after, by)) expect(pieceAt(after, by)).toBe(to % SPACES);
-
-      // Rent only moves money from the mover to the owner of the space they landed on, as much as the Rent: section says.
-      const owner = ownerOf(before, to % SPACES);
-      const charged = owner !== null && owner !== by;
-      const rent = charged ? runtime.columnValue(setRoll(before, roll), to % SPACES, 'rent')! : 0;
-      for (const seat of seats) {
-        const expected = seat === by ? salary - tax - rent : seat === owner ? rent : 0;
-        const got = counterOf(after, 'money', seat) - counterOf(before, 'money', seat);
-        expect(got, `${seat}'s money after ${by} rolled ${roll} from space ${from}`).toBe(expected);
+    }
+    if (move.type === ROLL && doublesThisTurn(after, by) === 3) {
+      // The third double moves nothing and pays nothing: the piece goes straight to Jail.
+      moneyMoves(before, after, {}, `${by} rolled a third double`);
+      expect(pieceAt(after, by)).toBe(JAIL);
+      expect(inJail(after, by)).toBe(true);
+    } else if (move.type === ROLL) {
+      walks(before, after, by, pieceAt(before, by)!, 0);
+    } else if (move.type === ROLL_FOR_DOUBLE) {
+      expect(inJail(before, by), `${by} rolled for a double out of jail`).toBe(true);
+      expect(pieceAt(before, by)).toBe(JAIL);
+      const roll = latestRoll(after)!;
+      // A double lets them out at no cost, and the third failed roll lets them out for the fine; either way they walk from Jail.
+      if (isDouble(roll)) walks(before, after, by, JAIL, 0);
+      else if (jailTurns(before, by) === 2) walks(before, after, by, JAIL, FINE);
+      else {
+        moneyMoves(before, after, {}, `${by} failed to roll a double with ${roll}`);
+        expect(pieceAt(after, by)).toBe(JAIL);
+        expect(inJail(after, by)).toBe(true);
+        expect(jailTurns(after, by)).toBe(jailTurns(before, by) + 1);
       }
+    } else if (move.type === PAY) {
+      moneyMoves(before, after, { [by]: -FINE }, `${by} paid to leave jail`);
+      expect(inJail(after, by)).toBe(false);
+      expect(jailTurns(after, by)).toBe(0);
     } else if (move.type === BUY) {
       const at = pieceAt(before, by)!;
       expect(change).toBe(-(spaces[at].attrs.price as number));
@@ -141,6 +206,12 @@ function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
     for (const seat of seats) {
       if (isOut(after, seat)) expect(pieceAt(after, seat)).toBeNull();
       else expect(pieceAt(after, seat)).not.toBeNull();
+    }
+
+    for (const seat of playersIn(after, seats)) {
+      if (inJail(after, seat)) expect(pieceAt(after, seat), `${seat} is in jail but not on Jail`).toBe(JAIL);
+      else expect(jailTurns(after, seat), `${seat} has jail turns out of jail`).toBe(0);
+      expect(jailTurns(after, seat)).toBeLessThanOrEqual(2);
     }
   };
 }
@@ -178,7 +249,7 @@ describe('Rent Day (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(31);
+    expect(results).toHaveLength(45);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -190,12 +261,33 @@ describe('Rent Day (designer language)', () => {
     if (turns < 60 * n) expect(playersIn(table.engine.getState(), seats)).toHaveLength(1);
   }, 30_000);
 
-  it('ends 2-player games on its own: at least 9 of the seeds 1 to 10 reach a winner within 3000 turns', () => {
+  it('ends 2-player games on its own: at least 9 of the seeds 1 to 10 reach a winner within 3000 turns, going in and out of jail every way', () => {
     const seats = seatsFor(2);
     const unfinished: number[] = [];
+    // How many times, across the ten games, a player went into or out of jail each way.
+    const jail = {
+      'sent to jail by a third double': 0,
+      'sent to jail by landing on Go To Jail': 0,
+      'paid to leave jail': 0,
+      'freed by a double': 0,
+      'let out after a third failed roll': 0,
+    };
     for (let seed = 1; seed <= 10; seed++) {
       const table = createEngine(game!, lib, 2, initialState(game!, seed));
-      playUpTo(table, 3000, keepsTheRules(table.runtime, seats));
+      const rules = keepsTheRules(table.runtime, seats);
+      playUpTo(table, 3000, (before, move, after) => {
+        rules(before, move, after);
+        const by = move.by as PlayerId;
+        if (move.type === ROLL && !inJail(before, by) && inJail(after, by)) {
+          jail[doublesThisTurn(after, by) === 3 ? 'sent to jail by a third double' : 'sent to jail by landing on Go To Jail']++;
+        } else if (move.type === PAY) {
+          jail['paid to leave jail']++;
+        } else if (move.type === ROLL_FOR_DOUBLE && isDouble(latestRoll(after)!)) {
+          jail['freed by a double']++;
+        } else if (move.type === ROLL_FOR_DOUBLE && jailTurns(before, by) === 2) {
+          jail['let out after a third failed roll']++;
+        }
+      });
       const { result } = table.engine.getState();
       if (result === undefined) {
         unfinished.push(seed);
@@ -204,6 +296,7 @@ describe('Rent Day (designer language)', () => {
       expect(playersIn(table.engine.getState(), seats)).toEqual([(result as { winner: string }).winner]);
     }
     expect(unfinished.length, `seeds with no winner after 3000 turns: ${unfinished.join(', ')}`).toBeLessThanOrEqual(1);
+    for (const [way, times] of Object.entries(jail)) expect(times, `times a player was ${way}`).toBeGreaterThan(0);
   }, 60_000);
 
   it.each([[4, 1], [4, 2], [4, 3], [8, 1], [8, 2], [8, 3]])(

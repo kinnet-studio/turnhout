@@ -160,7 +160,7 @@ describe('Playtest of a board game', () => {
 
   it('keeps the status line of each seat, and draws no card table for a game with no zones', () => {
     mountRentDay();
-    const hint = 'Roll the dice, then buy, build, or end your turn.';
+    const hint = 'Roll the dice, then buy, build, or end your turn. A double rolls again.';
     expect(screen.getByText(`seat: p0 — Your turn — ${hint}`)).toBeTruthy();
     expect(screen.getByText(`seat: p1 — ${hint} — waiting for p0`)).toBeTruthy();
     expect(rendered).toBe(0);
@@ -169,9 +169,10 @@ describe('Playtest of a board game', () => {
   it('rolls on press, and a greyed button says why instead of sending', () => {
     mountRentDay();
     const [p0Roll, p1Roll] = rollButtons();
+    // Seed 1 rolls 2 and 4, not a double, so p0 may not roll again.
     fireEvent.click(p0Roll);
-    expect(screen.getAllByLabelText(/^Rolled \d and \d$/)).toHaveLength(3);
-    expect(rollButtons()[0].getAttribute('title')).toBe('they have not rolled this turn');
+    expect(screen.getAllByLabelText('Rolled 2 and 4')).toHaveLength(3);
+    expect(rollButtons()[0].getAttribute('title')).toBe('they have not rolled this turn or they rolled a double');
     fireEvent.click(p1Roll);
     expect(screen.getByText("It's p0's turn.")).toBeTruthy();
   });
