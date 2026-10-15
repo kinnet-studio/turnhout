@@ -26,14 +26,18 @@ export const thirdPersonWords = (words: string): string => words.replace(/^\S+/,
 const IRREGULAR_PARTICIPLES = new Map(Object.entries({
   buy: 'bought', draw: 'drawn', pay: 'paid', build: 'built', sell: 'sold', take: 'taken', give: 'given', throw: 'thrown', put: 'put',
   go: 'gone', make: 'made', get: 'got', win: 'won', lose: 'lost', hold: 'held', keep: 'kept', leave: 'left', bid: 'bid', deal: 'dealt',
-  spend: 'spent', choose: 'chosen',
+  spend: 'spent', choose: 'chosen', run: 'run',
 }));
 
-/** What a player has done by the end of the turn: 'rolled', 'bought'. Regular verbs only add `d`, `ied` or `ed`. */
+/** One vowel then one consonant ends a short verb that doubles it (stop, skip, plan); w, x and y never double (show, fix). */
+const DOUBLES_LAST = /^[^aeiou]*[aeiou][^aeiouwxy]$/i;
+
+/** What a player has done by the end of the turn: 'rolled', 'bought'. Regular verbs only add `d`, `ied`, `ed` or a doubled letter and `ed`. */
 export function participle(verb: string): string {
   const irregular = IRREGULAR_PARTICIPLES.get(verb.toLowerCase());
   if (irregular !== undefined) return irregular;
   if (/e$/i.test(verb)) return `${verb}d`;
+  if (DOUBLES_LAST.test(verb)) return `${verb}${verb.slice(-1)}ed`;
   return /[^aeiou]y$/i.test(verb) ? `${verb.slice(0, -1)}ied` : `${verb}ed`;
 }
 
@@ -504,7 +508,7 @@ function resolveSpace(text: string, vocab: Vocab): Parsed {
 }
 
 const SPACE: ParamType = {
-  name: 'space', label: '[space]', stubOrder: 3,
+  name: 'space', label: '[space]',
   source: (vocab) => bounded(anyOf(vocab.spaces)),
   resolve: resolveSpace,
   loose: looseAs(ANY_TEXT, misnamedWord('space', spaceNames)),

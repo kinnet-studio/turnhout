@@ -83,6 +83,25 @@ describe('moving', () => {
       { kind: 'pass', seat: 'p0', space: 1 }, { kind: 'land', seat: 'p0', space: 1 },
     ]);
   });
+  it('stops walking when a passes rule moves the piece elsewhere, and announces no landing', () => {
+    const seen: Moment[] = [];
+    const announce = (s: GameState, m: Moment) => {
+      seen.push(m);
+      return seen.length === 1 ? placePiece(s, 'p0', 2) : s;
+    };
+    const start = setRoll(placePiece(fixtureBoardState(), 'p0', 6), [1, 2]);
+    const s = runPhrase<GameState>(lib, 'effect', 'their piece moves forward by the roll', env(start, { ...as('p0'), announce }));
+    expect(seen).toEqual([{ kind: 'pass', seat: 'p0', space: 7 }]);
+    expect(pieceAt(s, 'p0')).toBe(2);
+  });
+  it('stops walking when a passes rule takes the player out, and announces no landing', () => {
+    const seen: Moment[] = [];
+    const announce = (s: GameState, m: Moment) => { seen.push(m); return markOut(s, 'p0'); };
+    const start = setRoll(placePiece(fixtureBoardState(), 'p0', 6), [1, 2]);
+    const s = runPhrase<GameState>(lib, 'effect', 'their piece moves forward by the roll', env(start, { ...as('p0'), announce }));
+    expect(seen).toEqual([{ kind: 'pass', seat: 'p0', space: 7 }]);
+    expect(isOut(s, 'p0')).toBe(true);
+  });
   it('has the piece on the space it is announced for', () => {
     const where: (number | null)[] = [];
     const announce = (s: GameState) => { where.push(pieceAt(s, 'p0')); return s; };

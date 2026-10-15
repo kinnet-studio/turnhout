@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { standardDeckIdentities } from './cards';
 import { PhraseLibrary, STATIC_TYPES, emptyVocab, stubFor, suggestNames, vocabFrom } from './phrases';
 import { VOCAB_TYPES } from './refs';
-import { fixtureBoardGame } from './testing';
+import { FIXTURE_SPACES, fixtureBoardGame } from './testing';
 import type { EffectFn, ParamType } from './types';
 
 const V = emptyVocab();
@@ -186,6 +186,16 @@ describe('stubFor', () => {
     );
     expect(stubFor('moment', 'A piece passes space 3', V, STATIC_TYPES, { game: 'G', line: 2 })).toContain(
       "library.moment('a piece passes space {int}', (env, [a1], moment) => {",
+    );
+  });
+
+  it('never turns words into a space name, even one that reads like a sentence', () => {
+    const boardVocab = vocabFrom({
+      maxPlayers: 2,
+      board: { ...fixtureBoardGame().board!, spaces: [...FIXTURE_SPACES, { name: 'Go To Jail', attrs: { kind: 'jail' } }] },
+    });
+    expect(stubFor('effect', 'They go to jail.', boardVocab, [...STATIC_TYPES, ...VOCAB_TYPES], { game: 'G', line: 2 })).toContain(
+      "library.effect('they go to jail', (env) => {",
     );
   });
 

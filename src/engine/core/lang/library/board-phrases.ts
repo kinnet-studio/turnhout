@@ -162,7 +162,10 @@ const rollDice: EffectFn = (env) => {
   return setRoll({ ...env.state, rng }, faces);
 };
 
-/** One space at a time, so a rule about passing a space (like collecting on the way) sees every space on the way. */
+/**
+ * One space at a time, so a rule about passing a space (like collecting on the way) sees every space on the way. If such a
+ * rule moves the piece somewhere else, or takes the player out, the walk ends there: the move is over and nothing lands.
+ */
 const moveByRoll: EffectFn = (env) => {
   const they = theyOf(env);
   const steps = rollTotal(env.state);
@@ -175,6 +178,7 @@ const moveByRoll: EffectFn = (env) => {
   for (let step = 1; step <= steps; step++) {
     space = (from + step) % count;
     state = env.announce(placePiece(state, they, space), { kind: 'pass', seat: they, space });
+    if (pieceAt(state, they) !== space || isOut(state, they)) return state;
   }
   return env.announce(state, { kind: 'land', seat: they, space });
 };

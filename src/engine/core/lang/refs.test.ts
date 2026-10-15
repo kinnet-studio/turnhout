@@ -32,7 +32,8 @@ describe('vocabulary types', () => {
       ['action', '[action]'], ['done', '[action done]'],
     ]);
     const order = Object.fromEntries(VOCAB_TYPES.filter((t) => t.stubOrder !== undefined).map((t) => [t.name, t.stubOrder]));
-    expect(order).toEqual({ card: 2, zone: 3, space: 3, player: 4 });
+    // A stub never turns words into a space: a name like "Go To Jail" would swallow the words of an ordinary sentence.
+    expect(order).toEqual({ card: 2, zone: 3, player: 4 });
   });
 
   it.each([V, BOARD, emptyVocab()])('sources have no capture groups and do not match empty text', (vocab) => {
@@ -335,6 +336,11 @@ describe('verb forms', () => {
     ['throw', 'thrown'], ['put', 'put'], ['go', 'gone'], ['make', 'made'], ['get', 'got'], ['win', 'won'], ['lose', 'lost'], ['hold', 'held'],
     ['keep', 'kept'], ['leave', 'left'], ['bid', 'bid'], ['deal', 'dealt'], ['spend', 'spent'], ['choose', 'chosen'],
   ])('knows that %s is %s', (verb, done) => expect(participle(verb)).toBe(done));
+  it('doubles the last consonant of a short verb, and leaves longer verbs and w, x and y alone', () => {
+    expect(['stop', 'skip', 'swap', 'plan', 'roll', 'play', 'open', 'visit', 'run'].map(participle))
+      .toEqual(['stopped', 'skipped', 'swapped', 'planned', 'rolled', 'played', 'opened', 'visited', 'run']);
+    expect(['show', 'fix', 'end', 'pass'].map(participle)).toEqual(['showed', 'fixed', 'ended', 'passed']);
+  });
   it('adds d after an e, turns a consonant and y into ied, and otherwise adds ed', () => {
     expect(participle('use')).toBe('used');
     expect(participle('carry')).toBe('carried');
