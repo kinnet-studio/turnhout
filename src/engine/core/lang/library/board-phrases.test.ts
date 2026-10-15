@@ -344,6 +344,13 @@ describe('example phrases', () => {
       expect(() => rollGiven('the next roll is 3', withDice({ count: 2, sides: 6 }))).toThrow('This game rolls 2 dice, so give 2 numbers.');
       expect(() => rollGiven('the next roll is 3 and 4', withDice({ count: 1, sides: 6 }))).toThrow('This game rolls 1 die, so give 1 number.');
     });
+    it('cannot fix a roll of more than two dice, whatever numbers it is given', () => {
+      const three = withDice({ count: 3, sides: 6 });
+      const sentence = 'Examples can only fix the next roll in a game with one or two dice.';
+      expect(() => rollGiven('the next roll is 1 and 2', three)).toThrow(sentence);
+      expect(() => rollGiven('the next roll is 1', three)).toThrow(sentence);
+      expect(() => rollGiven('the next roll is 1 and 9', three)).toThrow(sentence);
+    });
     it('says which face a die cannot show', () => {
       const six = withDice({ count: 2, sides: 6 });
       expect(() => rollGiven('the next roll is 7 and 1', six)).toThrow("A 6-sided die can't roll 7.");

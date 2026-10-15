@@ -370,10 +370,28 @@ describe('board examples', () => {
 
   it('starts a board example with the pieces and counters of a new game, and keeps what Given lines changed', () => {
     const { game } = onBoard([
-      'Example: arranged before the game starts', '  Given p1 has 100 money', '  And p1 is out',
-      '  When p0 rolls the dice', '  Then p1 has 100 money', '  And p0 has 1500 money', '  And p1 is out',
+      'Example: arranged before the game starts', '  Given p1 has 100 money', '  And the next roll is 1 and 2',
+      '  Then p0 is on Go', '  And p0 has 1500 money',
+      '  When p0 rolls the dice', '  Then p0 is on Rose Lane', '  And p0 has 1500 money', '  And p1 has 100 money',
     ].join('\n'));
-    expect(runExamples(game!, lib)).toEqual([expect.objectContaining({ status: 'pass' })]);
+    expect(runExamples(game!, lib)).toEqual([expect.objectContaining({ status: 'pass', message: null })]);
+  });
+
+  it('puts a player out in a Given line and leaves the other pieces where a new game has them', () => {
+    // With only one player left a game is over, so this example rolls nothing.
+    const { game } = onBoard(['Example: out before it starts', '  Given p1 is out', '  Then p1 is out', '  And p0 is on Go'].join('\n'));
+    expect(runExamples(game!, lib)[0]).toMatchObject({ status: 'pass', message: null });
+  });
+
+  it('cannot fix a roll in a game with more than two dice, and says so on that line', () => {
+    const threeDice = TINY_BOARD.replace('There are two six-sided dice.', 'There are three six-sided dice.');
+    const example = ['Example: three dice', '  Given the next roll is 1 and 2', '  When p0 rolls the dice'].join('\n');
+    const { game } = compileGame(`${threeDice}\n\n${example}`, lib);
+    const [result] = runExamples(game!, lib);
+    expect(result).toMatchObject({
+      status: 'fail', message: expect.stringContaining('Examples can only fix the next roll in a game with one or two dice.'),
+    });
+    expect(result.atLine).toBe(result.line + 1);
   });
 
   it('buys the space a player is on after they have rolled, and ends their turn', () => {

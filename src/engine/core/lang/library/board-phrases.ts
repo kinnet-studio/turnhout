@@ -18,6 +18,9 @@ const MAX_DICE = 10;
 const MIN_SIDES = 2;
 const MAX_SIDES = 100;
 
+/** The most dice an example can fix a roll for: the Given lines take one number or two. */
+const MAX_FIXED_DICE = 2;
+
 /** Said by anything that rolls or fixes a roll in a game that has no dice. */
 const NO_DICE = 'This game has no dice. Add a line like “There are two six-sided dice.” under Board:';
 
@@ -228,6 +231,8 @@ const nextRollIs: EffectFn = (env, faces) => {
   // A card game has no board to read, but it can still be told about the dice it lacks.
   const dice = env.game.board?.dice ?? null;
   if (!dice) throw new RuleError(NO_DICE);
+  // “So give 3 numbers” would be no help: there is no line that takes three.
+  if (dice.count > MAX_FIXED_DICE) throw new RuleError('Examples can only fix the next roll in a game with one or two dice.');
   if (faces.length !== dice.count) {
     throw new RuleError(`This game rolls ${plural(dice.count, 'die', 'dice')}, so give ${plural(dice.count, 'number', 'numbers')}.`);
   }
