@@ -180,6 +180,16 @@ describe('Playtest of a board game', () => {
     expect(rendered).toBeGreaterThan(0);
   });
 
+  it('draws the card table for a board game whose phase only lets players rearrange their cards', () => {
+    const turns = '  Players take turns.\n';
+    const rearranging = compileGame(RENT_DAY.replace(turns, `${turns}  Players may rearrange their kept cards at any time.\n`), lib);
+    expect(rearranging.diagnostics).toEqual([]);
+    expect(rearranging.game!.phases.some((phase) => phase.moves.length > 0)).toBe(false);
+    expect(rearranging.game!.phases.some((phase) => phase.rearrange.length > 0)).toBe(true);
+    mountRentDay({ game: rearranging.game! });
+    expect(rendered).toBeGreaterThan(0);
+  });
+
   it('rolls on press, and a greyed button says why instead of sending', () => {
     mountRentDay();
     const [p0Roll, p1Roll] = rollButtons();

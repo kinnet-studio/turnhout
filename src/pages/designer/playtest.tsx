@@ -125,9 +125,11 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError }: {
     else if (intent.toZoneId !== null && intent.toZoneId !== intent.fromZoneId) flash(NO_RULE);
   };
   const status = `seat: ${seat} — ${seatStatus(game, view, seat)}`;
-  // A card game always gets its table. A board game gets one only when some phase moves cards by hand: piles that only rules
-  // draw from have nothing to drag. Asking the game, not the view, means nothing mounts before the first view arrives.
-  const showsCards = tableDef.zones.length > 0 && (game.board === null || game.phases.some((phase) => phase.moves.length > 0));
+  // A card game always gets its table. A board game gets one only when some phase has cards to drag: it moves them by hand, or
+  // lets players rearrange theirs. Piles that only rules draw from have nothing to drag. Asking the game, not the view, means
+  // nothing mounts before the first view arrives.
+  const showsCards = tableDef.zones.length > 0
+    && (game.board === null || game.phases.some((phase) => phase.moves.length > 0 || phase.rearrange.length > 0));
   const canvas = showsCards && (
     <Wrapper option={option} initFunction={initAppWithFaces}>
       <CardTable tableDef={tableDef} placement={placement} viewer={undefined} onDrop={submit} />
