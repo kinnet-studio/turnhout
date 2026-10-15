@@ -28,7 +28,10 @@ export type BoardSpec = {
   payWith: string | null; bank: BankSpec[];
 };
 /** A fact the game keeps about every space, card or player: a count, or something that is either so or not. */
-export type FactSpec = { name: string; on: 'space' | 'card' | 'player'; kind: 'number' | 'flag' };
+export type ThingFact = { name: string; on: 'space' | 'card' | 'player'; kind: 'number' | 'flag' };
+/** A number that belongs to the game itself, to no player and no space, and the value it starts at. */
+export type GameNumber = { name: string; on: 'game'; kind: 'number'; start: number };
+export type FactSpec = ThingFact | GameNumber;
 /** One fact as a line that declares facts lists it, before it is told what it is on. */
 export type FactItem = Pick<FactSpec, 'name' | 'kind'>;
 /** What one line of a Board: section says; the compiler folds the parts into a BoardSpec. */

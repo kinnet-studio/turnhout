@@ -643,6 +643,7 @@ const SPACENUMBER = declaredWord('spacenumber', '[space fact]', 'space fact', fa
 const CARDFLAG = declaredWord('cardflag', '[card fact]', 'card fact', factNames('card', 'flag'), false);
 const PLAYERFLAG = declaredWord('playerflag', '[player fact]', 'player fact', factNames('player', 'flag'), false);
 const PLAYERNUMBER = declaredWord('playernumber', '[player fact]', 'player fact', factNames('player', 'number'), true);
+const GAMENUMBER = declaredWord('gamenumber', '[game number]', 'game number', factNames('game', 'number'), false);
 const BANKED = declaredWord('banked', '[bank item]', 'bank item', (vocab) => vocab.bank, true);
 
 // Actions and what was done are whole phrases ("ends their turn", "rolled") with a fixed form, not names to misspell.
@@ -713,7 +714,7 @@ const DONE: ParamType = {
 /** Parameter types whose text depends on the game being compiled. */
 export const VOCAB_TYPES: ParamType[] = [
   ZONE, ZONES, PERZONE, PLAYER, PHASE, MOVE, ATTRIBUTE, CARD, CARDLIST, CARDCLASS, SPACE, SPACECLASS, SPACEATTR, COUNTER, ACTION, TARGETACTION,
-  DONE, SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, PLAYERFLAG, PLAYERNUMBER, BANKED,
+  DONE, SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, PLAYERFLAG, PLAYERNUMBER, GAMENUMBER, BANKED,
 ];
 
 const TYPES_BY_NAME = new Map(VOCAB_TYPES.map((t) => [t.name, t] as const));

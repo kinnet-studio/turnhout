@@ -7,7 +7,7 @@ import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import { counted, singularForms } from '../refs';
 import type {
-  BoardSpec, CardMatch, ConditionFn, DeclareFn, EffectFn, ExpectFn, FactItem, FactSpec, MomentFn, PhraseEnv, SpaceClass, SpaceSpec, TargetFn,
+  BoardSpec, CardMatch, ConditionFn, DeclareFn, EffectFn, ExpectFn, FactItem, MomentFn, PhraseEnv, SpaceClass, SpaceSpec, TargetFn, ThingFact,
   WhichFn, WinnerFn, ZoneRef,
 } from '../types';
 import { matchesCard, relocate, resolveZoneIds, zoneIdFor } from '../zones';
@@ -16,10 +16,10 @@ import { describeCard } from './example-phrases';
 import { cardOf, describeZone, itOf, movedCard, soleZone, theyOf } from './support';
 
 /** Every fact in the list, told what it is on. */
-const declares = (on: FactSpec['on']): DeclareFn => ([facts]) => (facts as FactItem[]).map((fact) => ({ ...fact, on }));
+const declares = (on: ThingFact['on']): DeclareFn => ([facts]) => (facts as FactItem[]).map((fact) => ({ ...fact, on }));
 
 /** A card or a space that "can be" something has a yes/no, which starts at no, with no count. */
-const isFlagOn = (on: FactSpec['on']): DeclareFn => ([name]) => [{ name: name as string, on, kind: 'flag' }];
+const isFlagOn = (on: ThingFact['on']): DeclareFn => ([name]) => [{ name: name as string, on, kind: 'flag' }];
 
 /**
  * The board a phrase plays on. Each phrase that calls this says `needsBoard`, so the compiler only lets it into a game with

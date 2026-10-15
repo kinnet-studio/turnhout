@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { GameState } from '../game-state';
 import type { Json } from '../table-def';
-import { markOut, placePiece, queueRoll, setBank, setCounter, setOwner, setPlayerFact, setSpaceFact, withBoardData } from './board-state';
+import { markOut, placePiece, queueRoll, setBank, setCounter, setGameNumber, setOwner, setPlayerFact, setSpaceFact, withBoardData } from './board-state';
 import { readSeatExtras, seatExtras } from './board-view';
 import { createEngine, initialState, seatsFor } from './build';
 import { compileGame } from './compile';
@@ -532,6 +532,57 @@ describe('seat views of debts and of flags no bank item goes with', () => {
   });
 });
 
+describe("seat views of the game's numbers", () => {
+  const POT = TINY_BOARD_HEAD.replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  The game has a pot of 5.');
+  const built = compileGame(POT, lib);
+  const g = built.game!;
+  const view = (seat: string, start: GameState = initialState(g, 1), played: CompiledGame = g) => {
+    const { engine, runtime } = createEngine(played, lib, 2, start);
+    return seatExtras(engine, runtime, engine.getState(), seat);
+  };
+  const arranged = (change: (state: GameState) => GameState) => change(withBoardData(initialState(g, 1), g, ['p0', 'p1']));
+
+  // The head of a board has no End: section, which is a warning, not a mistake.
+  it('compiles with no errors', () => expect(built.diagnostics.filter((d) => d.severity === 'error')).toEqual([]));
+
+  it('shows every seat the game numbers that are not 0, where they start', () => {
+    for (const seat of ['p0', 'p1']) expect(view(seat).board!.gameNumbers, seat).toEqual([{ name: 'pot', value: 5 }]);
+  });
+
+  it('leaves out a number a rule set to 0', () => {
+    for (const seat of ['p0', 'p1']) expect(view(seat, arranged((s) => setGameNumber(s, 'pot', 0))).board!.gameNumbers, seat).toEqual([]);
+  });
+
+  it('lists them in the order the game declares them, whatever order they were set in, and leaves out one that starts at 0', () => {
+    const two = compileGame(POT.replace('  The game has a pot of 5.', '  The game has a pot of 5.\n  The game has a limit of 0.\n  The game has a cap of 3.'), lib).game!;
+    const start = (change: (state: GameState) => GameState) => change(withBoardData(initialState(two, 1), two, ['p0', 'p1']));
+    expect(view('p0', initialState(two, 1), two).board!.gameNumbers).toEqual([{ name: 'pot', value: 5 }, { name: 'cap', value: 3 }]);
+    const backwards = start((s) => setGameNumber(setGameNumber(s, 'cap', 8), 'limit', 7));
+    expect(view('p1', backwards, two).board!.gameNumbers).toEqual([{ name: 'pot', value: 5 }, { name: 'limit', value: 7 }, { name: 'cap', value: 8 }]);
+  });
+
+  it('has none for a board that declares none', () => {
+    const plain = createEngine(game, lib, 2, initialState(game, 1));
+    expect(seatExtras(plain.engine, plain.runtime, plain.engine.getState(), 'p0').board!.gameNumbers).toEqual([]);
+  });
+
+  it('is plain data, and readSeatExtras reads it back', () => {
+    const extras = view('p0');
+    expect(readSeatExtras(JSON.parse(JSON.stringify(extras)))).toEqual(extras);
+  });
+
+  it('refuses game numbers that are not a list of a name and a number, or that are missing', () => {
+    const extras = JSON.parse(JSON.stringify(view('p0')));
+    const withBoard = (over: { [k: string]: Json }) => ({ ...extras, board: { ...extras.board, ...over } });
+    const { gameNumbers: _gone, ...without } = extras.board;
+    expect(readSeatExtras(extras)).not.toBeNull();
+    expect(readSeatExtras({ ...extras, board: without })).toBeNull();
+    expect(readSeatExtras(withBoard({ gameNumbers: [{ name: 'pot', value: '5' }] }))).toBeNull();
+    expect(readSeatExtras(withBoard({ gameNumbers: [{ value: 5 }] }))).toBeNull();
+    expect(readSeatExtras(withBoard({ gameNumbers: { pot: 5 } }))).toBeNull();
+  });
+});
+
 describe('readSeatExtras', () => {
   it('reads extras back, and nothing else', () => {
     expect(readSeatExtras(undefined)).toBeNull();
@@ -546,7 +597,7 @@ describe('readSeatExtras', () => {
 
   const space = { name: 'Go', color: null, details: {}, facts: {}, stripes: [], owner: null };
   const board = (over: { [k: string]: Json } = {}) => ({
-    spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {}, lastDrawn: null, playerCards: {}, owes: {}, ...over,
+    spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {}, lastDrawn: null, playerCards: {}, owes: {}, gameNumbers: [], ...over,
   });
   const action = (over: { [k: string]: Json } = {}) => ({ move: 'roll the dice', label: 'Roll', allowed: true, target: null, ...over });
   const picking = (over: { [k: string]: Json } = {}) => action({ target: { prompt: 'Pick a street you own', spaces: { 3: true }, ...over } });
@@ -578,19 +629,19 @@ describe('readSeatExtras', () => {
     ['a target space that is neither true nor a reason', { board: null, actions: [picking({ spaces: { 3: false } })] }],
     ['a target space that is a number', { board: null, actions: [picking({ spaces: { 3: 1 } })] }],
     ['a board that is not an object', { board: 3, actions: [] }],
-    ['a board with no spaces', { board: { pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {}, lastDrawn: null, playerCards: {}, owes: {} }, actions: [] }],
+    ['a board with no spaces', { board: { pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {}, lastDrawn: null, playerCards: {}, owes: {}, gameNumbers: [] }, actions: [] }],
     ['a space with no name', { board: board({ spaces: [{ color: null, details: {}, facts: {}, stripes: [], owner: null }] }), actions: [] }],
     ['a space with no facts', { board: board({ spaces: [{ name: 'Go', color: null, details: {}, stripes: [], owner: null }] }), actions: [] }],
     ['a fact that is text', { board: board({ spaces: [{ ...space, facts: { houses: 'two' } }] }), actions: [] }],
     ['a fact that is null', { board: board({ spaces: [{ ...space, facts: { houses: null } }] }), actions: [] }],
-    ['a board with no bank', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [], playerFacts: {}, lastDrawn: null, playerCards: {}, owes: {} }, actions: [] }],
+    ['a board with no bank', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [], playerFacts: {}, lastDrawn: null, playerCards: {}, owes: {}, gameNumbers: [] }, actions: [] }],
     ['a bank that is not a list', { board: board({ bank: {} }), actions: [] }],
     ['a bank entry with no count', { board: board({ bank: [{ name: 'houses' }] }), actions: [] }],
     ['a bank entry with no name', { board: board({ bank: [{ count: 3 }] }), actions: [] }],
     ['a piece that is not a number', { board: board({ pieces: { p0: 'x' } }), actions: [] }],
     ['a roll of text', { board: board({ roll: 'six' }), actions: [] }],
     ['a counter value that is text', { board: board({ counters: [{ name: 'm', values: { p0: 'x' } }] }), actions: [] }],
-    ['a board with no player facts', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [], lastDrawn: null, playerCards: {}, owes: {} }, actions: [] }],
+    ['a board with no player facts', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [], lastDrawn: null, playerCards: {}, owes: {}, gameNumbers: [] }, actions: [] }],
     ['player facts that are not a map', { board: board({ playerFacts: [] }), actions: [] }],
     ['a seat whose facts are not a map', { board: board({ playerFacts: { p0: true } }), actions: [] }],
     ['a player fact that is text', { board: board({ playerFacts: { p0: { 'in jail': 'yes' } } }), actions: [] }],

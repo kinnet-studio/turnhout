@@ -5,7 +5,9 @@ import { zoneCards, type GameState } from '../game-state';
 import type { PlayerId } from '../scene';
 import type { Json } from '../table-def';
 import { bankItemOf } from './board';
-import { bankOf, counterOf, isOut, lastDrawn, latestRoll, owedTo, ownerOf, pieceAt, playerFact, spaceFact, type Creditor, type LastDrawn } from './board-state';
+import {
+  bankOf, counterOf, gameNumber, isOut, lastDrawn, latestRoll, owedTo, ownerOf, pieceAt, playerFact, spaceFact, type Creditor, type LastDrawn,
+} from './board-state';
 import { cardName } from './card-facts';
 import { targetCandidates } from './declared-actions';
 import { friendlyError, friendlyReason } from './friendly';
@@ -37,11 +39,14 @@ type FactsView = { [fact: string]: number | boolean };
  * see, `[]` for none. Nothing else about a card or a pile is in a view, least of all the order of a pile.
  * `owes` has an entry for each seat still in that owes someone, whom it owes; `{}` while no one does, and for a board with no
  * counter to pay with. Whom a player owes is public, so every seat sees the same.
+ * `gameNumbers` lists the numbers that belong to the game itself and are not 0, in the order the game declares them; they are
+ * public too, so every seat sees the same.
  */
 export type BoardView = {
   spaces: SpaceView[]; pieces: { [seat: string]: number }; roll: number[] | null; counters: CounterView[]; out: PlayerId[]; bank: BankView[];
   playerFacts: { [seat: string]: FactsView }; lastDrawn: LastDrawn | null; playerCards: { [seat: string]: string[] };
   owes: { [seat: string]: Creditor };
+  gameNumbers: { name: string; value: number }[];
 };
 /**
  * For a button that picks a space: what to ask the player, and every space its target phrase allows, by the space's place on
@@ -107,6 +112,14 @@ function debtsIn(runtime: LangRuntime, state: GameState): { [seat: string]: Cred
   return owes;
 }
 
+/** The numbers of the game that are not 0, in the order the game declares them: one at 0 is as good as none for the page to show. */
+function gameNumbersIn(runtime: LangRuntime, state: GameState): { name: string; value: number }[] {
+  return runtime.game.facts
+    .filter((fact) => fact.on === 'game')
+    .map(({ name }) => ({ name, value: gameNumber(state, runtime.game, name) }))
+    .filter(({ value }) => value !== 0);
+}
+
 function boardView(runtime: LangRuntime, state: GameState, seat: PlayerId): BoardView | null {
   const { board } = runtime.game;
   if (!board) return null;
@@ -132,6 +145,7 @@ function boardView(runtime: LangRuntime, state: GameState, seat: PlayerId): Boar
   return {
     spaces, pieces, roll: latestRoll(state), counters, out: runtime.seats.filter((s) => isOut(state, s)), bank, playerFacts,
     lastDrawn: lastDrawn(state), playerCards: cardsInView(runtime, state), owes: debtsIn(runtime, state),
+    gameNumbers: gameNumbersIn(runtime, state),
   };
 }
 
@@ -210,6 +224,7 @@ const isSpace = (v: unknown): boolean =>
   isRecord(v) && isText(v.name) && (v.color === null || isText(v.color)) && isRecord(v.details) && isMap(v.facts, isFact)
   && isList(v.stripes, isText) && (v.owner === null || isText(v.owner));
 const isDrawn = (v: unknown): boolean => isRecord(v) && isText(v.seat) && isText(v.zone) && isText(v.name) && isText(v.says);
+const isGameNumber = (v: unknown): boolean => isRecord(v) && isText(v.name) && isNumber(v.value);
 const isBankLine = (v: unknown): boolean => isRecord(v) && isText(v.name) && isNumber(v.count);
 const isCounter = (v: unknown): boolean =>
   isRecord(v) && isText(v.name) && isMap(v.values, (n) => n === null || isNumber(n));
@@ -217,7 +232,7 @@ const isBoard = (v: unknown): boolean =>
   isRecord(v) && isList(v.spaces, isSpace) && isMap(v.pieces, isNumber) && (v.roll === null || isList(v.roll, isNumber))
   && isList(v.counters, isCounter) && isList(v.out, isText) && isList(v.bank, isBankLine) && isMap(v.playerFacts, (facts) => isMap(facts, isFact))
   && (v.lastDrawn === null || isDrawn(v.lastDrawn)) && isMap(v.playerCards, (names) => isList(names, isText))
-  && isMap(v.owes, isText);
+  && isMap(v.owes, isText) && isList(v.gameNumbers, isGameNumber);
 const isVerdict = (v: unknown): boolean => v === true || isText(v);
 const isTarget = (v: unknown): boolean => isRecord(v) && isText(v.prompt) && isMap(v.spaces, isVerdict);
 const isAction = (v: unknown): boolean =>

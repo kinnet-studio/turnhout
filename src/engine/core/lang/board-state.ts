@@ -2,7 +2,7 @@ import type { GameState } from '../game-state';
 import type { PlayerId } from '../scene';
 import type { Json } from '../table-def';
 import { RuleError } from './diagnostics';
-import type { CompiledGame, CompiledPhase } from './types';
+import type { CompiledGame, CompiledPhase, GameNumber } from './types';
 import { leftOf } from './zones';
 
 // The state of a board game lives in `GameState.data` under these keys, so it travels with the engine's state
@@ -32,8 +32,9 @@ export const TURN_ROLLS_KEY = 'lang:turn-rolls';
 /** Seats that have left the game, in the order they went: `PlayerId[]`. */
 export const OUT_KEY = 'lang:out';
 /**
- * Facts that change during play, on spaces and on players: `{ spaces: { [space index]: { [fact]: value } }, players: { [seat]:
- * { [fact]: value } } }`. A fact nobody set has no entry. Facts on cards live in the card's own `data`, not here.
+ * Facts that change during play, on spaces and on players, and the numbers of the game itself: `{ spaces: { [space index]: { [fact]:
+ * value } }, players: { [seat]: { [fact]: value } }, game: { [number]: value } }`. A fact nobody set has no entry. Facts on cards live
+ * in the card's own `data`, not here.
  */
 export const FACTS_KEY = 'lang:facts';
 /** What is left in the bank, by name: `{ [name]: number }`. */
@@ -59,7 +60,7 @@ type TurnLog = { [seat: string]: string[] };
 type TurnRolls = { [seat: string]: number[][] };
 type FactValue = number | boolean;
 type FactTable = { [who: string]: { [fact: string]: FactValue } };
-type Facts = { spaces: FactTable; players: FactTable };
+type Facts = { spaces: FactTable; players: FactTable; game: { [name: string]: number } };
 type Bank = { [name: string]: number };
 type Debts = { [seat: string]: Creditor };
 
@@ -71,7 +72,7 @@ const countersOf = (state: GameState): Counters => (state.data[COUNTERS_KEY] ?? 
 const outOf = (state: GameState): PlayerId[] => (state.data[OUT_KEY] ?? []) as PlayerId[];
 const turnLogOf = (state: GameState): TurnLog => (state.data[TURN_KEY] ?? {}) as TurnLog;
 const turnRollsOf = (state: GameState): TurnRolls => (state.data[TURN_ROLLS_KEY] ?? {}) as TurnRolls;
-const factsOf = (state: GameState): Facts => ({ spaces: {}, players: {}, ...(state.data[FACTS_KEY] as Partial<Facts> | undefined) });
+const factsOf = (state: GameState): Facts => ({ spaces: {}, players: {}, game: {}, ...(state.data[FACTS_KEY] as Partial<Facts> | undefined) });
 const bankTable = (state: GameState): Bank => (state.data[BANK_KEY] ?? {}) as Bank;
 const debtsOf = (state: GameState): Debts => (state.data[OWES_KEY] ?? {}) as Debts;
 
@@ -143,7 +144,7 @@ export function owedTo(state: GameState, seat: PlayerId, counter: string): Credi
   return to !== null && to !== 'bank' && isOut(state, to) ? 'bank' : to;
 }
 
-function setFact(state: GameState, table: keyof Facts, who: string, fact: string, value: FactValue): GameState {
+function setFact(state: GameState, table: 'spaces' | 'players', who: string, fact: string, value: FactValue): GameState {
   const facts = factsOf(state);
   return withData(state, FACTS_KEY, { ...facts, [table]: { ...facts[table], [who]: { ...facts[table][who], [fact]: value } } });
 }
@@ -164,6 +165,21 @@ export function playerFact(state: GameState, seat: PlayerId, fact: string): Fact
 
 export function setPlayerFact(state: GameState, seat: PlayerId, fact: string, value: FactValue): GameState {
   return setFact(state, 'players', seat, fact, value);
+}
+
+/**
+ * A number of the game as a rule last set it, or the value it was declared to start at while none has. A name the game never
+ * declared is a mistake in the rule, said as one.
+ */
+export function gameNumber(state: GameState, game: CompiledGame, name: string): number {
+  const declared = game.facts.find((fact): fact is GameNumber => fact.on === 'game' && fact.name === name);
+  if (!declared) throw new Error(`The game has no number called “${name}”.`);
+  return factsOf(state).game[name] ?? declared.start;
+}
+
+export function setGameNumber(state: GameState, name: string, value: number): GameState {
+  const facts = factsOf(state);
+  return withData(state, FACTS_KEY, { ...facts, game: { ...facts.game, [name]: value } });
 }
 
 /** How many the bank has of something; 0 when the game has no such thing. */

@@ -20,6 +20,7 @@ const board = (over: Partial<BoardView> = {}): BoardView => ({
   lastDrawn: null,
   playerCards: {},
   owes: {},
+  gameNumbers: [],
   ...over,
 });
 
