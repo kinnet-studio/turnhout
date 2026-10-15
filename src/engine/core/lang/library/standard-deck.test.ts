@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { GameState } from '../../game-state';
 import { RuleError } from '../diagnostics';
-import { fixtureCard, fixtureEnv, fixtureGame, fixtureState, runPhrase } from '../testing';
+import { fixtureCard, fixtureColorGame, fixtureEnv, fixtureGame, fixtureState, runPhrase } from '../testing';
 import type { MoveInfo, PhraseEnv } from '../types';
 import { WINNER_KEY } from '../zones';
 import { createDefaultLibrary } from './index';
@@ -79,6 +79,31 @@ describe('the highest card of the led suit', () => {
     const state = fixtureState([std('a', 'trick', 'S', 9), std('b', 'trick', 'S', 4, 'p1')]);
     expect(() => winTrick(fixtureEnv(state))).toThrow(RuleError);
     expect(() => winTrick(fixtureEnv(state))).toThrow('who played');
+  });
+  it('cannot pick a winner among cards that have no suit', () => {
+    const state = fixtureState([
+      fixtureCard('a', 'trick', { color: 'red', number: 2, movedBy: 'p0' }),
+      fixtureCard('b', 'trick', { color: 'blue', number: 7, movedBy: 'p1' }),
+    ]);
+    const colorGame = fixtureColorGame();
+    const trick = { name: 'trick', perPlayer: false, layout: 'row', visibility: 'public' } as const;
+    const decide = () => winTrick(fixtureEnv(state, { game: { ...colorGame, zones: [...colorGame.zones, trick] } }));
+    expect(decide).toThrow(RuleError);
+    expect(decide).toThrow('“The highest card of the led suit” needs cards that have a suit.');
+  });
+  it('cannot pick a winner among cards of the led suit that have no rank', () => {
+    const unranked = fixtureState([
+      fixtureCard('a', 'trick', { suit: 'C', movedBy: 'p0' }),
+      std('b', 'trick', 'C', 7, 'p1'),
+    ]);
+    expect(() => winTrick(fixtureEnv(unranked))).toThrow(RuleError);
+    expect(() => winTrick(fixtureEnv(unranked))).toThrow('needs cards that have a rank.');
+    const aloneUnranked = fixtureState([fixtureCard('a', 'trick', { suit: 'C', movedBy: 'p0' })]);
+    expect(() => winTrick(fixtureEnv(aloneUnranked))).toThrow(RuleError);
+  });
+  it('does not mind a missing rank on a card of another suit', () => {
+    const state = fixtureState([std('a', 'trick', 'C', 7, 'p0'), fixtureCard('b', 'trick', { suit: 'H', movedBy: 'p1' })]);
+    expect(winTrick(fixtureEnv(state)).data[WINNER_KEY]).toBe('p0');
   });
   it('is not one of the phrases that need a move', () => {
     expect(lib.get('effect', 'the highest card of the led suit wins {zone}')?.needsMove).toBe(false);

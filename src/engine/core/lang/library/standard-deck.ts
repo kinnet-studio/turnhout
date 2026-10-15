@@ -21,19 +21,21 @@ const followsLedSuit: ConditionFn = (env) => {
 /** Rank for comparing; an ace counts high when any of the game's card sets says aces are high. */
 function rankOf(card: CardState, env: PhraseEnv): number {
   const rank = card.data?.rank;
-  if (typeof rank !== 'number') return 0;
+  if (typeof rank !== 'number') throw new RuleError('“The highest card of the led suit” needs cards that have a rank.');
   return rank === 1 && env.game.cards.some((set) => set.acesHigh) ? ACE_HIGH_RANK : rank;
 }
 
 const highestLedCardWins: EffectFn = (env, args) => {
   const ref = args[0] as ZoneRef;
-  const [led, ...rest] = zoneCards(env.state, soleZone(ref, env));
-  if (!led) throw new RuleError(`${describeZone(ref)} is empty, so no card can win it.`);
+  const cards = zoneCards(env.state, soleZone(ref, env));
+  if (cards.length === 0) throw new RuleError(`${describeZone(ref)} is empty, so no card can win it.`);
+  const suit = cards[0].data?.suit;
+  if (typeof suit !== 'string') throw new RuleError('“The highest card of the led suit” needs cards that have a suit.');
   // A tie goes to the card played first.
-  const best = rest.reduce(
-    (top, card) => (card.data?.suit === led.data?.suit && rankOf(card, env) > rankOf(top, env) ? card : top),
-    led,
-  );
+  const best = cards
+    .filter((card) => card.data?.suit === suit)
+    .map((card) => ({ card, rank: rankOf(card, env) }))
+    .reduce((top, next) => (next.rank > top.rank ? next : top)).card;
   const winner = best.data?.movedBy;
   if (typeof winner !== 'string') throw new RuleError('I can\'t tell who played the winning card.');
   return { ...env.state, data: { ...env.state.data, [WINNER_KEY]: winner } };
