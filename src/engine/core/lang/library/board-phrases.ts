@@ -9,7 +9,7 @@ import {
 } from '../board-state';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
-import { canon, joinOr, participle } from '../refs';
+import { canon, joinOr, participle, pastWording } from '../refs';
 import type {
   ActionFn, BankSpec, BoardFn, BoardSpec, ConditionFn, EffectFn, ExpectFn, MomentFn, PhraseEnv, PhraseRef, SpaceClass, WhoFn, WinnerFn,
 } from '../types';
@@ -300,7 +300,8 @@ const hasDoneGiven: EffectFn = (env, [seat, moves]) => {
   const [move, ...others] = moves as string[];
   if (others.length > 0) {
     const said = participle(move.split(' ')[0]);
-    throw new RuleError(`“${said}” could mean ${joinOr([move, ...others].map((m) => `“${m}”`))}; write the whole wording.`);
+    // Said the way the example says it, in the past, so the wordings to choose from read like the line that was refused.
+    throw new RuleError(`“${said}” could mean ${joinOr([move, ...others].map((m) => `“${pastWording(m)}”`))}; write the whole wording.`);
   }
   return recordAction(env.state, who, move);
 };

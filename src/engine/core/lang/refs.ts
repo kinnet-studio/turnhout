@@ -664,18 +664,21 @@ const TARGETACTION: ParamType = {
 
 type VocabAction = Vocab['actions'][number];
 
-/** The words of a button, from its verb on, with the verb in the past: 'roll for a double' is 'rolled for a double'. */
-const pastTense = (action: VocabAction, words: string): string => `${participle(action.verb)}${words.slice(action.verb.length)}`;
+/** A button's wording with its verb, the first word, in the past: 'roll for a double' is 'rolled for a double'. */
+export function pastWording(words: string): string {
+  const verb = words.split(' ')[0];
+  return `${participle(verb)}${words.slice(verb.length)}`;
+}
 
 /** What a button is called once it has been pressed: 'roll for a double' is 'rolled for a double', and a one-word button is its bare participle. */
-const doneWording = (action: VocabAction): string => pastTense(action, action.words);
+const doneWording = (action: VocabAction): string => pastWording(action.words);
 
 /**
  * What a button that picks a space is called once pressed, without the space: 'planted a flag' for 'plant a flag on a space
  * they own'. Where the player planted it is no part of having planted it, so a rule may leave it out. A button that takes no
  * target has no such name, since its whole wording is all there is to say.
  */
-const doneBase = (action: VocabAction): string[] => (action.targeted ? [pastTense(action, action.base)] : []);
+const doneBase = (action: VocabAction): string[] => (action.targeted ? [pastWording(action.base)] : []);
 
 /** The ways a done-text can name a button, nearest first: a text that is several of them reads as the first. */
 const DONE_NAMES: ((action: VocabAction) => string[])[] = [

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  STANDARD_RANKS, STANDARD_SUITS, VOCAB_TYPES, counted, parseParam, participle, plural, secondPersonWords, singularForms, thirdPerson, thirdPersonWords,
+  STANDARD_RANKS, STANDARD_SUITS, VOCAB_TYPES, counted, parseParam, participle, pastWording, plural, secondPersonWords, singularForms, thirdPerson, thirdPersonWords,
 } from './refs';
 import { PhraseLibrary, STATIC_TYPES, emptyVocab, stubFor, vocabFrom } from './phrases';
 import { FIXTURE_SPACES, fixtureBoardGame } from './testing';
@@ -565,6 +565,11 @@ describe('plurals', () => {
 });
 
 describe('verb forms', () => {
+  it('puts the verb of a wording in the past, and leaves the rest as it is', () => {
+    expect(['roll for a double', 'end their turn', 'build a house on a street they own', 'pay'].map(pastWording)).toEqual([
+      'rolled for a double', 'ended their turn', 'built a house on a street they own', 'paid',
+    ]);
+  });
   it('makes participles', () => {
     expect(['roll', 'end', 'buy', 'draw', 'trade', 'bury', 'play'].map(participle))
       .toEqual(['rolled', 'ended', 'bought', 'drawn', 'traded', 'buried', 'played']);

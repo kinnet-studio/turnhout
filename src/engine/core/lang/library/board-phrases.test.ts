@@ -531,7 +531,7 @@ describe('example phrases', () => {
       const FOR_DOUBLE: DeclaredAction = { ...ROLL, words: 'roll for a double', base: 'roll for a double', label: 'Roll for a double' };
       const twoRolls = fixtureBoardGame({ phases: [fixturePhase('playing', [], { actions: [ROLL, FOR_DOUBLE, END] })] });
       const givenIn = (text: string) => runPhrase<GameState>(lib, 'given', text, env(fixtureBoardState(twoRolls), { game: twoRolls }));
-      expect(() => givenIn('p0 has rolled this turn')).toThrow('“rolled” could mean “roll the dice” or “roll for a double”; write the whole wording.');
+      expect(() => givenIn('p0 has rolled this turn')).toThrow('“rolled” could mean “rolled the dice” or “rolled for a double”; write the whole wording.');
       expect(givenIn('p0 has rolled for a double this turn').data[TURN_KEY]).toEqual({ p0: ['roll for a double'] });
     });
     it('refuses a player who is not at the table', () => {
