@@ -60,15 +60,19 @@ const fullSetDoublesRent: ColumnFn = (env, _args, value) => {
   return bare && ownsSet(env.state, spaces, at, STREET, COLOR, owner) ? value * 2 : value;
 };
 
-/** The two lists go together: the amount at one place is for the number of stations at the same place in the other. */
+/**
+ * The two lists go together: the amount at one place is for the number of stations at the same place in the other. Lists
+ * that do not are a mistake in the line, said when a station's rent is read; any other space's rent has nothing to do with them.
+ */
 const stationRentGoesWithCount: ColumnFn = (env, [amounts, counts], value) => {
+  const at = itOf(env);
+  const { spaces } = boardOf(env);
+  if (!isOfKind(spaces[at], STATION)) return value;
   const prices = amounts as number[];
   const numbers = counts as number[];
   if (prices.length !== numbers.length) throw new RuleError("A station's rent needs one amount for each number of stations.");
-  const at = itOf(env);
-  const { spaces } = boardOf(env);
   const owner = ownerOf(env.state, at);
-  if (owner === null || !isOfKind(spaces[at], STATION)) return value;
+  if (owner === null) return value;
   const matching = numbers.indexOf(ownedOfKind(env.state, spaces, STATION, owner).owned);
   return matching < 0 ? value : prices[matching];
 };

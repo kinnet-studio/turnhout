@@ -141,6 +141,14 @@ describe('a station’s rent', () => {
     expect(attempt).toThrow("A station's rent needs one amount for each number of stations.");
     expect(attempt).toThrow(expect.objectContaining({ line: lineOf(source, "A station's rent") }));
   });
+  it('says so only for a station, owned or not: every other space still reads its rent', () => {
+    const uneven = new LangRuntime(compiled(text("A station's rent is 25, 50 or 100 when its owner has 1, 2, 3 or 4 stations.")), lib, SEATS);
+    expect(rentOf(owning([ROSE, 'p0']), ROSE, uneven)).toBe(14);
+    expect(rentOf(owning([ROSE, 'p0'], [LILY, 'p0'], [IRIS, 'p0']), IRIS, uneven)).toBe(32);
+    expect(rentOf(fresh(), MILL, uneven)).toBe(2);
+    expect(rentOf(fresh(), POWER, uneven)).toBeNull();
+    expect(() => rentOf(fresh(), EAST, uneven)).toThrow("A station's rent needs one amount for each number of stations.");
+  });
 });
 
 describe('a utility’s rent', () => {
