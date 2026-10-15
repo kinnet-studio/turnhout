@@ -458,9 +458,9 @@ Example: you cannot end your turn on a double
   Then it is rejected because "they did not roll a double or they are in jail or they have rolled for a double this turn"
 
 Example: a third double sends you to jail
-  Given p0 is on Go
+  Given p0 is on Oak Gardens
   And p0 has rolled 2 doubles this turn
-  And the next roll is 4 and 4
+  And the next roll is 6 and 6
   When p0 rolls the dice
   Then p0 is on Jail
   And p0 is in jail
