@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import { zoneCards, type GameState } from '../game-state';
 import type { Json } from '../table-def';
-import { markOut, queueRoll, setBank, setCounter, setOwner, setPlayerFact, setSpaceFact, withBoardData } from './board-state';
+import { markOut, placePiece, queueRoll, setBank, setCounter, setOwner, setPlayerFact, setSpaceFact, withBoardData } from './board-state';
 import { readSeatExtras, seatExtras } from './board-view';
-import { createEngine, initialState } from './build';
+import { createEngine, initialState, seatsFor } from './build';
 import { compileGame } from './compile';
 import { RuleError } from './diagnostics';
 import { createDefaultLibrary } from './library';
-import { TEST_DUEL, TINY_BOARD } from './testing';
+import { deckGameText, TEST_DUEL, TINY_BOARD } from './testing';
+import type { CompiledGame } from './types';
+import { relocate } from './zones';
 
 const lib = createDefaultLibrary();
 const game = compileGame(TINY_BOARD, lib).game!;
@@ -306,6 +309,97 @@ describe('seat views of a board whose players have facts', () => {
   });
 });
 
+describe('seat views of a board with cards', () => {
+  type Table = ReturnType<typeof createEngine>;
+  const LUCKY = ['| name | says |', '| Free Pass | They keep this card in their kept cards. |', '| Dividend | They get 50 money. |'];
+  const FATE = ['| name | says |', '| Calm | They get 0 money. |'];
+  const built = compileGame(deckGameText(LUCKY, FATE), lib);
+  const g = built.game!;
+  const idOf = (state: GameState, name: string) => state.cards.find((c) => c.data?.name === name)!.id;
+  /** p0 to move on Go, the named lucky card on top of its pile and a 1 and a 1 to roll, which land on the first Lucky space. */
+  function started(game: CompiledGame, top: string, arrange: (s: GameState) => GameState = (s) => s): Table {
+    let s: GameState = { ...withBoardData(initialState(game, 1), game, seatsFor(2)), turn: { current: 'p0', phase: 'playing' } };
+    // Moving the whole pile, the named card last, numbers every slot afresh; moving it alone would tie it with a card never given a slot.
+    const pile = zoneCards(s, 'lucky-pile').map((c) => c.id).filter((id) => id !== idOf(s, top));
+    s = relocate(s, [...pile, idOf(s, top)], 'lucky-pile', game);
+    return createEngine(game, lib, 2, arrange(queueRoll(placePiece(s, 'p0', 0), [1, 1])));
+  }
+  const view = ({ engine, runtime }: Table, seat: string) => seatExtras(engine, runtime, engine.getState(), seat);
+  const rollDice = ({ engine }: Table) => engine.dispatch({ type: 'roll the dice', by: 'p0' });
+
+  it('compiles with no diagnostics', () => expect(built.diagnostics).toEqual([]));
+
+  it('shows no last card drawn before one is drawn, and then the same card to every seat', () => {
+    const table = started(g, 'Dividend');
+    for (const seat of ['p0', 'p1']) expect(view(table, seat).board!.lastDrawn, seat).toBeNull();
+    expect(rollDice(table).ok).toBe(true);
+    for (const seat of ['p0', 'p1']) {
+      expect(view(table, seat).board!.lastDrawn, seat).toEqual({ seat: 'p0', zone: 'the lucky pile', name: 'Dividend', says: 'They get 50 money.' });
+    }
+  });
+
+  it('shows the cards each player keeps where everyone can see them, to every seat', () => {
+    const table = started(g, 'Free Pass');
+    for (const seat of ['p0', 'p1']) expect(view(table, seat).board!.playerCards, seat).toEqual({ p0: [], p1: [] });
+    rollDice(table);
+    for (const seat of ['p0', 'p1']) expect(view(table, seat).board!.playerCards, seat).toEqual({ p0: ['Free Pass'], p1: [] });
+  });
+
+  it("lists a seat's cards zone by zone in Table order, and slot by slot in each", () => {
+    // The bench is written after the kept cards, though it would sort before them.
+    const benched = compileGame(deckGameText(LUCKY, FATE).replace(
+      '  Each player has a kept cards row that everyone can see.',
+      '  Each player has a kept cards row that everyone can see.\n  Each player has a bench row that everyone can see.',
+    ), lib);
+    expect(benched.diagnostics).toEqual([]);
+    const bg = benched.game!;
+    const table = started(bg, 'Dividend', (s) => relocate(relocate(s, [idOf(s, 'Dividend'), idOf(s, 'Free Pass')], 'kept-cards-p0', bg), [idOf(s, 'Calm')], 'bench-p0', bg));
+    for (const seat of ['p0', 'p1']) expect(view(table, seat).board!.playerCards, seat).toEqual({ p0: ['Dividend', 'Free Pass', 'Calm'], p1: [] });
+  });
+
+  it('Review Focus: a zone only its owner can see is never listed, and no name of a card in a pile or a hand reaches a view', () => {
+    const hidden = compileGame(deckGameText(LUCKY, FATE).replace(
+      '  Each player has a kept cards row that everyone can see.',
+      '  Each player has a kept cards row that everyone can see.\n  Each player has a hand that only they can see.',
+    ), lib);
+    expect(hidden.diagnostics).toEqual([]);
+    const hg = hidden.game!;
+    const table = started(hg, 'Free Pass', (s) => relocate(s, [idOf(s, 'Dividend')], 'hand-p0', hg));
+    for (const seat of ['p0', 'p1']) {
+      const extras = view(table, seat);
+      expect(extras.board!.playerCards, seat).toEqual({ p0: [], p1: [] });
+      // Dividend is in p0's hand and Free Pass is on top of the lucky pile: neither is anything a view may say.
+      expect(JSON.stringify(extras), seat).not.toMatch(/Dividend|Free Pass/);
+    }
+  });
+
+  it('is plain data, and readSeatExtras reads it back after a card is drawn', () => {
+    const table = started(g, 'Dividend');
+    rollDice(table);
+    const extras = view(table, 'p1');
+    expect(extras.board!.lastDrawn).toMatchObject({ name: 'Dividend' });
+    expect(readSeatExtras(JSON.parse(JSON.stringify(extras)))).toEqual(extras);
+  });
+
+  it('refuses a last card drawn that is not four texts, and cards kept that are not lists of names, or are missing', () => {
+    const table = started(g, 'Free Pass');
+    rollDice(table);
+    const extras = JSON.parse(JSON.stringify(view(table, 'p0')));
+    const withBoard = (over: { [k: string]: Json }) => ({ ...extras, board: { ...extras.board, ...over } });
+    const { lastDrawn: _drawn, ...noLastDrawn } = extras.board;
+    const { playerCards: _kept, ...noPlayerCards } = extras.board;
+    expect(readSeatExtras(extras)).not.toBeNull();
+    expect(readSeatExtras(withBoard({ lastDrawn: { seat: 'p0' } }))).toBeNull();
+    expect(readSeatExtras(withBoard({ lastDrawn: { seat: 'p0', zone: 'the lucky pile', name: 'Dividend', says: 7 } }))).toBeNull();
+    expect(readSeatExtras(withBoard({ lastDrawn: 'Dividend' }))).toBeNull();
+    expect(readSeatExtras({ ...extras, board: noLastDrawn })).toBeNull();
+    expect(readSeatExtras(withBoard({ playerCards: { p0: [1] } }))).toBeNull();
+    expect(readSeatExtras(withBoard({ playerCards: { p0: 'Free Pass' } }))).toBeNull();
+    expect(readSeatExtras(withBoard({ playerCards: [] }))).toBeNull();
+    expect(readSeatExtras({ ...extras, board: noPlayerCards })).toBeNull();
+  });
+});
+
 describe('readSeatExtras', () => {
   it('reads extras back, and nothing else', () => {
     expect(readSeatExtras(undefined)).toBeNull();
@@ -319,7 +413,9 @@ describe('readSeatExtras', () => {
   });
 
   const space = { name: 'Go', color: null, details: {}, facts: {}, owner: null };
-  const board = (over: { [k: string]: Json } = {}) => ({ spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {}, ...over });
+  const board = (over: { [k: string]: Json } = {}) => ({
+    spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {}, lastDrawn: null, playerCards: {}, ...over,
+  });
   const action = (over: { [k: string]: Json } = {}) => ({ move: 'roll the dice', label: 'Roll', allowed: true, target: null, ...over });
   const picking = (over: { [k: string]: Json } = {}) => action({ target: { prompt: 'Pick a street you own', spaces: { 3: true }, ...over } });
 
@@ -344,19 +440,19 @@ describe('readSeatExtras', () => {
     ['a target space that is neither true nor a reason', { board: null, actions: [picking({ spaces: { 3: false } })] }],
     ['a target space that is a number', { board: null, actions: [picking({ spaces: { 3: 1 } })] }],
     ['a board that is not an object', { board: 3, actions: [] }],
-    ['a board with no spaces', { board: { pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {} }, actions: [] }],
+    ['a board with no spaces', { board: { pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {}, lastDrawn: null, playerCards: {} }, actions: [] }],
     ['a space with no name', { board: board({ spaces: [{ color: null, details: {}, facts: {}, owner: null }] }), actions: [] }],
     ['a space with no facts', { board: board({ spaces: [{ name: 'Go', color: null, details: {}, owner: null }] }), actions: [] }],
     ['a fact that is text', { board: board({ spaces: [{ ...space, facts: { houses: 'two' } }] }), actions: [] }],
     ['a fact that is null', { board: board({ spaces: [{ ...space, facts: { houses: null } }] }), actions: [] }],
-    ['a board with no bank', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [], playerFacts: {} }, actions: [] }],
+    ['a board with no bank', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [], playerFacts: {}, lastDrawn: null, playerCards: {} }, actions: [] }],
     ['a bank that is not a list', { board: board({ bank: {} }), actions: [] }],
     ['a bank entry with no count', { board: board({ bank: [{ name: 'houses' }] }), actions: [] }],
     ['a bank entry with no name', { board: board({ bank: [{ count: 3 }] }), actions: [] }],
     ['a piece that is not a number', { board: board({ pieces: { p0: 'x' } }), actions: [] }],
     ['a roll of text', { board: board({ roll: 'six' }), actions: [] }],
     ['a counter value that is text', { board: board({ counters: [{ name: 'm', values: { p0: 'x' } }] }), actions: [] }],
-    ['a board with no player facts', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [] }, actions: [] }],
+    ['a board with no player facts', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [], lastDrawn: null, playerCards: {} }, actions: [] }],
     ['player facts that are not a map', { board: board({ playerFacts: [] }), actions: [] }],
     ['a seat whose facts are not a map', { board: board({ playerFacts: { p0: true } }), actions: [] }],
     ['a player fact that is text', { board: board({ playerFacts: { p0: { 'in jail': 'yes' } } }), actions: [] }],

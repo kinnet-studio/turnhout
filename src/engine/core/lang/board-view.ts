@@ -1,15 +1,17 @@
 // What one seat sees of a board game beyond the table: the board with its pieces and numbers, and the seat's buttons.
 // Everything here is plain `Json`, so the net layer can carry it in a view without knowing a board exists.
 import type { GameEngine } from '../game-engine';
-import type { GameState } from '../game-state';
+import { zoneCards, type GameState } from '../game-state';
 import type { PlayerId } from '../scene';
 import type { Json } from '../table-def';
-import { bankOf, counterOf, isOut, latestRoll, ownerOf, pieceAt, playerFact, spaceFact } from './board-state';
+import { bankOf, counterOf, isOut, lastDrawn, latestRoll, ownerOf, pieceAt, playerFact, spaceFact, type LastDrawn } from './board-state';
+import { cardName } from './card-facts';
 import { targetCandidates } from './declared-actions';
 import { friendlyError, friendlyReason } from './friendly';
 import { secondPersonWords } from './refs';
 import type { LangRuntime } from './runtime';
 import type { DeclaredAction } from './types';
+import { zoneIdFor } from './zones';
 
 /**
  * `color` is the space's color when it is written as text; `details` is every other thing the table says about it. `facts` is
@@ -27,10 +29,13 @@ type FactsView = { [fact: string]: number | boolean };
 /**
  * `pieces` lists the seats that still have a piece, so a player who is out is absent; `bank` is in the order the game declares it.
  * `playerFacts` has every seat of the game, `{}` for one with nothing set: what is true of a player is public, so every seat sees it.
+ * `lastDrawn` is the card drawn last, null until one is; every seat sees the same one, since a drawn card is shown to the table.
+ * `playerCards` has every seat of the game too, with the names of the cards the seat keeps in zones of its own that everyone can
+ * see, `[]` for none. Nothing else about a card or a pile is in a view, least of all the order of a pile.
  */
 export type BoardView = {
   spaces: SpaceView[]; pieces: { [seat: string]: number }; roll: number[] | null; counters: CounterView[]; out: PlayerId[]; bank: BankView[];
-  playerFacts: { [seat: string]: FactsView };
+  playerFacts: { [seat: string]: FactsView }; lastDrawn: LastDrawn | null; playerCards: { [seat: string]: string[] };
 };
 /**
  * For a button that picks a space: what to ask the player, and every space its target phrase allows, by the space's place on
@@ -61,6 +66,17 @@ function setFacts(runtime: LangRuntime, on: 'space' | 'player', read: (fact: str
   return set;
 }
 
+/**
+ * What each seat keeps where everyone can see it: the names of the cards in its per-player zones that are public, zone by zone in
+ * Table order and slot by slot. A zone only its owner can see, or nobody, is left out, and so is a zone shared by all.
+ */
+function cardsInView(runtime: LangRuntime, state: GameState): { [seat: string]: string[] } {
+  const shown = runtime.game.zones.filter((zone) => zone.perPlayer && zone.visibility === 'public');
+  return Object.fromEntries(runtime.seats.map((seat) => [
+    seat, shown.flatMap((zone) => zoneCards(state, zoneIdFor(zone.name, seat)).map((card) => cardName(card, runtime.game))),
+  ]));
+}
+
 function boardView(runtime: LangRuntime, state: GameState, seat: PlayerId): BoardView | null {
   const { board } = runtime.game;
   if (!board) return null;
@@ -82,7 +98,10 @@ function boardView(runtime: LangRuntime, state: GameState, seat: PlayerId): Boar
   }));
   const bank = board.bank.map(({ name }): BankView => ({ name, count: bankOf(state, name) }));
   const playerFacts = Object.fromEntries(runtime.seats.map((s) => [s, setFacts(runtime, 'player', (fact) => playerFact(state, s, fact))]));
-  return { spaces, pieces, roll: latestRoll(state), counters, out: runtime.seats.filter((s) => isOut(state, s)), bank, playerFacts };
+  return {
+    spaces, pieces, roll: latestRoll(state), counters, out: runtime.seats.filter((s) => isOut(state, s)), bank, playerFacts,
+    lastDrawn: lastDrawn(state), playerCards: cardsInView(runtime, state),
+  };
 }
 
 /** What a rule says about the space a button picks, said to the player: 'a field they own' is 'a field you own'. */
@@ -159,12 +178,14 @@ const isFact = (v: unknown): boolean => isNumber(v) || typeof v === 'boolean';
 const isSpace = (v: unknown): boolean =>
   isRecord(v) && isText(v.name) && (v.color === null || isText(v.color)) && isRecord(v.details) && isMap(v.facts, isFact)
   && (v.owner === null || isText(v.owner));
+const isDrawn = (v: unknown): boolean => isRecord(v) && isText(v.seat) && isText(v.zone) && isText(v.name) && isText(v.says);
 const isBankLine = (v: unknown): boolean => isRecord(v) && isText(v.name) && isNumber(v.count);
 const isCounter = (v: unknown): boolean =>
   isRecord(v) && isText(v.name) && isMap(v.values, (n) => n === null || isNumber(n));
 const isBoard = (v: unknown): boolean =>
   isRecord(v) && isList(v.spaces, isSpace) && isMap(v.pieces, isNumber) && (v.roll === null || isList(v.roll, isNumber))
-  && isList(v.counters, isCounter) && isList(v.out, isText) && isList(v.bank, isBankLine) && isMap(v.playerFacts, (facts) => isMap(facts, isFact));
+  && isList(v.counters, isCounter) && isList(v.out, isText) && isList(v.bank, isBankLine) && isMap(v.playerFacts, (facts) => isMap(facts, isFact))
+  && (v.lastDrawn === null || isDrawn(v.lastDrawn)) && isMap(v.playerCards, (names) => isList(names, isText));
 const isVerdict = (v: unknown): boolean => v === true || isText(v);
 const isTarget = (v: unknown): boolean => isRecord(v) && isText(v.prompt) && isMap(v.spaces, isVerdict);
 const isAction = (v: unknown): boolean =>

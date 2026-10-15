@@ -17,6 +17,8 @@ const board = (over: Partial<BoardView> = {}): BoardView => ({
   out: [],
   bank: [],
   playerFacts: {},
+  lastDrawn: null,
+  playerCards: {},
   ...over,
 });
 
