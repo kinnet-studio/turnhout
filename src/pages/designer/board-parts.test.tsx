@@ -3,7 +3,7 @@ import type { ComponentProps } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { BoardView } from '@/engine/core/lang/board-view';
 import { ActionButtons, MoneyLine } from './board-controls';
-import { BoardGrid } from './board-grid';
+import { BoardGrid, factWords } from './board-grid';
 import { seatColor } from './seat-colors';
 
 const space = (name: string, over: Partial<BoardView['spaces'][number]> = {}): BoardView['spaces'][number] =>
@@ -89,6 +89,42 @@ describe('BoardGrid facts', () => {
     expect(screen.getByTitle('Rose Lane — 1 house, price 180')).toBeTruthy();
     rerender(<BoardGrid board={rose({})} />);
     expect(screen.getByTitle('Rose Lane — price 180')).toBeTruthy();
+  });
+});
+
+describe('facts about players', () => {
+  const jailed = board({ playerFacts: { p0: { 'in jail': true, 'jail turns': 1 }, p1: { 'jail turns': 2 } } });
+  it('lists the players on a space with their facts, and rings a piece whose player has a yes/no fact set', () => {
+    render(<BoardGrid board={jailed} />);
+    expect(screen.getByTitle('Mill Lane — p0 (in jail, 1 jail turn), p1 (2 jail turns), price 60, rent 2')).toBeTruthy();
+    expect(screen.getByTitle('p0 (in jail, 1 jail turn)').getAttribute('data-ring')).toBe('true');
+    expect(screen.getByTitle('p1 (2 jail turns)').hasAttribute('data-ring')).toBe(false);
+  });
+  it('puts the facts after the money, and none after a seat that is out', () => {
+    render(<MoneyLine board={{ ...jailed, out: ['p2'], playerFacts: { ...jailed.playerFacts, p2: { 'in jail': true } } }} />);
+    expect(screen.getByText('p0 1,500 money · in jail · 1 jail turn')).toBeTruthy();
+    expect(screen.getByText('p1 1,234,567 money · 2 jail turns')).toBeTruthy();
+    expect(screen.getByText('p2 out')).toBeTruthy();
+  });
+  it('says nothing of a flag that is off or a count of 0, and leaves such a player unlisted and unringed', () => {
+    const off = board({ playerFacts: { p0: { 'in jail': false, 'jail turns': 0 } } });
+    render(<BoardGrid board={off} />);
+    expect(screen.getByTitle('Mill Lane — price 60, rent 2')).toBeTruthy();
+    expect(screen.getByTitle('p0').hasAttribute('data-ring')).toBe(false);
+    expect(factWords({ 'in jail': false, 'jail turns': 0 })).toEqual([]);
+  });
+  it('gives the facts in the order given: true flags by name, other counts with their number', () => {
+    expect(factWords({ crown: true, 'jail turns': 1, 'in jail': true, bonus: 3, banned: false })).toEqual(['crown', '1 jail turn', 'in jail', '3 bonus']);
+  });
+  it('never rings a piece for a count alone, and leaves a player with no facts as just the seat', () => {
+    render(<BoardGrid board={board({ playerFacts: { p0: { 'jail turns': 2 }, p1: {} } })} />);
+    expect(screen.getByTitle('p0 (2 jail turns)').hasAttribute('data-ring')).toBe(false);
+    expect(screen.getByTitle('p1')).toBeTruthy();
+  });
+  it('puts a space\'s own facts after the players and before its details', () => {
+    const spaces = [space('Go'), space('Rose Lane', { facts: { houses: 2 }, details: { price: 180 } }), space('Treasury'), space('Ferry Row')];
+    render(<BoardGrid board={board({ spaces, pieces: { p0: 1 }, playerFacts: { p0: { 'in jail': true } } })} />);
+    expect(screen.getByTitle('Rose Lane — p0 (in jail), 2 houses, price 180')).toBeTruthy();
   });
 });
 

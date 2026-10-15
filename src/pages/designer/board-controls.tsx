@@ -1,5 +1,6 @@
 import type { ActionView, BoardView } from '@/engine/core/lang/board-view';
 import { counted } from '@/engine/core/lang/refs';
+import { factWords } from './board-grid';
 import { seatColor } from './seat-colors';
 
 /** The seat's number, so p10 comes after p9; anything that is not `p<n>` goes last. */
@@ -12,14 +13,18 @@ function seatsOf(board: BoardView): string[] {
   return [...seats].sort((a, b) => seatNumber(a) - seatNumber(b) || a.localeCompare(b));
 }
 
-/** One text for the seat: "p0 1,500 money", "p1 ? money" where the number is hidden from this viewer, or "p2 out". */
+/**
+ * One text for the seat: "p0 1,500 money · asleep · 2 naps", "p1 ? money" where the number is hidden from this
+ * viewer, or "p2 out" with no facts: what is true of a player who is out no longer matters.
+ */
 function entryFor(board: BoardView, seat: string): string {
   if (board.out.includes(seat)) return `${seat} out`;
   const numbers = board.counters.map(({ name, values }) => {
     const value = values[seat];
     return typeof value === 'number' ? `${value.toLocaleString('en-US')} ${name}` : `? ${name}`;
   });
-  return numbers.length === 0 ? seat : `${seat} ${numbers.join(', ')}`;
+  const base = numbers.length === 0 ? seat : `${seat} ${numbers.join(', ')}`;
+  return [base, ...factWords(board.playerFacts[seat] ?? {})].join(' · ');
 }
 
 /** Everyone's numbers on one line, each in its seat's color, and under it what the bank has left: "bank: 31 houses, 12 hotels". */

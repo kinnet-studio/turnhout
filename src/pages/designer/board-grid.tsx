@@ -23,14 +23,43 @@ export type Picking = {
 const factsOf = ({ facts }: SpaceView): [string, number | boolean][] =>
   Object.entries(facts).filter(([, value]) => value !== 0 && value !== false);
 
-/** What pointing at a space says: its name, then what has come to be true of it, then everything the table says about it. */
-function hoverText(space: SpaceView): string {
+type Facts = { [fact: string]: number | boolean };
+
+/** What is true of something, in the order given: a flag that is on by its name, a count other than 0 with its number. */
+export function factWords(facts: Facts): string[] {
+  return Object.entries(facts)
+    .filter(([, value]) => value !== 0 && value !== false)
+    .map(([fact, value]) => (typeof value === 'number' ? counted(value, fact) : fact));
+}
+
+/** A seat and what is true of it: "p0 (asleep, 2 naps)"; null when nothing is, and the seat is then left bare. */
+function seatWithFacts(seat: string, facts: Facts | undefined): string | null {
+  const words = factWords(facts ?? {});
+  return words.length === 0 ? null : `${seat} (${words.join(', ')})`;
+}
+
+/** A piece is ringed when its player has any yes/no fact set to yes; a count alone is no reason to stand out. */
+const rings = (facts: Facts | undefined): boolean => Object.values(facts ?? {}).some((value) => value === true);
+
+/**
+ * What pointing at a space says: its name, then the players on it who have facts set, then what has come to be true of the
+ * space, then everything the table says about it.
+ */
+function hoverText(space: SpaceView, seats: string[], playerFacts: BoardView['playerFacts']): string {
   const said = [
-    ...factsOf(space).map(([fact, value]) => (typeof value === 'number' ? counted(value, fact) : fact)),
+    ...seats.flatMap((seat) => seatWithFacts(seat, playerFacts[seat]) ?? []),
+    ...factWords(space.facts),
     ...Object.entries(space.details).map(([k, v]) => `${k} ${v}`),
   ];
   return said.length === 0 ? space.name : `${space.name} — ${said.join(', ')}`;
 }
+
+const PIECE_SHADOW = '0 0 0 1px #111827';
+/**
+ * Outside the piece's usual outline: a white band between two dark edges, so it shows on a pale space and on any seat's
+ * color. The ring reaches 4px out and the space clips at its padding, so the piece keeps that much room around it.
+ */
+const RING_STYLE = { boxShadow: `${PIECE_SHADOW}, 0 0 0 3px #fff, 0 0 0 4px #111827`, margin: 2 } as const;
 
 const markStyle = { flex: '0 0 auto', height: '70%', boxSizing: 'border-box', border: '1px solid #111827' } as const;
 
@@ -79,15 +108,27 @@ function pickProps(index: number, name: string, picking: Picking | undefined) {
   };
 }
 
-function Space({ space, seats, row, col, index, picking }: {
-  space: SpaceView; seats: string[]; row: number; col: number; index: number; picking: Picking | undefined;
+/** A seat's piece in its color; its title says what is true of the player, and a yes/no fact that is on rings it. */
+function Piece({ seat, facts }: { seat: string; facts: Facts | undefined }) {
+  const ringed = rings(facts);
+  return (
+    <span
+      title={seatWithFacts(seat, facts) ?? seat}
+      data-ring={ringed ? 'true' : undefined}
+      style={{ width: MARK, height: MARK, borderRadius: '50%', boxSizing: 'border-box', border: '1px solid #fff', ...(ringed ? RING_STYLE : { boxShadow: PIECE_SHADOW }), backgroundColor: seatColor(seat) }}
+    />
+  );
+}
+
+function Space({ space, seats, playerFacts, row, col, index, picking }: {
+  space: SpaceView; seats: string[]; playerFacts: BoardView['playerFacts']; row: number; col: number; index: number; picking: Picking | undefined;
 }) {
   const paint = spaceColor(space.color);
   const marks = factMarks(space);
   const { style: pickStyle, ...pick } = pickProps(index, space.name, picking);
   return (
     <div
-      title={hoverText(space)}
+      title={hoverText(space, seats, playerFacts)}
       {...pick}
       style={{
         gridRow: row + 1, gridColumn: col + 1, minWidth: 0, minHeight: 0, overflow: 'hidden', boxSizing: 'border-box',
@@ -110,7 +151,7 @@ function Space({ space, seats, row, col, index, picking }: {
           : <span />}
         <span style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 2 }}>
           {seats.map((seat) => (
-            <span key={seat} title={seat} style={{ width: MARK, height: MARK, borderRadius: '50%', boxSizing: 'border-box', border: '1px solid #fff', boxShadow: '0 0 0 1px #111827', backgroundColor: seatColor(seat) }} />
+            <Piece key={seat} seat={seat} facts={playerFacts[seat]} />
           ))}
         </span>
       </div>
@@ -152,7 +193,7 @@ export function BoardGrid({ board, picking }: { board: BoardView; picking?: Pick
       }}
     >
       {board.spaces.map((space, i) => (
-        <Space key={i} space={space} seats={bySpace.get(i) ?? []} row={cells[i].row} col={cells[i].col} index={i} picking={picking} />
+        <Space key={i} space={space} seats={bySpace.get(i) ?? []} playerFacts={board.playerFacts} row={cells[i].row} col={cells[i].col} index={i} picking={picking} />
       ))}
       {size > 2 && (
         <div style={{ gridRow: `2 / ${size}`, gridColumn: `2 / ${size}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, background: '#cfe3d2' }}>

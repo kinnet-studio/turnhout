@@ -3,7 +3,7 @@ import { StrictMode, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import COLOR_MATCH from '@/games/color-match.rules?raw';
 import RENT_DAY from '@/games/rent-day.rules?raw';
-import { setOwner, withBoardData } from '@/engine/core/lang/board-state';
+import { placePiece, setOwner, setPlayerFact, withBoardData } from '@/engine/core/lang/board-state';
 import { createEngine, initialState } from '@/engine/core/lang/build';
 import { compileGame } from '@/engine/core/lang/compile';
 import { createDefaultLibrary } from '@/engine/core/lang/library';
@@ -342,5 +342,27 @@ describe('Playtest: building by picking a street', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'End your turn' })[0]);
     expect(build(1).getAttribute('aria-disabled')).toBe('false');
     expect(banner()).toBeNull();
+  });
+});
+
+describe('Playtest: a player in jail', () => {
+  const JAIL = rentDay.board!.spaces.findIndex((space) => space.name === 'Jail');
+  const jailed = setPlayerFact(setPlayerFact(
+    placePiece(withBoardData(initialState(rentDay, SEED), rentDay, ['p0', 'p1']), 'p0', JAIL), 'p0', 'in jail', true), 'p0', 'jail turns', 1);
+
+  it('shows who is in jail and the jail buttons, greyed with reasons, and paying sets them free', () => {
+    mountRentDay({ players: 2, initial: jailed });
+    expect(screen.getAllByText('p0 1,500 money · in jail · 1 jail turn')).toHaveLength(2);
+    expect(screen.getAllByTitle('Jail — p0 (in jail, 1 jail turn), kind jail')).toHaveLength(2);
+    expect(screen.getAllByTitle('p0 (in jail, 1 jail turn)').every((piece) => piece.getAttribute('data-ring') === 'true')).toBe(true);
+    expect(rollButtons()[0].getAttribute('title')).toBe('they are not in jail');
+    const [p0Pay, p1Pay] = screen.getAllByRole('button', { name: 'Pay to leave jail' });
+    const [p0ForDouble] = screen.getAllByRole('button', { name: 'Roll for a double' });
+    expect([p0Pay.getAttribute('aria-disabled'), p0ForDouble.getAttribute('aria-disabled')]).toEqual(['false', 'false']);
+    expect(p1Pay.getAttribute('title')).toBe("It's p0's turn.");
+    fireEvent.click(p0Pay);
+    expect(screen.getAllByText('p0 1,450 money')).toHaveLength(2);
+    expect(screen.queryAllByTitle(/^p0 \(/)).toHaveLength(0);
+    expect(rollButtons()[0].getAttribute('aria-disabled')).toBe('false');
   });
 });

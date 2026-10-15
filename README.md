@@ -69,7 +69,7 @@ The designer page is a text editor for the rule language, with a line-numbered e
 - **Play** is available once the rules read cleanly. It puts every seat on one screen (pick the player count first when the game allows a range), with undo and restart. Editing the rules ends the playtest; Play starts a fresh game under the new rules.
 - **Download** and **Upload** move the text to and from a `.rules` file.
 
-**Board games.** A game can have a `Board:` section: a table of spaces for the pieces to loop round (a `color` column is drawn as a band on the space), a piece for each player, numbers each player holds (money, say) and dice. In a phase, each `A player may …` line becomes a button on that seat's panel, greyed with the reason on hover while it is not allowed. `When a piece passes …` and `When a player lands on …` rules run as pieces move. Each seat's panel in the playtest draws the board with its pieces and owners, a line with everyone's numbers, and the seat's buttons. `src/games/rent-day.rules` is a 2 to 8 player property-trading game written this way, with 31 examples:
+**Board games.** A game can have a `Board:` section: a table of spaces for the pieces to loop round (a `color` column is drawn as a band on the space), a piece for each player, numbers each player holds (money, say) and dice. In a phase, each `A player may …` line becomes a button on that seat's panel, greyed with the reason on hover while it is not allowed. `When a piece passes …` and `When a player lands on …` rules run as pieces move. Each seat's panel in the playtest draws the board with its pieces and owners, a line with everyone's numbers, and the seat's buttons. `src/games/rent-day.rules` is a 2 to 8 player property-trading game written this way, with 45 examples:
 
 ```
 Phase: playing
@@ -87,6 +87,12 @@ Phase: playing
 - `Spaces can have houses and a hotel.` A plural noun is a count that starts at 0; "a hotel", or an adjective such as "poisoned", is a yes or no that starts at no. A space's counts are drawn on the board as small squares (up to 4, then one square and the number) and its yes-or-no facts as red blocks, and pointing at the space lists them.
 - `Cards can be poisoned.` The same for cards: a card's face shows what is set, so a card's health and "poisoned" show on it without anything else written. `src/games/venom.rules`, a two-player card game, is built on this: a Viper poisons the other camp, and a poisoned card loses health each time its owner plays.
 - `The bank has 32 houses and 12 hotels.` Supplies the game takes from and gives back to; the playtest shows what is left (`bank: 31 houses, 12 hotels`).
+
+**Facts about players.** A game can say what a player may come to be or have: `Players can be in jail.` is a yes or no (that starts at no), `Players can have jail turns.` is a count (that starts at 0), and rules and examples then use them like a space's facts. What is true of a player is public, so every seat sees it: after the player's numbers on the line under the board (`p0 1,450 money · in jail · 1 jail turn`), in the title of the space they stand on, and as a ring round their piece on the board while any of their yes-or-no facts is on. A player who is out shows only `out`.
+
+**Doubles.** `There are two six-sided dice.` makes `they rolled a double` (their own last roll this turn) and `they have rolled 2 doubles this turn`, `3 doubles`, `fewer than 3 doubles` available to the rules. A double needs exactly two dice: a game with another number of dice that says "double" gets an error on that line. An example fixes the rolls to come with `the next roll is 3 and 3` and, after it, `the roll after that is 1 and 2`.
+
+**Saying a button was pressed.** `they have rolled this turn` means any roll button was pressed, so a game with `A player may roll the dice.` and `A player may roll for a double.` reads "rolled" as either. To name one, write its whole wording in the past: `they have rolled for a double this turn`.
 
 **Buttons that pick a space.** A button whose line ends in "on a …" (`A player may build a house on a street they own.`) asks the player to pick a space. In the playtest, pressing it puts a banner with the question and a Cancel button above the board; the streets the player may pick are outlined, the ones the rules refuse are dashed (click one to see why) and the rest fade. A button with nothing to pick, because the player owns no street, say, stays greyed and says so on hover.
 
@@ -229,7 +235,7 @@ turnhout is built as dependency-ordered sub-projects, each with its own design s
 **Next:**
 
 - **Online play** — a real transport and rooms on top of the net core (a Cloudflare Durable Object per room is the intended fit).
-- **Tokens and meeples** — 🚧 in progress: non-card pieces, in the engine and in the designer language. Slice 1 (a board to loop round, pieces, dice, numbers such as money, buttons, and the Rent Day sample to play it) and slice 2 (sets and buildings: buttons that pick a space, facts on spaces and cards, a bank, `Rent:` sections, houses and hotels on the board, and the Venom sample) have shipped; the slices after them are laid out in [the board games overview](docs/superpowers/specs/2026-10-15-board-games-overview-design.md).
+- **Tokens and meeples** — 🚧 in progress: non-card pieces, in the engine and in the designer language. Slice 1 (a board to loop round, pieces, dice, numbers such as money, buttons, and the Rent Day sample to play it), slice 2 (sets and buildings: buttons that pick a space, facts on spaces and cards, a bank, `Rent:` sections, houses and hotels on the board, and the Venom sample) and slice 3 (doubles and jail: facts about players, doubles, done-wordings, and jail in Rent Day) have shipped; the slices after them are laid out in [the board games overview](docs/superpowers/specs/2026-10-15-board-games-overview-design.md).
 
 ## Tech stack
 
