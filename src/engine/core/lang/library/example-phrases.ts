@@ -1,6 +1,7 @@
 import { zoneCards, type GameState } from '../../game-state';
 import type { CardState } from '../../scene';
 import type { Json } from '../../table-def';
+import { isSaysColumn } from '../cards';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import { STANDARD_RANKS, STANDARD_SUITS } from '../refs';
@@ -48,9 +49,12 @@ const joinAnd = (items: string[]) => (items.length < 2 ? items.join('') : `${ite
 
 const countOf = (n: number) => `${n} ${n === 1 ? 'card' : 'cards'}`;
 
-/** The attributes that make up a card's face in this game, so bookkeeping like who played it is left out. */
+/**
+ * The attributes that make up a card's face in this game, so bookkeeping like who played it is left out. What a card says is
+ * left out too: a card is named by its name, not by its rules.
+ */
 function describeCards(cards: CardState[], game: CompiledGame): string {
-  const keys = [...new Set(game.cards.flatMap((set) => set.identities.flatMap((i) => Object.keys(i.attrs))))];
+  const keys = [...new Set(game.cards.flatMap((set) => set.identities.flatMap((i) => Object.keys(i.attrs))))].filter((key) => !isSaysColumn(key));
   return joinAnd(cards.map((card) => describeCard(Object.fromEntries(
     keys.flatMap((key) => (card.data?.[key] === undefined ? [] : [[key, card.data[key] as Json]])),
   ))));

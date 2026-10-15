@@ -49,6 +49,11 @@ export const MAX_CARDS = 1000;
 export const TOO_MANY_CARDS = `A game can have at most ${MAX_CARDS} cards.`;
 
 const COPIES = 'copies';
+/** The one column name the language gives meaning to: its cells are rules for the card's player (see `compileSays`). */
+export const SAYS = 'says';
+
+/** Whether a table column is the says column: any capitals, spaces around the name ignored. */
+export const isSaysColumn = (name: string): boolean => name.trim().toLowerCase() === SAYS;
 
 /** What a table cell says: 'a to b' counts up from a to b; anything else is one value, whole numbers as numbers. */
 type Cell = { from: number; to: number } | { value: Json };

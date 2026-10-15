@@ -6,7 +6,7 @@ import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
-import { TINY_BOARD_HEAD } from './testing';
+import { TINY_BOARD_HEAD, deckGameText } from './testing';
 import type { ParamType } from './types';
 
 const lib = createDefaultLibrary();
@@ -861,5 +861,50 @@ describe('a section named after a table column', () => {
     const header = text.split('\n').indexOf('Rent:') + 1;
     expect(errors(text)).toContainEqual([5, 'Add a table of spaces under this line.']);
     expect(compiled(text).diagnostics.filter((d) => d.line >= header)).toEqual([]);
+  });
+});
+
+describe('cards that say what they do', () => {
+  const FATE = ['| name | says |', '| Calm | They get 0 money. |'];
+
+  it('reads each says cell, sentence by sentence, as lines about the player who drew the card', () => {
+    const lucky = ['| name | says |', '| Dividend | They get 50 money. |', '| Toll | They pay 15. If someone else owns it, they pay its rent to its owner. |'];
+    const { game, diagnostics } = compileGame(deckGameText(lucky, FATE), lib);
+    expect(diagnostics).toEqual([]);
+    expect(Object.keys(game!.says)).toEqual(['They get 50 money.', 'They pay 15. If someone else owns it, they pay its rent to its owner.', 'They get 0 money.']);
+    expect(game!.says['They get 50 money.']).toEqual([{ kind: 'effect', phrase: 'they get {int} {counter}', args: [50, 'money'], line: 7, text: 'They get 50 money' }]);
+    expect(game!.says['They pay 15. If someone else owns it, they pay its rent to its owner.'].map((ref) => [ref.kind, ref.phrase, ref.line]))
+      .toEqual([['effect', 'they pay {int}', 8], ['lang', 'if', 8]]);
+    expect(JSON.parse(JSON.stringify(game!.says))).toEqual(game!.says);
+  });
+  it("reports a sentence the library doesn't know on its row, with a stub, and still reads the others", () => {
+    const { game, diagnostics } = compileGame(deckGameText(['| name | says |', '| Jig | They dance a jig. They get 5 money. |'], FATE), lib);
+    expect(diagnostics.map((d) => [d.line, d.kind, d.message])).toEqual([[7, 'unknown-phrase', "“They dance a jig” isn't in the phrase library yet."]]);
+    expect(diagnostics[0].stub).toBeDefined();
+    expect(game!.says['They dance a jig. They get 5 money.'].map((ref) => ref.phrase)).toEqual(['missing', 'they get {int} {counter}']);
+  });
+  it("Review Focus: never holds back the rest of the rules for a says sentence the library doesn't know", () => {
+    const text = deckGameText(['| name | says |', '| Jig | They dance a jig. |'], FATE, ['  When a player has less than 1 money:', '    They sing.']);
+    const sing = text.split('\n').indexOf('    They sing.') + 1;
+    expect(compileGame(text, lib).diagnostics.map((d) => [d.line, d.severity, d.kind])).toEqual([[7, 'error', 'unknown-phrase'], [sing, 'error', 'unknown-phrase']]);
+  });
+  it('reads a row on each deck even when two rows say the same, and keeps one entry for the text', () => {
+    const jig = ['| name | says |', '| Jig | They dance a jig. |'];
+    const { game, diagnostics } = compileGame(deckGameText(jig, jig), lib);
+    expect(diagnostics.map((d) => [d.line, d.kind])).toEqual([[7, 'unknown-phrase'], [10, 'unknown-phrase']]);
+    expect(Object.keys(game!.says)).toEqual(['They dance a jig.']);
+  });
+  it('asks for a sentence in an empty cell, on its row', () => {
+    const { diagnostics } = compileGame(deckGameText(['| name | says |', '| Blank | |'], FATE), lib);
+    expect(diagnostics.map((d) => [d.line, d.message])).toEqual([[7, 'Say what this card does, like “They get 50 money.”']]);
+  });
+  it('knows the column by its name in any capitals', () => {
+    const lucky = ['| name | Says |', '| Dividend | They get 50 money. |'];
+    const { game, diagnostics } = compileGame(deckGameText(lucky, FATE), lib);
+    expect(diagnostics).toEqual([]);
+    expect(game!.says['They get 50 money.'].map((ref) => ref.phrase)).toEqual(['they get {int} {counter}']);
+  });
+  it('is empty for a game whose decks have no says column', () => {
+    expect(compileGame(COLOR_MATCH_TEXT, lib).game!.says).toEqual({});
   });
 });

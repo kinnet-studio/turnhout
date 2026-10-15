@@ -30,7 +30,7 @@ export function fixtureGame(over: Partial<CompiledGame> = {}): CompiledGame {
     players: { min: 2, max: 4 },
     zones: FIXTURE_ZONES.map((z) => ({ ...z })),
     cards: [{ kind: 'standard', identities: standardDeckIdentities(), start: 'deck', acesHigh: true }],
-    setup: [], phases: [], end: null, examples: [], board: null, facts: [], columns: {},
+    setup: [], phases: [], end: null, examples: [], board: null, facts: [], columns: {}, says: {},
     ...over,
   };
 }
@@ -152,6 +152,51 @@ export const TINY_BOARD = [
   '  The game ends when one player is left.',
   '  That player wins.',
 ].join('\n');
+
+/**
+ * A board game whose two decks say what their cards do. `lucky` and `fate` are the tables under each deck line, header row
+ * first; `rules` are lines under `Phase: playing`, indented as written there. Lines: the lucky table starts on line 6 (its
+ * first card on line 7); the fate deck line is line 6 + lucky.length and its first card line 8 + lucky.length. The loop is
+ * Go 0, Mill Lane 1, Lucky 2, North Station 3, Rose Lane 4, Lucky 5, Fate 6, Power Works 7.
+ */
+export function deckGameText(lucky: string[], fate: string[], rules: string[] = []): string {
+  return [
+    'Game: Deck Board', 'Players: 2 to 4', '', 'Cards:',
+    '  A deck called lucky cards, starting in the lucky pile:', ...lucky.map((row) => `    ${row}`),
+    '  A deck called fate cards, starting in the fate pile:', ...fate.map((row) => `    ${row}`),
+    '', 'Table:',
+    '  The lucky pile is a pile in the center that no one can see.',
+    '  The fate pile is a pile in the center that no one can see.',
+    '  Each player has a kept cards row that everyone can see.',
+    '', 'Board:',
+    '  The board is a loop of spaces, starting at Go:',
+    '    | space         | kind    | color  | price | rent |',
+    '    | Go            | go      |        |       |      |',
+    '    | Mill Lane     | street  | brown  | 60    | 2    |',
+    '    | Lucky         | lucky   |        |       |      |',
+    '    | North Station | station |        | 200   | 25   |',
+    '    | Rose Lane     | street  | orange | 180   | 14   |',
+    '    | Lucky         | lucky   |        |       |      |',
+    '    | Fate          | fate    |        |       |      |',
+    '    | Power Works   | utility |        | 150   | 10   |',
+    '  Each player has a piece that starts on Go.',
+    '  Each player has 1500 money that everyone can see.',
+    '  Players pay with money.',
+    '  There are two six-sided dice.',
+    '  Spaces can have houses and a hotel.',
+    '  The bank has 32 houses and 12 hotels.',
+    '', 'Phase: playing', '  Players take turns.',
+    '  A player may roll the dice.', '    Only if they have not rolled this turn.', '    Then:', '      Roll the dice.',
+    '      Their piece moves forward by the roll.',
+    '  A player may end their turn.', '    Only if they have rolled this turn.',
+    '  When a piece passes Go:', '    Its player gets 200 money.',
+    '  When a player lands on a space someone else owns:', '    They pay its rent to its owner.',
+    '  When a player has less than 0 money:', '    They are out.', '    Their spaces go back to the bank.',
+    ...rules,
+    '  After a player ends their turn, the turn passes to the left.',
+    '', 'End:', '  The game ends when one player is left.', '  That player wins.',
+  ].join('\n');
+}
 
 /** The loop of the board fixtures: a start, two streets, a tax, a station, a utility and two chance spaces. */
 export const FIXTURE_SPACES: SpaceSpec[] = [

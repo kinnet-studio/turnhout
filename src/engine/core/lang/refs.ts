@@ -516,7 +516,7 @@ const spaceNames = (vocab: Vocab): string[] => [...spaceTable(vocab).values()].m
 function resolveSpace(text: string, vocab: Vocab): Parsed {
   const found = spaceTable(vocab).get(canon(text));
   if (!found) return unknownText(text);
-  // A rule about "Chance" would silently be about only one of them.
+  // A rule about a name several spaces share would silently be about only one of them.
   if (found.at.length > 1) return { error: `There are ${found.at.length} spaces called “${found.name}”, so this can't tell which one.` };
   return { value: found.at[0] };
 }

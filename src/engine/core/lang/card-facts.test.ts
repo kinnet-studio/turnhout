@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { cardFact, changeCard, faceKeyOf } from './card-facts';
+import { cardFact, cardName, changeCard, faceKeyOf, saysOf } from './card-facts';
 import { buildCards, expandCardTable, textFaceKey } from './cards';
-import { fixtureCard, fixtureColorGame, fixtureGame, fixtureState } from './testing';
+import { compileGame } from './compile';
+import { createDefaultLibrary } from './library';
+import { deckGameText, fixtureCard, fixtureColorGame, fixtureGame, fixtureState } from './testing';
 import { makeRng } from '../rng';
 import type { CardState } from '../scene';
 import type { CompiledGame } from './types';
@@ -117,5 +119,27 @@ describe('card facts', () => {
   });
   it('refuses a card that is not in the game', () => {
     expect(() => changeCard(stateWith(knight()), 'c9', { poisoned: true }, creatures)).toThrow('No card c9 to change.');
+  });
+});
+
+describe('what a card says', () => {
+  const FATE = ['| name | says |', '| Calm | They get 0 money. |'];
+
+  it('is the text of its says column, and the card is named by its other columns', () => {
+    const { game } = compileGame(deckGameText(['| name | Says |', '| Dividend | They get 50 money. |'], FATE), createDefaultLibrary());
+    const { cards } = buildCards(game!.cards, makeRng(1));
+    const dividend = cards.find((card) => card.data?.name === 'Dividend')!;
+    expect(saysOf(dividend)).toBe('They get 50 money.');
+    expect(cardName(dividend, game!)).toBe('Dividend');
+  });
+  it('is nothing for a card with no says column, which is named by its table columns', () => {
+    const card = fixtureCard('c0', 'deck', { color: 'red', number: 7 });
+    expect(saysOf(card)).toBeNull();
+    expect(cardName(card, fixtureColorGame())).toBe('red 7');
+  });
+  it('names a standard deck card by its face key', () => {
+    const [card] = buildCards(fixtureGame().cards, makeRng(1)).cards;
+    expect(saysOf(card)).toBeNull();
+    expect(cardName(card, fixtureGame())).toBe(card.faceKey);
   });
 });

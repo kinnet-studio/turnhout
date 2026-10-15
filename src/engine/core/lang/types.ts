@@ -73,6 +73,11 @@ export type CompiledGame = {
    * means for a space once they have each had their say.
    */
   columns: { [column: string]: PhraseRef[] };
+  /**
+   * What each cell of a deck's `says` column tells its cards to do, keyed by the cell's text as the cards' data holds it
+   * (trimmed): one effect ref per sentence, in order, each about the player who draws the card. Empty when no deck has the column.
+   */
+  says: { [cell: string]: PhraseRef[] };
 };
 export type Vocab = {
   sharedZones: string[]; playerZones: string[]; maxPlayers: number; phases: string[]; verbs: string[];

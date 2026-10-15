@@ -1,4 +1,4 @@
-import { MAX_CARDS, TOO_MANY_CARDS } from './cards';
+import { MAX_CARDS, TOO_MANY_CARDS, isSaysColumn } from './cards';
 import { compileExample } from './compile-example';
 import { actionLine, actionOf, cardMoveVerb, compilePhase, type VerbUses } from './compile-phase';
 import { addProblem, attempt, matchEffectLine, matchLine, phaseId, phraseFn, rejectChildren, type LineCtx } from './compile-util';
@@ -7,7 +7,7 @@ import { parseOutline, type OutlineNode } from './outline';
 import { normalizeLine, suggestNames, vocabFrom, type PhraseLibrary } from './phrases';
 import { canon } from './refs';
 import type {
-  BankSpec, BoardFn, BoardSpec, CardSetSpec, CardsFn, CompiledEnd, CompiledGame, CompiledPhase, DeclareFn, FactSpec, PhraseRef, SpaceSpec, Vocab,
+  BankSpec, BoardFn, BoardSpec, CardSetSpec, CardsFn, CardTable, CompiledEnd, CompiledGame, CompiledPhase, DeclareFn, FactSpec, PhraseRef, SpaceSpec, Vocab,
   ZoneFn, ZoneSpec,
 } from './types';
 
@@ -22,6 +22,8 @@ const GAME_ENDS = /^the game ends when\s+(.+)$/i;
 const SAYS_WINS = /\bwins\b/i;
 const LOOP_LINE = /^the\s+board\s+is\s+a\s+loop\b/i;
 const BLOCK_SECTIONS = new Set(['cards', 'table', 'board', 'setup', 'end']);
+/** Where one sentence of a says cell ends and the next begins: a full stop followed by whitespace. */
+const SENTENCE_END = /\.\s+/;
 
 const MAX_PLAYERS = 12;
 /** “They are out” already says a player has left the game, so a fact about players may not be called that. */
@@ -34,6 +36,9 @@ const UNKNOWN_SECTION = `I don't understand this section. Sections are ${SECTION
 const NO_LOOP = 'Add a line like “The board is a loop of spaces, starting at Go:” under Board:.';
 const NO_BOARD_FOR_PLAYER_FACTS = 'Facts about players need a Board: section for now.';
 const HOLD_BACK = (line: number) => `Some lines below can't be checked until line ${line} is fixed.`;
+// The example uses one of the game's own counters, so the compiler needs no word of its own for a thing players have.
+const SAYS_NOTHING = (counter: string) => `Say what this card does, like “They get 50 ${counter}.”`;
+const SAYS_EXAMPLE_COUNTER = 'coins';
 
 type Section = { keyword: string; rest: string; node: OutlineNode };
 
@@ -215,8 +220,23 @@ function acceptFacts(declared: Declared[], board: BoardSpec | null, hasBoardSect
   return facts;
 }
 
-function compileCards(lines: OutlineNode[], ctx: LineCtx, declared: Declared[]): CardSetSpec[] {
+/** One cell of a deck's says column, trimmed, and the line of its row. */
+type SaysCell = { text: string; line: number };
+
+/** A cell for every row of a table that has a says column; none when it has not. */
+function saysCellsOf(table: CardTable | null): SaysCell[] {
+  const column = table?.columns.findIndex(isSaysColumn) ?? -1;
+  if (!table || column < 0) return [];
+  return table.rows.map((row) => ({ text: (row.cells[column] ?? '').trim(), line: row.line }));
+}
+
+/**
+ * The sets of cards the Cards: lines make, and the says cells of those that came from a table with a says column. A set that
+ * has a problem is left out and so are its cells, which would only repeat that problem.
+ */
+function compileCards(lines: OutlineNode[], ctx: LineCtx, declared: Declared[]): { sets: CardSetSpec[]; says: SaysCell[] } {
   const sets: CardSetSpec[] = [];
+  const says: SaysCell[] = [];
   let total = 0;
   for (const node of lines) {
     rejectChildren(node, ctx.diagnostics);
@@ -234,8 +254,29 @@ function compileCards(lines: OutlineNode[], ctx: LineCtx, declared: Declared[]):
     }
     total += set.identities.length;
     sets.push(set);
+    if (set.kind === 'table') says.push(...saysCellsOf(node.table));
   }
-  return sets;
+  return { sets, says };
+}
+
+/**
+ * What each says cell tells its cards to do: every sentence is an effect line about the player who draws the card, and "it"
+ * in one is the space they stand on. Every row is read, so a problem is reported on each row that has it, but rows with the
+ * same text share one entry (the first one's refs stand). The problems come back apart from the rest, for the caller to show
+ * without holding anything back: a card's sentence is not among the words the other lines are made of.
+ */
+function compileSays(cells: SaysCell[], ctx: LineCtx): { says: CompiledGame['says']; diagnostics: Diagnostic[] } {
+  const diagnostics: Diagnostic[] = [];
+  const about: LineCtx = { ...ctx, player: true, space: true, diagnostics };
+  // A map, for a cell may read like any property name.
+  const says = new Map<string, PhraseRef[]>();
+  for (const { text, line } of cells) {
+    const sentences = text.split(SENTENCE_END).filter((sentence) => normalizeLine(sentence) !== '');
+    if (sentences.length === 0) addProblem(diagnostics, line, SAYS_NOTHING(ctx.vocab.counters[0] ?? SAYS_EXAMPLE_COUNTER), { kind: 'invalid' });
+    const refs = sentences.map((sentence) => matchEffectLine(sentence, line, about));
+    if (!says.has(text)) says.set(text, refs);
+  }
+  return { says: Object.fromEntries(says), diagnostics };
 }
 
 /** What the Board: lines above a line have said, as a board the lines below can name spaces and counters of. */
@@ -397,7 +438,9 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   // Buttons are read ahead too: “they have not rolled this turn” may come before the action that rolls.
   const actions = readActions(phaseLines);
 
-  const cards = compileCards(linesOf(of('cards')), stage(vocabFrom({ maxPlayers, zones, phases: phaseIds, verbs, actions })), declared);
+  const { sets: cards, says: saysCells } = compileCards(
+    linesOf(of('cards')), stage(vocabFrom({ maxPlayers, zones, phases: phaseIds, verbs, actions })), declared,
+  );
   // Facts are checked once both tables are read, since a fact may be named like a column of either.
   const facts = acceptFacts(declared, board, of('board').length > 0, cards, diagnostics);
 
@@ -409,6 +452,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   // Which headers name a column is only known now that the board is, wherever in the text they stand.
   const boardFailed = board === null && of('board').length > 0;
   const columns = compileColumns(readColumnSections(others, board, boardFailed, diagnostics), ctx);
+  const { says, diagnostics: saysDiagnostics } = compileSays(saysCells, ctx);
 
   const phases: CompiledPhase[] = [];
   const seen = new Set<string>();
@@ -425,11 +469,14 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   const end = compileEnd(of('end'), ctx);
   const examples = of('example').map((s) => compileExample(s.node, ctx, players));
 
-  // Decided before anything is held back: a game whose held-back lines have problems is not one to play.
-  const onlyUnknownPhrases = diagnostics.every((d) => d.severity !== 'error' || d.kind === 'unknown-phrase');
+  // Decided before anything is held back: a game whose held-back lines have problems is not one to play. The says problems
+  // count, but they are added only after the holding back: they sit on lines of the Cards: section, which would otherwise
+  // hold back the lines below them.
+  const onlyUnknownPhrases = [...diagnostics, ...saysDiagnostics].every((d) => d.severity !== 'error' || d.kind === 'unknown-phrase');
   holdBack(diagnostics, [of('players'), of('board'), of('table'), of('cards')]);
+  diagnostics.push(...saysDiagnostics);
   if (name === null || players === null || phases.length === 0 || !onlyUnknownPhrases) return undefined;
-  return { name, players, zones, cards, setup, phases, end, examples, board, facts, columns };
+  return { name, players, zones, cards, setup, phases, end, examples, board, facts, columns, says };
 }
 
 /**
