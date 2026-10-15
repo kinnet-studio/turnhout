@@ -86,6 +86,13 @@ describe('seats and zone references', () => {
     expect(() => resolveSeat({ who: 'actor' }, envFor(state))).toThrow(RuleError);
     expect(() => resolveSeat({ who: 'actor' }, envFor(state))).toThrow('Only a rule about a player\'s move can say “their”.');
   });
+  it('rejects a seat that is not at the table', () => {
+    const twoSeats = { ...envFor(state), seats: ['p0', 'p1'] };
+    expect(() => resolveSeat({ seat: 'p3' }, twoSeats)).toThrow(RuleError);
+    expect(() => resolveSeat({ seat: 'p3' }, twoSeats)).toThrow('There is no player p3 at this table.');
+    expect(() => resolveZoneIds({ of: { seat: 'p3' }, zone: 'hand' }, twoSeats)).toThrow('There is no player p3 at this table.');
+    expect(resolveZoneIds({ of: { seat: 'p1' }, zone: 'hand' }, twoSeats)).toEqual(['hand-p1']);
+  });
   it('resolves a seat from the move, an explicit actor or the reference itself', () => {
     expect(resolveSeat({ who: 'actor' }, envFor(state, MOVE))).toBe('p1');
     expect(resolveSeat({ who: 'actor' }, envFor(state, MOVE), 'p0')).toBe('p0');

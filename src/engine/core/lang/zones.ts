@@ -39,7 +39,10 @@ export function zoneInfo(game: CompiledGame, zoneId: string): { spec: ZoneSpec; 
 }
 
 export function resolveSeat(ref: SeatRef, env: PhraseEnv, actor?: PlayerId): PlayerId {
-  if ('seat' in ref) return ref.seat;
+  if ('seat' in ref) {
+    if (!env.seats.includes(ref.seat)) throw new RuleError(`There is no player ${ref.seat} at this table.`);
+    return ref.seat;
+  }
   if (ref.who === 'actor') {
     const by = actor ?? env.move?.by;
     if (by === undefined) throw new RuleError('Only a rule about a player\'s move can say “their”.');
