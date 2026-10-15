@@ -38,11 +38,19 @@ export const OUT_KEY = 'lang:out';
 export const FACTS_KEY = 'lang:facts';
 /** What is left in the bank, by name: `{ [name]: number }`. */
 export const BANK_KEY = 'lang:bank';
+/**
+ * Whom each seat owes, from the latest payment that left it below 0: `{ [seat]: Creditor }`. It is written only then, so a game
+ * where nobody goes below 0 never gets it.
+ */
+export const OWES_KEY = 'lang:owes';
 /** The card drawn last, for the page to show: a `LastDrawn`. Written only when a card is drawn, so a game with no such cards never gets it. */
 export const LAST_DRAWN_KEY = 'lang:last-drawn';
 
 /** Who drew the card, from which pile (said with its owner, “the lucky pile” or “p1's deck”), the card's name and what it said. */
 export type LastDrawn = { seat: PlayerId; zone: string; name: string; says: string };
+
+/** Whom a payment was owed to: a player, or the bank. */
+export type Creditor = PlayerId | 'bank';
 
 type Pieces = { [seat: string]: number };
 type Owners = { [space: string]: PlayerId };
@@ -53,6 +61,7 @@ type FactValue = number | boolean;
 type FactTable = { [who: string]: { [fact: string]: FactValue } };
 type Facts = { spaces: FactTable; players: FactTable };
 type Bank = { [name: string]: number };
+type Debts = { [seat: string]: Creditor };
 
 const withData = (state: GameState, key: string, value: Json): GameState => ({ ...state, data: { ...state.data, [key]: value } });
 
@@ -64,6 +73,7 @@ const turnLogOf = (state: GameState): TurnLog => (state.data[TURN_KEY] ?? {}) as
 const turnRollsOf = (state: GameState): TurnRolls => (state.data[TURN_ROLLS_KEY] ?? {}) as TurnRolls;
 const factsOf = (state: GameState): Facts => ({ spaces: {}, players: {}, ...(state.data[FACTS_KEY] as Partial<Facts> | undefined) });
 const bankTable = (state: GameState): Bank => (state.data[BANK_KEY] ?? {}) as Bank;
+const debtsOf = (state: GameState): Debts => (state.data[OWES_KEY] ?? {}) as Debts;
 
 /**
  * Puts a board game's pieces, owners, counters and bank in the state the first time it is needed. A card game, or a state
@@ -116,6 +126,21 @@ export function setCounter(state: GameState, counter: string, seat: PlayerId, va
 
 export function addToCounter(state: GameState, counter: string, seat: PlayerId, delta: number): GameState {
   return setCounter(state, counter, seat, counterOf(state, counter, seat) + delta);
+}
+
+/** Notes whom the seat owes, in place of whom it owed before: only the latest payment that took them below 0 counts. */
+export function recordDebt(state: GameState, seat: PlayerId, to: Creditor): GameState {
+  return withData(state, OWES_KEY, { ...debtsOf(state), [seat]: to });
+}
+
+/**
+ * Whom the seat owes while its counter is below 0; null once it is back to 0 or more, or when no payment ever took it below.
+ * A creditor who has gone out reads as the bank, since there is no one left to hand things to.
+ */
+export function owedTo(state: GameState, seat: PlayerId, counter: string): Creditor | null {
+  if (counterOf(state, counter, seat) >= 0) return null;
+  const to = debtsOf(state)[seat] ?? null;
+  return to !== null && to !== 'bank' && isOut(state, to) ? 'bank' : to;
 }
 
 function setFact(state: GameState, table: keyof Facts, who: string, fact: string, value: FactValue): GameState {

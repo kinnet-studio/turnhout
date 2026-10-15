@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { GameState } from '../../game-state';
 import {
-  TURN_KEY, TURN_ROLLS_KEY, addToCounter, clearTurnLog, counterOf, isOut, latestRoll, markOut, ownerOf, pieceAt, placePiece, queueRoll, recordAction,
-  rollsThisTurn, setCounter, setOwner, setRoll, setRollsThisTurn, takeQueuedRoll,
+  OWES_KEY, TURN_KEY, TURN_ROLLS_KEY, addToCounter, clearTurnLog, counterOf, isOut, latestRoll, markOut, ownerOf, owedTo, pieceAt, placePiece,
+  queueRoll, recordAction, recordDebt, rollsThisTurn, setCounter, setOwner, setRoll, setRollsThisTurn, takeQueuedRoll,
 } from '../board-state';
 import { RuleError } from '../diagnostics';
 import {
@@ -379,6 +379,52 @@ describe('paying and collecting from each other player', () => {
   it('needs a player', () => {
     expect(lib.get('effect', 'they pay {int} {counter} to each other player')).toMatchObject({ needsPlayer: true });
     expect(lib.get('effect', 'they get {int} {counter} from each other player')).toMatchObject({ needsPlayer: true });
+  });
+});
+
+describe('debts recorded by payments', () => {
+  const seats = ['p0', 'p1', 'p2'];
+  const start = fixtureBoardState(game, seats);
+  const pay = (text: string, state: GameState, space: number | null = null) =>
+    runPhrase<GameState>(lib, 'effect', text, env(state, as('p0', space)));
+  const owes = (state: GameState, seat = 'p0') => owedTo(state, seat, 'money');
+
+  it('names the owner of the space when the rent takes them below 0, and the bank for a plain amount', () => {
+    const rent = pay('they pay its rent to its owner', setOwner(setCounter(start, 'money', 'p0', 10), 5, 'p1'), 5);
+    expect([counterOf(rent, 'money', 'p0'), owes(rent)]).toEqual([-4, 'p1']);
+    expect(owes(pay('they pay 20', setCounter(start, 'money', 'p0', 10)))).toBe('bank');
+  });
+  it('records nothing when they are left at exactly 0', () => {
+    const s = pay('they pay 10', setCounter(start, 'money', 'p0', 10));
+    expect(counterOf(s, 'money', 'p0')).toBe(0);
+    expect(s.data[OWES_KEY]).toBeUndefined();
+  });
+  it('records nothing for a payment of 0, such as the rent of a space that charges none', () => {
+    const free = fixtureBoardGame({
+      board: { ...game.board!, spaces: FIXTURE_SPACES.map((sp, i) => (i === 5 ? { ...sp, attrs: { ...sp.attrs, rent: 0 } } : sp)) },
+      phases: game.phases,
+    });
+    const owing = recordDebt(setCounter(fixtureBoardState(free, seats), 'money', 'p0', -4), 'p0', 'p2');
+    const owned = setOwner(owing, 5, 'p1');
+    const s = runPhrase<GameState>(lib, 'effect', 'they pay its rent to its owner', fixtureEnv(owned, { game: free, seats, ...as('p0', 5) }));
+    expect(owes(s)).toBe('p2');
+  });
+  it('Review Focus: the latest payment that leaves them below 0 names their creditor', () => {
+    const owingP1 = recordDebt(setCounter(start, 'money', 'p0', -4), 'p0', 'p1');
+    expect(owes(pay('they pay 1', owingP1))).toBe('bank');
+    // Paying p1 leaves them at -10, and paying p2 after that at -60.
+    const split = pay('they pay 50 money to each other player', setCounter(start, 'money', 'p0', 40));
+    expect([counterOf(split, 'money', 'p0'), owes(split)]).toEqual([-60, 'p2']);
+  });
+  it('names the player collected from as the creditor of each who is left below 0', () => {
+    const s = pay('they get 50 money from each other player', setCounter(setCounter(start, 'money', 'p1', 30), 'money', 'p2', 20));
+    expect([owes(s, 'p1'), owes(s, 'p2')]).toEqual(['p0', 'p0']);
+  });
+  it('records nothing for another counter, which is not what players pay with', () => {
+    const tokens = fixtureBoardGame({ board: { ...game.board!, counters: [...game.board!.counters, { name: 'tokens', start: 5, visibility: 'public' }] } });
+    const s = runPhrase<GameState>(lib, 'effect', 'they pay 50 tokens to each other player', fixtureEnv(fixtureBoardState(tokens, seats), { game: tokens, seats, ...as('p0') }));
+    expect(counterOf(s, 'tokens', 'p0')).toBe(-95);
+    expect(s.data[OWES_KEY]).toBeUndefined();
   });
 });
 

@@ -5,7 +5,7 @@ import type { Json } from '../../table-def';
 import { numberIn, readSpaceTable } from '../board';
 import {
   addToCounter, counterOf, didThisTurn, isOut, latestRoll, markOut, nextIn, ownerOf, pieceAt, placePiece, playersIn, queueRoll, recordAction,
-  recordRoll, rollsThisTurn, setCounter, setOwner, setRoll, setRollsThisTurn, takeQueuedRoll,
+  recordDebt, recordRoll, rollsThisTurn, setCounter, setOwner, setRoll, setRollsThisTurn, takeQueuedRoll,
 } from '../board-state';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
@@ -117,12 +117,17 @@ function ownerOfIt(env: PhraseEnv): PlayerId {
   return owner;
 }
 
-/** Takes the amount from `from` and gives it to `to`; the bank (null) has no counter to fill. */
+/**
+ * Takes the amount from `from` and gives it to `to`; the bank (null) has no counter to fill. A payment that leaves the payer
+ * below 0 notes whom they owe, so the latest one names their creditor; one of 0, such as the charge of a space that costs
+ * nothing, moves nothing and so notes nothing.
+ */
 export function transfer(env: PhraseEnv, from: PlayerId, to: PlayerId | null, amount: number): GameState {
   const counter = boardIn(env).payWith;
   if (counter === null) throw new Error('This phrase needs something to pay with, but the board names none.');
   const paid = addToCounter(env.state, counter, from, -amount);
-  return to === null ? paid : addToCounter(paid, counter, to, amount);
+  const settled = to === null ? paid : addToCounter(paid, counter, to, amount);
+  return amount > 0 && counterOf(settled, counter, from) < 0 ? recordDebt(settled, from, to ?? 'bank') : settled;
 }
 
 // ---- conditions ------------------------------------------------------------------------------
@@ -305,13 +310,20 @@ const paysRollToOwner: EffectFn = (env, [times]) => {
 /**
  * Each other player still in, in seat order, ends up with the amount more of the counter than they had, and they with as much
  * less; or the other way round. A count may go below 0 here: what a player left with less than none must do is a rule of the game.
+ * What players pay with moves as a payment does, pair by pair, so the last pair that leaves a payer below 0 names their creditor;
+ * any other counter just moves.
  */
 const swapsWithEachOther = (theyPay: boolean): EffectFn => (env, [n, counter]) => {
   const they = theyOf(env);
+  const others = playersIn(env.state, env.seats).filter((seat) => seat !== they);
+  if (counter === boardIn(env).payWith) {
+    return others.reduce((state, seat) => {
+      const pair = { ...env, state };
+      return theyPay ? transfer(pair, they, seat, n as number) : transfer(pair, seat, they, n as number);
+    }, env.state);
+  }
   const gain = (theyPay ? 1 : -1) * (n as number);
-  return playersIn(env.state, env.seats)
-    .filter((seat) => seat !== they)
-    .reduce((state, seat) => addToCounter(addToCounter(state, counter as string, seat, gain), counter as string, they, -gain), env.state);
+  return others.reduce((state, seat) => addToCounter(addToCounter(state, counter as string, seat, gain), counter as string, they, -gain), env.state);
 };
 
 const paysEachOther = swapsWithEachOther(true);

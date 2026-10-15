@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  LAST_DRAWN_KEY, TURN_KEY, TURN_ROLLS_KEY, addToCounter, bankOf, clearTurnLog, counterOf, didThisTurn, endsTurn, isOut, lastDrawn, markOut,
-  nextIn, ownerOf, pieceAt, placePiece, playerFact, playersIn, queueRoll, recordAction, recordRoll, rollsThisTurn, setBank, setLastDrawn,
-  setOwner, setPlayerFact, setSpaceFact, spaceFact, takeQueuedRoll, withBoardData,
+  LAST_DRAWN_KEY, OWES_KEY, TURN_KEY, TURN_ROLLS_KEY, addToCounter, bankOf, clearTurnLog, counterOf, didThisTurn, endsTurn, isOut, lastDrawn,
+  markOut, nextIn, ownerOf, owedTo, pieceAt, placePiece, playerFact, playersIn, queueRoll, recordAction, recordDebt, recordRoll, rollsThisTurn,
+  setBank, setCounter, setLastDrawn, setOwner, setPlayerFact, setSpaceFact, spaceFact, takeQueuedRoll, withBoardData,
 } from './board-state';
-import { fixtureBoardGame, fixtureGame, fixturePhase, fixtureState } from './testing';
+import { fixtureBoardGame, fixtureBoardState, fixtureGame, fixturePhase, fixtureState } from './testing';
 import { chooseNext } from './zones';
 
 const seats = ['p0', 'p1', 'p2'];
@@ -173,5 +173,18 @@ describe('the last card drawn', () => {
     const before = fresh();
     setLastDrawn(before, drawn);
     expect(lastDrawn(before)).toBeNull();
+  });
+});
+
+describe('debts', () => {
+  it('reads whom a seat owes only while its counter is below 0, and a creditor who is out as the bank', () => {
+    let s = fixtureBoardState(fixtureBoardGame(), ['p0', 'p1', 'p2']);
+    expect(owedTo(s, 'p0', 'money')).toBeNull();
+    s = recordDebt(setCounter(s, 'money', 'p0', -5), 'p0', 'p1');
+    expect(owedTo(s, 'p0', 'money')).toBe('p1');
+    expect(owedTo(setCounter(s, 'money', 'p0', 0), 'p0', 'money')).toBeNull();
+    expect(owedTo(markOut(s, 'p1'), 'p0', 'money')).toBe('bank');
+    expect(owedTo(recordDebt(s, 'p0', 'bank'), 'p0', 'money')).toBe('bank');
+    expect(JSON.parse(JSON.stringify(s.data[OWES_KEY]))).toEqual({ p0: 'p1' });
   });
 });
