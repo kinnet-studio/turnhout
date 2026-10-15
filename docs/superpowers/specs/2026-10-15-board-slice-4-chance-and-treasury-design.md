@@ -1,7 +1,7 @@
 # Board Games, Slice 4: Chance and Treasury Cards
 
 **Date:** 2026-10-15
-**Status:** Ready to build. The user delegated the design calls under the goal to finish every slice (see Decisions).
+**Status:** Ready to build. The user delegated the design calls under the goal to finish every slice (see Decisions); a builder check was run and its six questions are settled in *Builder-check rulings*.
 **Part of:** `2026-10-15-board-games-overview-design.md`. Its decisions, calls, anti-goals and constraints apply
 here.
 **Builds on:** slices 1–3. Slice 3 (doubles and jail) is on the same branch, ahead of `main`.
@@ -80,8 +80,8 @@ To get there, the language gains:
   - a kept card stays face up;
   - a card is not put back under its pile once it has been kept.
 - **Using a kept card is a button:**
-  - Rent Day writes "A player may use a get out of jail free card." with the lines
-    `Only if they are in jail.` and `Only if their kept cards has a Get Out Of Jail Free.`;
+  - Rent Day writes "A player may use a Get Out Of Jail Free." with the lines `Only if they are in jail.`,
+    `Only if they have not rolled this turn.` and `Only if their kept cards has a Get Out Of Jail Free.`;
   - its Then lines free them, reset jail turns, and return "a Get Out Of Jail Free from their kept cards" to the
     bottom of the pile it came from;
   - "the pile it came from" is the zone its deck starts in, so each pile gets its own card back.
@@ -104,9 +104,36 @@ To get there, the language gains:
   - A seat's cards in public zones of their own (here, kept cards) are listed on the money line by name:
     "· Get Out Of Jail Free". This is a general rule; no page code names a card.
   - The piles themselves are not drawn on the board page.
-- **Examples can arrange a pile:** "Given the chance pile has an Advance To Go and a Go To Jail" puts those
-  cards in it, the first named on top. The expectation "the top card of the chance pile is …" already exists.
+- **Examples can arrange a pile** with the existing Given "the chance pile has …". As today, the cards are listed
+  bottom to top, so the last named is on top (Color Match relies on this). The expectation "the top card of the
+  chance pile is …" already exists.
 - **The decks** (unbranded wording, classic effects, 16 cards each) are in the table below.
+
+## Builder-check rulings
+
+A builder check (a fresh engineer planning from this document) raised six questions. The builder settled them:
+
+1. **The button has no "card" in its wording.** "A player may use a Get Out Of Jail Free." Any "A player may …"
+   line with the word "card" is read as a card move, and that rule stays as it is.
+2. **Using the card needs "Only if they have not rolled this turn."**, as paying to leave does. Without it, a
+   player jailed by a double could use the card and roll again. A player jailed by a third double would be freed
+   and at once sent back by the three-doubles rule, wasting the card.
+3. **A card's home pile is the zone its deck starts in, worked out from the card's deck, never from its name.**
+   Two decks share card names, so "the pile it came from" and the 32-card conservation check use the card's deck.
+   - Prefer deriving the deck from how the cards were built, so existing games' card data doesn't change. Record
+     it only if it can't be derived; the planner decides.
+   - Examples never depend on which copy of a shared name they pick. The "Using" example checks that p0 is free
+     and that their kept cards are empty, and a unit test pins the home-pile return for both decks.
+4. **An example's pile is listed bottom to top**, as the language reads it today.
+5. **The board page draws no card table** for a game whose phases have no card move, so Rent Day shows only its
+   board. A game with card moves keeps its card table. The existing "no card table" test is updated to match.
+6. **"A pile's order never reaches a view" covers the board extras and the last-drawn panel.** The card table data
+   the server already sends each seat (ids and positions of face-down cards) is existing engine behaviour for every
+   card game, and is left as it is (recorded as a known limitation).
+
+Also: one existing Rent Day example ("you cannot buy a space that has no price", Go then 3 and 4) now lands on
+Chance and draws whatever is on top. It gains a Given that fixes the chance pile's top card to a harmless one
+(Building Loan Matures), so it no longer depends on the table's row order. The rest of it is unchanged.
 
 ## Goals
 
@@ -118,7 +145,7 @@ To get there, the language gains:
 - The long runs check that the 32 cards are never lost: each pile plus every player's kept cards always holds 16
   of that deck. Houses and hotels stay conserved, and the jail invariants still hold.
 - The page shows the last card drawn and each player's kept cards. The "Use a get out of jail free card" button
-  appears, and greys out with reasons like any other button.
+  appears, and greys out with reasons like any other button. The button reads "Use a Get Out Of Jail Free".
 - Hearts, Color Match, Venom, and slices 1–3 behave as before.
 
 ## Non-goals
@@ -208,8 +235,9 @@ Setup:
 
 Phase: playing
   …
-  A player may use a get out of jail free card.
+  A player may use a Get Out Of Jail Free.
     Only if they are in jail.
+    Only if they have not rolled this turn.
     Only if their kept cards has a Get Out Of Jail Free.
     Then:
       They are not in jail.
@@ -238,8 +266,8 @@ Chance (36).
 | Collect from each other player | 3 players; Opera Night on top of the treasury pile; p0 rolls 1+1 from Go onto Treasury (2) | p0 1600, p1 1450, p2 1450 |
 | General repairs | p0 owns the brown set, Mill Lane and Ferry Row with 2 houses each; General Repairs on top; p0 rolls 3+4 from Go | p0 1400 money (4 houses × 25) |
 | Keeping Get Out Of Jail Free | Get Out Of Jail Free on top; p0 rolls 3+4 from Go | p0's kept cards has a Get Out Of Jail Free, and the chance pile does not |
-| Using Get Out Of Jail Free | p0 in jail on Jail with a Get Out Of Jail Free kept | p0 not in jail; the top card is unchanged and the card is last in the chance pile |
-| A drawn card goes to the bottom | the chance pile has Bank Pays A Dividend then Speeding Fine; p0 rolls 3+4 from Go | p0 1550 money; the top card of the chance pile is Speeding Fine |
+| Using Get Out Of Jail Free | p0 in jail on Jail with a Get Out Of Jail Free kept | p0 not in jail, and p0's kept cards are empty |
+| A drawn card goes to the bottom | the chance pile has Speeding Fine and Bank Pays A Dividend (the dividend on top); p0 rolls 3+4 from Go | p0 1550 money; the top card of the chance pile is Speeding Fine |
 
 The builder computes exact positions and amounts from the board, and keeps every number checked against it.
 
