@@ -3,7 +3,8 @@ import type { OutlineNode } from './outline';
 import { normalizeLine, suggestNames } from './phrases';
 import { joinOr, parseParam, secondPersonWords, thirdPerson, thirdPersonWords, VOCAB_TYPES } from './refs';
 import type {
-  CompiledMoment, CompiledPhase, CompiledTrigger, CondGroup, DeclaredAction, DeclaredMove, ParamType, PhraseKind, PhraseRef, Vocab, ZoneRef,
+  CompiledMoment, CompiledPhase, CompiledTrigger, CondGroup, DeclaredAction, DeclaredMove, ParamType, PhraseKind, PhraseRef, SpaceClass, Vocab,
+  ZoneRef,
 } from './types';
 
 const HINT = /^hint:\s*(.*)$/i;
@@ -29,6 +30,12 @@ const MENTIONS_CARD = /\bcards?\b/i;
  * player may pick. A line whose last “on” has no “a” or “an” after it (“buy the space they are on”) picks nothing.
  */
 const TARGETED = /^(.+) on ((?:a|an) (?:(?! on ).)+)$/i;
+/**
+ * A line whose last “on” is followed by another word than “a” or “an”: group 1 is that word or words, group 2 “their”
+ * when it is “one of their”, group 3 the rest. Nothing follows the last “on” of “…on the field they are on”, so that
+ * is no such line.
+ */
+const OTHER_PICK = /^.+ on (one of (their)|one of the|one of|any|the|each|every) ((?:(?! on\b).)+)$/i;
 
 const RESERVED_VERB = 'reorder';
 const NOT_UNDERSTOOD = "I don't understand this line in a phase. Phase lines start with Hint:, A player may…, When…, After a player…, Players take turns or Everyone acts at once.";
@@ -189,6 +196,32 @@ export function actionOf(found: RegExpExecArray): {
   };
 }
 
+/**
+ * How to write a pick the designer said with another word than “a” or “an” (“on any field they own”, “on one of their
+ * fields”, “on each field”), when the words after it start with a kind of space: “on a field they own”. Null for any
+ * other line, which is a button that picks nothing (“roll on doubles”, “stand on the space”).
+ */
+function otherPick(written: string, vocab: Vocab): string | null {
+  const found = OTHER_PICK.exec(written);
+  if (!found) return null;
+  // A kind written as a plural (“one of their fields”) is picked one at a time; null for words that are no kind.
+  const one = (text: string): string | null => {
+    const kind = parseParam('spacekind', text, vocab);
+    if (kind === null || !('value' in kind)) return null;
+    const values = (kind.value as SpaceClass).values.map(String);
+    return values.find((value) => value.toLowerCase() === text.toLowerCase()) ?? values[0];
+  };
+  const words = found[3].split(' ');
+  // The longest run of words that is a kind of space, so that a kind of two words is read whole.
+  for (let n = words.length; n > 0; n--) {
+    const kind = one(words.slice(0, n).join(' '));
+    if (kind === null) continue;
+    const rest = [...words.slice(n).map((word) => one(word) ?? word), ...(found[2] ? ['they own'] : [])];
+    return ['on', /^[aeiou]/i.test(kind) ? 'an' : 'a', kind, ...rest].join(' ');
+  }
+  return null;
+}
+
 /** What an action's button says: its words in the second person, as the player reads them. */
 export function actionLabel(words: string): string {
   const spoken = secondPersonWords(words);
@@ -200,14 +233,17 @@ export function actionLabel(words: string): string {
  * space it picks is not something the language can read (a mistyped target is reported and never makes a plain button).
  */
 function compileAction(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx): DeclaredAction | null {
-  const { verb, words, base, baseWritten, target: targetText } = actionOf(found);
+  const { verb, words, written, base, baseWritten, target: targetText } = actionOf(found);
   const reserved = verb === RESERVED_VERB;
   if (reserved) addProblem(ctx.diagnostics, node.line, `“${RESERVED_VERB}” is reserved; pick another word.`, { text: found[1] });
   // The player who presses the button is the one the target is about ("a field they own").
   const target = targetText === null ? null : matchLine('target', targetText, node.line, { ...ctx, player: true });
+  // Made a plain button, “on any field they own” would quietly act on the space their piece is on.
+  const pick = targetText === null ? otherPick(written, ctx.vocab) : null;
+  if (pick !== null) addProblem(ctx.diagnostics, node.line, `Write “${pick}” so the player picks one.`, { kind: 'invalid', text: normalizeLine(node.text) });
   // An action is about the player who presses it and the space it picks, else the space their piece is on.
   const { conditions, effects } = readRuleBody(node, { ...ctx, player: true, space: true });
-  if (reserved || (target !== null && isMissing(target))) return null;
+  if (reserved || pick !== null || (target !== null && isMissing(target))) return null;
   return { verb, words, base, label: actionLabel(baseWritten), target, conditions, effects, line: node.line };
 }
 

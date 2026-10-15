@@ -837,6 +837,33 @@ describe('buttons that pick a target', () => {
       expect(built.game!.phases[0].actions[0].target, line).toBeNull();
     }
   });
+  it('tells the designer to write “on a …” when a pick is said with another word, and makes no button of the line', () => {
+    const lines: [line: string, written: string][] = [
+      ['build a house on any street they own', 'on a street they own'],
+      ['build a house on the street they own', 'on a street they own'],
+      ['build a house on one of their streets', 'on a street they own'],
+      ['build a house on one of the streets they own', 'on a street they own'],
+      ['build a house on each street', 'on a street'],
+      ['Build a House on Every Street', 'on a street'],
+      ['build a house on any orange street they own', 'on an orange street they own'],
+      ['build a house on one of their orange streets', 'on an orange street they own'],
+    ];
+    for (const [line, written] of lines) {
+      const built = phase([`A player may ${line}.`, '  Then:', '    It gets a house from the bank.']);
+      expect(problems(built).map((d) => [d.line, d.message]), line).toEqual([[20, `Write “${written}” so the player picks one.`]]);
+      expect(built.game, line).toBeUndefined();
+    }
+  });
+  it('says nothing of a line whose last “on” names no kind of space, or picks nothing at all', () => {
+    const lines = [
+      'buy the space they are on', 'roll on doubles', 'carry on', 'build a house on the street they are on', 'stand on the space', 'lean on the rest of them',
+    ];
+    for (const line of lines) {
+      const built = phase([`A player may ${line}.`]);
+      expect(problems(built), line).toEqual([]);
+      expect(built.game!.phases[0].actions[0], line).toMatchObject({ words: line, target: null });
+    }
+  });
   it('splits at the last “on”, so a base may hold one', () => {
     const { game } = phase(['A player may turn on a light on a street they own.']);
     expect(game!.phases[0].actions[0]).toMatchObject({ base: 'turn on a light', target: { phrase: 'a {spacekind} they own' } });
