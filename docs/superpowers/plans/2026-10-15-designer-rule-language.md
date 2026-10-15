@@ -159,7 +159,7 @@ export type OutlineNode = { text: string; line: number; children: OutlineNode[];
 export function parseOutline(text: string): { roots: OutlineNode[]; diagnostics: Diagnostic[] };
 ```
 
-Rules: split on `/\r?\n/`; expand each tab to 2 spaces; `trimEnd`; skip blank lines and lines whose trimmed text starts with `#`; `line` is 1-based in the original text. A line indented deeper than the previous line is its child. A dedent that matches no open level → `structure` error "This line's indentation doesn't line up with any line above." and the node attaches to the nearest shallower parent. Lines whose trimmed text starts with `|` are table rows of the node they are nested under: first row = `columns`, later rows = `rows`; cells are split on `|`, trimmed, outer empties dropped. A row with a different cell count than the header → error "This row has N cells but the header has M."
+Rules: split on `/\r?\n/`; expand each tab to 2 spaces; `trimEnd`; skip blank lines and lines whose trimmed text starts with `#`; `line` is 1-based in the original text. A line indented deeper than the previous line is its child. A dedent that matches no open level → `structure` error "This line's indentation doesn't line up with any line above." and the node attaches to the nearest shallower parent. Lines whose trimmed text starts with `|` are table rows of the node they are nested under: first row = `columns`, later rows = `rows`; cells are split on `|`, trimmed, outer empties dropped. A row with a different cell count than the header → error "This row has N cell(s) but the header has M." (singular "cell" when N is 1)
 
 - [ ] **Step 1: Write the failing test**
 
@@ -194,7 +194,7 @@ describe('parseOutline', () => {
 
   it('reports a row whose cell count differs from the header', () => {
     const { diagnostics } = parseOutline('A:\n  | a | b |\n  | 1 |');
-    expect(diagnostics).toEqual([expect.objectContaining({ line: 3, severity: 'error', message: 'This row has 1 cells but the header has 2.' })]);
+    expect(diagnostics).toEqual([expect.objectContaining({ line: 3, severity: 'error', message: 'This row has 1 cell but the header has 2.' })]);
   });
 
   it('reports a dedent that matches no open level', () => {
