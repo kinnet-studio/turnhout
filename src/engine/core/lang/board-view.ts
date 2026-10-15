@@ -9,7 +9,7 @@ import {
   bankOf, counterOf, gameNumber, isOut, lastDrawn, latestRoll, owedTo, ownerOf, pieceAt, playerFact, spaceFact, type Creditor, type LastDrawn,
 } from './board-state';
 import { cardName } from './card-facts';
-import { targetCandidates } from './declared-actions';
+import { amountPrompt, amountReady, targetCandidates } from './declared-actions';
 import { friendlyError, friendlyReason } from './friendly';
 import { secondPersonWords } from './refs';
 import type { LangRuntime } from './runtime';
@@ -55,10 +55,11 @@ export type BoardView = {
 export type TargetView = { prompt: string; spaces: { [space: string]: true | string } };
 /**
  * `move` is the move type to send when the button is pressed. `allowed` is true when the button works now, otherwise the
- * sentence to show for why it does not; for a button that picks a space it is true when any space may be picked. `target` is
- * null for a button that picks no space.
+ * sentence to show for why it does not; for a button that picks a space it is true when any space may be picked, and for a button
+ * that carries an amount when only the amount is left to say. `target` is null for a button that picks no space. `amount` is true
+ * for a button that carries an amount, which the player types before pressing it.
  */
-export type ActionView = { move: string; label: string; allowed: true | string; target: TargetView | null };
+export type ActionView = { move: string; label: string; allowed: true | string; target: TargetView | null; amount: boolean };
 export type SeatExtras = { board: BoardView | null; actions: ActionView[] };
 
 const OUT_OF_GAME = "You're out of the game.";
@@ -193,6 +194,20 @@ function pickingView(
   return { target: view, allowed: verdicts.includes(true) ? true : verdicts[0] };
 }
 
+/**
+ * Whether `seat` may press a button that carries an amount, before any amount is typed: the move is asked with none, and when its
+ * only objection is that there is none, the lines that do not read the amount say whether the button would work.
+ */
+function amountView(engine: GameEngine, runtime: LangRuntime, state: GameState, seat: PlayerId, action: DeclaredAction): true | string {
+  const verdict = allowedNow(engine, state, seat, action.words);
+  if (verdict !== amountPrompt(action)) return verdict;
+  try {
+    return amountReady(runtime, action, state, seat);
+  } catch (e) {
+    return friendlyError(e);
+  }
+}
+
 /** The current phase's buttons in written order, each saying whether this seat may press it right now and if not why. */
 function actionViews(engine: GameEngine, runtime: LangRuntime, state: GameState, seat: PlayerId): ActionView[] {
   const phase = runtime.game.phases.find((p) => p.id === state.turn?.phase);
@@ -201,10 +216,11 @@ function actionViews(engine: GameEngine, runtime: LangRuntime, state: GameState,
   const out = isOut(state, seat) && state.result === undefined;
   return phase.actions.map((action): ActionView => {
     const { words: move, label, target } = action;
-    if (target === null) return { move, label, allowed: out ? OUT_OF_GAME : allowedNow(engine, state, seat, move), target: null };
-    if (out) return { move, label, allowed: OUT_OF_GAME, target: { prompt: pickPrompt(target), spaces: {} } };
+    if (action.amount) return { move, label, allowed: out ? OUT_OF_GAME : amountView(engine, runtime, state, seat, action), target: null, amount: true };
+    if (target === null) return { move, label, allowed: out ? OUT_OF_GAME : allowedNow(engine, state, seat, move), target: null, amount: false };
+    if (out) return { move, label, allowed: OUT_OF_GAME, target: { prompt: pickPrompt(target), spaces: {} }, amount: false };
     const picking = pickingView(engine, runtime, state, seat, action, target);
-    return { move, label, allowed: picking.allowed, target: picking.target };
+    return { move, label, allowed: picking.allowed, target: picking.target, amount: false };
   });
 }
 
@@ -236,7 +252,8 @@ const isBoard = (v: unknown): boolean =>
 const isVerdict = (v: unknown): boolean => v === true || isText(v);
 const isTarget = (v: unknown): boolean => isRecord(v) && isText(v.prompt) && isMap(v.spaces, isVerdict);
 const isAction = (v: unknown): boolean =>
-  isRecord(v) && isText(v.move) && isText(v.label) && isVerdict(v.allowed) && (v.target === null || isTarget(v.target));
+  isRecord(v) && isText(v.move) && isText(v.label) && isVerdict(v.allowed) && (v.target === null || isTarget(v.target))
+  && typeof v.amount === 'boolean';
 
 /** For the page: the extras of a view when they have the shape `seatExtras` makes, null for anything else. */
 export function readSeatExtras(extras: Json | undefined): SeatExtras | null {

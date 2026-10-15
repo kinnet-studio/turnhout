@@ -663,6 +663,12 @@ const TARGETACTION: ParamType = {
   },
 };
 
+/**
+ * The base of a button that carries an amount, in the third person: an example gives the number after it (“p1 raises 50”). The
+ * wording `ACTION` lists for the same button (“p1 raises an amount”) presses it with no number.
+ */
+const AMOUNTACTION = wordType('amountaction', '[action]', (v) => v.actions.filter((a) => a.amount).map((a) => [thirdPersonWords(a.base), a.words]), undefined);
+
 type VocabAction = Vocab['actions'][number];
 
 /** A button's wording with its verb, the first word, in the past: 'roll for a double' is 'rolled for a double'. */
@@ -714,7 +720,7 @@ const DONE: ParamType = {
 /** Parameter types whose text depends on the game being compiled. */
 export const VOCAB_TYPES: ParamType[] = [
   ZONE, ZONES, PERZONE, PLAYER, PHASE, MOVE, ATTRIBUTE, CARD, CARDLIST, CARDCLASS, SPACE, SPACECLASS, SPACEATTR, COUNTER, ACTION, TARGETACTION,
-  DONE, SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, PLAYERFLAG, PLAYERNUMBER, GAMENUMBER, BANKED,
+  AMOUNTACTION, DONE, SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, PLAYERFLAG, PLAYERNUMBER, GAMENUMBER, BANKED,
 ];
 
 const TYPES_BY_NAME = new Map(VOCAB_TYPES.map((t) => [t.name, t] as const));

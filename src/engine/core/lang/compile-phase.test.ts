@@ -5,7 +5,7 @@ import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { parseOutline } from './outline';
 import { vocabFrom } from './phrases';
-import { ANY_PLAYER_BOARD, TINY_BOARD_HEAD, fixtureBoardGame } from './testing';
+import { AMOUNT_BOARD, ANY_PLAYER_BOARD, TINY_BOARD_HEAD, fixtureBoardGame } from './testing';
 
 const lib = createDefaultLibrary();
 const BASE = [
@@ -389,7 +389,7 @@ describe('compilePhase on its own', () => {
       maxPlayers: 2, phases: ['main'], verbs: ['play', 'reorder'],
       zones: [{ name: 'deck', perPlayer: false, layout: 'pile', visibility: 'secret' }, { name: 'hand', perPlayer: true, layout: 'hand', visibility: 'owner' }],
     });
-    const phase = compilePhase(parseOutline(text).roots[0], { library: lib, vocab, gameName: 'Tiny', inMove: false, player: false, space: false, card: false, drawn: false, diagnostics });
+    const phase = compilePhase(parseOutline(text).roots[0], { library: lib, vocab, gameName: 'Tiny', inMove: false, player: false, space: false, card: false, drawn: false, amount: false, diagnostics });
     return { phase, diagnostics };
   };
 
@@ -926,7 +926,7 @@ describe('buttons that pick a target', () => {
     const vocab = vocabFrom({ maxPlayers: 2, phases: ['main'], board: fixtureBoardGame().board });
     const built = compilePhase(
       parseOutline('Phase: main\n  A player may build a house on a stret they own.').roots[0],
-      { library: lib, vocab, gameName: 'Tiny', inMove: false, player: false, space: false, card: false, drawn: false, diagnostics },
+      { library: lib, vocab, gameName: 'Tiny', inMove: false, player: false, space: false, card: false, drawn: false, amount: false, diagnostics },
     );
     expect(diagnostics.map((d) => [d.line, d.message])).toEqual([[2, 'There is no kind of space called “stret”.']]);
     expect(built.actions).toEqual([]);
@@ -962,7 +962,7 @@ describe('buttons that pick a target', () => {
     ]);
     const compiled = compilePhase(
       parseOutline('Phase: main\n  A player may build a house on a street they own.\n  A player may build a house on a street.').roots[0],
-      { library: lib, vocab: vocabFrom({ maxPlayers: 2, phases: ['main'], board: fixtureBoardGame().board }), gameName: 'Tiny', inMove: false, player: false, space: false, card: false, drawn: false, diagnostics: [] },
+      { library: lib, vocab: vocabFrom({ maxPlayers: 2, phases: ['main'], board: fixtureBoardGame().board }), gameName: 'Tiny', inMove: false, player: false, space: false, card: false, drawn: false, amount: false, diagnostics: [] },
     );
     expect(compiled.actions.map((a) => a.words)).toEqual(['build a house on a street they own']);
     expect(errorsOf(['A player may build a house on a street they own.', 'A player may Build a House on a Street they own.'])).toEqual([
@@ -1112,5 +1112,35 @@ describe('buttons any player may press', () => {
     const lines = ANY_PLAYER_BOARD.split('\n');
     lines.splice(24, 0, '  Any player may take a card from the draw pile to their hand.');
     expect(found(lines.join('\n'))).toContainEqual([25, MALFORMED_MOVE]);
+  });
+});
+
+describe('buttons that carry an amount', () => {
+  it('refuses a phrase that reads the amount outside a button whose wording ends in “an amount”', () => {
+    const outside = AMOUNT_BOARD.replace(
+      '    Only if they have rolled this turn.\n    Then:\n      They pay the pot.',
+      '    Only if the amount is more than the pot.\n    Then:\n      They pay the pot.',
+    );
+    expect(outside).not.toBe(AMOUNT_BOARD);
+    expect(compileGame(outside, lib).diagnostics.map((d) => [d.line, d.message])).toContainEqual(
+      [31, '“the amount is more than the pot” only makes sense in a button whose wording ends in “an amount”, like “A player may give an amount.”'],
+    );
+  });
+  it('makes a button that picks a space no amount button, whatever it ends in before “on”', () => {
+    const built = compileGame(AMOUNT_BOARD.replace('  A player may end their turn.', '  A player may plant an amount on a street they own.\n  A player may end their turn.'), lib);
+    expect(built.diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(built.game!.phases[0].actions.find((a) => a.verb === 'plant')).toMatchObject({
+      amount: false, base: 'plant an amount', target: { kind: 'target' },
+    });
+  });
+  it('reads “an amount” in any capitals, and leaves the designer\'s capitals on the label', () => {
+    const shouted = compileGame(AMOUNT_BOARD.replace('  A player may raise an amount.', '  A player may Raise An Amount.'), lib);
+    expect(shouted.diagnostics).toEqual([]);
+    expect(shouted.game!.phases[0].actions[1]).toMatchObject({ words: 'raise an amount', base: 'raise', label: 'Raise', amount: true });
+  });
+  it('lets a button of the turn and one any player may press carry an amount', () => {
+    const anyone = compileGame(AMOUNT_BOARD.replace('  A player may raise an amount.', '  Any player may raise an amount.'), lib);
+    expect(anyone.diagnostics).toEqual([]);
+    expect(anyone.game!.phases[0].actions[1]).toMatchObject({ anyone: true, amount: true });
   });
 });

@@ -21,11 +21,27 @@ function pickedBy(m: Move, runtime: LangRuntime): number | null {
   return typeof target === 'number' && Number.isInteger(target) && target >= 0 && target < spaces ? target : null;
 }
 
+/** The amount the move carries, or null when it carries none that is a whole number of 0 or more. */
+function pickedAmount(m: Move): number | null {
+  const { amount } = m;
+  return typeof amount === 'number' && Number.isInteger(amount) && amount >= 0 ? amount : null;
+}
+
+/** What a button that carries an amount asks of the player who has not said how much. */
+export function amountPrompt(action: DeclaredAction): string {
+  return `Say how much to ${secondPersonWords(action.base)}.`;
+}
+
 /**
  * Who a button is about: the player who presses it and, through “it”, the space it picks, else the space their piece is on.
  * A button that picks a space is refused, in the player's words, when the move names none or one its target does not allow.
+ * A button that carries an amount is refused, asking how much, when the move carries none; else the subject has the amount too.
  */
 function aboutPress(action: DeclaredAction, runtime: LangRuntime, state: GameState, m: Move, by: PlayerId): Subject | string {
+  if (action.amount) {
+    const amount = pickedAmount(m);
+    return amount === null ? amountPrompt(action) : { player: by, space: null, card: null, amount };
+  }
   if (action.target === null) return { player: by, space: null, card: null };
   const space = pickedBy(m, runtime);
   if (space === null) return `Pick where to ${secondPersonWords(action.base)}.`;
@@ -56,7 +72,8 @@ function choose(
  * any player may press (“Any player may wave.”) may be sent by any seat still in, whoever's turn it is; it is no part of
  * anyone's turn, so it is not noted for the turn, and the After line can't name it. A button that picks a space
  * (“A player may plant a flag on a field they own.”) takes it from the move's `target`, the index of the space on the
- * board, and its lines are about that space.
+ * board, and its lines are about that space. A button that carries an amount (“A player may raise an amount.”) takes it from the
+ * move's `amount`, a whole number of 0 or more, and is refused before any `Only if` line is read when there is none.
  */
 export function declaredActionHandler(move: string, runtime: LangRuntime): MoveHandler {
   return {
@@ -86,4 +103,15 @@ export function targetCandidates(runtime: LangRuntime, action: DeclaredAction, s
   if (target === null) return [];
   const spaces = Array.from({ length: runtime.game.board?.spaces.length ?? 0 }, (_, space) => space);
   return spaces.filter((space) => runtime.allowsTarget(target, state, { player: seat, space, card: null }, space));
+}
+
+/**
+ * Whether `seat` could press the button once it says how much: true, or why not. It asks every `Only if` line that does not
+ * read the amount, about the seat alone, and leaves the others, which can only be answered with an amount. A seat that is out
+ * can press nothing. It asks nothing of the turn or the flow, which the engine's own gate decides.
+ */
+export function amountReady(runtime: LangRuntime, action: DeclaredAction, state: GameState, seat: PlayerId): true | string {
+  if (isOut(state, seat)) return OUT;
+  const waiting = action.conditions.filter((group) => !runtime.readsAmount(group));
+  return runtime.failedGroup(waiting, state, undefined, { player: seat, space: null, card: null }) ?? true;
 }

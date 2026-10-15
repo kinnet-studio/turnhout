@@ -8,10 +8,11 @@ import type { ParamType, PhraseKind, PhraseRef, Vocab } from './types';
  * What every line of one compile stage shares. Never change `vocab` after a line has been matched with it. `inMove`,
  * `player`, `space` and `card` say what the rule around a line is about: a card move, a player ("they"), a space or a
  * card ("it"). `drawn` is true only for the sentences of a card's says column: they are run for a card that was just drawn.
+ * `amount` is true only for the lines of a button whose wording ends in “an amount”: its press carries a number.
  */
 export type LineCtx = {
   library: PhraseLibrary; vocab: Vocab; gameName: string; inMove: boolean; player: boolean; space: boolean; card: boolean; drawn: boolean;
-  diagnostics: Diagnostic[];
+  amount: boolean; diagnostics: Diagnostic[];
 };
 
 const MAX_SUGGESTIONS = 3;
@@ -21,6 +22,8 @@ export const NEEDS_PAYMENT = 'Say what players pay with, like “Players pay wit
 const NEEDS_BOARD = (clean: string) => `“${clean}” needs a board. Add a Board: section with a line like “The board is a loop of spaces, starting at Go:”.`;
 const NEEDS_DICE = (clean: string) => `“${clean}” needs dice. Add a line like “There are two six-sided dice.” under Board:.`;
 const NEEDS_TWO_DICE = 'A double needs exactly two dice.';
+const NEEDS_AMOUNT = (clean: string) =>
+  `“${clean}” only makes sense in a button whose wording ends in “an amount”, like “A player may give an amount.”`;
 const IF_FRAME = /^if\s+(.+)$/i;
 const COMMA = /, /g;
 const PHASE_NAME = /^phase\s*:\s*(.*)$/i;
@@ -125,6 +128,7 @@ function unmetNeed(entry: Required<PhraseOpts> | undefined, args: Json[], clean:
   if (!ctx.space && entry?.needsSpace) return `“${clean}” only makes sense in a rule about a space, such as an action or a “lands on” rule.`;
   if (!ctx.card && entry?.needsCard) return `“${clean}” only makes sense in a rule about a card, such as “When a card …”.`;
   if (!ctx.drawn && entry?.needsDrawnCard) return `“${clean}” only makes sense in a card's says column.`;
+  if (!ctx.amount && entry?.needsAmount) return NEEDS_AMOUNT(clean);
   if (entry?.needsPayment && ctx.vocab.payWith === null) return NEEDS_PAYMENT;
   return null;
 }

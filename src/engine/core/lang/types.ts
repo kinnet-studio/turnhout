@@ -51,9 +51,11 @@ export type SpaceClass = { attribute: string; values: Json[] };
  * A button whose line ends in “on a …” picks a space on the board: `base` is the lowercase wording before “on” ('plant a
  * flag') and `target` the phrase that says which spaces it may pick. Any other button has `base` equal to `words`, no target.
  * `anyone` is true for a line that starts “Any player may”: any seat still in may press it, whoever's turn it is.
+ * `amount` is true for a button that picks no space and whose wording ends in “ an amount” (“A player may raise an amount.”): its
+ * press carries a whole number, `base` and `label` leave “ an amount” out ('raise', 'Raise'), and `words` keeps it, as the move type.
  */
 export type DeclaredAction = {
-  verb: string; words: string; base: string; label: string; target: PhraseRef | null; anyone: boolean; conditions: CondGroup[];
+  verb: string; words: string; base: string; label: string; target: PhraseRef | null; anyone: boolean; amount: boolean; conditions: CondGroup[];
   effects: PhraseRef[]; line: number;
 };
 export type CompiledMoment = { line: number; text: string; when: PhraseRef; conditions: CondGroup[]; effects: PhraseRef[] };
@@ -94,9 +96,10 @@ export type Vocab = {
   counters: string[]; payWith: string | null;
   /**
    * Every button the phases declare, one for each wording; `targeted` ones pick a space, so an example names it after their `base`,
-   * and `anyone` ones may be pressed by any seat at any time, so they are never part of a turn.
+   * and `anyone` ones may be pressed by any seat at any time, so they are never part of a turn. An `amount` one carries a number
+   * with its press, so an example gives it after the base.
    */
-  actions: { verb: string; words: string; base: string; targeted: boolean; anyone: boolean }[];
+  actions: { verb: string; words: string; base: string; targeted: boolean; anyone: boolean; amount: boolean }[];
   /** True when the board has dice: a line like “There are two six-sided dice.” under Board:. */
   dice: boolean;
   /** How many dice the board rolls: 0 without dice. */
@@ -104,8 +107,11 @@ export type Vocab = {
   /** The facts the game keeps, and the names of the bank's numbers. */
   facts: FactSpec[]; bank: string[];
 };
-/** Who, which space and which card a phrase is about, when a rule is about a player's piece, a space or a card. */
-export type Subject = { player: PlayerId | null; space: number | null; card: string | null };
+/**
+ * Who, which space and which card a phrase is about, when a rule is about a player's piece, a space or a card. `amount` is the
+ * whole number a button that carries one was pressed with; no other rule has it.
+ */
+export type Subject = { player: PlayerId | null; space: number | null; card: string | null; amount?: number };
 /** A piece passing over or landing on a space. */
 export type Moment = { kind: 'pass' | 'land'; seat: PlayerId; space: number };
 export interface MoveInfo { verb: string; by: PlayerId; cardId: string; from: string; to: string }

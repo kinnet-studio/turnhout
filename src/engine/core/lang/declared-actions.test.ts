@@ -4,16 +4,17 @@ import { zoneCards, type GameState } from '../game-state';
 import type { Move, MoveContext } from '../moves';
 import { RuleRegistry } from '../rules';
 import {
-  TURN_KEY, counterOf, isOut, markOut, ownerOf, pieceAt, placePiece, queueRoll, setCounter, setOwner, setSpaceFact, spaceFact, withBoardData,
+  TURN_KEY, counterOf, gameNumber, isOut, markOut, ownerOf, pieceAt, placePiece, queueRoll, setCounter, setOwner, setSpaceFact, spaceFact,
+  withBoardData,
 } from './board-state';
 import { createEngine, flowDefFor, initialState, seatsFor } from './build';
 import { compileGame } from './compile';
-import { declaredActionHandler, targetCandidates } from './declared-actions';
+import { amountPrompt, amountReady, declaredActionHandler, targetCandidates } from './declared-actions';
 import { friendlyError } from './friendly';
 import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { MAX_MOMENT_DEPTH } from './runtime';
-import { ANY_PLAYER_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD } from './testing';
+import { AMOUNT_BOARD, ANY_PLAYER_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD } from './testing';
 
 const lib = createDefaultLibrary();
 const game = compileGame(TINY_BOARD, lib).game!;
@@ -465,6 +466,86 @@ describe('buttons any player may press', () => {
     ].join('\n');
     it('runs on the engine and passes', () => {
       const { game: withExample, diagnostics } = compileGame(`${ANY_PLAYER_BOARD}\n\n${EXAMPLE}`, lib);
+      expect(diagnostics).toEqual([]);
+      const results = runExamples(withExample!, lib);
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({ status: 'pass', message: null });
+    });
+  });
+});
+
+describe('buttons that carry an amount', () => {
+  const pot = compileGame(AMOUNT_BOARD, lib).game!;
+  const RAISE = 'raise an amount';
+  /** A new game on which p0 has rolled, so that only the amount lines are left to judge. */
+  const rolled = () => {
+    const engine = engineWith((s) => queueRoll(s, [1, 2]), pot);
+    expect(engine.dispatch({ type: 'roll the dice', by: 'p0' }).ok).toBe(true);
+    return engine;
+  };
+
+  it('compiles, keeps “an amount” out of the label, and reads the amount from the move', () => {
+    expect(compileGame(AMOUNT_BOARD, lib).diagnostics).toEqual([]);
+    expect(pot.phases[0].actions.map((a) => [a.words, a.base, a.label, a.amount])).toEqual([
+      ['roll the dice', 'roll the dice', 'Roll the dice', false], [RAISE, 'raise', 'Raise', true], ['end their turn', 'end their turn', 'End your turn', false],
+    ]);
+    const engine = rolled();
+    expect(engine.dispatch({ type: RAISE, by: 'p0', amount: 50 }).ok).toBe(true);
+    expect(gameNumber(engine.getState(), pot, 'pot')).toBe(50);
+  });
+  it('refuses in order: the turn, a missing amount, then every Only if line', () => {
+    const fresh = engineWith((s) => s, pot);
+    expect(fresh.canDispatch({ type: RAISE, by: 'p1', amount: 50 })).toBe("not p1's turn");
+    expect(fresh.canDispatch({ type: RAISE, by: 'p0' })).toBe('Say how much to raise.');
+    expect(fresh.canDispatch({ type: RAISE, by: 'p0', amount: 50 })).toBe('they have rolled this turn');
+    const engine = rolled();
+    expect(engine.canDispatch({ type: RAISE, by: 'p0', amount: 0 })).toBe('the amount is more than the pot');
+    expect(engine.canDispatch({ type: RAISE, by: 'p0', amount: 1501 })).toBe('they have at least the amount in money');
+  });
+  it('Review Focus: an amount that is not a whole number of 0 or more is refused before any Only if line reads it', () => {
+    const engine = rolled();
+    for (const amount of [1.5, -5, '50', null, true]) expect(engine.canDispatch({ type: RAISE, by: 'p0', amount })).toBe('Say how much to raise.');
+  });
+
+  describe('amountReady', () => {
+    const game = () => createEngine(pot, lib, 2, queueRoll(withBoardData(initialState(pot, 1), pot, ['p0', 'p1']), [1, 2]));
+    const raise = pot.phases[0].actions[1];
+    it('says what to ask the player who has not said how much', () => expect(amountPrompt(raise)).toBe('Say how much to raise.'));
+    it('tells the Only if lines that read the amount from the ones that do not', () => {
+      expect(raise.conditions.map((group) => game().runtime.readsAmount(group))).toEqual([false, true, true]);
+    });
+    it('asks only the lines that do not read the amount, about the seat alone', () => {
+      const { engine, runtime } = game();
+      expect(amountReady(runtime, raise, engine.getState(), 'p0')).toBe('they have rolled this turn');
+      engine.dispatch({ type: 'roll the dice', by: 'p0' });
+      expect(amountReady(runtime, raise, engine.getState(), 'p0')).toBe(true);
+      // The line about what they have reads the amount, so having nothing does not matter yet.
+      expect(amountReady(runtime, raise, setCounter(engine.getState(), 'money', 'p0', 0), 'p0')).toBe(true);
+    });
+    it('gives a seat that is out nothing to press', () => {
+      const { engine, runtime } = game();
+      expect(amountReady(runtime, raise, markOut(engine.getState(), 'p0'), 'p0')).toBe("You're out of the game.");
+    });
+  });
+
+  describe('as an example', () => {
+    const EXAMPLE = [
+      'Example: raising the pot',
+      '  Given the next roll is 1 and 2',
+      '  When p0 rolls the dice',
+      '  And p0 raises 0',
+      '  Then it is rejected because "the amount is more than the pot"',
+      '  When p0 raises an amount',
+      '  Then it is rejected because "Say how much to raise."',
+      '  When p0 raises 50',
+      '  Then it is accepted',
+      '  And the pot is 50',
+      '  When p0 ends their turn',
+      '  Then p0 has 1450 money',
+      '  And the pot is 0',
+    ].join('\n');
+    it('runs on the engine and passes', () => {
+      const { game: withExample, diagnostics } = compileGame(`${AMOUNT_BOARD}\n\n${EXAMPLE}`, lib);
       expect(diagnostics).toEqual([]);
       const results = runExamples(withExample!, lib);
       expect(results).toHaveLength(1);

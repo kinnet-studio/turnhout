@@ -171,6 +171,22 @@ export const ANY_PLAYER_BOARD = [
 ].join('\n');
 
 /**
+ * TINY_BOARD_HEAD with a pot the game keeps and a button that carries an amount: after rolling, a player may raise the pot to more
+ * than it is, as long as they have that much, and ending the turn pays the pot to the bank and empties it. Line 15 declares the
+ * pot; `A player may raise an amount.` is line 24 and `A player may end their turn.` line 30.
+ */
+export const AMOUNT_BOARD = [
+  TINY_BOARD_HEAD.replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  The game has a pot of 0.'),
+  '  A player may roll the dice.', '    Only if they have not rolled this turn.', '    Then:', '      Roll the dice.',
+  '      Their piece moves forward by the roll.',
+  '  A player may raise an amount.', '    Only if they have rolled this turn.', '    Only if the amount is more than the pot.',
+  '    Only if they have at least the amount in money.', '    Then:', '      The pot is the amount.',
+  '  A player may end their turn.', '    Only if they have rolled this turn.', '    Then:', '      They pay the pot.', '      The pot is 0.',
+  '  After a player ends their turn, the turn passes to the left.',
+  '', 'End:', '  The game ends when one player is left.', '  That player wins.',
+].join('\n');
+
+/**
  * A board game whose two decks say what their cards do. `lucky` and `fate` are the tables under each deck line, header row
  * first; `rules` are lines under `Phase: playing`, indented as written there. Lines: the lucky table starts on line 6 (its
  * first card on line 7); the fate deck line is line 6 + lucky.length and its first card line 8 + lucky.length. The loop is
@@ -303,7 +319,7 @@ export function vocabFor(game: CompiledGame, players: number = game.players.max)
     verbs: [...new Set(game.phases.flatMap((p) => p.moves.map((m) => m.verb)))],
     board: game.board,
     actions: game.phases.flatMap((p) => p.actions.map((a) => ({
-      verb: a.verb, words: a.words, base: a.base, targeted: a.target !== null, anyone: a.anyone,
+      verb: a.verb, words: a.words, base: a.base, targeted: a.target !== null, anyone: a.anyone, amount: a.amount,
     }))),
     facts: game.facts,
   });

@@ -35,6 +35,8 @@ const MENTIONS_CARD = /\bcards?\b/i;
  * player may pick. A line whose last “on” has no “a” or “an” after it (“buy the space they are on”) picks nothing.
  */
 const TARGETED = /^(.+) on ((?:a|an) (?:(?! on ).)+)$/i;
+/** A button that picks no space and ends in “an amount” carries a whole number with its press: group 1 is the wording before those words. */
+const AMOUNT_WORDING = /^(.+) an amount$/i;
 /**
  * A line whose last “on” is followed by another word than “a” or “an”: group 1 is that word or words, group 2 “their”
  * when it is “one of their”, group 3 the rest. Nothing follows the last “on” of “…on the field they are on”, so that
@@ -193,16 +195,19 @@ export function actionLine(clean: string): RegExpExecArray | null {
  * repeat them in any capitals). `written` keeps the designer's capitals for the button, so “Go to Rose Lane” stays one.
  * A line that ends in “on a …” picks a space: `base` and `baseWritten` are the words before that “on”, and `target` is what
  * follows it as written. Any other line has `base` equal to `words` and no target. `anyone` is true for “Any player may …”.
+ * A line that picks no space and ends in “an amount” is a button that carries one: `amount` is true, and `base` and `baseWritten`
+ * are the words before those, so that “raise an amount” is the button 'raise' (`words` keeps them, as the move type).
  */
 export function actionOf(found: RegExpExecArray): {
-  verb: string; words: string; written: string; base: string; baseWritten: string; target: string | null; anyone: boolean;
+  verb: string; words: string; written: string; base: string; baseWritten: string; target: string | null; anyone: boolean; amount: boolean;
 } {
   const written = found[2] === undefined ? found[1] : `${found[1]} ${found[2]}`;
   const targeted = TARGETED.exec(written);
-  const baseWritten = targeted ? targeted[1] : written;
+  const carrying = targeted ? null : AMOUNT_WORDING.exec(written);
+  const baseWritten = targeted ? targeted[1] : carrying ? carrying[1] : written;
   return {
     verb: found[1].toLowerCase(), words: written.toLowerCase(), written, base: baseWritten.toLowerCase(), baseWritten, target: targeted ? targeted[2] : null,
-    anyone: ANYONE_LINE.test(found[0]),
+    anyone: ANYONE_LINE.test(found[0]), amount: carrying !== null,
   };
 }
 
@@ -247,7 +252,7 @@ export function actionLabel(words: string): string {
  * space it picks is not something the language can read (a mistyped target is reported and never makes a plain button).
  */
 function compileAction(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx): DeclaredAction | null {
-  const { verb, words, written, base, baseWritten, target: targetText, anyone } = actionOf(found);
+  const { verb, words, written, base, baseWritten, target: targetText, anyone, amount } = actionOf(found);
   const reserved = verb === RESERVED_VERB;
   if (reserved) addProblem(ctx.diagnostics, node.line, `“${RESERVED_VERB}” is reserved; pick another word.`, { text: found[1] });
   // The player who presses the button is the one the target is about ("a field they own").
@@ -257,10 +262,10 @@ function compileAction(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx):
   if (pick !== null) {
     addProblem(ctx.diagnostics, node.line, `Write “${pick.written ?? 'on a …'}” so the player picks one.`, { kind: 'invalid', text: normalizeLine(node.text) });
   }
-  // An action is about the player who presses it and the space it picks, else the space their piece is on.
-  const { conditions, effects } = readRuleBody(node, { ...ctx, player: true, space: true });
+  // An action is about the player who presses it and the space it picks, else the space their piece is on; a button that carries an amount has it.
+  const { conditions, effects } = readRuleBody(node, { ...ctx, player: true, space: true, amount });
   if (reserved || pick !== null || (target !== null && isMissing(target))) return null;
-  return { verb, words, base, label: actionLabel(baseWritten), target, anyone, conditions, effects, line: node.line };
+  return { verb, words, base, label: actionLabel(baseWritten), target, anyone, amount, conditions, effects, line: node.line };
 }
 
 /** The `Only if` groups and the effects under a `When …:` rule; every line that is not an `Only if` is an effect. */

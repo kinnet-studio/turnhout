@@ -17,7 +17,7 @@ import { itOf, theyOf } from './support';
 const lib = createDefaultLibrary();
 // The phase's roll action gives `{done}` its word, "rolled".
 const ROLL: DeclaredAction = {
-  verb: 'roll', words: 'roll the dice', base: 'roll the dice', label: 'Roll the dice', target: null, anyone: false, conditions: [], effects: [], line: 1,
+  verb: 'roll', words: 'roll the dice', base: 'roll the dice', label: 'Roll the dice', target: null, anyone: false, amount: false, conditions: [], effects: [], line: 1,
 };
 const game = fixtureBoardGame({ phases: [fixturePhase('playing', [], { actions: [ROLL] })] });
 const env = (state: GameState, over: Partial<Parameters<typeof fixtureEnv>[1]> = {}) =>
@@ -571,16 +571,16 @@ describe('moments', () => {
 describe('example phrases', () => {
   // The buttons of the phase give `{action}` and `{done}` their words.
   const BUY: DeclaredAction = {
-    verb: 'buy', words: 'buy the space they are on', base: 'buy the space they are on', label: 'Buy', target: null, anyone: false, conditions: [], effects: [], line: 2,
+    verb: 'buy', words: 'buy the space they are on', base: 'buy the space they are on', label: 'Buy', target: null, anyone: false, amount: false, conditions: [], effects: [], line: 2,
   };
   const END: DeclaredAction = {
-    verb: 'end', words: 'end their turn', base: 'end their turn', label: 'End turn', target: null, anyone: false, conditions: [], effects: [], line: 3,
+    verb: 'end', words: 'end their turn', base: 'end their turn', label: 'End turn', target: null, anyone: false, amount: false, conditions: [], effects: [], line: 3,
   };
   // A button that picks where: its move is the whole wording, and an example names the space after the base.
   const BUILD: DeclaredAction = {
     verb: 'build', words: 'build a house on a street they own', base: 'build a house', label: 'Build a house',
     target: { kind: 'target', phrase: 'a {spacekind} they own', args: [{ attribute: 'kind', values: ['street'] }], line: 4, text: 'a street they own' },
-    anyone: false, conditions: [], effects: [], line: 4,
+    anyone: false, amount: false, conditions: [], effects: [], line: 4,
   };
   const playing = fixtureBoardGame({ phases: [fixturePhase('playing', [], { actions: [ROLL, BUY, END, BUILD] })] });
   const at = (state: GameState) => env(state, { game: playing });

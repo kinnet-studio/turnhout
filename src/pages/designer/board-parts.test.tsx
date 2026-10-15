@@ -304,8 +304,8 @@ describe('MoneyLine', () => {
 
 describe('ActionButtons', () => {
   const actions = [
-    { move: 'roll the dice', label: 'Roll the dice', allowed: true as const, target: null },
-    { move: 'end their turn', label: 'End your turn', allowed: 'they have rolled this turn', target: null },
+    { move: 'roll the dice', label: 'Roll the dice', allowed: true as const, target: null, amount: false },
+    { move: 'end their turn', label: 'End your turn', allowed: 'they have rolled this turn', target: null, amount: false },
   ];
 
   it('presses an allowed button and greys the others with the reason', () => {
@@ -329,7 +329,7 @@ describe('ActionButtons', () => {
   it('sends nothing from a button greyed because the game is over', () => {
     const onPress = vi.fn();
     const onRefused = vi.fn();
-    render(<ActionButtons actions={[{ move: 'roll the dice', label: 'Roll the dice', allowed: 'The game is over.', target: null }]} onPress={onPress} onPick={vi.fn()} onRefused={onRefused} />);
+    render(<ActionButtons actions={[{ move: 'roll the dice', label: 'Roll the dice', allowed: 'The game is over.', target: null, amount: false }]} onPress={onPress} onPick={vi.fn()} onRefused={onRefused} />);
     fireEvent.click(screen.getByRole('button', { name: 'Roll the dice' }));
     expect(onPress).not.toHaveBeenCalled();
     expect(onRefused).toHaveBeenCalledWith('The game is over.');
@@ -337,7 +337,7 @@ describe('ActionButtons', () => {
 
   describe('a button that picks a space', () => {
     const target = { prompt: 'Pick a street you own', spaces: { 1: true as const } };
-    const build = { move: 'build a house on a street they own', label: 'Build a house', allowed: true as const, target };
+    const build = { move: 'build a house on a street they own', label: 'Build a house', allowed: true as const, target, amount: false };
 
     it('opens picking when pressed, and sends nothing yet', () => {
       const onPress = vi.fn();

@@ -15,7 +15,7 @@ const library = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
   .which('a card in a {perzone} has {int} {attribute}', () => []);
 
 const ctx = (): LineCtx & { diagnostics: Diagnostic[] } =>
-  ({ library, vocab: emptyVocab(), gameName: 'Test', inMove: false, player: false, space: false, card: false, drawn: false, diagnostics: [] });
+  ({ library, vocab: emptyVocab(), gameName: 'Test', inMove: false, player: false, space: false, card: false, drawn: false, amount: false, diagnostics: [] });
 
 describe('matchLine with other kinds to try', () => {
   it('reads a line as the kind asked for before any other', () => {

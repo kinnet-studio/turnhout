@@ -95,6 +95,14 @@ export class LangRuntime {
     return groups.find((g) => !(g.mode === 'all' ? g.refs.every(holds) : g.refs.some(holds)))?.text ?? null;
   }
 
+  /**
+   * Whether a line of the group reads the amount a button's press carries, so that it can only be judged once there is one. The
+   * phrase is looked up as the compiler found it; a ref nobody wrote a phrase for reads nothing.
+   */
+  readsAmount(group: CondGroup): boolean {
+    return group.refs.some((ref) => ref.kind !== 'lang' && this.library.get(ref.kind, ref.phrase)?.needsAmount === true);
+  }
+
   /** Whether a button's target phrase allows the player in `subject` to pick `space`. */
   allowsTarget(ref: PhraseRef, state: GameState, subject: Subject, space: number): boolean {
     return this.call<TargetFn, boolean>(ref, ['target'], (fn) => fn(this.env(state, undefined, undefined, subject), ref.args, space));
