@@ -53,8 +53,10 @@ function choose(
  * The move handler for one button the designer declared, like “A player may roll the dice.” It refuses in the
  * designer's own words, then notes the action for the player (so “they have rolled this turn” holds) and runs its Then
  * lines. A button the After line names passes the turn, and with it everything done in the turn stops counting. A button
- * that picks a space (“A player may plant a flag on a field they own.”) takes it from the move's `target`, the index of
- * the space on the board, and its lines are about that space.
+ * any player may press (“Any player may wave.”) may be sent by any seat still in, whoever's turn it is; it is no part of
+ * anyone's turn, so it is not noted for the turn, and the After line can't name it. A button that picks a space
+ * (“A player may plant a flag on a field they own.”) takes it from the move's `target`, the index of the space on the
+ * board, and its lines are about that space.
  */
 export function declaredActionHandler(move: string, runtime: LangRuntime): MoveHandler {
   return {

@@ -30,6 +30,10 @@ const MAX_PLAYERS = 12;
 const LEAVES_THE_GAME = 'out';
 
 const MISSING_GAME = 'Start with a line like “Game: My Game”.';
+/** A button's wording is its move type: written “Any player may” in one phase and “A player may” in another, it would be two things. */
+const openedDifferently = (words: string, firstIsAnyone: boolean) => firstIsAnyone
+  ? `“${words}” is a button any player may press in another phase; use the same opening in both.`
+  : `“${words}” is written “A player may …” in another phase; use the same opening in both.`;
 const BAD_PLAYERS = 'Say how many players, like “Players: 4” or “Players: 2 to 5”.';
 const TOO_MANY_PLAYERS = `This game can have at most ${MAX_PLAYERS} players.`;
 const UNKNOWN_SECTION = `I don't understand this section. Sections are ${SECTION_NAMES.slice(0, -1).join(', ')} and ${SECTION_NAMES.at(-1)}, or a column of the board's table.`;
@@ -123,16 +127,24 @@ function holdBack(diagnostics: Diagnostic[], stages: Section[][]): number | null
   return root;
 }
 
-/** The buttons the phase lines declare, one for each wording; a line that mentions a card moves one, even mistyped, and is no button. */
-function readActions(lines: string[]): Vocab['actions'] {
-  const byWords = new Map<string, Vocab['actions'][number]>();
-  for (const line of lines) {
-    const found = actionLine(line);
-    if (!found) continue;
-    const { verb, words, base, target, anyone } = actionOf(found);
-    if (!byWords.has(words)) byWords.set(words, { verb, words, base, targeted: target !== null, anyone });
+/**
+ * The buttons the phases declare, one for each wording, the first written winning; a line that mentions a card moves one, even
+ * mistyped, and is no button. One wording is one move type, so it can't be a button any player may press in one phase and not in
+ * another: the later line is reported. (Twice in one phase is reported by the phase.)
+ */
+function readActions(phases: OutlineNode[], diagnostics: Diagnostic[]): Vocab['actions'] {
+  const byWords = new Map<string, { action: Vocab['actions'][number]; phase: OutlineNode }>();
+  for (const phase of phases) {
+    for (const child of phase.children) {
+      const found = actionLine(normalizeLine(child.text));
+      if (!found) continue;
+      const { verb, words, base, target, anyone } = actionOf(found);
+      const first = byWords.get(words);
+      if (!first) byWords.set(words, { action: { verb, words, base, targeted: target !== null, anyone }, phase });
+      else if (first.phase !== phase && first.action.anyone !== anyone) addProblem(diagnostics, child.line, openedDifferently(words, first.action.anyone));
+    }
   }
-  return [...byWords.values()];
+  return [...byWords.values()].map((first) => first.action);
 }
 
 /** The lines inside every section of one kind, in the order written. */
@@ -438,7 +450,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   // A card move that has a mistake still names its verb, so the examples that make it are not blamed for that mistake.
   const verbs = [...new Set(phaseLines.flatMap((line) => cardMoveVerb(line) ?? []))];
   // Buttons are read ahead too: “they have not rolled this turn” may come before the action that rolls.
-  const actions = readActions(phaseLines);
+  const actions = readActions(named, diagnostics);
 
   const { sets: cards, says: saysCells } = compileCards(
     linesOf(of('cards')), stage(vocabFrom({ maxPlayers, zones, phases: phaseIds, verbs, actions })), declared,

@@ -309,7 +309,7 @@ describe('compilePhase', () => {
   });
 
   it('says what it does not understand in a phase', () => {
-    const expected = 'I don\'t understand this line in a phase. Phase lines start with Hint:, A player may…, When…, After a player…, Players take turns or Everyone acts at once.';
+    const expected = 'I don\'t understand this line in a phase. Phase lines start with Hint:, A player may…, Any player may…, When…, After a player…, Players take turns or Everyone acts at once.';
     for (const line of ['  Dance.', '  When the deck is empty', '  After a player, the turn passes to the left.', '  Players may rearrange at any time.']) {
       expect(messages(rules(line))).toEqual([[17, expected]]);
     }
@@ -438,7 +438,7 @@ describe('actions, moments and player rules on a board', () => {
   const phase = (lines: string[]) => compileGame(`${TINY_BOARD_HEAD}\n${lines.map((l) => `  ${l}`).join('\n')}`, lib);
   const errorsOf = (lines: string[]) => phase(lines).diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message]);
   const TURN_ACTIONS = ['A player may roll the dice.', 'A player may end their turn.'];
-  const NOT_UNDERSTOOD = "I don't understand this line in a phase. Phase lines start with Hint:, A player may…, When…, After a player…, Players take turns or Everyone acts at once.";
+  const NOT_UNDERSTOOD = "I don't understand this line in a phase. Phase lines start with Hint:, A player may…, Any player may…, When…, After a player…, Players take turns or Everyone acts at once.";
   const NEEDS_PLAYER = (line: string) => `“${line}” only makes sense in a rule about a player, such as a move, an action or a “When a player …” rule.`;
   const NEEDS_SPACE = (line: string) => `“${line}” only makes sense in a rule about a space, such as an action or a “lands on” rule.`;
 
@@ -1084,6 +1084,28 @@ describe('buttons any player may press', () => {
       .replace('Only if they have rolled this turn.', 'Only if they have waved this turn.');
     // “waved” is the participle of both buttons; the one anyone may press is no part of a turn, so only the other is meant.
     expect(found(both).filter(([line]) => line === 24)).toEqual([]);
+    const end = compileGame(both, lib).game!.phases[0].actions.find((a) => a.words === 'end their turn')!;
+    expect(end.conditions[0].refs[0].args).toEqual([['wave to the crowd']]);
+  });
+  describe('written both ways', () => {
+    /** The errors alone: nothing leads to the second phase, which is only a warning here. */
+    const errors = (text: string) => compileGame(text, lib).diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message]);
+    /** ANY_PLAYER_BOARD with a second phase that also has a button called “wave”; the second phase's button is on line 38. */
+    const later = (opening: string) => ANY_PLAYER_BOARD.replace(
+      '\n\nEnd:', `\n\nPhase: later\n  Players take turns.\n  ${opening} wave.\n    Then:\n      They get 5 money.\n\nEnd:`,
+    );
+    it('is told when a later phase opens a button with “A player may” that another phase opens with “Any player may”', () => {
+      expect(errors(later('A player may'))).toEqual([
+        [38, '“wave” is a button any player may press in another phase; use the same opening in both.'],
+      ]);
+    });
+    it('is told when a later phase opens a button with “Any player may” that another phase opens with “A player may”', () => {
+      const first = later('Any player may').replace('  Any player may wave.', '  A player may wave.');
+      expect(errors(first)).toEqual([[38, '“wave” is written “A player may …” in another phase; use the same opening in both.']]);
+    });
+    it('is fine when both phases open it the same way', () => {
+      expect(errors(later('Any player may'))).toEqual([]);
+    });
   });
   it('are never card moves: “Any player may take a card …” is a move the phase can not read', () => {
     const MALFORMED_MOVE = 'I can\'t read this card move. Write it as “A player may <verb> a card from <zone> to <zone>.”';

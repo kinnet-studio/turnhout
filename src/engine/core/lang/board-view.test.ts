@@ -61,6 +61,16 @@ describe('seat views of a board game', () => {
     ]);
   });
 
+  it('shows every button as out of the game to a seat that is out, even one any player may press', () => {
+    const anyone = compileGame(ANY_PLAYER_BOARD, lib).game!;
+    // Three players: with two, one going out would end the game at once.
+    const start = markOut(withBoardData(initialState(anyone, 1), anyone, seatsFor(3)), 'p1');
+    const { engine, runtime } = createEngine(anyone, lib, 3, start);
+    const views = (seat: string) => seatExtras(engine, runtime, engine.getState(), seat).actions.map((a) => [a.move, a.allowed]);
+    expect(views('p1')).toEqual(Array.from({ length: 4 }, (_, i) => [anyone.phases[0].actions[i].words, "You're out of the game."]));
+    expect(views('p2').find(([move]) => move === 'wave')).toEqual(['wave', true]);
+  });
+
   it('keeps a space with no color without one, and lists every space in loop order', () => {
     const { engine, runtime } = createEngine(game, lib, 2, initialState(game, 1));
     const { board } = seatExtras(engine, runtime, engine.getState(), 'p0');

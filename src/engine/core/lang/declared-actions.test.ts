@@ -423,7 +423,10 @@ describe('buttons any player may press', () => {
     });
     it('still keeps the buttons of a turn to the player whose turn it is', () => {
       const engine = engineWith((s) => queueRoll(s, [1, 2]), anyone);
-      expect(engine.canDispatch({ type: 'roll the dice', by: 'p1' })).toMatch(/turn/);
+      // The same engine lets p1 wave: TINY_BOARD, which `engineWith` falls back to, has no such button, so this is the anyone game.
+      expect(engine.canDispatch({ type: 'wave', by: 'p1' })).toBe(true);
+      expect(engine.canDispatch({ type: 'roll the dice', by: 'p1' })).toBe("not p1's turn");
+      expect(engine.canDispatch({ type: 'end their turn', by: 'p1' })).toBe("not p1's turn");
     });
   });
 

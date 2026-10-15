@@ -382,6 +382,27 @@ describe('board references', () => {
     expect(parseParam('done', 'ended', rolls)).toEqual({ value: ['end their turn'] });
     expect(parseParam('done', 'rolled two doubles', rolls)).toBeNull();
   });
+  it('never reads what was done as a button any player may press, and says so', () => {
+    const waving = vocabFrom({
+      maxPlayers: 2,
+      actions: [
+        { verb: 'end', words: 'end their turn', base: 'end their turn', targeted: false, anyone: false },
+        { verb: 'wave', words: 'wave', base: 'wave', targeted: false, anyone: true },
+        { verb: 'wave', words: 'wave to the crowd', base: 'wave to the crowd', targeted: false, anyone: false },
+        { verb: 'plant', words: 'plant a flag on a street they own', base: 'plant a flag', targeted: true, anyone: true },
+      ],
+    });
+    // The word is still recognised, so it is the reason that is given rather than “I don't understand”.
+    const never = (text: string) => ({ error: `“${text}” names a button any player may press at any time, which is never part of a turn.` });
+    expect(parseParam('done', 'planted', waving)).toEqual(never('planted'));
+    expect(parseParam('done', 'Planted A Flag', waving)).toEqual(never('Planted A Flag'));
+    expect(parseParam('done', 'waved to the crowd', waving)).toEqual({ value: ['wave to the crowd'] });
+    // A bare participle that a button of the turn shares with one anyone may press is that button alone.
+    expect(parseParam('done', 'waved', waving)).toEqual({ value: ['wave to the crowd'] });
+    expect(parseParam('done', 'ended', waving)).toEqual({ value: ['end their turn'] });
+    const alone = vocabFrom({ maxPlayers: 2, actions: [{ verb: 'wave', words: 'wave', base: 'wave', targeted: false, anyone: true }] });
+    expect(parseParam('done', 'waved', alone)).toEqual(never('waved'));
+  });
   it('reads a button that picks a target as {targetaction}, by the third person of its base, and never as {action}', () => {
     expect(parseParam('targetaction', 'builds a house', v)).toEqual({ value: 'build a house on a street they own' });
     expect(parseParam('targetaction', 'Builds a House', v)).toEqual({ value: 'build a house on a street they own' });

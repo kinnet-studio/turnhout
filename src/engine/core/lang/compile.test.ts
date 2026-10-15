@@ -330,7 +330,7 @@ describe('compileGame phases', () => {
 
   it('leaves lines it cannot read in a phase for the designer to fix', () => {
     expect(messages(BASE.replace('Hint: Do things.', 'Hint: Do things.\n  Dance.'))).toEqual([
-      [17, 'I don\'t understand this line in a phase. Phase lines start with Hint:, A player may…, When…, After a player…, Players take turns or Everyone acts at once.'],
+      [17, 'I don\'t understand this line in a phase. Phase lines start with Hint:, A player may…, Any player may…, When…, After a player…, Players take turns or Everyone acts at once.'],
     ]);
   });
 
