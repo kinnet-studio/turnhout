@@ -51,6 +51,14 @@ function download(text: string): void {
 
 const SECTION_TITLE = { margin: '16px 0 8px', fontSize: 16 } as const;
 
+const REPLACE_QUESTION = 'Replace your current rules? Your changes will be lost.';
+
+/** Whether other text may replace `current`, the only copy of the rules: empty rules and an untouched sample go without asking. */
+function mayReplace(current: string): boolean {
+  if (current.trim() === '' || SAMPLES.some((sample) => sample.text === current)) return true;
+  return window.confirm(REPLACE_QUESTION);
+}
+
 /** Write a game in the rule language, see what the compiler and its examples make of it, and play it. */
 export function DesignerPage() {
   const [text, setText] = useState(() => loadRules() ?? SAMPLES[0].text);
@@ -78,7 +86,7 @@ export function DesignerPage() {
   const upload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ''; // so choosing the same file again still loads it
-    if (!file) return;
+    if (!file || !mayReplace(text)) return;
     try {
       edit(await file.text(), true);
     } catch {
@@ -102,8 +110,9 @@ export function DesignerPage() {
           aria-label="Load sample"
           value=""
           onChange={(e) => {
+            // A select also changes on arrow keys, so a sample never replaces the designer's own rules unasked.
             const sample = SAMPLES.find((s) => s.name === e.target.value);
-            if (sample) edit(sample.text, true);
+            if (sample && mayReplace(text)) edit(sample.text, true);
           }}
         >
           <option value="">Load sample…</option>

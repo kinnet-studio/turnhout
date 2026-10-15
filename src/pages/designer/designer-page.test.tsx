@@ -25,6 +25,12 @@ const edit = (value: string) => { fireEvent.change(rules(), { target: { value } 
 const loadSample = (name: string) => fireEvent.change(screen.getByLabelText('Load sample'), { target: { value: name } });
 const playButton = () => screen.getByRole('button', { name: 'Play' }) as HTMLButtonElement;
 const play = () => fireEvent.click(playButton());
+/** The test page has no window.confirm of its own; this one answers `answer` until told otherwise. */
+const confirmAnswering = (answer: boolean) => {
+  const confirm = vi.fn((_message?: string) => answer);
+  Object.defineProperty(window, 'confirm', { value: confirm, configurable: true, writable: true });
+  return confirm;
+};
 
 beforeEach(() => {
   localStorage.clear();
@@ -57,6 +63,15 @@ describe('DesignerPage', () => {
     render(<DesignerPage />);
     edit(HEARTS.replace('Shuffle the deck.', 'Shufle the deck.'));
     expect(screen.getByText('Did you mean: shuffle [zone]?')).toBeTruthy();
+  });
+
+  it('names a misspelt zone for the designer to fix, with no stub for a developer', () => {
+    render(<DesignerPage />);
+    edit(HEARTS.replace("Move the trick to the winner's won pile.", "Move the trik to the winner's won pile."));
+    expect(screen.getByText('Line 44: There is no zone called “trik”.')).toBeTruthy();
+    expect(screen.getByText('Did you mean: trick?')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Copy for developer' })).toBeNull();
+    expect(screen.getByText('Fix 1 problem in the rules first.')).toBeTruthy();
   });
 
   it('marks the lines with problems in the gutter', () => {
@@ -145,6 +160,47 @@ describe('DesignerPage', () => {
     expect(screen.getByText(/^\d+ of \d+ examples pass$/)).toBeTruthy();
     loadSample('Hearts');
     expect(rules().value).toBe(HEARTS);
+  });
+
+  it('asks before a sample replaces rules of the designer\'s own, and keeps them on cancel', () => {
+    const confirm = confirmAnswering(false);
+    render(<DesignerPage />);
+    edit('Game: Mine');
+    loadSample('Color Match');
+    expect(confirm).toHaveBeenCalledWith('Replace your current rules? Your changes will be lost.');
+    expect(rules().value).toBe('Game: Mine');
+    expect((screen.getByLabelText('Load sample') as HTMLSelectElement).value).toBe('');
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('Game: Mine');
+    confirm.mockReturnValue(true);
+    loadSample('Color Match');
+    expect(rules().value).toBe(COLOR_MATCH);
+    expect(confirm).toHaveBeenCalledTimes(2);
+  });
+
+  it('replaces empty rules or an unchanged sample without asking', () => {
+    const confirm = confirmAnswering(false);
+    render(<DesignerPage />);
+    loadSample('Color Match');
+    expect(rules().value).toBe(COLOR_MATCH);
+    edit('  \n');
+    loadSample('Hearts');
+    expect(rules().value).toBe(HEARTS);
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it('asks before an uploaded file replaces rules of the designer\'s own', async () => {
+    const confirm = confirmAnswering(false);
+    render(<DesignerPage />);
+    edit('Game: Mine');
+    const upload = async () => act(async () => {
+      fireEvent.change(screen.getByLabelText('Upload'), { target: { files: [new File([COLOR_MATCH], 'other.rules', { type: 'text/plain' })] } });
+    });
+    await upload();
+    expect(confirm).toHaveBeenCalledWith('Replace your current rules? Your changes will be lost.');
+    expect(rules().value).toBe('Game: Mine');
+    confirm.mockReturnValue(true);
+    await upload();
+    expect(rules().value).toBe(COLOR_MATCH);
   });
 
   it('editing the rules ends a running playtest', () => {
