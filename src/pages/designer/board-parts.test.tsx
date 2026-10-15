@@ -192,8 +192,19 @@ describe('BoardGrid picking', () => {
 
   it('outlines a space that may be picked and dashes one that is refused', () => {
     render(<BoardGrid board={board()} picking={choosing()} />);
-    expect(screen.getByRole('button', { name: 'Pick Mill Lane' }).style.outline).toContain('solid');
-    expect(screen.getByRole('button', { name: 'Pick Ferry Row' }).style.outline).toContain('dashed');
+    const outline = (name: string) => within(screen.getByRole('button', { name })).getByTestId('pick-outline').style.outline;
+    expect(outline('Pick Mill Lane')).toContain('solid');
+    expect(outline('Pick Ferry Row')).toContain('dashed');
+  });
+
+  it('draws the outline above the stripes of a striped space, so a space that may be picked does not look refused', () => {
+    const striped = (name: string) => space(name, { facts: { pledged: true }, stripes: ['pledged'] });
+    render(<BoardGrid board={board({ spaces: [space('Go'), striped('Mill Lane'), space('Treasury'), striped('Ferry Row')] })} picking={choosing()} />);
+    for (const name of ['Pick Mill Lane', 'Pick Ferry Row']) {
+      const picked = screen.getByRole('button', { name });
+      const above = Number(within(picked).getByTestId('pick-outline').style.zIndex);
+      expect(above, name).toBeGreaterThan(Number(within(picked).getByTestId('stripes').style.zIndex));
+    }
   });
 
   it('picks with the keyboard too', () => {
@@ -230,7 +241,7 @@ describe('BoardGrid picking', () => {
     expect(picking.onPick).not.toHaveBeenCalled();
     expect(picking.onRefused).not.toHaveBeenCalled();
     expect(screen.getByTitle('Go').style.opacity).toBe('0.35');
-    expect(screen.getByTitle('Go').style.outline).toBe('');
+    expect(within(screen.getByTitle('Go')).queryByTestId('pick-outline')).toBeNull();
     expect(screen.getByRole('button', { name: 'Pick Mill Lane' }).style.opacity).not.toBe('0.35');
   });
 

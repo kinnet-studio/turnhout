@@ -68,6 +68,11 @@ const RING_STYLE = { boxShadow: `${PIECE_SHADOW}, 0 0 0 3px #fff, 0 0 0 4px #111
 const STRIPE_FILL = 'repeating-linear-gradient(135deg, rgba(17, 24, 39, 0.3) 0 3px, rgba(255, 255, 255, 0.4) 3px 6px)';
 /** Above the stripes, so what the space says stays readable. */
 const ABOVE_STRIPES = { position: 'relative', zIndex: 2 } as const;
+/**
+ * The pick outline is a layer of its own over the whole space, above the stripes: drawn on the space itself, the stripes
+ * would paint over it, and an outline that may be picked would look dashed, as a refused one does.
+ */
+const OUTLINE_LAYER = { position: 'absolute', inset: 0, zIndex: 3, pointerEvents: 'none' } as const;
 
 const markStyle = { flex: '0 0 auto', height: '70%', boxSizing: 'border-box', border: '1px solid #111827' } as const;
 
@@ -96,11 +101,14 @@ function piecesBySpace(pieces: BoardView['pieces']): Map<number, string[]> {
   return bySpace;
 }
 
-/** What a space is while the player picks one: open to be picked, refused (with why), or not one of the choices. */
+/**
+ * What a space is while the player picks one: open to be picked, refused (with why), or not one of the choices. `outline`
+ * is the style of the layer that outlines a space that is one of the choices; null for the others.
+ */
 function pickProps(index: number, name: string, picking: Picking | undefined) {
-  if (!picking) return { style: {} };
+  if (!picking) return { style: {}, outline: null };
   const verdict = picking.spaces[String(index)];
-  if (verdict === undefined) return { style: { opacity: 0.35 } };
+  if (verdict === undefined) return { style: { opacity: 0.35 }, outline: null };
   const press = () => (verdict === true ? picking.onPick(index) : picking.onRefused(verdict));
   return {
     role: 'button',
@@ -113,9 +121,8 @@ function pickProps(index: number, name: string, picking: Picking | undefined) {
       e.preventDefault();
       press();
     },
-    style: verdict === true
-      ? { cursor: 'pointer', outline: '3px solid #f59e0b', outlineOffset: -3 }
-      : { cursor: 'not-allowed', outline: '2px dashed #6b7280', outlineOffset: -2 },
+    style: { cursor: verdict === true ? 'pointer' : 'not-allowed' },
+    outline: verdict === true ? { outline: '3px solid #f59e0b', outlineOffset: -3 } : { outline: '2px dashed #6b7280', outlineOffset: -2 },
   };
 }
 
@@ -137,7 +144,7 @@ function Space({ space, seats, playerFacts, row, col, index, picking }: {
   const paint = spaceColor(space.color);
   const marks = factMarks(space);
   const striped = space.stripes.length > 0;
-  const { style: pickStyle, ...pick } = pickProps(index, space.name, picking);
+  const { style: pickStyle, outline, ...pick } = pickProps(index, space.name, picking);
   return (
     <div
       title={hoverText(space, seats, playerFacts)}
@@ -157,7 +164,7 @@ function Space({ space, seats, playerFacts, row, col, index, picking }: {
           {marks}
         </div>
       )}
-      {striped && <div aria-hidden="true" style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none', backgroundImage: STRIPE_FILL }} />}
+      {striped && <div aria-hidden="true" data-testid="stripes" style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none', backgroundImage: STRIPE_FILL }} />}
       <div style={{ ...ABOVE_STRIPES, flex: '1 1 auto', minHeight: 0, padding: '1px 2px', textAlign: 'center', overflow: 'hidden', overflowWrap: 'anywhere' }}>{space.name}</div>
       <div style={{ ...ABOVE_STRIPES, flex: '0 0 auto', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 2, padding: 2, minHeight: MARK + 4 }}>
         {space.owner !== null
@@ -169,6 +176,7 @@ function Space({ space, seats, playerFacts, row, col, index, picking }: {
           ))}
         </span>
       </div>
+      {outline && <div aria-hidden="true" data-testid="pick-outline" style={{ ...OUTLINE_LAYER, ...outline }} />}
     </div>
   );
 }
