@@ -28,7 +28,7 @@ vi.mock('@/engine/react', () => ({
 const lib = createDefaultLibrary();
 const colorMatch = compileGame(COLOR_MATCH, lib).game!;
 const rentDay = compileGame(RENT_DAY, lib).game!;
-// With 5 money each, seed 2 rolls p0 a 3 and a 1 onto Income Tax: they cannot pay it and are out on their first turn.
+// With 5 money each, seed 2 rolls p0 a 3 and a 1 onto Income Tax on their first turn: they cannot pay it, and give up.
 const BROKE_SEED = 2;
 const brokeRentDay = compileGame(RENT_DAY.replace('1500 money', '5 money'), lib).game!;
 const HINT = 'Play a card matching the color or number, or draw one.';
@@ -174,7 +174,7 @@ describe('Playtest of a board game', () => {
   it('draws the card table for a board game once a phase moves cards by hand', () => {
     const turns = '  Players take turns.\n';
     expect(RENT_DAY).toContain(turns);
-    const byHand = compileGame(RENT_DAY.replace(turns, `${turns}  A player may take a card from the chance pile to their kept cards.\n`), lib);
+    const byHand = compileGame(RENT_DAY.replace(turns, `${turns}  A player may pick a card from the chance pile to their kept cards.\n`), lib);
     expect(byHand.diagnostics).toEqual([]);
     mountRentDay({ game: byHand.game! });
     expect(rendered).toBeGreaterThan(0);
@@ -222,7 +222,9 @@ describe('Playtest of a board game', () => {
 
   it('shows a seat that is out as out, greys its buttons, and sends nothing when one is pressed', () => {
     mountRentDay({ game: brokeRentDay, seed: BROKE_SEED });
+    // p0 lands on Income Tax: they cannot pay it, and give up.
     fireEvent.click(rollButtons()[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Give up' })[0]);
     expect(screen.getAllByText('p0 out')).toHaveLength(3);
     expect(screen.getByText("seat: p0 — You're out.")).toBeTruthy();
     const p0Roll = rollButtons()[0];
@@ -238,7 +240,9 @@ describe('Playtest of a board game', () => {
 
   it('greys every button when the game is over, and sends nothing when one is pressed', () => {
     mountRentDay({ game: brokeRentDay, seed: BROKE_SEED, players: 2 });
+    // p0 lands on Income Tax: they cannot pay it, and give up, which leaves p1 the last player in.
     fireEvent.click(rollButtons()[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Give up' })[0]);
     expect(screen.getByText('seat: p0 — Game over — p1 wins')).toBeTruthy();
     expect(screen.getByText('seat: p1 — Game over — p1 wins')).toBeTruthy();
     for (const button of rollButtons()) {

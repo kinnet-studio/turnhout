@@ -5,8 +5,8 @@ import { createDefaultLibrary } from '@/engine/core/lang/library';
 import { runExamples } from '@/engine/core/lang/examples';
 import { createEngine, initialState, seatsFor } from '@/engine/core/lang/build';
 import {
-  bankOf, counterOf, isOut, LAST_DRAWN_KEY, lastDrawn, latestRoll, ownerOf, pieceAt, playerFact, playersIn, rollsThisTurn, setOwner,
-  setRoll, spaceFact, TURN_KEY, TURN_ROLLS_KEY, withBoardData,
+  bankOf, counterOf, isOut, LAST_DRAWN_KEY, lastDrawn, latestRoll, owedTo, ownerOf, pieceAt, playerFact, playersIn, rollsThisTurn,
+  setOwner, setRoll, spaceFact, TURN_KEY, TURN_ROLLS_KEY, withBoardData,
 } from '@/engine/core/lang/board-state';
 import { deckOf } from '@/engine/core/lang/cards';
 import { targetCandidates } from '@/engine/core/lang/declared-actions';
@@ -29,6 +29,15 @@ const END = 'end their turn';
 const PAY = 'pay to leave jail';
 const ROLL_FOR_DOUBLE = 'roll for a double';
 const USE = 'use a get out of jail free';
+// The buttons any player may press at any time, to raise money or to settle a debt by going out.
+const SELL = 'sell a house on a street they own';
+const MORTGAGE = 'take a mortgage on a space they own';
+const PAY_OFF = 'pay off a mortgage on a space they own';
+const GIVE_UP = 'give up';
+/** The yes-or-no space fact a mortgage sets. */
+const MORTGAGED = 'mortgaged';
+/** The money an even seat keeps back when it pays off its mortgages, so that it isn't straight back in debt. */
+const PAY_OFF_RESERVE = 500;
 /** Where Jail and Go To Jail are on the board, and what leaving jail costs. */
 const JAIL = 10;
 const GO_TO_JAIL = 30;
@@ -58,31 +67,70 @@ const inJail = (state: GameState, seat: PlayerId): boolean => playerFact(state, 
 /** How many rolls for a double the player has failed since going to jail; a player it was never set on has failed none. */
 const jailTurns = (state: GameState, seat: PlayerId): number => (playerFact(state, seat, 'jail turns') ?? 0) as number;
 const doublesThisTurn = (state: GameState, seat: PlayerId): number => rollsThisTurn(state, seat).filter(isDouble).length;
+const isMortgaged = (state: GameState, space: number): boolean => spaceFact(state, space, MORTGAGED) === true;
+/** The seats still in whose money is below 0, in seat order: while there are any, only the buttons any player may press work. */
+const debtors = (state: GameState, seats: PlayerId[]): PlayerId[] => playersIn(state, seats).filter((seat) => counterOf(state, 'money', seat) < 0);
+/** What a mortgage pays and what paying it off costs, as the text's percentages work them out: rounded down to whole money. */
+const half = (n: number) => Math.floor((n * 50) / 100);
+const payOff = (n: number) => Math.floor((n * 55) / 100);
+const isEven = (seat: PlayerId): boolean => Number(seat.slice(1)) % 2 === 0;
+
+/** The spaces the button may pick for `by` that the move itself accepts now, in board order. */
+function accepted({ engine, runtime }: Table, by: PlayerId, words: string): number[] {
+  const action = runtime.game.phases.flatMap((phase) => phase.actions).find((a) => a.words === words);
+  if (!action) throw new Error(`The game has no “${words}” button.`);
+  // The target phrase lists the spaces they own; only the move says which of them the Only if lines allow now.
+  const accepts = (target: number) => engine.canDispatch({ type: words, by, target }) === true;
+  return targetCandidates(runtime, action, engine.getState(), by).filter(accepts);
+}
 
 /** The first street the build button may pick that the move itself accepts, or null when there is none. */
-function buildable({ engine, runtime }: Table, by: PlayerId): number | null {
-  const action = runtime.game.phases.flatMap((phase) => phase.actions).find((a) => a.words === BUILD);
-  if (!action) throw new Error(`The game has no “${BUILD}” button.`);
-  // The target phrase lists the streets they own; only the move says which of them the Only if lines allow now.
-  const accepts = (target: number) => engine.canDispatch({ type: BUILD, by, target }) === true;
-  return targetCandidates(runtime, action, engine.getState(), by).find(accepts) ?? null;
+const buildable = (table: Table, by: PlayerId): number | null => accepted(table, by, BUILD)[0] ?? null;
+
+/** The first of `candidates` (in board order) with the best `value`, where `beats` says which of two is better; null when there are none. */
+function firstBest(candidates: number[], value: (space: number) => number, beats: (a: number, b: number) => boolean): number | null {
+  return candidates.reduce<number | null>((best, space) => (best === null || beats(value(space), value(best)) ? space : best), null);
 }
 
 /**
- * One turn of a player who always buys and builds when allowed. In jail, a player holding a Get Out Of Jail Free uses it
- * first. Otherwise an even seat pays to leave whenever it may; an odd seat never does, so it rolls for a double and sometimes
- * reaches the third failed roll, and every way out of jail comes up even with two players. Then it rolls while it may (a
- * double rolls again, until the third sends it to jail), buying after each roll if it may, builds on the first street it may
- * until it can't, and ends its turn. It stops as soon as a move puts it out (the turn has passed already) or ends the game.
+ * One turn of a player who always buys and builds when allowed. An even seat first pays off its mortgages in board order, for
+ * as long as it keeps `PAY_OFF_RESERVE` money after each. In jail, a player holding a Get Out Of Jail Free uses it first.
+ * Otherwise an even seat pays to leave whenever it may; an odd seat never does, so it rolls for a double and sometimes reaches
+ * the third failed roll, and every way out of jail comes up even with two players. Then it rolls while it may (a double rolls
+ * again, until the third sends it to jail), buying after each roll if it may, builds on the first street it may until it
+ * can't, and ends its turn.
+ *
+ * After every move, whoever's turn it is, the players in debt settle up, the first in seat order first, since nothing else can
+ * happen until they do. An odd seat gives up at once, so players still go out holding buildings. An even seat raises money:
+ * it sells a building off its street with the dearest house price, else mortgages its cheapest space, and gives up only when
+ * it can do neither. Each sale or mortgage takes away a building or an unmortgaged space, so settling always ends. The turn
+ * stops as soon as its player gives up (the turn has passed already) or the game ends.
  */
 function playTurn(table: Table, watch: Watch = () => {}): void {
-  const { engine } = table;
+  const { engine, runtime } = table;
   const by = engine.getState().turn!.current;
+  const attr = (space: number, column: string) => runtime.game.board!.spaces[space].attrs[column] as number;
+  let settling = false;
   const make = (move: Move) => {
     const before = engine.getState();
     const outcome = engine.dispatch(move);
-    expect(outcome.ok, `${by} could not ${move.type}: ${outcome.reason}`).toBe(true);
+    expect(outcome.ok, `${move.by} could not ${move.type}: ${outcome.reason}`).toBe(true);
     watch(before, move, engine.getState());
+    if (!settling) settle();
+  };
+  // One press by a player in debt. It doesn't settle again by itself: `settle` presses on until nobody owes.
+  const raise = (debtor: PlayerId) => {
+    if (!isEven(debtor)) return make({ type: GIVE_UP, by: debtor });
+    const sale = firstBest(accepted(table, debtor, SELL), (at) => attr(at, 'house price'), (a, b) => a > b);
+    if (sale !== null) return make({ type: SELL, by: debtor, target: sale });
+    const mortgage = firstBest(accepted(table, debtor, MORTGAGE), (at) => attr(at, 'price'), (a, b) => a < b);
+    make(mortgage === null ? { type: GIVE_UP, by: debtor } : { type: MORTGAGE, by: debtor, target: mortgage });
+  };
+  const settle = () => {
+    settling = true;
+    const owing = () => (engine.getState().result === undefined ? debtors(engine.getState(), runtime.seats) : []);
+    for (let debtor = owing()[0]; debtor !== undefined; debtor = owing()[0]) raise(debtor);
+    settling = false;
   };
   const stillTheirs = () => engine.getState().result === undefined && engine.getState().turn!.current === by;
   const may = (type: string) => stillTheirs() && engine.canDispatch({ type, by }) === true;
@@ -90,7 +138,13 @@ function playTurn(table: Table, watch: Watch = () => {}): void {
     make({ type, by });
     if (may(BUY)) make({ type: BUY, by });
   };
-  const evenSeat = Number(by.slice(1)) % 2 === 0;
+  const evenSeat = isEven(by);
+  if (evenSeat) {
+    for (let at = accepted(table, by, PAY_OFF)[0]; at !== undefined; at = accepted(table, by, PAY_OFF)[0]) {
+      if (counterOf(engine.getState(), 'money', by) - payOff(attr(at, 'price')) < PAY_OFF_RESERVE) break;
+      make({ type: PAY_OFF, by, target: at });
+    }
+  }
   if (may(USE)) make({ type: USE, by });
   if (evenSeat && may(PAY)) make({ type: PAY, by });
   if (may(ROLL_FOR_DOUBLE)) rollWith(ROLL_FOR_DOUBLE);
@@ -110,14 +164,16 @@ function playUpTo(table: Table, turns: number, watch?: Watch): number {
 const totalMoney = (state: GameState, seats: PlayerId[]) => seats.reduce((sum, seat) => sum + counterOf(state, 'money', seat), 0);
 
 /**
- * The rules of money, of the bank, of jail and of the cards, checked around every move. Money only comes in through Go and
- * the cards, and only leaves through tax, purchases, building, leaving jail and the cards; rent moves it between players.
- * What a drawn card does is checked card by card in the examples, so here a walk onto a Chance or Treasury space only checks
- * that the mover drew. Houses and hotels only move between the bank and the board. A player in jail is on Jail, and only a
- * player in jail has jail turns, never more than two. What a player did and rolled this turn is forgotten as the turn
- * passes, so only the player whose turn it is has any. No card is ever lost or made: each lies face down in its own deck's
- * pile, or face up in a player's kept cards when it is a Get Out Of Jail Free, so each pile and the kept cards between them
- * always hold their deck exactly.
+ * The rules of money, of the bank, of jail, of debts and of the cards, checked around every move. Money only comes in through
+ * Go, the cards, mortgages and buildings sold back, and only leaves through tax, purchases, building, leaving jail, paying off
+ * mortgages and the cards; rent moves it between players. Giving up moves none: the debt is left unpaid. What a drawn card
+ * does is checked card by card in the examples, so here a walk onto a Chance or Treasury space only checks that the mover
+ * drew. Houses and hotels only move between the bank and the board. A mortgaged space has an owner and no building on its
+ * color. A player in debt always owes someone, and the turn only passes when its player gives up or ends it with nobody in
+ * debt. A player in jail is on Jail, and only a player in jail has jail turns, never more than two. What a player did and
+ * rolled this turn is forgotten as the turn passes, so only the player whose turn it is has any. No card is ever lost or
+ * made: each lies face down in its own deck's pile, or face up in the kept cards of a player still in when it is a Get Out
+ * Of Jail Free, so each pile and the kept cards between them always hold their deck exactly.
  */
 function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
   const { game } = runtime;
@@ -154,10 +210,12 @@ function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
     const owner = ownerOf(before, at);
     const charged = owner !== null && owner !== by;
     const rent = charged ? runtime.columnValue(setRoll(before, roll), at, 'rent')! : 0;
+    if (isMortgaged(before, at)) expect(rent, `rent on ${spaces[at].name}, which is mortgaged`).toBe(0);
     const moved: Record<PlayerId, number> = { [by]: salary - tax - rent - fine };
     if (charged) moved[owner] = rent;
     moneyMoves(before, after, moved, `${by} rolled ${roll} from space ${from}`);
-    if (isOut(after, by)) return;
+    // Going below 0 leaves them in debt, not out: only giving up puts a player out.
+    expect(isOut(after, by), `${by} went out by rolling ${roll} from space ${from}`).toBe(false);
     const sent = at === GO_TO_JAIL;
     expect(pieceAt(after, by), `${by}'s piece after rolling ${roll} from space ${from}`).toBe(sent ? JAIL : at);
     expect(inJail(after, by), `${by} in jail after rolling ${roll} from space ${from}`).toBe(sent);
@@ -210,8 +268,56 @@ function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
       expect(change, `${by} built on ${spaces[at].name}`).toBe(-(spaces[at].attrs['house price'] as number));
       expect(ownerOf(after, at)).toBe(by);
       expect(buildingsOn(after, at)).toBe(buildingsOn(before, at) + 1);
+    } else if (move.type === MORTGAGE) {
+      const at = move.target as number;
+      moneyMoves(before, after, { [by]: half(spaces[at].attrs.price as number) }, `${by} mortgaged ${spaces[at].name}`);
+      const mortgaged = [isMortgaged(before, at), isMortgaged(after, at), ownerOf(after, at)];
+      expect(mortgaged, `${spaces[at].name} mortgaged by ${by}, and its owner`).toEqual([false, true, by]);
+    } else if (move.type === PAY_OFF) {
+      const at = move.target as number;
+      moneyMoves(before, after, { [by]: -payOff(spaces[at].attrs.price as number) }, `${by} paid off ${spaces[at].name}`);
+      expect([isMortgaged(before, at), isMortgaged(after, at)], `${spaces[at].name} paid off by ${by}`).toEqual([true, false]);
+    } else if (move.type === SELL) {
+      // Sold evenly, off a street with as many buildings as any of its color, one building at a time: a hotel goes back as
+      // four houses.
+      const at = move.target as number;
+      const color = spaces[at].attrs.color;
+      for (const [street, space] of spaces.entries()) {
+        if (space.attrs.kind !== 'street' || space.attrs.color !== color) continue;
+        expect(buildingsOn(before, street), `${space.name} before ${by} sold off ${spaces[at].name}`).toBeLessThanOrEqual(buildingsOn(before, at));
+      }
+      moneyMoves(before, after, { [by]: half(spaces[at].attrs['house price'] as number) }, `${by} sold a building off ${spaces[at].name}`);
+      expect(buildingsOn(after, at), `buildings on ${spaces[at].name} after ${by} sold one`).toBe(buildingsOn(before, at) - 1);
+      expect(ownerOf(after, at)).toBe(by);
+    } else if (move.type === GIVE_UP) {
+      // Their buildings go back to the bank and everything else they own to whom they owe; the debt itself goes unpaid.
+      const to = owedTo(before, by, 'money');
+      expect(to, `${by} gave up owing no one`).not.toBeNull();
+      expect(isOut(after, by), `${by} is still in after giving up`).toBe(true);
+      moneyMoves(before, after, {}, `${by} gave up`);
+      const heir = to === 'bank' ? null : to;
+      for (const [at, space] of spaces.entries()) {
+        if (ownerOf(before, at) !== by) continue;
+        expect(ownerOf(after, at), `who owns ${space.name} after ${by} gave up to ${to}`).toBe(heir);
+        expect(buildingsOn(after, at), `buildings on ${space.name} after ${by} gave up`).toBe(0);
+        expect(isMortgaged(after, at), `${space.name} mortgaged after ${by} gave up to ${to}`).toBe(heir === null ? false : isMortgaged(before, at));
+      }
+      expect(keptBy(after, by), `${by}'s kept cards after giving up`).toBe(0);
+      if (heir !== null) {
+        expect(keptBy(after, heir), `${heir}'s kept cards after ${by} gave up to them`).toBe(keptBy(before, by) + keptBy(before, heir));
+      }
     } else {
       expect(change).toBe(0);
+    }
+
+    // Nobody goes below 0 without owing someone, so giving up always has someone to give to.
+    for (const seat of debtors(after, seats)) expect(owedTo(after, seat, 'money'), `whom ${seat} owes after ${by} ${move.type}`).not.toBeNull();
+
+    // The turn moves on only when its player gives up, or ends it once nobody owes anything.
+    if (after.turn!.current !== before.turn!.current) {
+      const gaveUp = move.type === GIVE_UP && by === before.turn!.current;
+      const ended = move.type === END && debtors(before, seats).length === 0;
+      expect(gaveUp || ended, `the turn passed from ${before.turn!.current} on ${by} ${move.type}`).toBe(true);
     }
 
     let houses = 0;
@@ -222,6 +328,13 @@ function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
       const built = housesOn(after, space);
       expect(built >= 0 && built <= 4 && !(built > 0 && hasHotel(after, space)), `${spaces[space].name} has ${built} houses`).toBe(true);
       if (buildingsOn(after, space) > 0) expect(owner, `${spaces[space].name} has buildings but no owner`).not.toBeNull();
+      if (isMortgaged(after, space)) {
+        expect(owner, `${spaces[space].name} is mortgaged but has no owner`).not.toBeNull();
+        const { kind, color } = spaces[space].attrs;
+        const sameColor = (other: (typeof spaces)[number]) => kind === 'street' && other.attrs.kind === 'street' && other.attrs.color === color;
+        const builtOn = spaces.filter((other, at) => sameColor(other) && buildingsOn(after, at) > 0);
+        expect(builtOn.map((other) => other.name), `streets with buildings on the color of ${spaces[space].name}, which is mortgaged`).toEqual([]);
+      }
       houses += built;
       hotels += hasHotel(after, space) ? 1 : 0;
     }
@@ -230,8 +343,7 @@ function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
     expect(bankOf(after, 'houses')).toBeGreaterThanOrEqual(0);
     expect(bankOf(after, 'hotels')).toBeGreaterThanOrEqual(0);
 
-    // A card's deck comes from its id, never its name, since both decks have a Get Out Of Jail Free. A player who goes out
-    // keeps their kept card for now, and it still counts towards its deck.
+    // A card's deck comes from its id, never its name, since both decks have a Get Out Of Jail Free.
     expect(after.cards, `cards after ${by} ${move.type}`).toHaveLength(2 * DECK_SIZE);
     const perDeck = new Map<string, number>();
     for (const card of after.cards) {
@@ -244,6 +356,8 @@ function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
       } else {
         const kept = zoneInfo(game, card.zoneId);
         expect(kept?.spec.name === KEPT && kept.seat !== null, `${where} is neither in its pile nor kept`).toBe(true);
+        // Giving up hands kept cards on, so nobody who is out keeps one.
+        expect(isOut(after, kept!.seat!), `${where} is kept by a player who is out`).toBe(false);
         expect(card.faceUp, `${where} is face down`).toBe(true);
         expect(card.data?.name, `${where} was kept`).toBe(PASS_CARD);
       }
@@ -278,6 +392,11 @@ function colorsInBoardOrder(): string[] {
 }
 
 describe('Rent Day (designer language)', () => {
+  // Paying off a mortgage takes an even seat that mortgaged to get out of debt growing rich again before anyone gives up. None
+  // of the ten 2-player games below happens to (seven of the seeds 1 to 60 do), so the full-set games count it too, and the
+  // last test checks it once they have all run.
+  let paidOff = 0;
+
   it('compiles with no diagnostics', () => expect(diagnostics).toEqual([]));
 
   it('has the 40 spaces of the table, starting at Go', () => {
@@ -304,7 +423,7 @@ describe('Rent Day (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(56);
+    expect(results).toHaveLength(68);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -329,6 +448,14 @@ describe('Rent Day (designer language)', () => {
       'freed by a double': 0,
       'let out after a third failed roll': 0,
     };
+    // And how many times a player raised money each way, or gave up to each kind of creditor. Paying a mortgage off is counted
+    // in `paidOff`, across these games and the full-set ones.
+    const raising = {
+      'took a mortgage': 0,
+      'sold a building': 0,
+      'gave up to a player': 0,
+      'gave up to the bank': 0,
+    };
     for (let seed = 1; seed <= 10; seed++) {
       const table = createEngine(game!, lib, 2, initialState(game!, seed));
       const rules = keepsTheRules(table.runtime, seats);
@@ -349,6 +476,14 @@ describe('Rent Day (designer language)', () => {
           jail['freed by a double']++;
         } else if (move.type === ROLL_FOR_DOUBLE && jailTurns(before, by) === 2) {
           jail['let out after a third failed roll']++;
+        } else if (move.type === MORTGAGE) {
+          raising['took a mortgage']++;
+        } else if (move.type === PAY_OFF) {
+          paidOff++;
+        } else if (move.type === SELL) {
+          raising['sold a building']++;
+        } else if (move.type === GIVE_UP) {
+          raising[owedTo(before, by, 'money') === 'bank' ? 'gave up to the bank' : 'gave up to a player']++;
         }
       });
       const { result } = table.engine.getState();
@@ -360,9 +495,12 @@ describe('Rent Day (designer language)', () => {
     }
     expect(unfinished.length, `seeds with no winner after 3000 turns: ${unfinished.join(', ')}`).toBeLessThanOrEqual(1);
     for (const [way, times] of Object.entries(jail)) expect(times, `times a player was ${way}`).toBeGreaterThan(0);
+    for (const [way, times] of Object.entries(raising)) expect(times, `times a player ${way}: ${JSON.stringify(raising)}`).toBeGreaterThan(0);
   }, 60_000);
 
-  it.each([[4, 1], [4, 2], [4, 3], [8, 1], [8, 2], [8, 3]])(
+  // At 8 players, seed 3 has no winner even after 20000 turns: its last two players are odd seats, which never pay off the
+  // mortgaged spaces handed to them, so most of the board charges no rent and Go's salary keeps both of them in. Seed 4 ends.
+  it.each([[4, 1], [4, 2], [4, 3], [8, 1], [8, 2], [8, 4]])(
     'ends a %i-player game where every player starts with a full color set (seed %i)',
     (n, seed) => {
       const seats = seatsFor(n);
@@ -385,6 +523,7 @@ describe('Rent Day (designer language)', () => {
         if (move.type === BUILD && !hasHotel(before, move.target as number) && hasHotel(after, move.target as number)) hotelsBuilt++;
         const holdsBuildings = (seat: PlayerId) => spaces.some((_, at) => ownerOf(before, at) === seat && buildingsOn(before, at) > 0);
         outHoldingBuildings += seats.filter((seat) => !isOut(before, seat) && isOut(after, seat) && holdsBuildings(seat)).length;
+        if (move.type === PAY_OFF) paidOff++;
       });
       const { result } = table.engine.getState();
       expect(result, `no winner after ${turns} turns`).toBeDefined();
@@ -438,5 +577,9 @@ describe('Rent Day (designer language)', () => {
       expect(engine.getState()).toEqual(states[i]);
     }
     expect(engine.getState()).toEqual(fresh().engine.getState());
+  });
+
+  it('pays off a mortgage somewhere in the 2-player and full-set games', () => {
+    expect(paidOff, 'mortgages paid off across the games that end on their own').toBeGreaterThan(0);
   });
 });

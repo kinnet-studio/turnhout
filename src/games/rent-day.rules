@@ -91,6 +91,7 @@ Board:
   Players pay with money.
   There are two six-sided dice.
   Spaces can have houses and a hotel.
+  Spaces can be mortgaged.
   The bank has 32 houses and 12 hotels.
   Players can be in jail.
   Players can have jail turns.
@@ -104,11 +105,13 @@ Rent:
   A street in a full set with no buildings has double rent.
   A station's rent is 25, 50, 100 or 200 when its owner has 1, 2, 3 or 4 stations.
   A utility's rent is 4 times the roll, or 10 times when its owner has both.
+  A mortgaged space's rent is 0.
 
 Phase: playing
   Hint: Roll the dice, then buy, build, or end your turn. A double rolls again.
   Players take turns.
   A player may roll the dice.
+    Only if no player has less than 0 money.
     Only if they are not in jail.
     Only if they have not rolled for a double this turn.
     Only if one of:
@@ -118,6 +121,7 @@ Phase: playing
       Roll the dice.
       If they have rolled fewer than 3 doubles this turn, their piece moves forward by the roll.
   A player may pay to leave jail.
+    Only if no player has less than 0 money.
     Only if they are in jail.
     Only if they have not rolled this turn.
     Only if they have at least 50 money.
@@ -126,6 +130,7 @@ Phase: playing
       They are not in jail.
       Their jail turns go back to 0.
   A player may roll for a double.
+    Only if no player has less than 0 money.
     Only if they are in jail.
     Only if they have not rolled this turn.
     Then:
@@ -135,6 +140,7 @@ Phase: playing
       If they are not in jail, their jail turns go back to 0.
       If they are not in jail, their piece moves forward by the roll.
   A player may use a Get Out Of Jail Free.
+    Only if no player has less than 0 money.
     Only if they are in jail.
     Only if they have not rolled this turn.
     Only if their kept cards has a Get Out Of Jail Free.
@@ -143,6 +149,7 @@ Phase: playing
       Their jail turns go back to 0.
       A Get Out Of Jail Free from their kept cards goes to the bottom of the pile it came from.
   A player may buy the space they are on.
+    Only if no player has less than 0 money.
     Only if they have rolled this turn.
     Only if it has a price.
     Only if no one owns it.
@@ -151,9 +158,11 @@ Phase: playing
       They pay its price.
       They own it.
   A player may build a house on a street they own.
+    Only if no player has less than 0 money.
     Only if they own every street of its color.
     Only if it has no hotel.
     Only if no street of its color has fewer buildings.
+    Only if no street of its color is mortgaged.
     Only if they have at least its house price in money.
     Only if one of:
       it has fewer than 4 houses
@@ -167,11 +176,45 @@ Phase: playing
       If it has a hotel, its houses go back to the bank.
       If it has no hotel, it gets a house from the bank.
   A player may end their turn.
+    Only if no player has less than 0 money.
     Only if they have rolled this turn.
     Only if one of:
       they did not roll a double
       they are in jail
       they have rolled for a double this turn
+  Any player may take a mortgage on a space they own.
+    Only if it is not mortgaged.
+    Only if no street of its color has a building.
+    Then:
+      They get 50% of its price.
+      It is mortgaged.
+  Any player may pay off a mortgage on a space they own.
+    Only if it is mortgaged.
+    Only if they have at least 55% of its price in money.
+    Then:
+      They pay 55% of its price.
+      It is not mortgaged.
+  Any player may sell a house on a street they own.
+    Only if one of:
+      it has a house
+      it has a hotel
+    Only if no street of its color has more buildings.
+    Only if one of:
+      it has no hotel
+      the bank has at least 4 houses
+    Then:
+      They get 50% of its house price.
+      If it has no hotel, one of its houses goes back to the bank.
+      If it has a hotel, it gets 4 houses from the bank.
+      If it has a hotel, its hotel goes back to the bank.
+  Any player may give up.
+    Only if they have less than 0 money.
+    Then:
+      Their houses go back to the bank.
+      Their hotels go back to the bank.
+      If they owe the bank, their spaces are no longer mortgaged.
+      Everything they own goes to the player they owe.
+      They are out.
   When a player has rolled 3 doubles this turn:
     Only if they are not in jail.
     Their piece goes straight to Jail.
@@ -194,11 +237,6 @@ Phase: playing
     They draw from the chance pile and do what it says.
   When a player lands on a treasury space:
     They draw from the treasury pile and do what it says.
-  When a player has less than 0 money:
-    They are out.
-    Their houses go back to the bank.
-    Their hotels go back to the bank.
-    Their spaces go back to the bank.
   After a player ends their turn, the turn passes to the left.
 
 End:
@@ -300,7 +338,7 @@ Example: a utility charges 4 times the roll
   Then p0 has 1488 money
   And p1 has 1512 money
 
-Example: going below 0 puts you out
+Example: giving up puts you out
   Given 3 players
   And p0 owns Rose Lane
   And p1 owns The Promenade
@@ -308,8 +346,9 @@ Example: going below 0 puts you out
   And p0 is on Harbour Heights
   And the next roll is 1 and 1
   When p0 rolls the dice
+  And p0 gives up
   Then p0 is out
-  And no one owns Rose Lane
+  And p1 owns Rose Lane
   And p1 has 1550 money
   And it is p1's turn
 
@@ -328,6 +367,7 @@ Example: the last player left wins
   And p0 is on Harbour Heights
   And the next roll is 1 and 1
   When p0 rolls the dice
+  And p0 gives up
   Then p1 wins
 
 Example: a full set doubles the base rent
@@ -470,10 +510,11 @@ Example: going out returns your buildings to the bank
   And p0 is on Harbour Heights
   And the next roll is 1 and 1
   When p0 rolls the dice
+  And p0 gives up
   Then p0 is out
   And the bank has 32 houses
   And Rose Lane has 0 houses
-  And no one owns Rose Lane
+  And p1 owns Rose Lane
 
 Example: three houses raise the rent
   Given p1 owns Rose Lane
@@ -724,3 +765,158 @@ Example: a drawn card goes to the bottom of its pile
   When p0 rolls the dice
   Then p0 has 1550 money
   And the top card of the chance pile is a Speeding Fine
+
+Example: mortgaging gives half the price
+  Given p0 owns Rose Lane
+  When p0 takes a mortgage on Rose Lane
+  Then it is accepted
+  And p0 has 1590 money
+  And Rose Lane is mortgaged
+
+Example: a mortgaged space charges no rent
+  Given p1 owns Rose Lane
+  And Rose Lane is mortgaged
+  And p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 is on Rose Lane
+  And p0 has 1500 money
+  And p1 has 1500 money
+
+Example: paying off a mortgage costs 55% of the price
+  Given p0 owns Rose Lane
+  And Rose Lane is mortgaged
+  When p0 pays off a mortgage on Rose Lane
+  Then it is accepted
+  And p0 has 1401 money
+  And Rose Lane is not mortgaged
+
+Example: you cannot mortgage a street while its color has buildings
+  Given p0 owns Rose Lane
+  And p0 owns Lily Lane
+  And p0 owns Iris Road
+  And Lily Lane has 1 house
+  When p0 takes a mortgage on Rose Lane
+  Then it is rejected because "no street of its color has a building"
+
+Example: you cannot build on a color with a mortgaged street
+  Given p1 owns Rose Lane
+  And p1 owns Lily Lane
+  And p1 owns Iris Road
+  And Iris Road is mortgaged
+  And it is p1's turn
+  When p1 builds a house on Rose Lane
+  Then it is rejected because "no street of its color is mortgaged"
+
+Example: selling a house gives half the house price, evenly
+  Given p0 owns Rose Lane
+  And p0 owns Lily Lane
+  And p0 owns Iris Road
+  And Rose Lane has 2 houses
+  And Lily Lane has 1 house
+  And Iris Road has 1 house
+  And the bank has 28 houses
+  When p0 sells a house on Lily Lane
+  Then it is rejected because "no street of its color has more buildings"
+  When p0 sells a house on Rose Lane
+  Then it is accepted
+  And p0 has 1550 money
+  And Rose Lane has 1 house
+  And the bank has 29 houses
+
+Example: selling a hotel puts four houses back on the street
+  Given p0 owns Rose Lane
+  And p0 owns Lily Lane
+  And p0 owns Iris Road
+  And Rose Lane has a hotel
+  And Lily Lane has 4 houses
+  And Iris Road has 4 houses
+  And the bank has 24 houses
+  And the bank has 11 hotels
+  When p0 sells a house on Rose Lane
+  Then it is accepted
+  And Rose Lane has no hotel
+  And Rose Lane has 4 houses
+  And the bank has 20 houses
+  And the bank has 12 hotels
+  And p0 has 1550 money
+
+Example: a hotel can't be sold while the bank has fewer than 4 houses
+  Given p0 owns Rose Lane
+  And p0 owns Lily Lane
+  And p0 owns Iris Road
+  And Rose Lane has a hotel
+  And Lily Lane has 4 houses
+  And Iris Road has 4 houses
+  And the bank has 3 houses
+  When p0 sells a house on Rose Lane
+  Then it is rejected because "it has no hotel or the bank has at least 4 houses"
+
+Example: any player may take a mortgage when it is not their turn
+  Given p1 owns Rose Lane
+  When p1 takes a mortgage on Rose Lane
+  Then it is accepted
+  And p1 has 1590 money
+  And Rose Lane is mortgaged
+  And it is p0's turn
+
+Example: a debt must be paid before the turn can end
+  Given p1 owns Rose Lane
+  And p0 owns Mill Lane
+  And p0 has 10 money
+  And p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 has -4 money
+  And p0 owes p1
+  When p0 ends their turn
+  Then it is rejected because "no player has less than 0 money"
+  When p0 takes a mortgage on Mill Lane
+  Then p0 has 26 money
+  When p0 ends their turn
+  Then it is accepted
+  And it is p1's turn
+
+Example: giving up hands everything to the player you owe
+  Given 3 players
+  And p0 owns Mill Lane
+  And p0 owns Ferry Row
+  And Mill Lane has 1 house
+  And Ferry Row has 1 house
+  And the bank has 30 houses
+  And p0 owns Ash Street
+  And Ash Street is mortgaged
+  And p0's kept cards has a Get Out Of Jail Free
+  And p1 owns Rose Lane
+  And p0 has 10 money
+  And p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 gives up
+  Then it is accepted
+  And p0 is out
+  And p1 owns Mill Lane
+  And p1 owns Ash Street
+  And Ash Street is mortgaged
+  And Mill Lane has 0 houses
+  And the bank has 32 houses
+  And p1's kept cards has a Get Out Of Jail Free
+  And p1 has 1514 money
+  And it is p1's turn
+
+Example: giving up to the bank returns everything to the bank
+  Given 3 players
+  And p0 owns Mill Lane
+  And Mill Lane is mortgaged
+  And p0's kept cards has a Get Out Of Jail Free
+  And p0 has 100 money
+  And p0 is on Go
+  And the next roll is 1 and 3
+  When p0 rolls the dice
+  And p0 gives up
+  Then it is accepted
+  And p0 is out
+  And no one owns Mill Lane
+  And Mill Lane is not mortgaged
+  And p0's kept cards are empty
+  And the bottom card of the chance pile is a Get Out Of Jail Free
