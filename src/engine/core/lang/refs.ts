@@ -65,7 +65,7 @@ const bounded = (source: string) => `(?<!\\w)(?:${source})(?!\\w)`;
 
 const joinWith = (conjunction: string) => (words: string[]) =>
   (words.length < 2 ? words.join('') : `${words.slice(0, -1).join(', ')} ${conjunction} ${words.at(-1)}`);
-const joinOr = joinWith('or');
+export const joinOr = joinWith('or');
 const joinAnd = joinWith('and');
 
 const unknownText = (text: string): { error: string } => ({ error: `I don't understand “${text}” here.` });
@@ -572,8 +572,20 @@ const COUNTER = wordType(
   looseAs(ANY_TEXT, misnamedWord('counter', (v) => v.counters)),
 );
 // Actions and what was done are whole phrases ("ends their turn", "rolled") with a fixed form, not names to misspell.
-const ACTION = wordType('action', '[action]', (v) => v.actions.map((a) => [thirdPersonWords(a.words), a.verb]), undefined);
-const DONE = wordType('done', '[action done]', (v) => v.actions.map((a) => [participle(a.verb), a.verb]), undefined);
+// An action is its wording, which is the move a button sends.
+const ACTION = wordType('action', '[action]', (v) => v.actions.map((a) => [thirdPersonWords(a.words), a.words]), undefined);
+
+/** What was done is one word, so it names a button only when no other button has the verb it comes from. */
+const DONE: ParamType = {
+  name: 'done', label: '[action done]',
+  source: (vocab) => bounded(anyOf(vocab.actions.map((a) => participle(a.verb)))),
+  resolve: (text, vocab) => {
+    const wordings = [...new Set(vocab.actions.filter((a) => canon(participle(a.verb)) === canon(text)).map((a) => a.words))];
+    if (wordings.length === 0) return unknownText(text);
+    if (wordings.length > 1) return { error: `“${text}” could mean ${joinOr(wordings.map((w) => `“${w}”`))}.` };
+    return { value: wordings[0] };
+  },
+};
 
 // ---- the list ----------------------------------------------------------------------------------
 

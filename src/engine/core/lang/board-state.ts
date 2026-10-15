@@ -19,7 +19,7 @@ export const ROLL_KEY = 'lang:roll';
 /** Rolls an example fixed ahead of time, taken first in first out: `number[][]`. */
 export const NEXT_ROLLS_KEY = 'lang:next-rolls';
 /**
- * What each seat has done this turn: `{ [seat]: verbs }`, emptied whenever the turn passes. It is written only when a
+ * What each seat has done this turn: `{ [seat]: move types }`, emptied whenever the turn passes. It is written only when a
  * button is pressed (or an example says what was done), so a card game without buttons never gets it.
  */
 export const TURN_KEY = 'lang:turn';
@@ -137,14 +137,14 @@ export function nextIn(state: GameState, seat: PlayerId, seats: PlayerId[]): Pla
 }
 
 /** Whether the seat has already done this since the turn last passed. */
-export function didThisTurn(state: GameState, seat: PlayerId, verb: string): boolean {
-  return turnLogOf(state)[seat]?.includes(verb) ?? false;
+export function didThisTurn(state: GameState, seat: PlayerId, move: string): boolean {
+  return turnLogOf(state)[seat]?.includes(move) ?? false;
 }
 
 /** Notes that the seat has done this; what the other seats did stays as it was, since everyone may act at once. */
-export function recordAction(state: GameState, seat: PlayerId, verb: string): GameState {
+export function recordAction(state: GameState, seat: PlayerId, move: string): GameState {
   const log = turnLogOf(state);
-  return withData(state, TURN_KEY, { ...log, [seat]: [...(log[seat] ?? []), verb] });
+  return withData(state, TURN_KEY, { ...log, [seat]: [...(log[seat] ?? []), move] });
 }
 
 /**
@@ -155,7 +155,7 @@ export function clearTurnLog(state: GameState): GameState {
   return Object.keys(turnLogOf(state)).length === 0 ? state : withData(state, TURN_KEY, {});
 }
 
-/** Whether the phase's After line names the verb: making that move or pressing that button passes the turn. */
-export function endsTurn(phase: CompiledPhase, verb: string): boolean {
-  return phase.after?.verbs.includes(verb) ?? false;
+/** Whether the phase's After line names the move type: making that move or pressing that button passes the turn. */
+export function endsTurn(phase: CompiledPhase, move: string): boolean {
+  return phase.after?.moves.includes(move) ?? false;
 }

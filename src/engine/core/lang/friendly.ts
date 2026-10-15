@@ -4,7 +4,8 @@ import { SETUP_PHASE } from './build';
 import { MissingPhraseError, RuleError } from './diagnostics';
 
 const NOT_YOUR_TURN = /^not .+'s turn$/;
-const NOT_IN_PHASE = /^move (\S+) not allowed in phase (.+)$/;
+// A button's move is its whole wording, so the move may be several words; the first “not allowed in phase” ends it.
+const NOT_IN_PHASE = /^move (.+?) not allowed in phase (.+)$/;
 const NOT_SETTLED = /flow did not settle/;
 const KEEPS_FIRING = /last fired: trigger line (\d+): (.*)\)$/;
 const KEEPS_MOVING = /last fired: advance to (.+)\)$/;
@@ -18,8 +19,8 @@ export function friendlyReason(reason: string, current?: PlayerId): string {
   if (NOT_YOUR_TURN.test(reason)) return current === undefined ? "It's not your turn." : `It's ${current}'s turn.`;
   const notInPhase = NOT_IN_PHASE.exec(reason);
   if (notInPhase) {
-    const [, verb, phase] = notInPhase;
-    return verb === 'reorder' ? `You can't rearrange cards during ${phaseName(phase)}.` : `You can't ${verb} during ${phaseName(phase)}.`;
+    const [, move, phase] = notInPhase;
+    return move === 'reorder' ? `You can't rearrange cards during ${phaseName(phase)}.` : `You can't ${move} during ${phaseName(phase)}.`;
   }
   return reason;
 }

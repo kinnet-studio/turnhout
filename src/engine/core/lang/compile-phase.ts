@@ -1,7 +1,7 @@
 import { addProblem, canRead, matchEffectLine, matchLine, phaseId, rejectChildren, type LineCtx } from './compile-util';
 import type { OutlineNode } from './outline';
 import { normalizeLine, suggestNames } from './phrases';
-import { parseParam, thirdPerson, thirdPersonWords, VOCAB_TYPES } from './refs';
+import { joinOr, parseParam, thirdPerson, thirdPersonWords, VOCAB_TYPES } from './refs';
 import type {
   CompiledMoment, CompiledPhase, CompiledTrigger, CondGroup, DeclaredAction, DeclaredMove, ParamType, PhraseRef, Vocab, ZoneRef,
 } from './types';
@@ -38,13 +38,18 @@ const ONE_AFTER = 'A phase can have only one “After a player …” rule.';
 const EMPTY_ONE_OF = 'Add the conditions under “Only if one of:”, one on each line.';
 
 const MAX_SUGGESTIONS = 3;
+/** A card move and a button that start alike would share a name in an After line, and a one-word button a move type, so one gives way. */
 const sameVerb = (verb: string) => `Two rules in this phase start “A player may ${verb}”. Start one with another word.`;
+const sameWords = (words: string) => `Two rules in this phase say “A player may ${words}”.`;
+/** A bare verb in an After line that more than one button in the phase starts with. */
+const sharedVerb = (word: string, wordings: string[]) => `“${word}” could be ${joinOr(wordings.map((w) => `“${w}”`))}; write the whole wording.`;
 const moveElsewhere = (verb: string) => `“${verb}” is a card move in another phase, so it can't also be a button. Start one with another word.`;
 const buttonElsewhere = (verb: string) => `“${verb}” is a button in another phase, so it can't also be a card move. Start one with another word.`;
 
 /**
- * The verbs the phases read so far use for card moves and for buttons. A verb is one move to the engine, so a card
- * move in one phase and a button in another can't share it; the later line is the one reported.
+ * The verbs the phases read so far use for card moves and for buttons. A card move is named by its verb and a button by
+ * its first word as well as its wording, so a card move in one phase and a button in another can't start alike; the
+ * later line is the one reported.
  */
 export type VerbUses = { moves: Set<string>; actions: Set<string> };
 
@@ -239,6 +244,32 @@ function targetPhase(name: string, line: number, ctx: LineCtx): string | null {
 /** An After line cut at one of its commas: what comes before may name moves and actions, what comes after may be a turn phrase. */
 type AfterCut = { list: string; turn: string };
 
+/**
+ * What an After line may call the phase's moves, in lowercase. `names` maps each name to the move type it stands for;
+ * `shared` holds the bare verbs that more than one button starts with, each with the wordings it could mean.
+ */
+type AfterNames = { names: Map<string, string>; shared: Map<string, string[]> };
+
+/**
+ * “plays” names a card move; “ends their turn” always names its button; “ends” names it too, unless another button in
+ * the phase also starts with “end”, when only the whole wording can tell them apart.
+ */
+function afterNamesOf(moveVerbs: string[], buttons: { verb: string; words: string }[]): AfterNames {
+  const names = new Map<string, string>();
+  const shared = new Map<string, string[]>();
+  for (const verb of moveVerbs) names.set(thirdPerson(verb), verb);
+  for (const { verb, words } of buttons) {
+    if (buttons.filter((b) => b.verb === verb).length === 1) names.set(thirdPerson(verb), words);
+    names.set(thirdPersonWords(words), words);
+  }
+  // A one-word button's whole wording is its bare verb, so that still names it.
+  for (const { verb } of buttons) {
+    const bare = thirdPerson(verb);
+    if (!names.has(bare)) shared.set(bare, buttons.filter((b) => b.verb === verb).map((b) => b.words));
+  }
+  return { names, shared };
+}
+
 /** Every way to cut the text of an After line at a comma, the first comma first. */
 function afterCuts(body: string): AfterCut[] {
   return [...body.matchAll(COMMA)].map((m) => ({ list: body.slice(0, m.index), turn: body.slice(m.index + 2) }));
@@ -246,34 +277,39 @@ function afterCuts(body: string): AfterCut[] {
 
 /**
  * An `After a player <names>, <turn phrase>` line. `names` holds every way this phase's moves and actions can be named
- * (“plays”, “ends their turn”), in lowercase, each for the verb it stands for. Names and phrase may both hold commas,
+ * (“plays”, “ends their turn”), in lowercase, each for the move type it stands for. Names and phrase may both hold commas,
  * so the comma is found by trying them left to right, and the first cut that is best wins: names all known and a turn
  * phrase after them; else a turn phrase after them (the names that are not known are then reported, as they would
  * be if the line had one comma); else names all known; else the first comma.
  */
-function readAfter(node: OutlineNode, cuts: AfterCut[], names: Map<string, string>, ctx: LineCtx, seen: boolean): CompiledPhase['after'] {
+function readAfter(node: OutlineNode, cuts: AfterCut[], { names, shared }: AfterNames, ctx: LineCtx, seen: boolean): CompiledPhase['after'] {
   rejectChildren(node, ctx.diagnostics);
   if (seen) {
     addProblem(ctx.diagnostics, node.line, ONE_AFTER, { text: normalizeLine(node.text) });
     return null;
   }
-  const named = (list: string) => list.split(VERB_SEPARATOR).every((word) => names.has(word.toLowerCase()));
+  // A bare verb that two buttons share is still a name, so the cut is found as it would be; it is reported below.
+  const named = (list: string) => list.split(VERB_SEPARATOR).every((word) => names.has(word.toLowerCase()) || shared.has(word.toLowerCase()));
   const reads = (c: AfterCut) => canRead('turn', c.turn, ctx);
   const cut = cuts.find((c) => named(c.list) && reads(c)) ?? cuts.find(reads) ?? cuts.find((c) => named(c.list)) ?? cuts[0];
-  const verbs: string[] = [];
+  const moves: string[] = [];
   let known = true;
   for (const word of cut.list.split(VERB_SEPARATOR)) {
-    const verb = names.get(word.toLowerCase());
-    if (verb === undefined) {
-      const moves = names.size > 0 ? `The moves here are: ${[...names.keys()].join(', ')}.` : 'This phase has no moves.';
-      addProblem(ctx.diagnostics, node.line, `“${word}” isn't a move in this phase. ${moves}`, { text: word });
+    const move = names.get(word.toLowerCase());
+    const wordings = shared.get(word.toLowerCase());
+    if (move !== undefined) {
+      if (!moves.includes(move)) moves.push(move);
+    } else if (wordings !== undefined) {
+      addProblem(ctx.diagnostics, node.line, sharedVerb(word, wordings), { text: word });
       known = false;
-    } else if (!verbs.includes(verb)) {
-      verbs.push(verb);
+    } else {
+      const here = names.size > 0 ? `The moves here are: ${[...names.keys()].join(', ')}.` : 'This phase has no moves.';
+      addProblem(ctx.diagnostics, node.line, `“${word}” isn't a move in this phase. ${here}`, { text: word });
+      known = false;
     }
   }
   const next = matchLine('turn', cut.turn, node.line, ctx);
-  return known ? { verbs, next, line: node.line } : null;
+  return known ? { moves, next, line: node.line } : null;
 }
 
 /**
@@ -339,8 +375,11 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx, uses: VerbUses = {
       continue;
     } else if (action) {
       const { verb, words: actionWords } = actionOf(action);
-      const taken = moveVerbs.includes(verb) || actionNames.some((a) => a.verb === verb);
-      if (taken) addProblem(ctx.diagnostics, child.line, sameVerb(verb), { text: clean });
+      // Buttons that start alike are different moves; only the same wording twice is a repeat.
+      const repeated = actionNames.some((a) => a.words === actionWords);
+      const taken = repeated || moveVerbs.includes(verb);
+      if (repeated) addProblem(ctx.diagnostics, child.line, sameWords(actionWords), { text: clean });
+      else if (taken) addProblem(ctx.diagnostics, child.line, sameVerb(verb), { text: clean });
       else if (uses.moves.has(verb)) addProblem(ctx.diagnostics, child.line, moveElsewhere(verb), { text: clean });
       if (!taken) actionNames.push({ verb, words: actionWords });
       const declared = compileAction(child, action, ctx);
@@ -377,13 +416,7 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx, uses: VerbUses = {
     rejectChildren(child, ctx.diagnostics);
   }
 
-  // “plays”, “ends” and “ends their turn” each name a verb.
-  const names = new Map<string, string>();
-  for (const verb of moveVerbs) names.set(thirdPerson(verb), verb);
-  for (const { verb, words: actionWords } of actionNames) {
-    names.set(thirdPerson(verb), verb);
-    names.set(thirdPersonWords(actionWords), verb);
-  }
+  const names = afterNamesOf(moveVerbs, actionNames);
   afters.forEach(({ node: line, cuts }, index) => {
     const after = readAfter(line, cuts, names, ctx, index > 0);
     if (index === 0) phase.after = after;

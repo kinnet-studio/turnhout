@@ -101,7 +101,7 @@ function transfer(env: PhraseEnv, from: PlayerId, to: PlayerId | null, amount: n
 
 // ---- conditions ------------------------------------------------------------------------------
 
-const hasDoneThisTurn = (done: boolean): ConditionFn => (env, [verb]) => didThisTurn(env.state, theyOf(env), verb as string) === done;
+const hasDoneThisTurn = (done: boolean): ConditionFn => (env, [move]) => didThisTurn(env.state, theyOf(env), move as string) === done;
 
 const spaceHas: ConditionFn = (env, [attr]) => boardIn(env).spaces[itOf(env)].attrs[attr as string] !== undefined;
 
@@ -226,7 +226,7 @@ const hasGiven: EffectFn = (env, [seat, n, counter]) => setCounter(env.state, co
 // Going out in an example only arranges the table: whose turn it is stays as the example set it.
 const isOutGiven: EffectFn = (env, [seat]) => markOut(env.state, seatOf(env, seat));
 
-const hasDoneGiven: EffectFn = (env, [seat, verb]) => recordAction(env.state, seatOf(env, seat), verb as string);
+const hasDoneGiven: EffectFn = (env, [seat, move]) => recordAction(env.state, seatOf(env, seat), move as string);
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 
@@ -247,8 +247,8 @@ const nextRollIs: EffectFn = (env, faces) => {
 
 // ---- examples: action --------------------------------------------------------------------------
 
-/** A player presses one of the phase's buttons: the move is the button's verb. */
-const pressesButton: ActionFn = (env, [seat, verb]) => ({ by: seatOf(env, seat), move: { type: verb as string } });
+/** A player presses one of the phase's buttons: the move type is the button's whole wording. */
+const pressesButton: ActionFn = (env, [seat, move]) => ({ by: seatOf(env, seat), move: { type: move as string } });
 
 // ---- examples: expect --------------------------------------------------------------------------
 

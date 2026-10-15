@@ -37,31 +37,35 @@ describe('board state', () => {
     expect(playersIn(s, seats)).toEqual(['p0', 'p2']);
   });
   it('remembers what each seat has done this turn', () => {
-    const s = recordAction(recordAction(fresh(), 'p0', 'roll'), 'p0', 'buy');
-    expect([didThisTurn(s, 'p0', 'roll'), didThisTurn(s, 'p0', 'buy'), didThisTurn(s, 'p0', 'end')]).toEqual([true, true, false]);
-    expect(didThisTurn(s, 'p1', 'roll')).toBe(false);
-    expect(s.data[TURN_KEY]).toEqual({ p0: ['roll', 'buy'] });
+    const s = recordAction(recordAction(fresh(), 'p0', 'roll the dice'), 'p0', 'buy the space they are on');
+    expect([didThisTurn(s, 'p0', 'roll the dice'), didThisTurn(s, 'p0', 'buy the space they are on'), didThisTurn(s, 'p0', 'end their turn')])
+      .toEqual([true, true, false]);
+    expect(didThisTurn(s, 'p1', 'roll the dice')).toBe(false);
+    expect(s.data[TURN_KEY]).toEqual({ p0: ['roll the dice', 'buy the space they are on'] });
+    // The move type is the whole wording: a first word alone is not something done.
+    expect(didThisTurn(s, 'p0', 'roll')).toBe(false);
   });
   it("keeps one seat's actions apart from another's: p1's roll doesn't erase p0's", () => {
-    const s = recordAction(recordAction(fresh(), 'p0', 'roll'), 'p1', 'roll');
-    expect([didThisTurn(s, 'p0', 'roll'), didThisTurn(s, 'p1', 'roll'), didThisTurn(s, 'p2', 'roll')]).toEqual([true, true, false]);
-    expect(s.data[TURN_KEY]).toEqual({ p0: ['roll'], p1: ['roll'] });
+    const s = recordAction(recordAction(fresh(), 'p0', 'roll the dice'), 'p1', 'roll the dice');
+    expect([didThisTurn(s, 'p0', 'roll the dice'), didThisTurn(s, 'p1', 'roll the dice'), didThisTurn(s, 'p2', 'roll the dice')]).toEqual([true, true, false]);
+    expect(s.data[TURN_KEY]).toEqual({ p0: ['roll the dice'], p1: ['roll the dice'] });
   });
   it('forgets what every seat did when the turn passes', () => {
-    const s = clearTurnLog(recordAction(recordAction(fresh(), 'p0', 'roll'), 'p1', 'roll'));
-    expect([didThisTurn(s, 'p0', 'roll'), didThisTurn(s, 'p1', 'roll')]).toEqual([false, false]);
+    const s = clearTurnLog(recordAction(recordAction(fresh(), 'p0', 'roll the dice'), 'p1', 'roll the dice'));
+    expect([didThisTurn(s, 'p0', 'roll the dice'), didThisTurn(s, 'p1', 'roll the dice')]).toEqual([false, false]);
     expect(s.data[TURN_KEY]).toEqual({});
-    expect(didThisTurn(recordAction(s, 'p1', 'buy'), 'p1', 'roll')).toBe(false);
+    expect(didThisTurn(recordAction(s, 'p1', 'buy the space they are on'), 'p1', 'roll the dice')).toBe(false);
   });
   it('chooseNext forgets the turn, and leaves card games without a record of it', () => {
-    const s = chooseNext(recordAction(recordAction(fresh(), 'p0', 'roll'), 'p1', 'roll'), 'p0');
-    expect([didThisTurn(s, 'p0', 'roll'), didThisTurn(s, 'p1', 'roll')]).toEqual([false, false]);
+    const s = chooseNext(recordAction(recordAction(fresh(), 'p0', 'roll the dice'), 'p1', 'roll the dice'), 'p0');
+    expect([didThisTurn(s, 'p0', 'roll the dice'), didThisTurn(s, 'p1', 'roll the dice')]).toEqual([false, false]);
     expect(chooseNext(fixtureState([]), 'p0').data).toEqual({});
   });
-  it('knows which verbs pass the turn: the ones the phase\'s After line names', () => {
-    const after = { verbs: ['play', 'end'], next: { kind: 'turn' as const, phrase: 'the turn passes to the left', args: [], line: 9, text: '' }, line: 9 };
+  it('knows which moves pass the turn: the ones the phase\'s After line names', () => {
+    const after = { moves: ['play', 'end their turn'], next: { kind: 'turn' as const, phrase: 'the turn passes to the left', args: [], line: 9, text: '' }, line: 9 };
     const phase = fixturePhase('playing', [], { after });
-    expect([endsTurn(phase, 'play'), endsTurn(phase, 'end'), endsTurn(phase, 'roll')]).toEqual([true, true, false]);
+    expect([endsTurn(phase, 'play'), endsTurn(phase, 'end their turn'), endsTurn(phase, 'roll the dice'), endsTurn(phase, 'end')])
+      .toEqual([true, true, false, false]);
     expect(endsTurn(fixturePhase('playing', []), 'play')).toBe(false);
   });
   it('queues rolls for examples, first in first out', () => {

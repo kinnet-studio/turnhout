@@ -36,18 +36,18 @@ export function MoneyLine({ board }: { board: BoardView }) {
  */
 export function ActionButtons({ actions, onPress, onRefused }: {
   actions: ActionView[];
-  onPress(verb: string): void;
+  onPress(move: string): void;
   onRefused(reason: string): void;
 }) {
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-      {actions.map(({ verb, label, allowed }, i) => (
+      {actions.map(({ move, label, allowed }, i) => (
         <button
-          key={`${i}-${verb}`}
+          key={`${i}-${move}`}
           type="button"
           aria-disabled={allowed !== true}
           title={allowed === true ? undefined : allowed}
-          onClick={() => (allowed === true ? onPress(verb) : onRefused(allowed))}
+          onClick={() => (allowed === true ? onPress(move) : onRefused(allowed))}
           style={{ padding: '6px 12px', font: '14px sans-serif', opacity: allowed === true ? 1 : 0.5, cursor: allowed === true ? 'pointer' : 'not-allowed' }}
         >
           {label}

@@ -187,7 +187,7 @@ describe('owning', () => {
     expect(runPhrase(lib, 'condition', 'no one owns it', env(onRose, as('p0')))).toBe(true);
     expect(runPhrase(lib, 'condition', 'they have at least its price in money', env(setCounter(onRose, 'money', 'p0', 179), as('p0')))).toBe(false);
     expect(runPhrase(lib, 'condition', 'they have at least its price in money', env(setCounter(onRose, 'money', 'p0', 180), as('p0')))).toBe(true);
-    expect(runPhrase(lib, 'condition', 'they have rolled this turn', env(recordAction(onRose, 'p0', 'roll'), as('p0')))).toBe(true);
+    expect(runPhrase(lib, 'condition', 'they have rolled this turn', env(recordAction(onRose, 'p0', 'roll the dice'), as('p0')))).toBe(true);
   });
   it('accepts either article before the detail', () => {
     const onRose = placePiece(fixtureBoardState(), 'p0', 5);
@@ -197,7 +197,7 @@ describe('owning', () => {
     const start = fixtureBoardState();
     expect(runPhrase(lib, 'condition', 'they have rolled this turn', env(start, as('p0')))).toBe(false);
     expect(runPhrase(lib, 'condition', 'they have not rolled this turn', env(start, as('p0')))).toBe(true);
-    const rolled = recordAction(start, 'p0', 'roll');
+    const rolled = recordAction(start, 'p0', 'roll the dice');
     expect(runPhrase(lib, 'condition', 'they have not rolled this turn', env(rolled, as('p0')))).toBe(false);
     expect(runPhrase(lib, 'condition', 'they have rolled this turn', env(rolled, as('p1')))).toBe(false);
     expect(runPhrase(lib, 'condition', 'they have rolled this turn', env(clearTurnLog(rolled), as('p0')))).toBe(false);
@@ -378,9 +378,9 @@ describe('example phrases', () => {
   describe('action', () => {
     it('is a player pressing one of the buttons', () => {
       const run = (text: string) => runPhrase(lib, 'action', text, at(fixtureBoardState(playing)));
-      expect(run('p0 rolls the dice')).toEqual({ by: 'p0', move: { type: 'roll' } });
-      expect(run('p1 buys the space they are on')).toEqual({ by: 'p1', move: { type: 'buy' } });
-      expect(run('p0 ends their turn')).toEqual({ by: 'p0', move: { type: 'end' } });
+      expect(run('p0 rolls the dice')).toEqual({ by: 'p0', move: { type: 'roll the dice' } });
+      expect(run('p1 buys the space they are on')).toEqual({ by: 'p1', move: { type: 'buy the space they are on' } });
+      expect(run('p0 ends their turn')).toEqual({ by: 'p0', move: { type: 'end their turn' } });
     });
     it('refuses a player who is not at the table', () => {
       expect(() => runPhrase(lib, 'action', 'p3 rolls the dice', at(fixtureBoardState(playing)))).toThrow('There is no player p3 at this table.');

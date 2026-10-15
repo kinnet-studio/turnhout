@@ -120,9 +120,9 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError }: {
   );
   const extras = readSeatExtras(view?.extras);
   if (extras?.board) {
-    const press = (verb: string) => {
+    const press = (move: string) => {
       onError(null);
-      send({ type: verb });
+      send({ type: move });
     };
     return (
       <div style={{ ...PANEL_STYLE, boxSizing: 'content-box', padding: 8, display: 'flex', flexDirection: 'column', gap: 8, font: '14px sans-serif', color: '#eee' }}>

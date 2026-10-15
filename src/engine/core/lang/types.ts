@@ -34,7 +34,8 @@ export type BoardPart =
 export type SpaceClass = { attribute: string; values: Json[] };
 /**
  * `words` is the lowercase text after "a player may" ('roll the dice'); `label` is the button text in the second person,
- * with the designer's capitals ('Roll the dice', 'Go to Rose Lane').
+ * with the designer's capitals ('Roll the dice', 'Go to Rose Lane'). `words` is also the button's move type, so that
+ * “pay the fine” and “pay the toll” are two buttons although they start with the same `verb`.
  */
 export type DeclaredAction = { verb: string; words: string; label: string; conditions: CondGroup[]; effects: PhraseRef[]; line: number };
 export type CompiledMoment = { line: number; text: string; when: PhraseRef; conditions: CondGroup[]; effects: PhraseRef[] };
@@ -42,7 +43,9 @@ export type CompiledTrigger = { line: number; text: string; when: PhraseRef; con
 export type CompiledPhase = {
   id: string; line: number; hint: string | null; actor: 'current' | 'any'; rearrange: string[];
   moves: DeclaredMove[]; onEnter: PhraseRef[]; goTo: { when: PhraseRef; to: string; line: number } | null;
-  triggers: CompiledTrigger[]; after: { verbs: string[]; next: PhraseRef; line: number } | null;
+  triggers: CompiledTrigger[];
+  /** `moves` are the move types the After line names: a card move's verb, a button's whole wording. */
+  after: { moves: string[]; next: PhraseRef; line: number } | null;
   actions: DeclaredAction[]; moments: CompiledMoment[];
 };
 export type CompiledEnd = { line: number; when: PhraseRef; scores: PhraseRef[]; winner: PhraseRef };

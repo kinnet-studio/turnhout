@@ -50,17 +50,17 @@ export function flowDefFor(game: CompiledGame, seats: PlayerId[]): FlowDef {
   const setup: PhaseDef = { id: SETUP_PHASE, allow: [], onEnter: game.setup.map(effect), advance: { when: 'lang:always', to: first.id } };
 
   const phases = game.phases.map((phase): PhaseDef => {
-    const verbs = [...new Set([...phase.moves.map((m) => m.verb), ...phase.actions.map((a) => a.verb)])];
+    const moveTypes = [...new Set([...phase.moves.map((m) => m.verb), ...phase.actions.map((a) => a.words)])];
     const rearranging = phase.rearrange.length > 0;
     const { goTo, after } = phase;
     return {
       id: phase.id,
-      allow: rearranging ? [...verbs, 'reorder'] : verbs,
+      allow: rearranging ? [...moveTypes, 'reorder'] : moveTypes,
       actor: phase.actor,
       ...(rearranging ? { anyActor: ['reorder'] } : {}),
       onEnter: phase.onEnter.map(effect),
       ...(goTo ? { advance: { when: cond(goTo.when), to: goTo.to } } : {}),
-      ...(after ? { endTurn: { when: 'lang:always', after: after.verbs, next: { name: 'lang:turn', params: after.next } } } : {}),
+      ...(after ? { endTurn: { when: 'lang:always', after: after.moves, next: { name: 'lang:turn', params: after.next } } } : {}),
     };
   });
 
@@ -116,8 +116,9 @@ export function createEngine(
   const moves = registerCoreMoves(new MoveRegistry());
   const verbs = new Set(game.phases.flatMap((p) => p.moves.map((m) => m.verb)));
   for (const verb of verbs) moves.register(verb, declaredMoveHandler(verb, runtime));
-  const actionVerbs = new Set(game.phases.flatMap((p) => p.actions.map((a) => a.verb)));
-  for (const verb of actionVerbs) moves.register(verb, declaredActionHandler(verb, runtime));
+  // A button's move type is its whole wording, so “pay the fine” and “pay the toll” are two moves.
+  const buttonMoves = new Set(game.phases.flatMap((p) => p.actions.map((a) => a.words)));
+  for (const move of buttonMoves) moves.register(move, declaredActionHandler(move, runtime));
 
   const flow = flowDefFor(game, seats);
   const rules = new RuleRegistry();

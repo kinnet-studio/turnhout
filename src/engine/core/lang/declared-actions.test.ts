@@ -50,13 +50,20 @@ describe('button actions on a board', () => {
     expect([pieceAt(s, 'p0'), counterOf(s, 'money', 'p1')]).toEqual([0, 1500]);
   });
 
+  it("a button's move type is its wording", () => {
+    const engine = engineWith((s) => queueRoll(s, [1, 2]));
+    // The engine throws for a type it has no move of; the old one-word type is not one.
+    expect(() => engine.dispatch({ type: 'roll', by: 'p0' })).toThrow('unknown move type: roll');
+    expect(engine.dispatch({ type: 'roll the dice', by: 'p0' }).ok).toBe(true);
+  });
+
   it('rolls once per turn, ends the turn, and passes it to the left', () => {
     const engine = engineWith((s) => queueRoll(s, [1, 2]));
-    expect(engine.dispatch({ type: 'roll', by: 'p0' }).ok).toBe(true);
-    expect(engine.dispatch({ type: 'roll', by: 'p0' })).toMatchObject({ ok: false, reason: 'they have not rolled this turn' });
-    expect(engine.dispatch({ type: 'end', by: 'p0' }).ok).toBe(true);
+    expect(engine.dispatch({ type: 'roll the dice', by: 'p0' }).ok).toBe(true);
+    expect(engine.dispatch({ type: 'roll the dice', by: 'p0' })).toMatchObject({ ok: false, reason: 'they have not rolled this turn' });
+    expect(engine.dispatch({ type: 'end their turn', by: 'p0' }).ok).toBe(true);
     expect(engine.getState().turn?.current).toBe('p1');
-    expect(engine.canDispatch({ type: 'end', by: 'p1' })).toBe('they have rolled this turn');
+    expect(engine.canDispatch({ type: 'end their turn', by: 'p1' })).toBe('they have rolled this turn');
   });
 
   it('forgets what was done when a card move the After line names passes the turn', () => {
@@ -64,21 +71,21 @@ describe('button actions on a board', () => {
     expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
     const { engine } = createEngine(g!, lib, 2, initialState(g!, 1));
     const play = (by: string) => engine.dispatch({ type: 'play', by, cardId: zoneCards(engine.getState(), `hand-${by}`)[0].id });
-    expect(engine.dispatch({ type: 'roll', by: 'p0' }).ok).toBe(true);
+    expect(engine.dispatch({ type: 'roll the dice', by: 'p0' }).ok).toBe(true);
     expect(play('p0').ok).toBe(true);
     expect(play('p1').ok).toBe(true);
     expect(engine.getState().turn?.current).toBe('p0');
-    expect(engine.dispatch({ type: 'roll', by: 'p0' }).ok).toBe(true);
+    expect(engine.dispatch({ type: 'roll the dice', by: 'p0' }).ok).toBe(true);
   });
 
   it('remembers what each player did apart when everyone acts at once', () => {
     const { game: g, diagnostics } = compileGame(EVERYONE_ROLLS, lib);
     expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
     const { engine } = createEngine(g!, lib, 2, initialState(g!, 1));
-    expect(engine.dispatch({ type: 'roll', by: 'p0' }).ok).toBe(true);
-    expect(engine.dispatch({ type: 'roll', by: 'p1' }).ok).toBe(true);
-    expect(engine.dispatch({ type: 'roll', by: 'p0' })).toMatchObject({ ok: false, reason: 'they have not rolled this turn' });
-    expect(engine.dispatch({ type: 'roll', by: 'p1' })).toMatchObject({ ok: false, reason: 'they have not rolled this turn' });
+    expect(engine.dispatch({ type: 'roll the dice', by: 'p0' }).ok).toBe(true);
+    expect(engine.dispatch({ type: 'roll the dice', by: 'p1' }).ok).toBe(true);
+    expect(engine.dispatch({ type: 'roll the dice', by: 'p0' })).toMatchObject({ ok: false, reason: 'they have not rolled this turn' });
+    expect(engine.dispatch({ type: 'roll the dice', by: 'p1' })).toMatchObject({ ok: false, reason: 'they have not rolled this turn' });
   });
 
   it('keeps a card game free of any record of the turn', () => {
@@ -91,11 +98,11 @@ describe('button actions on a board', () => {
 
   it('buys the space a piece is on, after rolling, and charges rent to whoever lands there next', () => {
     const engine = engineWith((s) => queueRoll(queueRoll(s, [1, 2]), [2, 1])); // both go Go → Rose Lane
-    engine.dispatch({ type: 'roll', by: 'p0' });
-    expect(engine.dispatch({ type: 'buy', by: 'p0' }).ok).toBe(true);
-    expect(engine.canDispatch({ type: 'buy', by: 'p0' })).toBe('no one owns it');
-    engine.dispatch({ type: 'end', by: 'p0' });
-    engine.dispatch({ type: 'roll', by: 'p1' });
+    engine.dispatch({ type: 'roll the dice', by: 'p0' });
+    expect(engine.dispatch({ type: 'buy the space they are on', by: 'p0' }).ok).toBe(true);
+    expect(engine.canDispatch({ type: 'buy the space they are on', by: 'p0' })).toBe('no one owns it');
+    engine.dispatch({ type: 'end their turn', by: 'p0' });
+    engine.dispatch({ type: 'roll the dice', by: 'p1' });
     const s = engine.getState();
     expect(ownerOf(s, 3)).toBe('p0');
     expect([counterOf(s, 'money', 'p0'), counterOf(s, 'money', 'p1')]).toEqual([1500 - 180 + 14, 1500 - 14]);
@@ -103,17 +110,17 @@ describe('button actions on a board', () => {
 
   it('pays 200 once for passing Go and once for landing on it', () => {
     const passing = engineWith((s) => queueRoll(placePiece(s, 'p0', 3), [1, 1])); // 3 → Go → Mill Lane
-    passing.dispatch({ type: 'roll', by: 'p0' });
+    passing.dispatch({ type: 'roll the dice', by: 'p0' });
     expect(counterOf(passing.getState(), 'money', 'p0')).toBe(1700);
     const landing = engineWith((s) => queueRoll(placePiece(s, 'p0', 2), [1, 1])); // 2 → Rose Lane → Go
-    landing.dispatch({ type: 'roll', by: 'p0' });
+    landing.dispatch({ type: 'roll the dice', by: 'p0' });
     expect(pieceAt(landing.getState(), 'p0')).toBe(0);
     expect(counterOf(landing.getState(), 'money', 'p0')).toBe(1700);
   });
 
   it('a player who goes below 0 is out, loses their spaces, and the last player left wins', () => {
     const engine = engineWith((s) => queueRoll(setCounter(setOwner(s, 1, 'p0'), 'money', 'p0', 100), [1, 1]));
-    engine.dispatch({ type: 'roll', by: 'p0' }); // Go → Income Tax: 100 - 200 < 0
+    engine.dispatch({ type: 'roll the dice', by: 'p0' }); // Go → Income Tax: 100 - 200 < 0
     const s = engine.getState();
     expect(isOut(s, 'p0')).toBe(true);
     expect(pieceAt(s, 'p0')).toBeNull();
@@ -124,7 +131,7 @@ describe('button actions on a board', () => {
   it('a player who goes out while two others are still in hands the turn on, and the game goes on', () => {
     const start = withBoardData(initialState(game, 1), game, ['p0', 'p1', 'p2']);
     const { engine } = createEngine(game, lib, 3, queueRoll(setCounter(start, 'money', 'p0', 100), [1, 1]));
-    engine.dispatch({ type: 'roll', by: 'p0' });
+    engine.dispatch({ type: 'roll the dice', by: 'p0' });
     const s = engine.getState();
     expect(isOut(s, 'p0')).toBe(true);
     expect(s.turn).toEqual({ current: 'p1', phase: 'playing' });
@@ -138,7 +145,7 @@ describe('button actions on a board', () => {
     // From Income Tax, a roll of 4 goes once round the 4-space loop and lands on Income Tax again, forever.
     const engine = engineWith((s) => queueRoll(placePiece(s, 'p0', 2), [2, 2]), g);
     let thrown: unknown;
-    try { engine.dispatch({ type: 'roll', by: 'p0' }); } catch (e) { thrown = e; }
+    try { engine.dispatch({ type: 'roll the dice', by: 'p0' }); } catch (e) { thrown = e; }
     expect(friendlyError(thrown)).toMatch(/^Line \d+ \(“When a player lands on a tax space”\): It keeps moving pieces without stopping\.$/);
   });
 
@@ -156,7 +163,7 @@ describe('button actions on a board', () => {
     ].join('\n');
     const g = compileGame(chain, lib).game!;
     const engine = engineWith((s) => queueRoll(s, [1]), g);
-    expect(engine.dispatch({ type: 'roll', by: 'p0' }).ok).toBe(true);
+    expect(engine.dispatch({ type: 'roll the dice', by: 'p0' }).ok).toBe(true);
     expect(pieceAt(engine.getState(), 'p0')).toBe(steps + 1);
   });
 
@@ -165,7 +172,7 @@ describe('button actions on a board', () => {
     const start = queueRoll(placePiece(withBoardData(initialState(g, 1), g, ['p0', 'p1']), 'p0', 2), [2, 2]);
     const { engine, runtime } = createEngine(g, lib, 2, start);
     let thrown: unknown;
-    try { engine.dispatch({ type: 'roll', by: 'p0' }); } catch (e) { thrown = e; }
+    try { engine.dispatch({ type: 'roll the dice', by: 'p0' }); } catch (e) { thrown = e; }
     // Line 37 is the tax rule, whose line moves the piece; not the Go rule (line 33) that the move sets off first.
     expect(friendlyError(thrown)).toBe('Line 37 (“When a player lands on a tax space”): It keeps moving pieces without stopping.');
     // Had the depth stayed raised, the next rule to fire would be refused at once.
@@ -177,9 +184,9 @@ describe('button actions on a board', () => {
     const { engine } = createEngine(game, lib, 3, initialState(game, 9));
     for (let turn = 0; turn < 12; turn++) {
       const cur = engine.getState().turn!.current;
-      engine.dispatch({ type: 'roll', by: cur });
-      if (engine.canDispatch({ type: 'buy', by: cur }) === true) engine.dispatch({ type: 'buy', by: cur });
-      engine.dispatch({ type: 'end', by: cur });
+      engine.dispatch({ type: 'roll the dice', by: cur });
+      if (engine.canDispatch({ type: 'buy the space they are on', by: cur }) === true) engine.dispatch({ type: 'buy the space they are on', by: cur });
+      engine.dispatch({ type: 'end their turn', by: cur });
     }
     const fresh = createEngine(game, lib, 3, initialState(game, 9)).engine;
     fresh.loadLog([...engine.getLog()]);
@@ -190,22 +197,22 @@ describe('button actions on a board', () => {
 describe('declaredActionHandler', () => {
   const { runtime, tableDef } = createEngine(game, lib, 2, initialState(game, 1));
   const ctx: MoveContext = { tableDef, rules: new RuleRegistry() };
-  const roll = declaredActionHandler('roll', runtime);
+  const roll = declaredActionHandler('roll the dice', runtime);
   const playing = (s: GameState): GameState => ({ ...withBoardData(s, game, ['p0', 'p1']), turn: { current: 'p0', phase: 'playing' } });
 
   it('refuses an action the phase does not declare', () => {
     const setup: GameState = { ...playing(initialState(game, 1)), turn: { current: 'p0', phase: '__setup' } };
-    expect(roll.legal(setup, { type: 'roll', by: 'p0' }, ctx)).toBe("You can't roll now.");
+    expect(roll.legal(setup, { type: 'roll the dice', by: 'p0' }, ctx)).toBe("You can't roll the dice now.");
     expect(declaredActionHandler('jump', runtime).legal(playing(initialState(game, 1)), { type: 'jump', by: 'p0' }, ctx)).toBe("You can't jump now.");
   });
 
   it('refuses a player who is out before asking the Only if lines', () => {
     const out = markOut(playing(initialState(game, 1)), 'p0');
-    expect(roll.legal(out, { type: 'roll', by: 'p0' }, ctx)).toBe("You're out of the game.");
+    expect(roll.legal(out, { type: 'roll the dice', by: 'p0' }, ctx)).toBe("You're out of the game.");
   });
 
   it('will not apply an action that is not allowed', () => {
     const out = markOut(playing(initialState(game, 1)), 'p0');
-    expect(() => roll.apply(out, { type: 'roll', by: 'p0' }, ctx)).toThrow(Error);
+    expect(() => roll.apply(out, { type: 'roll the dice', by: 'p0' }, ctx)).toThrow(Error);
   });
 });

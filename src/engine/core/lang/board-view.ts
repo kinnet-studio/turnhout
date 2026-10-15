@@ -14,8 +14,11 @@ export type SpaceView = { name: string; color: string | null; details: { [k: str
 export type CounterView = { name: string; values: { [seat: string]: number | null } };
 /** `pieces` lists the seats that still have a piece, so a player who is out is absent. */
 export type BoardView = { spaces: SpaceView[]; pieces: { [seat: string]: number }; roll: number[] | null; counters: CounterView[]; out: PlayerId[] };
-/** `allowed` is true when the button works now, otherwise the sentence to show for why it does not. */
-export type ActionView = { verb: string; label: string; allowed: true | string };
+/**
+ * `move` is the move type to send when the button is pressed. `allowed` is true when the button works now, otherwise the
+ * sentence to show for why it does not.
+ */
+export type ActionView = { move: string; label: string; allowed: true | string };
 export type SeatExtras = { board: BoardView | null; actions: ActionView[] };
 
 const OUT_OF_GAME = "You're out of the game.";
@@ -43,9 +46,9 @@ function boardView(runtime: LangRuntime, state: GameState, seat: PlayerId): Boar
 }
 
 /** Whether `seat` may press the button now; a rule that cannot be answered (“Go has no price.”) greys it with that sentence. */
-function allowedNow(engine: GameEngine, state: GameState, seat: PlayerId, verb: string): true | string {
+function allowedNow(engine: GameEngine, state: GameState, seat: PlayerId, move: string): true | string {
   try {
-    const verdict = engine.canDispatch({ type: verb, by: seat });
+    const verdict = engine.canDispatch({ type: move, by: seat });
     return verdict === true ? true : friendlyReason(verdict, state.turn?.current);
   } catch (e) {
     return friendlyError(e);
@@ -59,8 +62,8 @@ function actionViews(engine: GameEngine, runtime: LangRuntime, state: GameState,
   // A seat that is out has nothing to press while the others play on; once the game is over the engine's own word wins.
   const out = isOut(state, seat) && state.result === undefined;
   return phase.actions.map((action): ActionView => {
-    if (out) return { verb: action.verb, label: action.label, allowed: OUT_OF_GAME };
-    return { verb: action.verb, label: action.label, allowed: allowedNow(engine, state, seat, action.verb) };
+    if (out) return { move: action.words, label: action.label, allowed: OUT_OF_GAME };
+    return { move: action.words, label: action.label, allowed: allowedNow(engine, state, seat, action.words) };
   });
 }
 
@@ -83,7 +86,7 @@ const isBoard = (v: unknown): boolean =>
   isRecord(v) && isList(v.spaces, isSpace) && isMap(v.pieces, isNumber) && (v.roll === null || isList(v.roll, isNumber))
   && isList(v.counters, isCounter) && isList(v.out, isText);
 const isAction = (v: unknown): boolean =>
-  isRecord(v) && isText(v.verb) && isText(v.label) && (v.allowed === true || isText(v.allowed));
+  isRecord(v) && isText(v.move) && isText(v.label) && (v.allowed === true || isText(v.allowed));
 
 /** For the page: the extras of a view when they have the shape `seatExtras` makes, null for anything else. */
 export function readSeatExtras(extras: Json | undefined): SeatExtras | null {

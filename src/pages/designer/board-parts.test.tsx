@@ -76,8 +76,8 @@ describe('MoneyLine', () => {
 
 describe('ActionButtons', () => {
   const actions = [
-    { verb: 'roll', label: 'Roll the dice', allowed: true as const },
-    { verb: 'end', label: 'End your turn', allowed: 'they have rolled this turn' },
+    { move: 'roll the dice', label: 'Roll the dice', allowed: true as const },
+    { move: 'end their turn', label: 'End your turn', allowed: 'they have rolled this turn' },
   ];
 
   it('presses an allowed button and greys the others with the reason', () => {
@@ -91,7 +91,7 @@ describe('ActionButtons', () => {
     expect(end.getAttribute('aria-disabled')).toBe('true');
     expect(end.getAttribute('title')).toBe('they have rolled this turn');
     fireEvent.click(roll);
-    expect(onPress).toHaveBeenCalledWith('roll');
+    expect(onPress).toHaveBeenCalledWith('roll the dice');
     fireEvent.click(end);
     expect(onRefused).toHaveBeenCalledWith('they have rolled this turn');
     expect(onPress).toHaveBeenCalledTimes(1);
@@ -101,7 +101,7 @@ describe('ActionButtons', () => {
   it('sends nothing from a button greyed because the game is over', () => {
     const onPress = vi.fn();
     const onRefused = vi.fn();
-    render(<ActionButtons actions={[{ verb: 'roll', label: 'Roll the dice', allowed: 'The game is over.' }]} onPress={onPress} onRefused={onRefused} />);
+    render(<ActionButtons actions={[{ move: 'roll the dice', label: 'Roll the dice', allowed: 'The game is over.' }]} onPress={onPress} onRefused={onRefused} />);
     fireEvent.click(screen.getByRole('button', { name: 'Roll the dice' }));
     expect(onPress).not.toHaveBeenCalled();
     expect(onRefused).toHaveBeenCalledWith('The game is over.');

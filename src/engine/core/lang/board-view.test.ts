@@ -18,9 +18,9 @@ describe('seat views of a board game', () => {
     expect(p0.board!.pieces).toEqual({ p0: 0, p1: 0 });
     expect(p0.board!.counters).toEqual([{ name: 'money', values: { p0: 1500, p1: 1500 } }]);
     expect(p0.actions).toEqual([
-      { verb: 'roll', label: 'Roll the dice', allowed: true },
-      { verb: 'buy', label: 'Buy the space you are on', allowed: 'they have rolled this turn' },
-      { verb: 'end', label: 'End your turn', allowed: 'they have rolled this turn' },
+      { move: 'roll the dice', label: 'Roll the dice', allowed: true },
+      { move: 'buy the space they are on', label: 'Buy the space you are on', allowed: 'they have rolled this turn' },
+      { move: 'end their turn', label: 'End your turn', allowed: 'they have rolled this turn' },
     ]);
     expect(seatExtras(engine, runtime, engine.getState(), 'p1').actions.every((a) => a.allowed === "It's p0's turn.")).toBe(true);
   });
@@ -38,8 +38,8 @@ describe('seat views of a board game', () => {
   it('shows the roll, the pieces and the owners as the game moves', () => {
     const start = queueRoll(initialState(game, 1), [1, 2]);
     const { engine, runtime } = createEngine(game, lib, 2, start);
-    engine.dispatch({ type: 'roll', by: 'p0' });
-    engine.dispatch({ type: 'buy', by: 'p0' });
+    engine.dispatch({ type: 'roll the dice', by: 'p0' });
+    engine.dispatch({ type: 'buy the space they are on', by: 'p0' });
     const { board, actions } = seatExtras(engine, runtime, engine.getState(), 'p1');
     expect(board!.roll).toEqual([1, 2]);
     expect(board!.pieces).toEqual({ p0: 3, p1: 0 });
@@ -58,14 +58,14 @@ describe('seat views of a board game', () => {
   it('greys every button once the game is over', () => {
     const start = queueRoll(setCounter(withBoardData(initialState(game, 1), game, ['p0', 'p1']), 'money', 'p0', 100), [1, 1]);
     const { engine, runtime } = createEngine(game, lib, 2, start);
-    engine.dispatch({ type: 'roll', by: 'p0' });
+    engine.dispatch({ type: 'roll the dice', by: 'p0' });
     expect(seatExtras(engine, runtime, engine.getState(), 'p1').actions.map((a) => a.allowed)).toEqual(['The game is over.', 'The game is over.', 'The game is over.']);
   });
 
   it('greys the buttons of a seat that is out while the game goes on', () => {
     const start = queueRoll(setCounter(withBoardData(initialState(game, 1), game, ['p0', 'p1', 'p2']), 'money', 'p0', 100), [1, 1]);
     const { engine, runtime } = createEngine(game, lib, 3, start);
-    engine.dispatch({ type: 'roll', by: 'p0' });
+    engine.dispatch({ type: 'roll the dice', by: 'p0' });
     expect(engine.getState().result).toBeUndefined();
     expect(seatExtras(engine, runtime, engine.getState(), 'p0').actions.every((a) => a.allowed === "You're out of the game.")).toBe(true);
     const { board } = seatExtras(engine, runtime, engine.getState(), 'p1');
@@ -78,7 +78,7 @@ describe('seat views of a board game', () => {
     const { engine, runtime } = createEngine(careless, lib, 2, initialState(careless, 1));
     // The sentence names the designer's line, so they can find the rule that needs an “Only if it has a price.”
     expect(seatExtras(engine, runtime, engine.getState(), 'p0').actions[1]).toEqual({
-      verb: 'buy', label: 'Buy the space you are on', allowed: 'Line 24 (“they have at least its price in money”): Go has no price.',
+      move: 'buy the space they are on', label: 'Buy the space you are on', allowed: 'Line 24 (“they have at least its price in money”): Go has no price.',
     });
   });
 
@@ -113,8 +113,9 @@ describe('readSeatExtras', () => {
     ['a list', []],
     ['no actions', { board: null }],
     ['actions that are not a list', { board: null, actions: {} }],
-    ['an action with no label', { board: null, actions: [{ verb: 'roll', allowed: true }] }],
-    ['an action that is allowed with false', { board: null, actions: [{ verb: 'roll', label: 'Roll', allowed: false }] }],
+    ['an action with no label', { board: null, actions: [{ move: 'roll the dice', allowed: true }] }],
+    ['an action with no move type', { board: null, actions: [{ label: 'Roll', allowed: true }] }],
+    ['an action that is allowed with false', { board: null, actions: [{ move: 'roll the dice', label: 'Roll', allowed: false }] }],
     ['a board that is not an object', { board: 3, actions: [] }],
     ['a board with no spaces', { board: { pieces: {}, roll: null, counters: [], out: [] }, actions: [] }],
     ['a space with no name', { board: { spaces: [{ color: null, details: {}, owner: null }], pieces: {}, roll: null, counters: [], out: [] }, actions: [] }],

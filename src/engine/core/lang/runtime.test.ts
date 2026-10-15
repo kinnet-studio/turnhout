@@ -334,8 +334,8 @@ describe('LangRuntime on a board', () => {
     const choosy = new LangRuntime(rules, lib, ['p0', 'p1']);
     const both = broke(start, 'p0', 'p1');
     expect(choosy.triggerSubject('playing', rule, both)).toEqual({ player: 'p0', space: null });
-    expect(choosy.triggerSubject('playing', rule, recordAction(both, 'p0', 'roll'))).toEqual({ player: 'p1', space: null });
-    expect(choosy.triggerSubject('playing', rule, recordAction(broke(start, 'p0'), 'p0', 'roll'))).toBeNull();
+    expect(choosy.triggerSubject('playing', rule, recordAction(both, 'p0', 'roll the dice'))).toEqual({ player: 'p1', space: null });
+    expect(choosy.triggerSubject('playing', rule, recordAction(broke(start, 'p0'), 'p0', 'roll the dice'))).toBeNull();
   });
 
   it('runs a rule about no one in particular with no player', () => {
@@ -357,6 +357,8 @@ describe('LangRuntime on a board', () => {
 
   it('lets players press the phase’s buttons and passes the turn after the ones that end it', () => {
     const playing = flowDefFor(board, ['p0', 'p1']).phases[1];
-    expect(playing).toMatchObject({ allow: ['roll', 'buy', 'end'], endTurn: { after: ['end'] } });
+    expect(playing).toMatchObject({
+      allow: ['roll the dice', 'buy the space they are on', 'end their turn'], endTurn: { after: ['end their turn'] },
+    });
   });
 });

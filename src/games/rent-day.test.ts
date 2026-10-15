@@ -13,6 +13,10 @@ import type { PlayerId } from '@/engine/core/scene';
 const lib = createDefaultLibrary();
 const { game, diagnostics } = compileGame(RENT_DAY, lib);
 const SPACES = 40;
+// A button's move type is its whole wording.
+const ROLL = 'roll the dice';
+const BUY = 'buy the space they are on';
+const END = 'end their turn';
 
 /** What a test wants to look at around each move the auto-player makes. */
 type Watch = (before: GameState, move: Move, after: GameState) => void;
@@ -29,11 +33,11 @@ function playTurn(engine: GameEngine, watch: Watch = () => {}): void {
     expect(outcome.ok, `${by} could not ${move.type}: ${outcome.reason}`).toBe(true);
     watch(before, move, engine.getState());
   };
-  make({ type: 'roll', by });
+  make({ type: ROLL, by });
   const stillTheirs = () => engine.getState().result === undefined && engine.getState().turn!.current === by;
   if (!stillTheirs()) return;
-  if (engine.canDispatch({ type: 'buy', by }) === true) make({ type: 'buy', by });
-  make({ type: 'end', by });
+  if (engine.canDispatch({ type: BUY, by }) === true) make({ type: BUY, by });
+  make({ type: END, by });
 }
 
 const totalMoney = (state: GameState, seats: PlayerId[]) => seats.reduce((sum, seat) => sum + counterOf(state, 'money', seat), 0);
@@ -63,7 +67,7 @@ describe('Rent Day (designer language)', () => {
     const watch: Watch = (before, move, after) => {
       const by = move.by as PlayerId;
       const change = totalMoney(after, seats) - totalMoney(before, seats);
-      if (move.type === 'roll') {
+      if (move.type === ROLL) {
         const from = pieceAt(before, by)!;
         const roll = latestRoll(after)!;
         expect(roll).toHaveLength(2);
@@ -86,7 +90,7 @@ describe('Rent Day (designer language)', () => {
           const got = counterOf(after, 'money', seat) - counterOf(before, 'money', seat);
           expect(got, `${seat}'s money after ${by} rolled ${roll} from space ${from}`).toBe(expected);
         }
-      } else if (move.type === 'buy') {
+      } else if (move.type === BUY) {
         const at = pieceAt(before, by)!;
         expect(change).toBe(-(spaces[at].attrs.price as number));
         expect(ownerOf(after, at)).toBe(by);
@@ -136,7 +140,7 @@ describe('Rent Day (designer language)', () => {
     const log = [...engine.getLog()];
     expect(log.length).toBe(states.length - 1);
     expect(log.length).toBeGreaterThanOrEqual(80);
-    expect(log.some((move) => move.type === 'buy')).toBe(true);
+    expect(log.some((move) => move.type === BUY)).toBe(true);
 
     // The same moves from the same seed roll the same dice and fire the same moments.
     const replayed = fresh();
