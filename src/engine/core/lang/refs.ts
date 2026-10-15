@@ -542,10 +542,25 @@ function resolveSpaceClass(text: string, vocab: Vocab): Parsed {
   return { value: kind };
 }
 
+/** A kind of space as a designer writes one, read loosely: “a” or “an”, one word or several joined by “or”, maybe “space”. */
+const LOOSE_SPACE_CLASS = '(?:a|an) \\S+(?: or \\S+)*(?: space)?';
+const OR = / or /i;
+
+/** “a taks space” or “a street or stattion”: the first word that is no word of the board's table, with the closest that are. */
+function misnamedSpaceClass(text: string, vocab: Vocab): NameProblem | null {
+  const body = (A_OR_AN.exec(text)?.[1] ?? text).replace(SPACE_SUFFIX, '');
+  const values = [...new Set(vocab.spaceValues.map((v) => v.value))];
+  const known = new Set(values.map(canon));
+  const unknown = body.split(OR).find((word) => !known.has(canon(word)));
+  return unknown === undefined ? null : missing('kind of space', unknown, closestOrFirst(unknown, values));
+}
+
 const SPACECLASS: ParamType = {
   name: 'spaceclass', label: '[kind of space]',
   source: (vocab) => bounded(spaceClassSource(vocab)),
   resolve: resolveSpaceClass,
+  // Narrow: “When a player lands on a taks space” is a misspelt kind of space, not a space called “a taks space”.
+  loose: { source: (vocab) => (vocab.spaceValues.length === 0 ? NEVER : LOOSE_SPACE_CLASS), explain: misnamedSpaceClass, narrow: true },
 };
 
 const SPACEATTR = wordType(

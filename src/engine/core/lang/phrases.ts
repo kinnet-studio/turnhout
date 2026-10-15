@@ -133,6 +133,11 @@ const MIN_SUGGESTION_SCORE = 0.4;
 /** Names this much less alike than the closest one are left out of suggestions. */
 const CLOSE_TO_BEST = 0.2;
 const MAX_SUGGESTIONS = 3;
+/**
+ * What a name read by a narrow loose shape adds to a phrase's specificity when choosing which phrase a misnamed line
+ * meant: less than one letter of the phrase's own words, so it only settles a tie.
+ */
+const NARROW_BONUS = 0.5;
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -272,13 +277,15 @@ export class PhraseLibrary {
    */
   misnamed(kinds: PhraseKind[], text: string, vocab: Vocab): Misnamed | null {
     const line = normalizeLine(text);
-    let best: (Misnamed & { specificity: number }) | null = null;
+    let best: (Misnamed & { rank: number }) | null = null;
     for (const kind of kinds) {
       for (const entry of this.entries.get(kind)?.values() ?? []) {
-        if (best && best.specificity >= entry.specificity) continue;
+        if (best && best.rank >= entry.specificity + NARROW_BONUS) continue;
         const found = this.looseRegexFor(entry, vocab)?.exec(line);
-        const problem = found ? this.firstMisnamed(entry, found, vocab) : null;
-        if (problem) best = { kind, problem, specificity: entry.specificity };
+        const named = found ? this.firstMisnamed(entry, found, vocab) : null;
+        if (!named) continue;
+        const rank = entry.specificity + (named.narrow ? NARROW_BONUS : 0);
+        if (!best || rank > best.rank) best = { kind, problem: named.problem, rank };
       }
     }
     return best && { kind: best.kind, problem: best.problem };
@@ -354,9 +361,12 @@ export class PhraseLibrary {
     return re.test(text);
   }
 
-  /** The first name in a loose match the game never defined; null when there is none, or some text is no name at all. */
-  private firstMisnamed(entry: Entry, found: RegExpExecArray, vocab: Vocab): NameProblem | null {
-    let problem: NameProblem | null = null;
+  /**
+   * The first name in a loose match the game never defined, and whether its loose shape is a narrow one; null when there
+   * is none, or some text is no name at all.
+   */
+  private firstMisnamed(entry: Entry, found: RegExpExecArray, vocab: Vocab): { problem: NameProblem; narrow: boolean } | null {
+    let first: { problem: NameProblem; narrow: boolean } | null = null;
     let group = 1;
     for (const part of entry.parts) {
       if (!('type' in part)) continue;
@@ -364,9 +374,9 @@ export class PhraseLibrary {
       if (!part.type.loose || this.isWhole(part.type, text, vocab)) continue;
       const named = part.type.loose.explain(text, vocab);
       if (named === null) return null;
-      problem ??= named;
+      first ??= { problem: named, narrow: part.type.loose.narrow ?? false };
     }
-    return problem;
+    return first;
   }
 
   private suggest(entries: Entry[], line: string): string[] {

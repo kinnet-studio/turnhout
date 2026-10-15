@@ -501,6 +501,18 @@ describe('actions, moments and player rules on a board', () => {
     });
     expect(p.triggers.map((t) => t.text)).toEqual(['When one player is left']);
   });
+  it('names a misspelt kind of space in a moment rule, with the words of the board\'s table', () => {
+    const typo = (when: string) => phase([when, '  They pay its tax.']).diagnostics.filter((d) => d.severity === 'error');
+    expect(typo('When a player lands on a taks space:')).toEqual([
+      expect.objectContaining({ line: 18, kind: 'invalid', message: 'There is no kind of space called “taks”.', suggestions: ['tax'] }),
+    ]);
+    expect(typo('When a player lands on a stret someone else owns:')).toEqual([
+      expect.objectContaining({ line: 18, message: 'There is no kind of space called “stret”.', suggestions: ['street'] }),
+    ]);
+    expect(typo('When a player lands on Rose Lan:')).toEqual([
+      expect.objectContaining({ line: 18, message: 'There is no space called “Rose Lan”.', suggestions: ['Rose Lane'] }),
+    ]);
+  });
   it('lets a moment rule talk about the player and the space', () => {
     expect(errorsOf([
       'When a player lands on Rose Lane:', '  Only if no one owns it.', '  They own it.', '  Their piece moves forward by the roll.',

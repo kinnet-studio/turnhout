@@ -105,5 +105,10 @@ export interface ParamType {
   loose?: {
     source(vocab: Vocab): string;                    // regex source, no capture groups
     explain(text: string, vocab: Vocab): NameProblem | null; // null: the text is not meant as such a name at all
+    /**
+     * True when `source` is a shape of its own (“a … space”) rather than any text: where two phrases explain a line
+     * equally well, the one whose name has this shape is the one meant.
+     */
+    narrow?: boolean;
   };
 }

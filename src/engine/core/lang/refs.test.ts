@@ -411,8 +411,8 @@ describe('names the game never defined', () => {
   };
   const missing = (what: string, name: string, suggestions: string[]) => ({ message: `There is no ${what} called “${name}”.`, suggestions });
 
-  // Kinds of space, actions and what was done are phrases of their own, not names to misspell, so they have no loose shape.
-  const NAMES = VOCAB_TYPES.filter((t) => !['spaceclass', 'action', 'done'].includes(t.name));
+  // Actions and what was done are phrases of their own, not names to misspell, so they have no loose shape.
+  const NAMES = VOCAB_TYPES.filter((t) => !['action', 'done'].includes(t.name));
 
   it('gives every type of names a loose shape, and no other', () => {
     expect(VOCAB_TYPES.filter((t) => t.loose).map((t) => t.name)).toEqual(NAMES.map((t) => t.name));
@@ -478,6 +478,25 @@ describe('names the game never defined', () => {
     expect(misnamed('space', 'Boardwalk', board)).toEqual(missing('space', 'Boardwalk', ['Go', 'Mill Lane', 'Income Tax']));
     expect(misnamed('space', 'Rose Lane twice', board)).toBeNull();
     expect(misnamed('space', 'Chance twice', board)).toBeNull();
+  });
+
+  it('names a kind of space by the word that is no value in the board\'s table', () => {
+    const board = vocabFrom({ maxPlayers: 2, board: fixtureBoardGame().board });
+    expect(misnamed('spaceclass', 'a taks space', board)).toEqual(missing('kind of space', 'taks', ['tax']));
+    expect(misnamed('spaceclass', 'a street or stattion', board)).toEqual(missing('kind of space', 'stattion', ['station']));
+    expect(misnamed('spaceclass', 'an utilty space', board)).toEqual(missing('kind of space', 'utilty', ['utility']));
+    expect(misnamed('spaceclass', 'a street or station', board)).toBeNull();
+  });
+
+  it('gives a kind of space a loose shape of its own, only on a board that has words in its table', () => {
+    const board = vocabFrom({ maxPlayers: 2, board: fixtureBoardGame().board });
+    const shaped = (text: string, vocab: Vocab) => {
+      const loose = VOCAB_TYPES.find((t) => t.name === 'spaceclass')!.loose!;
+      return new RegExp(`^(?:${loose.source(vocab)})$`, 'i').test(text);
+    };
+    expect(['a taks space', 'an inn', 'a street or stattion', 'A Taks Space'].map((t) => shaped(t, board))).toEqual([true, true, true, true]);
+    expect(['Rose Lne', 'a free parking space', 'the taks space', 'a street, station'].map((t) => shaped(t, board))).toEqual([false, false, false, false]);
+    expect(shaped('a taks space', V)).toBe(false);
   });
 
   it('names counters and space details', () => {

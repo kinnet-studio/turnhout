@@ -145,6 +145,20 @@ describe('PhraseLibrary.misnamed', () => {
   it('leaves the strict answer alone', () => {
     expect(named().match('effect', 'Shuffle the dek', vocab).status).toBe('unknown');
   });
+
+  it('prefers a misspelt kind of space to a space name, whichever phrase was registered first', () => {
+    const board = vocabFrom({ maxPlayers: 2, board: fixtureBoardGame().board });
+    const spaceFirst = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
+      .moment('a player lands on {space}', () => true).moment('a player lands on {spaceclass}', () => true);
+    const kindFirst = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
+      .moment('a player lands on {spaceclass}', () => true).moment('a player lands on {space}', () => true);
+    for (const l of [spaceFirst, kindFirst]) {
+      expect(l.misnamed(['moment'], 'a player lands on a taks space', board)?.problem)
+        .toEqual({ message: 'There is no kind of space called “taks”.', suggestions: ['tax'] });
+      expect(l.misnamed(['moment'], 'a player lands on Rose Lan', board)?.problem)
+        .toEqual({ message: 'There is no space called “Rose Lan”.', suggestions: ['Rose Lane'] });
+    }
+  });
 });
 
 describe('stubFor', () => {
