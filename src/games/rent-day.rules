@@ -931,3 +931,26 @@ Example: you cannot roll the dice while someone owes
   And p1 owes p0
   When p0 rolls the dice
   Then it is rejected because "no player has less than 0 money"
+
+Example: you cannot build while someone owes
+  Given p0 owns Rose Lane
+  And p0 owns Lily Lane
+  And p0 owns Iris Road
+  And p1 owns Ash Street
+  And the treasury pile has an Opera Night
+  And p1 has 10 money
+  And p0 is on East Station
+  And the next roll is 1 and 1
+  When p0 rolls the dice
+  Then p0 has 1550 money
+  And p1 has -40 money
+  And p1 owes p0
+  When p0 builds a house on Rose Lane
+  Then it is rejected because "no player has less than 0 money"
+  When p1 takes a mortgage on Ash Street
+  Then p1 has 10 money
+  When p0 builds a house on Rose Lane
+  Then it is accepted
+  And Rose Lane has 1 house
+  And p0 has 1450 money
+  And the bank has 31 houses

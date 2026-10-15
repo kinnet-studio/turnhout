@@ -433,7 +433,7 @@ describe('Rent Day (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(69);
+    expect(results).toHaveLength(70);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
