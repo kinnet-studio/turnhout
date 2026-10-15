@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { GameState } from '../../game-state';
 import {
-  addToCounter, clearTurnLog, counterOf, isOut, latestRoll, markOut, ownerOf, pieceAt, placePiece, queueRoll, recordAction, setCounter, setOwner,
+  TURN_KEY, addToCounter, clearTurnLog, counterOf, isOut, latestRoll, markOut, ownerOf, pieceAt, placePiece, queueRoll, recordAction, setCounter, setOwner,
   setRoll, takeQueuedRoll,
 } from '../board-state';
 import { RuleError } from '../diagnostics';
@@ -129,6 +129,23 @@ describe('moving', () => {
   });
 });
 
+describe('going straight to a space', () => {
+  it('puts the piece there at once: nothing is passed or landed on, so Go pays nothing on the way', () => {
+    let announced = 0;
+    const announce = (s: GameState) => { announced += 1; return s; };
+    const start = placePiece(fixtureBoardState(), 'p0', 5);
+    const s = runPhrase<GameState>(lib, 'effect', 'their piece goes straight to Go', env(start, { ...as('p0'), announce }));
+    expect(pieceAt(s, 'p0')).toBe(0);
+    expect(announced).toBe(0);
+    expect(counterOf(s, 'money', 'p0')).toBe(1500);
+  });
+  it('says so when they have no piece on the board, and leaves them without one', () => {
+    const start = markOut(fixtureBoardState(), 'p1');
+    expect(() => runPhrase(lib, 'effect', 'their piece goes straight to Go', env(start, as('p1')))).toThrow('They have no piece on the board.');
+    expect(pieceAt(start, 'p1')).toBeNull();
+  });
+});
+
 describe('counters', () => {
   it('gives a number to its player and to they', () => {
     const start = fixtureBoardState();
@@ -163,6 +180,10 @@ describe('paying', () => {
     const s = runPhrase<GameState>(lib, 'effect', 'they pay its tax', env(start, as('p0')));
     expect(counterOf(s, 'money', 'p0')).toBe(1300);
     expect(counterOf(s, 'money', 'p1')).toBe(1500);
+  });
+  it('pays a plain amount to the bank', () => {
+    const s = runPhrase<GameState>(lib, 'effect', 'they pay 50', env(fixtureBoardState(), as('p0')));
+    expect([counterOf(s, 'money', 'p0'), counterOf(s, 'money', 'p1')]).toEqual([1450, 1500]);
   });
   it('pays 4 times the roll', () => {
     const start = setRoll(setOwner(placePiece(fixtureBoardState(), 'p0', 6), 6, 'p1'), [1, 2]);
@@ -374,6 +395,13 @@ describe('example phrases', () => {
       const they = (player: string) => runPhrase(lib, 'condition', 'they have rolled this turn', env(s, { game: playing, ...as(player) }));
       expect([they('p0'), they('p1'), they('p2')]).toEqual([true, true, false]);
     });
+    it('asks for the whole wording when “rolled” could be either roll button', () => {
+      const FOR_DOUBLE: DeclaredAction = { ...ROLL, words: 'roll for a double', base: 'roll for a double', label: 'Roll for a double' };
+      const twoRolls = fixtureBoardGame({ phases: [fixturePhase('playing', [], { actions: [ROLL, FOR_DOUBLE, END] })] });
+      const givenIn = (text: string) => runPhrase<GameState>(lib, 'given', text, env(fixtureBoardState(twoRolls), { game: twoRolls }));
+      expect(() => givenIn('p0 has rolled this turn')).toThrow('“rolled” could mean “roll the dice” or “roll for a double”; write the whole wording.');
+      expect(givenIn('p0 has rolled for a double this turn').data[TURN_KEY]).toEqual({ p0: ['roll for a double'] });
+    });
     it('refuses a player who is not at the table', () => {
       expect(() => given('p3 is on Rose Lane')).toThrow('There is no player p3 at this table.');
       expect(() => given('p3 owns Rose Lane')).toThrow('There is no player p3 at this table.');
@@ -388,6 +416,28 @@ describe('example phrases', () => {
     it('fixes the roll of a game with one die', () => {
       const queued = rollGiven('the next roll is 20', withDice({ count: 1, sides: 20 }));
       expect(takeQueuedRoll(queued).faces).toEqual([20]);
+    });
+    it('queues the roll after that behind the ones already fixed', () => {
+      const two = withDice({ count: 2, sides: 6 });
+      const both = rollGiven('the roll after that is 1 and 2', { ...two, state: rollGiven('the next roll is 3 and 3', two) });
+      const one = takeQueuedRoll(both);
+      expect(one.faces).toEqual([3, 3]);
+      expect(takeQueuedRoll(one.state).faces).toEqual([1, 2]);
+    });
+    it('needs a roll fixed before the one after it', () => {
+      expect(() => rollGiven('the roll after that is 1 and 2', withDice({ count: 2, sides: 6 }))).toThrow('Say what the next roll is first.');
+      expect(() => rollGiven('the roll after that is 5', withDice({ count: 1, sides: 6 }))).toThrow('Say what the next roll is first.');
+    });
+    it('checks the roll after that like the next roll', () => {
+      const two = withDice({ count: 2, sides: 6 });
+      const afterThree = { ...two, state: rollGiven('the next roll is 3 and 3', two) };
+      expect(() => rollGiven('the roll after that is 3', afterThree)).toThrow('This game rolls 2 dice, so give 2 numbers.');
+      expect(() => rollGiven('the roll after that is 7 and 1', afterThree)).toThrow("A 6-sided die can't roll 7.");
+      expect(() => rollGiven('the roll after that is 1', withDice(null))).toThrow('This game has no dice.');
+      const d20 = withDice({ count: 1, sides: 20 });
+      const queued = rollGiven('the roll after that is 20', { ...d20, state: rollGiven('the next roll is 5', d20) });
+      const taken = takeQueuedRoll(queued);
+      expect([taken.faces, takeQueuedRoll(taken.state).faces]).toEqual([[5], [20]]);
     });
     it('says how many numbers the dice need', () => {
       expect(() => rollGiven('the next roll is 3', withDice({ count: 2, sides: 6 }))).toThrow('This game rolls 2 dice, so give 2 numbers.');

@@ -338,11 +338,11 @@ describe('board references', () => {
     expect(parseParam('action', 'ends their turn', v)).toEqual({ value: 'end their turn' });
     expect(parseParam('action', 'rolls the dice', v)).toEqual({ value: 'roll the dice' });
     expect(parseParam('action', 'Buys the space they are on', v)).toEqual({ value: 'buy the space they are on' });
-    expect(parseParam('done', 'rolled', v)).toEqual({ value: 'roll the dice' });
-    expect(parseParam('done', 'bought', v)).toEqual({ value: 'buy the space they are on' });
-    expect(parseParam('done', 'ended', v)).toEqual({ value: 'end their turn' });
+    expect(parseParam('done', 'rolled', v)).toEqual({ value: ['roll the dice'] });
+    expect(parseParam('done', 'bought', v)).toEqual({ value: ['buy the space they are on'] });
+    expect(parseParam('done', 'ended', v)).toEqual({ value: ['end their turn'] });
   });
-  it('reads what was done as a button only when one button has the verb', () => {
+  it('reads what was done as every button that has the verb', () => {
     const building = vocabFrom({
       maxPlayers: 2,
       actions: [
@@ -351,13 +351,27 @@ describe('board references', () => {
         { verb: 'end', words: 'end their turn', base: 'end their turn', targeted: false },
       ],
     });
-    expect(parseParam('done', 'built', building)).toEqual({ error: '“built” could mean “build a house” or “build a hotel”.' });
-    expect(parseParam('done', 'ended', building)).toEqual({ value: 'end their turn' });
+    expect(parseParam('done', 'built', building)).toEqual({ value: ['build a house', 'build a hotel'] });
+    expect(parseParam('done', 'built a hotel', building)).toEqual({ value: ['build a hotel'] });
+    expect(parseParam('done', 'ended', building)).toEqual({ value: ['end their turn'] });
     expect(parseParam('action', 'builds a hotel', building)).toEqual({ value: 'build a hotel' });
     // The same wording in two phases is still one button.
     const roll = { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false };
     const twice = vocabFrom({ maxPlayers: 2, actions: [roll, roll] });
-    expect(parseParam('done', 'rolled', twice)).toEqual({ value: 'roll the dice' });
+    expect(parseParam('done', 'rolled', twice)).toEqual({ value: ['roll the dice'] });
+  });
+  it('reads a bare participle as every button with that verb, and a whole done-wording as one button', () => {
+    const rolls = vocabFrom({ maxPlayers: 2, actions: [
+      { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false },
+      { verb: 'roll', words: 'roll for a double', base: 'roll for a double', targeted: false },
+      { verb: 'end', words: 'end their turn', base: 'end their turn', targeted: false },
+    ] });
+    expect(parseParam('done', 'rolled', rolls)).toEqual({ value: ['roll the dice', 'roll for a double'] });
+    expect(parseParam('done', 'Rolled For A Double', rolls)).toEqual({ value: ['roll for a double'] });
+    expect(parseParam('done', 'rolled the dice', rolls)).toEqual({ value: ['roll the dice'] });
+    expect(parseParam('done', 'ended their turn', rolls)).toEqual({ value: ['end their turn'] });
+    expect(parseParam('done', 'ended', rolls)).toEqual({ value: ['end their turn'] });
+    expect(parseParam('done', 'rolled two doubles', rolls)).toBeNull();
   });
   it('reads a button that picks a target as {targetaction}, by the third person of its base, and never as {action}', () => {
     expect(parseParam('targetaction', 'builds a house', v)).toEqual({ value: 'build a house on a street they own' });
@@ -383,7 +397,8 @@ describe('board references', () => {
     });
   });
   it('reads what was done by a button that picks a target as the button, by its whole wording', () => {
-    expect(parseParam('done', 'built', v)).toEqual({ value: 'build a house on a street they own' });
+    expect(parseParam('done', 'built', v)).toEqual({ value: ['build a house on a street they own'] });
+    expect(parseParam('done', 'built a house on a street they own', v)).toEqual({ value: ['build a house on a street they own'] });
   });
   it('does not read what the game does not have', () => {
     expect(parseParam('counter', 'gold', v)).toBeNull();
@@ -579,7 +594,7 @@ describe('inside a phrase library', () => {
     expect(l.match('effect', 'They pay its rent to Chance', BOARD)).toEqual({
       status: 'invalid', message: 'There are 2 spaces called “Chance”, so this can\'t tell which one.',
     });
-    expect(l.match('condition', 'p1 has rolled this turn and at least two money', BOARD)).toMatchObject({ status: 'ok', args: ['p1', 'roll the dice', 2, 'money'] });
+    expect(l.match('condition', 'p1 has rolled this turn and at least two money', BOARD)).toMatchObject({ status: 'ok', args: ['p1', ['roll the dice'], 2, 'money'] });
     expect(l.match('action', 'p0 ends their turn', BOARD)).toMatchObject({ status: 'ok', args: ['p0', 'end their turn'] });
   });
   it('turns a space the game never defined into a designer message', () => {

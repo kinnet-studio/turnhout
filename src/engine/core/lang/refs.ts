@@ -654,15 +654,23 @@ const TARGETACTION: ParamType = {
   },
 };
 
-/** What was done is one word, so it names a button only when no other button has the verb it comes from. */
+/** What a button is called once it has been pressed: 'roll for a double' is 'rolled for a double', and a one-word button is its bare participle. */
+const doneWording = (action: Vocab['actions'][number]): string => `${participle(action.verb)}${action.words.slice(action.verb.length)}`;
+
+/**
+ * What was done names buttons by the move type each sends: a bare participle ('rolled') every button whose verb has it, a
+ * whole done-wording ('rolled for a double') that one button. Text that is both, as a one-word button's is, reads as the bare
+ * participle. The moves come once each, in the order the buttons were declared.
+ */
 const DONE: ParamType = {
   name: 'done', label: '[action done]',
-  source: (vocab) => bounded(anyOf(vocab.actions.map((a) => participle(a.verb)))),
+  source: (vocab) => bounded(anyOf(vocab.actions.flatMap((a) => [participle(a.verb), doneWording(a)]))),
   resolve: (text, vocab) => {
-    const wordings = [...new Set(vocab.actions.filter((a) => canon(participle(a.verb)) === canon(text)).map((a) => a.words))];
-    if (wordings.length === 0) return unknownText(text);
-    if (wordings.length > 1) return { error: `“${text}” could mean ${joinOr(wordings.map((w) => `“${w}”`))}.` };
-    return { value: wordings[0] };
+    const named = (nameOf: (a: Vocab['actions'][number]) => string) =>
+      [...new Set(vocab.actions.filter((a) => canon(nameOf(a)) === canon(text)).map((a) => a.words))];
+    const byVerb = named((a) => participle(a.verb));
+    const moves = byVerb.length > 0 ? byVerb : named(doneWording);
+    return moves.length === 0 ? unknownText(text) : { value: moves };
   },
 };
 

@@ -1,6 +1,7 @@
 import type { GameState } from '../../game-state';
 import { nextInt } from '../../rng';
 import type { PlayerId } from '../../scene';
+import type { Json } from '../../table-def';
 import { numberIn, readSpaceTable } from '../board';
 import {
   addToCounter, counterOf, didThisTurn, isOut, latestRoll, markOut, nextIn, ownerOf, pieceAt, placePiece, playersIn, queueRoll, recordAction,
@@ -8,7 +9,7 @@ import {
 } from '../board-state';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
-import { canon } from '../refs';
+import { canon, joinOr, participle } from '../refs';
 import type { ActionFn, BankSpec, BoardFn, BoardSpec, ConditionFn, EffectFn, ExpectFn, MomentFn, PhraseEnv, SpaceClass, WhoFn, WinnerFn } from '../types';
 import { chooseNext } from '../zones';
 import { itOf, seatOf, theyOf } from './support';
@@ -111,7 +112,9 @@ function transfer(env: PhraseEnv, from: PlayerId, to: PlayerId | null, amount: n
 
 // ---- conditions ------------------------------------------------------------------------------
 
-const hasDoneThisTurn = (done: boolean): ConditionFn => (env, [move]) => didThisTurn(env.state, theyOf(env), move as string) === done;
+/** Any of the move types the wording names counts: “rolled” holds once either roll button has been pressed. */
+const hasDoneThisTurn = (done: boolean): ConditionFn => (env, [moves]) =>
+  (moves as string[]).some((move) => didThisTurn(env.state, theyOf(env), move)) === done;
 
 const spaceHas: ConditionFn = (env, [attr]) => boardIn(env).spaces[itOf(env)].attrs[attr as string] !== undefined;
 
@@ -193,9 +196,19 @@ const moveByRoll: EffectFn = (env) => {
   return env.announce(state, { kind: 'land', seat: they, space });
 };
 
+/** Puts the piece on the space without a walk, so nothing is passed or landed on and no rule waiting for either happens. */
+const goesStraightTo: EffectFn = (env, [space]) => {
+  const they = theyOf(env);
+  // Without this check the piece would appear on the board for a player who has none (one who is out).
+  if (pieceAt(env.state, they) === null) throw new RuleError('They have no piece on the board.');
+  return placePiece(env.state, they, space as number);
+};
+
 const gets: EffectFn = (env, [n, counter]) => addToCounter(env.state, counter as string, theyOf(env), n as number);
 
 const paysBank: EffectFn = (env, [attr]) => transfer(env, theyOf(env), null, amountOf(env, attr as string));
+
+const paysAmount: EffectFn = (env, [n]) => transfer(env, theyOf(env), null, n as number);
 
 const paysOwner: EffectFn = (env, [attr]) => {
   const owner = ownerOfIt(env);
@@ -240,12 +253,21 @@ const hasGiven: EffectFn = (env, [seat, n, counter]) => setCounter(env.state, co
 // Going out in an example only arranges the table: whose turn it is stays as the example set it.
 const isOutGiven: EffectFn = (env, [seat]) => markOut(env.state, seatOf(env, seat));
 
-const hasDoneGiven: EffectFn = (env, [seat, move]) => recordAction(env.state, seatOf(env, seat), move as string);
+/** Only one button is pressed at a time, so a participle that stands for several buttons cannot say which one the player did. */
+const hasDoneGiven: EffectFn = (env, [seat, moves]) => {
+  const who = seatOf(env, seat);
+  const [move, ...others] = moves as string[];
+  if (others.length > 0) {
+    const said = participle(move.split(' ')[0]);
+    throw new RuleError(`“${said}” could mean ${joinOr([move, ...others].map((m) => `“${m}”`))}; write the whole wording.`);
+  }
+  return recordAction(env.state, who, move);
+};
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 
-/** The next roll an example fixes has to be one these dice could show, or the example would test something that cannot happen. */
-const nextRollIs: EffectFn = (env, faces) => {
+/** A roll an example fixes has to be one these dice could show, or the example would test something that cannot happen. */
+function fixedFaces(env: PhraseEnv, faces: Json[]): number[] {
   // A card game has no board to read, but it can still be told about the dice it lacks.
   const dice = env.game.board?.dice ?? null;
   if (!dice) throw new RuleError(NO_DICE);
@@ -256,7 +278,16 @@ const nextRollIs: EffectFn = (env, faces) => {
   }
   const impossible = (faces as number[]).find((face) => face < 1 || face > dice.sides);
   if (impossible !== undefined) throw new RuleError(`A ${dice.sides}-sided die can't roll ${impossible}.`);
-  return queueRoll(env.state, faces as number[]);
+  return faces as number[];
+}
+
+const nextRollIs: EffectFn = (env, faces) => queueRoll(env.state, fixedFaces(env, faces));
+
+/** Goes behind the rolls already fixed, so it needs one: a lone “roll after that” would be the next roll under another name. */
+const rollAfterThat: EffectFn = (env, faces) => {
+  const fixed = fixedFaces(env, faces);
+  if (takeQueuedRoll(env.state).faces === null) throw new RuleError('Say what the next roll is first.');
+  return queueRoll(env.state, fixed);
 };
 
 // ---- examples: action --------------------------------------------------------------------------
@@ -330,8 +361,10 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .moment('a player lands on {spaceclass} someone else owns', landsOnClassOwnedByOther)
     .effect('roll the dice', rollDice, { needsDice: true })
     .effect('their piece moves forward by the roll', moveByRoll, { needsPlayer: true, needsBoard: true, needsDice: true })
+    .effect('their piece goes straight to {space}', goesStraightTo, { needsPlayer: true, needsBoard: true })
     .effect('its player gets {int} {counter}', gets, { needsPlayer: true })
     .effect('they get {int} {counter}', gets, { needsPlayer: true })
+    .effect('they pay {int}', paysAmount, { needsPlayer: true, needsPayment: true })
     .effect('they pay its {spaceattr}', paysBank, { needsPlayer: true, needsSpace: true, needsPayment: true })
     .effect('they pay its {spaceattr} to its owner', paysOwner, { needsPlayer: true, needsSpace: true, needsPayment: true })
     .effect('they pay {int} times the roll to its owner', paysRollToOwner, { needsPlayer: true, needsSpace: true, needsPayment: true, needsDice: true })
@@ -346,6 +379,8 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .given('{player} has {done} this turn', hasDoneGiven)
     .given('the next roll is {int} and {int}', nextRollIs)
     .given('the next roll is {int}', nextRollIs)
+    .given('the roll after that is {int} and {int}', rollAfterThat)
+    .given('the roll after that is {int}', rollAfterThat)
     .action('{player} {action}', pressesButton)
     .action('{player} {targetaction} on {space}', pressesButtonOn)
     .expect('{player} is on {space}', isOnExpected)

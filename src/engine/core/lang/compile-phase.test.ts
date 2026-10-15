@@ -694,11 +694,17 @@ describe('actions, moments and player rules on a board', () => {
       [20, '“dances” isn\'t a move in this phase. The moves here are: builds a house, builds a hotel.'],
     ]);
   });
-  it('says which buttons “built” could mean when two of them share the verb, and takes what only one button did', () => {
-    const hotels = ['A player may build a house.', '  Only if they have not built this turn.', 'A player may build a hotel.'];
-    expect(errorsOf(hotels)).toEqual([[19, '“built” could mean “build a house” or “build a hotel”.']]);
-    const ends = ['A player may build a house.', 'A player may build a hotel.', 'A player may end their turn.', '  Only if they have not ended this turn.'];
-    expect(errorsOf(ends)).toEqual([]);
+  it('reads “rolled” as every roll button and a whole done-wording as one, while an After line still needs one button', () => {
+    const buttons = [
+      'A player may roll the dice.', 'A player may roll for a double.', 'A player may end their turn.',
+      '  Only if they have rolled this turn.', '  Only if they have not rolled for a double this turn.',
+    ];
+    const { game, diagnostics } = phase(buttons);
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(game!.phases[0].actions[2].conditions.map((g) => g.refs[0].args)).toEqual([[['roll the dice', 'roll for a double']], [['roll for a double']]]);
+    expect(errorsOf([...buttons, 'After a player rolls, the turn passes to the left.'])).toEqual([
+      [23, '“rolls” could be “roll the dice” or “roll for a double”; write the whole wording.'],
+    ]);
   });
   it('refuses two actions with the same wording', () => {
     const { diagnostics, game } = phase(['A player may pay the fine.', 'A player may pay the fine.']);

@@ -69,6 +69,20 @@ describe('button actions on a board', () => {
     expect(engine.canDispatch({ type: 'end their turn', by: 'p1' })).toBe('they have rolled this turn');
   });
 
+  it('lets either roll button count as having rolled, and records only the one pressed', () => {
+    const twoRolls = compileGame(TINY_BOARD.replace('  A player may end their turn.', [
+      '  A player may roll for a double.', '    Only if they have not rolled this turn.', '    Then:', '      Roll the dice.',
+      '  A player may end their turn.',
+    ].join('\n')), lib).game!;
+    for (const first of ['roll the dice', 'roll for a double']) {
+      const engine = engineWith((s) => queueRoll(s, [1, 2]), twoRolls);
+      expect(engine.dispatch({ type: 'end their turn', by: 'p0' }).reason).toBe('they have rolled this turn');
+      expect(engine.dispatch({ type: first, by: 'p0' }).ok).toBe(true);
+      expect(engine.getState().data[TURN_KEY]).toEqual({ p0: [first] });
+      expect(engine.dispatch({ type: 'end their turn', by: 'p0' }).ok).toBe(true);
+    }
+  });
+
   it('forgets what was done when a card move the After line names passes the turn', () => {
     const { game: g, diagnostics } = compileGame(ROLL_AND_PLAY, lib);
     expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
