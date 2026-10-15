@@ -16,7 +16,8 @@ export type LineCtx = {
 
 const MAX_SUGGESTIONS = 3;
 const NOT_INDENTED = "This line shouldn't be indented under the line above.";
-const NEEDS_PAYMENT = 'Say what players pay with, like “Players pay with coins.” under Board:.';
+/** What a game with nothing to pay with is told, by the compiler and by a phrase that finds out only when it runs. */
+export const NEEDS_PAYMENT = 'Say what players pay with, like “Players pay with coins.” under Board:.';
 const NEEDS_BOARD = (clean: string) => `“${clean}” needs a board. Add a Board: section with a line like “The board is a loop of spaces, starting at Go:”.`;
 const NEEDS_DICE = (clean: string) => `“${clean}” needs dice. Add a line like “There are two six-sided dice.” under Board:.`;
 const NEEDS_TWO_DICE = 'A double needs exactly two dice.';

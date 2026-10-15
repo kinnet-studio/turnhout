@@ -1,6 +1,7 @@
 import { zoneCards, type GameState } from '../../game-state';
 import { counterOf, owedTo, ownerOf, playersIn, setOwner, type Creditor } from '../board-state';
 import { deckOf } from '../cards';
+import { NEEDS_PAYMENT } from '../compile-util';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import type { ConditionFn, EffectFn, ExpectFn, PhraseEnv } from '../types';
@@ -14,7 +15,7 @@ import { seatOf, theyOf } from './support';
  */
 function payWithOf(env: PhraseEnv): string {
   const counter = env.game.board?.payWith ?? null;
-  if (counter === null) throw new RuleError('Say what players pay with, like “Players pay with coins.” under Board:.');
+  if (counter === null) throw new RuleError(NEEDS_PAYMENT);
   return counter;
 }
 

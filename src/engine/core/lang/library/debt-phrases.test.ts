@@ -6,6 +6,8 @@ import {
 import { initialState } from '../build';
 import { deckOf } from '../cards';
 import { compileGame } from '../compile';
+import { NEEDS_PAYMENT } from '../compile-util';
+import { RuleError } from '../diagnostics';
 import { deckGameText, fixtureEnv, runPhrase } from '../testing';
 import { relocate, zoneIdFor } from '../zones';
 import { createDefaultLibrary } from './index';
@@ -94,6 +96,11 @@ describe('debt phrases', () => {
     });
     it('says when they owe no one', () => {
       expect(expectThat('p0 owes p1', start)).toBe('Expected p0 to owe p1, but they owe no one.');
+    });
+    it('tells a game with nothing to pay with what the compiler tells it, word for word', () => {
+      const unpaid = { ...game, board: { ...game.board!, payWith: null } };
+      const run = () => runPhrase<true | string>(lib, 'expect', 'p0 owes the bank', fixtureEnv(start, { game: unpaid, seats: SEATS }));
+      expect(run).toThrow(new RuleError(NEEDS_PAYMENT));
     });
     it('refuses a player who is not at the table', () => {
       expect(() => expectThat('p3 owes the bank', start)).toThrow('There is no player p3 at this table.');
