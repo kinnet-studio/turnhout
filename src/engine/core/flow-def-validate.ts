@@ -29,6 +29,9 @@ export function validateFlowDef(flow: FlowDef, registry: FlowRegistry): { ok: bo
     }
     if (p.endTurn) {
       pred(p.endTurn.when, `phase ${p.id} endTurn`);
+      if (p.endTurn.next && !registry.hasPolicy(refName(p.endTurn.next))) {
+        errors.push(`phase ${p.id} endTurn.next references unknown policy: ${refName(p.endTurn.next)}`);
+      }
       if (p.endTurn.after && p.allow !== 'any') {
         for (const t of p.endTurn.after) {
           if (!p.allow.includes(t)) errors.push(`phase ${p.id} endTurn.after lists move not in allow: ${t}`);

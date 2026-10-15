@@ -7,6 +7,11 @@ export type { RngState };
 export interface TurnState {
   current: PlayerId;
   phase?: string;
+  /**
+   * Transient. An effect that picks who goes next sets this; `runFlow` then skips its
+   * end-turn step for that call and clears the flag on every return path.
+   */
+  chosen?: boolean;
 }
 
 export interface GameState {

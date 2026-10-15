@@ -35,9 +35,10 @@ export interface PhaseDef {
    * be false except immediately after a turn-ending action, or off-turn moves
    * (e.g. anyActor reorders) will advance the turn. Prefer `after` — the step is
    * then only evaluated when the just-applied move's type is listed (and never
-   * during initFlow, which has no move).
+   * during initFlow, which has no move). `next` is this phase's turn policy,
+   * overriding `FlowDef.turn.next`.
    */
-  endTurn?: { when: NamedRef; after?: string[] };
+  endTurn?: { when: NamedRef; after?: string[]; next?: NamedRef };
 }
 
 export interface TriggerDef {
@@ -85,15 +86,23 @@ function runEffect(ref: NamedRef, state: GameState, reg: FlowRegistry, ctx: Move
   return fn(state, ctx, refParams(ref));
 }
 
-function pickNext(state: GameState, flow: FlowDef, reg: FlowRegistry, ctx: MoveContext): PlayerId {
-  if (flow.turn.next) {
-    const policy = reg.policy(refName(flow.turn.next));
-    if (!policy) throw new Error(`unknown turn policy: ${refName(flow.turn.next)}`);
-    return policy(state, flow.turn.order, ctx, refParams(flow.turn.next));
+function pickNext(state: GameState, flow: FlowDef, phase: PhaseDef, reg: FlowRegistry, ctx: MoveContext): PlayerId {
+  const next = phase.endTurn?.next ?? flow.turn.next;
+  if (next) {
+    const policy = reg.policy(refName(next));
+    if (!policy) throw new Error(`unknown turn policy: ${refName(next)}`);
+    return policy(state, flow.turn.order, ctx, refParams(next));
   }
   const order = flow.turn.order;
   const i = order.indexOf(state.turn!.current);
   return order[(i + 1) % order.length];
+}
+
+/** Strip the transient `turn.chosen` flag; returns the same object when it is absent. */
+function clearChosen(s: GameState): GameState {
+  if (!s.turn || s.turn.chosen === undefined) return s;
+  const { chosen: _chosen, ...turn } = s.turn;
+  return { ...s, turn };
 }
 
 /**
@@ -106,13 +115,13 @@ export function runFlow(state: GameState, flow: FlowDef, reg: FlowRegistry, ctx:
   let endTurnFired = false;
   let lastFired = '(nothing)';
   for (let i = 0; i < MAX_FLOW_ITERATIONS; i++) {
-    if (s.result !== undefined) return s;
+    if (s.result !== undefined) return clearChosen(s);
 
     const end = (flow.end ?? []).find((e) => evalPred(e.when, s, reg, ctx));
     if (end) {
       s = runEffect(end.result, s, reg, ctx);
       if (s.result === undefined) throw new Error(`end effect ${refName(end.result)} did not set state.result`);
-      return s;
+      return clearChosen(s);
     }
 
     const trig = (flow.triggers ?? []).find((t) => evalPred(t.when, s, reg, ctx));
@@ -138,17 +147,18 @@ export function runFlow(state: GameState, flow: FlowDef, reg: FlowRegistry, ctx:
     // predicate (unlike triggers), and a turn passes at most once per player action.
     if (
       !endTurnFired &&
+      !s.turn?.chosen &&
       phase.endTurn &&
       (!phase.endTurn.after || (move !== undefined && phase.endTurn.after.includes(move.type))) &&
       evalPred(phase.endTurn.when, s, reg, ctx)
     ) {
       endTurnFired = true;
-      s = { ...s, turn: { ...s.turn!, current: pickNext(s, flow, reg, ctx) } };
+      s = { ...s, turn: { ...s.turn!, current: pickNext(s, flow, phase, reg, ctx) } };
       lastFired = 'endTurn';
       continue;
     }
 
-    return s;
+    return clearChosen(s);
   }
   throw new Error(`flow did not settle after ${MAX_FLOW_ITERATIONS} iterations (last fired: ${lastFired})`);
 }
