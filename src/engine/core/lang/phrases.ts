@@ -55,9 +55,14 @@ const MAX_SUGGESTIONS = 3;
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** Literal pattern text as a regex source: `(s)` is optional, runs of spaces match any whitespace. */
+const APOSTROPHES = /['‘’]/g;
+
+/**
+ * Literal pattern text as a regex source: `(s)` is optional, runs of spaces match any whitespace,
+ * and an apostrophe matches the straight and curly forms word processors swap between.
+ */
 function literalSource(literal: string): string {
-  return escapeRegex(literal).replace(/\\\(s\\\)/g, '(?:s)?').replace(/ +/g, '\\s+');
+  return escapeRegex(literal).replace(/\\\(s\\\)/g, '(?:s)?').replace(/ +/g, '\\s+').replace(APOSTROPHES, "['‘’]");
 }
 
 function bigrams(s: string): Map<string, number> {

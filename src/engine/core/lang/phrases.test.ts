@@ -67,6 +67,23 @@ describe('PhraseLibrary.match', () => {
     });
   });
 
+  it('matches a curly apostrophe against a straight one in the pattern, and the other way round', () => {
+    const l = lib().condition("it's their turn", () => true).condition('it’s my turn', () => true);
+    expect(l.match('condition', 'It’s their turn', V).status).toBe('ok');
+    expect(l.match('condition', 'it‘s their turn', V).status).toBe('ok');
+    expect(l.match('condition', "It's their turn.", V).status).toBe('ok');
+    expect(l.match('condition', "it's my turn", V).status).toBe('ok');
+  });
+
+  it('keeps curly characters in captured text when the phrase itself has an apostrophe', () => {
+    const l = lib().expect("it's rejected because {string}", () => true);
+    expect(l.match('expect', 'It’s rejected because “They Can’t”.', V)).toEqual({
+      status: 'ok',
+      pattern: "it's rejected because {string}",
+      args: ['They Can’t'],
+    });
+  });
+
   it('finds a phrase from a typo', () => {
     const l = lib().effect('shuffle {name}', (e) => e.state).effect('flip a coin', (e) => e.state);
     expect(l.match('effect', 'Shufle the deck', V)).toEqual({ status: 'unknown', suggestions: ['shuffle [name]'] });
