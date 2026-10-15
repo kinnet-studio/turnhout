@@ -11,7 +11,7 @@
   - `no player has less than {int} {counter}`;
   - `spaces can be {name}`, with `it is {spaceflag}`, `it is not {spaceflag}` and the Given and Then lines `{space} is {spaceflag}`;
   - `BoardView.owes` and `SpaceView.stripes`;
-  - Rent Day's 68 examples, and the auto-player that settles debts.
+  - Rent Day's 69 examples, and the auto-player that settles debts.
 - **The amount rides on the press.**
   - A move may carry `amount`. `aboutPress` puts it on `Subject.amount`.
   - The move is refused in this order: the flow gate (the engine's), the seat checks, a missing or bad amount, then every `Only if` group.
@@ -68,7 +68,7 @@
 - **Existing behaviour stays.**
   - Hearts, Color Match and Venom compile with no diagnostics and pass their examples.
   - A button whose wording does not end in " an amount" compiles and plays exactly as before.
-  - Rent Day's 68 examples keep passing, except the two that Task 5 changes because a turn can no longer end on, or roll past, an unbought space.
+  - Rent Day's 69 examples keep passing, except the two that Task 5 changes because a turn can no longer end on, or roll past, an unbought space.
   - Task 5 also changes the one playtest test whose p0 ends a turn on a space nobody owns.
   - The seat status puts the phase's name first only while a turn is interrupted (controller ruling, replacing the spec's "not the first phase"). So Hearts, Color Match, Venom and Rent Day outside an auction show exactly the status they show today.
 - **Style and commits.**
@@ -718,7 +718,7 @@ Phase: auction
     - `you cannot roll twice in one turn`, `you cannot end your turn on a double` and `leaving jail by a double does not roll again` keep their reasons, because the new groups come last;
     - `a double that lands on Go To Jail still ends the turn` ends on Jail, which has no price;
     - `a debt must be paid before the turn can end` ends on Rose Lane, which p1 owns.
-- [ ] **Step 5: Append these 12 examples** after the existing 68, for 80 in all. The last one is the Review Focus case.
+- [ ] **Step 5: Append these 12 examples** after the existing 69, for 81 in all. The last one is the Review Focus case.
 
 ```text
 Example: declining to buy starts an auction
@@ -887,7 +887,7 @@ How each number comes from the board:
   - in the last example: p2, then p0.
 
 - [ ] **Step 6: Extend `rent-day.test.ts`.**
-  - **Examples:** `results` has length 80, and all pass.
+  - **Examples:** `results` has length 81, and all pass.
   - **Constants:**
     - `AUCTION = 'auction the space they are on'`, `BID = 'bid an amount'`, `DROP = 'drop out'`;
     - `AUCTION_PHASE = 'auction'`, `UP = 'up for auction'`, `BIDDING = 'bidding'`, `HIGH_BIDDER = 'the high bidder'`, `HIGH_BID = 'high bid'`;
@@ -956,7 +956,7 @@ How each number comes from the board:
     - p0's first roll there is 4 and 2, onto Ash Street, which nobody owns, so p0 could no longer end the turn.
     - Its `brown` fixture also gives p1 Ash Street: `['Mill Lane', 'Ferry Row', 'Ash Street']`.
     - Add a comment saying why. If the roll is not 4 and 2, give p1 the space p0 does land on.
-  - In `designer-page.test.tsx`, expect `80 of 80 examples pass`, and the test name says 80.
+  - In `designer-page.test.tsx`, expect `81 of 81 examples pass`, and the test name says 81.
 - [ ] **Step 8: Run** `bunx vitest run src/games/rent-day.test.ts src/pages/designer`.
   - Fix any failure in the phrases, not in the example numbers: the numbers come from the board above.
   - Then run `bun run test` and `bun run typecheck`.
@@ -1123,7 +1123,7 @@ grep -rniE '\b(auction(s|ed)?|bid(s|der|ders|ding)?|high bid)\b' src/engine src/
 ```
 
 - [ ] **Step 6: Update the README.**
-  - Under *Designing a game*, change "with 68 examples" to "with 80 examples".
+  - Under *Designing a game*, change "with 69 examples" to "with 81 examples".
   - After the **Raising money.** paragraph, add an **Auctions.** paragraph covering these points:
     - **Amount buttons.**
       - A button whose wording ends in "an amount" (`A player may bid an amount.`) carries a whole number of 0 or more. It is labelled without those words ("Bid"), and the playtest gives it a number box.
