@@ -17,8 +17,8 @@ import { cardOf, describeZone, itOf, movedCard, soleZone, theyOf } from './suppo
 /** Every fact in the list, told what it is on. */
 const declares = (on: FactSpec['on']): DeclareFn => ([facts]) => (facts as FactItem[]).map((fact) => ({ ...fact, on }));
 
-/** A card that "can be poisoned" has something it is or is not, with no count. */
-const cardIs: DeclareFn = ([name]) => [{ name: name as string, on: 'card', kind: 'flag' }];
+/** A card or a space that "can be" something has a yes/no, which starts at no, with no count. */
+const isFlagOn = (on: FactSpec['on']): DeclareFn => ([name]) => [{ name: name as string, on, kind: 'flag' }];
 
 /**
  * The board a phrase plays on. Each phrase that calls this says `needsBoard`, so the compiler only lets it into a game with
@@ -133,6 +133,17 @@ const landsOnSpaceOwnedByOther: MomentFn = (env, _args, moment) => {
 
 // ---- effects ---------------------------------------------------------------------------------
 
+/** Sets the flag on the space the rule is about, or clears it. */
+const itBecomes = (value: boolean): EffectFn => (env, [fact]) => setSpaceFact(env.state, itOf(env), fact as string, value);
+
+/** Clears the flag on every space they own, and on no one else's. */
+const theirAreNoLonger: EffectFn = (env, [fact]) => {
+  const they = theyOf(env);
+  return boardOf(env).spaces.reduce(
+    (state, _space, at) => (ownerOf(state, at) === they ? setSpaceFact(state, at, fact as string, false) : state), env.state,
+  );
+};
+
 const getsFromBank: EffectFn = (env, [name]) => {
   const bank = name as string;
   const fact = factForBank(env, bank);
@@ -220,6 +231,8 @@ const spaceHasGiven: EffectFn = (env, [space, n, fact]) => setSpaceFact(env.stat
 
 const spaceHasFlagGiven: EffectFn = (env, [space, fact]) => setSpaceFact(env.state, space as number, fact as string, true);
 
+const spaceIsGiven = (value: boolean): EffectFn => (env, [space, fact]) => setSpaceFact(env.state, space as number, fact as string, value);
+
 const bankHasGiven: EffectFn = (env, [n, name]) => setBank(env.state, name as string, n as number);
 
 /** “the Knight” for the match of a card, as an example says it. */
@@ -281,6 +294,13 @@ const spaceHasNoFlagExpected: ExpectFn = (env, [space, fact]) =>
     ? true
     : `Expected ${nameOfSpace(env, space as number)} to have no ${fact}, but it has one.`;
 
+/** Whether the space's flag is as wanted; a flag nobody set is not set. Otherwise what an example should say about it. */
+const spaceIsExpected = (wanted: boolean): ExpectFn => (env, [space, fact]) => {
+  if ((spaceFact(env.state, space as number, fact as string) === true) === wanted) return true;
+  const name = nameOfSpace(env, space as number);
+  return wanted ? `Expected ${name} to be ${fact}, but it isn't.` : `Expected ${name} not to be ${fact}, but it is.`;
+};
+
 const bankHasExpected: ExpectFn = (env, [n, name]) => {
   const have = bankOf(env.state, name as string);
   return have === n ? true : `Expected the bank to have ${counted(n as number, name as string)}, but it has ${have}.`;
@@ -289,7 +309,7 @@ const bankHasExpected: ExpectFn = (env, [n, name]) => {
 /**
  * The sentences that say what a game keeps facts about: what a space or a card can have, or be, while the game is played.
  * A plural noun is a count (starting at 0) and “a” or “an” and a noun, or an adjective, is a yes/no (starting at no). Then the
- * sentences that read and change what a space has, and what the bank holds, that ask whether a player owns a whole set, and
+ * sentences that read and change what a space has or is, and what the bank holds, that ask whether a player owns a whole set, and
  * that say which spaces a button may pick. And those about cards: which cards a rule is about, whether one has a flag,
  * changing every card of a zone, raising or lowering a number a card has, moving the card a rule is about, and the player
  * with the most cards.
@@ -298,12 +318,15 @@ export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
     .declare('spaces can have {factlist}', declares('space'))
     .declare('cards can have {factlist}', declares('card'))
-    .declare('cards can be {name}', cardIs)
+    .declare('cards can be {name}', isFlagOn('card'))
+    .declare('spaces can be {name}', isFlagOn('space'))
     .condition('it has a {spaceflag}', hasFlag, { needsSpace: true })
     .condition('it has an {spaceflag}', hasFlag, { needsSpace: true })
     .condition('it has no {spaceflag}', hasNoFlag, { needsSpace: true })
     .condition('it has {int} {spacenumber}', hasCount, { needsSpace: true })
     .condition('it has fewer than {int} {spacenumber}', hasFewer, { needsSpace: true })
+    .condition('it is {spaceflag}', hasFlag, { needsSpace: true })
+    .condition('it is not {spaceflag}', hasNoFlag, { needsSpace: true })
     .condition('it is {cardflag}', itIsFlagged, { needsCard: true })
     .condition('the card is {cardflag}', theCardIsFlagged, { needsMove: true })
     .condition('the bank has a {banked}', bankHasOne)
@@ -318,6 +341,9 @@ export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
     .which('a card in a {perzone} has {int} {attribute}', cardsWithNumber)
     .effect('it gets a {banked} from the bank', getsFromBank, { needsSpace: true })
     .effect('it gets an {banked} from the bank', getsFromBank, { needsSpace: true })
+    .effect('it is {spaceflag}', itBecomes(true), { needsSpace: true })
+    .effect('it is not {spaceflag}', itBecomes(false), { needsSpace: true })
+    .effect('their spaces are no longer {spaceflag}', theirAreNoLonger, { needsPlayer: true, needsBoard: true })
     .effect('its {spacenumber} go back to the bank', countGoesBack, { needsSpace: true })
     .effect('their {banked} go back to the bank', theirGoBack, { needsPlayer: true, needsBoard: true })
     .effect('they pay {int} for each of their {banked}', paysForEach, { needsPlayer: true, needsBoard: true, needsPayment: true })
@@ -330,6 +356,8 @@ export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
     .given('{space} has {int} {spacenumber}', spaceHasGiven)
     .given('{space} has a {spaceflag}', spaceHasFlagGiven)
     .given('{space} has an {spaceflag}', spaceHasFlagGiven)
+    .given('{space} is {spaceflag}', spaceIsGiven(true))
+    .given('{space} is not {spaceflag}', spaceIsGiven(false))
     .given('the bank has {int} {banked}', bankHasGiven)
     .given('{card} in {zone} is {cardflag}', cardInZoneIsGiven)
     .given('{card} in {zone} has {int} {attribute}', cardInZoneHasGiven)
@@ -337,6 +365,8 @@ export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
     .expect('{space} has a {spaceflag}', spaceHasFlagExpected)
     .expect('{space} has an {spaceflag}', spaceHasFlagExpected)
     .expect('{space} has no {spaceflag}', spaceHasNoFlagExpected)
+    .expect('{space} is {spaceflag}', spaceIsExpected(true))
+    .expect('{space} is not {spaceflag}', spaceIsExpected(false))
     .expect('the bank has {int} {banked}', bankHasExpected)
     .expect('{card} in {zone} is {cardflag}', cardInZoneIsExpected(true))
     .expect('{card} in {zone} is not {cardflag}', cardInZoneIsExpected(false))

@@ -359,6 +359,42 @@ describe('paying', () => {
   });
 });
 
+describe('a percentage of a detail of the space', () => {
+  const run = <T>(kind: 'effect' | 'condition', text: string, state: GameState, space: number) =>
+    runPhrase<T>(lib, kind, text, env(state, as('p0', space)));
+  const money = (state: GameState) => counterOf(state, 'money', 'p0');
+
+  it('gets and pays a percentage, rounded down to a whole number', () => {
+    // Power Works (6) costs 150: half is 75, and 55% is 82.5, so 82. Mill Lane (1) costs 60: 33% is 19.8, so 19.
+    expect(counterOf(run('effect', 'they get 50% of its price', fixtureBoardState(), 6), 'money', 'p0')).toBe(1575);
+    expect(counterOf(run('effect', 'they pay 55% of its price', fixtureBoardState(), 6), 'money', 'p0')).toBe(1418);
+    expect(counterOf(run('effect', 'they get 33% of its price', fixtureBoardState(), 1), 'money', 'p0')).toBe(1519);
+  });
+  it('judges whether they have at least the percentage', () => {
+    const at = (n: number) => setCounter(fixtureBoardState(), 'money', 'p0', n);
+    expect(run('condition', 'they have at least 55% of its price in money', at(82), 6)).toBe(true);
+    expect(run('condition', 'they have at least 55% of its price in money', at(81), 6)).toBe(false);
+  });
+  it('notes the bank as the creditor when paying leaves them below 0', () => {
+    const s = run<GameState>('effect', 'they pay 55% of its price', setCounter(fixtureBoardState(), 'money', 'p0', 10), 6);
+    expect([money(s), owedTo(s, 'p0', 'money')]).toEqual([-72, 'bank']);
+  });
+  it('notes nothing when paying leaves them at 0 or more', () => {
+    const s = run<GameState>('effect', 'they pay 50% of its price', setCounter(fixtureBoardState(), 'money', 'p0', 75), 6);
+    expect([money(s), s.data[OWES_KEY]]).toEqual([0, undefined]);
+  });
+  it('says so when the space has no such detail', () => {
+    for (const [kind, text] of [['effect', 'they get 50% of its price'], ['effect', 'they pay 50% of its price'], ['condition', 'they have at least 50% of its price in money']] as const) {
+      expect(() => run(kind, text, fixtureBoardState(), 0)).toThrow(new RuleError('Go has no price.'));
+    }
+  });
+  it('needs a player and a space, and something to pay with for the effects', () => {
+    expect(lib.get('effect', 'they get {int}% of its {spaceattr}')).toMatchObject({ needsPlayer: true, needsSpace: true, needsPayment: true });
+    expect(lib.get('effect', 'they pay {int}% of its {spaceattr}')).toMatchObject({ needsPlayer: true, needsSpace: true, needsPayment: true });
+    expect(lib.get('condition', 'they have at least {int}% of its {spaceattr} in {counter}')).toMatchObject({ needsPlayer: true, needsSpace: true });
+  });
+});
+
 describe('paying and collecting from each other player', () => {
   const seats = ['p0', 'p1', 'p2'];
   const money = (s: GameState) => seats.map((seat) => counterOf(s, 'money', seat));

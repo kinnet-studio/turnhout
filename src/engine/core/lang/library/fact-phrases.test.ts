@@ -351,6 +351,84 @@ describe('example phrases', () => {
   });
 });
 
+describe('a yes-or-no that rules set and clear on a space', () => {
+  const FLAGGED = fixtureBoardGame({ facts: [...FACTS, { name: 'mortgaged', on: 'space', kind: 'flag' }], board: game.board! });
+  const flaggedExample = (kind: 'given' | 'expect', text: string, state: GameState = fresh(FLAGGED)) => runPhrase(lib, kind, text, bare(state, FLAGGED));
+
+  it('sets and clears the flag on the space the rule is about, and judges it', () => {
+    const on = effect('it is mortgaged', fresh(FLAGGED), ROSE, FLAGGED);
+    expect(spaceFact(on, ROSE, 'mortgaged')).toBe(true);
+    expect([condition('it is mortgaged', on, ROSE, FLAGGED), condition('it is not mortgaged', on, ROSE, FLAGGED)]).toEqual([true, false]);
+    expect(condition('it is not mortgaged', fresh(FLAGGED), ROSE, FLAGGED)).toBe(true);
+    expect(spaceFact(effect('it is not mortgaged', on, ROSE, FLAGGED), ROSE, 'mortgaged')).toBe(false);
+  });
+  it('is not set until a rule sets it, and is about the space the rule names, else the one their piece is on', () => {
+    expect([condition('it is mortgaged', fresh(FLAGGED), ROSE, FLAGGED), spaceFact(fresh(FLAGGED), ROSE, 'mortgaged')]).toEqual([false, null]);
+    const onLily = effect('it is mortgaged', fresh(FLAGGED), LILY, FLAGGED);
+    expect([ROSE, LILY].map((at) => spaceFact(onLily, at, 'mortgaged'))).toEqual([null, true]);
+    const underPiece = effect('it is mortgaged', placePiece(fresh(FLAGGED), 'p0', 1), null, FLAGGED);
+    expect(spaceFact(underPiece, 1, 'mortgaged')).toBe(true);
+  });
+  it('clears it on every space they own, and only theirs', () => {
+    const flagged = [ROSE, 1, LILY].reduce((s, at) => setSpaceFact(s, at, 'mortgaged', true), setOwner(setOwner(setOwner(fresh(FLAGGED), ROSE, 'p0'), 1, 'p0'), LILY, 'p1'));
+    const s = effect('their spaces are no longer mortgaged', flagged, null, FLAGGED);
+    expect([ROSE, 1, LILY].map((at) => spaceFact(s, at, 'mortgaged'))).toEqual([false, false, true]);
+  });
+  it('needs a space, and for clearing a player and a board', () => {
+    expect(lib.get('condition', 'it is {spaceflag}')).toMatchObject({ needsSpace: true });
+    expect(lib.get('condition', 'it is not {spaceflag}')).toMatchObject({ needsSpace: true });
+    expect(lib.get('effect', 'it is {spaceflag}')).toMatchObject({ needsSpace: true });
+    expect(lib.get('effect', 'it is not {spaceflag}')).toMatchObject({ needsSpace: true });
+    expect(lib.get('effect', 'their spaces are no longer {spaceflag}')).toMatchObject({ needsPlayer: true, needsBoard: true });
+  });
+
+  describe('declared with “Spaces can be …”', () => {
+    const HEAD = TINY_BOARD_HEAD.replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  Spaces can be mortgaged.');
+
+    it('is read with no problem, as a flag on spaces', () => {
+      const { game: compiled, diagnostics } = compileGame(HEAD, lib);
+      expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+      expect(compiled!.facts).toEqual([{ name: 'mortgaged', on: 'space', kind: 'flag' }]);
+    });
+    it('is set, judged and cleared by lines of a game, along with a share of the price, and played by its examples', () => {
+      const text = [
+        HEAD,
+        '  A player may mortgage the space they are on.', '    Only if they own it.', '    Only if it is not mortgaged.', '    Then:',
+        '      It is mortgaged.', '      They get 50% of its price.',
+        '  A player may redeem the space they are on.', '    Only if it is mortgaged.', '    Only if they have at least 55% of its price in money.',
+        '    Then:', '      They pay 55% of its price.', '      It is not mortgaged.',
+        '  A player may sweep.', '    Then:', '      Their spaces are no longer mortgaged.',
+        '',
+        'Example: mortgaging pays half the price', '  Given p0 is on Rose Lane', '  And p0 owns Rose Lane', '  When p0 mortgages the space they are on',
+        '  Then Rose Lane is mortgaged', '  And p0 has 1590 money', '  And Mill Lane is not mortgaged',
+        '',
+        'Example: redeeming costs 55% of the price', '  Given p0 is on Rose Lane', '  And p0 owns Rose Lane', '  And Rose Lane is mortgaged',
+        '  When p0 redeems the space they are on', '  Then Rose Lane is not mortgaged', '  And p0 has 1401 money',
+      ].join('\n');
+      const { game: compiled, diagnostics } = compileGame(text, lib);
+      expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+      expect(runExamples(compiled!, lib).map((r) => [r.status, r.message])).toEqual([['pass', null], ['pass', null]]);
+    });
+  });
+
+  describe('example phrases', () => {
+    it('sets it in a Given line, and clears it', () => {
+      const on = flaggedExample('given', 'Rose Lane is mortgaged') as GameState;
+      expect(spaceFact(on, ROSE, 'mortgaged')).toBe(true);
+      expect(spaceFact(flaggedExample('given', 'Rose Lane is not mortgaged', on) as GameState, ROSE, 'mortgaged')).toBe(false);
+    });
+    it('checks it in a Then line', () => {
+      const on = setSpaceFact(fresh(FLAGGED), ROSE, 'mortgaged', true);
+      expect([flaggedExample('expect', 'Rose Lane is mortgaged', on), flaggedExample('expect', 'Rose Lane is not mortgaged')]).toEqual([true, true]);
+    });
+    it('says what a space is instead', () => {
+      expect(flaggedExample('expect', 'Rose Lane is mortgaged')).toBe("Expected Rose Lane to be mortgaged, but it isn't.");
+      expect(flaggedExample('expect', 'Rose Lane is not mortgaged', setSpaceFact(fresh(FLAGGED), ROSE, 'mortgaged', true)))
+        .toBe('Expected Rose Lane not to be mortgaged, but it is.');
+    });
+  });
+});
+
 describe('reading the lines of a game', () => {
   const WITH_FACTS = TINY_BOARD_HEAD.replace(
     '  There are two six-sided dice.', ['  There are two six-sided dice.', '  Spaces can have houses and a hotel.', '  The bank has 32 houses and 12 hotels.'].join('\n'),

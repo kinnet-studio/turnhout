@@ -95,6 +95,9 @@ function amountOf(env: PhraseEnv, attr: string): number {
   return value;
 }
 
+/** A share of a detail of the space, rounded down to a whole number, as a counter holds only whole ones: 55% of 150 is 82.5, which comes to 82. */
+const percentOf = (env: PhraseEnv, n: number, attr: string): number => Math.floor((n * amountOf(env, attr)) / 100);
+
 /** What the dice showed last, added up. */
 export function rollTotal(state: GameState): number {
   const faces = latestRoll(state);
@@ -117,14 +120,20 @@ function ownerOfIt(env: PhraseEnv): PlayerId {
   return owner;
 }
 
+/** The counter players pay with. Each phrase that moves it says `needsPayment`, so the compiler only lets it into a game that names one. */
+function payCounter(env: PhraseEnv): string {
+  const counter = boardIn(env).payWith;
+  if (counter === null) throw new Error('This phrase needs something to pay with, but the board names none.');
+  return counter;
+}
+
 /**
  * Takes the amount from `from` and gives it to `to`; the bank (null) has no counter to fill. A payment that leaves the payer
  * below 0 notes whom they owe, so the latest one names their creditor; one of 0, such as the charge of a space that costs
  * nothing, moves nothing and so notes nothing.
  */
 export function transfer(env: PhraseEnv, from: PlayerId, to: PlayerId | null, amount: number): GameState {
-  const counter = boardIn(env).payWith;
-  if (counter === null) throw new Error('This phrase needs something to pay with, but the board names none.');
+  const counter = payCounter(env);
   const paid = addToCounter(env.state, counter, from, -amount);
   const settled = to === null ? paid : addToCounter(paid, counter, to, amount);
   return amount > 0 && counterOf(settled, counter, from) < 0 ? recordDebt(settled, from, to ?? 'bank') : settled;
@@ -160,6 +169,9 @@ const theyOwn: ConditionFn = (env) => ownerOf(env.state, itOf(env)) === theyOf(e
 
 const haveAtLeastItsAmount: ConditionFn = (env, [attr, counter]) =>
   counterOf(env.state, counter as string, theyOf(env)) >= amountOf(env, attr as string);
+
+const haveAtLeastItsPercent: ConditionFn = (env, [n, attr, counter]) =>
+  counterOf(env.state, counter as string, theyOf(env)) >= percentOf(env, n as number, attr as string);
 
 const haveAtLeast: ConditionFn = (env, [n, counter]) => counterOf(env.state, counter as string, theyOf(env)) >= (n as number);
 
@@ -287,6 +299,11 @@ const goesStraightTo: EffectFn = (env, [space]) => {
 const gets: EffectFn = (env, [n, counter]) => addToCounter(env.state, counter as string, theyOf(env), n as number);
 
 const paysBank: EffectFn = (env, [attr]) => transfer(env, theyOf(env), null, amountOf(env, attr as string));
+
+const getsPercent: EffectFn = (env, [n, attr]) => addToCounter(env.state, payCounter(env), theyOf(env), percentOf(env, n as number, attr as string));
+
+/** Like paying its amount: a share that leaves them below 0 is owed to the bank. */
+const paysPercent: EffectFn = (env, [n, attr]) => transfer(env, theyOf(env), null, percentOf(env, n as number, attr as string));
 
 const paysAmount: EffectFn = (env, [n]) => transfer(env, theyOf(env), null, n as number);
 
@@ -495,6 +512,7 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .condition('someone else owns it', someoneElseOwns, { needsSpace: true, needsBoard: true })
     .condition('they own it', theyOwn, { needsPlayer: true, needsSpace: true, needsBoard: true })
     .condition('they have at least its {spaceattr} in {counter}', haveAtLeastItsAmount, { needsPlayer: true, needsSpace: true })
+    .condition('they have at least {int}% of its {spaceattr} in {counter}', haveAtLeastItsPercent, { needsPlayer: true, needsSpace: true })
     .condition('they have at least {int} {counter}', haveAtLeast, { needsPlayer: true })
     .condition('one player is left', oneLeft)
     .who('a player has less than {int} {counter}', lessThan)
@@ -511,6 +529,8 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('their piece goes straight to {space}', goesStraightTo, { needsPlayer: true, needsBoard: true })
     .effect('its player gets {int} {counter}', gets, { needsPlayer: true })
     .effect('they get {int} {counter}', gets, { needsPlayer: true })
+    .effect('they get {int}% of its {spaceattr}', getsPercent, { needsPlayer: true, needsSpace: true, needsPayment: true })
+    .effect('they pay {int}% of its {spaceattr}', paysPercent, { needsPlayer: true, needsSpace: true, needsPayment: true })
     .effect('they pay {int}', paysAmount, { needsPlayer: true, needsPayment: true })
     .effect('they pay {int} {counter}', paysAmountOf, { needsPlayer: true, needsPayment: true })
     .effect('they pay its {spaceattr}', paysBank, { needsPlayer: true, needsSpace: true, needsPayment: true })
