@@ -1,7 +1,7 @@
 # Startup Simulator, Slice 9: Stealth and Audits
 
 **Date:** 2026-10-16
-**Status:** Draft, waiting for its builder check. The user handed over every design call for the full implementation;
+**Status:** Settled after its builder check (see "Builder-check rulings" at the end). The user handed over every design call for the full implementation;
 the calls below are the builder's.
 **Part of:** `2026-10-16-startup-simulator-overview-design.md`. Its decisions, calls, anti-goals and constraints apply.
 **Builds on:** slices 1a to 8.
@@ -89,6 +89,10 @@ The game after this slice:
 | Bidding | once around; the declarer doesn't bid again; the highest stakes the bid |
 | A legal project | the Whistleblower pays the owner; the card stays Face-Up |
 | Ghost Progress | a Tier 2 project with new cubes and no Lead is illegal |
+| Untrackable bluff | p1 saw Neobank drafted into p0's backlog; after p0's Face-Down Greenlight, no id in p1's view says which card it was |
+| Rivals see the staff | modes, Pending XP, XP and Skills show on a Face-Down team; no Pending Badge, Stalled or need |
+| Patent Trolls | the Settlement's Tag fee is $5 during Patent Trolls |
+| Fold returns Consultants | a Fold sends the Founder's staff to the Bench and the Investors' tokens back, unplaced |
 | Missing Dependency | a bluffed Tag is illegal |
 | Forced Fold | a missing Tag that exists nowhere |
 | Fold | scrapped, $4 to the Whistleblower, $1 to the bank |
@@ -120,3 +124,38 @@ The game after this slice:
 ## Left to the builder
 
 - Exact wordings; how hidden projects look; the auto-player's choices.
+
+## Builder-check rulings
+
+The builder check (`builder-check-startup-9.md`) raised three questions and settled three smaller ones. The user handed
+every design call to the builder; these are the calls.
+
+- **R1. A Face-Down card can't be followed by its id.** A card keeps one id for its whole life and seat views list hidden
+  cards with their ids, so a card a rival saw drafted face up would be identified once played Face-Down, making its
+  Audit risk-free. At a Face-Down Greenlight, the greenlit card and every card left in that player's backlog get fresh
+  ids (from the game's card counter, `lang:next-card`), keeping slot order, so a rival can't tell which backlog card
+  became the project.
+  - It is an effect in this game's text ("their backlog's cards are shuffled out of sight" or similar), built as a
+    general language effect but used by no other game; no shared view code changes, and Hearts is untouched.
+  - Nothing is attached to backlog cards and the greenlit card has nothing on it yet, so no holder needs rewriting. Replay
+    stays exact, since the ids come from the counter in the state.
+  - If re-keying clashes with something the builder finds (deck bookkeeping, examples that claim cards by id), the
+    fall-back is per-viewer aliases in the seat view, switched on only for games with face-down placement.
+  - Why: the anti-goal says a Face-Down project's identity is visible to no rival in any view, and 1a R8 already treats
+    an id that locates a hidden card as a leak.
+- **R2. No faking progress: Stalled applies Face-Down too.** Ghost Progress (new cubes, no usable Lead) is written as
+  specified, but the engine never generates on a Stalled project (slice 3 R2; the Rust engine likewise), so it never
+  fires in play. It and the Ghost-only Settle are pinned by examples that arrange new cubes in the Audit window. Long
+  runs reach Fold and Settle through Missing Dependency. Why: the rulebook states the Lead rule as a prohibition, not a
+  bluff (only Tag bluffing is licensed, §14.B.3, #21). On the owner's list, as a rule that never fires in long runs.
+- **R3. Rivals see each staff card on a Face-Down project as it is, and nothing worked out from the hidden card.**
+  - Shown: declared modes, Pending XP, XP, Skills, Attributes, Onboarding and the `cto`/`vest` marks — tokens and
+    declarations a table would show. This answers slice 4 R9 (modes) and slice 5 R12 (Pending tokens).
+  - Hidden: the Pending Badge, Stalled, the need, the cut, Feature complete, and the card's name in any prompt, verdict
+    reason or tableau line (a Veto prompt for a Face-Down Launch doesn't name the card).
+  - Inference from public outcomes is accepted, not engineered away: a Pending XP token appearing, Angel Investors'
+    payout, a Launch being declared. The proof's invariant reads: no rival's view contains a Face-Down card's name, its
+    counts, or a value worked out from it.
+- **R4 (the builder's own).** Patent Trolls' $5 Settlement Tag fee (§20.D) lands here, since no other slice lists it. A
+  Fold returns Consultants as Pivot does (slice 7 R1). The declaration offer restarts from the active player's left after
+  each verdict, as the Rust engine resets its passes.
