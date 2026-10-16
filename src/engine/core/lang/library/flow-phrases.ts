@@ -111,6 +111,10 @@ const holderGoesFirst: EffectFn = (env, args) => {
 /**
  * Interrupts the turn for another phase, which starts with the next player still in on their left: a player who is out could
  * not act in it. The phase's start lines then run, as `go to` runs them, about no one in particular.
+ *
+ * Meant for a button's lines. Started by a `When` rule after a press the After line names, it swallows that pass: the flow runs
+ * `When` rules before it passes the turn, and by then the phase is the new one, whose After line does not name the press. The
+ * kept turn is still the presser's, with nothing done in it, so going back to it gives them the turn again.
  */
 const phaseStartsOnTheirLeft: EffectFn = (env, [phase]) => {
   const id = phase as string;
@@ -123,6 +127,11 @@ const phaseStartsOnTheirLeft: EffectFn = (env, [phase]) => {
   return startLines.reduce((state, ref) => runLine(state, ref, nobody), started);
 };
 
+/**
+ * Goes back to the interrupted turn. Whether a button's lines or a `When` rule after a press go back, the flow then judges that
+ * press by the After line of the phase gone back to, so a button whose wording both phases' After lines name passes the turn
+ * gone back to on at once; give the two phases' buttons different words.
+ */
 const goBackToTheTurn: EffectFn = (env) => resumeTurn(env.state);
 
 // ---- turn order, scores and winners ----------------------------------------------------------
