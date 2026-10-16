@@ -15,9 +15,9 @@ function seatsOf(board: BoardView): string[] {
 }
 
 /**
- * One text for the seat: "p0 -4 money · owes p1 · asleep · 2 naps · Free Pass", its numbers, whom it owes if anyone, then its
- * facts, then the names of the cards it keeps; "p1 ? money" where the number is hidden from this viewer, or "p2 out" with nothing
- * after it: what is true of a player who is out no longer matters.
+ * One text for the seat: "p0 -4 money · owes p1 · asleep · 2 naps · Free Pass (lent)", its numbers, whom it owes if anyone, then
+ * its facts, then the names of the cards it keeps, each with the flags set on it in brackets; "p1 ? money" where the number is
+ * hidden from this viewer, or "p2 out" with nothing after it: what is true of a player who is out no longer matters.
  */
 function entryFor(board: BoardView, seat: string): string {
   if (board.out.includes(seat)) return `${seat} out`;
@@ -28,7 +28,9 @@ function entryFor(board: BoardView, seat: string): string {
   const base = numbers.length === 0 ? seat : `${seat} ${numbers.join(', ')}`;
   const creditor = board.owes[seat];
   const debt = creditor === undefined ? [] : [`owes ${creditor === 'bank' ? 'the bank' : creditor}`];
-  return [base, ...debt, ...factWords(board.playerFacts[seat] ?? {}), ...(board.playerCards[seat] ?? [])].join(' · ');
+  const flags = board.playerCardFlags[seat] ?? [];
+  const cards = (board.playerCards[seat] ?? []).map((name, i) => (flags[i]?.length ? `${name} (${flags[i].join(', ')})` : name));
+  return [base, ...debt, ...factWords(board.playerFacts[seat] ?? {}), ...cards].join(' · ');
 }
 
 /**
@@ -66,11 +68,11 @@ function ActionButton({ action, onPress, onPick, onRefused }: {
   onPick(action: ActionView): void;
   onRefused(reason: string): void;
 }) {
-  const { move, label, allowed, target, amount } = action;
+  const { move, label, allowed, target, amount, players } = action;
   const [typed, setTyped] = useState('');
   const live = allowed === true;
   const press = () => {
-    if (target !== null) onPick(action);
+    if (target !== null || players !== null) onPick(action);
     else if (amount) onPress(move, typed.trim() === '' ? null : Number(typed));
     else onPress(move);
   };
@@ -114,8 +116,8 @@ function ActionButton({ action, onPress, onPick, onRefused }: {
 
 /**
  * The seat's buttons. A button that may not be pressed stays on the page, greyed, with the reason on hover; pressing it
- * explains instead of sending (a real `disabled` button would say nothing on a tap). A button that picks a space does not
- * send when pressed: it asks to pick, and the move goes once a space is.
+ * explains instead of sending (a real `disabled` button would say nothing on a tap). A button that picks a space or another
+ * player does not send when pressed: it asks to pick, and the move goes once one is picked.
  */
 export function ActionButtons({ actions, onPress, onPick, onRefused }: {
   actions: ActionView[];
@@ -126,6 +128,48 @@ export function ActionButtons({ actions, onPress, onPick, onRefused }: {
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
       {actions.map((action, i) => <ActionButton key={`${i}-${action.move}`} action={action} onPress={onPress} onPick={onPick} onRefused={onRefused} />)}
+    </div>
+  );
+}
+
+/** The banner while the player picks a space or another player: a status line with room for its buttons. */
+export const BANNER_STYLE = { display: 'flex', alignItems: 'center', gap: 8, padding: '2px 8px', background: '#78350f', color: '#fff' } as const;
+
+/**
+ * The banner while the player picks another player: one button for each seat in seat order, in the seat's color, then Cancel. A
+ * seat the move refuses stays on the banner, greyed with the reason on hover, and pressing it explains instead of picking.
+ */
+export function PlayerPicker({ players, onPick, onRefused, onCancel }: {
+  players: { [seat: string]: true | string };
+  onPick(seat: string): void;
+  onRefused(reason: string): void;
+  onCancel(): void;
+}) {
+  const seats = Object.keys(players).sort((a, b) => seatNumber(a) - seatNumber(b) || a.localeCompare(b));
+  return (
+    <div role="status" style={BANNER_STYLE}>
+      <span>Pick another player</span>
+      {seats.map((seat) => {
+        const verdict = players[seat];
+        const live = verdict === true;
+        return (
+          <button
+            key={seat}
+            type="button"
+            aria-label={`Pick ${seat}`}
+            aria-disabled={!live}
+            title={live ? undefined : verdict}
+            onClick={() => (live ? onPick(seat) : onRefused(verdict))}
+            style={{
+              ...BUTTON_STYLE, font: 'bold 14px sans-serif', background: '#111827', color: seatColor(seat), border: `2px solid ${seatColor(seat)}`,
+              opacity: live ? 1 : 0.5, cursor: live ? 'pointer' : 'not-allowed',
+            }}
+          >
+            {seat}
+          </button>
+        );
+      })}
+      <button type="button" onClick={onCancel}>Cancel</button>
     </div>
   );
 }

@@ -69,7 +69,7 @@ The designer page is a text editor for the rule language, with a line-numbered e
 - **Play** is available once the rules read cleanly. It puts every seat on one screen (pick the player count first when the game allows a range), with undo and restart. Editing the rules ends the playtest; Play starts a fresh game under the new rules.
 - **Download** and **Upload** move the text to and from a `.rules` file.
 
-**Board games.** A game can have a `Board:` section: a table of spaces for the pieces to loop round (a `color` column is drawn as a band on the space), a piece for each player, numbers each player holds (money, say) and dice. In a phase, each `A player may …` line becomes a button on that seat's panel, greyed with the reason on hover while it is not allowed. `When a piece passes …` and `When a player lands on …` rules run as pieces move. Each seat's panel in the playtest draws the board with its pieces and owners, a line with everyone's numbers, and the seat's buttons. `src/games/rent-day.rules` is a 2 to 8 player property-trading game written this way, with 89 examples:
+**Board games.** A game can have a `Board:` section: a table of spaces for the pieces to loop round (a `color` column is drawn as a band on the space), a piece for each player, numbers each player holds (money, say) and dice. In a phase, each `A player may …` line becomes a button on that seat's panel, greyed with the reason on hover while it is not allowed. `When a piece passes …` and `When a player lands on …` rules run as pieces move. Each seat's panel in the playtest draws the board with its pieces and owners, a line with everyone's numbers, and the seat's buttons. `src/games/rent-day.rules` is a 2 to 8 player property-trading game written this way, with 106 examples:
 
 ```
 Phase: playing
@@ -113,6 +113,17 @@ Phase: playing
 - **Interrupting a turn.** `The auction phase starts with the player on their left.` keeps the turn (its phase, whose turn it is, what they did and what they rolled) and runs the new phase's start lines. `Go back to the interrupted turn.` restores all of it exactly; one turn at a time can be interrupted. `the turn passes to the next player on the left who is bidding` skips players who are out or not bidding. A phase entered this way is not reported as unreachable.
 - **In the playtest.** While a turn is interrupted, the seat status puts the name of the phase that holds it before the phase's hint (`auction — Your turn — Bid more than the high bid, or drop out.`). Only a phase with a hint gets the name, since one without shows its name in place of a hint already. The high bid shows on the bank line (`bank: 32 houses, 12 hotels · high bid 120`).
 - **Rent Day** auctions a space the lander doesn't buy. A turn can't end, and a double can't roll on, while the space is unbought and not yet auctioned. A space nobody bids on stays with the bank: the lander can no longer buy it.
+
+**Trading.** A game can let players swap spaces, money and kept cards, with the other player answering:
+
+- **Picking another player.** A button whose wording ends in "another player" (`A player may trade with another player.`) picks a seat still in, other than the presser's. The playtest lists them in a banner after the press. `That player is the trade partner.` reads the pick; such a line anywhere else is reported. A missing or wrong pick is refused with "Pick another player to trade with." Examples say `When p0 trades with p1`.
+- **Picking a space without "on".** A wording whose last part reads as a target picks a space: `A player may offer a space they own.` is labelled "Offer". Examples say `When p0 offers Mill Lane`. Two buttons in one phase that would read the same label are reported.
+- **The player who holds a flag.** "the player who is proposing", or the flag alone when its name starts with "the" ("the trade partner"). `a space the trade partner owns` and `They pay the cash request to the player who is proposing.` reach them. `For the player who is proposing, they own every space that is asked for.` runs the rest of the line as that player: "they" and "their" are them. No player, or two, holding the flag is an error that names it.
+- **Every, no and some.** `They own every space that is offered.`, `Every card that is handed over goes to their kept cards.`, `No card is handed over.`, `some space is offered`, `some card is claimed` and `their kept cards are not empty`. A card's flags go with it from zone to zone.
+- **Game numbers** work in conditions: `the cash offer is more than 0`, `they have at least the cash request in money`.
+- **A phase that starts with them.** `The trade phase starts with them.` interrupts the turn as the auction does, and the player who pressed stays current.
+- **In the playtest,** the player picker, a tag on each striped space ("offered" beside "mortgaged"), kept cards marked with their flags (`Get Out Of Jail Free (handed over)`), and the cash numbers on the bank line.
+- **Rent Day** trades on the proposer's own turn, never while anyone owes. A street whose color has a building can't be traded, and a mortgaged space trades as it is.
 
 **Saying a button was pressed.** `they have rolled this turn` means any roll button was pressed, so a game with `A player may roll the dice.` and `A player may roll for a double.` reads "rolled" as either. To name one, write its whole wording in the past: `they have rolled for a double this turn`.
 
@@ -253,11 +264,11 @@ turnhout is built as dependency-ordered sub-projects, each with its own design s
 4. **Net sync core** — ✅ shipped: client move → server validation → per-player projected views, over a transport-agnostic channel (loopback in-process).
 5. **Rule engine** — ✅ shipped: declarative turn/phase flow, triggers and end conditions.
 6. **Designer rule language** — ✅ shipped: games written as readable text, example checks, and an in-browser playtest page (see [Designing a game](#designing-a-game)).
+7. **Tokens and meeples** — ✅ shipped: non-card pieces, in the engine and in the designer language, in the seven slices of [the board games overview](docs/superpowers/specs/2026-10-15-board-games-overview-design.md): around the board, sets and buildings, doubles and jail, Chance and Treasury cards, raising money, auctions, and trading (buttons that pick another player, space picks without “on”, the player who holds a flag, and every, no and some over flags). Rent Day plays the whole game.
 
 **Next:**
 
 - **Online play** — a real transport and rooms on top of the net core (a Cloudflare Durable Object per room is the intended fit).
-- **Tokens and meeples** — 🚧 in progress: non-card pieces, in the engine and in the designer language. Slice 1 (a board to loop round, pieces, dice, numbers such as money, buttons, and the Rent Day sample to play it), slice 2 (sets and buildings: buttons that pick a space, facts on spaces and cards, a bank, `Rent:` sections, houses and hotels on the board, and the Venom sample), slice 3 (doubles and jail: facts about players, doubles, done-wordings, and jail in Rent Day), slice 4 (Chance and Treasury cards: cards whose `says` column holds rules, drawing, keeping and using a card, moves that pass Go, and money between all players), slice 5 (raising money: buttons any player may press at any time, debts and whom they are owed to, percentages, yes-or-no space facts such as a mortgage, selling buildings back, and giving up to a player or to the bank) and slice 6 (auctions: buttons that carry an amount, numbers that belong to the game, flags on every player at once, a phase that interrupts a turn and goes back to it, and turn order that skips players) have shipped; the slices after them are laid out in [the board games overview](docs/superpowers/specs/2026-10-15-board-games-overview-design.md).
 
 ## Tech stack
 

@@ -2,13 +2,13 @@
 // Everything here is plain `Json`, so the net layer can carry it in a view without knowing a board exists.
 import type { GameEngine } from '../game-engine';
 import { zoneCards, type GameState } from '../game-state';
-import type { PlayerId } from '../scene';
+import type { CardState, PlayerId } from '../scene';
 import type { Json } from '../table-def';
 import { bankItemOf } from './board';
 import {
   bankOf, counterOf, gameNumber, interruptedTurn, isOut, lastDrawn, latestRoll, owedTo, ownerOf, pieceAt, playerFact, spaceFact, type Creditor, type LastDrawn,
 } from './board-state';
-import { cardName } from './card-facts';
+import { cardFact, cardName } from './card-facts';
 import { amountPrompt, amountReady, playerCandidates, targetCandidates } from './declared-actions';
 import { friendlyError, friendlyReason } from './friendly';
 import { secondPersonWords } from './refs';
@@ -36,7 +36,8 @@ type FactsView = { [fact: string]: number | boolean };
  * `playerFacts` has every seat of the game, `{}` for one with nothing set: what is true of a player is public, so every seat sees it.
  * `lastDrawn` is the card drawn last, null until one is; every seat sees the same one, since a drawn card is shown to the table.
  * `playerCards` has every seat of the game too, with the names of the cards the seat keeps in zones of its own that everyone can
- * see, `[]` for none. Nothing else about a card or a pile is in a view, least of all the order of a pile.
+ * see, `[]` for none. `playerCardFlags` runs parallel to it: for each card shown, the flags set on it, in the order the game
+ * declares them. Nothing else about a card or a pile is in a view, least of all the order of a pile.
  * `owes` has an entry for each seat still in that owes someone, whom it owes; `{}` while no one does, and for a board with no
  * counter to pay with. Whom a player owes is public, so every seat sees the same.
  * `gameNumbers` lists the numbers that belong to the game itself and are not 0, in the order the game declares them; they are
@@ -47,7 +48,7 @@ type FactsView = { [fact: string]: number | boolean };
 export type BoardView = {
   spaces: SpaceView[]; pieces: { [seat: string]: number }; roll: number[] | null; counters: CounterView[]; out: PlayerId[]; bank: BankView[];
   playerFacts: { [seat: string]: FactsView }; lastDrawn: LastDrawn | null; playerCards: { [seat: string]: string[] };
-  owes: { [seat: string]: Creditor };
+  playerCardFlags: { [seat: string]: string[][] }; owes: { [seat: string]: Creditor };
   gameNumbers: { name: string; value: number }[]; interrupted: boolean;
 };
 /**
@@ -85,14 +86,17 @@ function setFacts(runtime: LangRuntime, on: 'space' | 'player', read: (fact: str
 }
 
 /**
- * What each seat keeps where everyone can see it: the names of the cards in its per-player zones that are public, zone by zone in
- * Table order and slot by slot. A zone only its owner can see, or nobody, is left out, and so is a zone shared by all.
+ * The cards each seat keeps where everyone can see them: those in its per-player zones that are public, zone by zone in Table
+ * order and slot by slot. A zone only its owner can see, or nobody, is left out, and so is a zone shared by all.
  */
-function cardsInView(runtime: LangRuntime, state: GameState): { [seat: string]: string[] } {
+function cardsKept(runtime: LangRuntime, state: GameState): { [seat: string]: CardState[] } {
   const shown = runtime.game.zones.filter((zone) => zone.perPlayer && zone.visibility === 'public');
-  return Object.fromEntries(runtime.seats.map((seat) => [
-    seat, shown.flatMap((zone) => zoneCards(state, zoneIdFor(zone.name, seat)).map((card) => cardName(card, runtime.game))),
-  ]));
+  return Object.fromEntries(runtime.seats.map((seat) => [seat, shown.flatMap((zone) => zoneCards(state, zoneIdFor(zone.name, seat)))]));
+}
+
+/** The flags set on a card (`true`, not merely given a value), in the order the game declares them. */
+function flagsOnCard(runtime: LangRuntime, card: CardState): string[] {
+  return runtime.game.facts.filter((fact) => fact.on === 'card' && fact.kind === 'flag' && cardFact(card, fact.name) === true).map((fact) => fact.name);
 }
 
 /**
@@ -149,9 +153,12 @@ function boardView(runtime: LangRuntime, state: GameState, seat: PlayerId): Boar
   }));
   const bank = board.bank.map(({ name }): BankView => ({ name, count: bankOf(state, name) }));
   const playerFacts = Object.fromEntries(runtime.seats.map((s) => [s, setFacts(runtime, 'player', (fact) => playerFact(state, s, fact))]));
+  const kept = Object.entries(cardsKept(runtime, state));
   return {
     spaces, pieces, roll: latestRoll(state), counters, out: runtime.seats.filter((s) => isOut(state, s)), bank, playerFacts,
-    lastDrawn: lastDrawn(state), playerCards: cardsInView(runtime, state), owes: debtsIn(runtime, state),
+    lastDrawn: lastDrawn(state), owes: debtsIn(runtime, state),
+    playerCards: Object.fromEntries(kept.map(([s, cards]) => [s, cards.map((card) => cardName(card, runtime.game))])),
+    playerCardFlags: Object.fromEntries(kept.map(([s, cards]) => [s, cards.map((card) => flagsOnCard(runtime, card))])),
     gameNumbers: gameNumbersIn(runtime, state), interrupted: interruptedTurn(state) !== null,
   };
 }
@@ -281,6 +288,7 @@ const isBoard = (v: unknown): boolean =>
   isRecord(v) && isList(v.spaces, isSpace) && isMap(v.pieces, isNumber) && (v.roll === null || isList(v.roll, isNumber))
   && isList(v.counters, isCounter) && isList(v.out, isText) && isList(v.bank, isBankLine) && isMap(v.playerFacts, (facts) => isMap(facts, isFact))
   && (v.lastDrawn === null || isDrawn(v.lastDrawn)) && isMap(v.playerCards, (names) => isList(names, isText))
+  && isMap(v.playerCardFlags, (cards) => isList(cards, (flags) => isList(flags, isText)))
   && isMap(v.owes, isText) && isList(v.gameNumbers, isGameNumber) && typeof v.interrupted === 'boolean';
 const isVerdict = (v: unknown): boolean => v === true || isText(v);
 const isTarget = (v: unknown): boolean => isRecord(v) && isText(v.prompt) && isMap(v.spaces, isVerdict);

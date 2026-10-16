@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { BoardView } from '@/engine/core/lang/board-view';
-import { ActionButtons, MoneyLine } from './board-controls';
+import { ActionButtons, MoneyLine, PlayerPicker } from './board-controls';
 import { BoardGrid, factWords } from './board-grid';
 import { seatColor } from './seat-colors';
 
@@ -19,6 +19,7 @@ const board = (over: Partial<BoardView> = {}): BoardView => ({
   playerFacts: {},
   lastDrawn: null,
   playerCards: {},
+  playerCardFlags: {},
   owes: {},
   gameNumbers: [],
   interrupted: false,
@@ -336,6 +337,16 @@ describe('ActionButtons', () => {
     expect(onRefused).toHaveBeenCalledWith('The game is over.');
   });
 
+  it('A pick button asks to pick: a button that picks another player calls onPick, and sends nothing yet', () => {
+    const onPress = vi.fn();
+    const onPick = vi.fn();
+    const swap = { move: 'swap with another player', label: 'Swap with another player', allowed: true as const, target: null, amount: false, players: { p1: true as const } };
+    render(<ActionButtons actions={[swap]} onPress={onPress} onPick={onPick} onRefused={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Swap with another player' }));
+    expect(onPick).toHaveBeenCalledWith(swap);
+    expect(onPress).not.toHaveBeenCalled();
+  });
+
   describe('a button that picks a space', () => {
     const target = { prompt: 'Pick a street you own', spaces: { 1: true as const } };
     const build = { move: 'build a house on a street they own', label: 'Build a house', allowed: true as const, target, amount: false, players: null };
@@ -454,5 +465,35 @@ describe("game numbers and buttons that carry an amount", () => {
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Raise amount' }), { target: { value: '7' } });
     fireEvent.click(screen.getByRole('button', { name: 'Lower' }));
     expect(onPress).toHaveBeenLastCalledWith('lower an amount', null);
+  });
+});
+
+describe('the offer on the board and the money line, and picking another player', () => {
+  it('tags a space with each flag it is striped for', () => {
+    const spaces = [space('Go'), space('Mill Lane', { facts: { pledged: true, lent: true }, stripes: ['pledged', 'lent'] }), space('Treasury'), space('Ferry Row')];
+    render(<BoardGrid board={board({ spaces })} />);
+    const mill = screen.getByTitle('Mill Lane — pledged, lent');
+    expect(within(mill).getAllByTestId('tag').map((tag) => tag.textContent)).toEqual(['pledged', 'lent']);
+    expect(screen.getAllByTestId('tag')).toHaveLength(2);
+  });
+  it('marks a kept card with the flags set on it', () => {
+    render(<MoneyLine board={board({ playerCards: { p0: ['Free Pass', 'Map'] }, playerCardFlags: { p0: [['lent', 'wanted'], []] } })} />);
+    expect(screen.getByText('p0 1,500 money · Free Pass (lent, wanted) · Map')).toBeTruthy();
+  });
+  it('Review Focus: offers each seat listed, greys a refused one with why, and sends only one that may be picked', () => {
+    const [onPick, onRefused, onCancel] = [vi.fn(), vi.fn(), vi.fn()];
+    render(<PlayerPicker players={{ p10: true, p2: 'they are asleep' }} onPick={onPick} onRefused={onRefused} onCancel={onCancel} />);
+    const picker = screen.getByRole('status');
+    expect(within(picker).getByText('Pick another player')).toBeTruthy();
+    const seats = within(picker).getAllByRole('button', { name: /^Pick p/ });
+    expect(seats.map((b) => b.textContent)).toEqual(['p2', 'p10']);
+    expect([seats[0].getAttribute('aria-disabled'), seats[0].getAttribute('title')]).toEqual(['true', 'they are asleep']);
+    fireEvent.click(seats[0]);
+    expect(onRefused).toHaveBeenLastCalledWith('they are asleep');
+    expect(onPick).not.toHaveBeenCalled();
+    fireEvent.click(seats[1]);
+    expect(onPick).toHaveBeenLastCalledWith('p10');
+    fireEvent.click(within(picker).getByRole('button', { name: 'Cancel' }));
+    expect(onCancel).toHaveBeenCalled();
   });
 });

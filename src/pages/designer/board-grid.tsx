@@ -63,7 +63,7 @@ const RING_STYLE = { boxShadow: `${PIECE_SHADOW}, 0 0 0 3px #fff, 0 0 0 4px #111
 
 /**
  * Diagonal bars across a striped space's whole face: dark ones for a pale space, light ones between them so a dark color band
- * shows them too. They pass clicks through to the space, and sit under its name and its row of owner and pieces.
+ * shows them too. They pass clicks through to the space, and sit under its name, its tags and its row of owner and pieces.
  */
 const STRIPE_FILL = 'repeating-linear-gradient(135deg, rgba(17, 24, 39, 0.3) 0 3px, rgba(255, 255, 255, 0.4) 3px 6px)';
 /** Above the stripes, so what the space says stays readable. */
@@ -73,6 +73,19 @@ const ABOVE_STRIPES = { position: 'relative', zIndex: 2 } as const;
  * would paint over it, and an outline that may be picked would look dashed, as a refused one does.
  */
 const OUTLINE_LAYER = { position: 'absolute', inset: 0, zIndex: 3, pointerEvents: 'none' } as const;
+
+/**
+ * A dark label with light text, which shows on a pale space and on any color band alike. It sits above the stripes, which look the
+ * same whatever the flag is, so the tag is what tells one striped space from another.
+ */
+const TAG_STYLE = { padding: '0 2px', borderRadius: 2, background: '#111827', color: '#fff', font: 'bold 7px/8px sans-serif' } as const;
+
+/**
+ * One line of a striped space's name, which it keeps when its tags are stacked, so the name is never squeezed out. The name and
+ * the row of owner and pieces take less room there (a tight line height, no padding round the name, and a row that is the mark
+ * and its padding in all, not on top of them), so that under two tags the owner mark still shows: a space is about 50px tall.
+ */
+const NAME_LINE = 8;
 
 const markStyle = { flex: '0 0 auto', height: '70%', boxSizing: 'border-box', border: '1px solid #111827' } as const;
 
@@ -165,8 +178,13 @@ function Space({ space, seats, playerFacts, row, col, index, picking }: {
         </div>
       )}
       {striped && <div aria-hidden="true" data-testid="stripes" style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none', backgroundImage: STRIPE_FILL }} />}
-      <div style={{ ...ABOVE_STRIPES, flex: '1 1 auto', minHeight: 0, padding: '1px 2px', textAlign: 'center', overflow: 'hidden', overflowWrap: 'anywhere' }}>{space.name}</div>
-      <div style={{ ...ABOVE_STRIPES, flex: '0 0 auto', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 2, padding: 2, minHeight: MARK + 4 }}>
+      <div style={{ ...ABOVE_STRIPES, flex: '1 1 auto', minHeight: striped ? NAME_LINE : 0, padding: striped ? '0 2px' : '1px 2px', lineHeight: striped ? 1 : undefined, textAlign: 'center', overflow: 'hidden', overflowWrap: 'anywhere' }}>{space.name}</div>
+      {striped && (
+        <div style={{ ...ABOVE_STRIPES, flex: '0 0 auto', display: 'flex', flexWrap: 'wrap', justifyContent: 'center', columnGap: 1, padding: '0 1px' }}>
+          {space.stripes.map((flag) => <span key={flag} data-testid="tag" style={TAG_STYLE}>{flag}</span>)}
+        </div>
+      )}
+      <div style={{ ...ABOVE_STRIPES, flex: '0 0 auto', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 2, padding: 2, minHeight: MARK + 4, boxSizing: striped ? 'border-box' : undefined }}>
         {space.owner !== null
           ? <span title={`Owned by ${space.owner}`} style={{ width: MARK, height: MARK, borderRadius: 2, boxSizing: 'border-box', border: '1px solid #111827', backgroundColor: seatColor(space.owner) }} />
           : <span />}

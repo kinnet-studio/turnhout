@@ -3,11 +3,11 @@ import { StrictMode, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import COLOR_MATCH from '@/games/color-match.rules?raw';
 import RENT_DAY from '@/games/rent-day.rules?raw';
-import { placePiece, queueRoll, setCounter, setOwner, setPlayerFact, withBoardData } from '@/engine/core/lang/board-state';
+import { markOut, placePiece, queueRoll, setCounter, setOwner, setPlayerFact, withBoardData } from '@/engine/core/lang/board-state';
 import { createEngine, initialState } from '@/engine/core/lang/build';
 import { compileGame } from '@/engine/core/lang/compile';
 import { createDefaultLibrary } from '@/engine/core/lang/library';
-import { relocate } from '@/engine/core/lang/zones';
+import { relocate, zoneIdFor } from '@/engine/core/lang/zones';
 import type { DropIntent } from '@/engine/input/table-input-context';
 import { GameServer } from '@/engine/net/game-server';
 import type { CardTableProps } from '@/engine/react';
@@ -505,5 +505,58 @@ describe('Playtest: an auction', () => {
     expect(screen.getAllByText('bank: 32 houses, 12 hotels')).toHaveLength(3);
     expect(screen.getByText('seat: p0 — Your turn — Roll the dice, then buy, build, or end your turn. A double rolls again.')).toBeTruthy();
     expect(named('End your turn')[0].getAttribute('aria-disabled')).toBe('false');
+  });
+});
+
+describe('Playtest: a trade', () => {
+  const start = { ...withBoardData(initialState(rentDay, SEED), rentDay, ['p0', 'p1', 'p2']), turn: { current: 'p0', phase: 'playing' } };
+  // p0 owns Mill Lane (1) and p1 owns Rose Lane (16).
+  const owning = setOwner(setOwner(start, 1, 'p0'), 16, 'p1');
+  const named = (name: string) => screen.getAllByRole('button', { name });
+  const HINT = 'Offer and ask for spaces, cash and kept cards, then propose. The other player accepts or declines.';
+  const startTrade = (initial = owning) => {
+    mountRentDay({ initial });
+    fireEvent.click(named('Trade with another player')[0]);
+    fireEvent.click(within(screen.getByRole('status')).getByRole('button', { name: 'Pick p1' }));
+  };
+
+  it('Review Focus: lists only the other players still in, and starts the trade with the one picked', () => {
+    mountRentDay({ initial: markOut(owning, 'p2') });
+    fireEvent.click(named('Trade with another player')[0]);
+    const picker = screen.getByRole('status');
+    expect(within(picker).getAllByRole('button', { name: /^Pick p/ }).map((b) => b.textContent)).toEqual(['p1']);
+    fireEvent.click(within(picker).getByRole('button', { name: 'Pick p1' }));
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByText(`seat: p0 — trade — Your turn — ${HINT}`)).toBeTruthy();
+    expect(screen.getByText(`seat: p1 — trade — ${HINT} — waiting for p0`)).toBeTruthy();
+  });
+  it('tags a space in the offer on every board, and shows the cash offer on every bank line', () => {
+    startTrade();
+    fireEvent.click(named('Offer')[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Pick Mill Lane' }));
+    expect(document.querySelectorAll('[data-stripes="offered"]')).toHaveLength(3);
+    expect(screen.getAllByTestId('tag').map((tag) => tag.textContent)).toEqual(['offered', 'offered', 'offered']);
+    fireEvent.change(screen.getAllByRole('spinbutton', { name: 'Offer to pay amount' })[0], { target: { value: '100' } });
+    fireEvent.click(named('Offer to pay')[0]);
+    expect(screen.getAllByText('bank: 32 houses, 12 hotels · cash offer 100')).toHaveLength(3);
+  });
+  it('marks the kept cards in the offer on every money line', () => {
+    const pass = owning.cards.find((card) => card.data?.name === 'Get Out Of Jail Free')!.id;
+    startTrade(relocate(owning, [pass], zoneIdFor('kept cards', 'p0'), rentDay));
+    fireEvent.click(named('Offer everything you keep')[0]);
+    expect(screen.getAllByText('p0 1,500 money · proposing · Get Out Of Jail Free (handed over)')).toHaveLength(3);
+  });
+  it("hands the turn to the other player once proposed, who accepts, and goes back to the proposer's turn", () => {
+    startTrade();
+    fireEvent.click(named('Offer')[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Pick Mill Lane' }));
+    fireEvent.click(named('Propose the trade')[0]);
+    expect(screen.getByText(`seat: p1 — trade — Your turn — ${HINT}`)).toBeTruthy();
+    expect(named('Accept the trade')[0].getAttribute('title')).toBe("It's p1's turn.");
+    expect(named('Decline the trade')[1].getAttribute('aria-disabled')).toBe('false');
+    fireEvent.click(named('Accept the trade')[1]);
+    expect(document.querySelectorAll('[data-stripes]')).toHaveLength(0);
+    expect(screen.getAllByTitle('Owned by p1')).toHaveLength(6);
+    expect(screen.getByText('seat: p0 — Your turn — Roll the dice, then buy, build, or end your turn. A double rolls again.')).toBeTruthy();
   });
 });

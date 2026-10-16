@@ -3,13 +3,14 @@ import type { GameState } from '../game-state';
 import type { Json } from '../table-def';
 import { markOut, placePiece, queueRoll, setBank, setCounter, setGameNumber, setOwner, setPlayerFact, setSpaceFact, withBoardData } from './board-state';
 import { readSeatExtras, seatExtras } from './board-view';
+import { changeCard } from './card-facts';
 import { createEngine, initialState, seatsFor } from './build';
 import { compileGame } from './compile';
 import { RuleError } from './diagnostics';
 import { createDefaultLibrary } from './library';
-import { AMOUNT_BOARD, ANY_PLAYER_BOARD, deckGameText, INTERRUPT_BOARD, PICK_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD } from './testing';
+import { AMOUNT_BOARD, ANY_PLAYER_BOARD, deckGameText, HOLDING_BOARD, INTERRUPT_BOARD, PICK_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD } from './testing';
 import type { CompiledGame } from './types';
-import { relocate } from './zones';
+import { relocate, zoneIdFor } from './zones';
 
 const lib = createDefaultLibrary();
 const game = compileGame(TINY_BOARD, lib).game!;
@@ -417,6 +418,46 @@ describe('seat views of a board with cards', () => {
   });
 });
 
+describe('seat views of the flags on kept cards', () => {
+  const holding = compileGame(HOLDING_BOARD, lib).game!;
+  const start: GameState = { ...withBoardData(initialState(holding, 1), holding, seatsFor(2)), turn: { current: 'p0', phase: 'playing' } };
+  const pass = start.cards.find((c) => c.data?.name === 'Pass')!.id;
+  /** p0 keeps the Pass. */
+  const kept = relocate(start, [pass], zoneIdFor('kept cards', 'p0'), holding);
+  const viewIn = (state: GameState, seat: string) => {
+    const { engine, runtime } = createEngine(holding, lib, 2, state);
+    return seatExtras(engine, runtime, engine.getState(), seat);
+  };
+
+  it('lists no flag for a card nothing has flagged, to every seat', () => {
+    for (const seat of ['p0', 'p1']) {
+      const board = viewIn(kept, seat).board!;
+      expect([board.playerCards, board.playerCardFlags], seat).toEqual([{ p0: ['Pass'], p1: [] }, { p0: [[]], p1: [] }]);
+    }
+  });
+  it('lists the flags set on a card, parallel to its name, to every seat', () => {
+    const lent = changeCard(kept, pass, { lent: true }, holding);
+    for (const seat of ['p0', 'p1']) {
+      const board = viewIn(lent, seat).board!;
+      expect([board.playerCards, board.playerCardFlags], seat).toEqual([{ p0: ['Pass'], p1: [] }, { p0: [['lent']], p1: [] }]);
+    }
+  });
+  it('leaves out a flag that was cleared again', () => {
+    const cleared = changeCard(changeCard(kept, pass, { lent: true }, holding), pass, { lent: null }, holding);
+    expect(viewIn(cleared, 'p0').board!.playerCardFlags).toEqual({ p0: [[]], p1: [] });
+  });
+  it('is plain data, and readSeatExtras refuses flags that are missing or not lists of lists of text', () => {
+    const extras = JSON.parse(JSON.stringify(viewIn(changeCard(kept, pass, { lent: true }, holding), 'p0')));
+    const withBoard = (over: { [k: string]: Json }) => ({ ...extras, board: { ...extras.board, ...over } });
+    const { playerCardFlags: _flags, ...noFlags } = extras.board;
+    expect(readSeatExtras(extras)).toEqual(extras);
+    expect(readSeatExtras({ ...extras, board: noFlags })).toBeNull();
+    expect(readSeatExtras(withBoard({ playerCardFlags: { p0: [['lent', 3]] } }))).toBeNull();
+    expect(readSeatExtras(withBoard({ playerCardFlags: { p0: ['lent'] } }))).toBeNull();
+    expect(readSeatExtras(withBoard({ playerCardFlags: [] }))).toBeNull();
+  });
+});
+
 describe('seat views of debts and of flags no bank item goes with', () => {
   // A hotel goes with the bank's hotels; mortgaged goes with nothing, so the page stripes it.
   const TEXT = ANY_PLAYER_BOARD.replace(
@@ -729,7 +770,7 @@ describe('readSeatExtras', () => {
 
   const space = { name: 'Go', color: null, details: {}, facts: {}, stripes: [], owner: null };
   const board = (over: { [k: string]: Json } = {}) => ({
-    spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {}, lastDrawn: null, playerCards: {}, owes: {}, gameNumbers: [], interrupted: false, ...over,
+    spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {}, lastDrawn: null, playerCards: {}, playerCardFlags: {}, owes: {}, gameNumbers: [], interrupted: false, ...over,
   });
   const action = (over: { [k: string]: Json } = {}) => ({ move: 'roll the dice', label: 'Roll', allowed: true, target: null, amount: false, players: null, ...over });
   const picking = (over: { [k: string]: Json } = {}) => action({ target: { prompt: 'Pick a street you own', spaces: { 3: true }, ...over } });
@@ -772,19 +813,19 @@ describe('readSeatExtras', () => {
     ['a target space that is neither true nor a reason', { board: null, actions: [picking({ spaces: { 3: false } })] }],
     ['a target space that is a number', { board: null, actions: [picking({ spaces: { 3: 1 } })] }],
     ['a board that is not an object', { board: 3, actions: [] }],
-    ['a board with no spaces', { board: { pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {}, lastDrawn: null, playerCards: {}, owes: {}, gameNumbers: [], interrupted: false }, actions: [] }],
+    ['a board with no spaces', { board: { pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {}, lastDrawn: null, playerCards: {}, playerCardFlags: {}, owes: {}, gameNumbers: [], interrupted: false }, actions: [] }],
     ['a space with no name', { board: board({ spaces: [{ color: null, details: {}, facts: {}, stripes: [], owner: null }] }), actions: [] }],
     ['a space with no facts', { board: board({ spaces: [{ name: 'Go', color: null, details: {}, stripes: [], owner: null }] }), actions: [] }],
     ['a fact that is text', { board: board({ spaces: [{ ...space, facts: { houses: 'two' } }] }), actions: [] }],
     ['a fact that is null', { board: board({ spaces: [{ ...space, facts: { houses: null } }] }), actions: [] }],
-    ['a board with no bank', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [], playerFacts: {}, lastDrawn: null, playerCards: {}, owes: {}, gameNumbers: [], interrupted: false }, actions: [] }],
+    ['a board with no bank', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [], playerFacts: {}, lastDrawn: null, playerCards: {}, playerCardFlags: {}, owes: {}, gameNumbers: [], interrupted: false }, actions: [] }],
     ['a bank that is not a list', { board: board({ bank: {} }), actions: [] }],
     ['a bank entry with no count', { board: board({ bank: [{ name: 'houses' }] }), actions: [] }],
     ['a bank entry with no name', { board: board({ bank: [{ count: 3 }] }), actions: [] }],
     ['a piece that is not a number', { board: board({ pieces: { p0: 'x' } }), actions: [] }],
     ['a roll of text', { board: board({ roll: 'six' }), actions: [] }],
     ['a counter value that is text', { board: board({ counters: [{ name: 'm', values: { p0: 'x' } }] }), actions: [] }],
-    ['a board with no player facts', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [], lastDrawn: null, playerCards: {}, owes: {}, gameNumbers: [], interrupted: false }, actions: [] }],
+    ['a board with no player facts', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [], lastDrawn: null, playerCards: {}, playerCardFlags: {}, owes: {}, gameNumbers: [], interrupted: false }, actions: [] }],
     ['player facts that are not a map', { board: board({ playerFacts: [] }), actions: [] }],
     ['a seat whose facts are not a map', { board: board({ playerFacts: { p0: true } }), actions: [] }],
     ['a player fact that is text', { board: board({ playerFacts: { p0: { 'in jail': 'yes' } } }), actions: [] }],
