@@ -1,4 +1,5 @@
 import { Container, Graphics, Text } from 'pixi.js';
+import { GAP } from '../core/lang/fit-layout';
 import { CARD_HEIGHT, CARD_WIDTH, cardsByZone, type PlacedCard, type Scene, type Vec2 } from '../core/scene';
 import { TableModel } from '../core/table-model';
 import { placeZone } from '../core/zone-geometry';
@@ -63,22 +64,31 @@ export class PixiTable extends Container {
     this.drawZoneNames(scene);
   }
 
-  /** A zone's name stands above its box, whether or not the box is outlined. Texts are kept by zone, so a move redraws none. */
+  /**
+   * A zone's name stands above its box, whether or not the box is outlined. Only a fitted table names its zones, so a name wraps
+   * to its box and the gap between the zones of a line: two long names side by side never meet. Texts are kept by zone, so a
+   * move redraws none.
+   */
   private drawZoneNames(scene: Scene): void {
     const named = new Set<string>();
     for (const zone of scene.zones) {
       if (zone.label === undefined) continue;
       named.add(zone.id);
+      const box = placeZone(zone, []);
+      const width = box.width + GAP;
       let name = this.nameTexts.get(zone.id);
       if (!name) {
-        name = new Text({ text: zone.label, style: { fontSize: 18, fill: 0xd1d5db } });
+        name = new Text({
+          text: zone.label,
+          style: { fontSize: 18, fill: 0xd1d5db, align: 'center', wordWrap: true, wordWrapWidth: width, breakWords: true },
+        });
         name.label = 'zone-label';
         name.anchor.set(0.5, 1);
         this.nameTexts.set(zone.id, name);
         this.zoneNames.addChild(name);
       }
       if (name.text !== zone.label) name.text = zone.label;
-      const box = placeZone(zone, []);
+      if (name.style.wordWrapWidth !== width) name.style.wordWrapWidth = width;
       name.position.set(box.x, box.y - box.height / 2 - 4);
     }
     for (const [id, name] of [...this.nameTexts]) {

@@ -1,10 +1,9 @@
-import { Graphics, Texture } from 'pixi.js';
+import { Container, Graphics, Text, Texture } from 'pixi.js';
 import { describe, expect, it } from 'vitest';
 import { PixiTable } from './pixi-table';
 import { FaceTextureCache } from './face-texture-cache';
 import { CardSprite } from './card-sprite';
 import type { Scene } from '../core/scene';
-import { Container, Text } from 'pixi.js';
 
 const faces = () => new FaceTextureCache(() => Texture.EMPTY, () => Texture.EMPTY);
 const scene = (ids: string[]): Scene => ({
@@ -114,5 +113,24 @@ describe('zone names', () => {
     const table = new PixiTable({ faces: faces(), createSprite: () => new CardSprite(), showEmptyZones: true });
     table.setScene(scene(['a']));
     expect(texts(table)).toHaveLength(0);
+  });
+
+  it('drops the name of a zone that stays on the table without one', () => {
+    const table = new PixiTable({ faces: faces(), createSprite: () => new CardSprite() });
+    table.setScene(named);
+    table.setScene({ ...named, zones: [{ id: 'shop', layout: 'row', transform: { x: 0, y: 0 }, bounds: { width: 400, height: 140 } }, named.zones[1]] });
+    expect(texts(table)).toHaveLength(0);
+  });
+
+  // Zones of a line stand 20 apart, so a name as wide as its zone and that gap stops short of its neighbour's.
+  it('wraps a long name to its zone\'s width and the gap beside it, centred', () => {
+    const table = new PixiTable({ faces: faces(), createSprite: () => new CardSprite() });
+    table.setScene({
+      cards: [],
+      zones: [...named.zones.slice(0, 1), { id: 'lost', layout: 'pile', transform: { x: 300, y: 0 }, label: 'lost and found pile' }],
+    });
+    const [shop, lost] = texts(table);
+    expect(shop.style).toMatchObject({ wordWrap: true, wordWrapWidth: 420, align: 'center' });
+    expect(lost.style).toMatchObject({ wordWrap: true, wordWrapWidth: 120, align: 'center' });
   });
 });

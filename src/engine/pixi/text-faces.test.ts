@@ -1,10 +1,16 @@
 import { Container, Text } from 'pixi.js';
 import { describe, expect, it } from 'vitest';
-import { textFaceKey } from '../core/lang/cards';
+import COLOR_MATCH from '@/games/color-match.rules?raw';
+import HEARTS from '@/games/hearts.rules?raw';
+import RENT_DAY from '@/games/rent-day.rules?raw';
+import VENOM from '@/games/venom.rules?raw';
+import { createEngine, initialState } from '../core/lang/build';
+import { parseTextFaceKey, textFaceKey } from '../core/lang/cards';
+import { compileGame } from '../core/lang/compile';
+import { createDefaultLibrary } from '../core/lang/library';
 import { CARD_HEIGHT, CARD_WIDTH, type CardState } from '../core/scene';
 import type { FaceDraw } from './face-texture-cache';
-import { designerFaceRenderer, textFaceRenderer } from './text-faces';
-import { labelStyleOf } from './text-faces';
+import { boldTextWidth, designerFaceRenderer, labelStyleOf, textFaceRenderer } from './text-faces';
 
 const card = (over: Partial<CardState> = {}): CardState => ({ id: 'c1', zoneId: 'z', faceUp: true, faceKey: 'back', ...over });
 
@@ -136,4 +142,59 @@ describe('faces of cards with many columns', () => {
     expect(label.anchor.y).toBe(0.5);
     expect(label.y).toBe(-12);
   });
+});
+
+describe('a one-word name on a card with details', () => {
+  const lifted = { fontSize: 14, wordWrapWidth: 88, anchorY: 1, y: 13 };
+
+  it('is measured as the faces draw it, in bold Arial: "Hacker" is just over the big label\'s 80, "Goblin" inside it', () => {
+    expect(boldTextWidth('Hacker', 24)).toBeCloseTo(80.04);
+    expect(boldTextWidth('Goblin', 24)).toBeCloseTo(76.01);
+    expect(boldTextWidth('Hacker', 14)).toBeCloseTo(46.69);
+  });
+
+  it('knows the width of every letter and digit, and counts any other character as a whole font size', () => {
+    for (const letter of 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789') {
+      expect(boldTextWidth(letter, 1000), letter).toBeLessThan(1000);
+    }
+    expect(boldTextWidth('é', 24)).toBe(24);
+  });
+
+  it('is set smaller when it is too wide for the big label, so "Hacker" stays on one line', () => {
+    const looks = labelStyleOf('Hacker', 3);
+    expect(looks).toEqual(lifted);
+    expect(boldTextWidth('Hacker', looks.fontSize)).toBeLessThanOrEqual(looks.wordWrapWidth);
+    const container = drawn(card({ faceKey: textFaceKey({ name: 'Hacker', cost: 6, skill: 'software', output: 2 }) }));
+    const label = container.children.find((ch): ch is Text => ch instanceof Text && ch.text === 'Hacker')!;
+    expect(label.style.fontSize).toBe(14);
+  });
+
+  it('keeps the big label when it fits, whatever its letters', () => {
+    const today = { fontSize: 24, wordWrapWidth: 80, anchorY: 0.5, y: -12 };
+    for (const name of ['Diva', 'Fixer', 'Goblin', 'Archer']) {
+      expect(boldTextWidth(name, 24), name).toBeLessThanOrEqual(80);
+      expect(labelStyleOf(name, 3), name).toEqual(today);
+    }
+  });
+});
+
+describe('the faces of the four games', () => {
+  const lib = createDefaultLibrary();
+  const games = { Hearts: HEARTS, 'Color Match': COLOR_MATCH, Venom: VENOM, 'Rent Day': RENT_DAY };
+  const labelOfFace = (faceKey: string) => drawn(card({ faceKey })).children.find((ch): ch is Text => ch instanceof Text)!;
+
+  for (const [name, text] of Object.entries(games)) {
+    it(`keeps today's big centred label on every card of ${name}`, () => {
+      const game = compileGame(text, lib).game!;
+      const { engine } = createEngine(game, lib, game.players.min, initialState(game, 1));
+      const keys = [...new Set(engine.getState().cards.map((c) => c.faceKey))].filter((key) => parseTextFaceKey(key) !== null);
+      if (name === 'Hearts') expect(keys).toEqual([]);
+      else expect(keys.length).toBeGreaterThan(0);
+      for (const key of keys) {
+        const label = labelOfFace(key);
+        expect({ fontSize: label.style.fontSize, wordWrapWidth: label.style.wordWrapWidth, anchorY: label.anchor.y, y: label.y }, key)
+          .toEqual({ fontSize: 24, wordWrapWidth: 80, anchorY: 0.5, y: -12 });
+      }
+    });
+  }
 });

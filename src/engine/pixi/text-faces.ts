@@ -22,8 +22,9 @@ const LABEL_Y = -12;
 const DETAILS_Y = 16;
 /** A face lists this many of its 'key: value' lines; a card with more columns shows the first ones. */
 export const FACE_DETAILS = 3;
-/** A one-word label this short is the big centred label of every card there has been; longer ones make room for the details. */
-const SHORT_LABEL = 6;
+/** The big label's size and the width it wraps at. */
+const BIG_LABEL = 24;
+const BIG_WRAP = CARD_WIDTH - 20;
 const MEDIUM_WORD = 11;
 /** The corner shows values up to this long whole, and cuts a longer first value to this many letters. */
 const CORNER_LETTERS = 3;
@@ -41,14 +42,31 @@ const detailsOf = (attrs: Record<string, string>): string[] =>
     : [];
 
 /**
- * How the big label is set. A card with at most one detail line, or a label that is one short word, keeps the big centred label
- * it has always had (every face of the four games). A card with more details has less room: its longer label is smaller, and
- * ends just above them.
+ * Bold Arial's widths, in thousandths of the font size: Pixi draws text in Arial unless told otherwise, and Liberation Sans, which
+ * stands in for it where it is missing, has the same widths. A letter not listed counts as a whole font size, so a label of
+ * unknown letters is never said to fit when it might not.
+ */
+const BOLD_WIDTHS: [number, string][] = [
+  [238, "'"], [278, ' ,./Iijl'], [333, '!()-:;[]ft'], [389, '*r'], [500, 'z'], [556, '#$0123456789J_aceksvxy'],
+  [584, '+<=>^~'], [611, '?FLTZbdghnopqu'], [667, 'EPSVXY'], [722, '&ABCDHKNRU'], [778, 'GOQw'], [833, 'M'], [889, '%m'],
+  [944, 'W'], [975, '@'],
+];
+const BOLD_WIDTH = new Map(BOLD_WIDTHS.flatMap(([width, letters]) => [...letters].map((letter) => [letter, width] as const)));
+
+/** How wide `text` is drawn in bold at `fontSize`, as Pixi measures a word to decide where a label wraps. */
+export function boldTextWidth(text: string, fontSize: number): number {
+  return ([...text].reduce((sum, letter) => sum + (BOLD_WIDTH.get(letter) ?? 1000), 0) * fontSize) / 1000;
+}
+
+/**
+ * How the big label is set. A card with at most one detail line keeps the big centred label it has always had (every face of
+ * the four games), and so does a one-word label that fits on one line of it. A card with more details has less room: any other
+ * label is smaller, and ends just above them, so a word too wide for the big label is never broken in the middle.
  */
 export function labelStyleOf(label: string, detailCount: number): { fontSize: number; wordWrapWidth: number; anchorY: number; y: number } {
   const words = label.split(/\s+/).filter((word) => word !== '');
-  if (detailCount <= 1 || (words.length === 1 && words[0].length <= SHORT_LABEL)) {
-    return { fontSize: 24, wordWrapWidth: CARD_WIDTH - 20, anchorY: 0.5, y: LABEL_Y };
+  if (detailCount <= 1 || (words.length === 1 && boldTextWidth(words[0], BIG_LABEL) <= BIG_WRAP)) {
+    return { fontSize: BIG_LABEL, wordWrapWidth: BIG_WRAP, anchorY: 0.5, y: LABEL_Y };
   }
   const longest = Math.max(0, ...words.map((word) => word.length));
   return { fontSize: longest <= MEDIUM_WORD ? 14 : 12, wordWrapWidth: CARD_WIDTH - 12, anchorY: 1, y: DETAILS_Y - 3 };
@@ -75,9 +93,10 @@ const drawText = (attrs: Record<string, string>): FaceDraw => (container) => {
   container.addChild(g);
 
   const details = detailsOf(attrs);
-  const looks = labelStyleOf(labelOf(attrs), details.length);
+  const text = labelOf(attrs);
+  const looks = labelStyleOf(text, details.length);
   const label = new Text({
-    text: labelOf(attrs),
+    text,
     style: { fontSize: looks.fontSize, fontWeight: 'bold', fill: ink, align: 'center', wordWrap: true, wordWrapWidth: looks.wordWrapWidth, breakWords: true },
   });
   label.anchor.set(0.5, looks.anchorY);
