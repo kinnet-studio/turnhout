@@ -27,7 +27,10 @@ const LABEL_ROOM = 24;
 /** Between one line's zones and the names of the next. */
 const LINE_GAP = 16;
 const LINE_WIDTH = TABLE_BOUNDS.max.x - TABLE_BOUNDS.min.x - 2 * MARGIN;
-/** A board row's cards stand a little further apart than a card's width, so the columns hanging under them don't touch. */
+/**
+ * A board row's cards stand a little further apart than a card's width, so the columns hanging under them don't touch while the
+ * row holds up to three; four or more are squeezed together inside the slot.
+ */
 export const BOARD_SPACING = 110;
 /** From a card's bottom edge to the top of the first card hanging under it: room for the caption drawn under the card. */
 export const STACK_GAP = 36;
@@ -114,6 +117,8 @@ export function fittedLayout(zones: ZoneSpec[], viewer: PlayerId): ZoneDef[] {
   const own = zones.filter((z) => z.perPlayer);
   const isPrivate = (spec: ZoneSpec) => spec.visibility !== 'public';
   // Only a zone where every card sits on a card gives up its slot: under any other mark a zone may hold cards that sit on none.
+  // A private one keeps its slot in the strip all the same, so a viewer with no public zone of its own has all its zones along the
+  // bottom, as a table with no band does.
   const isAttached = (spec: ZoneSpec) => !isPrivate(spec) && spec.onCards === 'every';
   const ownId = (spec: ZoneSpec) => zoneIdFor(spec.name, viewer);
 
@@ -136,7 +141,8 @@ export function fittedLayout(zones: ZoneSpec[], viewer: PlayerId): ZoneDef[] {
   // The band runs from under the last shared line's names to above the first private line's; `top` and `bottom` stand there now.
   const board: ZoneDef[] = [];
   const lines = wrap(own.filter((spec) => !isPrivate(spec) && !isAttached(spec)));
-  const height = Math.floor((bottom - top - (lines.length - 1) * (LINE_GAP + LABEL_ROOM)) / lines.length);
+  // With no board zone there is no line to share the band among.
+  const height = lines.length === 0 ? 0 : Math.floor((bottom - top - (lines.length - 1) * (LINE_GAP + LABEL_ROOM)) / lines.length);
   lines.forEach((line, k) => {
     const lineTop = top + k * (height + LINE_GAP + LABEL_ROOM);
     board.push(...placeLine(line, (slot) => lineTop + slot.height / 2, ownId, viewer).map((def) => boardDef(def, height)));
