@@ -7,7 +7,7 @@ import { attachmentProblem } from './attach';
 import { numberIn } from './board';
 import { holderOf, interruptedTurn, setCounter } from './board-state';
 import { cardAttribute, cardFact } from './card-facts';
-import { CHOOSE_PLAYER } from './choices';
+import { CHOOSE_ONE, CHOOSE_PLAYER, type ChoiceOption } from './choices';
 import { isMissing, readsPressCard } from './compile-util';
 import { isNoSuchNumber, MissingPhraseError, RuleError } from './diagnostics';
 import { cardsIn } from './library/support';
@@ -123,7 +123,8 @@ export class LangRuntime {
    * its effect as the player who holds the flag, with no card move, so “their” is theirs too; the space, amount and pick of a press stay
    * as they were. A For each line runs its effect about each card of its group in turn, with no card move, “it” being that card and
    * everything else what the line is about. A choice of a player runs its effect about the player its press filled in, as “that player”,
-   * and does nothing when the press filled in no one (it was not asked).
+   * and does nothing when the press filled in no one (it was not asked). A block of options runs the lines of the option its press
+   * filled in, in order, about the same move and subject, and does nothing when the press filled in none.
    */
   run(ref: PhraseRef, state: GameState, move?: MoveInfo, example?: ExampleEnv, subject?: Subject): GameState {
     if (ref.kind === 'lang' && ref.phrase === 'if') {
@@ -149,6 +150,11 @@ export class LangRuntime {
       const picked = subject?.choices?.[at];
       if (subject === undefined || typeof picked !== 'string' || !this.seats.includes(picked)) return state;
       return this.run(effect, state, move, example, { ...subject, picked });
+    }
+    if (ref.kind === 'lang' && ref.phrase === CHOOSE_ONE) {
+      const [at, , options] = ref.args as [number, CondGroup[], ChoiceOption[]];
+      const chosen = options.find((option) => option.label === subject?.choices?.[at]);
+      return chosen === undefined ? state : chosen.effects.reduce((s, effect) => this.run(effect, s, move, example, subject), state);
     }
     return this.call<EffectFn, GameState>(ref, ['effect', 'given'], (fn) => fn(this.env(state, move, example, subject), ref.args));
   }

@@ -442,7 +442,8 @@ export const SUBJECT = [
  * A card game of jobs that want a mark another job makes. Players start jobs from their stash in their workshop, hire hands from the
  * hall onto a job, and finish a job, which sends a grumpy hand to the scrap and the rest back to the hall. A job opened from the stash
  * needs the mark it wants made in some workshop, and a player who makes none pays the fee to a player of their choice who does. A Vase
- * or Bowl wants no mark and a Tower makes none.
+ * or Bowl wants no mark and a Tower makes none. A job in a workshop other than a Tower can be trimmed in one of three ways, as its sizes
+ * allow: 2 red, 2 gold, or 1 of each.
  */
 export const GUILD_GAME = [
   'Game: Guild', 'Players: 2 to 4', '  Each player has 9 coins that everyone can see.', '  Each player has 2 moves each turn.',
@@ -468,6 +469,11 @@ export const GUILD_GAME = [
   "      Some player has a card in their workshop whose mark is the card's wants.", '    Then:',
   "      They pay the fee to another player of their choice who has a card in their workshop whose mark is the card's wants.",
   "        Only if they have no card in their workshop whose mark is the card's wants.", '      Move it to their workshop.',
+  '  A player may trim a card in their workshop.', '    Then:', '      They choose one:', '        Only if it is not a Tower card.',
+  '        Trim 2 red:', '          Only if its red size is more than 1.', '          It gains 2 red trim.',
+  '        Trim 2 gold:', '          Only if its gold size is more than 1.', '          It gains 2 gold trim.',
+  '        Trim 1 of each:', '          Only if its red size is more than 0.', '          Only if its gold size is more than 0.',
+  '          It gains 1 red trim.', '          It gains 1 gold trim.',
   '  A player may stop.', '    Then:', '      Their moves go back to 0.',
   '  When they have less than 1 move:', '    The turn passes to the left.', '',
   'End:', '  The game ends when the pile is empty.', '  The highest score wins.',

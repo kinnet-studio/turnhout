@@ -1,6 +1,6 @@
 import type { GameState } from '../game-state';
 import { playersIn } from './board-state';
-import { joinOr, secondPersonWords } from './refs';
+import { canon, joinOr, secondPersonWords } from './refs';
 import type { LangRuntime } from './runtime';
 import type { CondGroup, DeclaredAction, MoveInfo, PhraseRef, Subject } from './types';
 
@@ -10,8 +10,14 @@ import type { CondGroup, DeclaredAction, MoveInfo, PhraseRef, Subject } from './
  * that is run about the player picked, as “that player”.
  */
 export const CHOOSE_PLAYER = 'choose player';
-/** A `Then:` block whose press chooses one of its options. */
+/**
+ * A `Then:` block whose press chooses one of its options: “They choose one:”, with a line ending in “:” for each option. Its args are its
+ * place among the button's choices, its `Only if` groups (when it is asked at all) and its options, in the order written.
+ */
 export const CHOOSE_ONE = 'choose one';
+
+/** One option of a block: its label as written, without its colon, the `Only if` groups that must hold for it, and the lines it runs. */
+export type ChoiceOption = { label: string; conditions: CondGroup[]; effects: PhraseRef[] };
 
 /** A choice a press asks: `at` its place among the button's choices, `prompt` what to ask, `options` the seats or labels that answer it, in order. */
 export type AskedChoice = { at: number; kind: 'player' | 'option'; prompt: string; options: string[] };
@@ -50,14 +56,28 @@ function askPlayer(runtime: LangRuntime, ref: PhraseRef, state: GameState, info:
 }
 
 /**
- * The choices a press asks, judged on `state` about the press: each choice whose guard holds and that has a candidate, in order.
- * A player choice's guard is judged about the press itself, with its `info` and `subject`. Its candidates are the seats still in, other
- * than the presser, in seat order, for which `who` holds about them as the move's player: with the press's `info` made by that seat
- * (`{ ...info, by: seat }`) and the subject `{ ...subject, player: seat }`, the card of the press unchanged.
+ * A block of options, as the press asks it, or null when it does not: its guard fails, or none of its options holds. Its options are
+ * those whose `Only if` lines all hold, in the order written, each asked by its label as written.
+ */
+function askOption(runtime: LangRuntime, ref: PhraseRef, state: GameState, info: MoveInfo | undefined, subject: Subject): AskedChoice | null {
+  const [at, guard, options] = ref.args as [number, CondGroup[], ChoiceOption[]];
+  const holds = (groups: CondGroup[]) => runtime.failedGroup(groups, state, info, subject) === null;
+  if (!holds(guard)) return null;
+  const labels = options.filter((option) => holds(option.conditions)).map((option) => option.label);
+  return labels.length === 0 ? null : { at, kind: 'option', prompt: `Choose one: ${joinOr(labels)}.`, options: labels };
+}
+
+/**
+ * The choices a press asks, judged on `state` about the press: each choice whose guard holds and that has a candidate or an option
+ * that holds, in order. Every guard, and every option's `Only if` lines, are judged about the press itself, with its `info` and
+ * `subject`. A player choice's candidates are the seats still in, other than the presser, in seat order, for which `who` holds about
+ * them as the move's player: with the press's `info` made by that seat (`{ ...info, by: seat }`) and the subject
+ * `{ ...subject, player: seat }`, the card of the press unchanged.
  */
 export function askChoices(runtime: LangRuntime, action: DeclaredAction, state: GameState, info: MoveInfo | undefined, subject: Subject): AskedChoice[] {
   return choicesOf(action).flatMap((ref) => {
-    const asked = ref.phrase === CHOOSE_PLAYER ? askPlayer(runtime, ref, state, info, subject) : null;
+    const ask = ref.phrase === CHOOSE_PLAYER ? askPlayer : askOption;
+    const asked = ask(runtime, ref, state, info, subject);
     return asked === null ? [] : [asked];
   });
 }
@@ -65,9 +85,15 @@ export function askChoices(runtime: LangRuntime, action: DeclaredAction, state: 
 /** What a press whose choices are no list names for each of them: a value no choice is answered by. */
 const NOT_A_LIST = Symbol('choices that are no list');
 
-/** The option a named value answers a choice with: a player is matched exactly, and anything but text answers nothing. */
-const answerOf = (choice: AskedChoice, value: unknown): string | undefined =>
-  (typeof value === 'string' ? choice.options.find((option) => option === value) : undefined);
+/**
+ * The option a named value answers a choice with, as the choice has it: a player is matched exactly, a label whatever its case (as the
+ * names of a game are), and anything but text answers nothing.
+ */
+function answerOf(choice: AskedChoice, value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const answers = choice.kind === 'option' ? (option: string) => canon(option) === canon(value) : (option: string) => option === value;
+  return choice.options.find(answers);
+}
 
 /**
  * One entry per choice of the button (`count`), from what the press named (`given`, anything): a choice asked with one option is filled

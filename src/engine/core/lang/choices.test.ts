@@ -5,6 +5,7 @@ import type { Json } from '../table-def';
 import { addToCounter, counterOf, markOut, setCounter } from './board-state';
 import { createEngine, initialState } from './build';
 import { fillChoices } from './choices';
+import type { ChoiceOption } from './choices';
 import { compileGame } from './compile';
 import { pressChoices } from './declared-actions';
 import { createDefaultLibrary } from './library/index';
@@ -311,5 +312,206 @@ describe('a choice line with a mistake in it', () => {
     const lines = text.split('\n');
     expect(messages(text)).toEqual([[lines.lastIndexOf(CHOICE) + 1, hidden], [lines.lastIndexOf(GUARD) + 1, hidden]]);
     expect(compileGame(text, lib).game).toBeUndefined();
+  });
+});
+
+const TRIM = 'trim a card in their workshop';
+const BLOCK = '      They choose one:';
+/** The trim button's block of options, as GUILD_GAME writes it under its `Then:`. */
+const TRIM_BLOCK = [
+  BLOCK, '        Only if it is not a Tower card.',
+  '        Trim 2 red:', '          Only if its red size is more than 1.', '          It gains 2 red trim.',
+  '        Trim 2 gold:', '          Only if its gold size is more than 1.', '          It gains 2 gold trim.',
+  '        Trim 1 of each:', '          Only if its red size is more than 0.', '          Only if its gold size is more than 0.',
+  '          It gains 1 red trim.', '          It gains 1 gold trim.',
+];
+const LABELS = ['Trim 2 red', 'Trim 2 gold', 'Trim 1 of each'];
+const ALL_THREE = 'Choose one: Trim 2 red, Trim 2 gold or Trim 1 of each.';
+const FEWER = 'Give “They choose one:” two or more options, each a line ending in “:” with its lines under it.';
+const LINES_THEN_OPTIONS = 'Under “They choose one:”, write its “Only if …” lines, then each option as a line ending in “:”.';
+const CHOICE_IN_CHOICE = 'A choice can\'t sit inside another choice.';
+
+/** A Tower dealt to a stash, not the one in the pile: the game ends once the pile is empty. */
+const tower = all('Tower').find((id) => cardById(setUp, id)?.zoneId !== 'pile')!;
+/** p0's workshop holds a Statue (red size 2, gold size 4), a Vase (3 and 0), a Bowl (1 and 1) and a Tower (0 and 5). */
+const workshop = arranged([[statue, vase, bowl, tower], 'workshop-p0']);
+/** The trim button pressed by p0 on `card`. */
+const trim = (card: string, extra: Record<string, Json> = {}): Move => ({ type: TRIM, by: 'p0', cardId: card, ...extra });
+const dataOf = (state: GameState, card: string) => cardById(state, card)?.data;
+/** The number of the last line of `text` that reads `line`. */
+const lastLineOf = (text: string, line: string) => text.split('\n').lastIndexOf(line) + 1;
+
+describe('choosing among options: compiled', () => {
+  it('makes the block a choice of one of its options, first among the trim button\'s choices, with its guard and each option\'s lines', () => {
+    const button = game.phases[0].actions.find((action) => action.words === TRIM)!;
+    expect(button.effects).toHaveLength(1);
+    const [block] = button.effects;
+    expect(block).toMatchObject({ kind: 'lang', phrase: 'choose one', line: lineOf(GUILD_GAME, BLOCK), text: 'They choose one:' });
+    const [at, guard, options] = block.args as [number, CondGroup[], ChoiceOption[]];
+    expect(at).toBe(0);
+    expect(guard).toHaveLength(1);
+    expect(options.map((option) => option.label)).toEqual(LABELS);
+    expect(options.map((option) => option.conditions.length)).toEqual([1, 1, 2]);
+    expect(options.map((option) => option.effects.length)).toEqual([1, 1, 2]);
+  });
+});
+
+describe('choosing among options: pressed', () => {
+  it('asks which, with each label as written, when several options hold, and changes nothing until told', () => {
+    const { engine, runtime } = playing(workshop);
+    const before = engine.getState();
+    expect(pressChoices(runtime, workshop, trim(statue))).toEqual([{ at: 0, kind: 'option', prompt: ALL_THREE, options: LABELS }]);
+    expect(engine.dispatch(trim(statue))).toMatchObject({ ok: false, reason: ALL_THREE });
+    expect(engine.getState()).toBe(before);
+  });
+  it('takes a label named in any case, and runs that option\'s lines only', () => {
+    const { engine } = playing(workshop);
+    expect(engine.dispatch(trim(statue, { choices: ['trim 2 GOLD'] }))).toMatchObject({ ok: true });
+    expect(dataOf(engine.getState(), statue)).toMatchObject({ 'gold trim': 2 });
+    expect(dataOf(engine.getState(), statue)).not.toHaveProperty('red trim');
+  });
+  it('fills in the one option that holds: 2 red for a Vase, 1 of each for a Bowl', () => {
+    const { engine, runtime } = playing(workshop);
+    const onlyRed = { at: 0, kind: 'option', prompt: 'Choose one: Trim 2 red.', options: ['Trim 2 red'] };
+    expect(pressChoices(runtime, workshop, trim(vase))).toEqual([onlyRed]);
+    expect(engine.dispatch(trim(vase))).toMatchObject({ ok: true });
+    expect(dataOf(engine.getState(), vase)).toMatchObject({ 'red trim': 2 });
+    expect(dataOf(engine.getState(), vase)).not.toHaveProperty('gold trim');
+    expect(engine.dispatch(trim(bowl))).toMatchObject({ ok: true });
+    expect(dataOf(engine.getState(), bowl)).toMatchObject({ 'red trim': 1, 'gold trim': 1 });
+  });
+  it('is not asked when its guard fails: a Tower is pressed and nothing is trimmed', () => {
+    const { engine, runtime } = playing(workshop);
+    expect(pressChoices(runtime, workshop, trim(tower))).toEqual([]);
+    expect(engine.dispatch(trim(tower, { choices: ['Trim 2 gold'] }))).toMatchObject({ ok: true });
+    expect(dataOf(engine.getState(), tower)).not.toHaveProperty('red trim');
+    expect(dataOf(engine.getState(), tower)).not.toHaveProperty('gold trim');
+  });
+  it('Review Focus: no option holds: is not asked, and the press changes nothing', () => {
+    // A Vase made 1 red and 0 gold: too little red for 2, no gold for 1 of each.
+    const shrunk = (card: GameState['cards'][number]) => (card.id === vase ? { ...card, data: { ...card.data, 'red size': 1 } } : card);
+    const small = { ...workshop, cards: workshop.cards.map(shrunk) };
+    const { engine, runtime } = playing(small);
+    expect(pressChoices(runtime, small, trim(vase))).toEqual([]);
+    expect(engine.dispatch(trim(vase))).toMatchObject({ ok: true });
+    // The press is kept as one made this turn, and that is all that changes.
+    const { 'lang:turn': pressed, ...data } = engine.getState().data;
+    expect(pressed).toEqual({ p0: [TRIM] });
+    expect({ ...engine.getState(), data }).toEqual(small);
+  });
+  it('replays a press whose option was filled in to the same trim, and undoes it', () => {
+    const { engine } = playing(workshop);
+    const before = engine.getState();
+    expect(engine.dispatch(trim(vase))).toMatchObject({ ok: true });
+    const log = [...engine.getLog()];
+    expect(log).toEqual([trim(vase)]);
+    const replayed = playing(workshop).engine;
+    replayed.loadLog(log);
+    expect(replayed.getState()).toEqual(engine.getState());
+    engine.undo();
+    expect(engine.getState()).toEqual(before);
+  });
+});
+
+describe('Review Focus: a press that names an option wrongly', () => {
+  it('refuses a label the block lacks and a seat, with the prompt, and changes nothing', () => {
+    const { engine } = playing(workshop);
+    const before = engine.getState();
+    for (const named of ['Trim 3', 'p1']) {
+      expect(engine.dispatch(trim(statue, { choices: [named] }))).toMatchObject({ ok: false, reason: ALL_THREE });
+    }
+    expect(engine.getState()).toBe(before);
+  });
+  it('P9: refuses an option that does not hold even when only one does', () => {
+    const { engine } = playing(workshop);
+    expect(engine.dispatch(trim(vase, { choices: ['Trim 2 gold'] }))).toMatchObject({ ok: false, reason: 'Choose one: Trim 2 red.' });
+  });
+});
+
+describe('choosing among options: one sequence with a chosen player', () => {
+  /** GUILD_GAME with the trim block in the open button's Then: too, after its payee and before the card moves. */
+  const BOTH = compiled(edited(GUILD_GAME, `${GUARD}\n`, `${GUARD}\n${TRIM_BLOCK.join('\n')}\n`));
+
+  it('numbers the payee 0 and the trim 1, in the order written', () => {
+    const button = BOTH.phases[0].actions.find((action) => action.words === OPEN)!;
+    const choices = button.effects.filter((ref) => ref.kind === 'lang').map((ref) => [ref.phrase, ref.args[0]]);
+    expect(choices).toEqual([['choose player', 0], ['choose one', 1]]);
+  });
+  it('pays the player named and trims as named', () => {
+    const { engine } = playing(twoProviders, BOTH);
+    expect(engine.dispatch(open(statue, { choices: ['p2', 'Trim 1 of each'] }))).toMatchObject({ ok: true });
+    const state = engine.getState();
+    expect(coins(state)).toEqual([7, 9, 11]);
+    expect(dataOf(state, statue)).toMatchObject({ 'red trim': 1, 'gold trim': 1 });
+    expect(cardById(state, statue)?.zoneId).toBe('workshop-p0');
+  });
+  it('is refused with the payee\'s prompt when only the trim is named, and with the trim\'s when only the payee is', () => {
+    const { engine } = playing(twoProviders, BOTH);
+    const before = engine.getState();
+    expect(engine.dispatch(open(statue, { choices: [null, 'Trim 1 of each'] }))).toMatchObject({ ok: false, reason: TWO_PROVIDERS });
+    expect(engine.dispatch(open(statue, { choices: ['p2'] }))).toMatchObject({ ok: false, reason: ALL_THREE });
+    expect(engine.getState()).toBe(before);
+  });
+});
+
+describe('a block of options with a mistake in it', () => {
+  const OPTION_LINES = TRIM_BLOCK.slice(5).join('\n');
+
+  it('needs two options or more, on the block\'s line', () => {
+    const text = edited(GUILD_GAME, `\n${OPTION_LINES}`, '');
+    expect(messages(text)).toEqual([[lineOf(text, BLOCK), FEWER]]);
+  });
+  it('names two options with one label, on the second, whatever their case', () => {
+    const text = edited(GUILD_GAME, '        Trim 2 gold:', '        TRIM 2 red:');
+    expect(messages(text)).toEqual([[lineOf(text, '        TRIM 2 red:'), 'Two options here are both called “TRIM 2 red”.']]);
+  });
+  it('takes no effect line directly under the block', () => {
+    const PAY = '        Pay 1 coin.';
+    const text = edited(GUILD_GAME, `${TRIM_BLOCK[1]}\n`, `${TRIM_BLOCK[1]}\n${PAY}\n`);
+    expect(messages(text)).toEqual([[lineOf(text, PAY), LINES_THEN_OPTIONS]]);
+  });
+  it('P21: takes no Only if line after an option', () => {
+    const LATE = '        Only if its gold size is more than 2.';
+    const text = beforeStop([LATE]);
+    expect(messages(text)).toEqual([[lineOf(text, LATE), LINES_THEN_OPTIONS]]);
+  });
+  it('takes no choice inside an option: neither a choice of a player nor another block', () => {
+    const PAY = '          They pay the fee to another player of their choice who has a card in their workshop.';
+    const paying = edited(GUILD_GAME, '          It gains 2 red trim.\n', `          It gains 2 red trim.\n${PAY}\n`);
+    expect(messages(paying)).toEqual([[lineOf(paying, PAY), CHOICE_IN_CHOICE]]);
+    const INNER = '          They choose one:';
+    const inner = [
+      INNER, '            Trim 1 red:', '              It gains 1 red trim.', '            Trim 1 gold:', '              It gains 1 gold trim.',
+    ];
+    const nested = edited(GUILD_GAME, '          It gains 2 red trim.\n', `          It gains 2 red trim.\n${inner.join('\n')}\n`);
+    expect(messages(nested)).toEqual([[lineOf(nested, INNER), CHOICE_IN_CHOICE]]);
+  });
+  it('takes no choice directly under the block either', () => {
+    const PAY = '        They pay the fee to another player of their choice who has a card in their workshop.';
+    const text = edited(GUILD_GAME, `${TRIM_BLOCK[1]}\n`, `${TRIM_BLOCK[1]}\n${PAY}\n`);
+    expect(messages(text)).toEqual([[lineOf(text, PAY), CHOICE_IN_CHOICE]]);
+  });
+  it('is refused under a When rule, on its line', () => {
+    const under = TRIM_BLOCK.map((line) => line.slice(2));
+    const text = edited(GUILD_GAME, '  When they have less than 1 move:\n', `  When they have less than 1 move:\n${under.join('\n')}\n`);
+    expect(messages(text)).toContainEqual([lineOf(text, under[0]), MISPLACED]);
+  });
+  it('Review Focus: would tell the presser a card they can\'t see, on its guard and on each option\'s Only if lines', () => {
+    const hidden = 'This line would tell the player what the card is, though they can\'t see the cards in the pile. Check it in the Then: lines, after a reveal.';
+    const text = beforeStop(['  A player may peek a card in the pile.', '    Then:', ...TRIM_BLOCK]);
+    const onlyIfs = TRIM_BLOCK.filter((line) => line.trim().startsWith('Only if'));
+    expect(onlyIfs).toHaveLength(5);
+    expect(messages(text)).toEqual(onlyIfs.map((line) => [lastLineOf(text, line), hidden]));
+    expect(compileGame(text, lib).game).toBeUndefined();
+  });
+});
+
+describe('filling in an option', () => {
+  const options = ['Trim 2 red', 'Trim 1 of each'];
+  const asked = [{ at: 0, kind: 'option' as const, prompt: 'Choose one: Trim 2 red or Trim 1 of each.', options }];
+  it('matches a label in any case and fills it in as written', () => {
+    expect(fillChoices(asked, 1, ['TRIM 1 OF EACH'])).toEqual(['Trim 1 of each']);
+    expect(fillChoices(asked, 1, ['Trim 3'])).toBe(asked[0].prompt);
+    expect(fillChoices(asked, 1, [])).toBe(asked[0].prompt);
   });
 });
