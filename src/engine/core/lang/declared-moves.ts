@@ -96,7 +96,7 @@ export function declaredMoveHandler(verb: string, runtime: LangRuntime): MoveHan
         cards: moved.cards.map((c) => (c.id === info.cardId ? { ...c, data: { ...c.data, movedBy: info.by } } : c)),
       };
       const done = decl.effects.reduce((s, ref) => runtime.run(ref, s, info), marked);
-      return runtime.checkAttachments(endsTurn(phase, verb) ? clearTurnLog(done) : done, decl);
+      return runtime.checkAttachments(endsTurn(phase, verb) ? clearTurnLog(done) : done, { line: decl.line });
     },
   };
 }
