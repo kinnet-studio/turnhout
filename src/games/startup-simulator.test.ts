@@ -3,10 +3,12 @@ import STARTUP_SIMULATOR from './startup-simulator.rules?raw';
 import { compileGame } from '@/engine/core/lang/compile';
 import { createDefaultLibrary } from '@/engine/core/lang/library';
 import { runExamples } from '@/engine/core/lang/examples';
-import { createEngine, initialState } from '@/engine/core/lang/build';
+import { createEngine, initialState, seatsFor, tableDefFor } from '@/engine/core/lang/build';
+import { counterOf } from '@/engine/core/lang/board-state';
 import { NEXT_CARD_KEY } from '@/engine/core/lang/cards';
-import { ROUND_KEY, START_PLAYER_KEY } from '@/engine/core/lang/turns';
-import { zoneIdFor } from '@/engine/core/lang/zones';
+import { markTurnStarted, ROUND_KEY, START_PLAYER_KEY } from '@/engine/core/lang/turns';
+import { relocate, zoneIdFor } from '@/engine/core/lang/zones';
+import { HIDDEN_FACE_KEY, deriveScene } from '@/engine/core/derive-scene';
 import { zoneCards, type GameState } from '@/engine/core/game-state';
 import type { CardState } from '@/engine/core/scene';
 
@@ -44,12 +46,30 @@ function setUp(players: number, seed: number): GameState {
   return createEngine(game!, lib, players, initialState(game!, seed)).engine.getState();
 }
 
+/** The id of the first card whose name is `name`, as dealt at seed 1. */
+const idOf = (name: string) => fresh().cards.find((card) => nameOf(card) === name)!.id;
+
+/**
+ * Two players, p0's turn in the actions phase, as an example arranges a game: every card starts in its own deck, unshuffled, and
+ * `zones` says which cards some zones hold instead, bottom first. What those zones held before goes to the box.
+ */
+function arrange(zones: Record<string, string[]>) {
+  let state: GameState = { ...fresh(), turn: { current: 'p0', phase: 'actions' } };
+  for (const [zoneId, ids] of Object.entries(zones)) {
+    state = relocate(state, zoneCards(state, zoneId).map((card) => card.id), 'box', game!);
+    state = relocate(state, ids, zoneId, game!);
+  }
+  return createEngine(game!, lib, 2, markTurnStarted(state)).engine;
+}
+
+const namesIn = (state: GameState, zoneId: string) => zoneCards(state, zoneId).map(nameOf);
+
 describe('Startup Simulator (designer language)', () => {
   it('compiles with no diagnostics', () => expect(diagnostics).toEqual([]));
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(10);
+    expect(results).toHaveLength(21);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -180,5 +200,81 @@ describe('Startup Simulator (designer language)', () => {
     it.each([1, 6])('is for 2 to 5 players, not %i (ruling 25)', (players) => {
       expect(() => createEngine(game!, lib, players, initialState(game!, 1))).toThrow('This game is for 2 to 5 players.');
     });
+  });
+
+  describe('decks that run short', () => {
+    it('researches a seed deck of 2 cards, shows both and keeps 1 (§14.A.2)', () => {
+      const engine = arrange({
+        'seed-market': [idOf('Basic Website'), idOf('USB Gadget')],
+        'seed-deck': [idOf('To-Do List'), idOf('Flashlight App')],
+      });
+      expect(engine.dispatch({ type: 'research the seed deck', by: 'p0' }).ok).toBe(true);
+
+      const researching = engine.getState();
+      expect(researching.turn).toMatchObject({ current: 'p0', phase: 'research' });
+      expect(namesIn(researching, 'research-p0')).toEqual(['To-Do List', 'Flashlight App']);
+      expect(zoneCards(researching, 'seed-deck')).toEqual([]);
+
+      expect(engine.dispatch({ type: 'keep', cardId: idOf('Flashlight App'), by: 'p0' }).ok).toBe(true);
+      const kept = engine.getState();
+      expect(namesIn(kept, 'backlog-p0')).toEqual(['Flashlight App']);
+      expect(namesIn(kept, 'open-idea-pool')).toEqual(['To-Do List']);
+      expect(zoneCards(kept, 'research-p0')).toEqual([]);
+      expect(kept.turn).toMatchObject({ current: 'p0', phase: 'actions' });
+      expect(counterOf(kept, 'actions', 'p0')).toBe(2);
+    });
+
+    it('leaves the agency row at 3 cards when the talent deck is empty (§13)', () => {
+      const engine = arrange({ 'talent-deck': [], 'agency-row': ['Hacker', 'Architect', 'Veteran', 'Diva'].map(idOf) });
+      expect(engine.dispatch({ type: 'hire', cardId: idOf('Hacker'), by: 'p0' }).ok).toBe(true);
+
+      const state = engine.getState();
+      expect(namesIn(state, 'agency-row')).toEqual(['Architect', 'Veteran', 'Diva']);
+      expect(zoneCards(state, 'talent-deck')).toEqual([]);
+      expect(namesIn(state, 'bench-p0')).toEqual(['Hacker']);
+    });
+  });
+
+  it('sets the Market Crash aside when it is the last growth card, and ends the game once the round is finished (§12)', () => {
+    const engine = arrange({
+      'growth-market': [idOf('Neobank'), idOf('Search Engine')],
+      'growth-deck': [idOf('Market Crash')],
+    });
+    expect(engine.dispatch({ type: 'draft', cardId: idOf('Neobank'), by: 'p0' }).ok).toBe(true);
+
+    const drafted = engine.getState();
+    expect(namesIn(drafted, 'crash-pile')).toEqual(['Market Crash']);
+    expect(namesIn(drafted, 'growth-market')).toEqual(['Search Engine']);
+    expect(zoneCards(drafted, 'growth-deck')).toEqual([]);
+    expect(drafted.result).toBeUndefined();
+
+    expect(engine.dispatch({ type: 'end their actions', by: 'p0' }).ok).toBe(true);
+    expect(engine.getState().turn?.current).toBe('p1');
+    expect(engine.getState().result).toBeUndefined();
+    expect(engine.dispatch({ type: 'end their actions', by: 'p1' }).ok).toBe(true);
+    expect(engine.getState().result).toBeDefined();
+  });
+
+  it('shows the bench, the backlog and the research row only to their owner (§14)', () => {
+    const engine = arrange({
+      'bench-p0': [idOf('Hacker'), idOf('Sales Rep')],
+      'backlog-p0': [idOf('Smart Lock')],
+      'seed-market': [idOf('To-Do List'), idOf('Flashlight App')],
+      'seed-deck': [idOf('Dating App'), idOf('Mobile Wallet'), idOf('Messaging App')],
+    });
+    expect(engine.dispatch({ type: 'research the seed deck', by: 'p0' }).ok).toBe(true);
+
+    const { cards } = engine.getState();
+    const tableDef = tableDefFor(game!, seatsFor(2));
+    const hidden = ['research-p0', 'bench-p0', 'backlog-p0'];
+    const ownCards = cards.filter((card) => hidden.includes(card.zoneId));
+    expect(ownCards.map((card) => card.zoneId).sort()).toEqual([
+      'backlog-p0', 'bench-p0', 'bench-p0', 'research-p0', 'research-p0', 'research-p0',
+    ]);
+
+    const seen = (viewer: string) => deriveScene(tableDef, { cards }, viewer).cards.filter((card) => hidden.includes(card.zoneId));
+    expect(seen('p1').map((card) => card.faceKey)).toEqual(ownCards.map(() => HIDDEN_FACE_KEY));
+    expect(seen('p0').map((card) => card.faceKey)).toEqual(ownCards.map((card) => card.faceKey));
+    expect(ownCards.every((card) => card.faceKey !== HIDDEN_FACE_KEY)).toBe(true);
   });
 });

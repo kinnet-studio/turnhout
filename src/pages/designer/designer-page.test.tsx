@@ -160,6 +160,20 @@ describe('DesignerPage', () => {
     expect(screen.getByText('playtest 4')).toBeTruthy();
   });
 
+  it('loads Startup Simulator with no problems, all 21 examples passing, 2 to 5 players and Play on', () => {
+    render(<DesignerPage />);
+    loadSample('Startup Simulator');
+    expect(rules().value).toBe(SAMPLES.find((s) => s.name === 'Startup Simulator')!.text);
+    expect(screen.getByText('No problems found.')).toBeTruthy();
+    expect(screen.getByText('21 of 21 examples pass')).toBeTruthy();
+    const select = screen.getByLabelText('Players') as HTMLSelectElement;
+    expect([...select.options].map((o) => o.value)).toEqual(['2', '3', '4', '5']);
+    expect(playButton().disabled).toBe(false);
+    fireEvent.change(select, { target: { value: '3' } });
+    play();
+    expect(screen.getByText('playtest 3')).toBeTruthy();
+  });
+
   it('loads Venom with no problems, all 7 examples passing, and Play on', () => {
     render(<DesignerPage />);
     loadSample('Venom');

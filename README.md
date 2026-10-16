@@ -63,7 +63,7 @@ bun run dev        # then open http://localhost:5173/#designer
 
 The designer page is a text editor for the rule language, with a line-numbered editor, a list of problems (each with a hint), and the results of the game's own `Example:`s. It checks the text as you type and keeps it in your browser.
 
-- Start from a sample: **Load sample** has Hearts, Color Match, Rent Day and Venom (`src/games/hearts.rules`, `src/games/color-match.rules`, `src/games/rent-day.rules`, `src/games/venom.rules`).
+- Start from a sample: **Load sample** has Hearts, Color Match, Rent Day, Startup Simulator and Venom (`src/games/hearts.rules`, `src/games/color-match.rules`, `src/games/rent-day.rules`, `src/games/startup-simulator.rules`, `src/games/venom.rules`).
 - A phrase the language doesn't know yet is flagged with the closest phrases it does know. **Copy for developer** copies a stub for a developer to implement; designers don't write code.
 - A name the rules never defined (a zone, phase, move, card value or attribute) is flagged with the closest names they do define, for the designer to fix.
 - **Play** is available once the rules read cleanly. It puts every seat on one screen (pick the player count first when the game allows a range), with undo and restart. Editing the rules ends the playtest; Play starts a fresh game under the new rules.
@@ -124,6 +124,32 @@ Phase: playing
 - **A phase that starts with them.** `The trade phase starts with them.` interrupts the turn as the auction does, and the player who pressed stays current.
 - **In the playtest,** the player picker, a tag on each striped space, laid over its color band so a name of two lines still shows ("offered" with "mortgaged"), kept cards marked with their flags (`Get Out Of Jail Free (handed over)`), and the cash numbers on the bank line.
 - **Rent Day** trades on the proposer's own turn, never while anyone owes. A street whose color has a building can't be traded, and a mortgaged space trades as it is.
+
+**Card games with turns.** A card game can keep counters, give each turn a budget, and play in rounds from a start player:
+
+- **Counters without a board.** Lines indented under `Players:` give each player a counter with no `Board:` section: `Each player has 7 capital that everyone can see.` and `Players pay with capital.` Facts and game numbers work there too.
+- **A budget each turn.** `Each player has 3 actions each turn.` sets the counter back to 3 as each turn starts. `They spend 1 action.` takes from it and `Their actions go back to 0.` empties it. Counters can be named in the singular (`they have at least 1 action`).
+- **Turns as steps.**
+  - "they" is the player whose turn it is in a phase where players take turns, so `When they have less than 1 action, go to bench cleanup.` reads.
+  - `The turn passes to the left.` ends a turn with no press, and runs no `When this phase starts:` lines.
+  - `The start player is chosen at random.` in Setup picks who starts; without it, p0 does.
+  - Every turn starts by itself: counters for each turn are reset and the `When a player's turn starts:` lines run. Each round starts with the start player and runs the `When a round starts:` lines.
+  - `When this phase starts:` under the first phase is flagged, since those lines run only on the game's first turn.
+- **`In every phase:`** holds rules that fire whatever the phase, such as a market that refills whenever it runs short.
+- **The End.**
+  - `The game ends when the crash pile is not empty and the round is finished.` waits until the last player of the round has had their turn.
+  - `Each player scores 1 point for every 5 capital.` rounds down.
+  - `The highest score wins, and tied players share the win.` Examples say `Then p0 and p1 win`.
+- **Cards.**
+  - A card move can ask for and pay the number the card shows: `Only if they have at least the card's cost in capital.` and `They pay the card's cost.`
+  - `A stack called junior software devs that never runs out:` makes a card each time one is wanted: `A new Junior Software Dev goes to their bench.`
+  - A blank cell in a card table is left out, so the card has no value for that column.
+  - Rows and queues: `Move the bottom card of the open idea pool to the box.`, `When the growth market has the market crash:`, `Move the market crash from their research to the crash pile.`, `Deal up to 3 cards from the seed deck to their research.` (it takes what's there), `Deal 1 card from the seed deck to each backlog.` and `The market crash goes into the bottom fifth of the growth deck.`
+  - Examples check the order of a row with `…, in that order` and where a card lies with `the market crash is among the bottom 8 cards of the growth deck`.
+- **Startup Simulator (slice 1a)** plays the table, money and turns: recruiting, drafting, Research, Cleanup, the Market Crash and a first score. Its 21 examples pin rulings 10, 12, 13, 18, 20, 24 and 25.
+  - Building products comes in slice 1b.
+  - The game still leaves out the game-end Ops check (§12.2) and the last Milestone check (§12.3).
+  - Growth cards are drafted but can't be built until slice 3.
 
 **Saying a button was pressed.** `they have rolled this turn` means any roll button was pressed, so a game with `A player may roll the dice.` and `A player may roll for a double.` reads "rolled" as either. To name one, write its whole wording in the past: `they have rolled for a double this turn`.
 
@@ -238,7 +264,7 @@ src/
               standard and text card faces
     input/    pointer tracker, KMT state machine + parser (Pixi federation off)
     react/    <CardTable> declarative bridge
-  games/              Hearts, Color Match, Rent Day and Venom, written in the designer language
+  games/              Hearts, Color Match, Rent Day, Startup Simulator and Venom, written in the designer language
   pages/
     table-demo/       deck + demo page
     hearts-demo/      four-seat Hearts over loopback channels

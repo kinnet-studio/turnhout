@@ -181,10 +181,53 @@ Phase: actions
     Then:
       They pay 1.
       They spend 1 action.
+  A player may draft a card from the seed market to their backlog.
+    Only if they have at least 1 action.
+    Only if their backlog has fewer than 4 cards.
+    Then:
+      They spend 1 action.
+  A player may draft a card from the growth market to their backlog.
+    Only if they have at least 1 action.
+    Only if their backlog has fewer than 4 cards.
+    Then:
+      They spend 1 action.
+  A player may draft a card from the open idea pool to their backlog.
+    Only if they have at least 2 actions.
+    Only if their backlog has fewer than 4 cards.
+    Then:
+      They spend 2 actions.
+  A player may research the seed deck.
+    Only if they have at least 1 action.
+    Only if their backlog has fewer than 4 cards.
+    Only if the seed deck is not empty.
+    Then:
+      They spend 1 action.
+      Deal up to 3 cards from the seed deck to their research.
+      The research phase starts with them.
+  A player may research the growth deck.
+    Only if they have at least 1 action.
+    Only if their backlog has fewer than 4 cards.
+    Only if the growth deck is not empty.
+    Then:
+      They spend 1 action.
+      Deal up to 3 cards from the growth deck to their research.
+      The research phase starts with them.
   A player may end their actions.
     Then:
       Their actions go back to 0.
   When they have less than 1 action, go to bench cleanup.
+
+Phase: research
+  Hint: Keep one of the cards you drew. The rest go to the open idea pool.
+  A player may keep a card from their research to their backlog.
+    Then:
+      Move their research to the open idea pool.
+      Go back to the interrupted turn.
+  When their research has the market crash:
+    Move the market crash from their research to the crash pile.
+    If the growth deck is not empty, move the top card of the growth deck to their research.
+  When their research is empty:
+    Go back to the interrupted turn.
 
 Phase: bench cleanup
   Hint: Your bench holds 5 cards. Drag the rest to the open job market.
@@ -326,3 +369,141 @@ Example: each round starts with the start player (ruling 13)
   When p0 ends their actions
   Then it is p1's turn
   And p1 has 3 actions
+
+Example: each half of the product market refills from its own deck (ruling 18)
+  Given the seed market has a To-Do List and a Smart Lock
+  And the seed deck has a Dating App and a Mobile Wallet
+  And the growth market has a Neobank and a Search Engine
+  And the growth deck has a Smart Grid
+  When p0 drafts the Smart Lock
+  Then it is accepted
+  And the seed market has a To-Do List and a Mobile Wallet
+  And the seed deck has a Dating App
+  When p0 drafts the Neobank
+  Then it is accepted
+  And the growth market has a Search Engine and a Smart Grid
+  And the growth deck is empty
+  And p0's backlog has a Smart Lock and a Neobank
+  And p0 has 1 action
+
+Example: research draws 3 and keeps 1 (ruling 18)
+  Given the seed market has a To-Do List and a Flashlight App
+  And the seed deck has a Smart Lock, a Dating App and a Mobile Wallet
+  When p0 researches the seed deck
+  Then it is accepted
+  And the phase is research
+  And it is p0's turn
+  And p0 has 2 actions
+  And p0's research has a Smart Lock, a Dating App and a Mobile Wallet
+  When p0 keeps the Dating App
+  Then it is accepted
+  And p0's backlog has a Dating App
+  And the open idea pool has a Smart Lock and a Mobile Wallet, in that order
+  And p0's research is empty
+  And the phase is actions
+
+Example: the cards not kept enter the open idea pool in the order they were drawn (ruling 12)
+  Given the seed market has a Smart Lock and a Mobile Wallet
+  And the open idea pool has a To-Do List, a Flashlight App, a Basic Website and a USB Gadget
+  And the seed deck has a Dating App, a Viral Video App and a Messaging App
+  When p0 researches the seed deck
+  And p0 keeps the Viral Video App
+  Then it is accepted
+  And the open idea pool has a Flashlight App, a Basic Website, a USB Gadget, a Dating App and a Messaging App, in that order
+  And the box has a To-Do List
+
+Example: the open idea pool costs 2 actions (section 14)
+  Given p0 has 1 action
+  And the open idea pool has a Smart Lock
+  When p0 drafts the Smart Lock
+  Then it is rejected because "they have at least 2 actions"
+  Given p0 has 2 actions
+  When p0 drafts the Smart Lock
+  Then it is accepted
+  And p0's backlog has a Smart Lock
+  And p0 has 0 actions
+  And it is p1's turn
+
+Example: ideation stops at a fourth backlog card (section 14)
+  Given p0's backlog has a To-Do List, a Smart Lock, a Dating App and a Mobile Wallet
+  And the seed market has a Messaging App and a Health Tracker
+  When p0 drafts the Messaging App
+  Then it is rejected because "their backlog has fewer than 4 cards"
+  When p0 researches the seed deck
+  Then it is rejected because "their backlog has fewer than 4 cards"
+  And p0 has 3 actions
+
+Example: the market crash in a refill is set aside, and the round is finished first (section 12)
+  Given p0 is the start player
+  And the growth market has a Neobank and a Search Engine
+  And the growth deck has a Smart Grid and the Market Crash
+  When p0 drafts the Neobank
+  Then it is accepted
+  And the crash pile has the Market Crash
+  And the growth market has a Search Engine and a Smart Grid
+  And the game is not over
+  When p0 ends their actions
+  Then it is p1's turn
+  And the game is not over
+  When p1 ends their actions
+  Then the game is over
+
+Example: the market crash in research is set aside and replaced (section 12)
+  Given the growth market has a Streaming Service and an Esports League
+  And the growth deck has a Smart Grid, a Neobank, the Market Crash and a Search Engine
+  When p0 researches the growth deck
+  Then it is accepted
+  And the crash pile has the Market Crash
+  And p0's research has a Neobank, a Search Engine and a Smart Grid
+  And the growth deck is empty
+  When p0 keeps the Search Engine
+  Then the open idea pool has a Neobank and a Smart Grid, in that order
+
+Example: research that finds only the market crash keeps nothing, and the turn goes on
+  Given the growth market has a Streaming Service and an Esports League
+  And the growth deck has the Market Crash
+  When p0 researches the growth deck
+  Then it is accepted
+  And the crash pile has the Market Crash
+  And the phase is actions
+  And p0 has 2 actions
+  And p0's research is empty
+  And p0's backlog is empty
+
+Example: the game ends only once the round is finished (rulings 13 and 25)
+  Given 3 players
+  And the crash pile has the Market Crash
+  And it is p1's turn
+  When p1 ends their actions
+  Then it is p2's turn
+  And the game is not over
+  When p2 ends their actions
+  Then the game is over
+
+Example: 1 point for every 5 capital, vaporware, and tied players share the win (ruling 24)
+  Given 3 players
+  And the crash pile has the Market Crash
+  And p0 has 39 capital
+  And p1 has 50 capital
+  And p2 has 75 capital
+  And p0's backlog has a Smart Lock
+  And p1's backlog has a Neobank
+  And p2's backlog has a Global Currency
+  And it is p2's turn
+  When p2 ends their actions
+  Then the game is over
+  And p0 scores 5
+  And p1 scores 5
+  And p2 scores 5
+  And p0, p1 and p2 win
+
+Example: the highest score wins
+  Given the crash pile has the Market Crash
+  And p0 has 10 capital
+  And p1 has 9 capital
+  And it is p1's turn
+  When p1 ends their actions
+  Then the game is over
+  And p0 scores 2
+  And p1 scores 1
+  And p0 wins
