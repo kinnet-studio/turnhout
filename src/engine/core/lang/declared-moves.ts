@@ -1,9 +1,9 @@
 import { cardById, type GameState } from '../game-state';
 import type { Move, MoveHandler } from '../moves';
-import type { PlayerId } from '../scene';
+import type { CardState, PlayerId } from '../scene';
 import { clearTurnLog, endsTurn } from './board-state';
 import type { LangRuntime } from './runtime';
-import type { CompiledPhase, DeclaredMove, MoveInfo, SeatRef, ZoneRef } from './types';
+import type { CompiledGame, CompiledPhase, DeclaredMove, MoveInfo, SeatRef, ZoneRef } from './types';
 import { otherSeat, relocate, topCard, zoneIdFor, zoneInfo } from './zones';
 
 const NOT_ON_TABLE = "That card isn't on the table.";
@@ -30,6 +30,13 @@ function seatOfMove(of: SeatRef, seats: PlayerId[], by: PlayerId): PlayerId | nu
 /** The zone as the designer named it, said to the player making the move: “their hand” becomes “your hand”. */
 export const yours = (text: string) => text.replace(/^their\s+/i, 'your ');
 
+/** Whether the zone is a pile, whose top card is the only one a move may take. */
+export const isPile = (game: CompiledGame, zoneId: string): boolean => zoneInfo(game, zoneId)?.spec.layout === 'pile';
+
+/** Whether a move may take the card from where it lies: any card of a hand or a row, only the top card of a pile. */
+export const isTakeable = (game: CompiledGame, state: GameState, card: CardState): boolean =>
+  !isPile(game, card.zoneId) || topCard(state, card.zoneId)?.id === card.id;
+
 const joinOr = (items: string[]) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} or ${items.at(-1)}`);
 
 /** The current phase's declaration of `verb` that allows the move, with the move as its phrases see it; else why not. */
@@ -53,8 +60,7 @@ function choose(
   });
   if (there.length === 0) return `You can't ${verb} a card there.`;
 
-  const pile = zoneInfo(runtime.game, card.zoneId)?.spec.layout === 'pile';
-  if (pile && topCard(state, card.zoneId)?.id !== card.id) return `You can only take the top card of ${yours(there[0].decl.fromText)}.`;
+  if (!isTakeable(runtime.game, state, card)) return `You can only take the top card of ${yours(there[0].decl.fromText)}.`;
 
   let failure: string | undefined;
   for (const { decl, to } of there) {

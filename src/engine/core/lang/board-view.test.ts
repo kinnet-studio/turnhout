@@ -959,6 +959,30 @@ describe('buttons that pick a card', () => {
     expect(built.engine.dispatch({ type: PEEK, by: 'p0', cardId: r3 }).ok).toBe(true);
     expect(built.engine.getState().cards.find((c) => c.id === r3)!.zoneId).toBe('case-p0');
   });
+  it('Review Focus: judges a face-down card without the lines about the card, so the view tells no hidden card from another', () => {
+    const PEEK = 'peek a card in the other player\'s stash';
+    const text = CARD_PICK_GAME.replace('Players: 2 to 3', 'Players: 2').replace('  A player may stop.\n', [
+      `  A player may ${PEEK}.`, '    Only if the card is not a Ruby.', '    Only if they have at least 1 coin.', '    Then:', '      Move it to their case.',
+      '  A player may stop.', '',
+    ].join('\n'));
+    expect(text.split('\n').length).toBe(CARD_PICK_GAME.split('\n').length + 5);
+    expect(compileGame(text, lib).diagnostics).toEqual([]);
+    const inStash = (s: GameState) => relocate(s, [r3, o2], 'stash-p1', g);
+    const hidden = picks(inStash, text);
+    expect(view('p0', hidden, PEEK).cards!.cards).toEqual([{ id: r3, name: 'a face-down card', allowed: true }, { id: o2, name: 'a face-down card', allowed: true }]);
+    // The press still judges the card itself.
+    expect(hidden.engine.canDispatch({ type: PEEK, by: 'p0', cardId: r3 })).toBe('the card is not a Ruby');
+    expect(hidden.engine.canDispatch({ type: PEEK, by: 'p0', cardId: o2 })).toBe(true);
+    // What does not read the card still speaks for each: the turn (p0's stash holds r2 alone now), and a line about the player alone.
+    expect(view('p1', hidden, PEEK).cards!.cards).toEqual([{ id: r2, name: 'a face-down card', allowed: "It's p0's turn." }]);
+    const poor = view('p0', picks((s) => setCounter(inStash(s), 'coins', 'p0', 0), text), PEEK);
+    expect([poor.allowed, ...poor.cards!.cards.map((c) => c.allowed)]).toEqual(Array(3).fill('they have at least 1 coin'));
+    // Shown to p0, the same cards are judged one by one.
+    const shownTo = (s: GameState): GameState => ({ ...s, cards: s.cards.map((c) => (c.id === r3 || c.id === o2 ? { ...c, revealTo: ['p0'] } : c)) });
+    expect(view('p0', picks((s) => shownTo(inStash(s)), text), PEEK).cards!.cards).toEqual([
+      { id: r3, name: 'Ruby', allowed: 'the card is not a Ruby' }, { id: o2, name: 'Opal', allowed: true },
+    ]);
+  });
   it('is plain data, and readSeatExtras reads it back, and nothing else for the cards', () => {
     const built = picks();
     const extras = seatExtras(built.engine, built.runtime, built.engine.getState(), 'p0');

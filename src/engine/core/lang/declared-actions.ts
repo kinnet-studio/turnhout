@@ -2,11 +2,11 @@ import { cardById, zoneCards, type GameState } from '../game-state';
 import type { Move, MoveHandler } from '../moves';
 import type { PlayerId } from '../scene';
 import { addToCounter, clearTurnLog, counterOf, endsTurn, isOut, playersIn, recordAction } from './board-state';
-import { moveZoneId, yours } from './declared-moves';
+import { isPile, isTakeable, moveZoneId, yours } from './declared-moves';
 import { counted, secondPersonWords } from './refs';
 import type { LangRuntime } from './runtime';
 import type { CardPick, CompiledPhase, DeclaredAction, MoveInfo, Subject } from './types';
-import { relocate, topCard, zoneInfo } from './zones';
+import { relocate } from './zones';
 
 const OUT = "You're out of the game.";
 
@@ -71,9 +71,6 @@ export function cardPrompt(action: DeclaredAction): string {
 /** Why a button that picks a card in a zone can't be pressed while the zone holds none. */
 export const noCardIn = (zoneText: string): string => `There is no card in ${yours(zoneText)}.`;
 
-/** Whether the zone is a pile, whose top card is the only one a move may take. */
-const isPile = (runtime: LangRuntime, zoneId: string): boolean => zoneInfo(runtime.game, zoneId)?.spec.layout === 'pile';
-
 /**
  * The cards a button that picks a card offers `seat`: the ids in the zone it picks from, in slot order, or only the top card of a
  * pile. None when that zone is no seat's at this table (“the other player's stash” at a table of three).
@@ -82,7 +79,7 @@ export function cardCandidates(runtime: LangRuntime, action: DeclaredAction, sta
   const zoneId = moveZoneId(pickOf(action).from, runtime.seats, seat);
   if (zoneId === null) return [];
   const ids = zoneCards(state, zoneId).map((card) => card.id);
-  return isPile(runtime, zoneId) ? ids.slice(-1) : ids;
+  return isPile(runtime.game, zoneId) ? ids.slice(-1) : ids;
 }
 
 /** Who a press is about, and for a button that picks a card the move its lines read, as a card move's lines read theirs. */
@@ -98,7 +95,7 @@ function aboutCards(action: DeclaredAction, pick: CardPick, runtime: LangRuntime
   const card = typeof cardId === 'string' ? cardById(state, cardId) : undefined;
   const from = moveZoneId(pick.from, runtime.seats, by);
   if (!card || from === null || card.zoneId !== from) return cardPrompt(action);
-  if (isPile(runtime, from) && topCard(state, from)?.id !== card.id) return `You can only take the top card of ${yours(pick.fromText)}.`;
+  if (!isTakeable(runtime.game, state, card)) return `You can only take the top card of ${yours(pick.fromText)}.`;
   const to = pick.to === null ? card.zoneId : moveZoneId(pick.to, runtime.seats, by);
   // Like a card move whose zone is no seat's at this table: no card the player could pick would change that.
   if (to === null) return `You can't ${secondPersonWords(action.base)} a card there.`;
@@ -219,6 +216,20 @@ export function targetCandidates(runtime: LangRuntime, action: DeclaredAction, s
 /** The seats a button that picks another player may be pointed at for `seat`: every one still in but `seat`, in seat order. */
 export function playerCandidates(runtime: LangRuntime, state: GameState, seat: PlayerId): PlayerId[] {
   return playersIn(state, runtime.seats).filter((other) => other !== seat);
+}
+
+/**
+ * Whether `seat` could press the button that picks a card with `cardId`, a card it can't see, judged by nothing that tells one such
+ * card from another: whether it is one the button takes from where it lies, the cost, and every `Only if` line that does not read the
+ * card, about the seat alone. A seat that is out can press nothing. Like `amountReady`, it asks nothing of the turn or the flow, and
+ * the press itself still judges the card.
+ */
+export function faceDownReady(runtime: LangRuntime, action: DeclaredAction, state: GameState, seat: PlayerId, cardId: string): true | string {
+  if (isOut(state, seat)) return OUT;
+  const press = aboutCards(action, pickOf(action), runtime, state, { type: action.words, by: seat, cardId }, seat);
+  if (typeof press === 'string') return press;
+  const blind = action.conditions.filter((group) => !runtime.readsCard(group));
+  return costRefusal(action, state, seat) ?? runtime.failedGroup(blind, state, undefined, { player: seat, space: null, card: null }) ?? true;
 }
 
 /**

@@ -3,8 +3,11 @@ import type { Placement, TableDef, ZoneDef } from './table-def';
 
 export const HIDDEN_FACE_KEY = 'back';
 
-/** Whether `viewer` (a real player id) may see the true face of `card`. */
-export function isRevealed(card: CardState, zone: ZoneDef | undefined, viewer: PlayerId): boolean {
+/**
+ * Whether `viewer` (a real player id) may see the true face of `card`. Only the zone's visibility and owner matter, so a caller that
+ * knows a zone without its place on the table can ask too.
+ */
+export function isRevealed(card: CardState, zone: Pick<ZoneDef, 'visibility' | 'owner'> | undefined, viewer: PlayerId): boolean {
   return (
     card.faceUp === true ||
     (zone?.visibility ?? 'public') === 'public' ||

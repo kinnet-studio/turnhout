@@ -128,6 +128,17 @@ export class LangRuntime {
     return group.refs.some((ref) => ref.kind !== 'lang' && this.library.get(ref.kind, ref.phrase)?.needsAmount === true);
   }
 
+  /**
+   * Whether a line of the group reads the card a press is about: the card a move makes, or “it”. Only such phrases may, so a group
+   * without one says the same of every card. Looked up as `readsAmount` does; a ref nobody wrote a phrase for reads nothing.
+   */
+  readsCard(group: CondGroup): boolean {
+    return group.refs.some((ref) => {
+      const entry = ref.kind === 'lang' ? undefined : this.library.get(ref.kind, ref.phrase);
+      return entry?.needsMove === true || entry?.needsCard === true;
+    });
+  }
+
   /** Whether a button's target phrase allows the player in `subject` to pick `space`. */
   allowsTarget(ref: PhraseRef, state: GameState, subject: Subject, space: number): boolean {
     return this.call<TargetFn, boolean>(ref, ['target'], (fn) => fn(this.env(state, undefined, undefined, subject), ref.args, space));

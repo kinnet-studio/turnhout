@@ -1,5 +1,6 @@
 // What one seat sees of a board game beyond the table: the board with its pieces and numbers, and the seat's buttons.
 // Everything here is plain `Json`, so the net layer can carry it in a view without knowing a board exists.
+import { isRevealed } from '../derive-scene';
 import type { GameEngine } from '../game-engine';
 import { zoneCards, type GameState } from '../game-state';
 import type { CardState, PlayerId } from '../scene';
@@ -9,7 +10,7 @@ import {
   bankOf, counterOf, gameNumber, interruptedTurn, isOut, lastDrawn, latestRoll, owedTo, ownerOf, pieceAt, playerFact, spaceFact, type Creditor, type LastDrawn,
 } from './board-state';
 import { cardFact, cardName } from './card-facts';
-import { amountPrompt, amountReady, cardCandidates, cardPrompt, noCardIn, playerCandidates, targetCandidates } from './declared-actions';
+import { amountPrompt, amountReady, cardCandidates, cardPrompt, faceDownReady, noCardIn, playerCandidates, targetCandidates } from './declared-actions';
 import { friendlyError, friendlyReason } from './friendly';
 import { secondPersonWords } from './refs';
 import type { LangRuntime } from './runtime';
@@ -264,14 +265,12 @@ function playersView(
 }
 
 /**
- * Whether `seat` sees the card's face, by the rule the table's own view follows: the card is face up, or its zone is one everyone sees,
- * or one only its owner sees and the seat owns it, or the card is shown to the seat or to everyone.
+ * Whether `seat` sees the card's face: the table's own rule (`isRevealed`), asked of the card's zone as the table lays it out, with the
+ * zone's visibility and its seat as owner, or 'shared'.
  */
 export function seesFace(game: CompiledGame, card: CardState, seat: PlayerId): boolean {
   const zone = zoneInfo(game, card.zoneId);
-  const visibility = zone?.spec.visibility ?? 'public';
-  return card.faceUp === true || visibility === 'public' || (visibility === 'owner' && zone?.seat === seat)
-    || card.revealTo === 'all' || (Array.isArray(card.revealTo) && card.revealTo.includes(seat));
+  return isRevealed(card, zone ? { visibility: zone.spec.visibility, owner: zone.seat ?? 'shared' } : undefined, seat);
 }
 
 /** A card as a button that picks it names it: by its name, the way its face is labelled, else as the page names any card. */
@@ -281,10 +280,27 @@ function pickName(card: CardState, game: CompiledGame): string {
 }
 
 /**
- * Which cards a button that picks one may be pointed at, and the button's own verdict from them. Each card it offers is asked of the
- * engine with the card, as the move would be sent; the button works when any card does, and otherwise says why the first does not,
- * or that there is no card to pick. A card the seat can't see is offered by its id as a face-down card, so that the view tells nothing
- * the table hides. A seat that is out picks nothing.
+ * Whether `seat` could pick a card it can't see: the move pressed with no card answers for all that is no card's (the turn, the phase,
+ * the game being over), and the rest is judged without the lines that read the card, so that the verdict is the same for every such
+ * card and gives none of them away.
+ */
+function faceDownVerdict(
+  engine: GameEngine, runtime: LangRuntime, state: GameState, seat: PlayerId, action: DeclaredAction, cardId: string,
+): true | string {
+  const verdict = allowedNow(engine, state, seat, action.words);
+  if (verdict !== cardPrompt(action)) return verdict;
+  try {
+    return faceDownReady(runtime, action, state, seat, cardId);
+  } catch (e) {
+    return friendlyError(e);
+  }
+}
+
+/**
+ * Which cards a button that picks one may be pointed at, and the button's own verdict from them. Each card the seat can see is asked of
+ * the engine with the card, as the move would be sent; the button works when any card does, and otherwise says why the first does not,
+ * or that there is no card to pick. A card the seat can't see is offered by its id as a face-down card, judged by nothing about the
+ * card itself (see `faceDownVerdict`), so that the view tells nothing the table hides. A seat that is out picks nothing.
  */
 function cardPickView(
   engine: GameEngine, runtime: LangRuntime, state: GameState, seat: PlayerId, action: DeclaredAction,
@@ -293,8 +309,9 @@ function cardPickView(
   if (isOut(state, seat) && state.result === undefined) return { cards: view, allowed: OUT_OF_GAME };
   for (const id of cardCandidates(runtime, action, state, seat)) {
     const card = state.cards.find((c) => c.id === id)!;
-    const name = seesFace(runtime.game, card, seat) ? pickName(card, runtime.game) : 'a face-down card';
-    view.cards.push({ id, name, allowed: allowedNow(engine, state, seat, action.words, { cardId: id }) });
+    view.cards.push(seesFace(runtime.game, card, seat)
+      ? { id, name: pickName(card, runtime.game), allowed: allowedNow(engine, state, seat, action.words, { cardId: id }) }
+      : { id, name: 'a face-down card', allowed: faceDownVerdict(engine, runtime, state, seat, action, id) });
   }
   // Once the game is over every button says so, as the ones that pick nothing do, whatever is left to pick.
   if (state.result !== undefined) return { cards: view, allowed: friendlyReason('game is over') };

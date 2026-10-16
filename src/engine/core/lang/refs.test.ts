@@ -44,7 +44,7 @@ describe('vocabulary types', () => {
       ['zone', '[zone]'], ['zones', '[zones]'], ['perzone', '[zone]'], ['sharedzone', '[zone]'], ['player', '[player]'], ['players', '[players]'],
       ['phase', '[phase]'], ['move', '[action]'], ['attribute', '[attribute]'], ['card', '[card]'], ['cardlist', '[cards]'], ['cardclass', '[kind of card]'],
       ['space', '[space]'], ['spaceclass', '[kind of space]'], ['spaceattr', '[space detail]'], ['counter', '[counter]'],
-      ['action', '[action]'], ['targetaction', '[action]'], ['amountaction', '[action]'], ['pickaction', '[action]'], ['done', '[action done]'],
+      ['action', '[action]'], ['targetaction', '[action]'], ['amountaction', '[action]'], ['pickaction', '[action]'], ['cardaction', '[action]'], ['done', '[action done]'],
       ['spacekind', '[kind of space]'], ['spaceflag', '[space fact]'], ['spacenumber', '[space fact]'], ['cardflag', '[card fact]'],
       ['playerflag', '[player fact]'], ['playernumber', '[player fact]'], ['gamenumber', '[game number]'], ['banked', '[bank item]'],
       ['holder', '[the player who is …]'],
@@ -779,7 +779,7 @@ describe('names the game never defined', () => {
   const missing = (what: string, name: string, suggestions: string[]) => ({ message: `There is no ${what} called “${name}”.`, suggestions });
 
   // Actions and what was done are phrases of their own, not names to misspell, so they have no loose shape.
-  const NAMES = VOCAB_TYPES.filter((t) => !['action', 'targetaction', 'amountaction', 'pickaction', 'done'].includes(t.name));
+  const NAMES = VOCAB_TYPES.filter((t) => !['action', 'targetaction', 'amountaction', 'pickaction', 'cardaction', 'done'].includes(t.name));
 
   it('gives every type of names a loose shape, and no other', () => {
     expect(VOCAB_TYPES.filter((t) => t.loose).map((t) => t.name)).toEqual(NAMES.map((t) => t.name));

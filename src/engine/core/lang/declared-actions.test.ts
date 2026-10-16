@@ -11,8 +11,8 @@ import {
 import { createEngine, flowDefFor, initialState, seatsFor } from './build';
 import { compileGame } from './compile';
 import {
-  amountPrompt, amountReady, cardCandidates, cardPrompt, costRefusal, declaredActionHandler, hasCost, noCardIn, payCost, pickPlayerPrompt, playerCandidates,
-  targetCandidates,
+  amountPrompt, amountReady, cardCandidates, cardPrompt, costRefusal, declaredActionHandler, faceDownReady, hasCost, noCardIn, payCost, pickPlayerPrompt,
+  playerCandidates, targetCandidates,
 } from './declared-actions';
 import { friendlyError } from './friendly';
 import { runExamples } from './examples';
@@ -931,6 +931,20 @@ describe('buttons that pick a card', () => {
     expect(compileGame(text, lib).diagnostics).toEqual([]);
     const { engine } = picks(undefined, text);
     for (const cardId of [r2, o2]) expect(engine.canDispatch({ type: "gift a card from their stash to p2's case", by: 'p0', cardId })).toBe("You can't gift a card there.");
+  });
+
+  it('judges a card the player can not see by nothing about the card: where it lies, the cost, and the lines about the player', () => {
+    const { engine, runtime } = picks(undefined, adding(CARD_PICK_GAME, SELL_LINE, '    Only if the card is not a Ruby.'));
+    const s = engine.getState();
+    const [buy, sell] = [actionNamed(BUY, runtime.game), actionNamed(SELL, runtime.game)];
+    // The line about the card is left to the press.
+    expect(faceDownReady(runtime, sell, s, 'p0', r2)).toBe(true);
+    expect(engine.canDispatch({ type: SELL, by: 'p0', cardId: r2 })).toBe('the card is not a Ruby');
+    expect(faceDownReady(runtime, sell, s, 'p0', r1)).toBe('Pick a card in your stash to sell.');
+    expect(faceDownReady(runtime, sell, markOut(s, 'p0'), 'p0', r2)).toBe("You're out of the game.");
+    // “the card's cost” reads the card; the move it costs does not.
+    expect(faceDownReady(runtime, buy, setCounter(s, 'coins', 'p0', 0), 'p0', r1)).toBe(true);
+    expect(faceDownReady(runtime, buy, setCounter(s, 'moves', 'p0', 0), 'p0', r1)).toBe('they have at least 1 move');
   });
 
   it('lists the cards each seat could pick, in slot order', () => {

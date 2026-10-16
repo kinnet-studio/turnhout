@@ -735,7 +735,7 @@ const PICKACTION = wordType('pickaction', '[action]', (v) => v.actions.filter((a
  * the base, not one button, since several may share it (a buy to the stash and a buy to the case): the rest of the example's words, and
  * where the card lies, say which is pressed.
  */
-export const CARDACTION = wordType(
+const CARDACTION = wordType(
   'cardaction', '[action]', (v) => v.actions.filter((a) => a.picksCard === true).map((a) => [thirdPersonWords(a.base), a.base]), undefined,
 );
 
@@ -790,7 +790,8 @@ const DONE: ParamType = {
 /** Parameter types whose text depends on the game being compiled. */
 export const VOCAB_TYPES: ParamType[] = [
   ZONE, ZONES, PERZONE, SHAREDZONE, PLAYER, PLAYERS, PHASE, MOVE, ATTRIBUTE, CARD, CARDLIST, CARDCLASS, SPACE, SPACECLASS, SPACEATTR, COUNTER, ACTION,
-  TARGETACTION, AMOUNTACTION, PICKACTION, DONE, SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, PLAYERFLAG, PLAYERNUMBER, GAMENUMBER, BANKED, HOLDER,
+  TARGETACTION, AMOUNTACTION, PICKACTION, CARDACTION, DONE, SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, PLAYERFLAG, PLAYERNUMBER, GAMENUMBER, BANKED,
+  HOLDER,
 ];
 
 const TYPES_BY_NAME = new Map(VOCAB_TYPES.map((t) => [t.name, t] as const));

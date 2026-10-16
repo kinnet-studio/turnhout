@@ -1,5 +1,5 @@
 import { PhraseLibrary, STATIC_TYPES } from '../phrases';
-import { CARDACTION, VOCAB_TYPES } from '../refs';
+import { VOCAB_TYPES } from '../refs';
 import { registerAmountPhrases } from './amount-phrases';
 import { registerBoardPhrases } from './board-phrases';
 import { registerCardPickPhrases } from './card-pick-phrases';
@@ -44,5 +44,5 @@ const REGISTRARS: ((lib: PhraseLibrary) => PhraseLibrary)[] = [
 
 /** Every phrase that ships with the language. */
 export function createDefaultLibrary(): PhraseLibrary {
-  return REGISTRARS.reduce((lib, register) => register(lib), new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES, CARDACTION]));
+  return REGISTRARS.reduce((lib, register) => register(lib), new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES]));
 }
