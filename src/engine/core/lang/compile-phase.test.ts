@@ -1126,11 +1126,22 @@ describe('buttons that carry an amount', () => {
       [31, '“the amount is more than the pot” only makes sense in a button whose wording ends in “an amount”, like “A player may give an amount.”'],
     );
   });
-  it('makes a button that picks a space no amount button, whatever it ends in before “on”', () => {
-    const built = compileGame(AMOUNT_BOARD.replace('  A player may end their turn.', '  A player may plant an amount on a street they own.\n  A player may end their turn.'), lib);
+  it('says on the button line, and only there, that a button cannot both pick a space and carry an amount', () => {
+    const both = [
+      '  A player may bid an amount on a street they own.', '    Only if the amount is more than the pot.', '    Then:', '      The pot is the amount.',
+    ].join('\n');
+    const text = AMOUNT_BOARD.replace('  A player may end their turn.', `${both}\n  A player may end their turn.`);
+    const line = text.split('\n').indexOf('  A player may bid an amount on a street they own.') + 1;
+    // Its lines that read the amount are not blamed too: the button line says what to change.
+    expect(compileGame(text, lib).diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message])).toEqual([
+      [line, 'A button can\'t both pick a space and carry an amount: drop “an amount” or “on a street they own”.'],
+    ]);
+  });
+  it('leaves a button that picks a space and says “an amount” earlier in its words a plain button that picks a space', () => {
+    const built = compileGame(AMOUNT_BOARD.replace('  A player may end their turn.', '  A player may plant an amount of seed on a street they own.\n  A player may end their turn.'), lib);
     expect(built.diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
     expect(built.game!.phases[0].actions.find((a) => a.verb === 'plant')).toMatchObject({
-      amount: false, base: 'plant an amount', target: { kind: 'target' },
+      amount: false, base: 'plant an amount of seed', target: { kind: 'target' },
     });
   });
   it('reads “an amount” in any capitals, and leaves the designer\'s capitals on the label', () => {

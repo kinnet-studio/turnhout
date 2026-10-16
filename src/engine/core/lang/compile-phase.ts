@@ -241,6 +241,9 @@ function otherPick(written: string, vocab: Vocab): { written: string | null } | 
   return null;
 }
 
+/** A button whose words before the space it picks end in “an amount” (“raise an amount on a field they own”) means to do both. */
+const pickAndAmount = (target: string) => `A button can't both pick a space and carry an amount: drop “an amount” or “on ${target}”.`;
+
 /** What an action's button says: its words in the second person, as the player reads them. */
 export function actionLabel(words: string): string {
   const spoken = secondPersonWords(words);
@@ -262,9 +265,12 @@ function compileAction(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx):
   if (pick !== null) {
     addProblem(ctx.diagnostics, node.line, `Write “${pick.written ?? 'on a …'}” so the player picks one.`, { kind: 'invalid', text: normalizeLine(node.text) });
   }
+  // Said once on the button line; its lines are then read as the designer meant them, with the amount, so none is blamed for it.
+  const both = targetText !== null && AMOUNT_WORDING.test(baseWritten);
+  if (both) addProblem(ctx.diagnostics, node.line, pickAndAmount(targetText), { kind: 'invalid', text: normalizeLine(node.text) });
   // An action is about the player who presses it and the space it picks, else the space their piece is on; a button that carries an amount has it.
-  const { conditions, effects } = readRuleBody(node, { ...ctx, player: true, space: true, amount });
-  if (reserved || pick !== null || (target !== null && isMissing(target))) return null;
+  const { conditions, effects } = readRuleBody(node, { ...ctx, player: true, space: true, amount: amount || both });
+  if (reserved || pick !== null || both || (target !== null && isMissing(target))) return null;
   return { verb, words, base, label: actionLabel(baseWritten), target, anyone, amount, conditions, effects, line: node.line };
 }
 
