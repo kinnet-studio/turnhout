@@ -440,8 +440,9 @@ export const SUBJECT = [
 
 /**
  * A card game of jobs that want a mark another job makes. Players start jobs from their stash in their workshop, hire hands from the
- * hall onto a job, and finish a job, which sends a grumpy hand to the scrap and the rest back to the hall. A Vase or Bowl wants no mark
- * and a Tower makes none.
+ * hall onto a job, and finish a job, which sends a grumpy hand to the scrap and the rest back to the hall. A job opened from the stash
+ * needs its mark made in some workshop, and a player who makes none pays the fee to a player of their choice who does. A Vase or Bowl
+ * wants no mark and a Tower makes none.
  */
 export const GUILD_GAME = [
   'Game: Guild', 'Players: 2 to 4', '  Each player has 9 coins that everyone can see.', '  Each player has 2 moves each turn.',
@@ -463,6 +464,10 @@ export const GUILD_GAME = [
   '  A player may hire a card from the hall to a card in their workshop.', '    Then:', '      It goes to their crew, on the target card.',
   '  A player may finish a card in their workshop.', '    Then:', '      Every card on it whose mood is grumpy goes to the scrap.',
   '      Every card on it goes to the hall.', '      Move it to the scrap.',
+  '  A player may open a card in their stash.', '    Only if one of:', '      The card has no wants.',
+  "      Some player has a card in their workshop whose mark is the card's wants.", '    Then:',
+  "      They pay the fee to another player of their choice who has a card in their workshop whose mark is the card's wants.",
+  "        Only if they have no card in their workshop whose mark is the card's wants.", '      Move it to their workshop.',
   '  A player may stop.', '    Then:', '      Their moves go back to 0.',
   '  When they have less than 1 move:', '    The turn passes to the left.', '',
   'End:', '  The game ends when the pile is empty.', '  The highest score wins.',

@@ -12,12 +12,13 @@ import type { CardFilter, CardGroup, CondGroup, ParamType, PhraseKind, PhraseRef
  * `amount` is true only for the lines of a button whose wording ends in “an amount”: its press carries a number. `picked` is true
  * only for the lines of a button whose wording ends in “another player”: its press picks a player. `cards` is true only for the lines
  * of a button that picks some cards (“the picked cards”), and `onto` only for those of a button that picks a card for its cards to go
- * to (“the target card”); absent means false. `worked` names the values the game works out for cards, which no line may change;
- * absent means none.
+ * to (“the target card”); absent means false. `choices` is true only for the lines of a button that picks a card, or that picks
+ * nothing (no space, amount or player): its `Then:` lines may ask for a choice, since only such a press can be shown with one; absent
+ * means false. `worked` names the values the game works out for cards, which no line may change; absent means none.
  */
 export type LineCtx = {
   library: PhraseLibrary; vocab: Vocab; gameName: string; inMove: boolean; player: boolean; space: boolean; card: boolean; drawn: boolean;
-  amount: boolean; picked: boolean; cards?: boolean; onto?: boolean; worked?: readonly string[]; diagnostics: Diagnostic[];
+  amount: boolean; picked: boolean; cards?: boolean; onto?: boolean; choices?: boolean; worked?: readonly string[]; diagnostics: Diagnostic[];
 };
 
 const MAX_SUGGESTIONS = 3;
@@ -58,6 +59,17 @@ const NO_GROUP_NAMED = (head: string) => `“${head}” doesn't say which cards.
 const NOTHING_FOR_EACH = 'Say what happens to each card, like “For each card in their hand, move it to the pile.”';
 const COMMA = /, /g;
 const PHASE_NAME = /^phase\s*:\s*(.*)$/i;
+/**
+ * A line that asks the presser to pick a player: group 1 = what is done to the player picked, group 2 = what a player must be to be
+ * picked, in the words said of one player (“has a card …”).
+ */
+export const CHOICE_LINE = /^(.+) to another player of their choice who (.+)$/i;
+/** A line that asks the presser to choose one of the options under it. */
+export const CHOOSE_ONE_LINE = /^they choose one:?$/i;
+/** Where a choice was written that no press could ask: only a button's own `Then:` lines may, and not of every button. */
+const MISPLACED_CHOICE = 'Only the Then: lines of a button that picks a card, or nothing, can ask for a choice.';
+/** A choice is asked when the press is judged, before any Then: line runs, so it can't wait on a condition judged when its line is reached. */
+const CHOICE_IN_IF = 'A choice can\'t sit inside “If …,”: write its condition under it as an “Only if …” line.';
 
 /** Records a problem found while reading the rules. Structure errors unless `extra` says otherwise. */
 export function addProblem(diagnostics: Diagnostic[], line: number, message: string, extra: Partial<Diagnostic> = {}): void {
@@ -368,7 +380,8 @@ export function innerEffect(ref: PhraseRef): PhraseRef {
  * Reads one effect line. “For each card …, <effect>” runs the effect for each card of a group, and “For …, <effect>” runs it as the
  * player who holds a flag. “If <condition>, <effect>” is tried
  * at every comma, since either part may hold commas; the first comma where both parts are phrases wins. When none does, the
- * part that needs fixing is the one reported. A button's cost line is reported as one in the wrong place, and kept as a placeholder.
+ * part that needs fixing is the one reported. A button's cost line is reported as one in the wrong place, and kept as a placeholder;
+ * so is a choice, which a button's `Then:` reads before this when it may ask one, and one inside “If …,”.
  */
 export function matchEffectLine(text: string, line: number, ctx: LineCtx): PhraseRef {
   const clean = normalizeLine(text);
@@ -387,10 +400,18 @@ export function matchEffectLine(text: string, line: number, ctx: LineCtx): Phras
   const holding = FOR_FRAME.exec(clean);
   if (holding) return matchForLine(holding[1], clean, line, ctx);
   const frame = IF_FRAME.exec(clean);
-  if (!frame) return matchLine('effect', clean, line, ctx);
+  if (!frame) {
+    if (!CHOICE_LINE.test(clean) && !CHOOSE_ONE_LINE.test(clean)) return matchLine('effect', clean, line, ctx);
+    addProblem(ctx.diagnostics, line, MISPLACED_CHOICE, { text: clean });
+    return missingRef('effect', clean, line);
+  }
 
   const body = frame[1];
   const splits = [...body.matchAll(COMMA)].map((m) => ({ condition: body.slice(0, m.index), effect: body.slice(m.index + 2) }));
+  if (splits.some((split) => CHOICE_LINE.test(split.effect))) {
+    addProblem(ctx.diagnostics, line, CHOICE_IN_IF, { text: clean });
+    return missingRef('effect', clean, line);
+  }
   const reads = (kind: PhraseKind, part: string) => canRead(kind, part, ctx);
   const chosen = splits.find((s) => reads('condition', s.condition) && reads('effect', s.effect))
     ?? splits.find((s) => reads('condition', s.condition))

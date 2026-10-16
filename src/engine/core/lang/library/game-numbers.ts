@@ -2,7 +2,7 @@ import { counterOf, gameNumber, holderOf, setGameNumber } from '../board-state';
 import type { PhraseLibrary } from '../phrases';
 import type { ConditionFn, DeclareFn, EffectFn, ExpectFn } from '../types';
 import { transfer } from './board-phrases';
-import { theyOf } from './support';
+import { thePick, theyOf } from './support';
 
 /** A number of the game, and the value it starts at: it belongs to no player and no space. */
 const declaresNumber: DeclareFn = ([name, start]) => [{ name: name as string, on: 'game', kind: 'number', start: start as number }];
@@ -13,6 +13,10 @@ const numberIsMoreThan: ConditionFn = (env, [name, n]) => gameNumber(env.state, 
 
 const theyHaveTheNumber: ConditionFn = (env, [name, counter]) =>
   counterOf(env.state, counter as string, theyOf(env)) >= gameNumber(env.state, env.game, name as string);
+
+/** Whether they could pay the number that many times over, as a rule that may charge it more than once asks first. */
+const theyHaveTimesTheNumber: ConditionFn = (env, [times, name, counter]) =>
+  counterOf(env.state, counter as string, theyOf(env)) >= (times as number) * gameNumber(env.state, env.game, name as string);
 
 // ---- effects ---------------------------------------------------------------------------------
 
@@ -25,6 +29,10 @@ const theyPayNumber: EffectFn = (env, [name]) => transfer(env, theyOf(env), null
 const theyPayNumberTo: EffectFn = (env, [name, flag]) =>
   transfer(env, theyOf(env), holderOf(env.state, env.seats, flag as string), gameNumber(env.state, env.game, name as string));
 
+/** Paid to the player the press picked, or filled in for a choice it asked, so that a debt names that player as whom they owe. */
+const theyPayNumberToThatPlayer: EffectFn = (env, [name]) =>
+  transfer(env, theyOf(env), thePick(env), gameNumber(env.state, env.game, name as string));
+
 // ---- examples: expect --------------------------------------------------------------------------
 
 const numberIsExpected: ExpectFn = (env, [name, n]) => {
@@ -34,9 +42,9 @@ const numberIsExpected: ExpectFn = (env, [name, n]) => {
 
 /**
  * The sentences about numbers that belong to the game as a whole, which a game declares under Board: with “The game has a … of …”
- * (or “an”), saying where each starts. Then the sentences a rule uses to compare one with a number or with what a player has, to
- * set one and to have a player pay it, to the bank or to the player who holds a flag, and the Given and Then lines that set and
- * check it in an example.
+ * (or “an”), saying where each starts. Then the sentences a rule uses to compare one with a number or with what a player has, once
+ * or a number of times over, to set one and to have a player pay it, to the bank, to the player who holds a flag or to the player a
+ * press picked, and the Given and Then lines that set and check it in an example.
  */
 export function registerGameNumberPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
@@ -44,9 +52,11 @@ export function registerGameNumberPhrases(lib: PhraseLibrary): PhraseLibrary {
     .declare('the game has an {name} of {int}', declaresNumber)
     .condition('the {gamenumber} is more than {int}', numberIsMoreThan)
     .condition('they have at least the {gamenumber} in {counter}', theyHaveTheNumber, { needsPlayer: true })
+    .condition('they have at least {int} times the {gamenumber} in {counter}', theyHaveTimesTheNumber, { needsPlayer: true })
     .effect('the {gamenumber} is {int}', numberIs)
     .effect('they pay the {gamenumber}', theyPayNumber, { needsPlayer: true, needsPayment: true })
     .effect('they pay the {gamenumber} to {holder}', theyPayNumberTo, { needsPlayer: true, needsPayment: true })
+    .effect('they pay the {gamenumber} to that player', theyPayNumberToThatPlayer, { needsPlayer: true, needsPick: true, needsPayment: true })
     .given('the {gamenumber} is {int}', numberIs)
     .expect('the {gamenumber} is {int}', numberIsExpected);
 }

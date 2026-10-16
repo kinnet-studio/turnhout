@@ -6,7 +6,7 @@ import type { Json } from '../table-def';
 export type PhraseKind =
   | 'cards' | 'zone' | 'board' | 'declare' | 'column' | 'condition' | 'effect' | 'turn' | 'who' | 'which' | 'score' | 'winner' | 'moment' | 'given'
   | 'action' | 'target' | 'expect' | 'value';
-/** kind 'lang' = compiler built-ins: all | any | phase | always | if | for | for each | round | missing */
+/** kind 'lang' = compiler built-ins: all | any | phase | always | if | for | for each | round | missing | choose player */
 export type PhraseRef = { kind: PhraseKind | 'lang'; phrase: string; args: Json[]; line: number; text: string };
 /** `other` is the one player who is not the actor, in a game for two. */
 export type SeatRef = { seat: string } | { who: 'actor' | 'winner' | 'other' };
@@ -176,12 +176,14 @@ export type Vocab = {
 /**
  * Who, which space and which card a phrase is about, when a rule is about a player's piece, a space or a card. `amount` is the
  * whole number a button that carries one was pressed with; no other rule has it. `picked` is the player a button that picks one
- * was pressed with; no other rule has it. `onto` is the id of the card a button that picks one for its cards to go to was pressed
+ * was pressed with, or the one a choice of a press filled in, while that choice's line runs; no other rule has it. `onto` is the id of the card a button that picks one for its cards to go to was pressed
  * with, and `cards` the ids of the set a button that picks some cards was pressed with, in the order the press gave them; no other
- * rule has either.
+ * rule has either. `choices` is what the press of a button whose `Then:` lines ask for choices filled in for each of them, in order, null
+ * for one it did not ask; no other rule has it.
  */
 export type Subject = {
   player: PlayerId | null; space: number | null; card: string | null; amount?: number; picked?: PlayerId; onto?: string; cards?: string[];
+  choices?: (string | null)[];
 };
 /** A piece passing over or landing on a space. */
 export type Moment = { kind: 'pass' | 'land'; seat: PlayerId; space: number };

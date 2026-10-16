@@ -2,6 +2,7 @@ import { cardById, zoneCards, type GameState } from '../game-state';
 import type { Move, MoveHandler } from '../moves';
 import type { CardState, PlayerId } from '../scene';
 import { addToCounter, clearTurnLog, counterOf, endsTurn, isOut, playersIn, recordAction } from './board-state';
+import { askChoices, choicesOf, fillChoices, type AskedChoice } from './choices';
 import { isPile, isTakeable, moveZoneId, yours } from './declared-moves';
 import { counted, secondPersonWords } from './refs';
 import type { LangRuntime } from './runtime';
@@ -211,10 +212,14 @@ export function payCost(action: DeclaredAction, state: GameState, by: PlayerId):
   return cost ? addToCounter(state, cost.counter, by, -cost.amount) : state;
 }
 
-/** The current phase's button whose move type is `move` and that allows it, with who it is about; else why not. */
-function choose(
-  move: string, runtime: LangRuntime, state: GameState, m: Move,
-): ({ phase: CompiledPhase; action: DeclaredAction; by: PlayerId } & Press) | string {
+/** A press the button's lines allow, with the button, its phase, who presses it and who it is about. */
+type Allowed = { phase: CompiledPhase; action: DeclaredAction; by: PlayerId } & Press;
+
+/**
+ * The current phase's button whose move type is `move`, with who the press `m` is about, when its pick, cost and `Only if` lines allow
+ * it; else why not. What its choices come to is not asked yet.
+ */
+function pressUpToChoices(move: string, runtime: LangRuntime, state: GameState, m: Move): Allowed | string {
   const phase = runtime.game.phases.find((p) => p.id === state.turn?.phase);
   const action = phase?.actions.find((a) => a.words === move);
   // Nobody can press a button without being someone at the table: a move with no player, or from a seat the game does not
@@ -226,6 +231,30 @@ function choose(
   if (typeof press === 'string') return press;
   // The cost comes before every Only if, so that a button that can't be paid for says so whatever else it asks.
   return costRefusal(action, state, by) ?? runtime.failedGroup(action.conditions, state, press.info, press.subject) ?? { phase, action, by, ...press };
+}
+
+/**
+ * The current phase's button whose move type is `move` and that allows it, with who it is about; else why not. A button whose `Then:`
+ * lines ask for choices is allowed only once each choice its press asks is answered: filled in when one player or option qualifies,
+ * else named by the move's `choices`. They are judged on the state before the press, as its `Only if` lines are, so that replaying a
+ * move that named none fills in the same.
+ */
+function choose(move: string, runtime: LangRuntime, state: GameState, m: Move): Allowed | string {
+  const press = pressUpToChoices(move, runtime, state, m);
+  if (typeof press === 'string') return press;
+  const count = choicesOf(press.action).length;
+  if (count === 0) return press;
+  const choices = fillChoices(askChoices(runtime, press.action, state, press.info, press.subject), count, m.choices);
+  return typeof choices === 'string' ? choices : { ...press, subject: { ...press.subject, choices } };
+}
+
+/**
+ * The choices the press of `move` asks, or why the button refuses it before they are asked: by its pick, its cost or an `Only if` line.
+ * None for a button whose lines ask for none. Like a press, it asks nothing of the turn or the flow, which the engine's own gate decides.
+ */
+export function pressChoices(runtime: LangRuntime, state: GameState, move: Move): AskedChoice[] | string {
+  const press = pressUpToChoices(move.type, runtime, state, move);
+  return typeof press === 'string' ? press : askChoices(runtime, press.action, state, press.info, press.subject);
 }
 
 /**
@@ -245,7 +274,9 @@ function choose(
  * same way when that is no card it takes; once paid for, the card moves to the button's zone, when it names one, before the Then
  * lines, which read it as a card move's lines read its card. A button that picks some cards (“A player may trade some cards from their
  * stash to the shop.”) takes them from the move's `cardIds` and moves them in that order, its lines reading them as the picked cards;
- * one that picks a card for its cards to go to (“… to a card in their case.”) takes that card from the move's `onto`. Nobody is marked
+ * one that picks a card for its cards to go to (“… to a card in their case.”) takes that card from the move's `onto`. A button whose
+ * Then lines ask for a choice (“… to another player of their choice who …”) takes what it can't fill in itself from the move's `choices`,
+ * one entry for each choice in the order written, and is refused with the choice's prompt when that names none or a wrong one. Nobody is marked
  * as having moved a card: only trick games read that, and they use card moves. A press must leave the table whole: one that strands a card
  * on a card gone elsewhere throws, on the button's line, so the engine keeps the state from before it. Only its result is checked, since
  * its lines may move a card before the cards on it.

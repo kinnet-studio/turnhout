@@ -1,5 +1,8 @@
+import { CHOOSE_PLAYER, choicesOf } from './choices';
+// Each module uses the other's functions only while compiling, never while it loads, so the two may import each other.
+import { readChoiceLine } from './compile-choice';
 import {
-  addProblem, canRead, isMissing, libraryHasSayOn, matchEffectLine, matchLine, phaseId, readsPressCard, rejectChildren, type LineCtx,
+  addProblem, canRead, CHOICE_LINE, isMissing, libraryHasSayOn, matchEffectLine, matchLine, phaseId, readsPressCard, rejectChildren, type LineCtx,
 } from './compile-util';
 import type { OutlineNode } from './outline';
 import { normalizeLine, suggestNames } from './phrases';
@@ -23,6 +26,8 @@ const TRIGGER = /^when (.+):$/i;
 const ONLY_IF_ONE_OF = /^only if one of:?$/i;
 const ONLY_IF = /^only if (.+)$/i;
 const THEN = /^then:?$/i;
+/** A line framed by “If …,” or “For …,”: whatever it holds is that frame's, so it is never a choice of the button's own. */
+const FRAMED = /^(?:if|for) /i;
 /** group 1 = what a button costs, to be read as a whole number and a counter */
 const COST_LINE = /^it costs (.+)$/i;
 /** group 1 = the whole number, group 2 = the counter, singular or plural */
@@ -221,7 +226,8 @@ function readCost(node: OutlineNode, clean: string, text: string, ctx: LineCtx):
 
 /**
  * The `Only if` groups, the `Then:` effects and the cost under a card move or an action; any other line is reported. A second cost
- * line is reported too. A cost line that can't be read, or a second one, sets `badCost`, which leaves a button out.
+ * line is reported too. A cost line that can't be read, or a second one, sets `badCost`, which leaves a button out. Where `ctx.choices`
+ * says the press may ask for choices, a `Then:` line that asks for one is read as a choice, numbered among them in the order written.
  */
 function readRuleBody(node: OutlineNode, ctx: LineCtx): { conditions: CondGroup[]; effects: PhraseRef[]; cost: ActionCost | null; badCost: boolean } {
   const conditions: CondGroup[] = [];
@@ -229,6 +235,7 @@ function readRuleBody(node: OutlineNode, ctx: LineCtx): { conditions: CondGroup[
   let cost: ActionCost | null = null;
   let badCost = false;
   let sawCost = false;
+  let choices = 0;
   for (const child of node.children) {
     const clean = normalizeLine(child.text);
     const group = readCondition(child, clean, ctx);
@@ -237,6 +244,12 @@ function readRuleBody(node: OutlineNode, ctx: LineCtx): { conditions: CondGroup[
       conditions.push(group);
     } else if (THEN.test(clean)) {
       for (const line of child.children) {
+        const text = normalizeLine(line.text);
+        const choice = ctx.choices && !FRAMED.test(text) ? CHOICE_LINE.exec(text) : null;
+        if (choice) {
+          effects.push(readChoiceLine(line, choice, choices++, ctx));
+          continue;
+        }
         rejectChildren(line, ctx.diagnostics);
         effects.push(matchEffectLine(line.text, line.line, ctx));
       }
@@ -478,8 +491,9 @@ function compileAction(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx):
   // The pick is told back as it was written, with its “on” or without.
   if (both) addProblem(ctx.diagnostics, node.line, pickAndAmount(written.slice(baseWritten.length).trim()), { kind: 'invalid', text: normalizeLine(node.text) });
   // An action is about the player who presses it and the space it picks, else the space their piece is on; a button that carries an amount has it,
-  // and one that picks a player has that player.
-  const { conditions, effects, cost, badCost } = readRuleBody(node, { ...ctx, player: true, space: true, amount: amount || both, picked: picksPlayer });
+  // and one that picks a player has that player. Only one that picks none of them may ask for a choice.
+  const choices = targetText === null && !amount && !picksPlayer;
+  const { conditions, effects, cost, badCost } = readRuleBody(node, { ...ctx, player: true, space: true, amount: amount || both, picked: picksPlayer, choices });
   if (reserved || pick !== null || both || badCost || (target !== null && isMissing(target))) return null;
   return { verb, words, base, label, target, anyone, amount, picksPlayer, conditions, effects, line: node.line, ...(cost ? { cost } : {}) };
 }
@@ -499,7 +513,10 @@ function compileCardPick(node: OutlineNode, words: PickWords, ctx: LineCtx): Dec
   const second = toText ?? ontoText;
   const zones = oneZones(node, second === null ? [fromText] : [fromText, second], ctx);
   const onto = ontoText !== null;
-  const about: LineCtx = some ? { ...ctx, player: true, cards: true, onto } : { ...ctx, inMove: true, player: true, card: true, onto };
+  // Only the press of one card, with its target or without, may ask for a choice: the page shows a choice beside the card picked.
+  const about: LineCtx = some
+    ? { ...ctx, player: true, cards: true, onto, choices: false }
+    : { ...ctx, inMove: true, player: true, card: true, onto, choices: true };
   const { conditions, effects, cost, badCost } = readRuleBody(node, about);
   if (reserved || !zones || badCost) return null;
   const pick: CardPick = {
@@ -523,19 +540,32 @@ function mayHideFromPresser(ref: ZoneRef, zones: ZoneSpec[]): boolean {
 }
 
 /**
+ * The lines of a button's choices that its press is judged by, as `Only if` groups in the order written: each choice of a player's
+ * clause, on the choice's own line, then its guard. Whether a press is asked a choice, and of whom, tells what they came to.
+ */
+function choiceGroups(action: DeclaredAction): CondGroup[] {
+  return choicesOf(action).flatMap((ref) => {
+    if (ref.phrase !== CHOOSE_PLAYER) return [];
+    const [, guard, who] = ref.args as [number, CondGroup[], PhraseRef];
+    return [{ mode: 'all', refs: [who], text: who.text, line: who.line }, ...guard];
+  });
+}
+
+/**
  * Reports each `Only if` line of the phase's buttons that reads a card of the press (“the card”, the target card, the picked cards)
- * under a pick whose cards, or the card they go to, the presser may not see. A press the line refuses costs nothing and changes
- * nothing, so pressing each face-down card in turn would tell the player which is which. Face-down cards in a zone everyone sees are
- * slice 9's.
+ * under a pick whose cards, or the card they go to, the presser may not see, and each line of a choice that does: its clause and its
+ * guard. A press the line refuses, or asks a choice of, costs nothing and changes nothing, so pressing each face-down card in turn would
+ * tell the player which is which. Face-down cards in a zone everyone sees are slice 9's.
  */
 export function reportHiddenCardReads(phase: CompiledPhase, zones: ZoneSpec[], ctx: LineCtx): void {
-  for (const { pick, conditions } of phase.actions) {
+  for (const action of phase.actions) {
+    const { pick, conditions } = action;
     if (!pick) continue;
     const places = [{ ref: pick.from, text: pick.fromText }];
     if (pick.onto !== null && pick.ontoText !== null) places.push({ ref: pick.onto, text: pick.ontoText });
     const hidden = places.find(({ ref }) => mayHideFromPresser(ref, zones));
     if (!hidden) continue;
-    for (const group of conditions) {
+    for (const group of [...conditions, ...choiceGroups(action)]) {
       if (readsPressCard(ctx.library, group)) addProblem(ctx.diagnostics, group.line, tellsHiddenCard(hidden.text), { text: group.text });
     }
   }

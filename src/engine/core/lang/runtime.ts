@@ -7,6 +7,7 @@ import { attachmentProblem } from './attach';
 import { numberIn } from './board';
 import { holderOf, interruptedTurn, setCounter } from './board-state';
 import { cardAttribute, cardFact } from './card-facts';
+import { CHOOSE_PLAYER } from './choices';
 import { isMissing, readsPressCard } from './compile-util';
 import { isNoSuchNumber, MissingPhraseError, RuleError } from './diagnostics';
 import { cardsIn } from './library/support';
@@ -118,10 +119,11 @@ export class LangRuntime {
   }
 
   /**
-   * An effect or a Given step, or the compiler's “If …, …”, “For …, …” or “For each card …, …”. A For line runs its effect as the player
-   * who holds the flag, with no card move, so “their” is theirs too; the space, amount and pick of a press stay as they were. A For each
-   * line runs its effect about each card of its group in turn, with no card move, “it” being that card and everything else what the line
-   * is about.
+   * An effect or a Given step, or the compiler's “If …, …”, “For …, …” or “For each card …, …”, or a choice of a player. A For line runs
+   * its effect as the player who holds the flag, with no card move, so “their” is theirs too; the space, amount and pick of a press stay
+   * as they were. A For each line runs its effect about each card of its group in turn, with no card move, “it” being that card and
+   * everything else what the line is about. A choice of a player runs its effect about the player its press filled in, as “that player”,
+   * and does nothing when the press filled in no one (it was not asked).
    */
   run(ref: PhraseRef, state: GameState, move?: MoveInfo, example?: ExampleEnv, subject?: Subject): GameState {
     if (ref.kind === 'lang' && ref.phrase === 'if') {
@@ -141,6 +143,12 @@ export class LangRuntime {
       // twice for being moved, and each that it moves away is still walked, in its turn.
       const ids = this.cardsFor(ref, group, this.env(state, move, example, about));
       return ids.reduce((s, card) => this.run(effect, s, undefined, example, { ...about, card }), state);
+    }
+    if (ref.kind === 'lang' && ref.phrase === CHOOSE_PLAYER) {
+      const [at, , , effect] = ref.args as [number, CondGroup[], PhraseRef, PhraseRef];
+      const picked = subject?.choices?.[at];
+      if (subject === undefined || typeof picked !== 'string' || !this.seats.includes(picked)) return state;
+      return this.run(effect, state, move, example, { ...subject, picked });
     }
     return this.call<EffectFn, GameState>(ref, ['effect', 'given'], (fn) => fn(this.env(state, move, example, subject), ref.args));
   }

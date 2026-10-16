@@ -4,6 +4,8 @@ import { counterOf, gameNumber, owedTo, setCounter, setGameNumber, setPlayerFact
 import { compileGame } from '../compile';
 import { fixtureBoardState, fixtureEnv, runPhrase, TINY_BOARD_HEAD } from '../testing';
 import { createDefaultLibrary } from './index';
+import { createEngine, initialState } from '../build';
+import { GUILD_GAME } from '../testing';
 
 const lib = createDefaultLibrary();
 const POT = TINY_BOARD_HEAD.replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  The game has a pot of 5.');
@@ -89,5 +91,35 @@ describe('a number of the game and the player who holds a flag', () => {
   it('needs a player, and something to pay with, to be paid; and a player to be compared with what they have', () => {
     expect(lib.get('effect', 'they pay the {gamenumber} to {holder}')).toMatchObject({ needsPlayer: true, needsPayment: true });
     expect(lib.get('condition', 'they have at least the {gamenumber} in {counter}')).toMatchObject({ needsPlayer: true });
+  });
+});
+
+describe('a number of the game and the player a press picked', () => {
+  // The Guild's fee is 2, and each player starts with 9 coins.
+  const guild = compileGame(GUILD_GAME, lib).game!;
+  const { engine, runtime } = createEngine(guild, lib, 3, initialState(guild, 1));
+  const begun = engine.getState();
+  /** A rule about p0, in a press that picked `picked` when it names one. */
+  const ofP0 = (state: GameState, picked?: string) =>
+    runtime.env(state, undefined, undefined, { player: 'p0', space: null, card: null, ...(picked === undefined ? {} : { picked }) });
+
+  it('is compared, a number of times over, with what they have', () => {
+    const having = (coins: number) =>
+      runPhrase<boolean>(lib, 'condition', 'they have at least 2 times the fee in coins', ofP0(setCounter(begun, 'coins', 'p0', coins)));
+    expect([having(4), having(3)]).toEqual([true, false]);
+    expect(lib.get('condition', 'they have at least {int} times the {gamenumber} in {counter}')).toMatchObject({ needsPlayer: true });
+  });
+  it('is paid to that player', () => {
+    const paid = runPhrase<GameState>(lib, 'effect', 'they pay the fee to that player', ofP0(begun, 'p1'));
+    expect([counterOf(paid, 'coins', 'p0'), counterOf(paid, 'coins', 'p1'), counterOf(paid, 'coins', 'p2')]).toEqual([7, 11, 9]);
+    expect(lib.get('effect', 'they pay the {gamenumber} to that player')).toMatchObject({ needsPlayer: true, needsPick: true, needsPayment: true });
+  });
+  it('is paid to that player only in a button that picks one', () => {
+    const PAY = '      They pay the fee to that player.';
+    const text = GUILD_GAME.replace('      Their moves go back to 0.\n', `      Their moves go back to 0.\n${PAY}\n`);
+    expect(compileGame(text, lib).diagnostics.map((d) => [d.line, d.message])).toEqual([[
+      text.split('\n').indexOf(PAY) + 1,
+      '“They pay the fee to that player” only makes sense in a button whose wording ends in “another player”, like “A player may challenge another player.”',
+    ]]);
   });
 });

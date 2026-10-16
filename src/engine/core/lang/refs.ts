@@ -51,6 +51,22 @@ export function counted(n: number, name: string): string {
 /** The first word of an action in the third person: 'end their turn' is 'ends their turn'. */
 export const thirdPersonWords = (words: string): string => words.replace(/^\S+/, (first) => thirdPerson(first));
 
+/** The verbs whose “they” form is not their third person with its ending taken off. */
+const THEY_FORMS = new Map([['has', 'have'], ['is', 'are'], ['does', 'do']]);
+
+/**
+ * A clause about one player said of “they”, as a choice asks it of each player who might be picked: 'has a card' is 'have a card',
+ * 'passes' is 'pass'. Only its first word changes, from the third person back to the verb (see `thirdPerson`), which English does not
+ * always say one way: 'uses' comes out 'us'.
+ */
+export const theyForm = (words: string): string => words.replace(/^\S+/, (first) => {
+  const irregular = THEY_FORMS.get(first.toLowerCase());
+  if (irregular !== undefined) return irregular;
+  if (/ies$/i.test(first)) return `${first.slice(0, -3)}y`;
+  if (/(?:s|sh|ch|x|z|o)es$/i.test(first)) return first.slice(0, -2);
+  return first.replace(/s$/i, '');
+});
+
 /** Whole words of a rule's text that name the player, and what the player reads in their place. */
 const SECOND_PERSON = new Map([['their', 'your'], ["they're", "you're"], ['they', 'you'], ['them', 'you'], ['themselves', 'yourself']]);
 const THIRD_PERSON_WORD = /\b(?:they['‘’]re|themselves|their|they|them)\b/gi;

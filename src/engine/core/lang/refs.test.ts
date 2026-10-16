@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   STANDARD_RANKS, STANDARD_SUITS, VOCAB_TYPES, counted, misnamedParam, parseParam, participle, pastWording, plural, secondPersonWords, singularForms, thirdPerson, thirdPersonWords,
 } from './refs';
+import { theyForm } from './refs';
 import { compileGame } from './compile';
 import { createDefaultLibrary } from './library/index';
 import { PhraseLibrary, STATIC_TYPES, emptyVocab, stubFor, vocabFrom } from './phrases';
@@ -1075,5 +1076,14 @@ describe('a test of a card', () => {
   it('passes on what is wrong with the test of a group', () => {
     expect(parseParam('cardgroup', 'the cards on it whose mood is glum', GUILD)).toEqual({ error: 'No card has “glum” as its mood.' });
     expect(misnamedParam('cardgroup', 'the cards in their workshop whose mod is grumpy', GUILD)).toEqual(misnamedParam('attribute', 'mod', GUILD));
+  });
+});
+
+describe('a clause about one player said of “they”', () => {
+  it('says has, is and does as have, are and do', () => {
+    expect([theyForm('has a card'), theyForm('is ready'), theyForm('does well')]).toEqual(['have a card', 'are ready', 'do well']);
+  });
+  it('takes the third person off any other first word', () => {
+    expect([theyForm('owns a field'), theyForm('passes'), theyForm('carries')]).toEqual(['own a field', 'pass', 'carry']);
   });
 });
