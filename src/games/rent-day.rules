@@ -1395,6 +1395,16 @@ Example: a street whose color has a building cannot be offered
   And p0 offers Mill Lane
   Then it is rejected because "no street of its color has a building"
 
+Example: asking for a street whose color has a building is refused
+  Given p1 owns Rose Lane
+  And p1 owns Lily Lane
+  And p1 owns Iris Road
+  And Lily Lane has 1 house
+  When p0 trades with p1
+  And p0 asks for Rose Lane
+  Then it is rejected because "no street of its color has a building"
+  And Rose Lane is not asked for
+
 Example: an empty trade cannot be proposed
   When p0 trades with p1
   And p0 proposes the trade
@@ -1438,12 +1448,33 @@ Example: accepting swaps everything in the offer
   And the phase is playing
   And it is p0's turn
 
+Example: accepting pays the cash the proposer asked for
+  Given p0 owns Mill Lane
+  When p0 trades with p1
+  And p0 offers Mill Lane
+  And p0 asks to be paid 50
+  And p0 proposes the trade
+  And p1 accepts the trade
+  Then it is accepted
+  And p1 owns Mill Lane
+  And p0 has 1550 money
+  And p1 has 1450 money
+  And Mill Lane is not offered
+  And the cash request is 0
+  And the phase is playing
+  And it is p0's turn
+
 Example: declining changes nothing
   Given p0 owns Mill Lane
   And p1 owns Rose Lane
+  And p0's kept cards has a Get Out Of Jail Free
+  And p1's kept cards has a Get Out Of Jail Free
   When p0 trades with p1
   And p0 offers Mill Lane
   And p0 asks for Rose Lane
+  And p0 offers everything they keep
+  And p0 asks for everything the trade partner keeps
+  And p0 offers to pay 100
   And p0 asks to be paid 50
   And p0 proposes the trade
   And p1 declines the trade
@@ -1454,23 +1485,41 @@ Example: declining changes nothing
   And p1 has 1500 money
   And Mill Lane is not offered
   And Rose Lane is not asked for
+  And a Get Out Of Jail Free in p0's kept cards is not handed over
+  And a Get Out Of Jail Free in p1's kept cards is not claimed
+  And p0 is not proposing
   And p1 is not the trade partner
+  And the cash offer is 0
   And the cash request is 0
   And the phase is playing
   And it is p0's turn
 
 Example: cancelling a trade changes nothing
   Given p0 owns Mill Lane
+  And p1 owns Rose Lane
+  And p0's kept cards has a Get Out Of Jail Free
+  And p1's kept cards has a Get Out Of Jail Free
   When p0 trades with p1
   And p0 offers Mill Lane
+  And p0 asks for Rose Lane
+  And p0 offers everything they keep
+  And p0 asks for everything the trade partner keeps
   And p0 offers to pay 100
+  And p0 asks to be paid 50
   And p0 cancels the trade
   Then it is accepted
   And p0 owns Mill Lane
+  And p1 owns Rose Lane
   And p0 has 1500 money
+  And p1 has 1500 money
   And Mill Lane is not offered
+  And Rose Lane is not asked for
+  And a Get Out Of Jail Free in p0's kept cards is not handed over
+  And a Get Out Of Jail Free in p1's kept cards is not claimed
   And p0 is not proposing
+  And p1 is not the trade partner
   And the cash offer is 0
+  And the cash request is 0
   And the phase is playing
   And it is p0's turn
 
@@ -1497,6 +1546,8 @@ Example: kept cards change hands both ways
   And p1 accepts the trade
   Then p0's kept cards has a Get Out Of Jail Free
   And p1's kept cards has a Get Out Of Jail Free
+  And a Get Out Of Jail Free in p1's kept cards is not handed over
+  And a Get Out Of Jail Free in p0's kept cards is not claimed
   When p0 uses a Get Out Of Jail Free
   Then it is accepted
   And the bottom card of the treasury pile is a Get Out Of Jail Free
