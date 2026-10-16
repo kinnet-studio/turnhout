@@ -17,6 +17,9 @@ const sizeIs = (test: (have: number, n: number) => boolean): ConditionFn => (env
   return resolveZoneIds(ref, env).every((id) => test(zoneCards(env.state, id).length, n));
 };
 
+/** A zone with a card in it, for a zone named in the singular or the plural alike. */
+const notEmpty = sizeIs((have) => have > 0);
+
 const zonesEmpty: ConditionFn = (env, args) =>
   (args[0] as ZoneRef[]).every((ref) => resolveZoneIds(ref, env).every((id) => zoneCards(env.state, id).length === 0));
 
@@ -190,7 +193,8 @@ export function registerFlowPhrases(lib: PhraseLibrary): PhraseLibrary {
     .condition('{zone} has fewer than {int} cards', sizeIs((have, n) => have < n))
     .condition('{zone} has more than {int} card(s)', sizeIs((have, n) => have > n))
     .condition('{zone} is empty', sizeIs((have) => have === 0))
-    .condition('{zone} is not empty', sizeIs((have) => have > 0))
+    .condition('{zone} is not empty', notEmpty)
+    .condition('{zone} are not empty', notEmpty)
     .condition('{zones} are empty', zonesEmpty)
     .condition("a player's {perzone} is empty", someSeatEmpty)
     .effect('shuffle {zone}', shuffle)

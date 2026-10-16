@@ -7,7 +7,7 @@ import { RuleError } from '../diagnostics';
 import { TURN_KEY, TURN_ROLLS_KEY, markOut, playerFact, queueRoll, setPlayerFact, withBoardData } from '../board-state';
 import { createEngine, initialState, seatsFor } from '../build';
 import { compileGame } from '../compile';
-import { INTERRUPT_BOARD, fixtureBoardGame, fixtureBoardState, fixtureCard, fixtureEnv, fixtureState, runPhrase } from '../testing';
+import { INTERRUPT_BOARD, fixtureBoardGame, fixtureBoardState, fixtureCard, fixtureEnv, fixtureGame, fixtureState, runPhrase } from '../testing';
 import type { PhraseKind, PhraseEnv } from '../types';
 import { WINNER_KEY } from '../zones';
 import { createDefaultLibrary } from './index';
@@ -93,6 +93,13 @@ describe('empty conditions', () => {
     expect(run('condition', "a player's hand is empty", env)).toBe(true);
     const full = fixtureEnv(fixtureState([...cards, ...pile('hand-p1', 'b', 1)]), { seats: ['p0', 'p1'] });
     expect(run('condition', "a player's hand is empty", full)).toBe(false);
+  });
+  it('a zone named in the plural is not empty with its cards: their kept cards are not empty', () => {
+    const game = fixtureGame({ zones: [...fixtureGame().zones, { name: 'kept cards', perPlayer: true, layout: 'row', visibility: 'public' }] });
+    const state = fixtureState(pile('kept-cards-p1', 'k', 1));
+    const about = (by: string) => fixtureEnv(state, { game, seats: ['p0', 'p1'], subject: { player: by, space: null, card: null } });
+    expect(run('condition', 'their kept cards are not empty', about('p1'))).toBe(true);
+    expect(run('condition', 'their kept cards are not empty', about('p0'))).toBe(false);
   });
 });
 

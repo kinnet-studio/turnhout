@@ -852,6 +852,32 @@ describe('facts on cards', () => {
     });
   });
 
+  describe('every card with a flag, no card with it, and some card with it', () => {
+    it('moves every flagged card to the zone in the order the table holds them, and the flag goes with it', () => {
+      const s = effectAs('every card that is poisoned goes to their camp', byPlayer('p0'));
+      expect(zoneCards(s, 'camp-p0').map((c) => c.id)).toEqual(['c0', 'c6', 'c1', 'c3', 'c4']);
+      expect(zoneCards(s, 'camp-p1').map((c) => c.id)).toEqual(['c2', 'c5']);
+      expect(['c1', 'c3', 'c4'].map((id) => cardFact(cardOf(s, id), 'poisoned'))).toEqual([true, true, true]);
+    });
+    it('takes the flag off every card, so each face is as it was', () => {
+      const s = runPhrase<GameState>(lib, 'effect', 'no card is poisoned', bare(table()));
+      expect(s.cards.filter((c) => Object.hasOwn(c.data ?? {}, 'poisoned'))).toEqual([]);
+      expect(cardOf(s, 'c1').faceKey).toBe(faceOf('Archer', 2));
+      expect(effectAs('every card that is poisoned goes to their camp', byPlayer('p0'), s)).toEqual(s);
+    });
+    it('takes the flag off a card that had it set to no as well', () => {
+      const s = runPhrase<GameState>(lib, 'effect', 'no card is poisoned', bare(changeCard(table(), 'c0', { poisoned: false }, creatures)));
+      expect(Object.hasOwn(cardOf(s, 'c0').data ?? {}, 'poisoned')).toBe(false);
+    });
+    it('judges whether some card has the flag set', () => {
+      expect(runPhrase<boolean>(lib, 'condition', 'some card is poisoned', bare(table()))).toBe(true);
+      const none = runPhrase<GameState>(lib, 'effect', 'no card is poisoned', bare(table()));
+      expect(runPhrase<boolean>(lib, 'condition', 'some card is poisoned', bare(none))).toBe(false);
+      // A flag set to no is not a flag set.
+      expect(runPhrase<boolean>(lib, 'condition', 'some card is poisoned', bare(changeCard(none, 'c0', { poisoned: false }, creatures)))).toBe(false);
+    });
+  });
+
   describe('judging a card', () => {
     it('“it is poisoned” is about the card the rule is about', () => {
       expect(holdsFor('it is poisoned', aboutCard('c3'))).toBe(true);
@@ -1200,5 +1226,25 @@ describe('the one space with a flag', () => {
     const flagged = [1, ROSE, LILY].reduce((s, at) => setSpaceFact(s, at, 'mortgaged', true), fresh(FLAGGED));
     const s = effect('no space is mortgaged', flagged, null, FLAGGED);
     expect([1, ROSE, LILY].map((at) => spaceFact(s, at, 'mortgaged'))).toEqual([false, false, false]);
+  });
+});
+
+describe('every space with a flag, and whether some space has it', () => {
+  const flagged = (...spaces: number[]) => spaces.reduce((s, at) => setSpaceFact(s, at, 'mortgaged', true), fresh(FLAGGED));
+
+  it('gives them every space with the flag set, flag and all, and no other', () => {
+    const s = effect('they own every space that is mortgaged', setOwner(flagged(1, LILY), LILY, 'p1'), null, FLAGGED);
+    expect([1, ROSE, LILY].map((at) => ownerOf(s, at))).toEqual(['p0', null, 'p0']);
+    expect([1, LILY].map((at) => spaceFact(s, at, 'mortgaged'))).toEqual([true, true]);
+  });
+  it('judges whether some space has the flag set', () => {
+    const some = (state: GameState) => runPhrase<boolean>(lib, 'condition', 'some space is mortgaged', bare(state, FLAGGED));
+    expect(some(fresh(FLAGGED))).toBe(false);
+    expect(some(flagged(ROSE))).toBe(true);
+    expect(some(setSpaceFact(flagged(ROSE), ROSE, 'mortgaged', false))).toBe(false);
+  });
+  it('needs a player and a board to give spaces, and a board to judge them', () => {
+    expect(lib.get('effect', 'they own every space that is {spaceflag}')).toMatchObject({ needsPlayer: true, needsBoard: true });
+    expect(lib.get('condition', 'some space is {spaceflag}')).toMatchObject({ needsBoard: true });
   });
 });
