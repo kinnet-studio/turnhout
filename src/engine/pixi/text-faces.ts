@@ -20,6 +20,11 @@ const DEFAULT_INK = 0x333333;
 const ATTRIBUTE_LINE_HEIGHT = 13;
 const LABEL_Y = -12;
 const DETAILS_Y = 16;
+/** A face lists this many of its 'key: value' lines; a card with more columns shows the first ones. */
+export const FACE_DETAILS = 3;
+/** A one-word label this short is the big centred label of every card there has been; longer ones make room for the details. */
+const SHORT_LABEL = 6;
+const MEDIUM_WORD = 11;
 /** The corner shows values up to this long whole, and cuts a longer first value to this many letters. */
 const CORNER_LETTERS = 3;
 /** Inset of the corner index: it has to fit in the strip of a card that a fanned hand leaves showing. */
@@ -29,9 +34,24 @@ const NUMBER = /^-?\d+$/;
 /** The big label: the card's name, else every value in column order ("red 7"). */
 const labelOf = (attrs: Record<string, string>): string => attrs.name ?? Object.values(attrs).join(' ');
 
-/** Attributes the label does not already say, as small 'key: value' lines. */
+/** Attributes the label does not already say, as small 'key: value' lines: the first FACE_DETAILS of them. */
 const detailsOf = (attrs: Record<string, string>): string[] =>
-  'name' in attrs ? Object.entries(attrs).filter(([key]) => key !== 'name').map(([key, value]) => `${key}: ${value}`) : [];
+  'name' in attrs
+    ? Object.entries(attrs).filter(([key]) => key !== 'name').map(([key, value]) => `${key}: ${value}`).slice(0, FACE_DETAILS)
+    : [];
+
+/**
+ * How the big label is set. A card with no details, or a label that is one short word, keeps the big centred label it has
+ * always had. Any other label would run into the details, so it is smaller, and ends just above them.
+ */
+export function labelStyleOf(label: string, hasDetails: boolean): { fontSize: number; wordWrapWidth: number; anchorY: number; y: number } {
+  const words = label.split(/\s+/).filter((word) => word !== '');
+  if (!hasDetails || (words.length === 1 && words[0].length <= SHORT_LABEL)) {
+    return { fontSize: 24, wordWrapWidth: CARD_WIDTH - 20, anchorY: 0.5, y: LABEL_Y };
+  }
+  const longest = Math.max(0, ...words.map((word) => word.length));
+  return { fontSize: longest <= MEDIUM_WORD ? 14 : 12, wordWrapWidth: CARD_WIDTH - 12, anchorY: 1, y: DETAILS_Y - 3 };
+}
 
 /**
  * The corner index, one value per line: the card's short values (numbers, and values of up to three letters), else the
@@ -53,12 +73,14 @@ const drawText = (attrs: Record<string, string>): FaceDraw => (container) => {
     .stroke({ color: ink, width: 3 });
   container.addChild(g);
 
+  const details = detailsOf(attrs);
+  const looks = labelStyleOf(labelOf(attrs), details.length > 0);
   const label = new Text({
     text: labelOf(attrs),
-    style: { fontSize: 24, fontWeight: 'bold', fill: ink, align: 'center', wordWrap: true, wordWrapWidth: CARD_WIDTH - 20, breakWords: true },
+    style: { fontSize: looks.fontSize, fontWeight: 'bold', fill: ink, align: 'center', wordWrap: true, wordWrapWidth: looks.wordWrapWidth, breakWords: true },
   });
-  label.anchor.set(0.5);
-  label.position.set(0, LABEL_Y);
+  label.anchor.set(0.5, looks.anchorY);
+  label.position.set(0, looks.y);
   container.addChild(label);
 
   // Like a playing card's rank and suit: in a fanned hand only the left edge of each card shows.
@@ -67,7 +89,7 @@ const drawText = (attrs: Record<string, string>): FaceDraw => (container) => {
   corner.position.set(-CARD_WIDTH / 2 + CORNER_INSET, -CARD_HEIGHT / 2 + CORNER_INSET);
   container.addChild(corner);
 
-  detailsOf(attrs).forEach((line, i) => {
+  details.forEach((line, i) => {
     const detail = new Text({ text: line, style: { fontSize: 10, fill: DEFAULT_INK } });
     detail.anchor.set(0.5, 0);
     detail.position.set(0, DETAILS_Y + i * ATTRIBUTE_LINE_HEIGHT);

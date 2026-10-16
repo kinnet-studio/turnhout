@@ -1,4 +1,4 @@
-import { Container, Graphics } from 'pixi.js';
+import { Container, Graphics, Text } from 'pixi.js';
 import { CARD_HEIGHT, CARD_WIDTH, cardsByZone, type PlacedCard, type Scene, type Vec2 } from '../core/scene';
 import { TableModel } from '../core/table-model';
 import { placeZone } from '../core/zone-geometry';
@@ -19,6 +19,9 @@ export class PixiTable extends Container {
   private createSprite: () => CardSprite;
   private showEmptyZones: boolean;
   private emptyZoneOutlines = new Graphics();
+  /** Behind everything else, so a name never covers a card. */
+  private zoneNames = new Container();
+  private nameTexts = new Map<string, Text>();
 
   constructor(deps: PixiTableDeps) {
     super();
@@ -28,6 +31,8 @@ export class PixiTable extends Container {
     this.showEmptyZones = deps.showEmptyZones ?? false;
     this.emptyZoneOutlines.zIndex = -1;
     this.addChild(this.emptyZoneOutlines);
+    this.zoneNames.zIndex = -1;
+    this.addChild(this.zoneNames);
   }
 
   setScene(scene: Scene): void {
@@ -55,6 +60,33 @@ export class PixiTable extends Container {
     }
 
     if (this.showEmptyZones) this.drawEmptyZoneOutlines(scene);
+    this.drawZoneNames(scene);
+  }
+
+  /** A zone's name stands above its box, whether or not the box is outlined. Texts are kept by zone, so a move redraws none. */
+  private drawZoneNames(scene: Scene): void {
+    const named = new Set<string>();
+    for (const zone of scene.zones) {
+      if (zone.label === undefined) continue;
+      named.add(zone.id);
+      let name = this.nameTexts.get(zone.id);
+      if (!name) {
+        name = new Text({ text: zone.label, style: { fontSize: 18, fill: 0xd1d5db } });
+        name.label = 'zone-label';
+        name.anchor.set(0.5, 1);
+        this.nameTexts.set(zone.id, name);
+        this.zoneNames.addChild(name);
+      }
+      if (name.text !== zone.label) name.text = zone.label;
+      const box = placeZone(zone, []);
+      name.position.set(box.x, box.y - box.height / 2 - 4);
+    }
+    for (const [id, name] of [...this.nameTexts]) {
+      if (named.has(id)) continue;
+      this.zoneNames.removeChild(name);
+      name.destroy();
+      this.nameTexts.delete(id);
+    }
   }
 
   private drawEmptyZoneOutlines(scene: Scene): void {

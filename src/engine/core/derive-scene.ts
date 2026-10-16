@@ -41,7 +41,11 @@ export function projectCard(card: CardState, zone: ZoneDef | undefined, viewer: 
  * a named viewer gets per-player hiding.
  */
 export function deriveScene(def: TableDef, placement: Placement, viewer?: PlayerId): Scene {
-  const zones = def.zones.map((z) => ({ id: z.id, layout: z.layout, transform: z.transform, layoutOptions: z.layoutOptions, bounds: z.bounds }));
+  // A label is carried only where the def has one, so a scene of a table with no names is what it always was.
+  const zones = def.zones.map((z) => ({
+    id: z.id, layout: z.layout, transform: z.transform, layoutOptions: z.layoutOptions, bounds: z.bounds,
+    ...(z.label === undefined ? {} : { label: z.label }),
+  }));
   if (viewer === undefined) return { zones, cards: placement.cards };
   const zoneById = new Map(def.zones.map((z) => [z.id, z]));
   const cards = placement.cards.map((c) => projectCard(c, zoneById.get(c.zoneId), viewer));

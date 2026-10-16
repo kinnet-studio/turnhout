@@ -21,6 +21,7 @@ import { designerFaceRenderer } from '@/engine/pixi/text-faces';
 import { makeInitApp } from '@/utils/init-app';
 import { ActionButtons, BANNER_SLOT, BANNER_STYLE, MoneyLine, PlayerPicker } from './board-controls';
 import { BoardGrid } from './board-grid';
+import { cardDetail } from './card-detail';
 import { seatStatus, seatToAct } from './seat-status';
 import { SeatTabs } from './seat-tabs';
 import { Tableaux } from './tableaux';
@@ -137,6 +138,11 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
   const cards = view?.scene.cards ?? [];
   // A fitted table leaves the other players' zones off, so their cards have nowhere to stand: they are counted in the tableaux.
   const placement: Placement = { cards: fitted ? cards.filter((card) => drawn.has(card.zoneId)) : cards };
+  // A card's face has room for only some of its columns, so a fitted table shows the card under the pointer in full below it.
+  const [hovered, setHovered] = useState<string | null>(null);
+  const hoveredCard = placement.cards.find((card) => card.id === hovered);
+  // A face-down card is a back to this seat, so pointing at it shows nothing.
+  const detail = hoveredCard?.faceUp ? cardDetail(hoveredCard.faceKey) : null;
   const submit = (intent: DropIntent) => {
     onError(null);
     const move = moveForDrop(game, seats, view?.turn?.phase, seat, intent);
@@ -154,7 +160,7 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
       || game.phases.some((phase) => phase.moves.length > 0 || phase.rearrange.length > 0));
   const canvas = showsCards && (
     <Wrapper option={option} initFunction={initAppWithFaces}>
-      <CardTable tableDef={tableDef} placement={placement} viewer={undefined} onDrop={submit} />
+      <CardTable tableDef={tableDef} placement={placement} viewer={undefined} onDrop={submit} onHover={fitted ? setHovered : undefined} />
     </Wrapper>
   );
   // The panel is for a game that has a board, or buttons to press, and for every fitted table, whose panel lists the tableaux;
@@ -218,6 +224,7 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
         {numbers}
         {hasButtons && extras && <ActionButtons actions={extras.actions} onPress={press} onPick={startPicking} onRefused={flash} />}
         {canvas && <div style={{ position: 'relative', ...canvasBox }}>{canvas}</div>}
+        {fitted && <div data-testid="card-detail" style={{ minHeight: 20 }}>{detail}</div>}
       </div>
     );
   }

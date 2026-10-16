@@ -40,6 +40,8 @@ export interface ZoneState {
   layoutOptions?: LayoutOptions;
   accepts?: (card: CardState) => boolean;
   bounds?: { width: number; height: number; anchor?: { x: number; y: number } };
+  /** The zone's name, for a table to draw above it. */
+  label?: string;
 }
 
 export interface Scene {

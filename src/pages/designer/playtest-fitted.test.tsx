@@ -9,6 +9,7 @@ import { compileGame } from '@/engine/core/lang/compile';
 import { fitsTable, fittedLayout } from '@/engine/core/lang/fit-layout';
 import { createDefaultLibrary } from '@/engine/core/lang/library';
 import type { CardTableProps } from '@/engine/react';
+import { cardDetail } from './card-detail';
 import { Playtest } from './playtest';
 
 vi.mock('@/components/PixiCanvas', () => ({ Wrapper: ({ children }: { children: ReactNode }) => <div>{children}</div> }));
@@ -140,5 +141,43 @@ describe('Playtest of a game too big for one table', () => {
     mount({ game: compileGame(COLOR_MATCH, lib).game! });
     expect(screen.queryByRole('tablist')).toBeNull();
     expect(screen.getAllByText(/^seat: p/)).toHaveLength(3);
+  });
+});
+
+describe('the whole card on hover', () => {
+  const detail = () => screen.getByTestId('card-detail').textContent;
+  const hover = (id: string | null) => act(() => table!.onHover!(id));
+
+  it('shows the card under the pointer in full, and nothing when the pointer leaves', () => {
+    mount();
+    const [card] = cardsIn('agency-row');
+    const attrs = parseTextFaceKey(card.faceKey)!;
+    expect(detail()).toBe('');
+    hover(card.id);
+    expect(detail()).toBe(cardDetail(card.faceKey));
+    expect(detail()!.startsWith(attrs.name)).toBe(true);
+    expect(detail()).toContain('trait ');
+    hover(null);
+    expect(detail()).toBe('');
+  });
+
+  it('shows nothing for a face-down card, so no identity leaks', () => {
+    mount();
+    const [card] = cardsIn('talent-deck');
+    expect(card.faceUp).toBe(false);
+    hover(card.id);
+    expect(detail()).toBe('');
+  });
+
+  it('shows nothing for a card that has since left the table', () => {
+    mount();
+    hover('no such card');
+    expect(detail()).toBe('');
+  });
+
+  it("is not on a game that fits", () => {
+    mount({ game: compileGame(COLOR_MATCH, lib).game! });
+    expect(table!.onHover).toBeUndefined();
+    expect(screen.queryByTestId('card-detail')).toBeNull();
   });
 });

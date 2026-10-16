@@ -175,3 +175,18 @@ describe('a card that carries facts that change during play', () => {
     expect(seen('p1', 'c2')).toMatchObject({ faceUp: true, faceKey, data });
   });
 });
+
+describe('a zone with a name to draw', () => {
+  const named: TableDef = { players: ['p0', 'p1'], zones: [zone({ id: 'stall', label: 'shop' }), zone({ id: 'stash' })] };
+  const none: Placement = { cards: [] };
+  const zoneOf = (scene: ReturnType<typeof deriveScene>, id: string) => scene.zones.find((z) => z.id === id)!;
+
+  it('carries it to every viewer', () => {
+    expect(zoneOf(deriveScene(named, none), 'stall').label).toBe('shop');
+    expect(zoneOf(deriveScene(named, none, 'p1'), 'stall').label).toBe('shop');
+  });
+  it('has no label key when the zone has none', () => {
+    expect('label' in zoneOf(deriveScene(named, none), 'stash')).toBe(false);
+    expect('label' in zoneOf(deriveScene(named, none, 'p0'), 'stash')).toBe(false);
+  });
+});
