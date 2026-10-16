@@ -239,6 +239,14 @@ describe('a line run for each card of a group', () => {
     });
     expect(moving.diagnostics.map((d) => d.message)).toEqual(['“they pay the card\'s pay” only makes sense in a rule about a player\'s move.']);
   });
+  it('runs its effect about no card just drawn, even in a card\'s says column: “this card” is not the card walked', () => {
+    const says = totalsCtx({ player: true, drawn: true });
+    expect(matchEffectLine('They keep this card in their stash.', 4, says)).toMatchObject({ kind: 'effect', phrase: 'they keep this card in their {perzone}' });
+    expect(matchEffectLine('For each card in their workshop, they keep this card in their stash.', 5, says)).toMatchObject({
+      phrase: 'for each', args: [{ kind: 'in' }, { kind: 'lang', phrase: 'missing' }],
+    });
+    expect(says.diagnostics.map((d) => [d.line, d.message])).toEqual([[5, '“they keep this card in their stash” only makes sense in a card\'s says column.']]);
+  });
   it('cuts the line at the first comma where both parts read', () => {
     const button = totalsCtx({ player: true });
     expect(matchEffectLine('For each card in their crew and their idle, it is tired.', 5, button)).toMatchObject({

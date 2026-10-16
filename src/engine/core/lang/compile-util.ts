@@ -303,14 +303,15 @@ function matchForLine(body: string, clean: string, line: number, ctx: LineCtx): 
 
 /**
  * Reads “For each card <cards>, <effect>” (R6): the effect is run about each of the cards in turn, so “it” is that card, and “they” are
- * still whoever the line is about. It runs with no card move, so a phrase that needs one is refused here even in a move. The line is cut at
+ * still whoever the line is about. It runs with no card move, so a phrase that needs one is refused here even in a move, and about no card
+ * just drawn, so “this card” is refused even in a card's says column: there it would not be the card walked. The line is cut at
  * a comma, since either part may hold commas: the first cut where the cards and the effect both read wins, then the first where the
  * cards read, then the first. The cards are read first, as “the cards …”, and what is wrong with them is what is reported: what their
  * zones or number say is wrong (“the crew” has no owner), a zone or a number the game never defined, else words that name no cards. Cards
  * that are named must suit the rule around the line, as a phrase's own words must: their zones need a player, “the cards on it” a card.
  */
 function matchForEachLine(body: string, clean: string, line: number, ctx: LineCtx): PhraseRef {
-  const each: LineCtx = { ...ctx, card: true, inMove: false };
+  const each: LineCtx = { ...ctx, card: true, inMove: false, drawn: false };
   const groupOf = (head: string) => parseParam('cardgroup', `${THE_CARDS}${head}`, ctx.vocab);
   const names = (head: string) => {
     const read = groupOf(head);
