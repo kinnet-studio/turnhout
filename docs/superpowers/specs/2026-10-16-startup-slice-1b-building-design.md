@@ -1,8 +1,8 @@
 # Startup Simulator, Slice 1b: Building (Tier 1)
 
 **Date:** 2026-10-16
-**Status:** Ready for its builder check. The user handed over every design call for the full implementation; the calls
-below are the builder's.
+**Status:** Settled after its builder check (`builder-check-startup-1b.md`, B1–B11, every call adopted in "Builder-check
+rulings" below). The user handed over every design call for the full implementation; the calls below are the builder's.
 **Part of:** `2026-10-16-startup-simulator-overview-design.md`. Its decisions, calls, anti-goals and constraints apply.
 **Builds on:** `2026-10-16-startup-slice-1a-table-money-turns-design.md` (its rulings R1–R11 are settled and stand).
 **Rulebook sections:** §3 (the zones and the Board), §5 Phase B (revenue, Market Share, Salaries), §5 Phase D steps 1,
@@ -77,15 +77,18 @@ The game after this slice:
     also arrives then.
   - **Face-Down Greenlight and the Audit window (slice 9).** Generate and Commit are written as separate steps so the
     Audit window can sit between them.
-  - **Dividends (slice 7)**, **Integration (slice 8)**, **the Growth Hacker's Cleanup Bug (slice 5)**.
+  - **Dividends (slice 7)**, **Integration (slice 8)**, **the Growth Hacker's Cleanup Bug (slice 4)**.
+  - **Hype (+5 VP) and Scandal (−5 VP) in the Product Portfolio (slices 6 and 8):** nothing creates them yet.
 - **Onboarding clears at the start of the next turn, whoever's turn it is** (§6 Pivot: "Tokens clear at the start of the
   next turn"). Staff who carry one from a Pivot keep it if Assigned in the same turn (§6 Assign).
 - **Salaries skip themselves when the payroll is $0.** The choice to leave staff unpaid only matters when there is a
-  salary to save, and Dismiss covers firing at $0.
+  salary to save, and Dismiss covers firing at $0. Only staff with a salary above $0 can be left unpaid (the Rust
+  engine; a $0 Junior can only be Dismissed in Phase C).
 - **A scrapped product loses its cubes.** The rulebook moves the card to the Open Idea Pool; a card drafted from there
   later starts empty.
-- **Source's passed cards keep their reveal order** as a block at the left of the Agency Row (the first revealed ends up
-  leftmost). The rulebook says only that they "enter from the Left".
+- **Source's passed cards enter the Agency Row one at a time at the left end, in reveal order**, so the last revealed
+  ends up leftmost, and each pushes the rightmost card out when the row is over 4 (the Rust engine; the rulebook says
+  only "enter from the Left"). A Source on an empty Talent Deck is still allowed and reveals nothing.
 - **Source is a private look**, like Research: the revealed cards go to a row only the sourcing player sees, and the
   turn is interrupted until they finish ("Decide before doing anything else", §13.B.3).
 - **Launch moves the whole team into the Ops pool.** Attaching a Sales Rep or Growth Hacker to the product arrives with
@@ -99,7 +102,9 @@ The game after this slice:
   - #7 (AP costs: Greenlight 0, Launch 1, Pivot 1);
   - #8's Onboarding part (the Agile PM part arrives with PMs in slice 5);
   - #20's Board part (Agency and Source hires may go to the Board; University and Open Market hires may not);
-  - #24's unpaid choice (the owner chooses whom to leave unpaid);
+  - #25's unpaid choice (the owner chooses whom to leave unpaid; "Rulebook kept over the engine");
+  - #24's "no Ops product limit" (§3): a Launch into an Ops Zone that already runs several products;
+  - #5 (Active): every Ops product is Active in 1b; Offline arrives in slice 4.
   - #25's Talent items that apply: Dismiss is 0 AP; pooled Ops staff may Reassign to a Development project; Source
     hires cost no extra AP.
 
@@ -279,6 +284,105 @@ Everything the "What 1b leaves out" call lists.
 3. Each language piece has unit tests.
 4. A browser check of the page, plus happy-dom tests.
 5. Hearts, Color Match, Venom and Rent Day pass; `bun run typecheck` is clean.
+
+## Builder-check rulings
+
+The builder check (`builder-check-startup-1b.md`) found nothing that needs the user. Every call below is the builder's,
+adopted from its recommendations B1–B11. No protected file changes. Where these rulings and the shape above differ, the
+rulings win.
+
+### R1. Card-pick buttons (B1)
+
+- **Grammar.** A line that mentions a card is a card move only when it reads exactly "a card from {zone} to {zone}" and
+  has no cost line. Every other card line is a card-pick button:
+  - "a card in {zone}" (one card);
+  - "a card from {zone} to {zone}" with a cost;
+  - "a card from {zone} to a card in {zone}" (a card and a target card);
+  - "some cards from {zone} [to {zone} | to a card in {zone}]" (a set of at least one).
+- **A press carries** the picked card, plus the target card or the list of cards. The button's lines are compiled
+  with a card subject ("it", "the card"), so "Move it to …" and "It gains …" work inside buttons.
+- **A set is judged card by card for the view, then once as a whole when pressed.** The view lists verdicts per card
+  (and per card and target), never per subset.
+- **Examples** read `{player} {action} {card}` and `… {cards} to {card}`, resolved by where the named card lies, so
+  1a's "When p0 hires the Hacker" keeps working where one button can take that card.
+- **All of Startup Simulator's card lines become buttons,** free ones too (the Research keep, the Cleanup discards), so
+  the page has one input: clicking. Card moves and dragging stay for Hearts, Color Match and Venom. A card move and a
+  button still can't share a verb.
+
+### R2. Income and the turn's start (B2)
+
+- **Revenue and Market Share are turn-start rules,** written "When a player's turn starts:" under `Phase: income`. The
+  1a trigger runs the current phase's own turn-start rules after the `In every phase:` ones, and never during setup.
+- **The pass never runs a phase's start lines** (plan 1a-1 carries this), so nothing of Income can run in the
+  round-finished window. A compile warning flags "When this phase starts:" under the first phase of a game with turn
+  start.
+- **A "Go to {phase}." effect** runs the target phase's start lines as an advance would. "Pay salaries" ends with it,
+  since the phase's one `go to` is the $0 skip.
+- **"Let a staff member go" applies only to staff whose salary is above $0.**
+- Income examples use a "When p1's turn starts" step (or 1a's step that finishes a turn), since an arranged turn counts
+  as started.
+
+### R3. Attachment (B3)
+
+- **The holder lives in `data['lang:on']`.** Every move clears it; the placing phrase ("It goes to their development
+  team, on the project.") sets it after the move. Pivot, Launch, Dismiss, letting go and Recall need no detach wording.
+- **Attachment zones are marked in the Table lines** (e.g. "…, holding cards on cards"). After every button, move and
+  flow effect the runtime checks: each card with a holder sits in such a zone; its holder exists in a public zone of the
+  same seat; each card in a holder-only zone (the development team) has a holder. A failed check throws, and the
+  engine keeps its old state.
+- The ops team is a plain row in 1b; it gains holders in slice 4 (the Growth Hacker) and slice 5 (Sales Reps).
+- **"With everything on it" is deferred to slice 8,** where attached cards first change owner.
+- Example steps: "Given p0's Junior Software Dev is on the Dating App", "Then … is on …".
+
+### R4. Card values (B4)
+
+- **A card analogue of `Rent:`:** a section per value, named after a card column (refining it) or a new name, whose
+  lines are about a card; every phrase that reads a card's number reads through it.
+- **Values now:** salary (from its column) and each project's generated cubes per color ("A project's new blue cubes
+  are the total blue output of its staff"), so slices 3, 5 and 6 only add lines (the Engineer's $1, a Junior's $1 at
+  2+ XP, Workaholic, Synergy, Toxic Personality, Crunch Time).
+- **"Feature complete" is a flag defined by a block of `Only if` lines** (conditions have no "and").
+- **Costs and maintenance are 0, not blank,** in the product tables (plan 1a-1 carries this).
+
+### R5. "It costs N {counter}." (B5)
+
+- One `It costs {int} {counter}.` line per button, judged before every `Only if` and spent before the `Then:` lines.
+- On buttons only; "is an action" means "has a cost", which is what slice 7's Veto reads.
+
+### R6. Sums and "for each" (B6)
+
+- "For each {card} in {zones}, …" is tried before the player frame; the line runs once per card, about that card,
+  with the player kept.
+- Sums read "the total {value} of {cards}", where `{cards}` is "the cards in {zones}", "the cards on it", or a filtered
+  form ("… whose rev is more than 0"). Two zones are written out ("their development team and their ops team").
+
+### R7. Source (B7)
+
+- Passed cards enter at the left end one at a time in reveal order (the last revealed ends up leftmost); the every-phase
+  push-out moves the rightmost card to the Open Job Market each time the row is over 4. A two-card example pins the
+  order the bumped cards reach the Open Job Market (the old 4th, then the old 3rd).
+- "When their scouting row is empty: Go back to the interrupted turn." covers hiring every revealed card and revealing
+  nothing.
+- "Deal up to as many cards as they picked", and a left-end entry phrase built on the zone's bottom insert.
+
+### R8. The Engine (B8)
+
+- **Generate and Commit are separate phases** (engine, then commit), so slice 9's Audit window can sit between them.
+- **Pivot resets the product's cubes itself** ("It loses its cubes."); card counts otherwise ride with the card.
+- Cubes are capped at the printed cost on Commit (the spec's call; Rust completes at "at least", and nothing reads the
+  excess).
+
+### R9. Three plans (B11)
+
+- **Plan 1b-1, picks and costs** (about 6 tasks; the 1a game stays playable): the cost line; one-card pick buttons;
+  card + target and sets; converting 1a's text and examples; a DOM card picker on the playtest page; 1a's long runs,
+  the four games and typecheck.
+- **Plan 1b-2, the Board** (about 9 tasks): attachment and the check; counts in arithmetic and "it loses its …"; card
+  values; sums and "for each"; phase-scoped turn-start rules, "Go to {phase}." and the warning; Source pieces and the
+  two score lines; the rules text in two halves with examples and pinned rulings; long runs with the invariants.
+- **Plan 1b-3, the page** (about 4 tasks): the viewer's Board on the canvas with staff stacked under projects and
+  "Blue 3/6, Red 0/0", rivals' Boards as DOM text, Market Share among the counters; canvas clicking and the scouting
+  row; happy-dom tests and the Hearts check for clicks; the browser check.
 
 ## Left to the builder
 
