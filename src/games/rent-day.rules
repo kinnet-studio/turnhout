@@ -163,6 +163,7 @@ Phase: playing
     Only if they have rolled this turn.
     Only if it has a price.
     Only if no one owns it.
+    Only if it is not up for auction.
     Only if they have at least its price in money.
     Then:
       They pay its price.
@@ -1226,3 +1227,15 @@ Example: a double's roll clears a space nobody bid on, and the next one can be a
   And the phase is auction
   And Cedar Avenue is up for auction
   And Ash Street is not up for auction
+
+Example: you cannot buy a space nobody bid on at auction
+  Given p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  And p1 drops out
+  And p0 drops out
+  And p0 buys the space they are on
+  Then it is rejected because "it is not up for auction"
+  And no one owns Rose Lane
+  And p0 has 1500 money

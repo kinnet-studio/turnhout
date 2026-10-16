@@ -69,7 +69,7 @@ The designer page is a text editor for the rule language, with a line-numbered e
 - **Play** is available once the rules read cleanly. It puts every seat on one screen (pick the player count first when the game allows a range), with undo and restart. Editing the rules ends the playtest; Play starts a fresh game under the new rules.
 - **Download** and **Upload** move the text to and from a `.rules` file.
 
-**Board games.** A game can have a `Board:` section: a table of spaces for the pieces to loop round (a `color` column is drawn as a band on the space), a piece for each player, numbers each player holds (money, say) and dice. In a phase, each `A player may …` line becomes a button on that seat's panel, greyed with the reason on hover while it is not allowed. `When a piece passes …` and `When a player lands on …` rules run as pieces move. Each seat's panel in the playtest draws the board with its pieces and owners, a line with everyone's numbers, and the seat's buttons. `src/games/rent-day.rules` is a 2 to 8 player property-trading game written this way, with 88 examples:
+**Board games.** A game can have a `Board:` section: a table of spaces for the pieces to loop round (a `color` column is drawn as a band on the space), a piece for each player, numbers each player holds (money, say) and dice. In a phase, each `A player may …` line becomes a button on that seat's panel, greyed with the reason on hover while it is not allowed. `When a piece passes …` and `When a player lands on …` rules run as pieces move. Each seat's panel in the playtest draws the board with its pieces and owners, a line with everyone's numbers, and the seat's buttons. `src/games/rent-day.rules` is a 2 to 8 player property-trading game written this way, with 89 examples:
 
 ```
 Phase: playing
@@ -112,7 +112,7 @@ Phase: playing
 - **The flagged space.** After `Spaces can be up for auction.`, `They own the space that is up for auction.`, `The space that is up for auction is not up for auction.` and `No space is up for auction.` reach the one space with the flag; two such spaces at once is an error. A rule can also ask `someone owns it` and `it has no price`.
 - **Interrupting a turn.** `The auction phase starts with the player on their left.` keeps the turn (its phase, whose turn it is, what they did and what they rolled) and runs the new phase's start lines. `Go back to the interrupted turn.` restores all of it exactly; one turn at a time can be interrupted. `the turn passes to the next player on the left who is bidding` skips players who are out or not bidding. A phase entered this way is not reported as unreachable.
 - **In the playtest.** While a turn is interrupted, the seat status names the phase that holds it (`auction — Your turn — Bid more than the high bid, or drop out.`), and the high bid shows on the bank line (`bank: 32 houses, 12 hotels · high bid 120`).
-- **Rent Day** auctions a space the lander doesn't buy. A turn can't end, and a double can't roll on, while the space is unbought and not yet auctioned.
+- **Rent Day** auctions a space the lander doesn't buy. A turn can't end, and a double can't roll on, while the space is unbought and not yet auctioned. A space nobody bids on stays with the bank: the lander can no longer buy it.
 
 **Saying a button was pressed.** `they have rolled this turn` means any roll button was pressed, so a game with `A player may roll the dice.` and `A player may roll for a double.` reads "rolled" as either. To name one, write its whole wording in the past: `they have rolled for a double this turn`.
 
