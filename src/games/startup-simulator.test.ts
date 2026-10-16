@@ -5,6 +5,7 @@ import { createDefaultLibrary } from '@/engine/core/lang/library';
 import { runExamples } from '@/engine/core/lang/examples';
 import { createEngine, initialState, seatsFor, tableDefFor } from '@/engine/core/lang/build';
 import { COUNTERS_KEY, counterOf, setCounter } from '@/engine/core/lang/board-state';
+import { gameNumber } from '@/engine/core/lang/board-state';
 import { seatExtras, type CardPickView, type SeatExtras } from '@/engine/core/lang/board-view';
 import { attachmentProblem, cardsOn, putOn } from '@/engine/core/lang/attach';
 import { deckOf, NEXT_CARD_KEY } from '@/engine/core/lang/cards';
@@ -12,6 +13,7 @@ import { cardCandidates, hasCost, ontoCandidates } from '@/engine/core/lang/decl
 import { moveZoneId } from '@/engine/core/lang/declared-moves';
 import { CHOOSE_ONE, CHOOSE_PLAYER, choicesOf, type ChoiceOption } from '@/engine/core/lang/choices';
 import { pressChoices } from '@/engine/core/lang/declared-actions';
+import type { AskedChoice } from '@/engine/core/lang/choices';
 import { RuleError } from '@/engine/core/lang/diagnostics';
 import { LangRuntime } from '@/engine/core/lang/runtime';
 import type { ZoneRef } from '@/engine/core/lang/types';
@@ -121,6 +123,8 @@ const REASSIGN_FROM_OPS = 'reassign a card from their ops team to a card in thei
 const RECALL = 'recall some cards from their ops team to their bench';
 const DISMISS_FROM_OPS = 'dismiss a card in their ops team';
 const LAUNCH = 'launch a card from their development to their operations';
+/** The two buttons that move staff onto a project from where they work, which the Diva's Ego refuses (§6, §20.B.1). */
+const REASSIGNS = [REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS];
 /** Sourcing's hires (§13.B): the cards a Layoff found, at their printed cost, to the bench, the ops team or a project. */
 const SOURCE_HIRES = [
   'hire some cards from their scouting to their bench',
@@ -144,6 +148,29 @@ const CLEANUPS: Record<string, { row: string; discard: string }> = {
 const VAPORWARE: Record<string, number> = { 'Tier 1': 2, 'Tier 2': 5, 'Tier 3': 10 };
 /** The actions each player has each turn, as the rules give them: what a seat has when its turn starts. */
 const ACTIONS_EACH_TURN = 3;
+/** The tiers of the growth deck's products, which require Tags and need Matching Leads (§3, §14.B.2). */
+const GROWTH_TIERS = ['Tier 2', 'Tier 3'];
+/** The columns naming the Tags a product requires of some player's operations; a blank cell requires nothing (§14.B.2). */
+const REQUIREMENTS = ['requires', 'also requires'];
+/** The skills of a Senior Developer who leads each colour of a project: Software or flex for blue, Hardware or flex for red (§3). */
+const LEADS: Record<string, string[]> = { blue: ['software', 'flex'], red: ['hardware', 'flex'] };
+/** Why the rules refuse to reassign the Diva: her Ego (§6, §20.B.1). */
+const EGO_REFUSAL = 'the card is not an Ego card';
+/** The phases of a seat's turn before its Engine runs: Income, Actions and the two phases that interrupt Actions. */
+const BEFORE_THE_ENGINE = ['income', 'actions', 'research', 'sourcing'];
+// What the tally calls the paths of slice 3 (see `happenings`), besides the moves themselves.
+const LICENSE_TO_THE_ONLY_PROVIDER = 'a license paid to the only provider';
+const LICENSE_TO_A_CHOSEN_PROVIDER = 'a license paid to a chosen provider';
+const TWO_LICENSES = 'two licenses in one greenlight';
+const CUT_FILLED_IN = 'a cut filled in';
+const CUT_CHOSEN = 'a cut chosen among options';
+const GROWTH_GREENLIT = 'a Tier 2 or 3 card greenlit';
+const GROWTH_LAUNCHED = 'a Tier 2 or 3 card launched';
+const CUT_LAUNCHED = 'a project launched with a cut';
+const STALLED_AT_THE_ENGINE = 'a stalled project at the engine';
+const DIVA_PIVOTED = 'the Diva fired by a pivot';
+const DIVA_REFUSED = 'the Diva refused a reassign';
+const ENGINEER_IN_OPS = 'the Engineer paid 1 in the ops team';
 
 /** The button of the phase `state` is in whose move type is `type`, as the game declares it. */
 const buttonOf = (state: GameState, type: string) =>
@@ -170,6 +197,14 @@ const COLOR_OF_SKILL: Record<string, string> = { software: 'blue', flex: 'blue',
  */
 const lacking = (runtime: LangRuntime, state: GameState, project: CardState) =>
   ['blue', 'red'].filter((color) => cubesOn(project, `${color} cubes`) < (runtime.workedValue(state, project.id, `${color} need`) as number));
+/** The colours of cube `project` needs at all: its cost less its cut, as the rules work it out, is above 0 (§19.A). */
+const needing = (runtime: LangRuntime, state: GameState, project: CardState) =>
+  ['blue', 'red'].filter((color) => (runtime.workedValue(state, project.id, `${color} need`) as number) > 0);
+/** The Tags `product` requires of some player's operations, from its requires and also requires cells; a blank cell requires none (§14.B.2). */
+const requirementsOf = (product: CardState) =>
+  REQUIREMENTS.map((column) => product.data?.[column]).filter((tag): tag is string => typeof tag === 'string');
+/** The Tags `seat`'s products in operation provide (§14.B.2). */
+const tagsOf = (state: GameState, seat: PlayerId) => new Set(operationsOf(state, seat).map((product) => product.data?.tag));
 
 /**
  * How an auto-player gets its growth ideas: by researching the growth deck, or by drafting from the growth market. A game that
@@ -177,8 +212,14 @@ const lacking = (runtime: LangRuntime, state: GameState, project: CardState) =>
  */
 type Style = 'researches' | 'drafts';
 
+/** The answers a move names for the choices its press asks, in order; none for a move that names none. */
+const answersOf = (move: Move) => (Array.isArray(move.choices) ? move.choices : []) as (string | null)[];
+
 /** Sees each move of a long run, with the state before it and the state after. */
 type Watch = (before: GameState, move: Move, after: GameState) => void;
+
+/** Hears of each press a long run's auto-player tried that the rules refused, with the state it was tried in and the rules' reason. */
+type Refused = (state: GameState, move: Move, reason: string) => void;
 
 /** Makes `move`, which the engine must accept, and shows it to `watch`. */
 function play(engine: GameEngine, move: Move, watch: Watch): void {
@@ -239,6 +280,15 @@ function viewedCards(
 type Onto = { zoneId: string; which: (targets: CardState[], card: CardState) => CardState | undefined };
 
 /**
+ * A press of one card alone, as the view says through it, else as the rules say: whether it is allowed, and the choices it asks, each
+ * by its place among the button's choices with its answers.
+ */
+type Pressing = { allows: (card: CardState) => boolean; asks: (card: CardState) => { at: number; options: string[] }[] };
+
+/** Finds the cards to press a button with among those it offers, knowing what a press of each alone would be. */
+type Which<T = CardState[]> = (row: CardState[], pressing: Pressing) => T;
+
+/**
  * The actions `playTurn` falls back on when the one it chose is refused or has nothing to pick: the Board moves 3 to 7 (assign to a
  * project, assign to the ops team, reassign, recall and pivot), which cost no capital, in the cycle's order after `action`.
  */
@@ -246,56 +296,76 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
 
 /**
  * Takes the turn of the seat whose turn it is, the game's turn `t` (counted from 0), until the turn passes, the game ends or
- * `stop` says the log holds enough. `a` counts the actions taken so far in this turn.
+ * `stop` says the log holds enough. `a` counts the actions taken so far in this turn. An idea Domain Expertise cuts is a product
+ * whose sector a product in the seat's operations shares, other than Infra and Concept (§19.A).
  *
  * - **Income.** While the payroll is more than the seat's capital, or once when `t % 6 === 5`, it lets go of its salaried card
  *   with the highest salary (the first of those), from the development team on an even `t` and the ops team on an odd one, or
  *   from the other when that one has none. Then it pays salaries.
- * - **Free moves** come first in the actions phase, each at most once a turn: it greenlights the backlog's first Tier 1 card while
- *   its development has fewer than 3, and it dismisses the ops team's first card when `t % 9 === 4` and the development team's
- *   first when `t % 9 === 8`.
- * - **The first action** is an Ideation, by `t % 4`: a growth idea (0 and 2), draft the growth market's first card (1), or (3) by
- *   `⌊t / 4⌋ % 3` research the seed deck, draft the seed market's first card or draft the open idea pool's first card. A growth
- *   idea researches the growth deck when the `style` researches, and drafts the growth market's first card when it drafts.
- *   When the rules refuse that, it tries researching the growth deck, drafting the growth market's first card, researching the
- *   seed deck and drafting the seed market's first card, in that order, and with none allowed it recruits instead.
- * - **Each later action** launches the first project that is feature complete; with none, it is one by `(t + a) % 9`:
+ * - **Free moves** come first in the actions phase, each at most once a turn. While its development has fewer than 3, it greenlights
+ *   the first backlog card whose press is allowed, Tier 2 and 3 included, but an idea Domain Expertise cuts before any other. It
+ *   dismisses the ops team's first card when `t % 9 === 4` and the development team's first when `t % 9 === 8`.
+ * - **The first action** is an Ideation, by `t % 4`: a growth idea (0 and 2), draft from the growth market (1), or (3) by
+ *   `⌊t / 4⌋ % 3` research the seed deck, draft from the seed market or draft the open idea pool's first card. A growth idea
+ *   researches the growth deck when the `style` researches, and drafts from the growth market when it drafts. A draft from a market
+ *   takes the idea Domain Expertise cuts, else the market's first. When the rules refuse that, it tries researching the growth deck,
+ *   drafting from the growth market, researching the seed deck and drafting from the seed market, in that order, and with none
+ *   allowed it recruits instead.
+ * - **Each later action** first tries to reassign the Diva while she works for the seat, which her Ego refuses at no cost
+ *   (§20.B.1), then pivots the project she is on, which fires her (ruling 9). Otherwise it launches the first project the engine
+ *   takes, which a Tier 2 or 3 project needs to be fully led for as well as complete (P11). With none, it finds a lead for its first
+ *   Stalled project (§3): the bench's first Senior Developer who would lead a colour it needs, assigned to it, else the agency row's
+ *   first such Senior it can pay for, hired onto it, else the open job market's first, hired, else a Layoff of the bench's first card,
+ *   which digs the talent deck for one. With no Stalled project, it is one by `(t + a) % 9`:
  *   0. recruit the Junior of kind `(t + a) % 3`;
- *   1. hire the first agency card it can pay for, to its bench, its first project or its ops team, by `(t + ⌊t / 9⌋) % 3`;
- *   2. hire the open job market's first card;
+ *   1. hire the first agency Senior Developer it can pay for, else the first agency card it can pay for, to its bench, its first
+ *      project or its ops team, by `(t + ⌊t / 9⌋) % 3`;
+ *   2. hire the open job market's first Senior Developer, else its first card;
  *   3. assign the bench cards whose skill makes a color the first unfinished project still lacks (the bench's first card when none
- *      does) to that project;
- *   4. assign the bench's first two cards (or its one) to the ops team;
- *   5. reassign the ops team's first card to the first project, else the first development team card with another project to go
- *      on, to the first such project;
+ *      does) to that project, leaving an Efficient card on the bench;
+ *   4. assign the bench's first two cards (or its one) to the ops team, an Efficient card first;
+ *   5. reassign the ops team's first card but an Efficient one to the first project, else the first development team card with
+ *      another project to go on, to the first such project;
  *   6. recall every ops team card;
- *   7. pivot the first project with no cubes and no staff, else, when `t % 13 === 0`, the first project;
+ *   7. pivot the first project with no cubes and no staff, else, when `t % 13 === 0`, the first project the Diva is on, else the
+ *      first project;
  *   8. lay off the bench's first card, or its first two on an odd `t`.
  *
  *   When the rules refuse that, or it has nothing to pick, it makes the first of the Board moves 3 to 7 after it in the cycle that
- *   it can (see `boardMovesAfter`); with none, it recruits the Junior of kind `(t + a) % 3`, else ends its actions.
+ *   it can (see `boardMovesAfter`); with none, it recruits a Junior who makes a color the first unfinished project lacks, or with
+ *   none lacking the Junior of kind `(t + a) % 3`, else ends its actions.
  * - **Sourcing.** It hires the first card in its scouting it can pay for, to its bench, its ops team or its first project, by
  *   `(t + ⌊t / 9⌋) % 3`; when it can pay for none, or the rules refuse the hire, it passes on the rest.
- * - In research it keeps the research row's card at `t` (mod the row's length); in each Cleanup it discards the row's first card.
+ * - In research it keeps the idea Domain Expertise cuts, else the research row's card at `t` (mod the row's length). In the backlog
+ *   cleanup it discards the first card Domain Expertise doesn't cut, else the row's first; in the bench cleanup, the row's first.
  *
  * A hire's place goes by `(t + ⌊t / 9⌋) % 3`, not `t % 3`: the action that hires from the agency row comes only when `t % 9` is 0
  * or 8, and the Layoff before a sourcing only when it is 6 or 7, so `t % 3` would never send either to one of its three places.
  * The Board moves come before a recruit as the fallback because a recruit alone spends a seat's capital on Juniors before it can hire
  * staff for its Board, and a seat that can't pay for one ends its turn with actions left; the Board moves cost nothing.
  *
+ * It plays slice 3 this way so that the long runs reach its rare paths. A Tier 2 or 3 project gains no cube until a Senior leads it,
+ * and a seat seldom has the capital for one, so it looks for a lead before anything but a Launch, takes Seniors first wherever it
+ * hires, and recruits Juniors who make what its projects lack. Cuts come only from ideas Domain Expertise cuts, so it keeps and
+ * builds those first, which lets hybrids ask their cut often enough to be answered each way. The Diva and the Engineer are single
+ * cards: it tries the Diva's reassign whenever she works for it and then pivots her project, and keeps the Engineer for the ops team,
+ * where his trait makes him cheaper.
+ *
  * Without `throughView` it finds the cards a button picks in the zones. With it, it finds them as a player at the page would: among
  * the cards the page's view of the seat offers for the button and the cards each may go on (both checked by `viewedCards`). The
  * view must judge each card it picks as the engine judges a press of that card alone, with its target, and allow every card of a
  * press the engine takes. A set is judged whole (R1), so the engine's word on the press is no one card's. It chooses the same
- * cards either way, so a game plays the same.
+ * cards either way, so a game plays the same. Whether a press of a card alone is allowed, and the choices it asks, come from the
+ * view's word on the card through it, else from `pressChoices`, which refuses as the button does before its choices are asked.
  *
- * A press that asks a choice, as a Greenlight asks who is paid each License and how Domain Expertise cuts a hybrid, answers each one
- * with its first option: with `throughView` from the `choices` the view lists for the card, else from `pressChoices`. The answers go on
- * the move before the view's word on it is kept, so that the view is checked on the move the seat makes.
+ * A press that asks a choice, as a Greenlight asks who is paid each License and how Domain Expertise cuts a hybrid, answers choice
+ * `at` with option `(t + at) % options.length`: with `throughView` from the `choices` the view lists for the card, else from
+ * `pressChoices`. The answers go on the move before the view's word on it is kept, so that the view is checked on the move the seat
+ * makes (P20). Each press the rules refuse is told to `refused`.
  */
 function playTurn(
   engine: GameEngine, t: number, style: Style, watch: Watch, stop: (log: readonly Move[]) => boolean, runtime: LangRuntime,
-  throughView: boolean,
+  throughView: boolean, refused: Refused = () => {},
 ): void {
   const by = engine.getState().turn!.current;
   const cards = (zoneId: string) => zoneCards(engine.getState(), zoneId);
@@ -322,11 +392,26 @@ function playTurn(
   };
   /**
    * The move that presses `type` with the cards `which` finds among those it offers from `zoneId`, as a set when `some`, and, for a
-   * button that puts them on a card, on the card `onto` finds; null when either finds none.
+   * button that puts them on a card, on the card `onto` finds; null when either finds none. `which` may ask whether a press of a card
+   * alone is allowed: as the view says through it, else when the rules don't refuse it before its choices (`pressChoices`).
    */
-  const pickFrom = (type: string, zoneId: string, some: boolean, which: (row: CardState[]) => CardState[], onto?: Onto): Move | null => {
+  const pickFrom = (type: string, zoneId: string, some: boolean, which: Which, onto?: Onto): Move | null => {
     const { row, targetsOf, seen } = offers(type, zoneId, onto?.zoneId ?? null);
-    const picked = which(row);
+    const alone = (card: CardState) => pressChoices(runtime, engine.getState(), { type, by, cardId: card.id });
+    const viewOf = (card: CardState) => seen!.cards.find(({ id }) => id === card.id)!;
+    const pressing: Pressing = seen === null
+      ? {
+        allows: (card) => typeof alone(card) !== 'string',
+        asks: (card) => {
+          const asked = alone(card);
+          return typeof asked === 'string' ? [] : asked;
+        },
+      }
+      : {
+        allows: (card) => viewOf(card).allowed === true,
+        asks: (card) => (viewOf(card).choices ?? []).map(({ at, options }) => ({ at, options: options.map(({ value }) => value) })),
+      };
+    const picked = which(row, pressing);
     if (picked.length === 0) return null;
     const target = onto?.which(targetsOf(picked[0].id), picked[0]);
     if (onto && !target) return null;
@@ -347,7 +432,11 @@ function playTurn(
     const button = buttonOf(engine.getState(), type);
     const count = button === undefined ? 0 : choicesOf(button).length;
     const asking = count === 0 ? [] : asked();
-    const choices = Array.from({ length: count }, (_, at): string | null => asking.find((choice) => choice.at === at)?.options[0] ?? null);
+    const answer = (at: number) => {
+      const options = asking.find((choice) => choice.at === at)?.options;
+      return options === undefined ? null : options[(t + at) % options.length];
+    };
+    const choices = Array.from({ length: count }, (_, at) => answer(at));
     const move: Move = asking.length === 0 ? pressed : { ...pressed, choices };
     if (seen !== null) {
       const verdictOf = (id: string) => (target
@@ -357,12 +446,12 @@ function playTurn(
     }
     return move;
   };
-  const pick = (type: string, zoneId: string, which: (row: CardState[]) => CardState | undefined, onto?: Onto) =>
-    pickFrom(type, zoneId, false, (row) => {
-      const card = which(row);
+  const pick = (type: string, zoneId: string, which: Which<CardState | undefined>, onto?: Onto) =>
+    pickFrom(type, zoneId, false, (row, pressing) => {
+      const card = which(row, pressing);
       return card ? [card] : [];
     }, onto);
-  const pickSome = (type: string, zoneId: string, which: (row: CardState[]) => CardState[], onto?: Onto) =>
+  const pickSome = (type: string, zoneId: string, which: Which, onto?: Onto) =>
     pickFrom(type, zoneId, true, which, onto);
   const first = (type: string, zoneId: string) => pick(type, zoneId, (row) => row[0]);
   /** On the project `which` finds in the seat's development, its first by default. */
@@ -374,7 +463,9 @@ function playTurn(
    * may still be made of them.
    */
   const accepts = (move: Move): boolean => {
-    const accepted = engine.canDispatch(move) === true;
+    const verdict = engine.canDispatch(move);
+    const accepted = verdict === true;
+    if (!accepted) refused(engine.getState(), move, verdict);
     const picks = verdicts.get(move) ?? [];
     for (const { id, allowed } of picks) {
       const alone = move.cardIds === undefined ? accepted : engine.canDispatch({ ...move, cardIds: [id] }) === true;
@@ -397,6 +488,14 @@ function playTurn(
     row.reduce<CardState | undefined>((top, card) => (salary(card) > (top ? salary(top) : 0) ? card : top), undefined);
   const lettingGo = () => (t % 2 === 0 ? ['development team', 'ops team'] : ['ops team', 'development team'])
     .map((row) => pick(LET_GO[row], own(row), highestPaid));
+  /** Whether Domain Expertise would cut `card` for the seat: a product in its operations shares its sector, not Infra or Concept (§19.A). */
+  const expertIn = (card: CardState) => !['Infra', 'Concept'].includes(card.data?.sector as string)
+    && cards(own('operations')).some((product) => product.data?.sector === card.data?.sector);
+  /** Whether a choice of the Greenlight's press is the cut Domain Expertise gives: the block of options, not a License's payee. */
+  const cutAt = (at: number) => choicesOf(buttonOf(engine.getState(), GREENLIGHT)!)[at].phrase === CHOOSE_ONE;
+  const isDiva = (card: CardState) => nameOf(card) === 'Diva';
+  /** Whether the Diva is on `project`. */
+  const divaOn = (project: CardState) => cardsOn(engine.getState(), project.id).some(isDiva);
   /** The free moves this turn has made, each at most once. */
   const made = new Set<string>();
   /** The free move to make now, or null. */
@@ -404,25 +503,71 @@ function playTurn(
     const dismiss = t % 9 === 4 ? DISMISS_FROM_OPS : t % 9 === 8 ? DISMISS_FROM_PROJECT : null;
     const mayGreenlight = !made.has(GREENLIGHT) && cards(own('development')).length < 3;
     const move = [
-      mayGreenlight ? pick(GREENLIGHT, own('backlog'), (row) => row.find((card) => card.data?.tier === 'Tier 1')) : null,
+      mayGreenlight ? pick(GREENLIGHT, own('backlog'), (row, { allows, asks }) => {
+        // A card Domain Expertise cuts costs less to build, so it goes first (§19.A).
+        const allowed = row.filter(allows);
+        return allowed.find((card) => asks(card).some(({ at }) => cutAt(at))) ?? allowed[0];
+      }) : null,
       dismiss !== null && !made.has(dismiss) ? first(dismiss, own(dismiss === DISMISS_FROM_OPS ? 'ops team' : 'development team')) : null,
     ].find((choice) => choice !== null && accepts(choice)) ?? null;
     if (move !== null) made.add(move.type);
     return move;
   };
   const ideation = (): (Move | null)[] => {
-    const seedSide = [press(RESEARCH_SEED), first(DRAFT_SEED, 'seed-market'), first(DRAFT_POOL, 'open-idea-pool')];
-    const growth = style === 'drafts' ? first(DRAFT_GROWTH, 'growth-market') : press(RESEARCH_GROWTH);
-    const planned = [growth, first(DRAFT_GROWTH, 'growth-market'), growth, seedSide[Math.floor(t / 4) % 3]];
-    return [planned[t % 4], press(RESEARCH_GROWTH), first(DRAFT_GROWTH, 'growth-market'), press(RESEARCH_SEED), first(DRAFT_SEED, 'seed-market')];
+    // From a market, the idea Domain Expertise cuts, else its first.
+    const draft = (type: string, zoneId: string) => pick(type, zoneId, (row) => row.find(expertIn) ?? row[0]);
+    const seedSide = [press(RESEARCH_SEED), draft(DRAFT_SEED, 'seed-market'), first(DRAFT_POOL, 'open-idea-pool')];
+    const growth = style === 'drafts' ? draft(DRAFT_GROWTH, 'growth-market') : press(RESEARCH_GROWTH);
+    const planned = [growth, draft(DRAFT_GROWTH, 'growth-market'), growth, seedSide[Math.floor(t / 4) % 3]];
+    return [planned[t % 4], press(RESEARCH_GROWTH), draft(DRAFT_GROWTH, 'growth-market'), press(RESEARCH_SEED), draft(DRAFT_SEED, 'seed-market')];
   };
   const recruit = (a: number) => press(RECRUITS[(t + a) % 3]);
+  /** The Junior who makes a color the first unfinished project lacks: a Software Dev for blue, a Hardware Eng for red; else as `recruit`. */
+  const recruitMaker = (a: number) => {
+    const unfinished = cards(own('development')).find((project) => lacks(project).length > 0);
+    const color = unfinished === undefined ? undefined : lacks(unfinished)[(t + a) % lacks(unfinished).length];
+    return color === undefined ? recruit(a) : press(RECRUITS[color === 'blue' ? 0 : 1]);
+  };
+  /** Whether the seat can pay for `card`. */
+  const canPay = (card: CardState) => (card.data?.cost as number) <= capital();
   /** The first card of a row the seat can pay for. */
-  const affordable = (row: CardState[]) => row.find((card) => (card.data?.cost as number) <= capital());
+  const affordable = (row: CardState[]) => row.find(canPay);
+  const senior = (card: CardState) => card.data?.role === 'Senior Developer';
+  /** The first Senior Developer of a row the seat can pay for, else its first card the seat can pay for. */
+  const seniorFirst = (row: CardState[]) => row.find((card) => senior(card) && canPay(card)) ?? affordable(row);
+  /** An Efficient card waits on the bench for the ops team, where it costs $1 less (§20.B.1). */
+  const efficient = (card: CardState) => card.data?.trait === 'Efficient';
   /** Which of its three places a hire goes to this turn. */
   const place = (t + Math.floor(t / 9)) % 3;
   const lacks = (project: CardState) => lacking(runtime, engine.getState(), project);
-  const launch = () => pick(LAUNCH, own('development'), (projects) => projects.find((project) => lacks(project).length === 0));
+  // A Tier 2 or 3 project Launches only fully led, so the first project the engine takes is launched, not the first one complete (P11).
+  const launch = () => pick(LAUNCH, own('development'), (projects) => projects.find((project) =>
+    engine.canDispatch({ type: LAUNCH, by, cardId: project.id }) === true));
+  /**
+   * A lead for the seat's first Stalled project (§3): the bench's first Senior Developer who would lead a color it needs, assigned to
+   * it, else the agency row's first such Senior the seat can pay for, hired onto it, else the open job market's first, hired, else a
+   * Layoff of the bench's first card, which digs the talent deck for one. Null with no project Stalled.
+   */
+  const leadForStalled = (): Move | null => {
+    const stalled = cards(own('development')).find((project) => runtime.workedFlag(engine.getState(), project.id, 'stalled'));
+    if (stalled === undefined) return null;
+    const needs = needing(runtime, engine.getState(), stalled);
+    const leads = (card: CardState) => senior(card) && needs.some((color) => LEADS[color].includes(card.data?.skill as string));
+    const onIt = onProject((targets) => targets.find((target) => target.id === stalled.id));
+    return pickSome(ASSIGN_TO_PROJECT, own('bench'), (bench) => bench.filter(leads).slice(0, 1), onIt)
+      ?? pick(HIRE_AGENCY_TO_PROJECT, 'agency-row', (row) => row.find((card) => leads(card) && canPay(card)), onIt)
+      ?? pick(HIRE_MARKET, 'open-job-market', (row) => row.find(leads))
+      ?? pickSome(LAY_OFF, own('bench'), (bench) => bench.slice(0, 1));
+  };
+  /**
+   * The Diva's reassign, while she works for the seat, from its ops team or its development team to its first project, another than
+   * hers when it has one: her Ego refuses it (§20.B.1), and the refusal costs nothing, so the seat tries it before each action.
+   */
+  const reassignDiva = (): Move | null => pick(REASSIGN_FROM_OPS, own('ops team'), (row) => row.find(isDiva), onProject())
+    ?? pick(REASSIGN_FROM_PROJECT, own('development team'), (row) => row.find(isDiva),
+      onProject((targets, card) => targets.find((project) => project.id !== card.data?.[HOLDER_KEY]) ?? targets[0]));
+  /** A Pivot of the project the Diva is on, which fires her, since no reassign will move her (ruling 9). */
+  const pivotDiva = () => pick(PIVOT, own('development'), (row) => row.find(divaOn));
   /** The move the action numbered `action` makes as the turn's action `a`, or null when it has nothing to pick (see above). */
   const boardAction = (action: number, a: number): Move | null => {
     const projects = cards(own('development'));
@@ -432,23 +577,25 @@ function playTurn(
         return recruit(a);
       case 1:
         return [
-          () => pick(HIRE_AGENCY, 'agency-row', affordable),
-          () => pick(HIRE_AGENCY_TO_PROJECT, 'agency-row', affordable, onProject()),
-          () => pick(HIRE_AGENCY_TO_OPS, 'agency-row', affordable),
+          () => pick(HIRE_AGENCY, 'agency-row', seniorFirst),
+          () => pick(HIRE_AGENCY_TO_PROJECT, 'agency-row', seniorFirst, onProject()),
+          () => pick(HIRE_AGENCY_TO_OPS, 'agency-row', seniorFirst),
         ][place]();
       case 2:
-        return first(HIRE_MARKET, 'open-job-market');
+        return pick(HIRE_MARKET, 'open-job-market', (row) => row.find(senior) ?? row[0]);
       case 3: {
         const unfinished = projects.find((project) => lacks(project).length > 0);
         if (unfinished === undefined) return null;
         const makers = (bench: CardState[]) => bench.filter((card) => lacks(unfinished).includes(COLOR_OF_SKILL[card.data?.skill as string]));
-        return pickSome(ASSIGN_TO_PROJECT, own('bench'), (bench) => (makers(bench).length > 0 ? makers(bench) : bench.slice(0, 1)),
+        const assigning = (bench: CardState[]) => (makers(bench).length > 0 ? makers(bench) : bench.slice(0, 1));
+        return pickSome(ASSIGN_TO_PROJECT, own('bench'), (bench) => assigning(bench.filter((card) => !efficient(card))),
           onProject((targets) => targets.find((project) => project.id === unfinished.id)));
       }
       case 4:
-        return pickSome(ASSIGN_TO_OPS, own('bench'), (bench) => bench.slice(0, 2));
+        return pickSome(ASSIGN_TO_OPS, own('bench'), (bench) => [...bench.filter(efficient), ...bench.filter((card) => !efficient(card))]
+          .slice(0, 2));
       case 5:
-        return pick(REASSIGN_FROM_OPS, own('ops team'), (row) => row[0], onProject())
+        return pick(REASSIGN_FROM_OPS, own('ops team'), (row) => row.find((card) => !efficient(card)), onProject())
           ?? pick(REASSIGN_FROM_PROJECT, own('development team'),
             (row) => row.find((card) => projects.some((project) => project.id !== holderOf(card))),
             onProject((targets, card) => targets.find((project) => project.id !== holderOf(card))));
@@ -457,7 +604,7 @@ function playTurn(
       case 7: {
         const idle = (project: CardState) =>
           cubesOn(project, 'blue cubes') + cubesOn(project, 'red cubes') === 0 && cardsOn(engine.getState(), project.id).length === 0;
-        return pick(PIVOT, own('development'), (row) => row.find(idle) ?? (t % 13 === 0 ? row[0] : undefined));
+        return pick(PIVOT, own('development'), (row) => row.find(idle) ?? (t % 13 === 0 ? row.find(divaOn) ?? row[0] : undefined));
       }
       default:
         return pickSome(LAY_OFF, own('bench'), (bench) => bench.slice(0, 1 + (t % 2)));
@@ -498,26 +645,28 @@ function playTurn(
         continue;
       }
       const action = (t + a) % 9;
-      const planned = a === 0 ? ideation() : [launch() ?? boardAction(action, a), ...boardMovesAfter(action).map((next) => boardAction(next, a))];
-      play(engine, choose([...planned, recruit(a), press(END_ACTIONS)]), watch);
+      const board = () => [launch() ?? leadForStalled() ?? boardAction(action, a), ...boardMovesAfter(action).map((next) => boardAction(next, a))];
+      const planned = a === 0 ? ideation() : [reassignDiva(), pivotDiva(), ...board()];
+      play(engine, choose([...planned, recruitMaker(a), press(END_ACTIONS)]), watch);
       a++;
     } else if (phase === 'research') {
-      play(engine, choose([pick(KEEP, own('research'), (row) => row[t % row.length])]), watch);
+      play(engine, choose([pick(KEEP, own('research'), (row) => row.find(expertIn) ?? row[t % row.length])]), watch);
     } else if (phase === 'sourcing') {
       play(engine, choose([sourcing(), press(PASS_ON_THE_REST)]), watch);
     } else {
       const cleanup = CLEANUPS[phase!];
       if (cleanup === undefined) throw new Error(`The long runs don't play the ${phase} phase.`);
-      play(engine, choose([first(cleanup.discard, own(cleanup.row))]), watch);
+      const kept = (card: CardState) => cleanup.row === 'backlog' && expertIn(card);
+      play(engine, choose([pick(cleanup.discard, own(cleanup.row), (row) => row.find((card) => !kept(card)) ?? row[0])]), watch);
     }
   }
 }
 
 /**
- * How a long run plays: until the log holds `moves` moves or `until` says it holds enough, and with `throughView` finding each card
- * to pick through the page's view.
+ * How a long run plays: until the log holds `moves` moves or `until` says it holds enough, with `throughView` finding each card
+ * to pick through the page's view, and telling `refused` of each press the rules refuse.
  */
-type Run = { moves?: number; throughView?: boolean; until?: (log: readonly Move[]) => boolean };
+type Run = { moves?: number; throughView?: boolean; until?: (log: readonly Move[]) => boolean; refused?: Refused };
 
 /**
  * Plays a game of `players` from Setup at `seed`, turn after turn, until it has a result, `MAX_TURNS` turns are played, the log
@@ -526,13 +675,13 @@ type Run = { moves?: number; throughView?: boolean; until?: (log: readonly Move[
  * `throughView` each seat finds the cards it picks through the page's view of it, as `playTurn` says.
  */
 function playGame(
-  players: number, seed: number, watch: Watch, { moves = Infinity, throughView = false, until = () => false }: Run = {},
+  players: number, seed: number, watch: Watch, { moves = Infinity, throughView = false, until = () => false, refused }: Run = {},
 ): GameEngine {
   const { engine, runtime } = createEngine(game!, lib, players, initialState(game!, seed));
   const style: Style = seed % 2 === 0 ? 'drafts' : 'researches';
   const stop = (log: readonly Move[]) => log.length >= moves || until(log);
   for (let t = 0; t < MAX_TURNS && engine.getState().result === undefined && !stop(engine.getLog()); t++) {
-    playTurn(engine, t, style, watch, stop, runtime, throughView);
+    playTurn(engine, t, style, watch, stop, runtime, throughView, refused);
   }
   return engine;
 }
@@ -547,14 +696,46 @@ function turnStarted(before: GameState, after: GameState): PlayerId | null {
   return typeof turnOf === 'string' && turnOf !== before.data[TURN_OF_KEY] ? turnOf : null;
 }
 
+/** Whether the Engine ran for `by` in the move from `before` to `after`: its turn was short of the Engine before, and is past it after. */
+function ranTheEngine(before: GameState, after: GameState, by: PlayerId): boolean {
+  const { current, phase } = after.turn!;
+  return before.turn!.current === by && BEFORE_THE_ENGINE.includes(before.turn!.phase!)
+    && (after.result !== undefined || current !== by || !BEFORE_THE_ENGINE.includes(phase!));
+}
+
+/**
+ * The state the Engine generated cubes in, as far as a project's leads go: `after`, with every card onboarding as it was before the
+ * move. A reassigned card is onboarding, as the reassign leaves it. A move that spends the last action runs the Engine and may then start
+ * the next turn, which lets every card settle in, so `after` alone would show a lead the Engine never had (§6, ruling 8).
+ */
+function atTheEngine(before: GameState, move: Move, after: GameState): GameState {
+  const reassigned = REASSIGNS.includes(move.type) ? move.cardId : undefined;
+  const cards = after.cards.map((card) => {
+    const was = card.id === reassigned ? true : cardById(before, card.id)?.data?.onboarding;
+    if (card.data?.onboarding === was) return card;
+    const { onboarding: _now, ...data } = card.data ?? {};
+    return { ...card, data: was === undefined ? data : { ...data, onboarding: was } };
+  });
+  return { ...after, cards };
+}
+
 /**
  * What else a move made happen that the tally counts: each card a pool let go of to the box, the Market Crash reaching the
  * crash pile, by where it came from, each card the agency row pushed out to the open job market, and each product in operation
  * that earned when a turn started. A draft from the growth market draws the Crash only through the market's refill, and a
  * research of the growth deck only into the research row, so the move says which way it came. A card leaves the agency row for
  * the open job market only when cards entering the row's left end push it out, never by a hire (R7).
+ *
+ * Slice 3's paths, read through `runtime`:
+ * - **A Greenlight** of a Tier 2 or 3 card, and the choices its press asked on `before`: each License paid to the only provider or to a
+ *   provider chosen among several, and both Licenses in one press; the cut filled in or chosen among options, and the cut taken, by its
+ *   label (§6, §14.B.2, §19.A).
+ * - **A Launch** of a Tier 2 or 3 card, and of a project with a cut.
+ * - **The Engine** running on a stalled project of the mover's (§3).
+ * - **The Diva** fired to the open job market by a Pivot of her project (ruling 9), and **the Engineer** paid his $1 salary in the ops
+ *   team at Income (§20.B.1).
  */
-function happenings(before: GameState, move: Move, after: GameState): string[] {
+function happenings(runtime: LangRuntime, before: GameState, move: Move, after: GameState): string[] {
   const boxed = new Set(zoneCards(before, 'box').map((c) => c.id));
   const newInBox = zoneCards(after, 'box').filter((c) => !boxed.has(c.id));
   const keys = POOLS.flatMap((pool) => {
@@ -572,6 +753,41 @@ function happenings(before: GameState, move: Move, after: GameState): string[] {
   }
   const started = turnStarted(before, after);
   if (started !== null) keys.push(...operationsOf(after, started).filter(earns).map(() => EARNS));
+
+  const by = move.by as PlayerId;
+  const card = typeof move.cardId === 'string' ? cardById(before, move.cardId) : undefined;
+  const growth = GROWTH_TIERS.includes(card?.data?.tier as string);
+  if (move.type === GREENLIGHT) {
+    if (growth) keys.push(GROWTH_GREENLIT);
+    const asked = pressChoices(runtime, before, move);
+    for (const { at, kind, options } of typeof asked === 'string' ? [] : asked) {
+      const one = options.length === 1;
+      if (kind === 'player') {
+        keys.push(one ? LICENSE_TO_THE_ONLY_PROVIDER : LICENSE_TO_A_CHOSEN_PROVIDER);
+        continue;
+      }
+      keys.push(one ? CUT_FILLED_IN : CUT_CHOSEN, `the cut: ${answersOf(move)[at] ?? options[0]}`);
+    }
+    if (typeof asked !== 'string' && asked.filter(({ kind }) => kind === 'player').length === 2) keys.push(TWO_LICENSES);
+  }
+  if (move.type === LAUNCH) {
+    if (growth) keys.push(GROWTH_LAUNCHED);
+    if (cubesOn(card!, 'cut blue cubes') + cubesOn(card!, 'cut red cubes') > 0) keys.push(CUT_LAUNCHED);
+  }
+  if (ranTheEngine(before, after, by)) {
+    const generating = atTheEngine(before, move, after);
+    const stalled = zoneCards(generating, zoneIdFor('development', by)).filter((project) => runtime.workedFlag(generating, project.id, 'stalled'));
+    keys.push(...stalled.map(() => STALLED_AT_THE_ENGINE));
+  }
+  if (move.type === PIVOT) {
+    const fired = cardsOn(before, move.cardId as string)
+      .filter((staff) => nameOf(staff) === 'Diva' && cardById(after, staff.id)!.zoneId === 'open-job-market');
+    keys.push(...fired.map(() => DIVA_PIVOTED));
+  }
+  if (move.type === PAY_SALARIES) {
+    const engineer = zoneCards(before, zoneIdFor('ops team', by)).find((staff) => nameOf(staff) === 'Engineer');
+    if (engineer !== undefined && runtime.workedValue(before, engineer.id, 'salary') === 1) keys.push(ENGINEER_IN_OPS);
+  }
   return keys;
 }
 
@@ -591,15 +807,23 @@ function scoreOf(state: GameState, seat: PlayerId): number {
  *
  * - Money is conserved: each seat's capital changes by what it earned less what it paid. The mover pays the bank 2 for a recruit,
  *   the card's cost for a hire from the agency row, 1 for one from the open job market, the total cost of the picked cards for a
- *   hire from its scouting, its payroll for paying salaries, and nothing for anything else. The seat whose turn started in the move
- *   earns the total rev of its products in operation, and no one else earns anything.
+ *   hire from its scouting, its payroll for paying salaries, and nothing for anything else but a Greenlight. The seat whose turn
+ *   started in the move earns the total rev of its products in operation, and no one else earns anything.
+ * - A Greenlight pays a License for each Tag the card requires that the mover's operations didn't provide, and pays it to the other
+ *   seats: the mover pays the license times the Tags missing, each other seat gains a whole number of Licenses, no more than the
+ *   missing Tags its operations provided, and together they gain what the mover paid. Some seat provided every Tag the card
+ *   requires (§6, §14.B.2).
  * - Market Share changes only for the seat whose turn started, which gains 1 for each of its products in operation that earned.
  * - No zone holds more than it may: the agency row 4, each market 2, each pool 5 and the crash pile 1; the bench of a player
  *   whose turn it is not 5, their backlog 3 and their research nothing; the player whose turn it is holds at most 4 in their
  *   backlog and 3 in their research, which has cards only in the research phase.
  * - The Board: no development holds more than 3 projects; every card that sits on a card is in a development team, on a project
  *   in the same seat's development, and every card in a development team sits on one; no card has more blue or red cubes than its
- *   blue or red cost, and none keeps new cubes, which the Engine commits in the move that generates them.
+ *   blue or red need, and none keeps new cubes, which the Engine commits in the move that generates them.
+ * - The cut: a project's cut is at most its cost in each colour, and leaves it a need of 1 cube or more; no card but a project or a
+ *   product in operation keeps a cut (§19.A).
+ * - No project gains cubes while it is Stalled, as it was when the Engine generated them (see `atTheEngine`) (§3).
+ * - No reassign the rules take moves the Diva, whose trait is Ego (§6, §20.B.1).
  * - Only the seat in the sourcing phase has cards in its scouting row.
  * - Each market refills at once: the agency row holds 4 and each product market 2 while its deck has cards, and the Market
  *   Crash is never anywhere but the growth deck or the crash pile.
@@ -643,7 +867,24 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
             : move.type === PAY_SALARIES ? payrollOf(runtime, before, by) : 0;
     const earned = (seat: PlayerId) => (seat === started ? sum(operationsOf(after, seat), 'rev') : 0);
     const gained = seats.map((seat) => capital(after, seat) - capital(before, seat));
-    expect(gained, `capital gained by ${seats.join(', ')} ${at}`).toEqual(seats.map((seat) => earned(seat) - (seat === by ? paid : 0)));
+    if (move.type === GREENLIGHT) {
+      // A License for each Tag the mover lacks, paid to the seats that provide it, read as the rules hold the license (§6, §14.B.2).
+      const license = gameNumber(before, game!, 'license');
+      const required = requirementsOf(card!);
+      const missing = required.filter((tag) => !tagsOf(before, by).has(tag));
+      expect(required.filter((tag) => !seats.some((seat) => tagsOf(before, seat).has(tag))), `Tags no seat provides ${at}`).toEqual([]);
+      const net = (seat: PlayerId) => gained[seats.indexOf(seat)] - earned(seat);
+      expect(net(by), `capital ${by} paid in Licenses ${at}`).toBe(0 - license * missing.length);
+      const others = seats.filter((seat) => seat !== by);
+      const overpaid = others.flatMap((seat) => {
+        const most = license * missing.filter((tag) => tagsOf(before, seat).has(tag)).length;
+        return net(seat) >= 0 && net(seat) % license === 0 && net(seat) <= most ? [] : [`${seat} gained ${net(seat)}, at most ${most}`];
+      });
+      expect(overpaid, `Licenses received ${at}`).toEqual([]);
+      expect(others.reduce((total, seat) => total + net(seat), 0), `Licenses received in all ${at}`).toBe(license * missing.length);
+    } else {
+      expect(gained, `capital gained by ${seats.join(', ')} ${at}`).toEqual(seats.map((seat) => earned(seat) - (seat === by ? paid : 0)));
+    }
     // Market Share: 1 for each product that earned, when its owner's turn started.
     const share = (state: GameState, seat: PlayerId) => counterOf(state, 'market share', seat);
     const shares = seats.map((seat) => share(after, seat) - share(before, seat));
@@ -677,8 +918,14 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       if (seat !== current || phase !== 'sourcing') atMost(own('scouting'), 0);
     }
 
-    // The Board: staff sit on their own seat's projects, and the tracks hold at most their cost.
+    // The Board: staff sit on their own seat's projects, and the tracks hold at most their need, the cost less the cut (§19.A).
     const projectsOf = new Map(seats.map((seat) => [zoneIdFor('development team', seat), zoneIdFor('development', seat)]));
+    const developments = new Set(seats.map((seat) => zoneIdFor('development', seat)));
+    /** The rows a product with a cut may be in: a project keeps it once Launched, and only a Pivot clears it (R3). */
+    const built = new Set([...developments, ...seats.map((seat) => zoneIdFor('operations', seat))]);
+    let generating: GameState | null = null;
+    /** The state the Engine generated in, made once a project is found to have gained cubes. */
+    const atGenerate = () => (generating ??= atTheEngine(before, move, after));
     const board: string[] = [];
     for (const c of after.cards) {
       const which = `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
@@ -688,13 +935,31 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
         board.push(`${which} is on ${JSON.stringify(holder)}, in ${holderZone}`);
       }
       if (holder === undefined && projectsOf.has(c.zoneId)) board.push(`${which} is on no card`);
+      const need = (color: string) => runtime.workedValue(after, c.id, `${color} need`) as number;
       for (const color of ['blue', 'red']) {
-        const cost = (c.data?.[`${color} cost`] as number | undefined) ?? 0;
-        if (cubesOn(c, `${color} cubes`) > cost) board.push(`${which} has ${cubesOn(c, `${color} cubes`)} ${color} cubes for a cost of ${cost}`);
+        const cubes = cubesOn(c, `${color} cubes`);
+        // Off the Board a card has no cut, so its need is its cost, at least 0: only one with cubes can hold more than it.
+        if ((cubes > 0 || built.has(c.zoneId)) && cubes > need(color)) {
+          board.push(`${which} has ${cubes} ${color} cubes for a need of ${need(color)}`);
+        }
         if (cubesOn(c, `new ${color} cubes`) !== 0) board.push(`${which} keeps ${cubesOn(c, `new ${color} cubes`)} new ${color} cubes`);
+        const cut = c.data?.[`cut ${color} cubes`];
+        if (cut !== undefined && !built.has(c.zoneId)) board.push(`${which} keeps a cut of ${cut} ${color} cubes`);
       }
+      if (!developments.has(c.zoneId)) continue;
+      for (const color of ['blue', 'red']) {
+        const [cut, cost] = [cubesOn(c, `cut ${color} cubes`), (c.data?.[`${color} cost`] as number | undefined) ?? 0];
+        if (cut > cost) board.push(`${which} has a cut of ${cut} ${color} cubes for a cost of ${cost}`);
+      }
+      if (need('blue') + need('red') < 1) board.push(`${which} needs ${need('blue')} blue and ${need('red')} red cubes`);
+      // A project gains cubes only from a team that has its leads, as the team was when the Engine generated them (§3).
+      const was = cardById(before, c.id);
+      const rose = ['blue', 'red'].some((color) => cubesOn(c, `${color} cubes`) > (was === undefined ? 0 : cubesOn(was, `${color} cubes`)));
+      if (rose && runtime.workedFlag(atGenerate(), c.id, 'stalled')) board.push(`${which} gained cubes while it was stalled`);
     }
     expect(board, `the Board ${at}`).toEqual([]);
+    // The Diva's Ego keeps her where she works: no reassign the rules take moves her (§6, §20.B.1).
+    if (REASSIGNS.includes(move.type)) expect(card!.data?.trait, `the trait of the card ${by} reassigned ${at}`).not.toBe('Ego');
 
     // Markets refill at once.
     const refilled = (row: string, deck: string, full: number) => {
@@ -1224,14 +1489,20 @@ describe('Startup Simulator (designer language)', () => {
       const seats = seatsFor(players);
       for (let seed = 1; seed <= 5; seed++) {
         const where = `${players} players, seed ${seed}`;
-        const rules = keepsTheRules(seats, new LangRuntime(game!, lib, seats));
+        const runtime = new LangRuntime(game!, lib, seats);
+        const rules = keepsTheRules(seats, runtime);
         const budget = keepsTheBudget(seats);
         const checked = { ...viewChecks };
+        const count = (key: string) => { tally[key] = (tally[key] ?? 0) + 1; };
+        // The Diva's Ego refuses her reassign, which the rules say in that line's words (§6, §20.B.1).
+        const refused: Refused = (_state, move, reason) => {
+          if (REASSIGNS.includes(move.type) && reason === EGO_REFUSAL) count(DIVA_REFUSED);
+        };
         const engine = playGame(players, seed, (before, move, after) => {
           rules(before, move, after);
           budget(before, move, after);
-          for (const key of [move.type, ...happenings(before, move, after)]) tally[key] = (tally[key] ?? 0) + 1;
-        }, { throughView: seed === 1 });
+          for (const key of [move.type, ...happenings(runtime, before, move, after)]) count(key);
+        }, { throughView: seed === 1, refused });
         if (seed === 1) {
           // The view was checked card by card: the cards each card may go on, and the cards of a set, each judged alone.
           expect(viewChecks.targets - checked.targets, `${where}: cards whose targets the view was checked for`).toBeGreaterThan(0);
@@ -1286,10 +1557,23 @@ describe('Startup Simulator (designer language)', () => {
       expect(Object.keys(played).filter((what) => !(played[what as keyof typeof played] > 0)), JSON.stringify(played)).toEqual([]);
     });
 
+    it('played slice 3 in those runs: Tier 2 and 3 greenlit and launched, Licenses paid to the only provider and to a chosen one, the cut filled in and chosen three ways and launched, Stalled projects at the Engine, the Diva refused a reassign and fired by a pivot, and the Engineer paid $1 in the ops team', () => {
+      const paths = [
+        GROWTH_GREENLIT, GROWTH_LAUNCHED, LICENSE_TO_THE_ONLY_PROVIDER, LICENSE_TO_A_CHOSEN_PROVIDER,
+        CUT_FILLED_IN, CUT_CHOSEN, 'the cut: Cut 2 blue', 'the cut: Cut 2 red', 'the cut: Cut 1 of each', CUT_LAUNCHED,
+        STALLED_AT_THE_ENGINE, DIVA_REFUSED, DIVA_PIVOTED, ENGINEER_IN_OPS,
+      ];
+      // Two Licenses in one Greenlight takes a Tier 3 card whose both Tags the mover lacks; it is counted, but not required.
+      expect(paths.filter((key) => !(tally[key] > 0)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
+    });
+
     it('plays the same game through the page’s view as without it (2 players, seed 1)', () => {
       const plain = playGame(2, 1, () => {});
       const viewed = playGame(2, 1, () => {}, { throughView: true });
       expect(plain.getState().result).toBeDefined();
+      // Greenlights that asked choices, answered from the choices the view lists for the card and from the rules alike.
+      const answering = plain.getLog().filter((move) => move.choices !== undefined);
+      expect(answering.map((move) => move.type), 'the moves that answered choices').toContain(GREENLIGHT);
       expect(viewed.getLog()).toEqual(plain.getLog());
       expect(viewed.getState()).toEqual(plain.getState());
     }, 60_000);
@@ -1412,6 +1696,55 @@ describe('Startup Simulator (designer language)', () => {
       }
       engine.undo();
       expect(engine.getState()).toEqual(fresh().getState());
+    }, 120_000);
+
+    it('takes back a Greenlight that asked a choice, and rebuilds it from its log, the payee included, whether the move named its answers or left them to be filled in (Review Focus: 4 players, seeds 1 to 5)', () => {
+      const seats = seatsFor(4);
+      const runtime = new LangRuntime(game!, lib, seats);
+      /** A Greenlight that answered the choices its press asked; the auto-player names no choices for a press that asks none. */
+      const answered = (move: Move) => move.type === GREENLIGHT && move.choices !== undefined;
+      const seen = { payees: 0, among: 0, filledIn: 0 };
+      for (let seed = 1; seed <= 5; seed++) {
+        const where = `4 players, seed ${seed}`;
+        const states: GameState[] = [];
+        const engine = playGame(4, seed, (before) => states.push(before), { until: (log) => log.some(answered) });
+        const log = [...engine.getLog()];
+        // A game whose seats never greenlight a card that asks a choice ends without one.
+        if (!answered(log.at(-1)!)) {
+          expect(log.some(answered), where).toBe(false);
+          continue;
+        }
+        const [before, after, greenlight] = [states.at(-1)!, engine.getState(), log.at(-1)!];
+        // Each payee gained a License for each Tag it was paid for, and the mover paid them all (§6, §14.B.2).
+        const license = gameNumber(before, game!, 'license');
+        const payees = answersOf(greenlight).slice(0, 2).filter((seat): seat is string => seat !== null);
+        const gained = (state: GameState) => seats.map((seat) => counterOf(state, 'capital', seat) - counterOf(before, 'capital', seat));
+        const paid = seats.map((seat) => license * (payees.filter((payee) => payee === seat).length - (seat === greenlight.by ? payees.length : 0)));
+        expect(gained(after), `${where}: capital gained by ${seats.join(', ')}`).toEqual(paid);
+
+        const fresh = () => createEngine(game!, lib, 4, initialState(game!, seed)).engine;
+        const replayed = fresh();
+        replayed.loadLog(log);
+        expect(replayed.getState(), `${where}: the game rebuilt from its log`).toEqual(after);
+        // A press whose every choice has one answer is filled in the same when the move names none, as the page sends it until 3-2.
+        const asked = pressChoices(runtime, before, greenlight) as AskedChoice[];
+        const among = asked.some(({ options }) => options.length > 1);
+        if (!among) {
+          const { choices: _named, ...unnamed } = greenlight;
+          const filledIn = fresh();
+          filledIn.loadLog([...log.slice(0, -1), unnamed]);
+          expect(filledIn.getState(), `${where}: the game rebuilt with the Greenlight's answers filled in`).toEqual(after);
+        }
+
+        engine.undo();
+        expect(engine.getState(), `${where}: the game with the Greenlight taken back`).toEqual(before);
+        expect(gained(engine.getState()), `${where}: capital after the Greenlight is taken back`).toEqual(seats.map(() => 0));
+        seen.payees += payees.length;
+        seen.among += among ? 1 : 0;
+        seen.filledIn += among ? 0 : 1;
+      }
+      // Some Greenlight paid a License, some chose among several answers, and some had every answer filled in.
+      expect(Object.entries(seen).filter(([, times]) => times === 0), JSON.stringify(seen)).toEqual([]);
     }, 120_000);
   });
 });
