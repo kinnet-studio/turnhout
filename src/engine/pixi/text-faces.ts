@@ -41,12 +41,13 @@ const detailsOf = (attrs: Record<string, string>): string[] =>
     : [];
 
 /**
- * How the big label is set. A card with no details, or a label that is one short word, keeps the big centred label it has
- * always had. Any other label would run into the details, so it is smaller, and ends just above them.
+ * How the big label is set. A card with at most one detail line, or a label that is one short word, keeps the big centred label
+ * it has always had (every face of the four games). A card with more details has less room: its longer label is smaller, and
+ * ends just above them.
  */
-export function labelStyleOf(label: string, hasDetails: boolean): { fontSize: number; wordWrapWidth: number; anchorY: number; y: number } {
+export function labelStyleOf(label: string, detailCount: number): { fontSize: number; wordWrapWidth: number; anchorY: number; y: number } {
   const words = label.split(/\s+/).filter((word) => word !== '');
-  if (!hasDetails || (words.length === 1 && words[0].length <= SHORT_LABEL)) {
+  if (detailCount <= 1 || (words.length === 1 && words[0].length <= SHORT_LABEL)) {
     return { fontSize: 24, wordWrapWidth: CARD_WIDTH - 20, anchorY: 0.5, y: LABEL_Y };
   }
   const longest = Math.max(0, ...words.map((word) => word.length));
@@ -74,7 +75,7 @@ const drawText = (attrs: Record<string, string>): FaceDraw => (container) => {
   container.addChild(g);
 
   const details = detailsOf(attrs);
-  const looks = labelStyleOf(labelOf(attrs), details.length > 0);
+  const looks = labelStyleOf(labelOf(attrs), details.length);
   const label = new Text({
     text: labelOf(attrs),
     style: { fontSize: looks.fontSize, fontWeight: 'bold', fill: ink, align: 'center', wordWrap: true, wordWrapWidth: looks.wordWrapWidth, breakWords: true },

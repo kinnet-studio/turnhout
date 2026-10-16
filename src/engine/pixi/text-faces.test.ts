@@ -99,25 +99,34 @@ describe('faces of cards with many columns', () => {
     expect(labels(container)).not.toContain('rarity: rare');
   });
 
-  it('keeps today\'s label for a card with no details or a short one-word name', () => {
+  it('keeps today\'s label for a card with at most one detail line, or a short one-word name', () => {
     const today = { fontSize: 24, wordWrapWidth: 80, anchorY: 0.5, y: -12 };
-    for (const name of ['Goblin', 'Knight', 'Archer', 'Viper']) expect(labelStyleOf(name, true), name).toEqual(today);
-    expect(labelStyleOf('red 7', false)).toEqual(today);
-    expect(labelStyleOf('Wandering Merchant', false)).toEqual(today);
+    for (const name of ['Goblin', 'Knight', 'Archer', 'Viper']) expect(labelStyleOf(name, 3), name).toEqual(today);
+    expect(labelStyleOf('red 7', 0)).toEqual(today);
+    expect(labelStyleOf('Wandering Merchant', 0)).toEqual(today);
+    expect(labelStyleOf('Wandering Merchant', 1)).toEqual(today);
   });
 
-  it('shrinks a longer label and lifts it clear of the details', () => {
+  it('shrinks a longer label of a card with two or more details, and lifts it clear of them', () => {
     const lifted = { fontSize: 14, wordWrapWidth: 88, anchorY: 1, y: 13 };
-    expect(labelStyleOf('Wandering Merchant', true)).toEqual(lifted);
-    expect(labelStyleOf('Big Bad', true)).toEqual(lifted);
-    expect(labelStyleOf('Extraordinarily Big', true)).toEqual({ ...lifted, fontSize: 12 });
+    expect(labelStyleOf('Wandering Merchant', 2)).toEqual(lifted);
+    expect(labelStyleOf('Big Bad', 3)).toEqual(lifted);
+    expect(labelStyleOf('Extraordinarily Big', 2)).toEqual({ ...lifted, fontSize: 12 });
   });
 
   it('draws a long name small and above its details', () => {
-    const container = drawn(card({ faceKey: textFaceKey({ name: 'Wandering Merchant', attack: 3 }) }));
+    const container = drawn(card({ faceKey: textFaceKey({ name: 'Wandering Merchant', attack: 3, defense: 2 }) }));
     const label = container.children.find((ch): ch is Text => ch instanceof Text && ch.text === 'Wandering Merchant')!;
     expect(label.style.fontSize).toBe(14);
     expect(label.anchor.y).toBe(1);
+  });
+
+  it('draws a long name with one detail line as it always was', () => {
+    const container = drawn(card({ faceKey: textFaceKey({ name: 'Get Out Of Jail Free', says: 'They keep this card until they use it.' }) }));
+    const label = container.children.find((ch): ch is Text => ch instanceof Text && ch.text === 'Get Out Of Jail Free')!;
+    expect(label.style.fontSize).toBe(24);
+    expect(label.anchor.y).toBe(0.5);
+    expect(label.y).toBe(-12);
   });
 
   it('draws a short name as it always was', () => {
