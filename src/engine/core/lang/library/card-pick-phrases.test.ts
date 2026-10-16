@@ -67,6 +67,65 @@ describe('examples that press a button that picks a card', () => {
     });
   });
 
+  describe('Review Focus: two buttons that take the card from two rows to one zone', () => {
+    /** CARD_PICK_GAME with a second row to buy from, the stall: both buys put the card in the stash. */
+    const TWO_ROWS = CARD_PICK_GAME
+      .replace('  The shop is a row in the center that everyone can see.\n', '  The shop is a row in the center that everyone can see.\n  The stall is a row in the center that everyone can see.\n')
+      .replace('  A player may sell a card in their stash.\n', '  A player may buy a card from the stall to their stash.\n    It costs 1 move.\n  A player may sell a card in their stash.\n');
+    /** An example of one press with a Ruby in both rows: `when` is the When line. */
+    const inBoth = (when: string, then: string[] = []) =>
+      ['Example: a Ruby in both rows', '  Given the shop has a Ruby', '  And the stall has a Ruby', `  When ${when}`, ...then.map((line) => `  ${line}`)].join('\n');
+    const BOTH_BUTTONS = 'p0 could buy a Ruby with more than one button: “buy a card from the shop to their stash” or “buy a card from the stall to their stash”.';
+
+    it('is the TWO_ROWS game', () => expect(TWO_ROWS.split('\n').length).toBe(CARD_PICK_GAME.split('\n').length + 3));
+    it('reads where the cards come from after them, and then where they go', () => {
+      const vocab = vocabFor(compileGame(TWO_ROWS, lib).game!);
+      expect(lib.match('action', 'p0 buys the Ruby from the stall', vocab)).toEqual({
+        status: 'ok', pattern: '{player} {cardaction} {cardlist} from {zone}', args: ['p0', 'buy', [{ name: 'Ruby' }], { shared: 'stall' }],
+      });
+      expect(lib.match('action', "p0 buys the Ruby from the stall to p0's stash", vocab)).toEqual({
+        status: 'ok', pattern: '{player} {cardaction} {cardlist} from {zone} to {zone}',
+        args: ['p0', 'buy', [{ name: 'Ruby' }], { shared: 'stall' }, { of: { seat: 'p0' }, zone: 'stash' }],
+      });
+      expect(lib.match('action', "p0 shows the Opal from p0's stash to the Ruby", vocab)).toEqual({
+        status: 'ok', pattern: '{player} {cardaction} {cardlist} from {zone} to {card}',
+        args: ['p0', 'show', [{ name: 'Opal' }], { of: { seat: 'p0' }, zone: 'stash' }, { name: 'Ruby' }],
+      });
+    });
+    it('presses the button that takes the card from the zone the example names', () => {
+      const fromStall = inBoth('p0 buys the Ruby from the stall', ['Then it is accepted', 'And the stall is empty', 'And the shop has a Ruby', "And p0's stash has a Ruby"]);
+      expect(run(TWO_ROWS, fromStall)).toEqual([expect.objectContaining({ status: 'pass', message: null })]);
+      const fromShop = inBoth('p0 buys the Ruby from the shop', ['Then it is accepted', 'And the shop is empty', 'And the stall has a Ruby']);
+      expect(run(TWO_ROWS, fromShop)).toEqual([expect.objectContaining({ status: 'pass', message: null })]);
+      const both = inBoth("p0 buys the Ruby from the stall to p0's stash", ['Then it is accepted', 'And the stall is empty', 'And the shop has a Ruby']);
+      expect(run(TWO_ROWS, both)).toEqual([expect.objectContaining({ status: 'pass', message: null })]);
+    });
+    it('says where it comes from when the example does not, and saying where it goes does not help', () => {
+      const ASK = 'Say where it comes from: “… from the shop” or “… from the stall”.';
+      for (const when of ['p0 buys the Ruby', "p0 buys the Ruby to p0's stash"]) {
+        const [result] = run(TWO_ROWS, inBoth(when, ['Then it is accepted']));
+        expect(result.status, when).toBe('fail');
+        expect(result.message, when).toMatch(new RegExp(`${BOTH_BUTTONS.replace(/\./g, '\\.')} ${ASK.replace(/\./g, '\\.')}$`));
+      }
+    });
+    it('says no button takes the card from a zone none of them takes it from', () => {
+      const [result] = run(TWO_ROWS, ['Example: selling from the shop', '  Given the shop has an Opal', '  When p0 sells the Opal from the shop'].join('\n'));
+      expect(result.status).toBe('fail');
+      expect(result.message).toMatch(/No button lets p0 sell a card from the shop\.$/);
+    });
+    it('asks for other words when neither where the cards come from nor where they go tells two buttons apart', () => {
+      // A one-card button and a set button that both take from the stash to a card in the case: an example names the card, not its zone.
+      const SHOW_SOME = CARD_PICK_GAME.replace('  A player may stop.\n', '  A player may show some cards from their stash to a card in their case.\n  A player may stop.\n');
+      expect(SHOW_SOME).not.toBe(CARD_PICK_GAME);
+      const showing = ['Example: showing one', "  Given p0's stash has an Opal", "  And p0's case has an Opal", '  When p0 shows the Opal to the Opal'].join('\n');
+      const [result] = run(SHOW_SOME, showing);
+      expect(result.status).toBe('fail');
+      expect(result.message).toMatch(
+        /with more than one button: “show a card from their stash to a card in their case” or “show some cards from their stash to a card in their case”\. Give the buttons different words\.$/,
+      );
+    });
+  });
+
   describe('a zone no button takes the card to', () => {
     it('presses the button whose zone it is', () => {
       const results = run(CARD_PICK_GAME, pressing("p0 buys the Ruby to p0's stash", ["Then p0's stash has a Ruby"]));

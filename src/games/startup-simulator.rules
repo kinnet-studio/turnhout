@@ -314,6 +314,17 @@ Example: the open job market costs 1 and hires to the bench (ruling 20)
   And p0's bench has the Fixer
   And the open job market is empty
 
+Example: a Sales Rep hired from the open job market costs 1 while the agency row has one too, and the agency row keeps its own (ruling 20)
+  Given the agency row has the Hacker, the Architect, the Veteran and a Sales Rep
+  And the open job market has a Sales Rep
+  When p0 hires a Sales Rep from the open job market
+  Then it is accepted
+  And p0 has 6 capital
+  And p0 has 2 actions
+  And p0's bench has a Sales Rep
+  And the open job market is empty
+  And the agency row has the Hacker, the Architect, the Veteran and a Sales Rep, in that order
+
 Example: the bench is cut to 5, and the open job market keeps the 5 newest (rulings 10 and 12)
   Given the phase is bench cleanup
   And p0's bench has a QA Engineer, a QA Engineer, a QA Engineer, a Sales Rep, a Sales Rep and a Sales Rep

@@ -147,7 +147,7 @@ Phase: playing
   - A blank cell in a card table is left out, so the card has no value for that column.
   - Rows and queues: `Move the bottom card of the open idea pool to the box.`, `When the growth market has the market crash:`, `Move the market crash from their research to the crash pile.`, `Deal up to 3 cards from the seed deck to their research.` (it takes what's there), `Deal 1 card from the seed deck to each backlog.` and `The market crash goes into the bottom fifth of the growth deck.`
   - Examples check the order of a row with `…, in that order` and where a card lies with `the market crash is among the bottom 8 cards of the growth deck`.
-- **Startup Simulator (slice 1a)** plays the table, money and turns: recruiting, drafting, Research, Cleanup, the Market Crash and a first score. Its 24 examples pin rulings 10, 12, 13, 18, 20, 24 and 25.
+- **Startup Simulator (slice 1a)** plays the table, money and turns: recruiting, drafting, Research, Cleanup, the Market Crash and a first score. Its 25 examples pin rulings 10, 12, 13, 18, 20, 24 and 25.
   - Building products comes in slice 1b.
   - The game still leaves out the game-end Ops check (§12.2) and the last Milestone check (§12.3).
   - Growth cards are drafted but can't be built until slice 3.
@@ -165,7 +165,7 @@ Phase: playing
   - it refuses with "they have at least 1 action" before every `Only if`;
   - it spends before the `Then:` lines;
   - only a number each player has each turn can be a cost.
-- **Examples** name the card: `When p0 hires the Hacker`, `When p0 shows the Opal to the Ruby`, `When p0 trades the Ruby and the Opal`, and `When p0 buys the Ruby to p0's case` when two buttons could take the Ruby.
+- **Examples** name the card: `When p0 hires the Hacker`, `When p0 shows the Opal to the Ruby` and `When p0 trades the Ruby and the Opal`. When two buttons could take the card, the example says where it goes (`When p0 buys the Ruby to p0's case`) or where it comes from (`When p0 hires a Sales Rep from the open job market`), and the error says which would tell them apart.
 - **In the playtest,** pressing the button lists the cards it may pick under the buttons, a refused one greyed with the reason on hover. A set ends with Confirm, and Cancel closes the list.
 - **Startup Simulator** is played by picking cards.
 

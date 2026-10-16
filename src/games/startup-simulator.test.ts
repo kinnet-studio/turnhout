@@ -430,8 +430,18 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(24);
+    expect(results).toHaveLength(25);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
+  });
+
+  it('asks an example to say where a hire comes from when both rows hold the card', () => {
+    const bare = [
+      'Example: a Sales Rep in both rows', '  Given the agency row has the Hacker, the Architect, the Veteran and a Sales Rep',
+      '  And the open job market has a Sales Rep', '  When p0 hires a Sales Rep', '  Then it is accepted',
+    ].join('\n');
+    const results = runExamples(compileGame(`${STARTUP_SIMULATOR}\n\n${bare}\n`, lib).game!, lib);
+    expect(results.at(-1)!.status).toBe('fail');
+    expect(results.at(-1)!.message).toMatch(/Say where it comes from: “… from the agency row” or “… from the open job market”\.$/);
   });
 
   describe('the cards (§20)', () => {
