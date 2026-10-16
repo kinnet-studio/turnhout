@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type KeyboardEvent } from 'react';
 import type { ActionView, BoardView } from '@/engine/core/lang/board-view';
 import { counted } from '@/engine/core/lang/refs';
 import { factWords } from './board-grid';
@@ -57,7 +57,8 @@ const BUTTON_STYLE = { padding: '6px 12px', font: '14px sans-serif' } as const;
 
 /**
  * One button. One that carries an amount has a number box right before it, greyed with it, which keeps what was typed so the next
- * press starts from the last amount; a blank box sends no amount, and the rules say what is missing.
+ * press starts from the last amount; a blank box sends no amount, and the rules say what is missing. Enter in the box does what
+ * pressing the button does, and the reason it is greyed shows on hover over either.
  */
 function ActionButton({ action, onPress, onPick, onRefused }: {
   action: ActionView;
@@ -73,21 +74,28 @@ function ActionButton({ action, onPress, onPick, onRefused }: {
     else if (amount) onPress(move, typed.trim() === '' ? null : Number(typed));
     else onPress(move);
   };
+  const act = () => (live ? press() : onRefused(allowed));
+  const actOnEnter = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    act();
+  };
   const button = (
     <button
       type="button"
       aria-disabled={!live}
       title={live ? undefined : allowed}
-      onClick={() => (live ? press() : onRefused(allowed))}
+      onClick={act}
       style={{ ...BUTTON_STYLE, opacity: live ? 1 : 0.5, cursor: live ? 'pointer' : 'not-allowed' }}
     >
       {label}
     </button>
   );
   if (!amount) return button;
-  // The box and its button stay together when the row wraps.
+  // The box and its button stay together when the row wraps. The reason is on the holder too, since not every browser shows a
+  // disabled box's own hover text.
   return (
-    <span style={{ display: 'inline-flex', gap: 4 }}>
+    <span title={live ? undefined : allowed} style={{ display: 'inline-flex', gap: 4 }}>
       <input
         type="number"
         min="0"
@@ -96,6 +104,7 @@ function ActionButton({ action, onPress, onPick, onRefused }: {
         value={typed}
         disabled={!live}
         onChange={(e) => setTyped(e.target.value)}
+        onKeyDown={actOnEnter}
         style={{ ...BUTTON_STYLE, width: 84, boxSizing: 'border-box' }}
       />
       {button}

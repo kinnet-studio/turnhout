@@ -418,6 +418,27 @@ describe("game numbers and buttons that carry an amount", () => {
     expect(onRefused).toHaveBeenCalledWith('they have rolled this turn');
     expect(onPress).not.toHaveBeenCalled();
   });
+  it('gives the reason on hover over the greyed box too, and none while the button is live', () => {
+    const { rerender } = render(<ActionButtons actions={[{ ...raise, allowed: 'they have rolled this turn' }]} onPress={vi.fn()} onPick={vi.fn()} onRefused={vi.fn()} />);
+    // Not every browser shows a disabled box's own hover text, so the box and its button share a holder that has the reason.
+    const holder = () => screen.getByRole('spinbutton', { name: 'Raise amount' }).parentElement!;
+    expect(holder().getAttribute('title')).toBe('they have rolled this turn');
+    expect(holder()).toBe(screen.getByRole('button', { name: 'Raise' }).parentElement);
+    rerender(<ActionButtons actions={[raise]} onPress={vi.fn()} onPick={vi.fn()} onRefused={vi.fn()} />);
+    expect(holder().hasAttribute('title')).toBe(false);
+  });
+  it('sends the number typed when Enter is pressed in the box, as the button does, and nothing on other keys', () => {
+    const onPress = vi.fn();
+    render(<ActionButtons actions={[raise]} onPress={onPress} onPick={vi.fn()} onRefused={vi.fn()} />);
+    const box = screen.getByRole('spinbutton', { name: 'Raise amount' });
+    fireEvent.change(box, { target: { value: '50' } });
+    fireEvent.keyDown(box, { key: '5' });
+    expect(onPress).not.toHaveBeenCalled();
+    fireEvent.keyDown(box, { key: 'Enter' });
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(onPress).toHaveBeenLastCalledWith('raise an amount', 50);
+    expect((box as HTMLInputElement).value).toBe('50');
+  });
   it('gives a button that carries no amount no box, and sends only its move', () => {
     const onPress = vi.fn();
     render(<ActionButtons actions={[{ ...raise, amount: false }]} onPress={onPress} onPick={vi.fn()} onRefused={vi.fn()} />);
