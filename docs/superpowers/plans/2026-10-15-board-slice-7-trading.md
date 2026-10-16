@@ -15,7 +15,7 @@
   - `every player is {playerflag}`, `no player is {playerflag}`, and the effect `no space is {spaceflag}`;
   - `BoardView.interrupted`, which puts the phase's name first in the seat status;
   - in `rent-day.test.ts`, the auto-player's settle-debts step (slice 5) and auction step (slice 6), and slice 6's widened turn invariant;
-  - Rent Day's 82 examples. Rent Day's text at the start of this slice is slice 6's final text.
+  - Rent Day's 89 examples. Rent Day's text at the start of this slice is slice 6's final text.
 - **The pick rides on the press.**
   - A button whose wording ends in " another player" picks a seat. The move carries it as `player`, and `aboutPress` puts it on `Subject.picked`, never on `env.move`.
   - The move is refused in this order: the flow gate (the engine's), the seat checks, a missing or bad pick, then every `Only if` group.
@@ -71,7 +71,7 @@
 - **Existing behaviour stays.**
   - Hearts, Color Match and Venom compile with no diagnostics and pass their examples.
   - A button whose wording ends in no target phrase, no " an amount" and no " another player" compiles and plays exactly as before. So does every "on a …" button.
-  - Rent Day's 82 examples keep passing unchanged. Its text changes only by adding the trade.
+  - Rent Day's 89 examples keep passing unchanged. Its text changes only by adding the trade.
   - One existing test changes, in Task 1: the slice 2 test whose third button `A player may build a house.` shares the label "Build a house" with a pick. The designer-page test's example count changes in Task 5.
   - The seat status keeps slice 6's rule: the phase's name comes first only while a turn is interrupted.
 - **Style and commits.**
@@ -761,7 +761,7 @@ Phase: trade
   After a player proposes the trade, the turn passes to the next player on the left who is the trade partner.
 ```
 
-- [ ] **Step 4: Append these 17 examples** after the existing 82, for 99 in all. `kept cards change hands both ways` is the Review Focus case for kept cards. `accepting swaps everything in the offer`, `declining changes nothing` and `cancelling a trade changes nothing` are the Review Focus cases for the ways out.
+- [ ] **Step 4: Append these 17 examples** after the existing 89, for 106 in all. `kept cards change hands both ways` is the Review Focus case for kept cards. `accepting swaps everything in the offer`, `declining changes nothing` and `cancelling a trade changes nothing` are the Review Focus cases for the ways out.
 
 ```text
 Example: starting a trade
@@ -979,7 +979,7 @@ How each number comes from the board and the rules:
 - In the answer-before-proposal example, the trade phase's turn is still p0's, so the flow refuses p1. The example shows that as "It's p0's turn.".
 
 - [ ] **Step 5: Extend `rent-day.test.ts`.**
-  - **Examples:** `results` has length 99, and all pass.
+  - **Examples:** `results` has length 106, and all pass.
   - **Constants:**
     - the move types above as `TRADE`, `OFFER`, `ASK`, `OFFER_CASH`, `ASK_CASH`, `OFFER_KEPT`, `ASK_KEPT`, `PROPOSE`, `CANCEL`, `ACCEPT`, `DECLINE`;
     - `TRADE_PHASE = 'trade'`, `OFFERED = 'offered'`, `ASKED = 'asked for'`, `HANDED = 'handed over'`, `CLAIMED = 'claimed'`, `PROPOSING = 'proposing'`, `PARTNER = 'the trade partner'`, `CASH_OFFER = 'cash offer'`, `CASH_REQUEST = 'cash request'`;
@@ -1039,7 +1039,7 @@ How each number comes from the board and the rules:
     - These are unchanged: the seeds slice 6 left, within 5000 turns, a hotel built, and someone going out holding buildings. They are seeds 1, 2 and 3 at both 4 and 8 players (slice 5's last fix round made every seat pay off mortgages, so 8-player seed 3 ends again).
     - If a seed doesn't finish, try the next seed and say so in the commit. Don't raise the cap past 20000.
   - **The lean variant and undo:** unchanged. They now play through the trading auto-player.
-- [ ] **Step 6: The page test that counts examples.** In `designer-page.test.tsx`, expect `99 of 99 examples pass`, and the test name says 99.
+- [ ] **Step 6: The page test that counts examples.** In `designer-page.test.tsx`, expect `106 of 106 examples pass`, and the test name says 106.
 - [ ] **Step 7: Run** `bunx vitest run src/games/rent-day.test.ts src/pages/designer`.
   - Fix any failure in the phrases, not in the example numbers: the numbers come from the board above.
   - Then run `bun run test` and `bun run typecheck`.
@@ -1209,7 +1209,7 @@ grep -rniE '\b(trad(e|es|ed|ing)|offer(s|ed|ing)?|propos(e|es|ed|ing|al)|partner
 ```
 
 - [ ] **Step 6: Update the README.**
-  - Under *Designing a game*, change "with 82 examples" to "with 99 examples".
+  - Under *Designing a game*, change "with 89 examples" to "with 106 examples".
   - After the **Auctions.** paragraph, add a **Trading.** paragraph covering these points:
     - **Picking another player.**
       - A button whose wording ends in "another player" (`A player may trade with another player.`) picks a seat still in, other than the presser's. The playtest lists them in a banner after the press.
