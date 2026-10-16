@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { zoneCards, type GameState } from '../game-state';
 import type { Json } from '../table-def';
 import { markOut, placePiece, queueRoll, setBank, setCounter, setGameNumber, setOwner, setPlayerFact, setSpaceFact, withBoardData } from './board-state';
@@ -1037,6 +1037,11 @@ describe('buttons that pick a card', () => {
       expect(show.cards!.onto!.targets[o2].map((t) => t.allowed)).toEqual(['the target card is not a Ruby', true]);
       expect([show.allowed, ...show.cards!.cards.map((c) => c.allowed)]).toEqual([true, true, true]);
     });
+    it('lists the same targets, in the same order, for every card, so the page may read one card\'s list for a whole set', () => {
+      const show = view('p0', picks(plus('case-p0', r3, o3)), SHOW);
+      const lists = Object.values(show.cards!.onto!.targets).map((targets) => targets.map((target) => [target.id, target.name]));
+      expect(lists).toEqual([[[r3, 'Ruby'], [o3, 'Opal']], [[r3, 'Ruby'], [o3, 'Opal']]]);
+    });
     it('says there is no card to go to while the case is empty', () => {
       const show = view('p0', picks(), SHOW);
       const none = 'There is no card in your case.';
@@ -1071,6 +1076,14 @@ describe('buttons that pick a card', () => {
       // The press still judges the target itself.
       expect(built.engine.canDispatch({ type: SPY, by: 'p0', cardId: o2, onto: r3 })).toBe('the target card is not a Ruby');
       expect(built.engine.canDispatch({ type: SPY, by: 'p0', cardId: o2, onto: o3 })).toBe(true);
+    });
+    it('asks the engine about the button with no card once, however many hidden cards and targets it lists', () => {
+      const SPY = "spy a card from their stash to a card in the other player's stash";
+      const built = picks(plus('stash-p1', r3, o3), peeking([`  A player may ${SPY}.`, '    Only if the target card is not a Ruby.']));
+      const asked = vi.spyOn(built.engine, 'canDispatch');
+      const spy = view('p0', built, SPY);
+      expect(Object.values(spy.cards!.onto!.targets).flat()).toHaveLength(4);
+      expect(asked.mock.calls.filter(([move]) => move.type === SPY && !('cardId' in move))).toEqual([[{ type: SPY, by: 'p0' }]]);
     });
     it('Review Focus: judges a hidden card of a set without the lines about the picked cards', () => {
       const SNOOP = "snoop some cards from the other player's stash";

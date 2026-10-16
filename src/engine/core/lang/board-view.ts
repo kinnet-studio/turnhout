@@ -291,15 +291,14 @@ function pickedAs(runtime: LangRuntime, state: GameState, seat: PlayerId, id: st
 }
 
 /**
- * Whether `seat` could pick cards it can't see all of: the move pressed with no card answers for all that is no card's (the turn, the
- * phase, the game being over), and the rest is judged without the lines that read any card of the press, so that the verdict is the
- * same for every such card and gives none of them away.
+ * Whether `seat` could pick cards it can't see all of: `cardless`, the move pressed with no card, answers for all that is no card's (the
+ * turn, the phase, the game being over), and the rest is judged without the lines that read any card of the press, so that the verdict
+ * is the same for every such card and gives none of them away.
  */
 function faceDownVerdict(
-  engine: GameEngine, runtime: LangRuntime, state: GameState, seat: PlayerId, action: DeclaredAction, cardId: string, onto?: string,
+  runtime: LangRuntime, state: GameState, seat: PlayerId, action: DeclaredAction, cardless: true | string, cardId: string, onto?: string,
 ): true | string {
-  const verdict = allowedNow(engine, state, seat, action.words);
-  if (verdict !== cardPrompt(action)) return verdict;
+  if (cardless !== cardPrompt(action)) return cardless;
   try {
     return faceDownReady(runtime, action, state, seat, cardId, onto);
   } catch (e) {
@@ -309,13 +308,14 @@ function faceDownVerdict(
 
 /**
  * Whether `seat` may press the button with `cardId`, alone for a set, and with `onto` for a button that picks a card for it to go to:
- * the engine's verdict on that move when the seat sees every card of it, else the verdict `faceDownVerdict` gives.
+ * the engine's verdict on that move when the seat sees every card of it, else the verdict `faceDownVerdict` gives with `cardless`, the
+ * verdict on the move with no card, asked only once one is needed.
  */
 function pickVerdict(
-  engine: GameEngine, runtime: LangRuntime, state: GameState, seat: PlayerId, action: DeclaredAction, card: { id: string; seen: boolean },
-  onto?: { id: string; seen: boolean },
+  engine: GameEngine, runtime: LangRuntime, state: GameState, seat: PlayerId, action: DeclaredAction, cardless: () => true | string,
+  card: { id: string; seen: boolean }, onto?: { id: string; seen: boolean },
 ): true | string {
-  if (!card.seen || (onto && !onto.seen)) return faceDownVerdict(engine, runtime, state, seat, action, card.id, onto?.id);
+  if (!card.seen || (onto && !onto.seen)) return faceDownVerdict(runtime, state, seat, action, cardless(), card.id, onto?.id);
   const cards = action.pick!.some ? { cardIds: [card.id] } : { cardId: card.id };
   return allowedNow(engine, state, seat, action.words, { ...cards, onto: onto?.id });
 }
@@ -335,21 +335,27 @@ function cardPickView(
   engine: GameEngine, runtime: LangRuntime, state: GameState, seat: PlayerId, action: DeclaredAction,
 ): { cards: CardPickView; allowed: true | string } {
   const { some, fromText, ontoText } = action.pick!;
-  const onto = ontoText === null ? null : { prompt: unstopped(ontoPrompt(action)), targets: {} as { [cardId: string]: PickCardView[] } };
-  const view: CardPickView = { some, prompt: unstopped(cardPrompt(action)), cards: [], onto };
+  // The zone of the card they go to, as written, beside what the view says of it.
+  const placing = ontoText === null
+    ? null
+    : { ontoText, view: { prompt: unstopped(ontoPrompt(action)), targets: {} as { [cardId: string]: PickCardView[] } } };
+  const view: CardPickView = { some, prompt: unstopped(cardPrompt(action)), cards: [], onto: placing?.view ?? null };
   if (isOut(state, seat) && state.result === undefined) return { cards: view, allowed: OUT_OF_GAME };
-  const targets = ontoText === null ? [] : ontoCandidates(runtime, action, state, seat).map((id) => pickedAs(runtime, state, seat, id));
+  // The move with no card says the same for every card the seat can't see, so it is asked once for the button, and only if one is listed.
+  let asked: true | string | undefined;
+  const cardless = () => (asked ??= allowedNow(engine, state, seat, action.words));
+  const targets = placing === null ? [] : ontoCandidates(runtime, action, state, seat).map((id) => pickedAs(runtime, state, seat, id));
   for (const id of cardCandidates(runtime, action, state, seat)) {
     const { seen, ...card } = pickedAs(runtime, state, seat, id);
-    if (onto === null || ontoText === null) {
-      view.cards.push({ ...card, allowed: pickVerdict(engine, runtime, state, seat, action, { id, seen }) });
+    if (placing === null) {
+      view.cards.push({ ...card, allowed: pickVerdict(engine, runtime, state, seat, action, cardless, { id, seen }) });
       continue;
     }
     const goes = targets.map(({ seen: shown, ...target }) => ({
-      ...target, allowed: pickVerdict(engine, runtime, state, seat, action, { id, seen }, { id: target.id, seen: shown }),
+      ...target, allowed: pickVerdict(engine, runtime, state, seat, action, cardless, { id, seen }, { id: target.id, seen: shown }),
     }));
-    onto.targets[id] = goes;
-    view.cards.push({ ...card, allowed: goes.some((t) => t.allowed === true) ? true : goes[0]?.allowed ?? noCardIn(ontoText) });
+    placing.view.targets[id] = goes;
+    view.cards.push({ ...card, allowed: goes.some((t) => t.allowed === true) ? true : goes[0]?.allowed ?? noCardIn(placing.ontoText) });
   }
   // Once the game is over every button says so, as the ones that pick nothing do, whatever is left to pick.
   if (state.result !== undefined) return { cards: view, allowed: friendlyReason('game is over') };

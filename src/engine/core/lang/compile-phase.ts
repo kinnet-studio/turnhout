@@ -74,8 +74,8 @@ const TWO_COSTS = 'A button can have only one “It costs …” line.';
  * one, or it picks the card “in” its zone and its `Then:` lines move it.
  */
 const anyoneMove = (base: string, fromText: string, toText: string) =>
-  `“Any player may …” can only be a button: add a cost line under it, like “It costs 1 action.”, or write “Any player may ${base} a card in ${fromText}.” `
-  + `with “Then: Move it to ${toText}.” under it.`;
+  '“Any player may …” can only be a button: add a cost line under it, like “It costs 1 action.”, or write '
+  + `“Any player may ${base} a card in ${fromText}.” with “Then: Move it to ${toText}.” under it.`;
 /** A press the rules refuse costs nothing and changes nothing, so a line about a card the presser can't see would tell them what it is. */
 const tellsHiddenCard = (zoneText: string) =>
   `This line would tell the player what the card is, though they can't see the cards in ${zoneText}. Check it in the Then: lines, after a reveal.`;
