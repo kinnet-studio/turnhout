@@ -7,7 +7,7 @@ import type { PhraseLibrary } from '../phrases';
 import { phaseTakesTurns } from '../turns';
 import type { CardMatch, ConditionFn, EffectFn, PhraseEnv, ScoreFn, Subject, TurnFn, WinnerFn, ZoneRef } from '../types';
 import { chooseNext, leftOf, matchesCard, relocate, resolveSeat, resolveZoneIds, topCard, zoneIdFor, zoneInfo } from '../zones';
-import { describeZone, soleZone, theyOf } from './support';
+import { cardNumber, describeZone, soleZone, theyOf } from './support';
 
 const idsIn = (state: GameState, zoneId: string): string[] => zoneCards(state, zoneId).map((c) => c.id);
 
@@ -221,6 +221,13 @@ const oneCardScores: ScoreFn = (env, args, seat) => {
   return zoneCards(env.state, zoneIdFor(zone, seat)).some((c) => matchesCard(c, match)) ? points : 0;
 };
 
+/**
+ * The number each card of the seat's zone has, added up, as every phrase that does arithmetic on a card's number reads it. A card
+ * without the number is the rule's mistake here, not a card that counts 0: a score over a zone of several kinds of card would hide it.
+ */
+const everyCardScoresItsNumber: ScoreFn = (env, [zone, attribute], seat) =>
+  zoneCards(env.state, zoneIdFor(zone as string, seat)).reduce((sum, card) => sum + cardNumber(env, card, attribute as string), 0);
+
 /** The seat whose score `better` prefers; a tie goes to the earlier seat. */
 const bestScore = (better: (score: number, best: number) => boolean): WinnerFn => (env: PhraseEnv, _args, scores) => {
   const scoreOf = (seat: string) => scores[seat] ?? 0;
@@ -267,6 +274,7 @@ export function registerFlowPhrases(lib: PhraseLibrary): PhraseLibrary {
     .turn('the turn passes to the left', passesLeft)
     .turn('the turn passes to the next player on the left who is {playerflag}', passesToNextWhoIs)
     .score("each {cardclass} in a player's {perzone} scores {int} point(s)", everyCardScores)
+    .score("each card in a player's {perzone} scores its {attribute}", everyCardScoresItsNumber)
     .score("{card} in a player's {perzone} scores {int} point(s)", oneCardScores)
     .winner('the lowest score wins', bestScore((score, best) => score < best))
     .winner('the highest score wins', bestScore((score, best) => score > best))

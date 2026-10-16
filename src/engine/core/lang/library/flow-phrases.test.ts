@@ -7,7 +7,7 @@ import { RuleError } from '../diagnostics';
 import { TURN_KEY, TURN_ROLLS_KEY, counterOf, interruptedTurn, markOut, playerFact, queueRoll, setPlayerFact, withBoardData } from '../board-state';
 import { createEngine, initialState, seatsFor } from '../build';
 import { compileGame } from '../compile';
-import { INTERRUPT_BOARD, TURN_GAME, fixtureBoardGame, fixtureBoardState, fixtureCard, fixtureEnv, fixtureGame, fixturePhase, fixtureState, runPhrase } from '../testing';
+import { CREW_GAME, INTERRUPT_BOARD, TURN_GAME, fixtureBoardGame, fixtureBoardState, fixtureCard, fixtureEnv, fixtureGame, fixturePhase, fixtureState, runPhrase, vocabFor } from '../testing';
 import type { CompiledGame, PhraseKind, PhraseEnv } from '../types';
 import { WINNER_KEY } from '../zones';
 import { createDefaultLibrary } from './index';
@@ -530,5 +530,41 @@ describe('Go to a phase', () => {
       expect(twice.dispatch({ type: 'hurry', by: 'p0' }).reason).toBeUndefined();
       expect(counterOf(twice.getState(), 'coins', 'p0')).toBe(2);
     });
+  });
+});
+
+describe('each card in a zone scores its number', () => {
+  const crew = compileGame(CREW_GAME, lib);
+  const SCORE = "each card in a player's workshop scores its worth";
+  const worth = (name: string, id: string, zoneId: string, number: number) => fixtureCard(id, zoneId, { name, worth: number });
+  const scoring = (cards: CardState[]) => fixtureEnv(fixtureState(cards), { game: crew.game!, seats: ['p0', 'p1'] });
+  const workshop = [worth('Vase', 'v', 'workshop-p0', 3), worth('Statue', 's', 'workshop-p0', 4)];
+
+  it('compiles with the crew game it is tried on, and as an End: line', () => {
+    expect(crew.diagnostics).toEqual([]);
+    const text = CREW_GAME.replace('  The highest score wins.', `  ${SCORE[0].toUpperCase()}${SCORE.slice(1)}.\n  The highest score wins.`);
+    expect(compileGame(text, lib).diagnostics).toEqual([]);
+  });
+  it('is the sum of the number over the cards of that seat’s zone', () => {
+    const env = scoring(workshop);
+    expect(run('score', SCORE, env, 'p0')).toBe(7);
+    expect(run('score', SCORE, env, 'p1')).toBe(0);
+  });
+  it('counts only that zone', () => {
+    const env = scoring([...workshop, worth('Vase', 'v2', 'workshop-p1', 3), worth('Vase', 'v3', 'scrap', 3)]);
+    expect([run('score', SCORE, env, 'p0'), run('score', SCORE, env, 'p1')]).toEqual([7, 3]);
+  });
+  it('is a phrase of its own, and leaves points for each card to the phrase for them (the second: guard, passes before and after)', () => {
+    const vocab = vocabFor(crew.game!);
+    expect(lib.match('score', SCORE, vocab)).toMatchObject({ status: 'ok', pattern: "each card in a player's {perzone} scores its {attribute}" });
+    expect(lib.match('score', "each Vase in a player's workshop scores 2 points", vocab)).toMatchObject({
+      status: 'ok', pattern: "each {cardclass} in a player's {perzone} scores {int} point(s)",
+    });
+  });
+  it('throws, over a card with no such number, in the words a rule that asks for a number says', () => {
+    // A Potter has no worth: the number is the rule's mistake here, as it is anywhere that is not a value worked out for cards.
+    const env = scoring([...workshop, fixtureCard('crew', 'crew-p0', { name: 'Potter', craft: 'red', skill: 1, wage: 1 })]);
+    const over = () => run('score', "each card in a player's crew scores its worth", env, 'p0');
+    expect(over).toThrow(new RuleError('This card has no worth.'));
   });
 });

@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { zoneCards, type GameState } from '../../game-state';
-import { seatsFor } from '../build';
+import { createEngine, initialState, seatsFor } from '../build';
 import { compileGame } from '../compile';
 import { RuleError } from '../diagnostics';
 import { misnamedParam } from '../refs';
-import { COUNTER_GAME, fixtureCard, fixtureEnv, fixtureState, runPhrase, vocabFor } from '../testing';
-import type { PhraseEnv, PhraseKind } from '../types';
+import { COUNTER_GAME, CREW_GAME, fixtureCard, fixtureEnv, fixtureState, runPhrase, vocabFor } from '../testing';
+import type { PhraseEnv, PhraseKind, Subject } from '../types';
+import { relocate } from '../zones';
 import { createDefaultLibrary } from './index';
 
 const lib = createDefaultLibrary();
@@ -235,5 +236,126 @@ describe('a card goes into the bottom fifth of a zone', () => {
     const next = effect('an Opal goes into the bottom fifth of the pile', env);
     expect(next.cards.find((c) => c.id === 'in')).toMatchObject({ zoneId: 'pile', data: { name: 'Opal', cost: 1 } });
     expect(next.cards.find((c) => c.id === 'in')?.data).not.toHaveProperty('lang:on');
+  });
+});
+
+describe('the cards a press picked, and the left end of a row', () => {
+  const crewCompiled = compileGame(CREW_GAME, lib);
+  const crew = () => crewCompiled.game!;
+  /** The 1-based number of `line` in `text`. */
+  const at = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+  const crewEnv = (cards: ReturnType<typeof fixtureCard>[], subject?: Subject): PhraseEnv =>
+    fixtureEnv(fixtureState(cards), { game: crew(), seats, subject: subject ?? { player: 'p0', space: null, card: null } });
+  const crewEffect = (text: string, env: PhraseEnv) => run<GameState>('effect', text, env);
+  /** A card with a name, in a zone, at a slot counted from the bottom. */
+  const card = (id: string, zoneId: string, slot: number, data: Record<string, string | number> = {}) =>
+    fixtureCard(id, zoneId, { name: 'Potter', ...data }, { slot });
+
+  it('compiles with the crew game it is tried on', () => {
+    expect(crewCompiled.diagnostics).toEqual([]);
+  });
+
+  describe('dealing as many cards as were picked', () => {
+    const DEAL = 'deal up to as many cards as they picked from the pile to their stash';
+    const picked = (...cards: string[]): Subject => ({ player: 'p0', space: null, card: null, cards });
+    const pile = (n: number) => Array.from({ length: n }, (_, i) => card(`c${i}`, 'pile', i));
+
+    it('deals the top cards of the pile, as many as were picked, in pile order', () => {
+      const next = crewEffect(DEAL, crewEnv(pile(4), picked('a', 'b')));
+      expect(ids(next, 'stash-p0')).toEqual(['c2', 'c3']);
+      expect(ids(next, 'pile')).toEqual(['c0', 'c1']);
+    });
+    it('deals what there is when the pile is short, and none from an empty pile', () => {
+      expect(ids(crewEffect(DEAL, crewEnv(pile(1), picked('a', 'b'))), 'stash-p0')).toEqual(['c0']);
+      const empty = crewEnv([], picked('a', 'b'));
+      expect(crewEffect(DEAL, empty)).toEqual(empty.state);
+    });
+    it('deals none when none were picked', () => {
+      const env = crewEnv(pile(2), picked());
+      expect(crewEffect(DEAL, env)).toEqual(env.state);
+    });
+    it('is the phrase that needs the picked cards', () => {
+      expect(lib.get('effect', 'deal up to as many cards as they picked from {zone} to {zone}')).toMatchObject({ needsCards: true });
+    });
+    it('is said in a button that picks no set only in the words that name what it needs', () => {
+      const line = `      ${DEAL[0].toUpperCase()}${DEAL.slice(1)}.`;
+      const text = CREW_GAME.replace('  A player may stop.', `  A player may count.\n    Then:\n${line}\n  A player may stop.`);
+      expect(compileGame(text, lib).diagnostics.map((d) => [d.line, d.message])).toEqual([[
+        at(text, line),
+        `“${DEAL[0].toUpperCase()}${DEAL.slice(1)}” only makes sense in a button that picks some cards, like “A player may discard some cards from their hand.”`,
+      ]]);
+    });
+    it('leaves a number of cards to the phrase for one (guard: passes before and after)', () => {
+      const found = lib.match('effect', 'deal up to 2 cards from the pile to their stash', vocabFor(crew()));
+      expect(found).toMatchObject({ status: 'ok', pattern: 'deal up to {int} cards from {zone} to {zone}' });
+    });
+  });
+
+  describe('the left end of a row', () => {
+    const MOVE = 'move their stash to the left end of the hall';
+    // The hall is a row everyone can see, so its cards lie face up.
+    const table = (extra: ReturnType<typeof fixtureCard>[] = []) => [
+      { ...card('h1', 'hall', 0), faceUp: true }, { ...card('h2', 'hall', 1), faceUp: true }, { ...card('h3', 'hall', 2), faceUp: true },
+      card('s1', 'stash-p0', 0), card('s2', 'stash-p0', 1), ...extra,
+    ];
+
+    it('puts each card of the first zone under the cards of the second, keeping its own order', () => {
+      const next = crewEffect(MOVE, crewEnv(table()));
+      expect(ids(next, 'hall')).toEqual(['s1', 's2', 'h1', 'h2', 'h3']);
+      expect(zoneCards(next, 'hall').map((c) => c.slot)).toEqual([0, 1, 2, 3, 4]);
+      expect(ids(next, 'stash-p0')).toEqual([]);
+    });
+    it('turns them face up in a row everyone can see', () => {
+      const next = crewEffect(MOVE, crewEnv(table()));
+      expect(zoneCards(next, 'hall').map((c) => c.faceUp)).toEqual([true, true, true, true, true]);
+    });
+    it('takes a card off the card it sat on', () => {
+      const next = crewEffect(MOVE, crewEnv(table([card('s3', 'stash-p0', 2, { 'lang:on': 'h1' })])));
+      expect(ids(next, 'hall')).toEqual(['s1', 's2', 's3', 'h1', 'h2', 'h3']);
+      expect(next.cards.find((c) => c.id === 's3')?.data).toEqual({ name: 'Potter' });
+    });
+    it('gathers the zones of “each stash” in seat order, the first seat’s cards at the very left', () => {
+      const env = crewEnv(table([card('t1', 'stash-p1', 0), card('t2', 'stash-p1', 1)]));
+      expect(ids(crewEffect('move each stash to the left end of the hall', env), 'hall')).toEqual(['s1', 's2', 't1', 't2', 'h1', 'h2', 'h3']);
+    });
+    it('leaves the row alone when the first zone is empty', () => {
+      const env = crewEnv([card('h1', 'hall', 0)]);
+      expect(ids(crewEffect(MOVE, env), 'hall')).toEqual(['h1']);
+    });
+    it('is a phrase of its own', () => {
+      expect(lib.match('effect', MOVE, vocabFor(crew()))).toMatchObject({ status: 'ok', pattern: 'move {zone} to the left end of {zone}' });
+    });
+    it('leaves a move to the top of a zone to the phrase for it (guard: passes before and after)', () => {
+      const found = lib.match('effect', 'move their stash to the hall', vocabFor(crew()));
+      expect(found).toMatchObject({ status: 'ok', pattern: 'move {zone} to {zone}' });
+    });
+  });
+
+  // R7: a row that is over its limit lets its top cards go, so cards that come in at the left end push out the ones at the right.
+  describe('R7: the push-out order', () => {
+    const RETURNING = CREW_GAME
+      .replace('Phase: working', 'In every phase:\n  When the hall has more than 4 cards:\n    Move the top card of the hall to the scrap.\n\nPhase: working')
+      .replace(
+        '  A player may stop.',
+        '  A player may return some cards from their stash.\n    Then:\n      Move their stash to the left end of the hall.\n  A player may stop.',
+      );
+
+    it('lets the cards at the right end go first, the one on top of the row before the one under it', () => {
+      const { game: returning, diagnostics } = compileGame(RETURNING, lib);
+      expect(diagnostics).toEqual([]);
+      const setUp = createEngine(returning!, lib, 2, initialState(returning!, 1)).engine.getState();
+      const [s1, s2] = ids(setUp, 'stash-p0');
+      // Setup has already pushed three hands out of the hall, so every hand goes back to the pile before four of them come to the hall.
+      const hands = [...ids(setUp, 'hall'), ...ids(setUp, 'scrap')];
+      const [h1, h2, h3, h4] = ids(setUp, 'hall');
+      // Four cards in the hall, an empty scrap, and p0 holding the two cards that return.
+      const arranged = relocate(relocate(setUp, hands, 'pile', returning!), [h1, h2, h3, h4], 'hall', returning!);
+      const { engine } = createEngine(returning!, lib, 2, arranged);
+      expect(engine.dispatch({ type: 'return some cards from their stash', by: 'p0', cardIds: [s1, s2] })).toMatchObject({ ok: true });
+      const state = engine.getState();
+      expect(ids(state, 'hall')).toEqual([s1, s2, h1, h2]);
+      expect(ids(state, 'scrap')).toEqual([h4, h3]);
+      expect(ids(state, 'stash-p0')).toEqual([]);
+    });
   });
 });

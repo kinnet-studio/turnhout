@@ -390,6 +390,9 @@ const pointsForEvery: ScoreFn = (env, [points, every, counter], seat) => {
   return Math.floor(counterOf(env.state, counter as string, seat) / (every as number)) * (points as number);
 };
 
+/** The points for each one of the player's counter, such as each star: the points times the count. */
+const pointsForEach: ScoreFn = (env, [points, counter], seat) => (points as number) * counterOf(env.state, counter as string, seat);
+
 const lastOneStanding: WinnerFn = (env) => {
   const [winner, ...others] = playersIn(env.state, env.seats);
   if (winner === undefined || others.length > 0) throw new RuleError('More than one player is still in, so no one has won yet.');
@@ -574,6 +577,7 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('they are out', goesOut, { needsPlayer: true })
     .effect('their spaces go back to the bank', returnToBank, { needsPlayer: true, needsBoard: true })
     .score(POINTS_FOR_EVERY, pointsForEvery)
+    .score('each player scores {int} point(s) for each {counter}', pointsForEach)
     .winner('that player wins', lastOneStanding)
     .given('{player} is on {space}', isOnGiven)
     .given('{player} owns {space}', ownsGiven)

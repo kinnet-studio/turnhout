@@ -3,10 +3,10 @@ import { nextInt } from '../../rng';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import type { CardMatch, ConditionFn, EffectFn, ZoneRef } from '../types';
-import { BOX_ZONE, matchesCard, relocate, resolveZoneIds, withoutHolder, zoneIdFor, zoneInfo } from '../zones';
+import { BOX_ZONE, matchesCard, relocate, resolveZoneIds, toBottom, withoutHolder, zoneIdFor, zoneInfo } from '../zones';
 import { describeCard } from './example-phrases';
 import { deal } from './flow-phrases';
-import { describeZone, soleZone } from './support';
+import { describeZone, soleZone, thePickedCards } from './support';
 
 // Rows that keep their order and queues whose bottom card is the oldest: a zone's cards are in slot order, the first at the bottom.
 
@@ -42,7 +42,7 @@ const moveNamed: EffectFn = (env, args) => {
  * `deal`, for a source that may be short: each zone dealt to gets the top cards there are when its turn comes, up to the
  * number. A negative number is refused, as `deal` refuses it, whatever the source holds.
  */
-const dealUpTo: EffectFn = (env, args) => {
+export const dealUpTo: EffectFn = (env, args) => {
   const [count, fromRef, toRef] = args as [number, ZoneRef, ZoneRef];
   if (count < 0) return deal(env, args);
   const from = soleZone(fromRef, env);
@@ -51,6 +51,22 @@ const dealUpTo: EffectFn = (env, args) => {
     const top = count > 0 ? remaining.slice(-count) : []; // slice(-0) would be every card
     return relocate(state, top.map((card) => card.id), to, env.game);
   }, env.state);
+};
+
+/** `dealUpTo` as many cards as the press picked: a button that picks some cards of one zone deals the same number to the zone they go to. */
+const dealUpToAsManyAsPicked: EffectFn = (env, args) => dealUpTo(env, [thePickedCards(env).length, ...args]);
+
+/**
+ * Each card of the first zone, from its top card down, goes under every card of the second, so the second then holds the first's cards in
+ * their slot order and then its own: a row that is over its limit loses its right end, the oldest cards, to a rule that says so. Like
+ * `toBottom`, each card comes off any card it sat on and turns as the second zone shows its cards. Several zones (“each stash”) come in
+ * as `move` gathers them, the first seat's cards at the very left.
+ */
+const moveToLeftEnd: EffectFn = (env, args) => {
+  const [fromRef, toRef] = args as [ZoneRef, ZoneRef];
+  const to = soleZone(toRef, env);
+  const entering = [...resolveZoneIds(fromRef, env)].reverse().flatMap((id) => [...zoneCards(env.state, id)].reverse());
+  return entering.reduce((state, card) => toBottom(state, card.id, to, env.game), env.state);
 };
 
 /** One card where “deal 1 cards” would read badly: `deal` with 1. */
@@ -76,13 +92,18 @@ const goesIntoBottomFifth: EffectFn = (env, args) => {
   return { ...placed, cards: placed.cards.map((c) => (c.id === card.id ? { ...withoutHolder(c), faceUp } : c)) };
 };
 
-/** The bottom card of a zone, a shared zone that has a card, moving a named card, dealing up to a number, and the bottom fifth. */
+/**
+ * The bottom card of a zone, a shared zone that has a card, moving a named card, dealing up to a number or as many as were picked, a row's
+ * left end, and the bottom fifth.
+ */
 export function registerQueuePhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
     .condition('{sharedzone} has {card}', sharedZoneHas)
     .effect('move the bottom card of {zone} to {zone}', moveBottom)
     .effect('move {card} from {zone} to {zone}', moveNamed)
     .effect('deal up to {int} cards from {zone} to {zone}', dealUpTo)
+    .effect('deal up to as many cards as they picked from {zone} to {zone}', dealUpToAsManyAsPicked, { needsCards: true })
     .effect('deal 1 card from {zone} to {zone}', dealOne)
+    .effect('move {zone} to the left end of {zone}', moveToLeftEnd)
     .effect('{card} goes into the bottom fifth of {zone}', goesIntoBottomFifth);
 }

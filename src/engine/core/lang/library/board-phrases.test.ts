@@ -6,9 +6,10 @@ import {
 } from '../board-state';
 import { createEngine, initialState } from '../build';
 import { compileGame } from '../compile';
+import { POINTS_FOR_EVERY } from '../compile-util';
 import { RuleError } from '../diagnostics';
 import {
-  COUNTER_GAME, FIXTURE_SPACES, MARK_BOARD, TINY_BOARD, fixtureBoardGame, fixtureBoardState, fixtureEnv, fixtureGame, fixturePhase, fixtureState, runPhrase, vocabFor,
+  COUNTER_GAME, CREW_GAME, FIXTURE_SPACES, MARK_BOARD, TINY_BOARD, fixtureBoardGame, fixtureBoardState, fixtureEnv, fixtureGame, fixturePhase, fixtureState, runPhrase, vocabFor,
 } from '../testing';
 import type { DeclaredAction, Moment } from '../types';
 import { chooseNext } from '../zones';
@@ -892,6 +893,34 @@ describe('points for every few of a counter', () => {
   });
   it('asks for a number of 1 or more after “for every”', () => {
     expect(() => score(5, 'each player scores 1 point for every 0 money')).toThrow(new RuleError('Say a number of 1 or more after “for every”.'));
+  });
+});
+
+describe('points for each of a counter', () => {
+  /** CREW_GAME with a count of stars each player has, which the score reads. */
+  const STARS = CREW_GAME.replace('  Each player has 3 moves each turn.', '  Each player has 3 moves each turn.\n  Each player has 0 stars that everyone can see.');
+  const compiled = compileGame(STARS, lib);
+  const stars = () => compiled.game!;
+  const score = (count: number, text = 'each player scores 2 points for each star') =>
+    runPhrase<number>(lib, 'score', text, fixtureEnv(setCounter(fixtureBoardState(stars(), ['p0', 'p1']), 'stars', 'p0', count), { game: stars(), seats: ['p0', 'p1'] }), 'p0');
+
+  it('compiles with the stars it is tried on, as an End: line', () => {
+    expect(compiled.diagnostics).toEqual([]);
+    const text = STARS.replace('  The highest score wins.', '  Each player scores 2 points for each star.\n  The highest score wins.');
+    expect(compileGame(text, lib).diagnostics).toEqual([]);
+  });
+  it('scores the points once for each of the counter', () => {
+    expect([0, 1, 3].map((count) => score(count))).toEqual([0, 2, 6]);
+    expect(score(3, 'each player scores 1 point for each star')).toBe(3);
+  });
+  it('reads the player’s own count, not another’s', () => {
+    const state = setCounter(setCounter(fixtureBoardState(stars(), ['p0', 'p1']), 'stars', 'p0', 3), 'stars', 'p1', 5);
+    const env = fixtureEnv(state, { game: stars(), seats: ['p0', 'p1'] });
+    expect(['p0', 'p1'].map((seat) => runPhrase<number>(lib, 'score', 'each player scores 2 points for each star', env, seat))).toEqual([6, 10]);
+  });
+  it('is not the phrase for every few of a counter (guard: passes before and after)', () => {
+    const vocab = vocabFor(stars());
+    expect(lib.match('score', 'each player scores 2 points for every 3 stars', vocab)).toMatchObject({ status: 'ok', pattern: POINTS_FOR_EVERY });
   });
 });
 
