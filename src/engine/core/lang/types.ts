@@ -52,6 +52,12 @@ export type SpaceClass = { attribute: string; values: Json[] };
 /** What a button costs: `counter` is the plural name the game declares, of a number each player has each turn; `line` is the cost line's. */
 export type ActionCost = { amount: number; counter: string; line: number };
 /**
+ * The cards a button picks. `some` is true for a set (“some cards”). `from` is the zone they are picked in and `fromText` that zone as
+ * written ('their stash'). `to` is the zone the picked cards move to before the `Then:` lines, and `onto` the zone a target card is
+ * picked in, with `ontoText` as written. A one-card pick with `to` and `onto` both null was written “a card in {zone}”.
+ */
+export type CardPick = { some: boolean; from: ZoneRef; fromText: string; to: ZoneRef | null; onto: ZoneRef | null; ontoText: string | null };
+/**
  * `words` is the lowercase text after "a player may" ('roll the dice'); `label` is the button text in the second person,
  * with the designer's capitals ('Roll the dice', 'Go to Rose Lane'). `words` is also the button's move type, so that
  * “pay the fine” and “pay the toll” are two buttons although they start with the same `verb`.
@@ -66,10 +72,12 @@ export type ActionCost = { amount: number; counter: string; line: number };
  * as the move type, and `label` is the whole wording in the second person, since the page shows the players to pick only after
  * the press.
  * `cost` is there only for a button with an “It costs 1 action.” line: it is judged before any `Only if` and spent before the `Then:` lines.
+ * `pick` is there only for a button that picks a card (“A player may sell a card in their stash.”): its press names the card, `base` is
+ * the wording before “a card” ('sell'), and `label` is the whole wording in the second person.
  */
 export type DeclaredAction = {
   verb: string; words: string; base: string; label: string; target: PhraseRef | null; anyone: boolean; amount: boolean; picksPlayer: boolean;
-  conditions: CondGroup[]; effects: PhraseRef[]; line: number; cost?: ActionCost;
+  conditions: CondGroup[]; effects: PhraseRef[]; line: number; cost?: ActionCost; pick?: CardPick;
 };
 export type CompiledMoment = { line: number; text: string; when: PhraseRef; conditions: CondGroup[]; effects: PhraseRef[] };
 export type CompiledTrigger = { line: number; text: string; when: PhraseRef; conditions: CondGroup[]; effects: PhraseRef[] };
@@ -121,9 +129,10 @@ export type Vocab = {
   /**
    * Every button the phases declare, one for each wording; `targeted` ones pick a space, so an example names it after their `base`,
    * and `anyone` ones may be pressed by any seat at any time, so they are never part of a turn. An `amount` one carries a number
-   * with its press, so an example gives it after the base; so does a `picksPlayer` one, with the player it picks.
+   * with its press, so an example gives it after the base; so does a `picksPlayer` one, with the player it picks, and a `picksCard` one,
+   * with the cards it picks. `picksCard` is left out for every other button.
    */
-  actions: { verb: string; words: string; base: string; targeted: boolean; anyone: boolean; amount: boolean; picksPlayer: boolean }[];
+  actions: { verb: string; words: string; base: string; targeted: boolean; anyone: boolean; amount: boolean; picksPlayer: boolean; picksCard?: boolean }[];
   /** True when the board has dice: a line like “There are two six-sided dice.” under Board:. */
   dice: boolean;
   /** How many dice the board rolls: 0 without dice. */

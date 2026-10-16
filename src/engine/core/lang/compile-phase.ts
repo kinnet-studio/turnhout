@@ -3,8 +3,8 @@ import type { OutlineNode } from './outline';
 import { normalizeLine, suggestNames } from './phrases';
 import { joinOr, misnamedParam, parseParam, secondPersonWords, thirdPerson, thirdPersonWords, VOCAB_TYPES } from './refs';
 import type {
-  ActionCost, CompiledMoment, CompiledPhase, CompiledTrigger, CondGroup, DeclaredAction, DeclaredMove, ParamType, PhraseKind, PhraseRef, SpaceClass, Vocab,
-  ZoneRef,
+  ActionCost, CardPick, CompiledMoment, CompiledPhase, CompiledTrigger, CondGroup, DeclaredAction, DeclaredMove, ParamType, PhraseKind, PhraseRef, SpaceClass,
+  Vocab, ZoneRef,
 } from './types';
 
 const HINT = /^hint:\s*(.*)$/i;
@@ -30,8 +30,9 @@ const AFTER = /^after a player (.+)$/i;
 const VERB_SEPARATOR = /, or |, | or /i;
 const COMMA = /, /g;
 /**
- * `A player may <verb> <the rest>`: a card move when it mentions a card, else a button the player presses. `Any player may …` is
- * a button too, one any seat may press at any time; the move lines below still start “a player may”, so it is never a card move.
+ * `A player may <verb> <the rest>`: when it mentions a card, a card move or a button that picks a card (see `cardLineOf`), else a
+ * button the player presses. `Any player may …` is a button too, one any seat may press at any time; the move lines below still start
+ * “a player may”, so it is never a card move.
  */
 const ACTION_LINE = /^(?:a|any) player may (\w+)(?:\s+(.+))?$/i;
 /** The start of a button any seat may press, as opposed to one the player whose turn it is may. */
@@ -103,6 +104,17 @@ const moveLines = new WeakMap<Vocab, RegExp>();
 /** A move line whose zones may not be the game's; they are read, and explained, one by one. */
 const LOOSE_MOVE_LINE = /^a player may (\w+) a card from (.+?) to (.+)$/i;
 
+// The lines that pick cards (R1). Each starts with the base, the words before “a card” or “some cards”: a verb, and maybe more words.
+const PICKS = '^(?:a|any) player may (\\w+(?: .+?)?)';
+/** group 1 = the base, 2 = “a card” or “some cards”, 3 = the zone they are picked in, 4 = the zone of the card they go to */
+const PICK_ONTO = new RegExp(`${PICKS} (a card|some cards) from (.+?) to a card in (.+)$`, 'i');
+/** group 1 = the base, 2 = “a card” or “some cards”, 3 = the zone they are picked in, 4 = the zone they go to */
+const PICK_TO = new RegExp(`${PICKS} (a card|some cards) from (.+?) to (.+)$`, 'i');
+/** group 1 = the base, 2 = the zone the cards are picked in */
+const PICK_SOME = new RegExp(`${PICKS} some cards from (.+)$`, 'i');
+/** group 1 = the base, 2 = the zone the card is picked in */
+const PICK_IN = new RegExp(`${PICKS} a card in (.+)$`, 'i');
+
 /** group 1 = the verb, group 2 = the zone it takes the card from, group 3 = the zone it puts it in */
 function moveLineFor(vocab: Vocab): RegExp {
   let line = moveLines.get(vocab);
@@ -130,16 +142,22 @@ function moveZone(text: string, line: number, ctx: LineCtx): ZoneRef | null {
   return null;
 }
 
-/** The zones of a move line, or null (with the reason given) when they cannot be a move's. */
-function moveZones(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx): { from: ZoneRef; to: ZoneRef } | null {
-  const from = moveZone(found[2], node.line, ctx);
-  const to = moveZone(found[3], node.line, ctx);
-  if (!from || !to) return null;
-  if (!isOneZone(from) || !isOneZone(to)) {
+/** The zones a move line or a pick line names, read in order, or null (with the reason given) when they cannot be a move's. */
+function oneZones(node: OutlineNode, texts: string[], ctx: LineCtx): ZoneRef[] | null {
+  const zones = texts.map((text) => moveZone(text, node.line, ctx));
+  if (zones.some((zone) => zone === null)) return null;
+  const read = zones as ZoneRef[];
+  if (!read.every(isOneZone)) {
     addProblem(ctx.diagnostics, node.line, ONE_ZONE, { text: normalizeLine(node.text) });
     return null;
   }
-  return { from, to };
+  return read;
+}
+
+/** The zones of a move line, or null (with the reason given) when they cannot be a move's. */
+function moveZones(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx): { from: ZoneRef; to: ZoneRef } | null {
+  const zones = oneZones(node, [found[2], found[3]], ctx);
+  return zones && { from: zones[0], to: zones[1] };
 }
 
 /**
@@ -166,8 +184,7 @@ function readCondition(node: OutlineNode, clean: string, ctx: LineCtx): CondGrou
  * An `It costs 1 action.` line read as what it costs: the whole number and the counter, which must be one each player has each turn.
  * Null, with the reason given, when it can't be.
  */
-function readCost(node: OutlineNode, clean: string, ctx: LineCtx): ActionCost | null {
-  const text = COST_LINE.exec(clean)?.[1] ?? '';
+function readCost(node: OutlineNode, clean: string, text: string, ctx: LineCtx): ActionCost | null {
   const shape = COST_AMOUNT.exec(text);
   // A number past what can be told apart exactly is no cost a player could pay.
   if (!shape || !Number.isSafeInteger(Number(shape[1]))) {
@@ -203,6 +220,7 @@ function readRuleBody(node: OutlineNode, ctx: LineCtx): { conditions: CondGroup[
   for (const child of node.children) {
     const clean = normalizeLine(child.text);
     const group = readCondition(child, clean, ctx);
+    const costs = COST_LINE.exec(clean);
     if (group) {
       conditions.push(group);
     } else if (THEN.test(clean)) {
@@ -210,10 +228,10 @@ function readRuleBody(node: OutlineNode, ctx: LineCtx): { conditions: CondGroup[
         rejectChildren(line, ctx.diagnostics);
         effects.push(matchEffectLine(line.text, line.line, ctx));
       }
-    } else if (COST_LINE.test(clean)) {
+    } else if (costs) {
       rejectChildren(child, ctx.diagnostics);
       if (sawCost) addProblem(ctx.diagnostics, child.line, TWO_COSTS, { text: clean });
-      else cost = readCost(child, clean, ctx);
+      else cost = readCost(child, clean, costs[1], ctx);
       badCost ||= sawCost || cost === null;
       sawCost = true;
     } else {
@@ -230,24 +248,78 @@ function compileMove(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx): D
   const reserved = verb === RESERVED_VERB;
   if (reserved) addProblem(ctx.diagnostics, node.line, `“${RESERVED_VERB}” is reserved; pick another word.`, { text: found[1] });
   const zones = moveZones(node, found, ctx);
-  // Its cost is dropped: a card move has none, and a line that costs something is a button.
+  // A card move has no cost to keep: a card line with a cost line under it is a button that picks the card (see `cardLineOf`).
   const { conditions, effects } = readRuleBody(node, inMove);
   if (reserved || !zones) return null;
   return { verb, ...zones, fromText: found[2], conditions, effects, line: node.line };
 }
 
 /**
- * The verb of an `A player may …` line that mentions a card, or null for any other line. Such a line moves a card even
- * when the rest of it is mistyped, so it is reported as a move it can't read, never made into a button.
+ * The words of a button that picks cards. `verb` is the first word of the base, `words` the lowercase text after “may” (the move type),
+ * `written` that text as the designer wrote it, and `base` the lowercase words before “ a card” or “ some cards”. `anyone` is true
+ * for “Any player may …”. `fromText`, `toText` and `ontoText` are the zones as written: the one the cards are picked in, the one they go
+ * to, and the one the card they go to is picked in; null where the line names none.
  */
-export function cardMoveVerb(clean: string): string | null {
-  const found = ACTION_LINE.exec(clean);
-  return found && MENTIONS_CARD.test(clean) ? found[1].toLowerCase() : null;
+export type PickWords = {
+  verb: string; words: string; written: string; base: string; anyone: boolean; some: boolean; fromText: string; toText: string | null;
+  ontoText: string | null;
+};
+
+/** What a line that mentions a card is: a card move, a button that picks a card, or a card line the phase can't read. */
+type CardLine = { kind: 'move'; verb: string } | { kind: 'pick'; words: PickWords } | { kind: 'unread'; verb: string };
+
+/** Whether a line has an `It costs …` line under it, which makes a card line a button. */
+const hasCostLine = (node: OutlineNode): boolean => node.children.some((child) => COST_LINE.test(normalizeLine(child.text)));
+
+/** The words of a button that picks one card, from its line and the parts of it a pick line found. */
+function onePick(clean: string, base: string, fromText: string, toText: string | null): PickWords {
+  const written = clean.replace(/^(?:a|any) player may /i, '');
+  return {
+    verb: base.split(' ')[0].toLowerCase(), words: written.toLowerCase(), written, base: base.toLowerCase(), anyone: ANYONE_LINE.test(clean),
+    some: false, fromText, toText, ontoText: null,
+  };
 }
 
-/** An `A player may …` line that does not mention a card, or null: a line that does is a move, even a wrong one. */
-export function actionLine(clean: string): RegExpExecArray | null {
-  return cardMoveVerb(clean) === null ? ACTION_LINE.exec(clean) : null;
+/**
+ * What an `A player may …` line that mentions a card is, by its words and by whether a cost line sits under it (R1), trying in order:
+ * a card and the card it goes to; a card move, when there is no cost line; a card from a zone to a zone, with a cost line; some cards
+ * from a zone; a card in a zone. Anything else is a card line the phase can't read, even when the rest of it is mistyped: it is
+ * reported as one, never made into a plain button. Null for a line that is no `A player may …` line about a card.
+ * For now only one card is picked, from a zone to a zone or in a zone: a target card and a set are card lines the phase can't read.
+ */
+function cardLineOf(node: OutlineNode): CardLine | null {
+  const clean = normalizeLine(node.text);
+  const found = ACTION_LINE.exec(clean);
+  if (!found || !MENTIONS_CARD.test(clean)) return null;
+  const unread: CardLine = { kind: 'unread', verb: found[1].toLowerCase() };
+  if (PICK_ONTO.test(clean)) return unread;
+  const costed = hasCostLine(node);
+  if (!costed && LOOSE_MOVE_LINE.test(clean)) return { kind: 'move', verb: found[1].toLowerCase() };
+  const to = PICK_TO.exec(clean);
+  if (to && costed && to[2].toLowerCase() === 'a card') return { kind: 'pick', words: onePick(clean, to[1], to[3], to[4]) };
+  if (PICK_SOME.test(clean)) return unread;
+  const inZone = PICK_IN.exec(clean);
+  return inZone ? { kind: 'pick', words: onePick(clean, inZone[1], inZone[2], null) } : unread;
+}
+
+/** The words of a button that picks a card, or null for any other line. */
+export function pickLine(node: OutlineNode): PickWords | null {
+  const line = cardLineOf(node);
+  return line?.kind === 'pick' ? line.words : null;
+}
+
+/**
+ * The verb of a card move, or of an `A player may …` line about a card that is neither a card move nor a button that picks a card; null
+ * for any other line. Such a line still names its verb, so a rule that names it is not blamed for the line's mistake.
+ */
+export function cardMoveVerb(node: OutlineNode): string | null {
+  const line = cardLineOf(node);
+  return line === null || line.kind === 'pick' ? null : line.verb;
+}
+
+/** An `A player may …` line that is a button that picks no card, or null: a line about a card is a move or a pick, even a wrong one. */
+export function actionLine(node: OutlineNode): RegExpExecArray | null {
+  return cardLineOf(node) === null ? ACTION_LINE.exec(normalizeLine(node.text)) : null;
 }
 
 /**
@@ -384,6 +456,25 @@ function compileAction(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx):
   const { conditions, effects, cost, badCost } = readRuleBody(node, { ...ctx, player: true, space: true, amount: amount || both, picked: picksPlayer });
   if (reserved || pick !== null || both || badCost || (target !== null && isMissing(target))) return null;
   return { verb, words, base, label, target, anyone, amount, picksPlayer, conditions, effects, line: node.line, ...(cost ? { cost } : {}) };
+}
+
+/**
+ * A button that picks a card, with its `Only if` conditions, `Then:` effects and cost; null when its verb is reserved, a zone it names
+ * can't be read or is more than one zone, or its cost line has a problem. Its zones are read as a card move's are, so a misnamed one is
+ * told the same way. Its lines are about the player who presses it and, as a card move's are, the card picked: “it” and “the card”.
+ */
+function compileCardPick(node: OutlineNode, words: PickWords, ctx: LineCtx): DeclaredAction | null {
+  const { verb, written, base, anyone, fromText, toText } = words;
+  const reserved = verb === RESERVED_VERB;
+  if (reserved) addProblem(ctx.diagnostics, node.line, `“${RESERVED_VERB}” is reserved; pick another word.`, { text: written.split(' ')[0] });
+  const zones = oneZones(node, toText === null ? [fromText] : [fromText, toText], ctx);
+  const { conditions, effects, cost, badCost } = readRuleBody(node, { ...ctx, inMove: true, player: true, card: true });
+  if (reserved || !zones || badCost) return null;
+  const pick: CardPick = { some: false, from: zones[0], fromText, to: zones[1] ?? null, onto: null, ontoText: null };
+  return {
+    verb, words: words.words, base, label: actionLabel(written), target: null, anyone, amount: false, picksPlayer: false, conditions, effects,
+    line: node.line, pick, ...(cost ? { cost } : {}),
+  };
 }
 
 /** The `Only if` groups and the effects under a `When …:` rule; every line that is not an `Only if` is an effect. */
@@ -564,14 +655,42 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx, uses: VerbUses = {
   let hinted = false;
   let sawGoTo = false;
 
+  /**
+   * Whether a button may join the phase's buttons: one whose wording, label or verb is taken is reported and left out; one whose verb
+   * is a card move in another phase is reported. `pickBase` is the words before “on” of a button that picks a space with it.
+   */
+  const joins = (line: number, clean: string, button: { verb: string; words: string; label: string; anyone: boolean }, pickBase: string | null): boolean => {
+    const { verb, words, label, anyone } = button;
+    // Buttons that start alike are different moves; only the same wording twice is a repeat, or two picks with one base, or two
+    // buttons with one label.
+    const repeated = actionNames.some((a) => a.words === words);
+    const pickedAlike = pickBase !== null && pickBases.has(pickBase);
+    const labelled = labels.has(label.toLowerCase());
+    const taken = repeated || pickedAlike || labelled || moveVerbs.includes(verb);
+    if (repeated) addProblem(ctx.diagnostics, line, sameWords(words), { text: clean });
+    else if (pickedAlike) addProblem(ctx.diagnostics, line, samePick(pickBase), { text: clean });
+    else if (labelled) addProblem(ctx.diagnostics, line, sameLabel(label), { text: clean });
+    else if (taken) addProblem(ctx.diagnostics, line, sameVerb(verb), { text: clean });
+    else if (uses.moves.has(verb)) addProblem(ctx.diagnostics, line, moveElsewhere(verb), { text: clean });
+    if (!taken) {
+      actionNames.push({ verb, words, anyone });
+      labels.add(label.toLowerCase());
+      if (pickBase !== null) pickBases.add(pickBase);
+    }
+    return !taken;
+  };
+
   for (const child of node.children) {
     const clean = normalizeLine(child.text);
     const words = clean.toLowerCase();
     const hint = HINT.exec(child.text);
     const rearrange = REARRANGE.exec(clean);
-    const move = moveLine.exec(clean) ?? LOOSE_MOVE_LINE.exec(clean);
-    const unreadMove = move ? null : cardMoveVerb(clean);
-    const action = move || unreadMove !== null ? null : actionLine(clean);
+    const cardLine = cardLineOf(child);
+    // The strict line reads zones whose names hold “ to ”; the loose one still finds the verb when a zone is misnamed.
+    const move = cardLine?.kind === 'move' ? (moveLine.exec(clean) ?? LOOSE_MOVE_LINE.exec(clean)) : null;
+    const unreadMove = cardLine?.kind === 'unread' ? cardLine.verb : null;
+    const picked = cardLine?.kind === 'pick' ? cardLine.words : null;
+    const action = cardLine === null ? actionLine(child) : null;
     const goTo = GO_TO.exec(clean);
     const moment = MOMENT_LINE.exec(clean);
     const trigger = TRIGGER.exec(clean);
@@ -605,29 +724,19 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx, uses: VerbUses = {
       // Its verb still counts as a move here, so an After line that names it is not blamed for this line's mistake.
       moveVerbs.push(unreadMove);
       addProblem(ctx.diagnostics, child.line, MALFORMED_MOVE, { text: clean });
-      readRuleBody(child, { ...ctx, inMove: true, player: true });
+      // It may have been meant as a button that picks a card, whose lines say “it” for the card: only the line itself is blamed.
+      readRuleBody(child, { ...ctx, inMove: true, player: true, card: true });
+      continue;
+    } else if (picked) {
+      const joined = joins(child.line, clean, { ...picked, label: actionLabel(picked.written) }, null);
+      const declared = compileCardPick(child, picked, ctx);
+      if (declared && joined) phase.actions.push(declared);
       continue;
     } else if (action) {
       const { verb, words: actionWords, base, label, anyone } = actionOf(action, target);
-      // Buttons that start alike are different moves; only the same wording twice is a repeat, or two picks with one base, or two
-      // buttons with one label.
-      const repeated = actionNames.some((a) => a.words === actionWords);
-      const pickedWithOn = TARGETED.test(actionWords);
-      const pickedAlike = pickedWithOn && pickBases.has(base);
-      const labelled = labels.has(label.toLowerCase());
-      const taken = repeated || pickedAlike || labelled || moveVerbs.includes(verb);
-      if (repeated) addProblem(ctx.diagnostics, child.line, sameWords(actionWords), { text: clean });
-      else if (pickedAlike) addProblem(ctx.diagnostics, child.line, samePick(base), { text: clean });
-      else if (labelled) addProblem(ctx.diagnostics, child.line, sameLabel(label), { text: clean });
-      else if (taken) addProblem(ctx.diagnostics, child.line, sameVerb(verb), { text: clean });
-      else if (uses.moves.has(verb)) addProblem(ctx.diagnostics, child.line, moveElsewhere(verb), { text: clean });
-      if (!taken) {
-        actionNames.push({ verb, words: actionWords, anyone });
-        labels.add(label.toLowerCase());
-        if (pickedWithOn) pickBases.add(base);
-      }
+      const joined = joins(child.line, clean, { verb, words: actionWords, label, anyone }, TARGETED.test(actionWords) ? base : null);
       const declared = compileAction(child, action, ctx);
-      if (declared && !taken) phase.actions.push(declared);
+      if (declared && joined) phase.actions.push(declared);
       continue;
     } else if (STARTS.test(clean)) {
       for (const line of child.children) {

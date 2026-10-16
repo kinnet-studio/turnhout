@@ -9,13 +9,13 @@ import {
   bankOf, counterOf, gameNumber, interruptedTurn, isOut, lastDrawn, latestRoll, owedTo, ownerOf, pieceAt, playerFact, spaceFact, type Creditor, type LastDrawn,
 } from './board-state';
 import { cardFact, cardName } from './card-facts';
-import { amountPrompt, amountReady, playerCandidates, targetCandidates } from './declared-actions';
+import { amountPrompt, amountReady, cardCandidates, cardPrompt, noCardIn, playerCandidates, targetCandidates } from './declared-actions';
 import { friendlyError, friendlyReason } from './friendly';
 import { secondPersonWords } from './refs';
 import type { LangRuntime } from './runtime';
 import { startPlayerOf, usesTurns } from './turns';
-import type { DeclaredAction } from './types';
-import { zoneIdFor } from './zones';
+import type { CompiledGame, DeclaredAction } from './types';
+import { zoneIdFor, zoneInfo } from './zones';
 
 /**
  * `color` is the space's color when it is written as text; `details` is every other thing the table says about it. `facts` is
@@ -58,16 +58,27 @@ export type BoardView = {
  * the board, each `true` when the move accepts it and otherwise the sentence for why it does not.
  */
 export type TargetView = { prompt: string; spaces: { [space: string]: true | string } };
+/** A card a button may pick, by its id: `name` is how the seat sees it, and `allowed` is true when the move takes it, else why not. */
+export type PickCardView = { id: string; name: string; allowed: true | string };
+/**
+ * For a button that picks cards: what to ask the player, without its period, and every card it may pick, each judged alone. `some` is
+ * true for a set. `onto` is null for a button that picks no card for the cards to go to.
+ */
+export type CardPickView = {
+  some: boolean; prompt: string; cards: PickCardView[]; onto: { prompt: string; targets: { [cardId: string]: PickCardView[] } } | null;
+};
 /**
  * `move` is the move type to send when the button is pressed. `allowed` is true when the button works now, otherwise the
  * sentence to show for why it does not; for a button that picks a space it is true when any space may be picked, and for a button
  * that carries an amount when only the amount is left to say, and for a button that picks another player when any player may be
- * picked. `target` is null for a button that picks no space. `amount` is true for a button that carries an amount, which the player
- * types before pressing it. `players` is null for every button but one that picks another player; for that one it has each player
- * to pick, `true` when the move accepts that player and otherwise the sentence for why it does not.
+ * picked, and for a button that picks a card when any card may be. `target` is null for a button that picks no space. `amount` is
+ * true for a button that carries an amount, which the player types before pressing it. `players` is null for every button but one
+ * that picks another player; for that one it has each player to pick, `true` when the move accepts that player and otherwise the
+ * sentence for why it does not. `cards` is there only on a button that picks a card: the cards to pick from.
  */
 export type ActionView = {
   move: string; label: string; allowed: true | string; target: TargetView | null; amount: boolean; players: { [seat: string]: true | string } | null;
+  cards?: CardPickView;
 };
 export type SeatExtras = { board: BoardView | null; actions: ActionView[] };
 
@@ -180,15 +191,16 @@ const noneWords = (target: NonNullable<DeclaredAction['target']>): string => tar
 const pickPrompt = (target: NonNullable<DeclaredAction['target']>): string => `Pick ${targetWords(target)}`;
 
 /**
- * Whether `seat` may press the button now, with the space or the player it picks when it picks one; a rule that cannot be answered
- * (“Go has no price.”) greys it with that sentence.
+ * Whether `seat` may press the button now, with the space, the player or the cards it picks when it picks any; a rule that cannot be
+ * answered (“Go has no price.”) greys it with that sentence. Each part of the pick goes on the move only when it is given.
  */
 function allowedNow(
-  engine: GameEngine, state: GameState, seat: PlayerId, move: string, pick: { target?: number; player?: PlayerId } = {},
+  engine: GameEngine, state: GameState, seat: PlayerId, move: string,
+  pick: { target?: number; player?: PlayerId; cardId?: string; cardIds?: string[]; onto?: string } = {},
 ): true | string {
   try {
-    const { target, player } = pick;
-    const verdict = engine.canDispatch({ type: move, by: seat, ...(target === undefined ? {} : { target }), ...(player === undefined ? {} : { player }) });
+    const given = Object.fromEntries(Object.entries(pick).filter(([, value]) => value !== undefined));
+    const verdict = engine.canDispatch({ type: move, by: seat, ...given });
     return verdict === true ? true : friendlyReason(verdict, state.turn?.current);
   } catch (e) {
     return friendlyError(e);
@@ -251,6 +263,45 @@ function playersView(
   return { players, allowed: over ?? (verdicts.includes(true) ? true : verdicts[0]) };
 }
 
+/**
+ * Whether `seat` sees the card's face, by the rule the table's own view follows: the card is face up, or its zone is one everyone sees,
+ * or one only its owner sees and the seat owns it, or the card is shown to the seat or to everyone.
+ */
+export function seesFace(game: CompiledGame, card: CardState, seat: PlayerId): boolean {
+  const zone = zoneInfo(game, card.zoneId);
+  const visibility = zone?.spec.visibility ?? 'public';
+  return card.faceUp === true || visibility === 'public' || (visibility === 'owner' && zone?.seat === seat)
+    || card.revealTo === 'all' || (Array.isArray(card.revealTo) && card.revealTo.includes(seat));
+}
+
+/** A card as a button that picks it names it: by its name, the way its face is labelled, else as the page names any card. */
+function pickName(card: CardState, game: CompiledGame): string {
+  const named = card.data?.name;
+  return typeof named === 'string' || typeof named === 'number' ? String(named) : cardName(card, game);
+}
+
+/**
+ * Which cards a button that picks one may be pointed at, and the button's own verdict from them. Each card it offers is asked of the
+ * engine with the card, as the move would be sent; the button works when any card does, and otherwise says why the first does not,
+ * or that there is no card to pick. A card the seat can't see is offered by its id as a face-down card, so that the view tells nothing
+ * the table hides. A seat that is out picks nothing.
+ */
+function cardPickView(
+  engine: GameEngine, runtime: LangRuntime, state: GameState, seat: PlayerId, action: DeclaredAction,
+): { cards: CardPickView; allowed: true | string } {
+  const view: CardPickView = { some: false, prompt: cardPrompt(action).replace(/\.$/, ''), cards: [], onto: null };
+  if (isOut(state, seat) && state.result === undefined) return { cards: view, allowed: OUT_OF_GAME };
+  for (const id of cardCandidates(runtime, action, state, seat)) {
+    const card = state.cards.find((c) => c.id === id)!;
+    const name = seesFace(runtime.game, card, seat) ? pickName(card, runtime.game) : 'a face-down card';
+    view.cards.push({ id, name, allowed: allowedNow(engine, state, seat, action.words, { cardId: id }) });
+  }
+  // Once the game is over every button says so, as the ones that pick nothing do, whatever is left to pick.
+  if (state.result !== undefined) return { cards: view, allowed: friendlyReason('game is over') };
+  if (view.cards.length === 0) return { cards: view, allowed: noCardIn(action.pick!.fromText) };
+  return { cards: view, allowed: view.cards.some((c) => c.allowed === true) ? true : view.cards[0].allowed };
+}
+
 /** The current phase's buttons in written order, each saying whether this seat may press it right now and if not why. */
 function actionViews(engine: GameEngine, runtime: LangRuntime, state: GameState, seat: PlayerId): ActionView[] {
   const phase = runtime.game.phases.find((p) => p.id === state.turn?.phase);
@@ -259,6 +310,10 @@ function actionViews(engine: GameEngine, runtime: LangRuntime, state: GameState,
   const out = isOut(state, seat) && state.result === undefined;
   return phase.actions.map((action): ActionView => {
     const { words: move, label, target } = action;
+    if (action.pick) {
+      const picking = cardPickView(engine, runtime, state, seat, action);
+      return { move, label, allowed: picking.allowed, target: null, amount: false, players: null, cards: picking.cards };
+    }
     if (action.amount) {
       return { move, label, allowed: out ? OUT_OF_GAME : amountView(engine, runtime, state, seat, action), target: null, amount: true, players: null };
     }
@@ -303,9 +358,13 @@ const isBoard = (v: unknown): boolean =>
   && (v.startPlayer === null || isText(v.startPlayer));
 const isVerdict = (v: unknown): boolean => v === true || isText(v);
 const isTarget = (v: unknown): boolean => isRecord(v) && isText(v.prompt) && isMap(v.spaces, isVerdict);
+const isPickCard = (v: unknown): boolean => isRecord(v) && isText(v.id) && isText(v.name) && isVerdict(v.allowed);
+const isOnto = (v: unknown): boolean => isRecord(v) && isText(v.prompt) && isMap(v.targets, (cards) => isList(cards, isPickCard));
+const isCardPick = (v: unknown): boolean =>
+  isRecord(v) && typeof v.some === 'boolean' && isText(v.prompt) && isList(v.cards, isPickCard) && (v.onto === null || isOnto(v.onto));
 const isAction = (v: unknown): boolean =>
   isRecord(v) && isText(v.move) && isText(v.label) && isVerdict(v.allowed) && (v.target === null || isTarget(v.target))
-  && typeof v.amount === 'boolean' && (v.players === null || isMap(v.players, isVerdict));
+  && typeof v.amount === 'boolean' && (v.players === null || isMap(v.players, isVerdict)) && (v.cards === undefined || isCardPick(v.cards));
 
 /** For the page: the extras of a view when they have the shape `seatExtras` makes, null for anything else. */
 export function readSeatExtras(extras: Json | undefined): SeatExtras | null {

@@ -6,7 +6,7 @@ import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { parseOutline } from './outline';
 import { vocabFrom } from './phrases';
-import { AMOUNT_BOARD, ANY_PLAYER_BOARD, MARK_BOARD, PICK_BOARD, TINY_BOARD_HEAD, TURN_GAME, fixtureBoardGame } from './testing';
+import { AMOUNT_BOARD, ANY_PLAYER_BOARD, CARD_PICK_GAME, MARK_BOARD, PICK_BOARD, TINY_BOARD_HEAD, TURN_GAME, fixtureBoardGame, vocabFor } from './testing';
 
 const lib = createDefaultLibrary();
 const BASE = [
@@ -1472,5 +1472,112 @@ describe('a button that costs part of the turn budget', () => {
       expect(messages(text)).toEqual([[second, TWO_COSTS]]);
       expect(compileGame(text, lib).game).toBeUndefined();
     });
+  });
+});
+
+describe('buttons that pick a card', () => {
+  const BUY_LINE = '  A player may buy a card from the shop to their stash.';
+  const BUY_COST = `${BUY_LINE}\n    It costs 1 move.\n`;
+  const SELL_LINE = '  A player may sell a card in their stash.';
+  const ONE_ZONE = 'A move goes from one zone to one zone.';
+  /** The 1-based number of `line` in `text`. */
+  const at = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+  const phaseOf = (text: string) => compileGame(text, lib).game!.phases[0];
+  /** `text` with `line` put in after `after`, which it must hold. */
+  const adding = (text: string, after: string, line: string) => {
+    const added = text.replace(`${after}\n`, `${after}\n${line}\n`);
+    expect(added).not.toBe(text);
+    return added;
+  };
+  /** The shopping phase of `text` read on its own, against the words of CARD_PICK_GAME, so a line with a problem still leaves a phase to look at. */
+  const phaseAlone = (text: string) => {
+    const diagnostics: Parameters<typeof compilePhase>[1]['diagnostics'] = [];
+    const node = parseOutline(text).roots.find((root) => root.text.startsWith('Phase:'))!;
+    const vocab = vocabFor(compileGame(CARD_PICK_GAME, lib).game!);
+    const ctx = { library: lib, vocab, gameName: 'Gem Picks', inMove: false, player: false, space: false, card: false, drawn: false, amount: false, picked: false, diagnostics };
+    return compilePhase(node, ctx);
+  };
+
+  it('reads a button that picks a card from one zone to another, and one that picks a card in a zone', () => {
+    const { game, diagnostics } = compileGame(CARD_PICK_GAME, lib);
+    expect(diagnostics).toEqual([]);
+    const phase = game!.phases[0];
+    expect(phase.moves).toEqual([]);
+    const buy = phase.actions.find((a) => a.base === 'buy')!;
+    expect(buy).toMatchObject({
+      words: 'buy a card from the shop to their stash', base: 'buy', label: 'Buy a card from the shop to your stash', target: null, anyone: false,
+      amount: false, picksPlayer: false, line: at(CARD_PICK_GAME, BUY_LINE),
+    });
+    expect(buy.pick).toEqual({ some: false, from: { shared: 'shop' }, fromText: 'the shop', to: { of: { who: 'actor' }, zone: 'stash' }, onto: null, ontoText: null });
+    expect(buy.cost).toMatchObject({ amount: 1, counter: 'moves' });
+    const sell = phase.actions.find((a) => a.base === 'sell')!;
+    expect(sell).toMatchObject({ words: 'sell a card in their stash', label: 'Sell a card in your stash' });
+    expect(sell.pick).toMatchObject({ from: { of: { who: 'actor' }, zone: 'stash' }, fromText: 'their stash', to: null });
+    expect('cost' in sell).toBe(false);
+    expect('pick' in phase.actions.find((a) => a.words === 'stop')!).toBe(false);
+  });
+
+  it('R1: reads a card line with no cost line under it as a card move, as before', () => {
+    const uncosted = CARD_PICK_GAME.replace(BUY_COST, `${BUY_LINE}\n`);
+    expect(uncosted).not.toBe(CARD_PICK_GAME);
+    expect(compileGame(uncosted, lib).diagnostics).toEqual([]);
+    expect(phaseOf(uncosted).moves.map((m) => m.verb)).toEqual(['buy']);
+    expect(phaseOf(uncosted).actions.some((a) => a.base === 'buy')).toBe(false);
+  });
+
+  describe('“it” and “the card” in a pick', () => {
+    it('read the picked card in its lines', () => {
+      const shining = adding(adding(CARD_PICK_GAME, '    | Opal | 1    | 4      |', '  Cards can have shine.'), '      Move it to the pile.', '      It gains 1 shine.');
+      expect(compileGame(shining, lib).diagnostics).toEqual([]);
+      expect(compileGame(adding(CARD_PICK_GAME, SELL_LINE, '    Only if the card is not a Ruby.'), lib).diagnostics).toEqual([]);
+    });
+    it('are no card in a button that picks none', () => {
+      const text = adding(CARD_PICK_GAME, '      Their moves go back to 0.', '      Move it to the pile.');
+      // Sell has the same line; the one under stop is the last.
+      const line = text.split('\n').lastIndexOf('      Move it to the pile.') + 1;
+      expect(line).toBe(at(text, '      Their moves go back to 0.') + 1);
+      expect(messages(text)).toEqual([[line, '“Move it to the pile” only makes sense in a rule about a card, such as “When a card …”.']]);
+    });
+  });
+
+  describe('problems', () => {
+    /** CARD_PICK_GAME with the sell line written as `line`: the errors, with the line they are on, and the words of the buttons it makes. */
+    const sellAs = (line: string) => {
+      const text = CARD_PICK_GAME.replace(SELL_LINE, line);
+      expect(text).not.toBe(CARD_PICK_GAME);
+      return { errors: messages(text), line: at(text, line), buttons: phaseAlone(text).actions.map((a) => a.words) };
+    };
+    it('names a zone it cannot read as a card move does', () => {
+      const moved = CARD_PICK_GAME.replace(BUY_COST, '  A player may buy a card from the shop to their stsh.\n');
+      const asMove = messages(moved);
+      expect(asMove).toEqual([[at(moved, '  A player may buy a card from the shop to their stsh.'), expect.any(String)]]);
+      const { errors, line, buttons } = sellAs('  A player may sell a card in their stsh.');
+      expect(errors).toEqual([[line, asMove[0][1]]]);
+      expect(buttons).toEqual(['buy a card from the shop to their stash', 'stop']);
+    });
+    it('picks from one zone only', () => {
+      const { errors, line, buttons } = sellAs('  A player may sell a card in each stash.');
+      expect(errors).toEqual([[line, ONE_ZONE]]);
+      expect(buttons).toEqual(['buy a card from the shop to their stash', 'stop']);
+    });
+    it('says how to write a card line that is neither a card move nor a pick', () => {
+      const { errors, line, buttons } = sellAs('  A player may sell a card from their stash.');
+      expect(errors).toEqual([[line, MALFORMED_MOVE]]);
+      expect(buttons).toEqual(['buy a card from the shop to their stash', 'stop']);
+    });
+  });
+
+  it('can not be a card move in one phase and a button that picks a card in another, on the later line', () => {
+    /** `text` with a second phase holding `lines`: the errors alone, since nothing leads to that phase. */
+    const later = (text: string, lines: string[]) => {
+      const two = text.replace('\n\nEnd:', `\n\nPhase: later\n  Players take turns.\n${lines.join('\n')}\n\nEnd:`);
+      expect(two).not.toBe(text);
+      const errors = compileGame(two, lib).diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message]);
+      return { errors, line: two.split('\n').lastIndexOf(BUY_LINE) + 1 };
+    };
+    const asButton = later(CARD_PICK_GAME, [BUY_LINE]);
+    expect(asButton.errors).toEqual([[asButton.line, '“buy” is a button in another phase, so it can\'t also be a card move. Start one with another word.']]);
+    const asMove = later(CARD_PICK_GAME.replace(BUY_COST, `${BUY_LINE}\n`), [BUY_LINE, '    It costs 1 move.']);
+    expect(asMove.errors).toEqual([[asMove.line, '“buy” is a card move in another phase, so it can\'t also be a button. Start one with another word.']]);
   });
 });

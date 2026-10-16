@@ -3,21 +3,26 @@ import { MAX_FLOW_ITERATIONS } from '../flow';
 import { zoneCards, type GameState } from '../game-state';
 import type { Move, MoveContext } from '../moves';
 import { RuleRegistry } from '../rules';
+import type { Json } from '../table-def';
 import {
   TURN_KEY, counterOf, gameNumber, isOut, markOut, ownerOf, pieceAt, placePiece, playerFact, queueRoll, setCounter, setOwner, setSpaceFact, spaceFact,
   withBoardData,
 } from './board-state';
 import { createEngine, flowDefFor, initialState, seatsFor } from './build';
 import { compileGame } from './compile';
-import { amountPrompt, amountReady, declaredActionHandler, pickPlayerPrompt, playerCandidates, targetCandidates } from './declared-actions';
-import { costRefusal, hasCost, payCost } from './declared-actions';
+import {
+  amountPrompt, amountReady, cardCandidates, cardPrompt, costRefusal, declaredActionHandler, hasCost, noCardIn, payCost, pickPlayerPrompt, playerCandidates,
+  targetCandidates,
+} from './declared-actions';
 import { friendlyError } from './friendly';
 import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { MAX_MOMENT_DEPTH } from './runtime';
 import type { DeclaredAction } from './types';
-import { AMOUNT_BOARD, ANY_PLAYER_BOARD, INTERRUPT_BOARD, MARK_BOARD, PICK_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD } from './testing';
-import { TURN_GAME } from './testing';
+import {
+  AMOUNT_BOARD, ANY_PLAYER_BOARD, CARD_PICK_GAME, INTERRUPT_BOARD, MARK_BOARD, PICK_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD, TURN_GAME,
+} from './testing';
+import { relocate, topCard } from './zones';
 
 const lib = createDefaultLibrary();
 const game = compileGame(TINY_BOARD, lib).game!;
@@ -815,5 +820,136 @@ describe('buttons that cost part of the turn budget', () => {
       expect(results).toHaveLength(1);
       expect(results[0]).toMatchObject({ status: 'pass', message: null });
     });
+  });
+});
+
+describe('buttons that pick a card', () => {
+  const BUY = 'buy a card from the shop to their stash';
+  const SELL = 'sell a card in their stash';
+  const SELL_LINE = '  A player may sell a card in their stash.';
+  const g = compileGame(CARD_PICK_GAME, lib).game!;
+  /** A two-player game of CARD_PICK_GAME once Setup is done: p0 to act, with 7 coins and 2 moves. */
+  const started = createEngine(g, lib, 2, initialState(g, 1)).engine.getState();
+  const named = (name: string) => started.cards.filter((c) => c.data?.name === name).map((c) => c.id);
+  const [r1, r2] = named('Ruby');
+  const [o1, o2] = named('Opal');
+  /** The shop holds r1 and o1 and nothing else, and p0's stash r2 and o2. */
+  const arranged = (s: GameState, game = g): GameState => {
+    const emptied = relocate(s, zoneCards(s, 'shop').map((c) => c.id), 'pile', game);
+    return relocate(relocate(emptied, [r1, o1], 'shop', game), [r2, o2], 'stash-p0', game);
+  };
+  /** An engine on the arranged table, after `arrange`; `text` is the game, CARD_PICK_GAME unless said. */
+  const picks = (arrange: (s: GameState) => GameState = (s) => s, text = CARD_PICK_GAME) => {
+    const game = compileGame(text, lib).game!;
+    return createEngine(game, lib, 2, arrange(arranged(started, game)));
+  };
+  /** `text` with `line` put in after `after`, which it must hold. */
+  const adding = (text: string, after: string, line: string) => {
+    const added = text.replace(`${after}\n`, `${after}\n${line}\n`);
+    expect(added).not.toBe(text);
+    return added;
+  };
+  const coinsAndMoves = (s: GameState, seat = 'p0') => [counterOf(s, 'coins', seat), counterOf(s, 'moves', seat)];
+  const actionNamed = (words: string, game = g) => game.phases[0].actions.find((a) => a.words === words)!;
+
+  it('starts p0 on 7 coins and 2 moves, with the table arranged', () => {
+    const s = picks().engine.getState();
+    expect(coinsAndMoves(s)).toEqual([7, 2]);
+    expect([zoneCards(s, 'shop').map((c) => c.id), zoneCards(s, 'stash-p0').map((c) => c.id)]).toEqual([[r1, o1], [r2, o2]]);
+  });
+
+  it('buys: the card goes to the stash, the move and the card\'s cost are spent, and nobody is marked as having moved it', () => {
+    const { engine } = picks();
+    expect(engine.dispatch({ type: BUY, by: 'p0', cardId: r1 })).toMatchObject({ ok: true });
+    const s = engine.getState();
+    expect(s.cards.find((c) => c.id === r1)!.zoneId).toBe('stash-p0');
+    expect(coinsAndMoves(s)).toEqual([4, 1]);
+    expect(s.cards.find((c) => c.id === r1)!.data).not.toHaveProperty('movedBy');
+  });
+
+  it('sells for free: “it” is the card picked, moved to the pile', () => {
+    const { engine } = picks();
+    expect(engine.dispatch({ type: SELL, by: 'p0', cardId: o2 })).toMatchObject({ ok: true });
+    const s = engine.getState();
+    expect(topCard(s, 'pile')?.id).toBe(o2);
+    expect(coinsAndMoves(s)).toEqual([8, 2]);
+  });
+
+  it('reads “the card” as the card picked', () => {
+    const { engine } = picks(undefined, adding(CARD_PICK_GAME, SELL_LINE, '    Only if the card is not a Ruby.'));
+    expect(engine.dispatch({ type: SELL, by: 'p0', cardId: r2 })).toMatchObject({ ok: false, reason: 'the card is not a Ruby' });
+    expect(engine.dispatch({ type: SELL, by: 'p0', cardId: o2 })).toMatchObject({ ok: true });
+  });
+
+  it('Review Focus: refuses a press without a card it can take with its prompt, before the cost, and changes nothing', () => {
+    const prompt = 'Pick a card from the shop to buy.';
+    expect(cardPrompt(actionNamed(BUY))).toBe(prompt);
+    // A buy that costs 2 moves, with 1 move and no coins left: the cost and the Only if would refuse it too, so the pick is asked first.
+    const COSTLY = CARD_PICK_GAME.replace('    It costs 1 move.', '    It costs 2 moves.');
+    expect(COSTLY).not.toBe(CARD_PICK_GAME);
+    const short = (s: GameState) => setCounter(setCounter(s, 'moves', 'p0', 1), 'coins', 'p0', 0);
+    const presses: { [k: string]: Json }[] = [{}, { cardId: r2 }, { cardId: 'c999' }, { cardId: 7 }];
+    for (const press of presses) {
+      const { engine } = picks(short, COSTLY);
+      const before = engine.getState();
+      expect(engine.dispatch({ type: BUY, by: 'p0', ...press }), JSON.stringify(press)).toMatchObject({ ok: false, reason: prompt });
+      expect(engine.getState()).toEqual(before);
+    }
+    const refusals: [string, (s: GameState) => GameState, Move, string?][] = [
+      ["not p1's turn", (s) => s, { type: BUY, by: 'p1', cardId: r1 }],
+      ["they have at least the card's cost in coins", (s) => setCounter(s, 'coins', 'p0', 2), { type: BUY, by: 'p0', cardId: r1 }],
+      ['they have at least 2 moves', short, { type: BUY, by: 'p0', cardId: r1 }, COSTLY],
+    ];
+    for (const [reason, arrange, move, text] of refusals) {
+      const { engine } = picks(arrange, text);
+      const before = engine.getState();
+      expect(engine.dispatch(move)).toMatchObject({ ok: false, reason });
+      expect(engine.getState()).toEqual(before);
+    }
+  });
+
+  it('says how to pick a card in a zone, and that there is none', () => {
+    expect(cardPrompt(actionNamed(SELL))).toBe('Pick a card in your stash to sell.');
+    expect(noCardIn('their stash')).toBe('There is no card in your stash.');
+    expect(noCardIn('the shop')).toBe('There is no card in the shop.');
+  });
+
+  it('offers and takes only the top card of a pile', () => {
+    const text = adding(CARD_PICK_GAME, '      They get 1 coin.', '  A player may take a card in the pile.');
+    const { engine, runtime } = picks(undefined, text);
+    const take = actionNamed('take a card in the pile', runtime.game);
+    const pile = zoneCards(engine.getState(), 'pile').map((c) => c.id);
+    expect(pile.length).toBeGreaterThan(1);
+    const [under, top] = pile.slice(-2);
+    expect(cardCandidates(runtime, take, engine.getState(), 'p0')).toEqual([top]);
+    expect(engine.canDispatch({ type: 'take a card in the pile', by: 'p0', cardId: under })).toBe('You can only take the top card of the pile.');
+    expect(engine.canDispatch({ type: 'take a card in the pile', by: 'p0', cardId: top })).toBe(true);
+  });
+
+  it('refuses a card it would put in a zone of a seat that is not at the table, whichever card it is', () => {
+    const text = adding(CARD_PICK_GAME, '      They get 1 coin.', "  A player may gift a card from their stash to p2's case.\n    It costs 1 move.");
+    expect(compileGame(text, lib).diagnostics).toEqual([]);
+    const { engine } = picks(undefined, text);
+    for (const cardId of [r2, o2]) expect(engine.canDispatch({ type: "gift a card from their stash to p2's case", by: 'p0', cardId })).toBe("You can't gift a card there.");
+  });
+
+  it('lists the cards each seat could pick, in slot order', () => {
+    const { engine, runtime } = picks();
+    const s = engine.getState();
+    expect(cardCandidates(runtime, actionNamed(BUY), s, 'p0')).toEqual([r1, o1]);
+    expect(cardCandidates(runtime, actionNamed(SELL), s, 'p0')).toEqual([r2, o2]);
+    expect(cardCandidates(runtime, actionNamed(SELL), s, 'p1')).toEqual([]);
+  });
+
+  it('undoes a buy, and replays it from the log', () => {
+    const { engine } = picks();
+    const before = engine.getState();
+    expect(engine.dispatch({ type: BUY, by: 'p0', cardId: r1 }).ok).toBe(true);
+    const after = engine.getState();
+    const fresh = picks().engine;
+    fresh.loadLog([...engine.getLog()]);
+    expect(fresh.getState()).toEqual(after);
+    engine.undo();
+    expect(engine.getState()).toEqual(before);
   });
 });

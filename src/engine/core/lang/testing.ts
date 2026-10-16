@@ -313,6 +313,26 @@ export const COUNTER_GAME = [
 ].join('\n');
 
 /**
+ * A card game whose buttons pick cards. Buying one from the shop costs a move and its cost in coins; selling one from your stash
+ * is free and gives a coin. Each player has 2 moves each turn, and the turn passes once they have none.
+ */
+export const CARD_PICK_GAME = [
+  'Game: Gem Picks', 'Players: 2 to 3', '  Each player has 7 coins that everyone can see.', '  Each player has 2 moves each turn.',
+  '  Players pay with coins.', '',
+  'Cards:', '  A deck called gems, starting in the pile:', '    | name | cost | copies |', '    | Ruby | 3    | 4      |', '    | Opal | 1    | 4      |', '',
+  'Table:', '  The pile is a pile in the center that no one can see.', '  The shop is a row in the center that everyone can see.',
+  '  Each player has a stash row that only they can see.', '  Each player has a case row that everyone can see.', '',
+  'Setup:', '  Deal 2 cards from the pile to the shop.', '',
+  'Phase: shopping', '  Players take turns.',
+  '  A player may buy a card from the shop to their stash.', '    It costs 1 move.', "    Only if they have at least the card's cost in coins.",
+  '    Then:', "      They pay the card's cost.",
+  '  A player may sell a card in their stash.', '    Then:', '      Move it to the pile.', '      They get 1 coin.',
+  '  A player may stop.', '    Then:', '      Their moves go back to 0.',
+  '  When they have less than 1 move:', '    The turn passes to the left.', '',
+  'End:', '  The game ends when the pile is empty.', '  The highest score wins.',
+].join('\n');
+
+/**
  * A card game whose turn is a run of steps, written the way a designer would. Each player has 2 moves each turn, and a start player
  * is chosen at random. Working and taking a card each spend a move; once a player has none left the turn goes to tidying, whose
  * start line gives them a coin, and once their list has fewer than 2 cards the turn passes to the left with no press.
@@ -439,6 +459,7 @@ export function vocabFor(game: CompiledGame, players: number = game.players.max)
     board: game.board,
     actions: game.phases.flatMap((p) => p.actions.map((a) => ({
       verb: a.verb, words: a.words, base: a.base, targeted: a.target !== null, anyone: a.anyone, amount: a.amount, picksPlayer: a.picksPlayer,
+      ...(a.pick ? { picksCard: true } : {}),
     }))),
     facts: game.facts,
   });

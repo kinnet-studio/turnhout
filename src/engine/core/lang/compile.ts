@@ -1,7 +1,7 @@
 import { MAX_CARDS, TOO_MANY_CARDS, isSaysColumn } from './cards';
 import { compileExample } from './compile-example';
 import {
-  actionLine, actionOf, cardMoveVerb, compilePhase, compileTrigger, startsLineOf, targetWords, TURN_STARTS, type VerbUses,
+  actionLine, actionOf, cardMoveVerb, compilePhase, compileTrigger, pickLine, startsLineOf, targetWords, TURN_STARTS, type TargetWords, type VerbUses,
 } from './compile-phase';
 import {
   addProblem, attempt, FOR_EVERY_AT_LEAST_ONE, innerEffect, matchEffectLine, matchLine, phaseId, phraseFn, POINTS_FOR_EVERY, rejectChildren, type LineCtx,
@@ -149,22 +149,32 @@ function holdBack(diagnostics: Diagnostic[], stages: Section[][]): number | null
   return root;
 }
 
+/** A button as the words of the game know it, from its line: null for a line that is no button. */
+function buttonOf(node: OutlineNode, target: TargetWords): Vocab['actions'][number] | null {
+  const found = actionLine(node);
+  if (found) {
+    const { verb, words, base, target: picked, anyone, amount, picksPlayer } = actionOf(found, target);
+    return { verb, words, base, targeted: picked !== null, anyone, amount, picksPlayer };
+  }
+  const pick = pickLine(node);
+  return pick && { verb: pick.verb, words: pick.words, base: pick.base, targeted: false, anyone: pick.anyone, amount: false, picksPlayer: false, picksCard: true };
+}
+
 /**
  * The buttons the phases declare, one for each wording, the first written winning; a line that mentions a card moves one, even
- * mistyped, and is no button. One wording is one move type, so it can't be a button any player may press in one phase and not in
- * another: the later line is reported. (Twice in one phase is reported by the phase.)
+ * mistyped, and is no button, unless it is a button that picks a card. One wording is one move type, so it can't be a button any player
+ * may press in one phase and not in another: the later line is reported. (Twice in one phase is reported by the phase.)
  */
 function readActions(phases: OutlineNode[], ctx: LineCtx): Vocab['actions'] {
   const target = targetWords(ctx);
   const byWords = new Map<string, { action: Vocab['actions'][number]; phase: OutlineNode }>();
   for (const phase of phases) {
     for (const child of phase.children) {
-      const found = actionLine(normalizeLine(child.text));
-      if (!found) continue;
-      const { verb, words, base, target: picked, anyone, amount, picksPlayer } = actionOf(found, target);
-      const first = byWords.get(words);
-      if (!first) byWords.set(words, { action: { verb, words, base, targeted: picked !== null, anyone, amount, picksPlayer }, phase });
-      else if (first.phase !== phase && first.action.anyone !== anyone) addProblem(ctx.diagnostics, child.line, openedDifferently(words, first.action.anyone));
+      const action = buttonOf(child, target);
+      if (!action) continue;
+      const first = byWords.get(action.words);
+      if (!first) byWords.set(action.words, { action, phase });
+      else if (first.phase !== phase && first.action.anyone !== action.anyone) addProblem(ctx.diagnostics, child.line, openedDifferently(action.words, first.action.anyone));
     }
   }
   return [...byWords.values()].map((first) => first.action);
@@ -557,9 +567,9 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   for (const node of phaseNodes) if (phaseId(node) === '') addProblem(diagnostics, node.line, 'Give the phase a name, like “Phase: playing”.');
   const named = phaseNodes.filter((node) => phaseId(node) !== '');
   const phaseIds = [...new Set(named.map(phaseId))];
-  const phaseLines = named.flatMap((node) => node.children).map((c) => normalizeLine(c.text));
-  // A card move that has a mistake still names its verb, so the examples that make it are not blamed for that mistake.
-  const verbs = [...new Set(phaseLines.flatMap((line) => cardMoveVerb(line) ?? []))];
+  // A card move that has a mistake still names its verb, so the examples that make it are not blamed for that mistake. A button that
+  // picks a card is no card move: it is read with the buttons.
+  const verbs = [...new Set(named.flatMap((node) => node.children).flatMap((line) => cardMoveVerb(line) ?? []))];
 
   const { sets: cards, says: saysCells } = compileCards(
     linesOf(of('cards')), stage(vocabFrom({ maxPlayers, zones, phases: phaseIds, verbs })), declared,

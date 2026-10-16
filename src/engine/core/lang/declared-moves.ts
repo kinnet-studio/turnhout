@@ -28,7 +28,7 @@ function seatOfMove(of: SeatRef, seats: PlayerId[], by: PlayerId): PlayerId | nu
 }
 
 /** The zone as the designer named it, said to the player making the move: “their hand” becomes “your hand”. */
-const yours = (text: string) => text.replace(/^their\s+/i, 'your ');
+export const yours = (text: string) => text.replace(/^their\s+/i, 'your ');
 
 const joinOr = (items: string[]) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} or ${items.at(-1)}`);
 

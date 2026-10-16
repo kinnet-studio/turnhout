@@ -1,7 +1,8 @@
 import { PhraseLibrary, STATIC_TYPES } from '../phrases';
-import { VOCAB_TYPES } from '../refs';
+import { CARDACTION, VOCAB_TYPES } from '../refs';
 import { registerAmountPhrases } from './amount-phrases';
 import { registerBoardPhrases } from './board-phrases';
+import { registerCardPickPhrases } from './card-pick-phrases';
 import { registerDebtPhrases } from './debt-phrases';
 import { registerDrawPhrases } from './draw-phrases';
 import { registerExamplePhrases } from './example-phrases';
@@ -32,6 +33,7 @@ const REGISTRARS: ((lib: PhraseLibrary) => PhraseLibrary)[] = [
   registerGameNumberPhrases,
   registerAmountPhrases,
   registerPickPhrases,
+  registerCardPickPhrases,
   registerTurnPhrases,
   registerMovePhrases,
   registerStandardDeckPhrases,
@@ -42,5 +44,5 @@ const REGISTRARS: ((lib: PhraseLibrary) => PhraseLibrary)[] = [
 
 /** Every phrase that ships with the language. */
 export function createDefaultLibrary(): PhraseLibrary {
-  return REGISTRARS.reduce((lib, register) => register(lib), new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES]));
+  return REGISTRARS.reduce((lib, register) => register(lib), new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES, CARDACTION]));
 }

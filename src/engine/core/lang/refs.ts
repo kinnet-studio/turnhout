@@ -730,6 +730,15 @@ const AMOUNTACTION = wordType('amountaction', '[action]', (v) => v.actions.filte
  */
 const PICKACTION = wordType('pickaction', '[action]', (v) => v.actions.filter((a) => a.picksPlayer).map((a) => [thirdPersonWords(a.base), a.words]), undefined);
 
+/**
+ * The base of a button that picks a card, in the third person: an example names the card after it (“p0 buys the Ruby”). It stands for
+ * the base, not one button, since several may share it (a buy to the stash and a buy to the case): the rest of the example's words, and
+ * where the card lies, say which is pressed.
+ */
+export const CARDACTION = wordType(
+  'cardaction', '[action]', (v) => v.actions.filter((a) => a.picksCard === true).map((a) => [thirdPersonWords(a.base), a.base]), undefined,
+);
+
 type VocabAction = Vocab['actions'][number];
 
 /** A button's wording with its verb, the first word, in the past: 'roll for a double' is 'rolled for a double'. */

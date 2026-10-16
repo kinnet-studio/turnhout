@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { GameState } from '../game-state';
+import { zoneCards, type GameState } from '../game-state';
 import type { Json } from '../table-def';
 import { markOut, placePiece, queueRoll, setBank, setCounter, setGameNumber, setOwner, setPlayerFact, setSpaceFact, withBoardData } from './board-state';
 import { readSeatExtras, seatExtras } from './board-view';
@@ -8,7 +8,10 @@ import { createEngine, initialState, seatsFor } from './build';
 import { compileGame } from './compile';
 import { RuleError } from './diagnostics';
 import { createDefaultLibrary } from './library';
-import { AMOUNT_BOARD, ANY_PLAYER_BOARD, COUNTER_GAME, deckGameText, HOLDING_BOARD, INTERRUPT_BOARD, PICK_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD, TURN_GAME } from './testing';
+import {
+  AMOUNT_BOARD, ANY_PLAYER_BOARD, CARD_PICK_GAME, COUNTER_GAME, deckGameText, HOLDING_BOARD, INTERRUPT_BOARD, PICK_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD,
+  TURN_GAME,
+} from './testing';
 import { START_PLAYER_KEY } from './turns';
 import type { CompiledGame } from './types';
 import { relocate, zoneIdFor } from './zones';
@@ -884,4 +887,85 @@ describe('readSeatExtras', () => {
     ['a player fact that is null', { board: board({ playerFacts: { p0: { 'in jail': null } } }), actions: [] }],
     ['seats that are out given as a number', { board: board({ out: 1 }), actions: [] }],
   ])('refuses %s', (_name, extras) => expect(readSeatExtras(extras)).toBeNull());
+});
+
+describe('buttons that pick a card', () => {
+  const BUY = 'buy a card from the shop to their stash';
+  const SELL = 'sell a card in their stash';
+  const g = compileGame(CARD_PICK_GAME, lib).game!;
+  const started = createEngine(g, lib, 2, initialState(g, 1)).engine.getState();
+  const named = (name: string) => started.cards.filter((c) => c.data?.name === name).map((c) => c.id);
+  const [r1, r2, r3] = named('Ruby');
+  const [o1, o2] = named('Opal');
+  /** The shop holds r1 and o1 and nothing else, and p0's stash r2 and o2. */
+  const arranged = (s: GameState, game = g): GameState => {
+    const emptied = relocate(s, zoneCards(s, 'shop').map((c) => c.id), 'pile', game);
+    return relocate(relocate(emptied, [r1, o1], 'shop', game), [r2, o2], 'stash-p0', game);
+  };
+  /** An engine on the arranged table, after `arrange`; `text` is the game, CARD_PICK_GAME unless said. */
+  const picks = (arrange: (s: GameState) => GameState = (s) => s, text = CARD_PICK_GAME) => {
+    const game = compileGame(text, lib).game!;
+    return createEngine(game, lib, 2, arrange(arranged(started, game)));
+  };
+  const actionsOf = (seat: string, built: ReturnType<typeof picks>) => seatExtras(built.engine, built.runtime, built.engine.getState(), seat).actions;
+  const view = (seat: string, built: ReturnType<typeof picks>, move = BUY) => actionsOf(seat, built).find((a) => a.move === move)!;
+
+  it('lists the cards p0 could buy, by name, each with whether the move takes it', () => {
+    expect(view('p0', picks())).toEqual({
+      move: BUY, label: 'Buy a card from the shop to your stash', allowed: true, target: null, amount: false, players: null,
+      cards: {
+        some: false, prompt: 'Pick a card from the shop to buy',
+        cards: [{ id: r1, name: 'Ruby', allowed: true }, { id: o1, name: 'Opal', allowed: true }], onto: null,
+      },
+    });
+  });
+  it('lists the cards in the stash for a sale, and gives a button that picks none no cards', () => {
+    const built = picks();
+    expect(view('p0', built, SELL).cards).toEqual({
+      some: false, prompt: 'Pick a card in your stash to sell',
+      cards: [{ id: r2, name: 'Ruby', allowed: true }, { id: o2, name: 'Opal', allowed: true }], onto: null,
+    });
+    expect('cards' in view('p0', built, 'stop')).toBe(false);
+  });
+  it('greys a card the player can not pay for, and the button only when every card is', () => {
+    const poor = view('p0', picks((s) => setCounter(s, 'coins', 'p0', 2)));
+    expect(poor.cards!.cards.map((c) => c.allowed)).toEqual(["they have at least the card's cost in coins", true]);
+    expect(poor.allowed).toBe(true);
+    const broke = view('p0', picks((s) => setCounter(s, 'coins', 'p0', 0)));
+    expect(broke.allowed).toBe(broke.cards!.cards[0].allowed);
+    expect(broke.allowed).toBe("they have at least the card's cost in coins");
+  });
+  it('tells a seat whose turn it is not so, card by card, and that it has nothing to sell', () => {
+    const built = picks();
+    const buy = view('p1', built);
+    expect([buy.allowed, ...buy.cards!.cards.map((c) => c.allowed)]).toEqual(["It's p0's turn.", "It's p0's turn.", "It's p0's turn."]);
+    expect(view('p1', built, SELL)).toMatchObject({ allowed: 'There is no card in your stash.', cards: { cards: [] } });
+  });
+  it('lists no card for a seat that is out, and says the game is over once it is', () => {
+    expect(view('p1', picks((s) => markOut(s, 'p1')))).toMatchObject({ allowed: "You're out of the game.", cards: { cards: [] } });
+    const over = view('p0', picks((s) => ({ ...s, result: { winner: 'p0' } })));
+    expect([over.allowed, ...over.cards!.cards.map((c) => c.allowed)]).toEqual(['The game is over.', 'The game is over.', 'The game is over.']);
+  });
+  it('Review Focus: names no card the seat can not see, and still takes the press by its id', () => {
+    const PEEK = 'peek a card in the other player\'s stash';
+    // “The other player” is only one player in a game for two.
+    const text = CARD_PICK_GAME.replace('Players: 2 to 3', 'Players: 2')
+      .replace('  A player may stop.\n', `  A player may ${PEEK}.\n    Then:\n      Move it to their case.\n  A player may stop.\n`);
+    expect(text.split('\n').length).toBe(CARD_PICK_GAME.split('\n').length + 3);
+    expect(compileGame(text, lib).diagnostics).toEqual([]);
+    const built = picks((s) => relocate(s, [r3, o2], 'stash-p1', g), text);
+    const peek = view('p0', built, PEEK);
+    expect(peek.cards!.cards).toEqual([{ id: r3, name: 'a face-down card', allowed: true }, { id: o2, name: 'a face-down card', allowed: true }]);
+    expect(built.engine.dispatch({ type: PEEK, by: 'p0', cardId: r3 }).ok).toBe(true);
+    expect(built.engine.getState().cards.find((c) => c.id === r3)!.zoneId).toBe('case-p0');
+  });
+  it('is plain data, and readSeatExtras reads it back, and nothing else for the cards', () => {
+    const built = picks();
+    const extras = seatExtras(built.engine, built.runtime, built.engine.getState(), 'p0');
+    expect(readSeatExtras(JSON.parse(JSON.stringify(extras)))).toEqual(extras);
+    const buy = extras.actions.find((a) => a.move === BUY)!;
+    const withCards = (cards: Json) => ({ board: null, actions: [{ ...buy, cards }] });
+    expect(readSeatExtras(withCards({ ...buy.cards!, cards: [{ id: r1, name: 'Ruby', allowed: 3 }] }))).toBeNull();
+    expect(readSeatExtras(withCards({ prompt: 'x' }))).toBeNull();
+  });
 });
