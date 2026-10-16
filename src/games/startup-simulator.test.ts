@@ -1110,6 +1110,8 @@ describe('Startup Simulator (designer language)', () => {
     const broken = compileGame(BROKEN, lib);
     const LEFT_BEHIND =
       "The Architect in p0's development team is on the Dating App, which is now in the open idea pool. Move the cards on a card along with it.";
+    /** The Pivot button's line, which the refusal is on. */
+    const PIVOT_LINE = BROKEN.split('\n').indexOf('  A player may pivot a card in their development.') + 1;
 
     it('is the rules without the line that sends a pivoted project’s staff to the bench, and they compile', () => {
       expect(STARTUP_SIMULATOR.split(forgotten)).toHaveLength(2);
@@ -1126,7 +1128,7 @@ describe('Startup Simulator (designer language)', () => {
       const { engine } = createEngine(rules, lib, 2, markTurnStarted(state));
       const before = engine.getState();
 
-      expect(() => engine.dispatch({ type: PIVOT, by: 'p0', cardId: app })).toThrow(new RuleError(LEFT_BEHIND));
+      expect(() => engine.dispatch({ type: PIVOT, by: 'p0', cardId: app })).toThrow(new RuleError(LEFT_BEHIND, PIVOT_LINE));
       expect(engine.getState()).toBe(before);
       expect(engine.getLog()).toEqual([]);
     });

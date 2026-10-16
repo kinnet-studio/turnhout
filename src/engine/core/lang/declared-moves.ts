@@ -76,6 +76,8 @@ function choose(
  * The move handler for one verb the designer declared, like “A player may play a card from their hand to the
  * trick.” It refuses a move in the designer's own words, then moves the card and runs the declaration's Then lines.
  * A move the After line names passes the turn, so what the players did in it stops counting, as after a button.
+ * The move must leave the table whole: one that strands a card on a card gone elsewhere throws, on the declaration's line, so the engine
+ * keeps the state from before it. Only its result is checked, since its lines may move a card before the cards on it.
  */
 export function declaredMoveHandler(verb: string, runtime: LangRuntime): MoveHandler {
   return {
@@ -94,7 +96,7 @@ export function declaredMoveHandler(verb: string, runtime: LangRuntime): MoveHan
         cards: moved.cards.map((c) => (c.id === info.cardId ? { ...c, data: { ...c.data, movedBy: info.by } } : c)),
       };
       const done = decl.effects.reduce((s, ref) => runtime.run(ref, s, info), marked);
-      return endsTurn(phase, verb) ? clearTurnLog(done) : done;
+      return runtime.checkAttachments(endsTurn(phase, verb) ? clearTurnLog(done) : done, decl);
     },
   };
 }

@@ -6,6 +6,7 @@ import { createEngine, initialState } from '../build';
 import { compileGame } from '../compile';
 import { RuleError } from '../diagnostics';
 import { runExamples } from '../examples';
+import { friendlyError } from '../friendly';
 import { CREW_GAME, fixtureEnv, runPhrase } from '../testing';
 import { relocate } from '../zones';
 import { createDefaultLibrary } from './index';
@@ -71,21 +72,72 @@ describe('hiring onto a job, shifting and finishing', () => {
   });
 });
 
-describe('Review Focus: the forgotten crew', () => {
-  const DROPPING = CREW_GAME.replace(
-    '  A player may stop.',
-    '  A player may drop a card in their workshop.\n    Then:\n      Move it to the scrap.\n  A player may stop.',
-  );
-  const LEFT_BEHIND = "The Potter in p0's crew is on the Vase, which is now in the scrap. Move the cards on a card along with it.";
+const DROP = '  A player may drop a card in their workshop.';
+/** CREW_GAME with a button that moves a job to the scrap and forgets its crew. */
+const DROPPING = CREW_GAME.replace('  A player may stop.', `${DROP}\n    Then:\n      Move it to the scrap.\n  A player may stop.`);
+const LEFT_BEHIND = "The Potter in p0's crew is on the Vase, which is now in the scrap. Move the cards on a card along with it.";
 
+describe('Review Focus: the forgotten crew', () => {
   it('is the DROPPING game', () => expect(DROPPING).not.toBe(CREW_GAME));
   it('refuses a press that leaves a crew on a job gone to the scrap, and keeps the state from before it', () => {
     const { engine } = crew(atWork, DROPPING);
     engine.dispatch(HIRE);
     const before = engine.getState();
-    expect(() => engine.dispatch({ type: 'drop a card in their workshop', by: 'p0', cardId: vase })).toThrow(new RuleError(LEFT_BEHIND));
+    expect(() => engine.dispatch({ type: 'drop a card in their workshop', by: 'p0', cardId: vase })).toThrow(new RuleError(LEFT_BEHIND, at(DROPPING, DROP)));
     expect(engine.getState()).toBe(before);
     expect(engine.getLog()).toEqual([HIRE]);
+  });
+});
+
+describe('the line a broken table is blamed on', () => {
+  /** What `run` threw, as the designer reads it. */
+  const said = (run: () => unknown): string => {
+    try {
+      run();
+    } catch (error) {
+      return friendlyError(error);
+    }
+    throw new Error('Nothing was thrown.');
+  };
+  const stranding = (text: string) => () => createEngine(compileGame(text, lib).game!, lib, 2, initialState(game, 1));
+  /** What is said of the first card a line leaves on nothing in p0's crew. */
+  const NOWHERE = "in p0's crew isn't on any card, but every card there must be.";
+
+  it('is the button pressed, for a press', () => {
+    const { engine } = crew(atWork, DROPPING);
+    engine.dispatch(HIRE);
+    expect(said(() => engine.dispatch({ type: 'drop a card in their workshop', by: 'p0', cardId: vase })))
+      .toBe(`Line ${at(DROPPING, DROP)}: ${LEFT_BEHIND}`);
+  });
+  it('is the card move, for a card moved', () => {
+    const TOSS = '  A player may toss a card from their workshop to the scrap.';
+    const text = CREW_GAME.replace('  A player may stop.', `${TOSS}\n  A player may stop.`);
+    const { engine } = crew(atWork, text);
+    engine.dispatch(HIRE);
+    expect(said(() => engine.dispatch({ type: 'toss', by: 'p0', cardId: vase }))).toBe(`Line ${at(text, TOSS)}: ${LEFT_BEHIND}`);
+  });
+  it('is the rule, for a rule that fires after a press', () => {
+    const RULE = '  When they have less than 3 moves:';
+    const text = CREW_GAME.replace('  When they have less than 1 move:', `${RULE}\n    Move their workshop to the scrap.\n  When they have less than 1 move:`);
+    const { engine } = crew(atWork, text);
+    expect(said(() => engine.dispatch(HIRE))).toBe(`Line ${at(text, RULE)} (“When they have less than 3 moves”): ${LEFT_BEHIND}`);
+  });
+  it('is the line, with its words, for a Setup line and a line that starts a phase', () => {
+    // Each deals to every crew in turn, so the first card it leaves on nothing may be in either.
+    const nowhere = (line: number, words: string) => new RegExp(`^Line ${line} \\(“${words}”\\): The \\w+ in p\\d's crew isn't on any card, but every card there must be\\.$`);
+    const SETUP = '  Deal 2 cards from the pile to each crew.';
+    const setUp = CREW_GAME.replace('  Deal 2 cards from the pile to each stash.', SETUP);
+    expect(said(stranding(setUp))).toMatch(nowhere(at(setUp, SETUP), 'Deal 2 cards from the pile to each crew'));
+    const START = '    Deal 1 card from the hall to each crew.';
+    const starting = CREW_GAME.replace('  Players take turns.', `  Players take turns.\n  When this phase starts:\n${START}`);
+    expect(said(stranding(starting))).toMatch(nowhere(at(starting, START), 'Deal 1 card from the hall to each crew'));
+  });
+  it('is the line that starts a turn after which the table stayed broken, not a later one', () => {
+    const DEAL = '    Deal 1 card from the hall to their crew.';
+    // The line after it moves a card too, and leaves the table as broken as it found it.
+    const text = CREW_GAME.replace('  Players take turns.', `  Players take turns.\n  When a player's turn starts:\n${DEAL}\n    Deal 1 card from the hall to their idle.`);
+    expect(compileGame(text, lib).diagnostics).toEqual([]);
+    expect(said(stranding(text))).toBe(`Line ${at(text, DEAL)} (“Deal 1 card from the hall to their crew”): The Potter ${NOWHERE}`);
   });
 });
 
@@ -192,6 +244,22 @@ describe('examples about cards on cards', () => {
 
   it('arranges a crew on its job, and checks what is on a card', () => {
     expect(run(EXAMPLE)).toEqual([expect.objectContaining({ status: 'pass', message: null })]);
+  });
+  it('refuses a Given that leaves a card on a card where it can\'t follow, at that Given, before any press', () => {
+    const GIVEN = "  And the Vase in p0's stash has a Potter on it";
+    const text = ['Example: a crew on a job in the stash', "  Given p0's stash has a Vase", GIVEN, '  When p0 stops', '  Then it is accepted'].join('\n');
+    const at = `${CREW_GAME}\n\n${text}\n`.split('\n').indexOf(GIVEN) + 1;
+    expect(run(text)).toEqual([expect.objectContaining({
+      status: 'fail', atLine: at,
+      message: `Line ${at} (“the Vase in p0's stash has a Potter on it”): The Potter in p0's crew is on the Vase, which is now in p0's stash. `
+        + 'Move the cards on a card along with it.',
+    })]);
+  });
+  it('says which button left the table broken when a press does', () => {
+    const text = ['Example: dropping a job', "  Given p0's workshop has a Vase", "  And the Vase in p0's workshop has a Potter on it", '  When p0 drops the Vase'].join('\n');
+    const { game: dropping, diagnostics } = compileGame(`${DROPPING}\n\n${text}\n`, lib);
+    expect(diagnostics).toEqual([]);
+    expect(runExamples(dropping!, lib)).toEqual([expect.objectContaining({ status: 'fail', message: `Line ${at(DROPPING, DROP)}: ${LEFT_BEHIND}` })]);
   });
   it('says what is on the card when it expected nothing', () => {
     const [result] = run([...EXAMPLE.split('\n').slice(0, 3), "  Then the Vase in p0's workshop has no cards on it"].join('\n'));

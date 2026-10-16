@@ -5,7 +5,7 @@ import { gateMove } from '../flow';
 import { FlowRegistry, type NamedRef } from '../flow-registry';
 import { GameEngine } from '../game-engine';
 import type { GameState } from '../game-state';
-import { MoveRegistry, type MoveContext, type MoveHandler } from '../moves';
+import { MoveRegistry, type MoveContext } from '../moves';
 import { registerCoreMoves } from '../moves-library';
 import { makeRng } from '../rng';
 import { RuleRegistry } from '../rules';
@@ -110,7 +110,8 @@ export function flowDefFor(game: CompiledGame, seats: PlayerId[]): FlowDef {
 
 /**
  * The flow's side of the language. Every effect that runs the designer's lines leaves the table whole, or throws, so that a rule which
- * moves a card and forgets the cards on it is refused with the cards named; `lang:result` only scores, and moves nothing.
+ * moves a card and forgets the cards on it is refused with the cards named, on the line that did it: the Setup or start line, or the
+ * rule (a turn's start lines say which of them, see `LangRuntime.startTurn`). `lang:result` only scores, and moves nothing.
  */
 function flowRegistryFor(runtime: LangRuntime): FlowRegistry {
   const ref = (params: Json | undefined) => params as PhraseRef;
@@ -120,14 +121,14 @@ function flowRegistryFor(runtime: LangRuntime): FlowRegistry {
   return new FlowRegistry()
     .registerPredicate('lang:always', () => true)
     .registerPredicate('lang:cond', (state, _ctx, params) => runtime.test(ref(params), state))
-    .registerEffect('lang:effect', (state, _ctx, params) => runtime.checkAttachments(runtime.run(ref(params), state)))
+    .registerEffect('lang:effect', (state, _ctx, params) => runtime.checkAttachments(runtime.run(ref(params), state), ref(params)))
     .registerPredicate('lang:phase-cond', (state, _ctx, params) => {
       const { phase, ref: line } = phaseLine(params);
       return runtime.testInPhase(phase, line, state);
     })
     .registerEffect('lang:phase-effect', (state, _ctx, params) => {
       const { phase, ref: line } = phaseLine(params);
-      return runtime.checkAttachments(runtime.runInPhase(phase, line, state));
+      return runtime.checkAttachments(runtime.runInPhase(phase, line, state), line);
     })
     .registerPredicate('lang:end-when', (state, _ctx, params) => {
       const { when, rules } = ending(params);
@@ -139,24 +140,12 @@ function flowRegistryFor(runtime: LangRuntime): FlowRegistry {
     })
     .registerEffect('lang:trigger-then', (state, _ctx, params) => {
       const { phase, trigger } = rule(params);
-      return runtime.checkAttachments(runtime.fireTrigger(phase, trigger, state));
+      return runtime.checkAttachments(runtime.fireTrigger(phase, trigger, state), trigger);
     })
     .registerPredicate('lang:turn-waiting', (state) => runtime.turnWaiting(state))
-    .registerEffect('lang:turn-start', (state) => runtime.checkAttachments(runtime.startTurn(state)))
+    .registerEffect('lang:turn-start', (state) => runtime.startTurn(state))
     .registerPolicy('lang:turn', (state, _order, _ctx, params) => runtime.pick(ref(params), state))
     .registerEffect('lang:result', (state) => runtime.result(state));
-}
-
-/**
- * A declared move or button whose result must leave the table whole: one that strands a card on a card gone elsewhere throws, so the
- * engine keeps the state from before the press. Only the result is checked, since the lines in between may move a card before the cards
- * on it. The core moves are not the designer's, and are not checked.
- */
-function checked(handler: MoveHandler, runtime: LangRuntime): MoveHandler {
-  return {
-    legal: (state, m, ctx) => handler.legal(state, m, ctx),
-    apply: (state, m, ctx) => runtime.checkAttachments(handler.apply(state, m, ctx)),
-  };
 }
 
 /** Throws a RuleError when the game is not for that many players. */
@@ -177,13 +166,14 @@ export function createEngine(
   const seats = seatsFor(players);
   const tableDef = tableDefFor(game, seats);
   const runtime = new LangRuntime(game, library, seats);
-  // Declared verbs come last, so a designer's “move” or “deal” replaces the core move of that name.
+  // Declared verbs come last, so a designer's “move” or “deal” replaces the core move of that name. Each leaves the table whole or
+  // throws, as the flow's effects do; the core moves are not the designer's, and are not checked.
   const moves = registerCoreMoves(new MoveRegistry());
   const verbs = new Set(game.phases.flatMap((p) => p.moves.map((m) => m.verb)));
-  for (const verb of verbs) moves.register(verb, checked(declaredMoveHandler(verb, runtime), runtime));
+  for (const verb of verbs) moves.register(verb, declaredMoveHandler(verb, runtime));
   // A button's move type is its whole wording, so “pay the fine” and “pay the toll” are two moves.
   const buttonMoves = new Set(game.phases.flatMap((p) => p.actions.map((a) => a.words)));
-  for (const move of buttonMoves) moves.register(move, checked(declaredActionHandler(move, runtime), runtime));
+  for (const move of buttonMoves) moves.register(move, declaredActionHandler(move, runtime));
 
   const flow = flowDefFor(game, seats);
   const rules = new RuleRegistry();

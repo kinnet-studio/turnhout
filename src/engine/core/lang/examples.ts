@@ -71,7 +71,8 @@ function runExample(game: CompiledGame, library: PhraseLibrary, example: Compile
     for (const { keyword, ref } of example.steps) {
       at = ref.line;
       if (keyword === 'given') {
-        table = arranging.run(ref, built ? built.engine.getState() : table, undefined, env);
+        // A Given that leaves a card on a card where it can't follow is told so here, not at the first press after it.
+        table = arranging.checkAttachments(arranging.run(ref, built ? built.engine.getState() : table, undefined, env), ref);
         if (built) built = createEngine(game, library, players, table);
         continue;
       }

@@ -272,13 +272,20 @@ export class LangRuntime {
    * Starts the current player's turn. The start player's turn starts a round first, whose lines are about no one. Then the player's
    * numbers for each turn go back to their start, and the lines that start a turn run about them: those for every phase, then those
    * of the phase the turn starts in (C2). Last, the turn counts as started, so that this runs once a turn.
+   *
+   * The table is checked once the lines have all run, since one may move a card before another moves the cards on it. A table they
+   * leave broken is blamed on the line after which it stayed broken: the last one that found it whole.
    */
   startTurn(state: GameState): GameState {
     const seat = state.turn?.current;
     const phaseId = state.turn?.phase;
     if (seat === undefined) throw new Error('There is no turn to start.');
+    const ran: { ref: PhraseRef; before: GameState }[] = [];
     const runAll = (from: GameState, refs: PhraseRef[], subject: Subject) =>
-      refs.reduce((s, ref) => this.run(ref, s, undefined, undefined, subject), from);
+      refs.reduce((s, ref) => {
+        ran.push({ ref, before: s });
+        return this.run(ref, s, undefined, undefined, subject);
+      }, from);
     let s = state;
     if (seat === startPlayerOf(s, this.seats)) {
       s = { ...s, data: { ...s.data, [ROUND_KEY]: roundOf(s) + 1 } };
@@ -290,7 +297,10 @@ export class LangRuntime {
     const about: Subject = { player: seat, space: null, card: null };
     const phase = this.game.phases.find((p) => p.id === phaseId);
     s = runAll(s, [...this.game.everyPhase.turnStarts, ...(phase?.turnStarts ?? [])], about);
-    return { ...s, data: { ...s.data, [TURN_OF_KEY]: seat } };
+    const started: GameState = { ...s, data: { ...s.data, [TURN_OF_KEY]: seat } };
+    if (attachmentProblem(this.game, started) === null) return started;
+    const breaking = [...ran].reverse().find(({ before }) => attachmentProblem(this.game, before) === null);
+    return this.checkAttachments(started, breaking?.ref);
   }
 
   /**
@@ -415,12 +425,13 @@ export class LangRuntime {
   }
 
   /**
-   * The state, when every card that must sit on a card does, on one still with it; else a RuleError that names the card left behind.
-   * Thrown from a move or a rule, it refuses the whole change, so the engine keeps the state from before it.
+   * The state, when every card that must sit on a card does, on one still with it; else a RuleError that names the card left behind, on
+   * the line `at` (a button's, a rule's or one line's, with its words when it has them), as any rule's error says where it is. Thrown
+   * from a move or a rule, it refuses the whole change, so the engine keeps the state from before it.
    */
-  checkAttachments(state: GameState): GameState {
+  checkAttachments(state: GameState, at?: { line: number; text?: string }): GameState {
     const problem = attachmentProblem(this.game, state);
-    if (problem !== null) throw new RuleError(problem);
+    if (problem !== null) throw new RuleError(problem, at?.line, at?.text);
     return state;
   }
 

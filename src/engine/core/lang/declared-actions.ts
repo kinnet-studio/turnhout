@@ -246,7 +246,9 @@ function choose(
  * lines, which read it as a card move's lines read its card. A button that picks some cards (“A player may trade some cards from their
  * stash to the shop.”) takes them from the move's `cardIds` and moves them in that order, its lines reading them as the picked cards;
  * one that picks a card for its cards to go to (“… to a card in their case.”) takes that card from the move's `onto`. Nobody is marked
- * as having moved a card: only trick games read that, and they use card moves.
+ * as having moved a card: only trick games read that, and they use card moves. A press must leave the table whole: one that strands a card
+ * on a card gone elsewhere throws, on the button's line, so the engine keeps the state from before it. Only its result is checked, since
+ * its lines may move a card before the cards on it.
  */
 export function declaredActionHandler(move: string, runtime: LangRuntime): MoveHandler {
   return {
@@ -265,7 +267,7 @@ export function declaredActionHandler(move: string, runtime: LangRuntime): MoveH
       const moved = relocation ? relocate(paid, relocation.ids, relocation.to, runtime.game) : paid;
       const done = action.effects.reduce((s, ref) => runtime.run(ref, s, info, undefined, subject), moved);
       // Only a turn of this phase passes: lines that went back to an interrupted turn leave that turn's log as it was.
-      return endsTurn(phase, move) && done.turn?.phase === phase.id ? clearTurnLog(done) : done;
+      return runtime.checkAttachments(endsTurn(phase, move) && done.turn?.phase === phase.id ? clearTurnLog(done) : done, action);
     },
   };
 }
