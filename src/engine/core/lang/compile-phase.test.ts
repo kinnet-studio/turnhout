@@ -1049,6 +1049,77 @@ describe('buttons that pick a space without “on”', () => {
   });
 });
 
+describe('a pick without “on” whose words read no target', () => {
+  /** MARK_BOARD with a flag players can have on line 16, and `button` on line 24, before ending a turn. */
+  const RIVAL_BOARD = MARK_BOARD.replace('  Spaces can be marked.', '  Spaces can be marked.\n  Players can be the rival.');
+  const withButton = (button: string) => RIVAL_BOARD.replace('  A player may end their turn.', `  ${button}\n    Then:\n      They own it.\n  A player may end their turn.`);
+  const buttonsOf = (text: string) => compileGame(text, lib).game!.phases[0].actions.map((a) => a.words);
+
+  it('is a pick that was meant: reported at the button line with the target phrase\'s own words, and no button at all', () => {
+    const { game, diagnostics } = compileGame(withButton('A player may seize a space the rivel owns.'), lib);
+    expect(diagnostics).toEqual([
+      expect.objectContaining({ line: 24, kind: 'invalid', message: 'There is no player fact called “the rivel”.', suggestions: ['the rival'] }),
+    ]);
+    expect(game).toBeUndefined();
+    // The phase itself makes no button of it, not even a plain one that would act on the presser's own space.
+    const diagnosed: Parameters<typeof compilePhase>[1]['diagnostics'] = [];
+    const vocab = vocabFrom({
+      maxPlayers: 2, phases: ['main'], board: fixtureBoardGame().board, facts: [{ name: 'the rival', on: 'player', kind: 'flag' }],
+    });
+    const built = compilePhase(
+      parseOutline('Phase: main\n  A player may seize a space the rivel owns.\n  A player may end their turn.').roots[0],
+      { library: lib, vocab, gameName: 'Tiny', inMove: false, player: false, space: false, card: false, drawn: false, amount: false, picked: false, diagnostics: diagnosed },
+    );
+    expect(diagnosed.map((d) => [d.line, d.message])).toEqual([[2, 'There is no player fact called “the rivel”.']]);
+    expect(built.actions.map((a) => a.words)).toEqual(['end their turn']);
+  });
+  it('says the same as the pick written with “on” does', () => {
+    const said = (button: string) => compileGame(withButton(button), lib).diagnostics.map((d) => [d.line, d.kind, d.message, d.suggestions]);
+    expect(said('A player may seize a space the rivel owns.')).toEqual(said('A player may seize on a space the rivel owns.'));
+    expect(said('A player may seize a street they onw.')).toEqual(said('A player may seize on a street they onw.'));
+  });
+  it('is meant when its words start with “space” or a kind of space the board has, in any capitals', () => {
+    for (const [button, rest] of [
+      ['A player may seize a space they onw.', 'a space they onw'], ['A player may seize a street they onw.', 'a street they onw'],
+      ['A player may seize a Street they onw.', 'a Street they onw'], ['A player may seize an orange street they own.', 'an orange street they own'],
+      ['A player may seize a tax space twice.', 'a tax space twice'],
+    ]) {
+      const { game, diagnostics } = compileGame(withButton(button), lib);
+      expect(diagnostics, button).toEqual([expect.objectContaining({ line: 24, kind: 'unknown-phrase', message: `“${rest}” isn't in the phrase library yet.` })]);
+      // A line nobody has written a phrase for still lets the game be read, but makes no button.
+      expect(game!.phases[0].actions.map((a) => a.words), button).toEqual(['mark a space they own', 'end their turn']);
+    }
+    expect(compileGame(withButton('A player may seize a space they onw.'), lib).diagnostics[0].suggestions).toContain('a space they own');
+  });
+  it('leaves a button a plain one when the words after its “a” or “an” start with no kind of space', () => {
+    // A board with Jail and Go To Jail beside Go, so that neither “Get Out Of Jail Free” nor “leave jail” is read as one.
+    const board = TINY_BOARD_HEAD.replace(
+      '    | Rose Lane  | street | orange | 180   | 14   |     |',
+      '    | Rose Lane  | street | orange | 180   | 14   |     |\n    | Jail       | jail   |        |       |      |     |\n    | Go To Jail | go to jail |    |       |      |     |',
+    );
+    const buttons = [
+      'use a Get Out Of Jail Free', 'bid an amount', 'offer to pay an amount', 'roll for a double', 'pay to leave jail', 'build a house on a street they own',
+      'use a free pass', 'trade with another player',
+    ];
+    const { game, diagnostics } = compileGame(`${board}\n${buttons.map((b) => `  A player may ${b}.`).join('\n')}`, lib);
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(game!.phases[0].actions.map((a) => [a.words, a.base, a.label, a.target?.text ?? null, a.amount, a.picksPlayer])).toEqual([
+      ['use a get out of jail free', 'use a get out of jail free', 'Use a Get Out Of Jail Free', null, false, false],
+      ['bid an amount', 'bid', 'Bid', null, true, false],
+      ['offer to pay an amount', 'offer to pay', 'Offer to pay', null, true, false],
+      ['roll for a double', 'roll for a double', 'Roll for a double', null, false, false],
+      ['pay to leave jail', 'pay to leave jail', 'Pay to leave jail', null, false, false],
+      ['build a house on a street they own', 'build a house', 'Build a house', 'a street they own', false, false],
+      ['use a free pass', 'use a free pass', 'Use a free pass', null, false, false],
+      ['trade with another player', 'trade with', 'Trade with another player', null, false, true],
+    ]);
+  });
+  it('still tells the designer to write “on a …” for a pick said with another word', () => {
+    expect(messages(withButton('A player may seize a space on any street they own.'))).toEqual([[24, 'Write “on a street they own” so the player picks one.']]);
+    expect(buttonsOf(withButton('A player may seize a street they own.'))).toEqual(['mark a space they own', 'seize a street they own', 'end their turn']);
+  });
+});
+
 describe('rules about a card, and the other player', () => {
   /** A two-player game of creatures with the phase's own lines below `Players take turns.` (line 18), so the first of them is line 19. */
   const creatures = (phase: string[], { players = '2', setup = [] as string[] } = {}) => [

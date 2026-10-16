@@ -740,6 +740,35 @@ describe('Rent Day (designer language)', () => {
 
   it('compiles with no diagnostics', () => expect(diagnostics).toEqual([]));
 
+  it('keeps every button with the words, the label and the pick it had before picks without “on” were checked', () => {
+    expect(game!.phases.map((phase) => [phase.id, phase.actions.map((a) => [a.words, a.label, a.target?.text ?? null])])).toEqual([
+      ['playing', [
+        [ROLL, 'Roll the dice', null], [PAY, 'Pay to leave jail', null], [ROLL_FOR_DOUBLE, 'Roll for a double', null],
+        [USE, 'Use a Get Out Of Jail Free', null], [BUY, 'Buy the space you are on', null], [AUCTION, 'Auction the space you are on', null],
+        [BUILD, 'Build a house', 'a street they own'], [TRADE, 'Trade with another player', null], [END, 'End your turn', null],
+        [MORTGAGE, 'Take a mortgage', 'a space they own'], [PAY_OFF, 'Pay off a mortgage', 'a space they own'], [SELL, 'Sell a house', 'a street they own'],
+        [GIVE_UP, 'Give up', null],
+      ]],
+      [AUCTION_PHASE, [[BID, 'Bid', null], [DROP, 'Drop out', null]]],
+      [TRADE_PHASE, [
+        [OFFER, 'Offer', 'a space they own'], [ASK, 'Ask for', 'a space the trade partner owns'], [OFFER_CASH, 'Offer to pay', null],
+        [ASK_CASH, 'Ask to be paid', null], [OFFER_KEPT, 'Offer everything you keep', null], [ASK_KEPT, 'Ask for everything the trade partner keeps', null],
+        [PROPOSE, 'Propose the trade', null], [CANCEL, 'Cancel the trade', null], [ACCEPT, 'Accept the trade', null], [DECLINE, 'Decline the trade', null],
+      ]],
+    ]);
+  });
+
+  it('refuses a pick without “on” whose holder is misspelt at its own line, and makes no button that would act on the presser\'s space', () => {
+    const line = '  A player may ask for a space the trade partner owns.';
+    const mistyped = RENT_DAY.replace(line, '  A player may ask for a space the trade partnr owns.');
+    expect(mistyped).not.toBe(RENT_DAY);
+    const compiled = compileGame(mistyped, lib);
+    expect(compiled.diagnostics).toEqual([expect.objectContaining({
+      line: RENT_DAY.split('\n').indexOf(line) + 1, kind: 'invalid', message: 'There is no player fact called “the trade partnr”.', suggestions: [PARTNER],
+    })]);
+    expect(compiled.game).toBeUndefined();
+  });
+
   it('has the 40 spaces of the table, starting at Go', () => {
     const spaces = game!.board!.spaces;
     expect(spaces).toHaveLength(SPACES);

@@ -1,6 +1,6 @@
 import { MAX_CARDS, TOO_MANY_CARDS, isSaysColumn } from './cards';
 import { compileExample } from './compile-example';
-import { actionLine, actionOf, cardMoveVerb, compilePhase, targetReader, type VerbUses } from './compile-phase';
+import { actionLine, actionOf, cardMoveVerb, compilePhase, targetWords, type VerbUses } from './compile-phase';
 import { addProblem, attempt, innerEffect, matchEffectLine, matchLine, phaseId, phraseFn, rejectChildren, type LineCtx } from './compile-util';
 import type { Diagnostic } from './diagnostics';
 import { parseOutline, type OutlineNode } from './outline';
@@ -135,15 +135,15 @@ function holdBack(diagnostics: Diagnostic[], stages: Section[][]): number | null
  * another: the later line is reported. (Twice in one phase is reported by the phase.)
  */
 function readActions(phases: OutlineNode[], ctx: LineCtx): Vocab['actions'] {
-  const readsTarget = targetReader(ctx);
+  const target = targetWords(ctx);
   const byWords = new Map<string, { action: Vocab['actions'][number]; phase: OutlineNode }>();
   for (const phase of phases) {
     for (const child of phase.children) {
       const found = actionLine(normalizeLine(child.text));
       if (!found) continue;
-      const { verb, words, base, target, anyone, amount, picksPlayer } = actionOf(found, readsTarget);
+      const { verb, words, base, target: picked, anyone, amount, picksPlayer } = actionOf(found, target);
       const first = byWords.get(words);
-      if (!first) byWords.set(words, { action: { verb, words, base, targeted: target !== null, anyone, amount, picksPlayer }, phase });
+      if (!first) byWords.set(words, { action: { verb, words, base, targeted: picked !== null, anyone, amount, picksPlayer }, phase });
       else if (first.phase !== phase && first.action.anyone !== anyone) addProblem(ctx.diagnostics, child.line, openedDifferently(words, first.action.anyone));
     }
   }
