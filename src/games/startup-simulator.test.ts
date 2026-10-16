@@ -6,7 +6,7 @@ import { runExamples } from '@/engine/core/lang/examples';
 import { createEngine, initialState, seatsFor, tableDefFor } from '@/engine/core/lang/build';
 import { COUNTERS_KEY, counterOf, setCounter } from '@/engine/core/lang/board-state';
 import { seatExtras, type CardPickView, type SeatExtras } from '@/engine/core/lang/board-view';
-import { cardsOn, putOn } from '@/engine/core/lang/attach';
+import { attachmentProblem, cardsOn, putOn } from '@/engine/core/lang/attach';
 import { deckOf, NEXT_CARD_KEY } from '@/engine/core/lang/cards';
 import { cardCandidates, hasCost, ontoCandidates } from '@/engine/core/lang/declared-actions';
 import { moveZoneId } from '@/engine/core/lang/declared-moves';
@@ -1090,6 +1090,18 @@ describe('Startup Simulator (designer language)', () => {
     // The Fixer enters at the left end and pushes the Diva out (R7).
     expect(namesIn(passed, 'agency-row')).toEqual(['Fixer', 'Hacker', 'Architect', 'Veteran']);
     expect(namesIn(passed, 'open-job-market')).toEqual(['Engineer', 'Diva']);
+  });
+
+  it('finds nothing wrong with a whole table: after Setup at every count, and with staff on projects and in the ops team', () => {
+    for (const players of [2, 3, 4, 5]) expect(attachmentProblem(game!, setUp(players, 1)), `${players} players`).toBeNull();
+    let state: GameState = fresh();
+    const id = (name: string) => state.cards.find((card) => nameOf(card) === name)!.id;
+    state = relocate(state, [id('Dating App'), id('Smart Lock')], 'development-p0', game!);
+    state = relocate(state, [id('To-Do List')], 'operations-p0', game!);
+    state = putOn(state, [id('Architect'), id('Hacker')], 'development-team-p0', id('Dating App'), game!);
+    state = putOn(state, [id('Diva')], 'development-team-p0', id('Smart Lock'), game!);
+    state = relocate(state, [id('Veteran')], 'ops-team-p0', game!);
+    expect(attachmentProblem(game!, state)).toBeNull();
   });
 
   describe('Review Focus: a Pivot that forgets the staff on its project', () => {

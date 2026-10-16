@@ -30,8 +30,27 @@ export function zoneIdFor(name: string, seat?: PlayerId): string {
   return seat === undefined ? slug(name) : `${slug(name)}-${seat}`;
 }
 
+type ZoneInfo = { spec: ZoneSpec; seat: PlayerId | null };
+
+/**
+ * What each zone id a game was asked about names, by game: a compiled game never changes, and every move, every check of the cards on
+ * cards and every view asks it of the zones of the cards it touches, so each id is worked out once.
+ */
+const zoneInfos = new WeakMap<CompiledGame, Map<string, ZoneInfo | null>>();
+
 /** Which of the game's zones an id names, and whose it is; null for ids the game does not have. */
-export function zoneInfo(game: CompiledGame, zoneId: string): { spec: ZoneSpec; seat: PlayerId | null } | null {
+export function zoneInfo(game: CompiledGame, zoneId: string): ZoneInfo | null {
+  let known = zoneInfos.get(game);
+  if (!known) zoneInfos.set(game, (known = new Map()));
+  const info = known.get(zoneId);
+  if (info !== undefined) return info;
+  const found = findZone(game, zoneId);
+  known.set(zoneId, found);
+  return found;
+}
+
+/** `zoneInfo` worked out from the game's zone lines. */
+function findZone(game: CompiledGame, zoneId: string): ZoneInfo | null {
   for (const spec of game.zones) {
     const base = slug(spec.name);
     if (!spec.perPlayer) {

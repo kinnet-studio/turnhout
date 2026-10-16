@@ -49,27 +49,31 @@ export function onCardsZoneOf(game: CompiledGame, seat: PlayerId): string {
  * once for a game with no zone for them. A card in a zone that every card in must sit on a card sits on none; a card in a zone with no
  * such mark sits on one; or the card it sits on is gone from the table, or has gone where the card can't follow: out of sight, to
  * another player, or to the center. A card in the box is out of the game, and nothing it says counts.
+ *
+ * It runs after every press and every rule, and the view runs it for each card a button offers, so it decides from ids and zones alone
+ * and names only the card it reports.
  */
 export function attachmentProblem(game: CompiledGame, state: GameState): string | null {
   if (!game.zones.some((zone) => zone.onCards !== undefined)) return null;
-  const byId = new Map(state.cards.map((card) => [card.id, card] as const));
+  // Only a card that sits on a card needs the one it sits on, and most sit on none.
+  let byId: Map<string, CardState> | null = null;
+  const theCard = (card: CardState) => `The ${pickName(card, game)} in ${zoneNameOf(game, card.zoneId)}`;
   for (const card of state.cards) {
     if (card.zoneId === BOX_ZONE) continue;
-    const name = pickName(card, game);
-    const where = zoneNameOf(game, card.zoneId);
     const info = zoneInfo(game, card.zoneId);
     const holderId = holderIdOf(card);
     if (holderId === null) {
-      if (info?.spec.onCards === 'every') return `The ${name} in ${where} isn't on any card, but every card there must be.`;
+      if (info?.spec.onCards === 'every') return `${theCard(card)} isn't on any card, but every card there must be.`;
       continue;
     }
-    if (info?.spec.onCards === undefined) return `The ${name} in ${where} is on a card, but cards there don't sit on cards.`;
+    if (info?.spec.onCards === undefined) return `${theCard(card)} is on a card, but cards there don't sit on cards.`;
+    byId ??= new Map(state.cards.map((c) => [c.id, c] as const));
     const holder = byId.get(holderId);
-    if (!holder || holder.zoneId === BOX_ZONE) return `The ${name} in ${where} is on a card that is no longer on the table.`;
+    if (!holder || holder.zoneId === BOX_ZONE) return `${theCard(card)} is on a card that is no longer on the table.`;
     const at = zoneInfo(game, holder.zoneId);
     if (at?.spec.visibility !== 'public' || at.seat === null || at.seat !== info.seat) {
       const now = zoneNameOf(game, holder.zoneId);
-      return `The ${name} in ${where} is on the ${pickName(holder, game)}, which is now in ${now}. Move the cards on a card along with it.`;
+      return `${theCard(card)} is on the ${pickName(holder, game)}, which is now in ${now}. Move the cards on a card along with it.`;
     }
   }
   return null;

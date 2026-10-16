@@ -57,6 +57,16 @@ describe('zone ids', () => {
     expect(zoneInfo(game, 'pass-pile-p1')?.spec.name).toBe('pass pile');
     expect(zoneInfo(game, 'pass-p1')?.spec.name).toBe('pass');
   });
+  it('answers each game from its own zones, however often it is asked', () => {
+    // The same id names p0's hand in one game and a zone in the center in the other.
+    const centered: CompiledGame = { ...GAME, zones: [{ ...TRICK, name: 'hand p0' }] };
+    for (let round = 0; round < 2; round++) {
+      expect(zoneInfo(GAME, 'hand-p0')).toEqual({ spec: HAND, seat: 'p0' });
+      expect(zoneInfo(centered, 'hand-p0')).toEqual({ spec: { ...TRICK, name: 'hand p0' }, seat: null });
+      expect(zoneInfo(centered, 'trick')).toBeNull();
+      expect(zoneInfo(GAME, 'trick')).toEqual({ spec: TRICK, seat: null });
+    }
+  });
 });
 
 describe('seats and zone references', () => {
