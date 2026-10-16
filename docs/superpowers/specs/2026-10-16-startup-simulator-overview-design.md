@@ -93,7 +93,9 @@ rulebook as written, every rule and every card.
 - **Cards attached to cards: a holder reference in the attached card's data.**
   - The attached card stores its holder's id in its own `data`, under a bookkeeping key the face never shows.
   - Attached cards live in their own static per-player zones, never in the holder's zone: "their development team", "their
-    ops team", "their attributes", "their portfolio". Today's zone phrases therefore keep working unchanged.
+    ops team", "their portfolio". Today's zone phrases therefore keep working unchanged. (Attributes are not attached
+    cards: slice 6 R2 makes them counts on their Talent plus a parked card, since they sit on hidden and ownerless
+    Talents.)
   - A move "with everything on it" moves what is attached, transitively.
   - After every move the runtime checks that each holder is a card in play with the same owner, which catches a rule that
     forgot to free an attached card.
@@ -245,8 +247,8 @@ Market Crash is reachable).
 
 ## Keep in view while building any slice
 
-- **Staff on cards is the spine.** Slice 1b needs staff on projects. Later slices hang tokens and Attributes on staff and
-  move them between owners with everything attached.
+- **Staff on cards is the spine.** Slice 1b needs staff on projects. Later slices hang tokens and Attributes (as counts,
+  slice 6 R2) on staff and move them between owners with everything attached.
 - **Hidden information.** Slice 1a already has a hidden Bench and Backlog; slice 9 adds Face-Down products in a public
   zone. The view model must not need rework then.
 - **Choices mid-step.** Slices 1b, 4, 5, 8, 9 and 10 ask a player to choose during a fixed step. Slice 1a's step

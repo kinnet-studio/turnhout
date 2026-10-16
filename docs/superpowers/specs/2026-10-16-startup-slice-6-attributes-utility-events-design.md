@@ -1,7 +1,7 @@
 # Startup Simulator, Slice 6: Attributes, Utility Cards and Events
 
 **Date:** 2026-10-16
-**Status:** Draft, waiting for its builder check. The user handed over every design call for the full implementation;
+**Status:** Settled after its builder check (see "Builder-check rulings" at the end). The user handed over every design call for the full implementation;
 the calls below are the builder's.
 **Part of:** `2026-10-16-startup-simulator-overview-design.md`. Its decisions, calls, anti-goals and constraints apply.
 **Builds on:** slices 1a to 5.
@@ -59,8 +59,8 @@ The game after this slice:
 
 ## What the language gains
 
-1. **Cards attached to talent from a hand,** with own/opponent targeting, read by output, salary and leads (building on
-   slice 1b's attachment).
+1. **Attributes played from a hand onto a Talent,** with own/opponent targeting, read by output, salary and leads. Per
+   R2 below they are counts on the Talent card plus a parked card, not attached cards.
 2. **Round-long modifiers read as conditions on the card in play** (the overview's "Round-long Events, written as
    conditions on the Event in play").
 3. **Reveal effects that run once** when a card enters play.
@@ -83,6 +83,10 @@ The game after this slice:
 | Toxic Personality | the target's team produces 1 less in all |
 | Burnout | 0 output; a PM with Burnout adds no Synergy |
 | Attributes on firing | a fired Talent's Attributes go to the Strategy Discard |
+| Attributes ride along | a Bench discard keeps them; a rehire from the Job Market brings them to the new owner |
+| Attributes on eviction | a Talent evicted from the Job Market takes its Attributes to the box |
+| Burnout in an Event | a burned-out Blue unit makes 0 in Open Source Boom, earns no Pending XP, gives a PM no Synergy |
+| Toxic in a hybrid team | the team loses one Blue, not one Red; none while the Toxic card has an Onboarding Token |
 | TechCrunch Feature | +1 Hype for $5; $2 with an attached Sales Rep; $2 in Trade Show, not $0 with both |
 | Hype scores | +5 VP per Hype on an Active product, 0 when Offline |
 | Design Sprint | 5 Seed cards to the Backlog; Cleanup cuts to 3 |
@@ -117,3 +121,37 @@ The game after this slice:
 ## Left to the builder
 
 - Exact wordings; how the Event and Attributes look; the auto-player's choices.
+
+## Builder-check rulings
+
+The builder check (`builder-check-startup-6.md`) raised three questions. The user handed every design call to the builder;
+these are the calls, each on the owner's call list.
+
+- **R1. Toxic Personality takes one cube off its team's total, as printed (§20.A: "-1 to its team's total Output").**
+  - It is settled without a choice: the team's Blue if it makes any Blue, otherwise its Red, otherwise its QA (one Bug
+    fewer removed). The same order holds in a Development team and in the Ops pool's bandwidth. It is taken after
+    Synergy and the Event modifiers, and no colour goes below 0. The order echoes Crunch Time, which also prefers Blue.
+  - It acts only while the Toxic card works (no Onboarding Token), by Ruling #8.
+  - It acts even when the Toxic card itself makes nothing (a PM, a Sales Rep, a Burnout card). That case is what keeps
+    Ruling #25's "whole team" apart from the Rust engine's −1 on the unit.
+  - Why: the printed text is the rulebook, and the rulebook comes first. The stronger reading (every teammate makes 1
+    less) fits #25's stated reason better but is not what the card says. If playtests show a $3 Toxic weaker than the free
+    Burnout, that reading is a one-line change and the first thing to try.
+- **R2. Attributes are counts on their Talent plus a parked card, not attached cards.**
+  - Playing an Attribute puts one count of its kind on the Talent ("1 workaholic") and moves the played card to a public
+    "attributes in play" pile. Output, salary and leads read the counts.
+  - The counts ride with the Talent wherever it goes, as XP and badges do (slice 5 R4): to the Bench (Recall, Pivot, a
+    hidden holder costs nothing because counts hide with their card), into the Open Job Market on a Bench discard, and to
+    whoever hires it from there (§15.A.3, §15.C: Attributes stay "until the Talent is Fired").
+  - Firing (Dismiss, unpaid salary, the Regulation Audit shortfall, the Diva's Pivot) strips the counts and moves one
+    parked card of each counted kind to the Strategy Discard. A Talent evicted from the Job Market strips them and sends
+    those cards to the box: eviction is not firing, and the Rust engine drops them with the card.
+  - Why: the overview's "their attributes" zone and 1b R3's holder rule (a public zone of the same seat) forbid a hidden
+    Bench holder, a holder in a shared zone and an attached card that changes owner, all of which the rulebook needs.
+    Counts need none of that and reuse slice 5's carrying and stripping. This departs from the overview's attachment
+    picture for Attributes only; staff on products stay attached cards (1b R3).
+  - The page shows the counts as badges under the Talent's face.
+- **R3. Burnout is absolute: 0 output after every modifier, Events included.** A burned-out unit makes nothing under Open
+  Source Boom or Hardware Hackathon, earns no Pending XP and is not a working teammate for a PM's Synergy. Why: the card
+  prints "0 Output" and the rulebook says nothing about it meeting an Event; the Rust engine adds the Event after the 0, so
+  this keeps the rulebook over the engine. Small effect: one card, 2 of the 18 Events.
