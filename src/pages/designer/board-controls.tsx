@@ -19,11 +19,13 @@ function seatsOf(board: BoardView): string[] {
  * its facts, then the names of the cards it keeps, each with the flags set on it in brackets; "p1 ? money" where the number is
  * hidden from this viewer, or "p2 out" with nothing after it: what is true of a player who is out no longer matters.
  */
-function entryFor(board: BoardView, seat: string): string {
+export function entryFor(board: BoardView, seat: string): string {
   if (board.out.includes(seat)) return `${seat} out`;
   const numbers = board.counters.map(({ name, values }) => {
     const value = values[seat];
-    return typeof value === 'number' ? `${value.toLocaleString('en-US')} ${name}` : `? ${name}`;
+    if (typeof value !== 'number') return `? ${name}`;
+    // A name is declared in the plural, so a number at exactly 1 reads in the singular: "1 action".
+    return value === 1 ? counted(1, name) : `${value.toLocaleString('en-US')} ${name}`;
   });
   const base = numbers.length === 0 ? seat : `${seat} ${numbers.join(', ')}`;
   const creditor = board.owes[seat];
@@ -37,7 +39,7 @@ function entryFor(board: BoardView, seat: string): string {
  * What the bank has left and then the game's own numbers that are not 0, joined with " · " ("bank: 31 tokens · pot 120"); a
  * game with no bank starts at the numbers, and one with neither has nothing to say.
  */
-function bankLine(board: BoardView): string {
+export function bankLine(board: BoardView): string {
   const bank = board.bank.length > 0 ? [`bank: ${board.bank.map(({ name, count }) => counted(count, name)).join(', ')}`] : [];
   return [...bank, ...board.gameNumbers.map(({ name, value }) => `${name} ${value.toLocaleString('en-US')}`)].join(' · ');
 }

@@ -6,6 +6,7 @@ import { createDefaultLibrary } from '@/engine/core/lang/library';
 import type { CompiledGame } from '@/engine/core/lang/types';
 import type { ClientView } from '@/engine/net/protocol';
 import { seatStatus } from './seat-status';
+import { seatToAct } from './seat-status';
 
 const lib = createDefaultLibrary();
 const colorMatch = compileGame(COLOR_MATCH, lib).game!;
@@ -117,5 +118,29 @@ describe('seatStatus', () => {
     it('names a phase everyone acts in at once too, in front of its hint alone', () => {
       expect(seatStatus(hearts, view({ current: 'p1', phase: 'passing' }, undefined, boardExtras([], true)), 'p0')).toBe('passing — Drag 3 cards to your pass pile.');
     });
+  });
+});
+
+describe('seatToAct', () => {
+  it('is null without a view', () => {
+    expect(seatToAct(colorMatch, null)).toBeNull();
+  });
+
+  it('is the seat whose turn it is', () => {
+    expect(seatToAct(colorMatch, view({ current: 'p1', phase: 'playing' }))).toBe('p1');
+  });
+
+  it('is null once the game is over', () => {
+    expect(seatToAct(colorMatch, view({ current: 'p1', phase: 'playing' }, { winner: 'p1' }))).toBeNull();
+  });
+
+  it('is null while there is no turn', () => {
+    expect(seatToAct(colorMatch, view(undefined))).toBeNull();
+  });
+
+  it('is null while everyone acts at once', () => {
+    const together = hearts.phases.find((p) => p.actor === 'any');
+    expect(together).toBeDefined();
+    expect(seatToAct(hearts, view({ current: 'p1', phase: together!.id }))).toBeNull();
   });
 });

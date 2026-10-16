@@ -166,6 +166,25 @@ describe('Playtest of a game with counters and no board', () => {
     expect(screen.getAllByRole('button', { name: 'Pass' })).toHaveLength(2);
     expect(screen.queryByText(/coins/)).toBeNull();
   });
+
+  it('draws the card table for a game with counters whose only lines are buttons', () => {
+    const buttonsOnly = compileGame(COUNTER_GAME
+      .replace('  A player may buy a card from the shop to their stash.\n    Then:\n      They pay 1.\n', '')
+      .replace('After a player buys or passes,', 'After a player passes,'), lib);
+    expect(buttonsOnly.diagnostics).toEqual([]);
+    mount({ game: buttonsOnly.game!, players: 2 });
+    expect(rendered).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: 'Pass' })).toHaveLength(2);
+  });
+
+  it('draws the bank line for a game whose only number is the bank', () => {
+    const bankOnly = compileGame(COUNTER_GAME
+      .replace('  Each player has 7 coins that everyone can see.\n  Players pay with coins.\n', '  The bank has 5 tokens.\n')
+      .replace('    Then:\n      They pay 1.\n', ''), lib);
+    expect(bankOnly.diagnostics).toEqual([]);
+    mount({ game: bankOnly.game!, players: 2 });
+    expect(screen.getAllByText('bank: 5 tokens')).toHaveLength(2);
+  });
 });
 
 describe('Playtest of a board game', () => {

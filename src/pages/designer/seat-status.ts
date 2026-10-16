@@ -22,6 +22,16 @@ export function seatStatus(game: CompiledGame, view: ClientView | null, seat: Pl
   return named + (view.turn.current === seat ? `Your turn — ${hint}` : `${hint} — waiting for ${view.turn.current}`);
 }
 
+/**
+ * The seat the game is waiting on, for the page to point at; null when it waits on no one seat: before there is a view, once
+ * the game is over, while there is no turn, and in a phase everyone acts in at once.
+ */
+export function seatToAct(game: CompiledGame, view: ClientView | null): PlayerId | null {
+  if (!view || view.result !== undefined || !view.turn) return null;
+  const phase = game.phases.find((p) => p.id === view.turn?.phase);
+  return phase?.actor === 'any' ? null : view.turn.current;
+}
+
 /** The players who share the win, when two or more do; null for a win that is one player's. */
 function sharedWin(winners: Json | undefined): string[] | null {
   if (!Array.isArray(winners) || winners.length < 2) return null;

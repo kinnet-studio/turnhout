@@ -5,6 +5,7 @@ import type { GameState } from '@/engine/core/game-state';
 import { seatExtras, readSeatExtras, type ActionView } from '@/engine/core/lang/board-view';
 import { createEngine, initialState } from '@/engine/core/lang/build';
 import { moveForDrop } from '@/engine/core/lang/drops';
+import { fitsTable, fittedLayout } from '@/engine/core/lang/fit-layout';
 import { friendlyError, friendlyReason } from '@/engine/core/lang/friendly';
 import type { PhraseLibrary } from '@/engine/core/lang/phrases';
 import type { CompiledGame } from '@/engine/core/lang/types';
@@ -20,7 +21,9 @@ import { designerFaceRenderer } from '@/engine/pixi/text-faces';
 import { makeInitApp } from '@/utils/init-app';
 import { ActionButtons, BANNER_SLOT, BANNER_STYLE, MoneyLine, PlayerPicker } from './board-controls';
 import { BoardGrid } from './board-grid';
-import { seatStatus } from './seat-status';
+import { seatStatus, seatToAct } from './seat-status';
+import { SeatTabs } from './seat-tabs';
+import { Tableaux } from './tableaux';
 
 const initAppWithFaces = makeInitApp(designerFaceRenderer, { showEmptyZones: true });
 
@@ -33,6 +36,9 @@ const NO_RULE = 'No rule lets you move a card there.';
 const SEAT_WIDTH = 800;
 const SEAT_HEIGHT = 600;
 const PANEL_STYLE = { width: SEAT_WIDTH, flex: '0 0 auto', border: '1px solid #ccc' } as const;
+// A game too big for one table shows one seat at a time, on a canvas that draws the 1600 x 1200 world at three quarters.
+const FITTED_WIDTH = 1200;
+const FITTED_HEIGHT = 900;
 
 type Started = { server: GameServer; session: GameSession; tableDef: TableDef; seats: PlayerId[] } | { error: string };
 
@@ -95,15 +101,25 @@ function useSeat(
   return { view, send, notice, flash };
 }
 
-function SeatCanvas({ game, session, tableDef, seats, seat, onError }: {
+function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = false, onTurn }: {
   game: CompiledGame;
   session: GameSession;
   tableDef: TableDef;
   seats: PlayerId[];
   seat: PlayerId;
   onError: (message: string | null) => void;
+  /** The seat's own table of a game too big for one: its panel lists every player's tableau, and the canvas draws only its zones. */
+  fitted?: boolean;
+  /** Told the seat the game waits on, each time that changes. */
+  onTurn?(seat: PlayerId | null): void;
 }) {
   const { view, send, notice, flash } = useSeat(session, seat, onError);
+  const toAct = seatToAct(game, view);
+  const viewed = view !== null;
+  useEffect(() => {
+    // Until its first view arrives the seat knows nothing of the turn, which is not the same as no seat having to act.
+    if (viewed) onTurn?.(toAct);
+  }, [viewed, toAct, onTurn]);
   // The move type of the button this seat is choosing a space or another player for, until one is picked or it is cancelled.
   const [picking, setPicking] = useState<string | null>(null);
   const extras = readSeatExtras(view?.extras);
@@ -117,7 +133,10 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError }: {
     if (stale) setPicking(null);
   }, [stale]);
   const option = useMemo(() => ({ fullScreen: false, limitEntireViewPort: false }), []);
-  const placement: Placement = { cards: view?.scene.cards ?? [] };
+  const drawn = useMemo(() => new Set(tableDef.zones.map((zone) => zone.id)), [tableDef]);
+  const cards = view?.scene.cards ?? [];
+  // A fitted table leaves the other players' zones off, so their cards have nowhere to stand: they are counted in the tableaux.
+  const placement: Placement = { cards: fitted ? cards.filter((card) => drawn.has(card.zoneId)) : cards };
   const submit = (intent: DropIntent) => {
     onError(null);
     const move = moveForDrop(game, seats, view?.turn?.phase, seat, intent);
@@ -126,21 +145,24 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError }: {
     else if (intent.toZoneId !== null && intent.toZoneId !== intent.fromZoneId) flash(NO_RULE);
   };
   const status = `seat: ${seat} — ${seatStatus(game, view, seat)}`;
-  // A card game always gets its table. A board game gets one only when some phase has cards to drag: it moves them by hand, or
-  // lets players rearrange theirs. Piles that only rules draw from have nothing to drag. Asking the game, not the view, means
-  // nothing mounts before the first view arrives.
+  // A card game always gets its table, and so does a game whose board has no spaces: it has only numbers, so it is a card game
+  // however it moves its cards. A board game gets one only when some phase has cards to drag: it moves them by hand, or lets
+  // players rearrange theirs. Piles that only rules draw from have nothing to drag. Asking the game, not the view, means nothing
+  // mounts before the first view arrives.
   const showsCards = tableDef.zones.length > 0
-    && (game.board === null || game.phases.some((phase) => phase.moves.length > 0 || phase.rearrange.length > 0));
+    && (game.board === null || game.board.spaces.length === 0
+      || game.phases.some((phase) => phase.moves.length > 0 || phase.rearrange.length > 0));
   const canvas = showsCards && (
     <Wrapper option={option} initFunction={initAppWithFaces}>
       <CardTable tableDef={tableDef} placement={placement} viewer={undefined} onDrop={submit} />
     </Wrapper>
   );
-  // The panel is for a game that has a board, or buttons to press; each part of it is drawn only when the game has what it shows,
-  // so a card game with a number each player has gets its money line and buttons without a board.
+  // The panel is for a game that has a board, or buttons to press, and for every fitted table, whose panel lists the tableaux;
+  // each part of it is drawn only when the game has what it shows, so a card game with a number each player has gets its money
+  // line and buttons without a board.
   const hasButtons = game.phases.some((phase) => phase.actions.length > 0);
-  if (extras && (extras.board !== null || hasButtons)) {
-    const { board } = extras;
+  const board = extras?.board ?? null;
+  if (fitted || (extras && (board !== null || hasButtons))) {
     // A blank box sends no amount at all; the rules answer that with what is missing, and it flashes like any other refusal.
     const press = (move: string, amount?: number | null) => {
       onError(null);
@@ -173,8 +195,13 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError }: {
         onCancel={() => setPicking(null)}
       />
     );
+    // The money line's place on a fitted table goes to every player's tableau, which counts the cards their zones hold.
+    const numbers = fitted
+      ? view && <Tableaux game={game} seats={seats} board={board} cards={view.scene.cards} />
+      : board && (board.counters.length > 0 || game.facts.length > 0 || board.bank.length > 0) && <MoneyLine board={board} />;
+    const canvasBox = fitted ? { width: FITTED_WIDTH, height: FITTED_HEIGHT } : { height: SEAT_HEIGHT };
     return (
-      <div style={{ ...PANEL_STYLE, boxSizing: 'content-box', padding: 8, display: 'flex', flexDirection: 'column', gap: 8, font: '14px sans-serif', color: '#eee' }}>
+      <div style={{ ...PANEL_STYLE, width: fitted ? FITTED_WIDTH : SEAT_WIDTH, boxSizing: 'content-box', padding: 8, display: 'flex', flexDirection: 'column', gap: 8, font: '14px sans-serif', color: '#eee' }}>
         <div>{status}</div>
         {/* Room for the notice and the banner is kept, so the board does not jump when either appears. */}
         <div style={{ minHeight: BANNER_SLOT, display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -188,9 +215,9 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError }: {
           <span style={{ color: '#ff8a65' }}>{notice}</span>
         </div>
         {board && board.spaces.length > 0 && <BoardGrid board={board} picking={picker} />}
-        {board && (board.counters.length > 0 || game.facts.length > 0) && <MoneyLine board={board} />}
-        {hasButtons && <ActionButtons actions={extras.actions} onPress={press} onPick={startPicking} onRefused={flash} />}
-        {canvas && <div style={{ position: 'relative', height: SEAT_HEIGHT }}>{canvas}</div>}
+        {numbers}
+        {hasButtons && extras && <ActionButtons actions={extras.actions} onPress={press} onPick={startPicking} onRefused={flash} />}
+        {canvas && <div style={{ position: 'relative', ...canvasBox }}>{canvas}</div>}
       </div>
     );
   }
@@ -221,6 +248,21 @@ export function Playtest({ game, library, players, seed, initial, onRestart, onS
   const [problem, setProblem] = useState<string | null>(null);
   const running = 'error' in started ? null : started;
   const banner = 'error' in started ? started.error : problem;
+  // A game whose zones do not all fit on one table is played one seat at a time, each on a table of its own zones.
+  const fitted = useMemo(() => running !== null && !fitsTable(game.zones, running.seats), [game, running]);
+  const [selected, setSelected] = useState<PlayerId>(() => running?.seats[0] ?? '');
+  const [toAct, setToAct] = useState<PlayerId | null>(null);
+  const lastToAct = useRef<PlayerId | null>(null);
+  // The tabs follow the turn only when the seat that must act changes, so a player can look at another seat's tab in peace.
+  const seen = useCallback((seat: PlayerId | null) => {
+    setToAct(seat);
+    if (seat !== null && seat !== lastToAct.current) setSelected(seat);
+    lastToAct.current = seat;
+  }, []);
+  const fittedDef = useMemo<TableDef | null>(
+    () => (running && fitted ? { players: running.seats, zones: fittedLayout(game.zones, selected) } : null),
+    [running, fitted, game, selected],
+  );
   const undo = () => {
     setProblem(null);
     running?.server.undo();
@@ -233,7 +275,23 @@ export function Playtest({ game, library, players, seed, initial, onRestart, onS
         <button type="button" onClick={onStop}>Stop</button>
       </div>
       {banner && <div role="alert" style={{ padding: '8px 12px', background: '#7f1d1d', color: '#fff' }}>{banner}</div>}
-      {running && (
+      {running && fittedDef && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start', overflow: 'auto' }}>
+          <SeatTabs seats={running.seats} selected={selected} toAct={toAct} onSelect={setSelected} />
+          <SeatCanvas
+            key={selected}
+            game={game}
+            session={running.session}
+            tableDef={fittedDef}
+            seats={running.seats}
+            seat={selected}
+            onError={setProblem}
+            fitted
+            onTurn={seen}
+          />
+        </div>
+      )}
+      {running && !fittedDef && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignContent: 'flex-start', overflow: 'auto' }}>
           {running.seats.map((seat) => (
             <SeatCanvas key={seat} game={game} session={running.session} tableDef={running.tableDef} seats={running.seats} seat={seat} onError={setProblem} />
