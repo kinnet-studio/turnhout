@@ -929,3 +929,54 @@ describe('LangRuntime.workedValue and workedFlag in a game that works nothing ou
     expect(runtime.env(state).workedFlag?.(state, queen.id, 'tired')).toBe(false);
   });
 });
+
+describe('a first phase that starts each turn', () => {
+  /** ROUNDS_GAME with a payday phase first, whose turn-start lines give 5 coins, and an End that waits for the round to finish. */
+  const PAYDAY = ROUNDS_GAME.replace('Phase: working', [
+    'Phase: payday',
+    "  When a player's turn starts:",
+    '    They get 5 coins.',
+    '  A player may settle.',
+    '    Then:',
+    '      Go to working.',
+    '',
+    'Phase: working',
+  ].join('\n')).replace('  The game ends when the pile is empty.\n  The highest score wins.', [
+    '  The game ends when the done pile is not empty and the round is finished.',
+    '  The highest score wins, and tied players share the win.',
+  ].join('\n'));
+  const payday = compiled(PAYDAY);
+  const table = () => createEngine(payday, lib, 3, { ...initialState(payday, 1), turn: { current: 'p0', phase: 'payday' } }).engine;
+  const coinsOf = (state: GameState) => seatsFor(3).map((seat) => counterOf(state, 'coins', seat));
+  const press = (engine: ReturnType<typeof table>, type: string, ...seats: PlayerId[]) => {
+    for (const by of seats) expect(engine.dispatch({ type, by }).reason).toBeUndefined();
+  };
+
+  it('compiles with nothing to report', () => {
+    expect(compileGame(PAYDAY, lib).diagnostics).toEqual([]);
+  });
+  it('starts each turn in payday: the coin for every phase, then payday’s five', () => {
+    const engine = table();
+    expect(coinsOf(engine.getState())).toEqual([6, 0, 0]);
+    press(engine, 'settle', 'p0');
+    expect(engine.getState().turn).toEqual({ current: 'p0', phase: 'working' });
+    press(engine, 'stop', 'p0');
+    const state = engine.getState();
+    // Tidying's start line gave p0 the 1 coin that makes 7, and the turn passed to p1 in payday.
+    expect(state.turn).toEqual({ current: 'p1', phase: 'payday' });
+    expect(coinsOf(state)).toEqual([7, 6, 0]);
+  });
+  it('keeps payday out of the round’s last window: the round ends before p0’s next payday (R2)', () => {
+    const engine = table();
+    press(engine, 'settle', 'p0');
+    press(engine, 'stop', 'p0');
+    press(engine, 'settle', 'p1');
+    press(engine, 'stop', 'p1');
+    press(engine, 'settle', 'p2');
+    press(engine, 'stop', 'p2');
+    const state = engine.getState();
+    expect(state.result).toBeDefined();
+    expect(state.data[ROUND_KEY]).toBe(1);
+    expect(coinsOf(state)).toEqual([7, 7, 7]);
+  });
+});

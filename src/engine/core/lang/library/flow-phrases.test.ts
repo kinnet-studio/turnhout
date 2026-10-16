@@ -4,10 +4,10 @@ import { zoneCards, type GameState } from '../../game-state';
 import { shuffleWithRng } from '../../rng';
 import type { CardState } from '../../scene';
 import { RuleError } from '../diagnostics';
-import { TURN_KEY, TURN_ROLLS_KEY, interruptedTurn, markOut, playerFact, queueRoll, setPlayerFact, withBoardData } from '../board-state';
+import { TURN_KEY, TURN_ROLLS_KEY, counterOf, interruptedTurn, markOut, playerFact, queueRoll, setPlayerFact, withBoardData } from '../board-state';
 import { createEngine, initialState, seatsFor } from '../build';
 import { compileGame } from '../compile';
-import { INTERRUPT_BOARD, fixtureBoardGame, fixtureBoardState, fixtureCard, fixtureEnv, fixtureGame, fixtureState, runPhrase } from '../testing';
+import { INTERRUPT_BOARD, TURN_GAME, fixtureBoardGame, fixtureBoardState, fixtureCard, fixtureEnv, fixtureGame, fixturePhase, fixtureState, runPhrase } from '../testing';
 import type { CompiledGame, PhraseKind, PhraseEnv } from '../types';
 import { WINNER_KEY } from '../zones';
 import { createDefaultLibrary } from './index';
@@ -436,5 +436,44 @@ describe('scoring and winners', () => {
     const winner = () => run('winner', 'the player with an empty hand wins', fixtureEnv(cards, { seats: ['p0', 'p1'] }), {});
     expect(winner).toThrow(RuleError);
     expect(winner).toThrow('No player has an empty hand.');
+  });
+});
+
+describe('Go to a phase', () => {
+  /** TURN_GAME with a button that goes straight to tidying, whose start line gives a coin. */
+  const HURRY = TURN_GAME.replace('  A player may stop.', '  A player may hurry.\n    Then:\n      Go to tidying.\n  A player may stop.');
+  /** p0 to move in working, with an empty list and no coins. */
+  const working = (): GameEngine => {
+    const { game, diagnostics } = compileGame(HURRY, lib);
+    if (!game) throw new Error(JSON.stringify(diagnostics));
+    return createEngine(game, lib, 3, { ...initialState(game, 1), turn: { current: 'p0', phase: 'working' } }).engine;
+  };
+
+  it('enters the phase it names', () => {
+    expect(lib.get('effect', 'go to {phase}')).toMatchObject({ entersPhase: true });
+  });
+  it('runs the start lines of the phase, and the turn then passes on that phase’s own rule', () => {
+    const engine = working();
+    expect(engine.dispatch({ type: 'hurry', by: 'p0' }).reason).toBeUndefined();
+    const state = engine.getState();
+    // Tidying's start line gave p0 a coin; the list has fewer than 2 cards, so tidying's rule passed the turn.
+    expect(counterOf(state, 'coins', 'p0')).toBe(1);
+    expect(state.turn).toEqual({ current: 'p1', phase: 'working' });
+  });
+  it('is a way to reach a phase nothing else leads to', () => {
+    const only = HURRY.replace('  When they have less than 1 move, go to tidying.\n', '');
+    expect(only).not.toBe(HURRY);
+    expect(compileGame(only, lib).diagnostics).toEqual([]);
+  });
+  it('names a phase the game has', () => {
+    const { game, diagnostics } = compileGame(HURRY.replace('      Go to tidying.', '      Go to tidyng.'), lib);
+    expect(game).toBeUndefined();
+    expect(diagnostics).toEqual([expect.objectContaining({ message: 'There is no phase called “tidyng”.', suggestions: ['tidying'] })]);
+  });
+  it('has no turn to move on when the game has none', () => {
+    const game = fixtureGame({ phases: [fixturePhase('tidying', [])] });
+    const env = fixtureEnv(fixtureState([]), { game, seats: ['p0', 'p1'], runLine: (s) => s });
+    expect(() => run('effect', 'go to tidying', env)).toThrow(RuleError);
+    expect(() => run('effect', 'go to tidying', env)).toThrow('There is no turn to move on.');
   });
 });

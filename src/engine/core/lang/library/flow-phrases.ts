@@ -1,4 +1,4 @@
-import { zoneCards, type GameState } from '../../game-state';
+import { setPhase, zoneCards, type GameState } from '../../game-state';
 import { shuffleWithRng } from '../../rng';
 import type { PlayerId } from '../../scene';
 import { interruptTurn, isOut, nextIn, playerFact, resumeTurn } from '../board-state';
@@ -114,6 +114,19 @@ const holderGoesFirst: EffectFn = (env, args) => {
 // ---- interrupting a turn ---------------------------------------------------------------------
 
 /**
+ * Runs the start lines of `phase` about `seat`, the player whose turn it is, where players take turns, and about no one in
+ * particular where everyone acts at once. Each line sees what the line before it did, as an advance's start lines do.
+ */
+function runStartLines(env: PhraseEnv, state: GameState, phase: string, seat: PlayerId): GameState {
+  const startLines = env.game.phases.find((p) => p.id === phase)?.onEnter ?? [];
+  if (startLines.length === 0) return state;
+  const { runLine } = env;
+  if (!runLine) throw new Error('This phrase needs to run the start lines of a phase, but nothing is listening.');
+  const about: Subject = { player: phaseTakesTurns(env.game, phase) ? seat : null, space: null, card: null };
+  return startLines.reduce((acc, ref) => runLine(acc, ref, about), state);
+}
+
+/**
  * Interrupts the turn for another phase, which starts with `next`. The phase's start lines then run, as `go to` runs them: about
  * `next` where players take turns, and about no one in particular where everyone acts at once.
  *
@@ -122,14 +135,18 @@ const holderGoesFirst: EffectFn = (env, args) => {
  * kept turn is still the presser's, with nothing done in it, so going back to it gives them the turn again.
  */
 function startPhase(env: PhraseEnv, phase: string, next: PlayerId): GameState {
-  const started = interruptTurn(env.state, phase, next);
-  const startLines = env.game.phases.find((p) => p.id === phase)?.onEnter ?? [];
-  if (startLines.length === 0) return started;
-  const { runLine } = env;
-  if (!runLine) throw new Error('This phrase needs to run the start lines of a phase, but nothing is listening.');
-  const about: Subject = { player: phaseTakesTurns(env.game, phase) ? next : null, space: null, card: null };
-  return startLines.reduce((state, ref) => runLine(state, ref, about), started);
+  return runStartLines(env, interruptTurn(env.state, phase, next), phase, next);
 }
+
+/**
+ * Moves the game on to the phase and runs its start lines, as an advance does (R2), with the turn where it was: it is still the
+ * same player's. Only the start lines run: a phase's “When a player's turn starts:” lines run as a turn starts, never as a phase
+ * is gone to, so a first phase that starts each turn is not started again by a “go to” that comes back to it.
+ */
+const goToPhase: EffectFn = (env, [phase]) => {
+  if (!env.state.turn) throw new RuleError('There is no turn to move on.');
+  return runStartLines(env, setPhase(env.state, phase as string), phase as string, env.state.turn.current);
+};
 
 /** The phase starts with the next player still in on their left: a player who is out could not act in it. */
 const phaseStartsOnTheirLeft: EffectFn = (env, [phase]) => startPhase(env, phase as string, nextIn(env.state, theyOf(env), env.seats));
@@ -224,6 +241,7 @@ export function registerFlowPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('the player holding {card} goes first', holderGoesFirst)
     .effect('the {phase} phase starts with the player on their left', phaseStartsOnTheirLeft, { needsPlayer: true, entersPhase: true })
     .effect('the {phase} phase starts with them', phaseStartsWithThem, { needsPlayer: true, entersPhase: true })
+    .effect('go to {phase}', goToPhase, { entersPhase: true })
     .effect('go back to the interrupted turn', goBackToTheTurn)
     .turn('the turn passes to the left', passesLeft)
     .turn('the turn passes to the next player on the left who is {playerflag}', passesToNextWhoIs)
