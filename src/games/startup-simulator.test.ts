@@ -4,8 +4,11 @@ import { compileGame } from '@/engine/core/lang/compile';
 import { createDefaultLibrary } from '@/engine/core/lang/library';
 import { runExamples } from '@/engine/core/lang/examples';
 import { createEngine, initialState, seatsFor, tableDefFor } from '@/engine/core/lang/build';
-import { counterOf } from '@/engine/core/lang/board-state';
+import { counterOf, setCounter } from '@/engine/core/lang/board-state';
+import { seatExtras, type PickCardView, type SeatExtras } from '@/engine/core/lang/board-view';
 import { deckOf, NEXT_CARD_KEY } from '@/engine/core/lang/cards';
+import { cardCandidates, hasCost } from '@/engine/core/lang/declared-actions';
+import type { LangRuntime } from '@/engine/core/lang/runtime';
 import { markTurnStarted, ROUND_KEY, START_PLAYER_KEY, startPlayerOf, TURN_OF_KEY } from '@/engine/core/lang/turns';
 import { relocate, zoneIdFor, zoneInfo } from '@/engine/core/lang/zones';
 import { HIDDEN_FACE_KEY, deriveScene } from '@/engine/core/derive-scene';
@@ -92,6 +95,12 @@ const CLEANUPS: Record<string, { row: string; discard: string }> = {
 };
 /** What each card left in a backlog costs at the end, by its tier: vaporware (ruling 24). */
 const VAPORWARE: Record<string, number> = { 'Tier 1': 2, 'Tier 2': 5, 'Tier 3': 10 };
+/** The actions each player has each turn, as the rules give them: what a seat has when its turn starts. */
+const ACTIONS_EACH_TURN = 3;
+
+/** The button of the phase `state` is in whose move type is `type`, as the game declares it. */
+const buttonOf = (state: GameState, type: string) =>
+  game!.phases.find((phase) => phase.id === state.turn?.phase)?.actions.find((action) => action.words === type);
 
 /**
  * How an auto-player gets its growth ideas: by researching the growth deck, or by drafting from the growth market. A game that
@@ -111,6 +120,27 @@ function play(engine: GameEngine, move: Move, watch: Watch): void {
 }
 
 /**
+ * The cards `extras`, the page's view of `seat` in `state`, offers for the button `type`, once the view is checked against the
+ * rules: they are the button's candidates, which are the cards of `zoneId` in slot order, each is named by its card's name, and
+ * the button is allowed exactly when some card is.
+ */
+function viewedCards(
+  runtime: LangRuntime, extras: SeatExtras, state: GameState, seat: PlayerId, type: string, zoneId: string,
+): PickCardView[] {
+  const at = `${seat}'s ${type} in ${state.turn!.phase}`;
+  const button = extras.actions.find((action) => action.move === type);
+  expect(button?.cards, `the cards the view offers for ${at}`).toBeDefined();
+  const offered = button!.cards!.cards;
+  const zone = zoneCards(state, zoneId);
+  expect(cardCandidates(runtime, buttonOf(state, type)!, state, seat), `the candidates of ${at}`).toEqual(zone.map((card) => card.id));
+  expect(offered.map((card) => card.id), `the cards the view offers for ${at}`).toEqual(zone.map((card) => card.id));
+  expect(offered.map((card) => card.name), `the names the view gives the cards of ${at}`).toEqual(zone.map(nameOf));
+  const some = offered.some((card) => card.allowed === true);
+  expect(button!.allowed === true, `whether ${at} is allowed, with ${JSON.stringify(offered)}`).toBe(some);
+  return offered;
+}
+
+/**
  * Takes the turn of the seat whose turn it is, the game's turn `t` (counted from 0), until the turn passes, the game ends or
  * the log holds `moves` moves. `a` counts the actions taken so far in this turn.
  *
@@ -123,15 +153,48 @@ function play(engine: GameEngine, move: Move, watch: Watch): void {
  *   for (1), the open job market's first card (2), or the end of its actions (3). When the rules refuse that, or there is no
  *   such card, it recruits that Junior, else ends its actions.
  * - In research it keeps the research row's card at `t` (mod the row's length); in each Cleanup it discards the row's first card.
+ *
+ * Without a `runtime` it finds the card a button picks in the zone. With one, it finds it as a player at the page would: among
+ * the cards the page's view of the seat offers for the button (checked by `viewedCards`), and the view must allow the card it
+ * presses and grey each card it passes over because the engine refuses it. It chooses the same card either way, so a game plays
+ * the same.
  */
-function playTurn(engine: GameEngine, t: number, style: Style, watch: Watch, moves = Infinity): void {
+function playTurn(engine: GameEngine, t: number, style: Style, watch: Watch, moves: number, runtime: LangRuntime | null): void {
   const by = engine.getState().turn!.current;
   const cards = (zoneId: string) => zoneCards(engine.getState(), zoneId);
   const press = (type: string): Move => ({ type, by });
-  const take = (type: string, card: CardState | undefined): Move | null => (card ? { type, cardId: card.id, by } : null);
-  const first = (type: string, zoneId: string) => take(type, cards(zoneId)[0]);
+  /** The page's view of the seat, read once for each state a card is picked in. */
+  let view: { of: GameState; extras: SeatExtras } | null = null;
+  /** The view's word on each move whose card was found through the view. */
+  const verdicts = new Map<Move, PickCardView>();
+  /** The move that presses `type` with the card `which` finds among the cards of `zoneId`, or null when it finds none. */
+  const pick = (type: string, zoneId: string, which: (row: CardState[]) => CardState | undefined): Move | null => {
+    if (runtime === null) {
+      const card = which(cards(zoneId));
+      return card ? { type, cardId: card.id, by } : null;
+    }
+    const state = engine.getState();
+    if (view?.of !== state) view = { of: state, extras: seatExtras(engine, runtime, state, by) };
+    const offered = viewedCards(runtime, view.extras, state, by, type, zoneId);
+    const card = which(offered.map((candidate) => cardById(state, candidate.id)!));
+    if (!card) return null;
+    const move: Move = { type, cardId: card.id, by };
+    verdicts.set(move, offered.find((candidate) => candidate.id === card.id)!);
+    return move;
+  };
+  const first = (type: string, zoneId: string) => pick(type, zoneId, (row) => row[0]);
+  /**
+   * Whether the engine accepts `move`. For a card found through the view, the view must say the same: the card the seat presses is
+   * one the view allows, and each card it passes over because the engine refuses it is one the view greys.
+   */
+  const accepts = (move: Move): boolean => {
+    const accepted = engine.canDispatch(move) === true;
+    const verdict = verdicts.get(move);
+    if (verdict) expect(verdict.allowed === true, `whether the view allows ${by}'s ${move.type} ${move.cardId}: ${verdict.allowed}`).toBe(accepted);
+    return accepted;
+  };
   const choose = (choices: (Move | null)[]): Move => {
-    const move = choices.find((choice) => choice !== null && engine.canDispatch(choice) === true);
+    const move = choices.find((choice) => choice !== null && accepts(choice));
     if (!move) throw new Error(`${by} has no move in turn ${t}, phase ${engine.getState().turn!.phase}.`);
     return move;
   };
@@ -144,8 +207,8 @@ function playTurn(engine: GameEngine, t: number, style: Style, watch: Watch, mov
   const recruiting = (a: number): (Move | null)[] => {
     const capital = counterOf(engine.getState(), 'capital', by);
     const junior = press(RECRUITS[(t + a) % 3]);
-    const affordable = cards('agency-row').find((card) => (card.data?.cost as number) <= capital);
-    const planned = [junior, take(HIRE_AGENCY, affordable), first(HIRE_MARKET, 'open-job-market'), press(END_ACTIONS)];
+    const affordable = pick(HIRE_AGENCY, 'agency-row', (row) => row.find((card) => (card.data?.cost as number) <= capital));
+    const planned = [junior, affordable, first(HIRE_MARKET, 'open-job-market'), press(END_ACTIONS)];
     return [planned[(t + a) % 4], junior, press(END_ACTIONS)];
   };
   const going = () => {
@@ -158,8 +221,7 @@ function playTurn(engine: GameEngine, t: number, style: Style, watch: Watch, mov
       play(engine, choose(a === 0 ? [...ideation(), ...recruiting(a)] : recruiting(a)), watch);
       a++;
     } else if (phase === 'research') {
-      const row = cards(zoneIdFor('research', by));
-      play(engine, choose([take(KEEP, row[t % row.length])]), watch);
+      play(engine, choose([pick(KEEP, zoneIdFor('research', by), (row) => row[t % row.length])]), watch);
     } else {
       const cleanup = CLEANUPS[phase!];
       if (cleanup === undefined) throw new Error(`The long runs don't play the ${phase} phase.`);
@@ -168,16 +230,20 @@ function playTurn(engine: GameEngine, t: number, style: Style, watch: Watch, mov
   }
 }
 
+/** How a long run plays: until the log holds `moves` moves, and with `throughView` finding each card to pick through the page's view. */
+type Run = { moves?: number; throughView?: boolean };
+
 /**
  * Plays a game of `players` from Setup at `seed`, turn after turn, until it has a result, `MAX_TURNS` turns are played or the
  * log holds `moves` moves; the engine as it is then. At an odd seed every seat researches the growth deck for its growth ideas,
- * and at an even seed it drafts them from the growth market, so that the Crash comes out of each.
+ * and at an even seed it drafts them from the growth market, so that the Crash comes out of each. With `throughView` each seat
+ * finds the cards it picks through the page's view of it, as `playTurn` says.
  */
-function playGame(players: number, seed: number, watch: Watch, moves = Infinity): GameEngine {
-  const { engine } = createEngine(game!, lib, players, initialState(game!, seed));
+function playGame(players: number, seed: number, watch: Watch, { moves = Infinity, throughView = false }: Run = {}): GameEngine {
+  const { engine, runtime } = createEngine(game!, lib, players, initialState(game!, seed));
   const style: Style = seed % 2 === 0 ? 'drafts' : 'researches';
   for (let t = 0; t < MAX_TURNS && engine.getState().result === undefined && engine.getLog().length < moves; t++) {
-    playTurn(engine, t, style, watch, moves);
+    playTurn(engine, t, style, watch, moves, throughView ? runtime : null);
   }
   return engine;
 }
@@ -334,6 +400,28 @@ function keepsTheRules(seats: PlayerId[]): Watch {
         .map((c) => `${c.id} in ${c.zoneId}`);
       expect(wrong, `cards ${viewer} sees wrongly ${at}`).toEqual([]);
     }
+  };
+}
+
+/**
+ * A watch that checks, after every move of a game at `seats`, that actions are spent only through cost lines: the mover's actions
+ * go down by what the button they pressed costs in the phase it was pressed in, nothing for a button with no cost line, except that
+ * ending their actions leaves them none. Every other seat's actions stay as they were, but for the seat whose turn the move started,
+ * which has its 3.
+ */
+function keepsTheBudget(seats: PlayerId[]): Watch {
+  return (before, move, after) => {
+    const by = move.by as PlayerId;
+    const at = `after ${by}'s ${move.type}${move.cardId === undefined ? '' : ` ${move.cardId}`}`;
+    const actions = (state: GameState, seat: PlayerId) => counterOf(state, 'actions', seat);
+    const cost = buttonOf(before, move.type)?.cost?.amount ?? 0;
+    const turnOf = after.data[TURN_OF_KEY];
+    const started = typeof turnOf === 'string' && turnOf !== before.data[TURN_OF_KEY] ? turnOf : null;
+    const expected = seats.map((seat) => {
+      if (seat === by) return move.type === END_ACTIONS ? 0 : actions(before, by) - cost;
+      return seat === started ? ACTIONS_EACH_TURN : actions(before, seat);
+    });
+    expect(seats.map((seat) => actions(after, seat)), `actions of ${seats.join(', ')} ${at}`).toEqual(expected);
   };
 }
 
@@ -569,15 +657,17 @@ describe('Startup Simulator (designer language)', () => {
     /** How many times the runs below made each move, by its type, and saw each happening: see `happenings`. */
     const tally: Record<string, number> = {};
 
-    it.each([2, 3, 4, 5])('plays %i players to the Market Crash and a score at seeds 1 to 5', (players) => {
+    it.each([2, 3, 4, 5])('plays %i players to the Market Crash and a score at seeds 1 to 5, seed 1 through the page’s view', (players) => {
       const seats = seatsFor(players);
       for (let seed = 1; seed <= 5; seed++) {
         const where = `${players} players, seed ${seed}`;
         const rules = keepsTheRules(seats);
+        const budget = keepsTheBudget(seats);
         const engine = playGame(players, seed, (before, move, after) => {
           rules(before, move, after);
+          budget(before, move, after);
           for (const key of [move.type, ...happenings(before, move, after)]) tally[key] = (tally[key] ?? 0) + 1;
-        });
+        }, { throughView: seed === 1 });
         const state = engine.getState();
         const turns = turnsIn(engine.getLog());
         expect(state.result, `${where}: the result after ${turns.length} turns`).toBeDefined();
@@ -608,9 +698,35 @@ describe('Startup Simulator (designer language)', () => {
       expect(every.filter((key) => !(tally[key] > 0)), `never made or seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
+    it('a refused press spends nothing', () => {
+      const setup = setUp(2, 1);
+      const start = setup.turn!.current;
+      // With no capital the start player can pay for no agency card, though the hire's 1 action is theirs to spend.
+      const { engine, runtime } = createEngine(game!, lib, 2, setCounter(setup, 'capital', start, 0));
+      const state = engine.getState();
+      expect(state.turn).toMatchObject({ current: start, phase: 'actions' });
+      expect(counterOf(state, 'actions', start)).toBe(ACTIONS_EACH_TURN);
+      expect(hasCost(buttonOf(state, HIRE_AGENCY)!)).toBe(true);
+      const agency = zoneCards(state, 'agency-row');
+      expect(agency).toHaveLength(4);
+
+      const refusal = "they have at least the card's cost in capital";
+      for (const card of agency) {
+        expect(engine.canDispatch({ type: HIRE_AGENCY, by: start, cardId: card.id }), `hiring the ${nameOf(card)}`).toBe(refusal);
+      }
+      const button = seatExtras(engine, runtime, state, start).actions.find((action) => action.move === HIRE_AGENCY)!;
+      expect(button.allowed).toBe(refusal);
+      expect(button.cards!.cards.map((card) => card.allowed)).toEqual(agency.map(() => refusal));
+
+      const outcome = engine.dispatch({ type: HIRE_AGENCY, by: start, cardId: agency[0].id });
+      expect(outcome).toMatchObject({ ok: false, reason: refusal });
+      expect(counterOf(engine.getState(), 'actions', start)).toBe(ACTIONS_EACH_TURN);
+      expect(engine.getState()).toEqual(state);
+    });
+
     it('takes back every move with undo, and rebuilds the game from its log, through recruits and research (3 players, seed 1)', () => {
       const states: GameState[] = [];
-      const engine = playGame(3, 1, (_before, _move, after) => states.push(after), 40);
+      const engine = playGame(3, 1, (_before, _move, after) => states.push(after), { moves: 40 });
       const log = [...engine.getLog()];
       expect(log).toHaveLength(40);
       expect(states).toHaveLength(40);
