@@ -11,9 +11,8 @@ import {
 import { createEngine, flowDefFor, initialState, seatsFor } from './build';
 import { compileGame } from './compile';
 import {
-  amountPrompt, amountReady, cardCandidates, cardPrompt, costRefusal, declaredActionHandler, faceDownReady, hasCost, noCardIn, payCost, pickPlayerPrompt,
-  playerCandidates, targetCandidates,
-  ontoCandidates, ontoPrompt,
+  amountPrompt, amountReady, cardCandidates, cardPrompt, costRefusal, declaredActionHandler, faceDownReady, hasCost, noCardIn, ontoCandidates, ontoPrompt,
+  payCost, pickPlayerPrompt, playerCandidates, targetCandidates,
 } from './declared-actions';
 import { friendlyError } from './friendly';
 import { runExamples } from './examples';
@@ -1100,6 +1099,63 @@ describe('buttons that pick a card', () => {
       expect(shown.engine.canDispatch({ type: SHOW, by: 'p0', cardId: o2, onto: r3 })).toBe('the target card is not a Ruby');
       expect(faceDownReady(shown.runtime, show, shown.engine.getState(), 'p0', o2, r3)).toBe(true);
       expect(faceDownReady(shown.runtime, show, shown.engine.getState(), 'p0', o2, r1)).toBe('Pick where it goes: a card in your case.');
+    });
+
+    it('Review Focus: refuses a set it can not take with its prompt before the cost, and a set it can take with the cost before its Only if', () => {
+      const prompt = 'Pick one or more cards from your stash to trade.';
+      const trade = (press: { [k: string]: Json }): Move => ({ type: TRADE, by: 'p0', ...press });
+      // A trade that costs 2 moves, with 1 move left: the cost would refuse every press.
+      const COSTLY = CARD_PICK_GAME.replace('    It costs 1 move.\n    Only if they picked at most', '    It costs 2 moves.\n    Only if they picked at most');
+      expect(COSTLY).not.toBe(CARD_PICK_GAME);
+      const { engine } = picks((s) => setCounter(plus('stash-p0', o4)(s), 'moves', 'p0', 1), COSTLY);
+      refusesAll(engine, [trade({}), trade({ cardIds: [] }), trade({ cardIds: [r2, r1] }), trade({ cardIds: [r2, r2] })], prompt);
+      // Three cards are more than its Only if allows too; the cost is asked first.
+      refusesAll(engine, [trade({ cardIds: [r2, o2, o4] })], 'they have at least 2 moves');
+    });
+
+    it('Review Focus: refuses a target it can not take with its prompt before the cost, and one it can take with the cost before its Only if', () => {
+      const show = (press: { [k: string]: Json }): Move => ({ type: SHOW, by: 'p0', cardId: o2, ...press });
+      // A show that costs 2 moves, with 1 move left: the cost would refuse every press.
+      const COSTLY = CARD_PICK_GAME.replace('    It costs 1 move.\n    Only if the target card', '    It costs 2 moves.\n    Only if the target card');
+      expect(COSTLY).not.toBe(CARD_PICK_GAME);
+      const { engine } = picks((s) => setCounter(plus('case-p0', r3)(s), 'moves', 'p0', 1), COSTLY);
+      refusesAll(engine, [show({}), show({ onto: r1 }), show({ onto: o2 })], 'Pick where it goes: a card in your case.');
+      // The Ruby in the case is refused by its Only if too; the cost is asked first.
+      refusesAll(engine, [show({ onto: r3 })], 'they have at least 2 moves');
+    });
+
+    it('takes a set from a pile only as its top card', () => {
+      const GRAB = 'grab some cards from the pile';
+      const text = CARD_PICK_GAME.replace('  A player may stop.\n', `  A player may ${GRAB}.\n    Then:\n      Move the picked cards to their stash.\n  A player may stop.\n`);
+      expect(compileGame(text, lib).diagnostics).toEqual([]);
+      const { engine, runtime } = picks(undefined, text);
+      const [under, top] = zoneIds(engine.getState(), 'pile').slice(-2);
+      expect(cardCandidates(runtime, actionNamed(GRAB, runtime.game), engine.getState(), 'p0')).toEqual([top]);
+      const grab = (cardIds: string[]): Move => ({ type: GRAB, by: 'p0', cardIds });
+      refusesAll(engine, [grab([under]), grab([top, under])], 'Pick one or more cards from the pile to grab.');
+      expect(engine.dispatch(grab([top]))).toMatchObject({ ok: true });
+      expect(zoneIds(engine.getState(), 'stash-p0')).toEqual([r2, o2, top]);
+    });
+
+    it('refuses a set it would put in a zone of a seat that is not at the table, whichever cards they are', () => {
+      const GIFT = "gift some cards from their stash to p2's case";
+      const text = CARD_PICK_GAME.replace('  A player may stop.\n', `  A player may ${GIFT}.\n  A player may stop.\n`);
+      expect(compileGame(text, lib).diagnostics).toEqual([]);
+      const { engine } = picks(undefined, text);
+      refusesAll(engine, [{ type: GIFT, by: 'p0', cardIds: [r2] }, { type: GIFT, by: 'p0', cardIds: [o2, r2] }], "You can't gift cards there.");
+    });
+
+    it('undoes a show, and replays it from the log', () => {
+      const arrange = plus('case-p0', o3);
+      const { engine } = picks(arrange);
+      const before = engine.getState();
+      expect(engine.dispatch({ type: SHOW, by: 'p0', cardId: o2, onto: o3 }).ok).toBe(true);
+      const after = engine.getState();
+      const fresh = picks(arrange).engine;
+      fresh.loadLog([...engine.getLog()]);
+      expect(fresh.getState()).toEqual(after);
+      engine.undo();
+      expect(engine.getState()).toEqual(before);
     });
 
     it('undoes a trade, and replays it from the log', () => {
