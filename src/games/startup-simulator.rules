@@ -264,9 +264,11 @@ Phase: actions
     It costs 1 action.
   A player may dismiss a card in their development team.
     Then:
+      It is not onboarding.
       Move it to the open job market.
   A player may dismiss a card in their ops team.
     Then:
+      It is not onboarding.
       Move it to the open job market.
   A player may draft a card from the seed market to their backlog.
     It costs 1 action.
@@ -828,6 +830,21 @@ Example: dismissing board staff is free (section 18, ruling 25)
   And the open job market has the Architect and a Junior QA Tester, in that order
   And p0's ops team is empty
 
+Example: staff dismissed from the board lose their tokens, so one hired back the same turn is not onboarding (section 15)
+  Given the phase is actions
+  And p0's development has a Dating App and a To-Do List
+  And the Dating App in p0's development has the Architect on it
+  When p0 reassigns the Architect to the To-Do List
+  Then the Architect in p0's development team is onboarding
+  When p0 dismisses the Architect
+  Then it is accepted
+  And the open job market has the Architect
+  When p0 hires the Architect
+  Then it is accepted
+  And p0 has 6 capital
+  And p0's bench has the Architect
+  And the Architect in p0's bench is not onboarding
+
 Example: income pays the total rev of the products in operations, and 1 market share for each that earned (section 5, ruling 25)
   Given p1's operations has a Dating App, a Trading Bot and a DAO Nation
   And the turn passes to the left
@@ -866,7 +883,7 @@ Example: a player who can't pay everyone chooses whom to let go (ruling 25)
   And p1 has 0 capital
   And the Smart Lock in p1's development has the Diva and a Junior Hardware Eng on it
 
-Example: with no salary to pay, the step is skipped (section 5)
+Example: with no salary to pay, the step is skipped (this slice's call)
   Given p1's development has a Dating App
   And the Dating App in p1's development has a Junior Software Dev on it
   And the turn passes to the left
