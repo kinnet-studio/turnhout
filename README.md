@@ -131,6 +131,7 @@ Phase: playing
 - **A budget each turn.** `Each player has 3 actions each turn.` sets the counter back to 3 as each turn starts. `They spend 1 action.` takes from it and `Their actions go back to 0.` empties it. Counters can be named in the singular (`they have at least 1 action`).
 - **Turns as steps.**
   - "they" is the player whose turn it is in a phase where players take turns, so `When they have less than 1 action, go to bench cleanup.` reads.
+  - In a phase where players take turns, a plain rule or a start line that rolls the dice records the roll as the current player's.
   - `The turn passes to the left.` ends a turn with no press, and runs no `When this phase starts:` lines.
   - `The start player is chosen at random.` in Setup picks who starts; without it, p0 does.
   - Every turn starts by itself: counters for each turn are reset and the `When a player's turn starts:` lines run. Each round starts with the start player and runs the `When a round starts:` lines.
@@ -146,7 +147,7 @@ Phase: playing
   - A blank cell in a card table is left out, so the card has no value for that column.
   - Rows and queues: `Move the bottom card of the open idea pool to the box.`, `When the growth market has the market crash:`, `Move the market crash from their research to the crash pile.`, `Deal up to 3 cards from the seed deck to their research.` (it takes what's there), `Deal 1 card from the seed deck to each backlog.` and `The market crash goes into the bottom fifth of the growth deck.`
   - Examples check the order of a row with `…, in that order` and where a card lies with `the market crash is among the bottom 8 cards of the growth deck`.
-- **Startup Simulator (slice 1a)** plays the table, money and turns: recruiting, drafting, Research, Cleanup, the Market Crash and a first score. Its 21 examples pin rulings 10, 12, 13, 18, 20, 24 and 25.
+- **Startup Simulator (slice 1a)** plays the table, money and turns: recruiting, drafting, Research, Cleanup, the Market Crash and a first score. Its 24 examples pin rulings 10, 12, 13, 18, 20, 24 and 25.
   - Building products comes in slice 1b.
   - The game still leaves out the game-end Ops check (§12.2) and the last Milestone check (§12.3).
   - Growth cards are drafted but can't be built until slice 3.
