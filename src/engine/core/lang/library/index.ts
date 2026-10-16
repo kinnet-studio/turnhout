@@ -21,6 +21,7 @@ import { registerRentDayPhrases } from './rent-day';
 import { registerSetupPhrases } from './setup-phrases';
 import { registerStackPhrases } from './stack-phrases';
 import { registerStandardDeckPhrases } from './standard-deck';
+import { registerTotalPhrases } from './total-phrases';
 import { registerTurnPhrases } from './turn-phrases';
 
 const REGISTRARS: ((lib: PhraseLibrary) => PhraseLibrary)[] = [
@@ -33,6 +34,7 @@ const REGISTRARS: ((lib: PhraseLibrary) => PhraseLibrary)[] = [
   registerAttachPhrases,
   registerCardNumberPhrases,
   registerCardValuePhrases,
+  registerTotalPhrases,
   registerPlayerFactPhrases,
   registerDrawPhrases,
   registerDebtPhrases,

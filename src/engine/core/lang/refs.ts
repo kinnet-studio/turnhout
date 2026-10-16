@@ -511,6 +511,48 @@ const CARDCLASS: ParamType = {
   loose: looseAs(ANY_TEXT, misnamedCardClass),
 };
 
+const ON_IT = /^the cards on it$/i;
+const PICKED = /^the picked cards$/i;
+/** group 1 = the zones, group 2 = the number that must be more than group 3, when there is one */
+const CARDS_IN = /^the cards in (.+?)(?: whose (.+) (?:is|are) more than (-?\d+))?$/i;
+
+const cardGroupSource = (vocab: Vocab): string =>
+  `(?:the cards on it|the picked cards|the cards in ${ZONES.source(vocab)}(?: whose ${ATTRIBUTE.source(vocab)} (?:is|are) more than -?\\d+)?)`;
+
+/** The zones and the number of “the cards in …”, each read by its own type, so that each says what is wrong with it. */
+function resolveCardGroup(text: string, vocab: Vocab): Parsed {
+  if (ON_IT.test(text)) return { value: { kind: 'on it' } };
+  if (PICKED.test(text)) return { value: { kind: 'picked' } };
+  const found = CARDS_IN.exec(text);
+  if (!found) return unknownText(text);
+  const [, zonesText, attribute, above] = found;
+  const zones = parseParam('zones', zonesText, vocab) ?? unknownText(zonesText);
+  if ('error' in zones) return zones;
+  if (attribute === undefined) return { value: { kind: 'in', zones: zones.value, whose: null } };
+  const named = parseParam('attribute', attribute, vocab) ?? unknownText(attribute);
+  if ('error' in named) return named;
+  return { value: { kind: 'in', zones: zones.value, whose: { attribute: named.value as string, above: Number(above) } } };
+}
+
+/** “the cards in their crwe”: a zone, or the number after “whose”, that the game never defined, as its own type says it. */
+function misnamedCardGroup(text: string, vocab: Vocab): NameProblem | null {
+  const found = CARDS_IN.exec(text);
+  if (!found) return null;
+  const [, zones, attribute] = found;
+  return misnamedParam('zones', zones, vocab) ?? (attribute === undefined ? null : misnamedParam('attribute', attribute, vocab));
+}
+
+/**
+ * Some cards a rule adds up or walks through (a `CardGroup`): “the cards in {zones}”, maybe with “whose {attribute} is more than {int}”,
+ * “the cards on it” or “the picked cards”.
+ */
+const CARDGROUP: ParamType = {
+  name: 'cardgroup', label: '[cards]',
+  source: (vocab) => bounded(cardGroupSource(vocab)),
+  resolve: resolveCardGroup,
+  loose: looseAs(`the cards in ${ANY_TEXT}`, misnamedCardGroup),
+};
+
 // ---- board: spaces, counters and actions -------------------------------------------------------
 
 /** Each space name (any capitals) with its first spelling in the table and the places it holds in the loop; a shared name holds several. */
@@ -791,7 +833,7 @@ const DONE: ParamType = {
 export const VOCAB_TYPES: ParamType[] = [
   ZONE, ZONES, PERZONE, SHAREDZONE, PLAYER, PLAYERS, PHASE, MOVE, ATTRIBUTE, CARD, CARDLIST, CARDCLASS, SPACE, SPACECLASS, SPACEATTR, COUNTER, ACTION,
   TARGETACTION, AMOUNTACTION, PICKACTION, CARDACTION, DONE, SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, PLAYERFLAG, PLAYERNUMBER, GAMENUMBER, BANKED,
-  HOLDER,
+  HOLDER, CARDGROUP,
 ];
 
 const TYPES_BY_NAME = new Map(VOCAB_TYPES.map((t) => [t.name, t] as const));

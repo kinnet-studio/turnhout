@@ -1,10 +1,11 @@
-import { cardById } from '../../game-state';
+import { cardById, zoneCards } from '../../game-state';
 import type { CardState, PlayerId } from '../../scene';
 import type { Json } from '../../table-def';
+import { cardsOn } from '../attach';
 import { pieceAt } from '../board-state';
 import { cardAttribute, cardFact } from '../card-facts';
 import { noSuchNumber, RuleError } from '../diagnostics';
-import type { MoveInfo, PhraseEnv, ZoneRef } from '../types';
+import type { CardGroup, MoveInfo, PhraseEnv, ZoneRef } from '../types';
 import { resolveSeat, resolveZoneIds } from '../zones';
 
 const OWNER_WORDS = { actor: 'their', winner: "the winner's", other: "the other player's" };
@@ -123,6 +124,33 @@ export function cardNumber(env: PhraseEnv, card: CardState, name: string): numbe
   if (value === null) throw noSuchNumber(`This card has no ${name}.`);
   if (typeof value !== 'number') throw new RuleError(`This card's ${name} isn't a number.`);
   return value;
+}
+
+/** Every card in the zones a reference names, zone by zone and slot by slot. */
+export const cardsInZones = (env: PhraseEnv, ref: ZoneRef): CardState[] => resolveZoneIds(ref, env).flatMap((id) => zoneCards(env.state, id));
+
+/**
+ * The cards of a group, as a rule that adds them up or walks through them reads them: those in its zones, zone by zone and slot by slot,
+ * keeping only a card whose number is more than the group says when it says one; those on the card the rule is about; or the set the
+ * button's press picked, in the order it gave them. A card a group keeps by its number must have that number.
+ */
+export function cardsIn(env: PhraseEnv, group: CardGroup): CardState[] {
+  if (group.kind === 'on it') return cardsOn(env.state, cardOf(env));
+  if (group.kind === 'picked') {
+    return thePickedCards(env).map((id) => {
+      const card = cardById(env.state, id);
+      if (!card) throw new Error(`No card ${id} among the picked cards.`);
+      return card;
+    });
+  }
+  const { zones, whose } = group;
+  const cards = zones.flatMap((ref) => cardsInZones(env, ref));
+  return whose === null ? cards : cards.filter((card) => cardNumber(env, card, whose.attribute) > whose.above);
+}
+
+/** A number added up over the cards of a group, each read as `cardNumber` reads it: 0 over no cards. */
+export function totalOf(env: PhraseEnv, attribute: string, group: CardGroup): number {
+  return cardsIn(env, group).reduce((sum, card) => sum + cardNumber(env, card, attribute), 0);
 }
 
 /** The seat an example line names; it has to be sitting at the table. */

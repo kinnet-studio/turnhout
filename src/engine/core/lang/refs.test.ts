@@ -47,7 +47,7 @@ describe('vocabulary types', () => {
       ['action', '[action]'], ['targetaction', '[action]'], ['amountaction', '[action]'], ['pickaction', '[action]'], ['cardaction', '[action]'], ['done', '[action done]'],
       ['spacekind', '[kind of space]'], ['spaceflag', '[space fact]'], ['spacenumber', '[space fact]'], ['cardflag', '[card fact]'],
       ['playerflag', '[player fact]'], ['playernumber', '[player fact]'], ['gamenumber', '[game number]'], ['banked', '[bank item]'],
-      ['holder', '[the player who is …]'],
+      ['holder', '[the player who is …]'], ['cardgroup', '[cards]'],
     ]);
     const order = Object.fromEntries(VOCAB_TYPES.filter((t) => t.stubOrder !== undefined).map((t) => [t.name, t.stubOrder]));
     // A stub never turns words into a space: a name like "Go To Jail" would swallow the words of an ordinary sentence.
@@ -978,5 +978,49 @@ describe('names the game never defined', () => {
     // A lone word is only a misspelt suit or value when it looks like one.
     expect(misnamed('cardclass', 'playable')).toBeNull();
     expect(misnamed('card', 'the 2 of clubs', { ...emptyVocab(), maxPlayers: 4 })).toBeNull();
+  });
+});
+
+describe('a group of cards', () => {
+  // The words of a game whose workers sit on jobs: shared zones, zones each player has, and the numbers its cards have.
+  const CREW: Vocab = {
+    ...emptyVocab(), sharedZones: ['pile', 'hall', 'scrap'], playerZones: ['stash', 'workshop', 'crew', 'idle'], maxPlayers: 3,
+    attributes: ['pay', 'skill', 'wage'],
+  };
+  const their = (zone: string) => ({ of: { who: 'actor' }, zone });
+
+  it('reads the cards in one or more zones', () => {
+    expect(parseParam('cardgroup', 'the cards in their crew and their idle', CREW)).toEqual({
+      value: { kind: 'in', zones: [their('crew'), their('idle')], whose: null },
+    });
+    expect(parseParam('cardgroup', 'the cards in the hall', CREW)).toEqual({ value: { kind: 'in', zones: [{ shared: 'hall' }], whose: null } });
+  });
+  it('reads the cards in a zone whose number is more than some', () => {
+    expect(parseParam('cardgroup', 'the cards in the hall whose skill is more than 1', CREW)).toEqual({
+      value: { kind: 'in', zones: [{ shared: 'hall' }], whose: { attribute: 'skill', above: 1 } },
+    });
+    expect(parseParam('cardgroup', 'the cards in their crew whose wage are more than 0', CREW)).toEqual({
+      value: { kind: 'in', zones: [their('crew')], whose: { attribute: 'wage', above: 0 } },
+    });
+  });
+  it('reads the cards on it and the picked cards', () => {
+    expect(parseParam('cardgroup', 'the cards on it', CREW)).toEqual({ value: { kind: 'on it' } });
+    expect(parseParam('cardgroup', 'the picked cards', CREW)).toEqual({ value: { kind: 'picked' } });
+  });
+  it('passes on what is wrong with a zone it names', () => {
+    expect(parseParam('cardgroup', 'the cards in the crew', CREW)).toEqual({ error: '“the crew” — whose crew? Say “their crew”, “each crew” or “p1\'s crew”.' });
+  });
+  it('is no group for other words', () => {
+    expect(parseParam('cardgroup', 'the cards', CREW)).toBeNull();
+    expect(parseParam('cardgroup', 'the cards under it', CREW)).toBeNull();
+    expect(parseParam('cardgroup', 'the cards in the moon', CREW)).toBeNull();
+  });
+  it('names a misnamed zone as the zone type does, and a misnamed number as the attribute type does', () => {
+    expect(misnamedParam('cardgroup', 'the cards in their crwe', CREW)).toEqual({ message: 'There is no zone called “crwe”.', suggestions: ['crew'] });
+    expect(misnamedParam('cardgroup', 'the cards in their crwe', CREW)).toEqual(misnamedParam('zones', 'their crwe', CREW));
+    expect(misnamedParam('cardgroup', 'the cards in the hall whose skil is more than 1', CREW)).toEqual(misnamedParam('attribute', 'skil', CREW));
+    expect(misnamedParam('cardgroup', 'the cards in the hall whose skil is more than 1', CREW)).toMatchObject({ suggestions: ['skill'] });
+    expect(misnamedParam('cardgroup', 'the cards in the hall whose skill is more than 1', CREW)).toBeNull();
+    expect(misnamedParam('cardgroup', 'the cards under it', CREW)).toBeNull();
   });
 });

@@ -6,12 +6,20 @@ import type { Json } from '../table-def';
 export type PhraseKind =
   | 'cards' | 'zone' | 'board' | 'declare' | 'column' | 'condition' | 'effect' | 'turn' | 'who' | 'which' | 'score' | 'winner' | 'moment' | 'given'
   | 'action' | 'target' | 'expect' | 'value';
-/** kind 'lang' = compiler built-ins: all | any | phase | always | if | for | round | missing */
+/** kind 'lang' = compiler built-ins: all | any | phase | always | if | for | for each | round | missing */
 export type PhraseRef = { kind: PhraseKind | 'lang'; phrase: string; args: Json[]; line: number; text: string };
 /** `other` is the one player who is not the actor, in a game for two. */
 export type SeatRef = { seat: string } | { who: 'actor' | 'winner' | 'other' };
 export type ZoneRef = { shared: string } | { each: string } | { of: SeatRef; zone: string };
 export type CardMatch = { [attr: string]: Json };
+/**
+ * Some cards a rule adds up or walks through: those in the zones, slot by slot, keeping only a card whose number `whose` names is more
+ * than `above` when there is one; those on “it”, the card the rule is about; or the set a button's press picked.
+ */
+export type CardGroup =
+  | { kind: 'in'; zones: ZoneRef[]; whose: { attribute: string; above: number } | null }
+  | { kind: 'on it' }
+  | { kind: 'picked' };
 /**
  * `onCards` is there only for a zone each player has whose line ends “, where every card is on a card”: every card in it must sit on
  * a card, and only such a zone may hold a card that sits on one.

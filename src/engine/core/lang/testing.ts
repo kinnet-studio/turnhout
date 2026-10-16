@@ -423,6 +423,9 @@ export const WORKED_GAME = [
   'Done:', '  Only if its red done are at least its red need.', '  Only if its gold done are at least its gold need.',
 ].join('\n');
 
+/** WORKED_GAME with a job's crew red: the red work of the cards on it, added up. */
+export const TOTALS_GAME = [WORKED_GAME, '', 'Crew red:', "  A card's crew red is the total red work of the cards on it."].join('\n');
+
 /** The loop of the board fixtures: a start, two streets, a tax, a station, a utility and two chance spaces. */
 export const FIXTURE_SPACES: SpaceSpec[] = [
   { name: 'Go', attrs: { kind: 'go' } },

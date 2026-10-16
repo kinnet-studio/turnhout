@@ -127,7 +127,7 @@ function ownerOfIt(env: PhraseEnv): PlayerId {
 }
 
 /** The counter players pay with. Each phrase that moves it says `needsPayment`, so the compiler only lets it into a game that names one. */
-function payCounter(env: PhraseEnv): string {
+export function payCounter(env: PhraseEnv): string {
   const counter = boardIn(env).payWith;
   if (counter === null) throw new Error('This phrase needs something to pay with, but the board names none.');
   return counter;

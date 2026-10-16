@@ -10,10 +10,10 @@ import type {
   BoardSpec, CardMatch, ConditionFn, DeclareFn, EffectFn, ExpectFn, FactItem, MomentFn, PhraseEnv, SpaceClass, SpaceSpec, TargetFn, ThingFact,
   WhichFn, WinnerFn, ZoneRef,
 } from '../types';
-import { matchesCard, relocate, resolveZoneIds, zoneIdFor } from '../zones';
+import { matchesCard, relocate, zoneIdFor } from '../zones';
 import { transfer } from './board-phrases';
 import { describeCard } from './example-phrases';
-import { cardHasFlag, cardOf, cardValueOf, describeZone, itOf, movedCard, mustBeKept, soleZone, theyOf } from './support';
+import { cardHasFlag, cardOf, cardsInZones, cardValueOf, describeZone, itOf, movedCard, mustBeKept, soleZone, theyOf } from './support';
 
 /** Every fact in the list, told what it is on. */
 const declares = (on: ThingFact['on']): DeclareFn => ([facts]) => (facts as FactItem[]).map((fact) => ({ ...fact, on }));
@@ -281,9 +281,6 @@ const paysForEach: EffectFn = (env, [n, name]) => {
   const held = boardOf(env).spaces.reduce((sum, _space, at) => (ownerOf(env.state, at) === they ? sum + heldBy(env.state, at, fact.name) : sum), 0);
   return transfer(env, they, null, (n as number) * held);
 };
-
-/** Every card in the zones a reference names, zone by zone and slot by slot. */
-const cardsInZones = (env: PhraseEnv, ref: ZoneRef): CardState[] => resolveZoneIds(ref, env).flatMap((id) => zoneCards(env.state, id));
 
 /** Its facts go with it: a move only changes where the card is. */
 const moveItTo: EffectFn = (env, [zone]) => relocate(env.state, [cardOf(env)], soleZone(zone as ZoneRef, env), env.game);

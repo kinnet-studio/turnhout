@@ -3,7 +3,7 @@ import { RuleError, type Diagnostic } from './diagnostics';
 import type { OutlineNode } from './outline';
 import { normalizeLine, stubFor, type MatchResult, type Misnamed, type PhraseLibrary, type PhraseOpts } from './phrases';
 import { misnamedParam, parseParam } from './refs';
-import type { CondGroup, ParamType, PhraseKind, PhraseRef, Vocab } from './types';
+import type { CardGroup, CondGroup, ParamType, PhraseKind, PhraseRef, Vocab } from './types';
 
 /**
  * What every line of one compile stage shares. Never change `vocab` after a line has been matched with it. `inMove`,
@@ -39,10 +39,16 @@ const NEEDS_ONTO = (clean: string) =>
   `“${clean}” only makes sense in a button that picks a card and the card it goes to, like “A player may stack a card from their hand to a card in the row.”`;
 const IF_FRAME = /^if\s+(.+)$/i;
 const FOR_FRAME = /^for\s+(.+)$/i;
+/** group 1 = the words after “For each card ”, which say which cards and then, after a comma, what happens to each */
+const FOR_EACH_FRAME = /^for each card (.+)$/i;
+/** What “For each card ” and the words after it are read as: the group of cards those words name. */
+const THE_CARDS = 'the cards ';
 /** A button's cost line, which is no effect: under a rule or in `Then:` it is in the wrong place, not a phrase nobody has written. */
 const COST_LINE = /^it costs /i;
 const MISPLACED_COST = '“It costs …” goes right under a button, beside its Only if lines.';
 const NO_HOLDER_NAMED = (head: string) => `“${head}” doesn't name a player. Write “For the player who is …,” with something players can be.`;
+const NO_GROUP_NAMED = (head: string) => `“${head}” doesn't say which cards. Write “For each card in their hand, …” or “For each card on it, …”.`;
+const NOTHING_FOR_EACH = 'Say what happens to each card, like “For each card in their hand, move it to the pile.”';
 const COMMA = /, /g;
 const PHASE_NAME = /^phase\s*:\s*(.*)$/i;
 
@@ -137,22 +143,41 @@ function tryMisnamed(kinds: PhraseKind[], text: string, ctx: LineCtx): Misnamed 
   }
 }
 
+const PARAM = /\{([^{}]+)\}/g;
+
+/** The groups of cards among a phrase's arguments: those its pattern reads as `{cardgroup}`, as the library gives one argument a parameter. */
+function cardGroupsOf(pattern: string, args: Json[]): CardGroup[] {
+  // Asked of every line read and of every press judged, so the many phrases without a group skip the reading of their parameters.
+  if (!pattern.includes('{cardgroup}')) return [];
+  const types = [...pattern.matchAll(PARAM)].map((found) => found[1]);
+  return args.filter((_, at) => types[at] === 'cardgroup') as CardGroup[];
+}
+
+/** Whether a group is “the cards on it”, which reads the card the rule is about, or “the picked cards”, which reads a press's set. */
+const readsItsCard = (groups: CardGroup[]): boolean => groups.some((group) => group.kind === 'on it');
+const readsPickedCards = (groups: CardGroup[]): boolean => groups.some((group) => group.kind === 'picked');
+
 /**
  * Whether a line of the group reads a card a press is about: the card a move makes, or “it”, the picked cards of a set, or the
- * target card. Only such phrases may, so a group without one says the same of every card. A ref nobody wrote a phrase for reads nothing.
+ * target card, by itself or through “the cards on it” or “the picked cards” (P8). Only such phrases may, so a group without one says the
+ * same of every card. A ref nobody wrote a phrase for reads nothing.
  */
 export function readsPressCard(library: PhraseLibrary, group: CondGroup): boolean {
   return group.refs.some((ref) => {
     const entry = ref.kind === 'lang' ? undefined : library.get(ref.kind, ref.phrase);
-    return entry?.needsMove === true || entry?.needsCard === true || entry?.needsCards === true || entry?.needsOnto === true;
+    if (entry === undefined) return false;
+    const groups = cardGroupsOf(ref.phrase, ref.args);
+    return entry.needsMove || entry.needsCard || entry.needsCards || entry.needsOnto || readsItsCard(groups) || readsPickedCards(groups);
   });
 }
 
 /**
  * What a phrase needs that the game or the rule around it does not give, said for the designer; null when it has all it
- * needs. The first lack is the one reported, and a board or dice comes first: no rule can make up for a game without them.
+ * needs. The first lack is the one reported, and a board or dice comes first: no rule can make up for a game without them. A group
+ * of cards among `groups` needs what it reads: “the cards on it” a card, “the picked cards” a button that picks some, and the cards
+ * in their zones a player, as any of their zones does.
  */
-function unmetNeed(entry: Required<PhraseOpts> | undefined, args: Json[], clean: string, ctx: LineCtx): string | null {
+function unmetNeed(entry: Required<PhraseOpts> | undefined, args: Json[], clean: string, ctx: LineCtx, groups: CardGroup[] = []): string | null {
   // A game has a board when its Board: section has a loop of spaces, and dice only come with a board.
   if (entry?.needsBoard && ctx.vocab.spaces.length === 0) return NEEDS_BOARD(clean);
   if (entry?.needsDice && !ctx.vocab.dice) return NEEDS_DICE(clean);
@@ -164,11 +189,11 @@ function unmetNeed(entry: Required<PhraseOpts> | undefined, args: Json[], clean:
   }
   if (!aboutPlayer && args.some(mentionsActor)) return `“${clean}” only makes sense in a rule about a player's move.`;
   if (!ctx.space && entry?.needsSpace) return `“${clean}” only makes sense in a rule about a space, such as an action or a “lands on” rule.`;
-  if (!ctx.card && entry?.needsCard) return `“${clean}” only makes sense in a rule about a card, such as “When a card …”.`;
+  if (!ctx.card && (entry?.needsCard || readsItsCard(groups))) return `“${clean}” only makes sense in a rule about a card, such as “When a card …”.`;
   if (!ctx.drawn && entry?.needsDrawnCard) return `“${clean}” only makes sense in a card's says column.`;
   if (!ctx.amount && entry?.needsAmount) return NEEDS_AMOUNT(clean);
   if (!ctx.picked && entry?.needsPick) return NEEDS_PICK(clean);
-  if (!ctx.cards && entry?.needsCards) return NEEDS_CARDS(clean);
+  if (!ctx.cards && (entry?.needsCards || readsPickedCards(groups))) return NEEDS_CARDS(clean);
   if (!ctx.onto && entry?.needsOnto) return NEEDS_ONTO(clean);
   if (entry?.needsPayment && ctx.vocab.payWith === null) return NEEDS_PAYMENT;
   return null;
@@ -201,7 +226,7 @@ export function matchLine(
   switch (result.status) {
     case 'ok': {
       const entry = ctx.library.get(found, result.pattern);
-      const problem = unmetNeed(entry, result.args, clean, ctx);
+      const problem = unmetNeed(entry, result.args, clean, ctx, cardGroupsOf(result.pattern, result.args));
       if (problem) {
         addProblem(ctx.diagnostics, line, problem, { kind: 'invalid', text: clean });
         return missingRef(found, clean, line);
@@ -260,13 +285,52 @@ function matchForLine(body: string, clean: string, line: number, ctx: LineCtx): 
   return missingRef('effect', clean, line);
 }
 
-/** What a line does: the effect of an `If …, …` or a `For …, …` line, else the line itself. */
+/**
+ * Reads “For each card <cards>, <effect>” (R6): the effect is run about each of the cards in turn, so “it” is that card, and “they” are
+ * still whoever the line is about. It runs with no card move, so a phrase that needs one is refused here even in a move. The line is cut at
+ * a comma, since either part may hold commas: the first cut where the cards and the effect both read wins, then the first where the
+ * cards read, then the first. The cards are read first, as “the cards …”, and what is wrong with them is what is reported: what their
+ * zones or number say is wrong (“the crew” has no owner), a zone or a number the game never defined, else words that name no cards. Cards
+ * that are named must suit the rule around the line, as a phrase's own words must: their zones need a player, “the cards on it” a card.
+ */
+function matchForEachLine(body: string, clean: string, line: number, ctx: LineCtx): PhraseRef {
+  const each: LineCtx = { ...ctx, card: true, inMove: false };
+  const groupOf = (head: string) => parseParam('cardgroup', `${THE_CARDS}${head}`, ctx.vocab);
+  const names = (head: string) => {
+    const read = groupOf(head);
+    return read !== null && 'value' in read;
+  };
+  const refuse = (message: string, extra: Partial<Diagnostic> = {}): PhraseRef => {
+    addProblem(ctx.diagnostics, line, message, { kind: 'invalid', text: clean, ...extra });
+    return missingRef('effect', clean, line);
+  };
+  const cuts = [...body.matchAll(COMMA)].map((m) => ({ head: body.slice(0, m.index), effect: body.slice(m.index + 2) }));
+  const chosen = cuts.find((cut) => names(cut.head) && canRead('effect', cut.effect, each))
+    ?? cuts.find((cut) => names(cut.head))
+    ?? cuts[0];
+  if (!chosen) return refuse(NOTHING_FOR_EACH);
+  const read = groupOf(chosen.head);
+  if (read !== null && 'error' in read) return refuse(read.error);
+  if (read === null) {
+    const misnamed = misnamedParam('cardgroup', `${THE_CARDS}${chosen.head}`, ctx.vocab);
+    return misnamed ? refuse(misnamed.message, { suggestions: misnamed.suggestions }) : refuse(NO_GROUP_NAMED(chosen.head));
+  }
+  const group = read.value as CardGroup;
+  // The words before the comma, as written: “For each card in their workshop”.
+  const written = clean.slice(0, clean.length - body.length + chosen.head.length);
+  const unmet = unmetNeed(undefined, [group], written, ctx, [group]);
+  if (unmet !== null) return refuse(unmet);
+  return { kind: 'lang', phrase: 'for each', args: [group, matchLine('effect', chosen.effect, line, each)], line, text: clean };
+}
+
+/** What a line does: the effect of an `If …, …`, a `For …, …` or a `For each card …, …` line, else the line itself. */
 export function innerEffect(ref: PhraseRef): PhraseRef {
-  return ref.kind === 'lang' && (ref.phrase === 'if' || ref.phrase === 'for') ? (ref.args[1] as PhraseRef) : ref;
+  return ref.kind === 'lang' && (ref.phrase === 'if' || ref.phrase === 'for' || ref.phrase === 'for each') ? (ref.args[1] as PhraseRef) : ref;
 }
 
 /**
- * Reads one effect line. “For …, <effect>” runs the effect as the player who holds a flag. “If <condition>, <effect>” is tried
+ * Reads one effect line. “For each card …, <effect>” runs the effect for each card of a group, and “For …, <effect>” runs it as the
+ * player who holds a flag. “If <condition>, <effect>” is tried
  * at every comma, since either part may hold commas; the first comma where both parts are phrases wins. When none does, the
  * part that needs fixing is the one reported. A button's cost line is reported as one in the wrong place, and kept as a placeholder.
  */
@@ -276,6 +340,9 @@ export function matchEffectLine(text: string, line: number, ctx: LineCtx): Phras
     addProblem(ctx.diagnostics, line, MISPLACED_COST, { text: clean });
     return missingRef('effect', clean, line);
   }
+  // Tried before the holder frame, whose “For …” it starts like.
+  const each = FOR_EACH_FRAME.exec(clean);
+  if (each) return matchForEachLine(each[1], clean, line, ctx);
   const holding = FOR_FRAME.exec(clean);
   if (holding) return matchForLine(holding[1], clean, line, ctx);
   const frame = IF_FRAME.exec(clean);

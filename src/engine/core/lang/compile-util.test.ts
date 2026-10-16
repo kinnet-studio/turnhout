@@ -4,6 +4,9 @@ import type { Diagnostic } from './diagnostics';
 import { PhraseLibrary, STATIC_TYPES, emptyVocab } from './phrases';
 import { VOCAB_TYPES } from './refs';
 import type { PhraseRef } from './types';
+import { compileGame } from './compile';
+import { createDefaultLibrary } from './library/index';
+import { TOTALS_GAME, vocabFor } from './testing';
 
 const library = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
   .cards('a deck called {name}', () => ({ kind: 'table', identities: [], start: 'deck', acesHigh: false }))
@@ -150,5 +153,135 @@ describe('the effect a line runs', () => {
     expect(innerEffect(effect)).toBe(effect);
     expect(innerEffect({ kind: 'lang', phrase: 'if', args: [condition, effect], line: 3, text: 'If the bank is empty, they cheer' })).toBe(effect);
     expect(innerEffect({ kind: 'lang', phrase: 'for', args: ['leading', effect], line: 3, text: 'For the player who is leading, they cheer' })).toBe(effect);
+  });
+});
+
+describe('a line run for each card of a group', () => {
+  const lib = createDefaultLibrary();
+  const totals = compileGame(TOTALS_GAME, lib).game!;
+  /** The context of a line of TOTALS_GAME, in a rule about what `about` says. */
+  const totalsCtx = (about: Partial<LineCtx> = {}): LineCtx & { diagnostics: Diagnostic[] } => ({
+    ...ctx(), library: lib, vocab: vocabFor(totals), gameName: 'Crew', ...about, diagnostics: [],
+  });
+  const NEEDS_CARD = (head: string) => `“${head}” only makes sense in a rule about a card, such as “When a card …”.`;
+
+  it('reads the rest of the line about each card, and “they” as whoever the line is about', () => {
+    const button = totalsCtx({ player: true, space: true });
+    expect(matchEffectLine('For each card in their workshop, it loses its new red.', 5, button)).toEqual({
+      kind: 'lang', phrase: 'for each', line: 5, text: 'For each card in their workshop, it loses its new red',
+      args: [
+        { kind: 'in', zones: [{ of: { who: 'actor' }, zone: 'workshop' }], whose: null },
+        { kind: 'effect', phrase: 'it loses its {attribute}', args: ['new red'], line: 5, text: 'it loses its new red' },
+      ],
+    });
+    expect(button.diagnostics).toEqual([]);
+  });
+  it('(guard: passes before and after) leaves “For the player who is …” to the holder frame', () => {
+    const vocab = vocabFor(totals);
+    const first = totalsCtx({ vocab: { ...vocab, facts: [...vocab.facts, { name: 'first', on: 'player', kind: 'flag' }] } });
+    expect(matchEffectLine('For the player who is first, they get 1 coin.', 5, first)).toMatchObject({
+      kind: 'lang', phrase: 'for', args: ['first', { kind: 'effect', phrase: 'they get {int} {counter}', args: [1, 'coins'] }],
+    });
+    expect(first.diagnostics).toEqual([]);
+  });
+  it('reads the cards first: a group of their cards needs a player', () => {
+    const none = totalsCtx();
+    expect(matchEffectLine('For each card in their workshop, they get 1 coin.', 5, none)).toMatchObject({ kind: 'lang', phrase: 'missing', args: ['effect'] });
+    expect(none.diagnostics).toEqual([expect.objectContaining({
+      line: 5, kind: 'invalid', message: '“For each card in their workshop” only makes sense in a rule about a player\'s move.',
+      text: 'For each card in their workshop, they get 1 coin',
+    })]);
+  });
+  it('names a misnamed zone', () => {
+    const button = totalsCtx({ player: true });
+    expect(matchEffectLine('For each card in their wrokshop, it is tired.', 5, button)).toMatchObject({ kind: 'lang', phrase: 'missing' });
+    expect(button.diagnostics).toEqual([expect.objectContaining({
+      line: 5, kind: 'invalid', message: 'There is no zone called “wrokshop”.', suggestions: ['workshop'],
+    })]);
+  });
+  it('needs a card for the cards on it', () => {
+    const button = totalsCtx({ player: true });
+    expect(matchEffectLine('For each card on it, it is tired.', 5, button)).toMatchObject({ kind: 'lang', phrase: 'missing' });
+    expect(button.diagnostics.map((d) => [d.line, d.message])).toEqual([[5, NEEDS_CARD('For each card on it')]]);
+    const aboutCard = totalsCtx({ card: true });
+    expect(matchEffectLine('For each card on it, it is tired.', 5, aboutCard)).toMatchObject({ phrase: 'for each', args: [{ kind: 'on it' }, { phrase: 'it is {cardflag}' }] });
+    expect(aboutCard.diagnostics).toEqual([]);
+  });
+  it('passes on what is wrong with a zone it names', () => {
+    const button = totalsCtx({ player: true });
+    matchEffectLine('For each card in the crew, it is tired.', 5, button);
+    expect(button.diagnostics.map((d) => [d.line, d.message])).toEqual([[5, '“the crew” — whose crew? Say “their crew”, “each crew” or “p1\'s crew”.']]);
+  });
+  it('names a misnamed number', () => {
+    const button = totalsCtx({ player: true });
+    matchEffectLine('For each card in the hall whose skil is more than 1, it is tired.', 5, button);
+    expect(button.diagnostics).toEqual([expect.objectContaining({ line: 5, message: 'There is no card attribute called “skil”.', suggestions: ['skill'] })]);
+  });
+  it('says “which cards” for words that are no group', () => {
+    const button = totalsCtx({ player: true });
+    matchEffectLine('For each card picked, it is tired.', 5, button);
+    expect(button.diagnostics.map((d) => [d.line, d.message])).toEqual([
+      [5, '“picked” doesn\'t say which cards. Write “For each card in their hand, …” or “For each card on it, …”.'],
+    ]);
+  });
+  it('runs its effect with no card move, so a phrase that needs one is refused even in one', () => {
+    const moving = totalsCtx({ inMove: true, player: true, card: true });
+    expect(matchEffectLine('For each card in their workshop, they pay the card\'s pay.', 5, moving)).toMatchObject({
+      phrase: 'for each', args: [{ kind: 'in' }, { kind: 'lang', phrase: 'missing' }],
+    });
+    expect(moving.diagnostics.map((d) => d.message)).toEqual(['“they pay the card\'s pay” only makes sense in a rule about a player\'s move.']);
+  });
+  it('cuts the line at the first comma where both parts read', () => {
+    const button = totalsCtx({ player: true });
+    expect(matchEffectLine('For each card in their crew and their idle, it is tired.', 5, button)).toMatchObject({
+      phrase: 'for each', args: [{ zones: [{ of: { who: 'actor' }, zone: 'crew' }, { of: { who: 'actor' }, zone: 'idle' }] }, { phrase: 'it is {cardflag}' }],
+    });
+    expect(button.diagnostics).toEqual([]);
+  });
+  it('asks what happens to each card when nothing follows a comma', () => {
+    const button = totalsCtx({ player: true });
+    expect(matchEffectLine('For each card in their workshop.', 5, button)).toMatchObject({ kind: 'lang', phrase: 'missing' });
+    expect(button.diagnostics.map((d) => d.message)).toEqual([expect.stringContaining('Say what happens to each card')]);
+  });
+});
+
+describe('a group of cards a phrase reads', () => {
+  const lib = createDefaultLibrary();
+  const totals = compileGame(TOTALS_GAME, lib).game!;
+  const totalsCtx = (about: Partial<LineCtx> = {}): LineCtx & { diagnostics: Diagnostic[] } => ({
+    ...ctx(), library: lib, vocab: vocabFor(totals), gameName: 'Crew', ...about, diagnostics: [],
+  });
+
+  it('needs a card for the cards on it', () => {
+    const none = totalsCtx();
+    expect(matchLine('condition', 'the total wage of the cards on it is 0', 4, none)).toMatchObject({ kind: 'lang', phrase: 'missing' });
+    expect(none.diagnostics.map((d) => [d.line, d.message])).toEqual([
+      [4, '“the total wage of the cards on it is 0” only makes sense in a rule about a card, such as “When a card …”.'],
+    ]);
+    const aboutCard = totalsCtx({ card: true });
+    expect(matchLine('condition', 'the total wage of the cards on it is 0', 4, aboutCard)).toMatchObject({ kind: 'condition' });
+    expect(aboutCard.diagnostics).toEqual([]);
+  });
+  it('needs a button that picks some cards for the picked cards', () => {
+    const button = totalsCtx({ player: true, space: true });
+    expect(matchLine('condition', 'the total wage of the picked cards is 0', 4, button)).toMatchObject({ kind: 'lang', phrase: 'missing' });
+    expect(button.diagnostics.map((d) => [d.line, d.message])).toEqual([
+      [4, '“the total wage of the picked cards is 0” only makes sense in a button that picks some cards, like “A player may discard some cards from their hand.”'],
+    ]);
+    const picking = totalsCtx({ player: true, cards: true });
+    expect(matchLine('condition', 'the total wage of the picked cards is 0', 4, picking)).toMatchObject({ kind: 'condition' });
+    expect(picking.diagnostics).toEqual([]);
+  });
+  it('needs a player for their cards', () => {
+    const none = totalsCtx();
+    matchLine('condition', 'the total wage of the cards in their crew is 0', 4, none);
+    expect(none.diagnostics.map((d) => d.message)).toEqual(['“the total wage of the cards in their crew is 0” only makes sense in a rule about a player\'s move.']);
+  });
+});
+
+describe('the effect a line run for each card runs', () => {
+  it('is the line it runs for each card', () => {
+    const effect: PhraseRef = { kind: 'effect', phrase: 'it is {cardflag}', args: ['tired'], line: 3, text: 'it is tired' };
+    expect(innerEffect({ kind: 'lang', phrase: 'for each', args: [{ kind: 'on it' }, effect], line: 3, text: 'For each card on it, it is tired' })).toBe(effect);
   });
 });

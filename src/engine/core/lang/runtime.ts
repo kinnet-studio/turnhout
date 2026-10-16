@@ -9,10 +9,11 @@ import { holderOf, interruptedTurn, setCounter } from './board-state';
 import { cardAttribute, cardFact } from './card-facts';
 import { isMissing, readsPressCard } from './compile-util';
 import { isNoSuchNumber, MissingPhraseError, RuleError } from './diagnostics';
+import { cardsIn } from './library/support';
 import type { PhraseLibrary } from './phrases';
 import { phaseTakesTurns, ROUND_FRAME, ROUND_KEY, roundFinished, roundOf, startPlayerOf, TURN_OF_KEY } from './turns';
 import type {
-  ActionFn, ColumnFn, CompiledGame, CompiledMoment, CompiledTrigger, CondGroup, ConditionFn, EffectFn, ExampleEnv, ExpectFn, MomentFn, Moment, MoveInfo,
+  ActionFn, CardGroup, ColumnFn, CompiledGame, CompiledMoment, CompiledTrigger, CondGroup, ConditionFn, EffectFn, ExampleEnv, ExpectFn, MomentFn, Moment, MoveInfo,
   PhraseEnv, PhraseKind, PhraseRef, ScoreFn, Subject, TargetFn, TurnFn, ValueFn, WhichFn, WhoFn, WinnerFn, WorkedValue,
 } from './types';
 
@@ -65,7 +66,7 @@ function unlessNoSuchNumber<T>(line: () => T, otherwise: T): T {
 
 /**
  * Runs a compiled game's phrases against game states: the code behind each `PhraseRef`, plus the compiler's own
- * `lang` refs (all, any, phase, always, if, for, missing). A ref nobody has written a phrase for throws a
+ * `lang` refs (all, any, phase, always, if, for, for each, missing). A ref nobody has written a phrase for throws a
  * MissingPhraseError when it is reached; whatever else a phrase throws comes out as a RuleError with its line.
  */
 export class LangRuntime {
@@ -117,8 +118,10 @@ export class LangRuntime {
   }
 
   /**
-   * An effect or a Given step, or the compiler's “If …, …” or “For …, …”. A For line runs its effect as the player who holds
-   * the flag, with no card move, so “their” is theirs too; the space, amount and pick of a press stay as they were.
+   * An effect or a Given step, or the compiler's “If …, …”, “For …, …” or “For each card …, …”. A For line runs its effect as the player
+   * who holds the flag, with no card move, so “their” is theirs too; the space, amount and pick of a press stay as they were. A For each
+   * line runs its effect about each card of its group in turn, with no card move, “it” being that card and everything else what the line
+   * is about.
    */
   run(ref: PhraseRef, state: GameState, move?: MoveInfo, example?: ExampleEnv, subject?: Subject): GameState {
     if (ref.kind === 'lang' && ref.phrase === 'if') {
@@ -130,6 +133,15 @@ export class LangRuntime {
       const holder = this.holderFor(ref, state, flag);
       return this.run(effect, state, undefined, example, { ...(subject ?? { player: null, space: null, card: null }), player: holder });
     }
+    if (ref.kind === 'lang' && ref.phrase === 'for each') {
+      const [group, effect] = ref.args as [CardGroup, PhraseRef];
+      // A card move's lines are about the player making it, as `env` says.
+      const about = subject ?? (move ? { player: move.by, space: null, card: null } : NO_ONE);
+      // The cards are those of the group when the line starts: a card its effect moves in is not one of them, nor is one walked
+      // twice for being moved, and each that it moves away is still walked, in its turn.
+      const ids = this.cardsFor(ref, group, this.env(state, move, example, about));
+      return ids.reduce((s, card) => this.run(effect, s, undefined, example, { ...about, card }), state);
+    }
     return this.call<EffectFn, GameState>(ref, ['effect', 'given'], (fn) => fn(this.env(state, move, example, subject), ref.args));
   }
 
@@ -137,6 +149,15 @@ export class LangRuntime {
   private holderFor(ref: PhraseRef, state: GameState, flag: string): PlayerId {
     try {
       return holderOf(state, this.seats, flag);
+    } catch (error) {
+      throw located(error, ref);
+    }
+  }
+
+  /** The ids of the cards of a For each line's group, in its order; a mistake in reading them is a mistake on that line. */
+  private cardsFor(ref: PhraseRef, group: CardGroup, env: PhraseEnv): string[] {
+    try {
+      return cardsIn(env, group).map((card) => card.id);
     } catch (error) {
       throw located(error, ref);
     }
