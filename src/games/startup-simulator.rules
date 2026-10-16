@@ -145,69 +145,56 @@ In every phase:
 
 Phase: actions
   Players take turns.
-  Hint: Spend 3 actions: recruit, draft ideas or research. Drag a card from the agency row or a market to hire or draft it.
+  Hint: Spend 3 actions: recruit, draft ideas or research. Press hire or draft, then pick the card.
   A player may recruit a junior software dev.
-    Only if they have at least 1 action.
+    It costs 1 action.
     Only if they have at least 2 capital.
     Then:
       They pay 2.
-      They spend 1 action.
       A new Junior Software Dev goes to their bench.
   A player may recruit a junior hardware eng.
-    Only if they have at least 1 action.
+    It costs 1 action.
     Only if they have at least 2 capital.
     Then:
       They pay 2.
-      They spend 1 action.
       A new Junior Hardware Eng goes to their bench.
   A player may recruit a junior qa tester.
-    Only if they have at least 1 action.
+    It costs 1 action.
     Only if they have at least 2 capital.
     Then:
       They pay 2.
-      They spend 1 action.
       A new Junior QA Tester goes to their bench.
   A player may hire a card from the agency row to their bench.
-    Only if they have at least 1 action.
+    It costs 1 action.
     Only if they have at least the card's cost in capital.
     Then:
       They pay the card's cost.
-      They spend 1 action.
   A player may hire a card from the open job market to their bench.
-    Only if they have at least 1 action.
+    It costs 1 action.
     Only if they have at least 1 capital.
     Then:
       They pay 1.
-      They spend 1 action.
   A player may draft a card from the seed market to their backlog.
-    Only if they have at least 1 action.
+    It costs 1 action.
     Only if their backlog has fewer than 4 cards.
-    Then:
-      They spend 1 action.
   A player may draft a card from the growth market to their backlog.
-    Only if they have at least 1 action.
+    It costs 1 action.
     Only if their backlog has fewer than 4 cards.
-    Then:
-      They spend 1 action.
   A player may draft a card from the open idea pool to their backlog.
-    Only if they have at least 2 actions.
+    It costs 2 actions.
     Only if their backlog has fewer than 4 cards.
-    Then:
-      They spend 2 actions.
   A player may research the seed deck.
-    Only if they have at least 1 action.
+    It costs 1 action.
     Only if their backlog has fewer than 4 cards.
     Only if the seed deck is not empty.
     Then:
-      They spend 1 action.
       Deal up to 3 cards from the seed deck to their research.
       The research phase starts with them.
   A player may research the growth deck.
-    Only if they have at least 1 action.
+    It costs 1 action.
     Only if their backlog has fewer than 4 cards.
     Only if the growth deck is not empty.
     Then:
-      They spend 1 action.
       Deal up to 3 cards from the growth deck to their research.
       The research phase starts with them.
   A player may end their actions.
@@ -217,8 +204,9 @@ Phase: actions
 
 Phase: research
   Hint: Keep one of the cards you drew. The rest go to the open idea pool.
-  A player may keep a card from their research to their backlog.
+  A player may keep a card in their research.
     Then:
+      Move it to their backlog.
       Move their research to the open idea pool.
       Go back to the interrupted turn.
   When their research has the market crash:
@@ -228,15 +216,19 @@ Phase: research
     Go back to the interrupted turn.
 
 Phase: bench cleanup
-  Hint: Your bench holds 5 cards. Drag the rest to the open job market.
-  A player may discard a card from their bench to the open job market.
+  Hint: Your bench holds 5 cards. Discard the rest to the open job market.
+  A player may discard a card in their bench.
     Only if their bench has more than 5 cards.
+    Then:
+      Move it to the open job market.
   When their bench has fewer than 6 cards, go to backlog cleanup.
 
 Phase: backlog cleanup
-  Hint: Your backlog holds 3 cards. Drag the rest to the open idea pool.
-  A player may discard a card from their backlog to the open idea pool.
+  Hint: Your backlog holds 3 cards. Discard the rest to the open idea pool.
+  A player may discard a card in their backlog.
     Only if their backlog has more than 3 cards.
+    Then:
+      Move it to the open idea pool.
   When their backlog has fewer than 4 cards:
     The turn passes to the left.
 

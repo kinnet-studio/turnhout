@@ -9,6 +9,7 @@ import { parseTextFaceKey } from '@/engine/core/lang/cards';
 import { compileGame } from '@/engine/core/lang/compile';
 import { fitsTable, fittedLayout } from '@/engine/core/lang/fit-layout';
 import { createDefaultLibrary } from '@/engine/core/lang/library';
+import { TURN_GAME } from '@/engine/core/lang/testing';
 import { relocate } from '@/engine/core/lang/zones';
 import type { CardTableProps } from '@/engine/react';
 import { BUTTON_ROW } from './board-controls';
@@ -42,6 +43,9 @@ const cardsIn = (zoneId: string) => table!.placement.cards.filter((c) => c.zoneI
 const lineOf = (seat: string) => within(screen.getByTestId('tableaux')).getByText(new RegExp(`^${seat} `)).textContent;
 const status = () => screen.getByText(/^seat: p/).textContent;
 const press = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
+const picker = () => screen.getByRole('group', { name: 'Pick cards' });
+const pickFirst = () => fireEvent.click(within(picker()).getAllByRole('button', { name: /^Pick / })[0]);
+const pickNamed = (name: string) => fireEvent.click(within(picker()).getAllByRole('button', { name: `Pick ${name}` })[0]);
 const drop = (cardId: string, from: string, to: string) =>
   act(() => table!.onDrop!({ cardId, fromZoneId: from, toZoneId: to, slot: 0, worldPoint: { x: 0, y: 0 } }));
 
@@ -123,12 +127,13 @@ describe('Playtest of a game too big for one table', () => {
     expect(status()).toBe(`seat: ${O} — research — ${hint('research')} — waiting for ${S}`);
   });
 
-  it('moves a card dragged on the fitted table', () => {
+  it('moves a card picked on the fitted table', () => {
     mount();
     const card = cardsIn('agency-row').find((c) => Number(parseTextFaceKey(c.faceKey)!.cost) <= 7);
     expect(card, 'seed 1 deals an affordable agency card').toBeDefined();
     const cost = Number(parseTextFaceKey(card!.faceKey)!.cost);
-    drop(card!.id, 'agency-row', `bench-${S}`);
+    press('Hire a card from the agency row to your bench');
+    pickNamed(parseTextFaceKey(card!.faceKey)!.name);
     const expected = `${S} ${7 - cost} capital, 2 actions · bench 4`;
     expect(lineOf(S)?.slice(0, expected.length)).toBe(expected);
   });
@@ -219,19 +224,21 @@ describe('a round played through the page', () => {
     expect(lineOf(S)).toBe(`${S} 1 capital, 0 actions · bench 6 · backlog 1 · research 0 · start player`);
     expect(status()).toBe(`seat: ${S} — Your turn — ${hint('bench cleanup')}`);
 
-    const [spare] = cardsIn(`bench-${S}`);
-    drop(spare.id, `bench-${S}`, 'open-job-market');
+    press('Discard a card in your bench');
+    pickFirst();
     selected(`${N} — to act`);
     expect(cardsIn('open-job-market')).toHaveLength(1);
     expect(lineOf(S)).toContain('bench 5');
 
-    drop(spare.id, 'open-job-market', `bench-${N}`);
+    press('Hire a card from the open job market to your bench');
+    pickFirst();
     begins(N, `${N} 6 capital, 2 actions · bench 4`);
 
     const hire = cardsIn('agency-row').find((c) => Number(parseTextFaceKey(c.faceKey)!.cost) <= 6);
     expect(hire, 'seed 1 deals an agency card that 6 capital buys').toBeDefined();
     const cost = Number(parseTextFaceKey(hire!.faceKey)!.cost);
-    drop(hire!.id, 'agency-row', `bench-${N}`);
+    press('Hire a card from the agency row to your bench');
+    pickNamed(parseTextFaceKey(hire!.faceKey)!.name);
     begins(N, `${N} ${6 - cost} capital, 1 action · bench 5`);
 
     press('Research the seed deck');
@@ -245,13 +252,14 @@ describe('a round played through the page', () => {
     fireEvent.click(tab(`${N} — to act`));
     selected(`${N} — to act`);
 
-    drop(drawn[0].id, `research-${N}`, `backlog-${N}`);
+    press('Keep a card in your research');
+    pickFirst();
     selected(`${T} — to act`);
     expect(cardsIn('open-idea-pool')).toHaveLength(2);
     expect(lineOf(N)).toContain('0 actions · bench 5 · backlog 2 · research 0');
 
-    const [idea] = cardsIn('seed-market');
-    drop(idea.id, 'seed-market', `backlog-${T}`);
+    press('Draft a card from the seed market to your backlog');
+    pickFirst();
     begins(T, `${T} 7 capital, 2 actions · bench 3 · backlog 2`);
     expect(cardsIn('seed-market')).toHaveLength(2);
 
@@ -295,11 +303,20 @@ describe("the buttons' room", () => {
   const room = () => screen.getByTestId('seat-buttons');
 
   it('is kept when a phase has no buttons, so the table does not jump', () => {
-    mount();
+    // Every phase of Startup Simulator has a button, so Chores stands in, crowded by four more rows: its tidying has only a card
+    // to drag. Two cards on the list keep the turn there, since tidying passes it once the list has fewer than 2.
+    const DONE = '  The done pile is a pile in the center that everyone can see.';
+    const rows = ['hall', 'yard', 'loft', 'barn'].map((zone) => `  The ${zone} is a row in the center that everyone can see.`);
+    const chores = compileGame(TURN_GAME.replace(DONE, [DONE, ...rows].join('\n')), lib).game!;
+    expect(fitsTable(chores.zones, seatsOf(3))).toBe(false);
+    const set = createEngine(chores, lib, 3, initialState(chores, SEED)).engine.getState();
+    const start = set.data['lang:start-player'] as string;
+    const two = set.cards.filter((c) => c.zoneId === 'pile').slice(0, 2).map((c) => c.id);
+    mount({ game: chores, initial: relocate(set, two, `list-${start}`, chores) });
     expect(room().style.minHeight).toBe(`${BUTTON_ROW}px`);
     expect(within(room()).getAllByRole('button').length).toBeGreaterThan(0);
-    for (let i = 0; i < 3; i++) press('Recruit a junior software dev');
-    expect(status()).toBe(`seat: ${startOf(3)} — Your turn — ${hint('bench cleanup')}`);
+    for (let i = 0; i < 2; i++) press('Work');
+    expect(status()).toBe(`seat: ${start} — Your turn — tidying`);
     expect(within(room()).queryAllByRole('button')).toEqual([]);
     expect(room().style.minHeight).toBe(`${BUTTON_ROW}px`);
   });

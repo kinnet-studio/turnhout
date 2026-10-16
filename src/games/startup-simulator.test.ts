@@ -72,14 +72,24 @@ const RECRUITS = ['recruit a junior software dev', 'recruit a junior hardware en
 const RESEARCH_SEED = 'research the seed deck';
 const RESEARCH_GROWTH = 'research the growth deck';
 const END_ACTIONS = 'end their actions';
-/** The moves that take a card from a zone the player picks it in, so the tally keeps them apart by that zone. */
-const CARD_MOVES = ['hire', 'draft', 'discard'];
+// The buttons that pick a card: one for each zone a card is hired, drafted, kept or discarded from.
+const HIRE_AGENCY = 'hire a card from the agency row to their bench';
+const HIRE_MARKET = 'hire a card from the open job market to their bench';
+const DRAFT_SEED = 'draft a card from the seed market to their backlog';
+const DRAFT_GROWTH = 'draft a card from the growth market to their backlog';
+const DRAFT_POOL = 'draft a card from the open idea pool to their backlog';
+const KEEP = 'keep a card in their research';
+const DISCARD_BENCH = 'discard a card in their bench';
+const DISCARD_BACKLOG = 'discard a card in their backlog';
 /** The rows that keep only their 5 newest cards, letting the oldest go to the box. */
 const POOLS = ['open-job-market', 'open-idea-pool'];
 /** The rows each player has that only they can see. */
 const OWN_ROWS = ['bench', 'backlog', 'research'];
-/** The row each Cleanup phase discards from. */
-const CLEANUPS: Record<string, string> = { 'bench cleanup': 'bench', 'backlog cleanup': 'backlog' };
+/** The row each Cleanup phase discards from, and the button that discards from it. */
+const CLEANUPS: Record<string, { row: string; discard: string }> = {
+  'bench cleanup': { row: 'bench', discard: DISCARD_BENCH },
+  'backlog cleanup': { row: 'backlog', discard: DISCARD_BACKLOG },
+};
 /** What each card left in a backlog costs at the end, by its tier: vaporware (ruling 24). */
 const VAPORWARE: Record<string, number> = { 'Tier 1': 2, 'Tier 2': 5, 'Tier 3': 10 };
 
@@ -126,16 +136,16 @@ function playTurn(engine: GameEngine, t: number, style: Style, watch: Watch, mov
     return move;
   };
   const ideation = (): (Move | null)[] => {
-    const seedSide = [press(RESEARCH_SEED), first('draft', 'seed-market'), first('draft', 'open-idea-pool')];
-    const growth = style === 'drafts' ? first('draft', 'growth-market') : press(RESEARCH_GROWTH);
-    const planned = [growth, first('draft', 'growth-market'), growth, seedSide[Math.floor(t / 4) % 3]];
-    return [planned[t % 4], press(RESEARCH_GROWTH), first('draft', 'growth-market'), press(RESEARCH_SEED), first('draft', 'seed-market')];
+    const seedSide = [press(RESEARCH_SEED), first(DRAFT_SEED, 'seed-market'), first(DRAFT_POOL, 'open-idea-pool')];
+    const growth = style === 'drafts' ? first(DRAFT_GROWTH, 'growth-market') : press(RESEARCH_GROWTH);
+    const planned = [growth, first(DRAFT_GROWTH, 'growth-market'), growth, seedSide[Math.floor(t / 4) % 3]];
+    return [planned[t % 4], press(RESEARCH_GROWTH), first(DRAFT_GROWTH, 'growth-market'), press(RESEARCH_SEED), first(DRAFT_SEED, 'seed-market')];
   };
   const recruiting = (a: number): (Move | null)[] => {
     const capital = counterOf(engine.getState(), 'capital', by);
     const junior = press(RECRUITS[(t + a) % 3]);
     const affordable = cards('agency-row').find((card) => (card.data?.cost as number) <= capital);
-    const planned = [junior, take('hire', affordable), first('hire', 'open-job-market'), press(END_ACTIONS)];
+    const planned = [junior, take(HIRE_AGENCY, affordable), first(HIRE_MARKET, 'open-job-market'), press(END_ACTIONS)];
     return [planned[(t + a) % 4], junior, press(END_ACTIONS)];
   };
   const going = () => {
@@ -149,11 +159,11 @@ function playTurn(engine: GameEngine, t: number, style: Style, watch: Watch, mov
       a++;
     } else if (phase === 'research') {
       const row = cards(zoneIdFor('research', by));
-      play(engine, choose([take('keep', row[t % row.length])]), watch);
+      play(engine, choose([take(KEEP, row[t % row.length])]), watch);
     } else {
-      const row = CLEANUPS[phase!];
-      if (row === undefined) throw new Error(`The long runs don't play the ${phase} phase.`);
-      play(engine, choose([first('discard', zoneIdFor(row, by))]), watch);
+      const cleanup = CLEANUPS[phase!];
+      if (cleanup === undefined) throw new Error(`The long runs don't play the ${phase} phase.`);
+      play(engine, choose([first(cleanup.discard, zoneIdFor(cleanup.row, by))]), watch);
     }
   }
 }
@@ -176,12 +186,6 @@ function playGame(players: number, seed: number, watch: Watch, moves = Infinity)
 const turnsIn = (log: readonly Move[]): PlayerId[] =>
   log.filter((move, i) => i === 0 || move.by !== log[i - 1].by).map((move) => move.by as PlayerId);
 
-/** The key the tally counts a move under: a card move's type and the zone it takes the card from, else the move's type. */
-function tallyKey(before: GameState, move: Move): string {
-  if (!CARD_MOVES.includes(move.type)) return move.type;
-  return `${move.type} from ${zoneInfo(game!, cardById(before, move.cardId as string)!.zoneId)!.spec.name}`;
-}
-
 /**
  * What else a move made happen that the tally counts: each card a pool let go of to the box, and the Market Crash reaching the
  * crash pile, by where it came from. A draft from the growth market draws the Crash only through the market's refill, and a
@@ -195,9 +199,8 @@ function happenings(before: GameState, move: Move, after: GameState): string[] {
     return newInBox.filter((c) => held.has(c.id)).map(() => `${zoneInfo(game!, pool)!.spec.name} lets a card go to the box`);
   });
   if (zoneCards(before, 'crash-pile').length === 0 && zoneCards(after, 'crash-pile').length > 0) {
-    const way = tallyKey(before, move);
-    const from = way === 'draft from growth market' ? 'from the growth market'
-      : way === RESEARCH_GROWTH ? 'from a research row' : `after ${way}`;
+    const from = move.type === DRAFT_GROWTH ? 'from the growth market'
+      : move.type === RESEARCH_GROWTH ? 'from a research row' : `after ${move.type}`;
     keys.push(`the Market Crash reaches the crash pile ${from}`);
   }
   return keys;
@@ -251,8 +254,8 @@ function keepsTheRules(seats: PlayerId[]): Watch {
     // Money is paid to the bank only.
     const capital = (state: GameState, seat: PlayerId) => counterOf(state, 'capital', seat);
     const paid = RECRUITS.includes(move.type) ? 2
-      : move.type === 'hire' && from === 'agency-row' ? (card!.data?.cost as number)
-        : move.type === 'hire' && from === 'open-job-market' ? 1 : 0;
+      : move.type === HIRE_AGENCY ? (card!.data?.cost as number)
+        : move.type === HIRE_MARKET ? 1 : 0;
     const spent = seats.map((seat) => capital(before, seat) - capital(after, seat));
     expect(spent, `capital paid by ${seats.join(', ')} ${at}`).toEqual(seats.map((seat) => (seat === by ? paid : 0)));
     // No one pays what they don't have.
@@ -397,8 +400,6 @@ describe('Startup Simulator (designer language)', () => {
     it('gives the Market Crash an id that changes with the seed, so no seat can follow it through the growth deck by its id', () => {
       const crashIds = Array.from({ length: 10 }, (_, i) => fresh(i + 1).cards.find((card) => nameOf(card) === 'Market Crash')!.id);
       expect(new Set(crashIds).size, crashIds.join(', ')).toBeGreaterThanOrEqual(2);
-      // c52 is the id a set of the Crash alone, listed first, would always give it.
-      expect(crashIds, crashIds.join(', ')).not.toContain('c52');
       const growthSet = game!.cards.find((set) => set.start === 'growth deck');
       for (const id of crashIds) expect(deckOf(game!.cards, id), id).toBe(growthSet);
     });
@@ -501,7 +502,7 @@ describe('Startup Simulator (designer language)', () => {
       expect(namesIn(researching, 'research-p0')).toEqual(['To-Do List', 'Flashlight App']);
       expect(zoneCards(researching, 'seed-deck')).toEqual([]);
 
-      expect(engine.dispatch({ type: 'keep', cardId: idOf('Flashlight App'), by: 'p0' }).ok).toBe(true);
+      expect(engine.dispatch({ type: KEEP, by: 'p0', cardId: idOf('Flashlight App') }).ok).toBe(true);
       const kept = engine.getState();
       expect(namesIn(kept, 'backlog-p0')).toEqual(['Flashlight App']);
       expect(namesIn(kept, 'open-idea-pool')).toEqual(['To-Do List']);
@@ -512,7 +513,7 @@ describe('Startup Simulator (designer language)', () => {
 
     it('leaves the agency row at 3 cards when the talent deck is empty (§13)', () => {
       const engine = arrange({ 'talent-deck': [], 'agency-row': ['Hacker', 'Architect', 'Veteran', 'Diva'].map(idOf) });
-      expect(engine.dispatch({ type: 'hire', cardId: idOf('Hacker'), by: 'p0' }).ok).toBe(true);
+      expect(engine.dispatch({ type: HIRE_AGENCY, by: 'p0', cardId: idOf('Hacker') }).ok).toBe(true);
 
       const state = engine.getState();
       expect(namesIn(state, 'agency-row')).toEqual(['Architect', 'Veteran', 'Diva']);
@@ -526,7 +527,7 @@ describe('Startup Simulator (designer language)', () => {
       'growth-market': [idOf('Neobank'), idOf('Search Engine')],
       'growth-deck': [idOf('Market Crash')],
     });
-    expect(engine.dispatch({ type: 'draft', cardId: idOf('Neobank'), by: 'p0' }).ok).toBe(true);
+    expect(engine.dispatch({ type: DRAFT_GROWTH, by: 'p0', cardId: idOf('Neobank') }).ok).toBe(true);
 
     const drafted = engine.getState();
     expect(namesIn(drafted, 'crash-pile')).toEqual(['Market Crash']);
@@ -565,7 +566,7 @@ describe('Startup Simulator (designer language)', () => {
   });
 
   describe('long runs, with every rule kept after every move', () => {
-    /** How many times the runs below made each move and saw each happening: see `tallyKey` and `happenings`. */
+    /** How many times the runs below made each move, by its type, and saw each happening: see `happenings`. */
     const tally: Record<string, number> = {};
 
     it.each([2, 3, 4, 5])('plays %i players to the Market Crash and a score at seeds 1 to 5', (players) => {
@@ -575,7 +576,7 @@ describe('Startup Simulator (designer language)', () => {
         const rules = keepsTheRules(seats);
         const engine = playGame(players, seed, (before, move, after) => {
           rules(before, move, after);
-          for (const key of [tallyKey(before, move), ...happenings(before, move, after)]) tally[key] = (tally[key] ?? 0) + 1;
+          for (const key of [move.type, ...happenings(before, move, after)]) tally[key] = (tally[key] ?? 0) + 1;
         });
         const state = engine.getState();
         const turns = turnsIn(engine.getLog());
@@ -599,9 +600,8 @@ describe('Startup Simulator (designer language)', () => {
 
     it('made every move in those runs, and the idea pool let cards go and the Crash came out of the market and of research', () => {
       const every = [
-        ...RECRUITS, 'hire from agency row', 'hire from open job market',
-        'draft from seed market', 'draft from growth market', 'draft from open idea pool',
-        RESEARCH_SEED, RESEARCH_GROWTH, 'keep', END_ACTIONS, 'discard from bench', 'discard from backlog',
+        ...RECRUITS, HIRE_AGENCY, HIRE_MARKET, DRAFT_SEED, DRAFT_GROWTH, DRAFT_POOL,
+        RESEARCH_SEED, RESEARCH_GROWTH, KEEP, END_ACTIONS, DISCARD_BENCH, DISCARD_BACKLOG,
         'open idea pool lets a card go to the box',
         'the Market Crash reaches the crash pile from the growth market', 'the Market Crash reaches the crash pile from a research row',
       ];

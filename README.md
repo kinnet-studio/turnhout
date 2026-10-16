@@ -142,7 +142,7 @@ Phase: playing
   - `Each player scores 1 point for every 5 capital.` rounds down.
   - `The highest score wins, and tied players share the win.` Examples say `Then p0 and p1 win`.
 - **Cards.**
-  - A card move can ask for and pay the number the card shows: `Only if they have at least the card's cost in capital.` and `They pay the card's cost.`
+  - A button that picks a card can ask for and pay the number the card shows: `Only if they have at least the card's cost in capital.` and `They pay the card's cost.`
   - `A stack called junior software devs that never runs out:` makes a card each time one is wanted: `A new Junior Software Dev goes to their bench.`
   - A blank cell in a card table is left out, so the card has no value for that column.
   - Rows and queues: `Move the bottom card of the open idea pool to the box.`, `When the growth market has the market crash:`, `Move the market crash from their research to the crash pile.`, `Deal up to 3 cards from the seed deck to their research.` (it takes what's there), `Deal 1 card from the seed deck to each backlog.` and `The market crash goes into the bottom fifth of the growth deck.`
@@ -151,6 +151,23 @@ Phase: playing
   - Building products comes in slice 1b.
   - The game still leaves out the game-end Ops check (§12.2) and the last Milestone check (§12.3).
   - Growth cards are drafted but can't be built until slice 3.
+
+**Buttons that pick cards.** A button can ask the player for a card, for a card and the card it goes to, or for a set of cards, and can cost a number each player has each turn:
+
+- **The forms.**
+  - `A player may buy a card from the shop to their stash.` with a cost line under it is a button that asks for a card from the shop. The card moves to the stash before the `Then:` lines.
+  - `… a card in their stash` picks one card and moves nothing by itself.
+  - `… a card from their stash to a card in their case` picks a card and the card it goes to.
+  - `… some cards from their stash` picks one or more.
+- **What the lines call them.** The picked card is "it" and "the card", the card it goes to is "the target card", and a set is "the picked cards": `Move the picked cards to the pile.` and `Only if they picked at most 2 cards.`
+- **Card moves.** A line with no cost that reads exactly "a card from … to …" is still a card move, moved by dragging.
+- **Costs.** `It costs 1 action.` goes under any button:
+  - it refuses with "they have at least 1 action" before every `Only if`;
+  - it spends before the `Then:` lines;
+  - only a number each player has each turn can be a cost.
+- **Examples** name the card: `When p0 hires the Hacker`, `When p0 shows the Opal to the Ruby`, `When p0 trades the Ruby and the Opal`, and `When p0 buys the Ruby to p0's case` when two buttons could take the Ruby.
+- **In the playtest,** pressing the button lists the cards it may pick under the buttons, a refused one greyed with the reason on hover. A set ends with Confirm, and Cancel closes the list.
+- **Startup Simulator** is played by picking cards.
 
 **A table too big for one screen.** When a game's zones don't fit the table, the playtest shows one seat at a time, with a tab for each seat:
 
