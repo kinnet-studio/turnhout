@@ -2,6 +2,7 @@
 // started and how many rounds have.
 import type { GameState } from '../game-state';
 import type { PlayerId } from '../scene';
+import { interruptedTurn } from './board-state';
 import { innerEffect } from './compile-util';
 import type { CompiledGame } from './types';
 
@@ -16,6 +17,9 @@ export const ROUND_KEY = 'lang:round';
 
 /** The Setup line that picks the start player. A game that uses turns without it starts with the first seat. */
 export const START_PLAYER_PHRASE = 'the start player is chosen at random';
+
+/** The compiler's frame for an End condition that holds only once the round is finished: “… and the round is finished”. */
+export const ROUND_FRAME = 'round';
 
 /**
  * Whether players take turns in the phase, so that its own lines are about the player whose turn it is. Setup is not one of the
@@ -35,6 +39,17 @@ export function startPlayerOf(state: GameState, seats: PlayerId[]): PlayerId {
 export function roundOf(state: GameState): number {
   const round = state.data[ROUND_KEY];
   return typeof round === 'number' ? round : 0;
+}
+
+/**
+ * Whether a round is finished and the next has yet to start: one has started, and the turn has passed back to the start player,
+ * whose turn has not started again. The turn start that would start the next round waits for the flow to check End, so that is
+ * the moment End sees. A turn that is interrupted is in the middle of a round, whoever stands in for it.
+ */
+export function roundFinished(state: GameState, seats: PlayerId[]): boolean {
+  const current = state.turn?.current;
+  return roundOf(state) >= 1 && current === startPlayerOf(state, seats) && state.data[TURN_OF_KEY] !== current
+    && interruptedTurn(state) === null;
 }
 
 /**
@@ -63,11 +78,14 @@ export function clearTurnMarkers(state: GameState): GameState {
 
 /**
  * Whether the game plays in rounds of turns that start by themselves: it has a number each player has each turn, a start player,
- * or lines that start a round or a turn. Other games never start a turn, so they run as they always have.
+ * lines that start a round or a turn, or an End that waits for the round to finish. Other games never start a turn, so they run as
+ * they always have.
  */
 export function usesTurns(game: Pick<CompiledGame, 'board' | 'setup' | 'everyPhase' | 'end' | 'phases'>): boolean {
-  const { board, setup, everyPhase, phases } = game;
+  const { board, setup, everyPhase, end, phases } = game;
   if (board?.counters.some((counter) => counter.perTurn)) return true;
+  // Rounds are only counted as turns start, so an End that waits for one needs them started.
+  if (end?.when.kind === 'lang' && end.when.phrase === ROUND_FRAME) return true;
   if (setup.some((ref) => {
     const effect = innerEffect(ref);
     return effect.kind === 'effect' && effect.phrase === START_PLAYER_PHRASE;

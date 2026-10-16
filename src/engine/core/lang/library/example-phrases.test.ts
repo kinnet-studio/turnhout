@@ -586,6 +586,37 @@ describe('expect: how the game ended', () => {
     const odd = fixtureEnv(fixtureState([], { result: 'done' }));
     expect(expectThat('p0 wins', odd)).toBe('Expected p0 to win, but the game has no winner.');
   });
+
+  describe('a shared win', () => {
+    const shared = fixtureEnv(fixtureState([], { result: { scores: { p0: 2, p1: 2, p2: 1 }, winner: 'p0', winners: ['p0', 'p1'] } }));
+
+    it('holds for exactly the players who share it, in any order', () => {
+      expect(expectThat('p0 and p1 win', shared)).toBe(true);
+      expect(expectThat('p1 and p0 win', shared)).toBe(true);
+      expect(expectThat('p0, p1 and p2 win', shared)).toBe('Expected p0, p1 and p2 to win, but p0 and p1 share the win.');
+      expect(expectThat('p0 win', shared)).toBe('Expected p0 to win, but p0 and p1 share the win.');
+    });
+    it('is not a win for one of them alone', () => {
+      expect(expectThat('p0 wins', shared)).toBe('Expected p0 to win alone, but p0 and p1 share the win.');
+    });
+    it('holds for the one winner of a result that names no winners', () => {
+      expect(expectThat('p0 win', noScores)).toBe(true);
+      expect(expectThat('p0 and p1 win', noScores)).toBe('Expected p0 and p1 to win, but p0 won.');
+      expect(expectThat('p0 and p1 win', running)).toBe("The game hasn't ended.");
+    });
+    it('reads the players as each player is read', () => {
+      const two = fixtureEnv(fixtureState([], { result: { winner: 'p0' } }), { seats: ['p0', 'p1'] });
+      expect(() => expectThat('p0 and p3 win', two)).toThrow(new RuleError('There is no player p3 at this table.'));
+    });
+  });
+
+  it('whether the game is over', () => {
+    const shared = fixtureEnv(fixtureState([], { result: { scores: { p0: 2, p1: 2, p2: 1 }, winner: 'p0', winners: ['p0', 'p1'] } }));
+    expect(expectThat('the game is over', shared)).toBe(true);
+    expect(expectThat('the game is not over', shared)).toBe('Expected the game not to be over, but it has ended.');
+    expect(expectThat('the game is not over', running)).toBe(true);
+    expect(expectThat('the game is over', running)).toBe("Expected the game to be over, but it hasn't ended.");
+  });
 });
 
 describe('the default library', () => {
@@ -618,6 +649,10 @@ describe('the default library', () => {
     ['expect', 'the queen of spades is among the bottom 2 cards of the trick', '{card} is among the bottom {int} cards of {zone}'],
     ['expect', 'p0 scores 14', '{player} scores {int}'],
     ['expect', 'p0 wins', '{player} wins'],
+    ['expect', 'p0 win', '{players} win'],
+    ['expect', 'p0, p1 and p2 win', '{players} win'],
+    ['expect', 'the game is over', 'the game is over'],
+    ['expect', 'the game is not over', 'the game is not over'],
   ])('reads an example %s line exactly one way: “%s”', (kind, text, pattern) => {
     expect(lib.match(kind, text, vocab)).toEqual(expect.objectContaining({ status: 'ok', pattern }));
     expect(lib.get(kind, pattern)).toBeDefined();

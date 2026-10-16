@@ -882,6 +882,19 @@ describe('the bank line', () => {
   });
 });
 
+describe('points for every few of a counter', () => {
+  const score = (money: number, text = 'each player scores 1 point for every 5 money') =>
+    runPhrase<number>(lib, 'score', text, env(setCounter(fixtureBoardState(), 'money', 'p1', money)), 'p1');
+
+  it('scores the points once for each whole few, rounding down', () => {
+    expect([4, 5, 9, 1500].map((money) => score(money))).toEqual([0, 1, 1, 300]);
+    expect(score(12, 'each player scores 3 points for every 5 money')).toBe(6);
+  });
+  it('asks for a number of 1 or more after “for every”', () => {
+    expect(() => score(5, 'each player scores 1 point for every 0 money')).toThrow(new RuleError('Say a number of 1 or more after “for every”.'));
+  });
+});
+
 describe('a budget each turn', () => {
   /** COUNTER_GAME with a number each player has each turn, and a button that spends it. */
   const BUDGET = COUNTER_GAME

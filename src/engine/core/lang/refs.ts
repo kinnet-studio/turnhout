@@ -324,6 +324,14 @@ const PLAYER: ParamType = {
   loose: looseAs(ONE_WORD, misnamedPlayer),
 };
 
+/** One or more seats, “p0 and p1” or “p0, p1 and p2”, each read as a single seat is. */
+const PLAYERS: ParamType = {
+  name: 'players', label: '[players]',
+  source: () => bounded(listSource('p\\d+')),
+  resolve: (text, vocab) => listResult(splitList(text, (item) => (fullMatch(PLAYER, item, vocab) ? seatResult(item, vocab) : null)), text),
+  loose: looseAs(ANY_TEXT, (text, vocab) => misnamedItem(text, vocab, PLAYER)),
+};
+
 // ---- cards -----------------------------------------------------------------------------------
 
 type ValueTable = { texts: string[]; owners: Map<string, { attribute: string; value: Json }[]> };
@@ -772,8 +780,8 @@ const DONE: ParamType = {
 
 /** Parameter types whose text depends on the game being compiled. */
 export const VOCAB_TYPES: ParamType[] = [
-  ZONE, ZONES, PERZONE, SHAREDZONE, PLAYER, PHASE, MOVE, ATTRIBUTE, CARD, CARDLIST, CARDCLASS, SPACE, SPACECLASS, SPACEATTR, COUNTER, ACTION, TARGETACTION,
-  AMOUNTACTION, PICKACTION, DONE, SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, PLAYERFLAG, PLAYERNUMBER, GAMENUMBER, BANKED, HOLDER,
+  ZONE, ZONES, PERZONE, SHAREDZONE, PLAYER, PLAYERS, PHASE, MOVE, ATTRIBUTE, CARD, CARDLIST, CARDCLASS, SPACE, SPACECLASS, SPACEATTR, COUNTER, ACTION,
+  TARGETACTION, AMOUNTACTION, PICKACTION, DONE, SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, PLAYERFLAG, PLAYERNUMBER, GAMENUMBER, BANKED, HOLDER,
 ];
 
 const TYPES_BY_NAME = new Map(VOCAB_TYPES.map((t) => [t.name, t] as const));

@@ -8,7 +8,7 @@ import type { Diagnostic } from './diagnostics';
 import { parseOutline, type OutlineNode } from './outline';
 import { normalizeLine, suggestNames, vocabFrom, type PhraseLibrary } from './phrases';
 import { canon } from './refs';
-import { usesTurns } from './turns';
+import { ROUND_FRAME, usesTurns } from './turns';
 import type {
   BankSpec, BoardFn, BoardSpec, CardSetSpec, CardsFn, CardTable, CompiledEnd, CompiledGame, CompiledPhase, DeclareFn, EveryPhase, FactSpec, PhraseRef,
   SpaceSpec, Vocab, ZoneFn, ZoneSpec,
@@ -22,6 +22,8 @@ const SECTION = new RegExp(`^(${SECTION_NAMES.join('|')})\\s*:\\s*(.*)$`, 'i');
 const HEADER = /^([^:]+?)\s*:$/;
 const PLAYERS = /^(\d+)(?:\s+to\s+(\d+))?$/i;
 const GAME_ENDS = /^the game ends when\s+(.+)$/i;
+/** An End condition that waits for the round to finish; group 1 is the condition. Conditions have no “and” of their own (R1.5). */
+const ROUND_ENDS = /^(.+?)\s+and the round is finished$/i;
 const SAYS_WINS = /\bwins\b/i;
 const LOOP_LINE = /^the\s+board\s+is\s+a\s+loop\b/i;
 const BLOCK_SECTIONS = new Set(['cards', 'table', 'board', 'setup', 'in every phase', 'end']);
@@ -483,6 +485,14 @@ function warnUnreachable(phases: CompiledPhase[], elsewhere: PhraseRef[], librar
 /** A winner phrase, or the placeholder for one nobody has written yet. */
 const isWinner = (ref: PhraseRef) => ref.kind === 'winner' || (ref.phrase === 'missing' && ref.args[0] === 'winner');
 
+/** What “The game ends when …” waits for: the condition, held back until the round is finished when the line says so. */
+function endCondition(body: string, line: number, ctx: LineCtx): PhraseRef {
+  const text = normalizeLine(body);
+  const round = ROUND_ENDS.exec(text);
+  if (!round) return matchLine('condition', text, line, ctx);
+  return { kind: 'lang', phrase: ROUND_FRAME, args: [matchLine('condition', round[1], line, ctx)], line, text };
+}
+
 function compileEnd(sections: Section[], ctx: LineCtx): CompiledEnd | null {
   if (sections.length === 0) {
     addProblem(ctx.diagnostics, 1, 'Without an End: section the game never finishes.', { severity: 'warning' });
@@ -495,7 +505,7 @@ function compileEnd(sections: Section[], ctx: LineCtx): CompiledEnd | null {
     rejectChildren(node, ctx.diagnostics);
     const ends = GAME_ENDS.exec(node.text);
     if (ends) {
-      const ref = matchLine('condition', ends[1], node.line, ctx);
+      const ref = endCondition(ends[1], node.line, ctx);
       if (when) addProblem(ctx.diagnostics, node.line, 'There is already a line saying when the game ends.');
       else when = ref;
       continue;

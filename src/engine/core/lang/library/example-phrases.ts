@@ -263,12 +263,42 @@ const scoresExpected: ExpectFn = (env, args) => {
   return have === wanted ? true : `Expected ${seat} to score ${wanted}, but they scored ${have}.`;
 };
 
+/** Who won: every player sharing the win, else the one winner; nobody when the result names none. */
+function winnersOf(result: Json | undefined): string[] {
+  const record = asRecord(result);
+  if (Array.isArray(record?.winners)) return record.winners.filter((seat): seat is string => typeof seat === 'string');
+  return typeof record?.winner === 'string' ? [record.winner] : [];
+}
+
+/** How the game was won, said after “but”: “p0 won”, “p0 and p1 share the win”. */
+function wonBy(winners: string[]): string {
+  if (winners.length === 0) return 'the game has no winner';
+  return winners.length === 1 ? `${winners[0]} won` : `${joinAnd(winners)} share the win`;
+}
+
+/** One player winning alone: a win they share is not theirs alone, even when it names them first. */
 const winsExpected: ExpectFn = (env, args) => {
   const seat = seatOf(env, args[0]);
   if (env.state.result === undefined) return NOT_ENDED;
+  const winners = winnersOf(env.state.result);
+  if (winners.length > 1) return `Expected ${seat} to win alone, but ${joinAnd(winners)} share the win.`;
   const winner = asRecord(env.state.result)?.winner;
   if (winner === seat) return true;
-  return `Expected ${seat} to win, but ${typeof winner === 'string' ? `${winner} won` : 'the game has no winner'}.`;
+  return `Expected ${seat} to win, but ${wonBy(typeof winner === 'string' ? [winner] : [])}.`;
+};
+
+/** Exactly these players won, in any order: all of them sharing the win, or the one winner. */
+const playersWinExpected: ExpectFn = (env, args) => {
+  const seats = (args[0] as Json[]).map((seat) => seatOf(env, seat));
+  if (env.state.result === undefined) return NOT_ENDED;
+  const winners = winnersOf(env.state.result);
+  const same = new Set(seats).size === winners.length && seats.length === winners.length && seats.every((seat) => winners.includes(seat));
+  return same ? true : `Expected ${joinAnd(seats)} to win, but ${wonBy(winners)}.`;
+};
+
+const gameIsOverExpected = (wanted: boolean): ExpectFn => (env) => {
+  if ((env.state.result !== undefined) === wanted) return true;
+  return wanted ? "Expected the game to be over, but it hasn't ended." : 'Expected the game not to be over, but it has ended.';
 };
 
 /** The Given, When and Then lines of an example: arranging cards, making a move, and checking what came of it. */
@@ -296,5 +326,8 @@ export function registerExamplePhrases(lib: PhraseLibrary): PhraseLibrary {
     .expect('the bottom card of {zone} is {card}', bottomCardIs)
     .expect('{card} is among the bottom {int} cards of {zone}', cardIsAmongBottom)
     .expect('{player} scores {int}', scoresExpected)
-    .expect('{player} wins', winsExpected);
+    .expect('{player} wins', winsExpected)
+    .expect('{players} win', playersWinExpected)
+    .expect('the game is over', gameIsOverExpected(true))
+    .expect('the game is not over', gameIsOverExpected(false));
 }

@@ -12,8 +12,8 @@ import { MissingPhraseError, RuleError } from './diagnostics';
 import { friendlyError } from './friendly';
 import { createDefaultLibrary } from './library';
 import { LangRuntime } from './runtime';
-import { HOLDING_BOARD, PICK_BOARD, ROUNDS_GAME, TEST_DUEL, TINY_BOARD, TURN_GAME } from './testing';
-import { ROUND_KEY, TURN_OF_KEY } from './turns';
+import { COUNTER_GAME, HOLDING_BOARD, PICK_BOARD, ROUNDS_GAME, TEST_DUEL, TINY_BOARD, TURN_GAME } from './testing';
+import { ROUND_KEY, START_PLAYER_KEY, TURN_OF_KEY, roundFinished, usesTurns } from './turns';
 import type { CompiledGame, ExampleEnv, MoveInfo, PhraseRef } from './types';
 import { matchesCard, relocate, zoneIdFor } from './zones';
 import RENT_DAY from '@/games/rent-day.rules?raw';
@@ -235,6 +235,13 @@ describe('the game flow', () => {
     const engine = engineFor(state);
     expect(engine.dispatch({ type: 'play', cardId: idOf(state, '3C'), by: 'p0' }).ok).toBe(true);
     expect(engine.getState().result).toEqual({ winner: 'p0' });
+  });
+
+  it('names no winners beside the one winner, for a winner line that picks one', () => {
+    const state = arrange('p0', { 'hand-p0': ['3C'], 'hand-p1': ['9D'] });
+    const engine = engineFor(state);
+    expect(engine.dispatch({ type: 'play', cardId: idOf(state, '3C'), by: 'p0' }).ok).toBe(true);
+    expect(engine.getState().result).not.toHaveProperty('winners');
   });
 
   it('records every seat’s score next to the winner', () => {
@@ -811,5 +818,95 @@ describe('rounds and turns', () => {
     expect(every).toEqual({
       id: 'line 26: When the done pile has more than 2 cards', when: { name: 'lang:trigger-when', params }, then: [{ name: 'lang:trigger-then', params }],
     });
+  });
+});
+
+describe('an End that waits for the round', () => {
+  /** ROUNDS_GAME whose End waits for the round to finish once the done pile has a card, scores coins in twos and lets tied players share the win. */
+  const ENDING = ROUNDS_GAME.replace('  The game ends when the pile is empty.\n  The highest score wins.', [
+    '  The game ends when the done pile is not empty and the round is finished.',
+    '  Each player scores 1 point for every 2 coins.',
+    '  The highest score wins, and tied players share the win.',
+  ].join('\n'));
+  const ending = compiled(ENDING);
+  const SEATS = seatsFor(3);
+  /** A game of ENDING (or `game`) at 3 seats whose turn is p0's in working, so Setup is skipped and p0, the first seat, starts. */
+  const table = (game = ending) =>
+    createEngine(game, lib, 3, { ...initialState(game, 1), turn: { current: 'p0', phase: 'working' } }).engine;
+  const doneOf = (state: GameState) => zoneCards(state, zoneIdFor('done pile')).length;
+  const coinsOf = (state: GameState) => SEATS.map((seat) => counterOf(state, 'coins', seat));
+  /** Each seat in turn presses the button; stop spends their moves and so finishes their turn. */
+  const press = (engine: ReturnType<typeof table>, type: string, ...seats: PlayerId[]) => {
+    for (const by of seats) expect(engine.dispatch({ type, by }).reason).toBeUndefined();
+  };
+
+  it('waits while the round goes on, though the done pile is not empty', () => {
+    const engine = table();
+    press(engine, 'stop', 'p0', 'p1');
+    const state = engine.getState();
+    expect(doneOf(state)).toBe(1);
+    expect(state.result).toBeUndefined();
+    expect(state.turn).toEqual({ current: 'p2', phase: 'working' });
+  });
+
+  it('ends once the turn passes back to the start player, before the next round starts', () => {
+    const engine = table();
+    press(engine, 'stop', 'p0', 'p1', 'p2');
+    const state = engine.getState();
+    // Round 2 never started: it would have put a second card in the done pile, and started p0's turn.
+    expect([state.data[ROUND_KEY], state.turn?.current, doneOf(state)]).toEqual([1, 'p0', 1]);
+    expect(state.data).not.toHaveProperty(TURN_OF_KEY);
+    // 1 coin as each turn started and 1 from tidying's start line.
+    expect(coinsOf(state)).toEqual([2, 2, 2]);
+    expect(state.result).toEqual({ scores: { p0: 1, p1: 1, p2: 1 }, winner: 'p0', winners: ['p0', 'p1', 'p2'] });
+  });
+
+  it('runs no start lines of a phase in the moment the round is finished (C1)', () => {
+    const text = ENDING.replace('  Players take turns.', '  Players take turns.\n  When this phase starts:\n    They get 5 coins.');
+    const { game: starting, diagnostics } = compileGame(text, lib);
+    expect(diagnostics).toEqual([expect.objectContaining({ line: 31, severity: 'warning' })]);
+    const engine = table(starting!);
+    press(engine, 'stop', 'p0', 'p1', 'p2');
+    const state = engine.getState();
+    expect(state.result).toBeDefined();
+    expect(coinsOf(state)[0]).toBe(2);
+  });
+
+  it('names a lone winner as the only one of the winners', () => {
+    const engine = table();
+    press(engine, 'work', 'p0', 'p0');
+    press(engine, 'stop', 'p1', 'p2');
+    const state = engine.getState();
+    // p0: 1 as their turn started, 2 from working and 1 from tidying.
+    expect(coinsOf(state)).toEqual([4, 2, 2]);
+    expect(state.result).toEqual({ scores: { p0: 2, p1: 1, p2: 1 }, winner: 'p0', winners: ['p0'] });
+  });
+
+  it('counts the round finished once one has started and the turn is back with the start player, not yet started and not interrupted', () => {
+    const start = withBoardData(initialState(ending, 1), ending, SEATS);
+    const at = (current: PlayerId, data: Record<string, Json>): GameState =>
+      ({ ...start, turn: { current, phase: 'working' }, data: { ...start.data, [START_PLAYER_KEY]: 'p1', ...data } });
+    const finished = at('p1', { [ROUND_KEY]: 1 });
+    expect(roundFinished(finished, SEATS)).toBe(true);
+    expect(roundFinished(at('p1', { [ROUND_KEY]: 2, [TURN_OF_KEY]: 'p0' }), SEATS)).toBe(true);
+    expect(roundFinished(at('p1', {}), SEATS)).toBe(false);
+    expect(roundFinished(at('p2', { [ROUND_KEY]: 1 }), SEATS)).toBe(false);
+    expect(roundFinished(at('p1', { [ROUND_KEY]: 1, [TURN_OF_KEY]: 'p1' }), SEATS)).toBe(false);
+    expect(roundFinished(interruptTurn(finished, 'tidying', 'p1'), SEATS)).toBe(false);
+  });
+
+  it('plays in rounds of turns for a game whose only round is the one its End waits for', () => {
+    const waits = COUNTER_GAME.replace('The game ends when the pile is empty.', 'The game ends when the pile is empty and the round is finished.');
+    expect(usesTurns(compiled(COUNTER_GAME))).toBe(false);
+    expect(usesTurns(compiled(waits))).toBe(true);
+  });
+
+  it('refuses a winner line that picks no one', () => {
+    const library = createDefaultLibrary().winner('nobody wins', () => []);
+    const nobody = compiled(ENDING.replace('  The highest score wins, and tied players share the win.', '  Nobody wins.'), library);
+    const state: GameState = { ...withBoardData(initialState(nobody, 1), nobody, SEATS), turn: { current: 'p0', phase: 'working' } };
+    const error = thrown(() => new LangRuntime(nobody, library, SEATS).result(state));
+    expect(error).toBeInstanceOf(RuleError);
+    expect(error).toMatchObject({ message: 'No player won.', line: 56 });
   });
 });

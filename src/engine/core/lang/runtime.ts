@@ -2,12 +2,13 @@ import { MAX_FLOW_ITERATIONS } from '../flow';
 import type { GameState } from '../game-state';
 import type { Move } from '../moves';
 import type { PlayerId } from '../scene';
+import type { Json } from '../table-def';
 import { numberIn } from './board';
 import { holderOf, interruptedTurn, setCounter } from './board-state';
 import { isMissing } from './compile-util';
 import { MissingPhraseError, RuleError } from './diagnostics';
 import type { PhraseLibrary } from './phrases';
-import { phaseTakesTurns, ROUND_KEY, roundOf, startPlayerOf, TURN_OF_KEY } from './turns';
+import { phaseTakesTurns, ROUND_FRAME, ROUND_KEY, roundFinished, roundOf, startPlayerOf, TURN_OF_KEY } from './turns';
 import type {
   ActionFn, ColumnFn, CompiledGame, CompiledMoment, CompiledTrigger, CondGroup, ConditionFn, EffectFn, ExampleEnv, ExpectFn, MomentFn, Moment, MoveInfo,
   PhraseEnv, PhraseKind, PhraseRef, ScoreFn, Subject, TargetFn, TurnFn, WhichFn, WhoFn, WinnerFn,
@@ -18,6 +19,7 @@ type Checker = (state: GameState, move: Move) => true | string;
 const DEPEND_ON_EACH_OTHER = 'Two moves depend on each other through “they have no card they could play”.';
 const KEEPS_MOVING = 'It keeps moving pieces without stopping.';
 const KEEPS_DRAWING = 'Cards keep drawing cards without stopping.';
+const NO_WINNER = 'No player won.';
 
 /** Who a line about no one in particular is about. */
 const NO_ONE: Subject = { player: null, space: null, card: null };
@@ -71,7 +73,7 @@ export class LangRuntime {
     };
   }
 
-  /** A condition, or the compiler's all / any / phase / always. */
+  /** A condition, or the compiler's all / any / phase / always, or an End condition that waits for the round to finish. */
   test(ref: PhraseRef, state: GameState, move?: MoveInfo, example?: ExampleEnv, subject?: Subject): boolean {
     if (ref.kind === 'lang') {
       const holds = (r: PhraseRef) => this.test(r, state, move, example, subject);
@@ -80,6 +82,7 @@ export class LangRuntime {
         case 'any': return (ref.args as PhraseRef[]).some(holds);
         case 'phase': return state.turn?.phase === ref.args[0];
         case 'always': return true;
+        case ROUND_FRAME: return holds(ref.args[0] as PhraseRef) && roundFinished(state, this.seats);
       }
     }
     return this.call<ConditionFn, boolean>(ref, ['condition'], (fn) => fn(this.env(state, move, example, subject), ref.args));
@@ -303,7 +306,10 @@ export class LangRuntime {
     return this.call<ExpectFn, true | string>(ref, ['expect'], (fn) => fn(this.env(state, undefined, example), ref.args));
   }
 
-  /** How the game ended: every seat's score when the game has score lines, and the winner. */
+  /**
+   * How the game ended: every seat's score when the game has score lines, and the winner. A win the winner line lets players share
+   * names them all as `winners`, with the first of them as `winner`, so that whatever reads only `winner` still finds one.
+   */
   result(state: GameState): GameState {
     const end = this.game.end;
     if (!end) throw new Error('This game has no End: section, so it cannot end.');
@@ -314,8 +320,11 @@ export class LangRuntime {
         scores[seat] = end.scores.reduce((sum, ref) => sum + this.call<ScoreFn, number>(ref, ['score'], (fn) => fn(env, ref.args, seat)), 0);
       }
     }
-    const winner = this.call<WinnerFn, PlayerId>(end.winner, ['winner'], (fn) => fn(env, end.winner.args, scores));
-    return { ...state, result: end.scores.length > 0 ? { scores, winner } : { winner } };
+    const scored: { [k: string]: Json } = end.scores.length > 0 ? { scores } : {};
+    const won = this.call<WinnerFn, PlayerId | PlayerId[]>(end.winner, ['winner'], (fn) => fn(env, end.winner.args, scores));
+    if (!Array.isArray(won)) return { ...state, result: { ...scored, winner: won } };
+    if (won.length === 0) throw new RuleError(NO_WINNER, end.winner.line, end.winner.text);
+    return { ...state, result: { ...scored, winner: won[0], winners: won } };
   }
 
   /** Runs the code behind a phrase of one of `kinds`. */

@@ -41,8 +41,8 @@ const FACTS = vocabFrom({
 describe('vocabulary types', () => {
   it('declares every type with its label and stub order', () => {
     expect(VOCAB_TYPES.map((t) => [t.name, t.label])).toEqual([
-      ['zone', '[zone]'], ['zones', '[zones]'], ['perzone', '[zone]'], ['sharedzone', '[zone]'], ['player', '[player]'], ['phase', '[phase]'],
-      ['move', '[action]'], ['attribute', '[attribute]'], ['card', '[card]'], ['cardlist', '[cards]'], ['cardclass', '[kind of card]'],
+      ['zone', '[zone]'], ['zones', '[zones]'], ['perzone', '[zone]'], ['sharedzone', '[zone]'], ['player', '[player]'], ['players', '[players]'],
+      ['phase', '[phase]'], ['move', '[action]'], ['attribute', '[attribute]'], ['card', '[card]'], ['cardlist', '[cards]'], ['cardclass', '[kind of card]'],
       ['space', '[space]'], ['spaceclass', '[kind of space]'], ['spaceattr', '[space detail]'], ['counter', '[counter]'],
       ['action', '[action]'], ['targetaction', '[action]'], ['amountaction', '[action]'], ['pickaction', '[action]'], ['done', '[action done]'],
       ['spacekind', '[kind of space]'], ['spaceflag', '[space fact]'], ['spacenumber', '[space fact]'], ['cardflag', '[card fact]'],
@@ -180,6 +180,14 @@ describe('players, phases, moves and attributes', () => {
     expect(parseParam('player', 'P0', V)).toEqual({ value: 'p0' });
     expect(parseParam('player', 'p7', V)).toEqual({ error: 'This game only has players p0 to p3.' });
     expect(parseParam('player', 'p4', V)).toEqual({ error: 'This game only has players p0 to p3.' });
+  });
+  it('reads one or more players, each as a single player is read', () => {
+    expect(parseParam('players', 'p0', V)).toEqual({ value: ['p0'] });
+    expect(parseParam('players', 'P0 and p1', V)).toEqual({ value: ['p0', 'p1'] });
+    expect(parseParam('players', 'p0, p1 and p2', V)).toEqual({ value: ['p0', 'p1', 'p2'] });
+    expect(parseParam('players', 'p0, p1, and p2', V)).toEqual({ value: ['p0', 'p1', 'p2'] });
+    expect(parseParam('players', 'p0 and p7', V)).toEqual({ error: 'This game only has players p0 to p3.' });
+    expect(parseParam('players', 'p0 and bob', V)).toBeNull();
   });
   it('phrases the player-count error for tiny games', () => {
     expect(parseParam('player', 'p1', { ...V, maxPlayers: 1 })).toEqual({ error: 'This game only has player p0.' });
@@ -816,6 +824,8 @@ describe('names the game never defined', () => {
     expect(misnamed('player', 'player1')).toEqual({ message: 'There is no player called “player1”. Players are called p0 to p3.', suggestions: ['p1'] });
     expect(misnamed('player', 'player9')).toEqual({ message: 'There is no player called “player9”. Players are called p0 to p3.', suggestions: [] });
     expect(misnamed('player', 'nobody')).toBeNull();
+    expect(misnamed('players', 'p0 and player1')).toEqual({ message: 'There is no player called “player1”. Players are called p0 to p3.', suggestions: ['p1'] });
+    expect(misnamed('players', 'p0 and nobody')).toBeNull();
   });
 
   it('names phases, moves and card attributes', () => {

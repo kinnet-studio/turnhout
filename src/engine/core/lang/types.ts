@@ -6,7 +6,7 @@ import type { Json } from '../table-def';
 export type PhraseKind =
   | 'cards' | 'zone' | 'board' | 'declare' | 'column' | 'condition' | 'effect' | 'turn' | 'who' | 'which' | 'score' | 'winner' | 'moment' | 'given'
   | 'action' | 'target' | 'expect';
-/** kind 'lang' = compiler built-ins: all | any | phase | always | if | for | missing */
+/** kind 'lang' = compiler built-ins: all | any | phase | always | if | for | round | missing */
 export type PhraseRef = { kind: PhraseKind | 'lang'; phrase: string; args: Json[]; line: number; text: string };
 /** `other` is the one player who is not the actor, in a game for two. */
 export type SeatRef = { seat: string } | { who: 'actor' | 'winner' | 'other' };
@@ -158,7 +158,8 @@ export type WhoFn = (env: PhraseEnv, args: Json[]) => PlayerId[];
 /** The cards a `When a card …:` rule is about, as card ids in a fixed order: by zone, then by slot. */
 export type WhichFn = (env: PhraseEnv, args: Json[]) => string[];
 export type ScoreFn = (env: PhraseEnv, args: Json[], seat: PlayerId) => number;
-export type WinnerFn = (env: PhraseEnv, args: Json[], scores: Record<PlayerId, number>) => PlayerId;
+/** The one winner, or every player who shares the win, in seat order. */
+export type WinnerFn = (env: PhraseEnv, args: Json[], scores: Record<PlayerId, number>) => PlayerId | PlayerId[];
 export type MomentFn = (env: PhraseEnv, args: Json[], moment: Moment) => boolean;
 export type ActionFn = (env: PhraseEnv, args: Json[]) => { by: PlayerId; move: Move };
 /** Whether a button may pick `space`; `env.subject.player` is the player pressing it. */

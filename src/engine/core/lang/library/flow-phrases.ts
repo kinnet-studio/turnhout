@@ -189,6 +189,13 @@ const bestScore = (better: (score: number, best: number) => boolean): WinnerFn =
   return env.seats.reduce((best, seat) => (better(scoreOf(seat), scoreOf(best)) ? seat : best));
 };
 
+/** Every seat with the top score, in seat order: tied players share the win. A seat with no score counts 0. */
+const highestScoresShare: WinnerFn = (env, _args, scores) => {
+  const scoreOf = (seat: string) => scores[seat] ?? 0;
+  const top = Math.max(...env.seats.map(scoreOf));
+  return env.seats.filter((seat) => scoreOf(seat) === top);
+};
+
 const emptyZoneWins: WinnerFn = (env, args) => {
   const zone = args[0] as string;
   const winner = env.seats.find((seat) => zoneCards(env.state, zoneIdFor(zone, seat)).length === 0);
@@ -224,5 +231,6 @@ export function registerFlowPhrases(lib: PhraseLibrary): PhraseLibrary {
     .score("{card} in a player's {perzone} scores {int} point(s)", oneCardScores)
     .winner('the lowest score wins', bestScore((score, best) => score < best))
     .winner('the highest score wins', bestScore((score, best) => score > best))
+    .winner('the highest score wins, and tied players share the win', highestScoresShare)
     .winner('the player with an empty {perzone} wins', emptyZoneWins);
 }

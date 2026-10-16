@@ -12,7 +12,7 @@ import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import { canon, counted, joinOr, participle, pastWording } from '../refs';
 import type {
-  ActionFn, BankSpec, BoardFn, BoardSpec, ConditionFn, EffectFn, ExpectFn, MomentFn, PhraseEnv, PhraseRef, SpaceClass, WhoFn, WinnerFn,
+  ActionFn, BankSpec, BoardFn, BoardSpec, ConditionFn, EffectFn, ExpectFn, MomentFn, PhraseEnv, PhraseRef, ScoreFn, SpaceClass, WhoFn, WinnerFn,
 } from '../types';
 import { chooseNext } from '../zones';
 import { itOf, seatOf, theyOf } from './support';
@@ -382,7 +382,13 @@ const returnToBank: EffectFn = (env) => {
   return boardIn(env).spaces.reduce((state, _space, at) => (ownerOf(state, at) === they ? setOwner(state, at, null) : state), env.state);
 };
 
-// ---- winner ----------------------------------------------------------------------------------
+// ---- scores and winner -----------------------------------------------------------------------
+
+/** The points for each whole few of the player's counter; what is left over scores nothing. */
+const pointsForEvery: ScoreFn = (env, [points, every, counter], seat) => {
+  if ((every as number) < 1) throw new RuleError('Say a number of 1 or more after “for every”.');
+  return Math.floor(counterOf(env.state, counter as string, seat) / (every as number)) * (points as number);
+};
 
 const lastOneStanding: WinnerFn = (env) => {
   const [winner, ...others] = playersIn(env.state, env.seats);
@@ -510,7 +516,7 @@ const THEIR_DOUBLES = { needsPlayer: true, ...ABOUT_DOUBLES };
 
 /**
  * The sentences under Board: that say what the board is, who plays on it, what they roll and pay with and what the bank
- * holds, the ones that play a board game, and the Given, When and Then lines of its examples.
+ * holds, the ones that play a board game and score what players have, and the Given, When and Then lines of its examples.
  */
 export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
@@ -567,6 +573,7 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('they own it', owns, { needsPlayer: true, needsSpace: true, needsBoard: true })
     .effect('they are out', goesOut, { needsPlayer: true })
     .effect('their spaces go back to the bank', returnToBank, { needsPlayer: true, needsBoard: true })
+    .score('each player scores {int} point(s) for every {int} {counter}', pointsForEvery)
     .winner('that player wins', lastOneStanding)
     .given('{player} is on {space}', isOnGiven)
     .given('{player} owns {space}', ownsGiven)

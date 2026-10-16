@@ -55,6 +55,16 @@ describe('seatStatus', () => {
     );
   });
 
+  it('names every player who shares the win, with the scores', () => {
+    const result = { scores: { p0: 3, p1: 3, p2: 1 }, winner: 'p0', winners: ['p0', 'p1'] };
+    expect(seatStatus(colorMatch, view({ current: 'p0', phase: 'playing' }, result), 'p2')).toBe('Game over — p0 and p1 win (p0 3, p1 3, p2 1)');
+  });
+
+  it('announces a lone winner as before when the result lists the winners', () => {
+    const result = { scores: { p0: 3, p1: 1 }, winner: 'p0', winners: ['p0'] };
+    expect(seatStatus(colorMatch, view({ current: 'p0', phase: 'playing' }, result), 'p1')).toBe('Game over — p0 wins (p0 3, p1 1)');
+  });
+
   it('falls back to the phase name when the phase has no hint or is not one of the game phases', () => {
     const unhinted: CompiledGame = { ...colorMatch, phases: colorMatch.phases.map((p) => ({ ...p, hint: null })) };
     expect(seatStatus(unhinted, view({ current: 'p0', phase: 'playing' }), 'p0')).toBe('Your turn — playing');

@@ -418,6 +418,11 @@ describe('scoring and winners', () => {
     expect(run('winner', 'the highest score wins', env, { p0: 3, p1: 9, p2: 9, p3: 1 })).toBe('p1');
     expect(run('winner', 'the highest score wins', env, { p0: 9, p1: 9, p2: 9, p3: 9 })).toBe('p0');
   });
+  it('highest score wins, with every tied player sharing the win, in seat order', () => {
+    const text = 'the highest score wins, and tied players share the win';
+    expect(run('winner', text, env, { p0: 3, p1: 5, p2: 5 })).toEqual(['p1', 'p2']);
+    expect(run('winner', text, fixtureEnv(state, { seats: ['p0', 'p1'] }), { p0: 1 })).toEqual(['p0']);
+  });
   it('only counts the seats at the table', () => {
     const two = fixtureEnv(state, { seats: ['p0', 'p1'] });
     expect(run('winner', 'the lowest score wins', two, { p0: 5, p1: 4, p2: -3 })).toBe('p1');

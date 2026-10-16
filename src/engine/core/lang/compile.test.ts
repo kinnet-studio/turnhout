@@ -1003,6 +1003,31 @@ describe('In every phase:', () => {
   });
 });
 
+describe('an End that waits for the round', () => {
+  /** ROUNDS_GAME whose End waits for the round to finish, scores coins in twos and lets tied players share the win. Line 54 says when it ends. */
+  const ENDING = ROUNDS_GAME.replace('  The game ends when the pile is empty.\n  The highest score wins.', [
+    '  The game ends when the done pile is not empty and the round is finished.',
+    '  Each player scores 1 point for every 2 coins.',
+    '  The highest score wins, and tied players share the win.',
+  ].join('\n'));
+
+  it('compiles the condition inside the wait for the round', () => {
+    const { game, diagnostics } = compileGame(ENDING, lib);
+    expect(diagnostics).toEqual([]);
+    expect(game!.end!.when).toMatchObject({
+      kind: 'lang', phrase: 'round', args: [{ kind: 'condition', phrase: '{zone} is not empty' }], line: 54,
+      text: 'the done pile is not empty and the round is finished',
+    });
+    expect(game!.end!.scores).toMatchObject([{ kind: 'score', phrase: 'each player scores {int} point(s) for every {int} {counter}', args: [1, 2, 'coins'] }]);
+    expect(game!.end!.winner).toMatchObject({ kind: 'winner', phrase: 'the highest score wins, and tied players share the win' });
+  });
+
+  it('reports a misnamed zone in the condition on its line', () => {
+    const text = ENDING.replace('the done pile is not empty and', 'the done pil is not empty and');
+    expect(compileGame(text, lib).diagnostics).toEqual([expect.objectContaining({ line: 54, message: 'There is no zone called “done pil”.' })]);
+  });
+});
+
 describe('a section named after a table column', () => {
   const UNKNOWN = "I don't understand this section. Sections are Game, Players, Cards, Table, Board, Setup, In every phase, Phase, End and Example, or a column of the board's table.";
   const DOUBLE = 'A street in a full set with no buildings has double rent.';
