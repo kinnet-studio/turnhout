@@ -58,8 +58,10 @@ export const isSaysColumn = (name: string): boolean => name.trim().toLowerCase()
 /** What a table cell says: 'a to b' counts up from a to b; anything else is one value, whole numbers as numbers. */
 type Cell = { from: number; to: number } | { value: Json };
 
-function readCell(cell: string, line: number): Cell {
+/** The cell's meaning; null for a blank one, which gives the card no such attribute at all (a number is written 0, not left blank). */
+function readCell(cell: string, line: number): Cell | null {
   const text = cell.trim();
+  if (text === '') return null;
   const range = RANGE.exec(text);
   if (range) {
     const [from, to] = [Number(range[1]), Number(range[2])];
@@ -83,7 +85,8 @@ function copiesOf(row: CardTable['rows'][number], column: number): number {
 
 /**
  * One identity per card in a designer's table: ranges expand to a row per value, a `copies` column (any case)
- * repeats the row. Each row's cards are counted before they are made, so a table of too many cards is refused at once.
+ * repeats the row, and a blank cell leaves its attribute out. Each row's cards are counted before they are made, so a
+ * table of too many cards is refused at once.
  */
 export function expandCardTable(table: CardTable): CardIdentity[] {
   const copiesColumn = table.columns.findIndex((name) => name.trim().toLowerCase() === COPIES);
@@ -91,7 +94,10 @@ export function expandCardTable(table: CardTable): CardIdentity[] {
   const identities: CardIdentity[] = [];
   for (const row of table.rows) {
     const copies = copiesOf(row, copiesColumn);
-    const cells = columns.map(({ name, at }) => ({ name, cell: readCell(row.cells[at] ?? '', row.line) }));
+    const cells = columns.flatMap(({ name, at }) => {
+      const cell = readCell(row.cells[at] ?? '', row.line);
+      return cell === null ? [] : [{ name, cell }];
+    });
     const count = cells.reduce((n, { cell }) => n * countOf(cell), copies);
     if (count === 0) continue; // no copies: nothing to make, however long its ranges
     // Written so that a count too big to be a number (NaN) is refused too.

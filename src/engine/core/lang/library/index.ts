@@ -12,6 +12,7 @@ import { registerHeartsPhrases } from './hearts';
 import { registerMovePhrases } from './move-phrases';
 import { registerPickPhrases } from './pick-phrases';
 import { registerPlayerFactPhrases } from './player-facts';
+import { registerQueuePhrases } from './queue-phrases';
 import { registerRentDayPhrases } from './rent-day';
 import { registerSetupPhrases } from './setup-phrases';
 import { registerStandardDeckPhrases } from './standard-deck';
@@ -20,6 +21,7 @@ import { registerTurnPhrases } from './turn-phrases';
 const REGISTRARS: ((lib: PhraseLibrary) => PhraseLibrary)[] = [
   registerSetupPhrases,
   registerFlowPhrases,
+  registerQueuePhrases,
   registerBoardPhrases,
   registerFactPhrases,
   registerPlayerFactPhrases,

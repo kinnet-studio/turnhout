@@ -52,7 +52,7 @@ function notEnoughCards(left: number, from: ZoneRef): RuleError {
   return new RuleError(`Only ${left} ${left === 1 ? 'card is' : 'cards are'} left in ${where}.`);
 }
 
-const deal: EffectFn = (env, args) => {
+export const deal: EffectFn = (env, args) => {
   const [count, fromRef, toRef] = args as [number, ZoneRef, ZoneRef];
   if (count < 0) throw new RuleError('A negative number of cards cannot be dealt.');
   const from = soleZone(fromRef, env);

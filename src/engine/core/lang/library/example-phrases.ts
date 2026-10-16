@@ -213,6 +213,26 @@ const zoneHasExactly: ExpectFn = (env, args) => {
   return `Expected ${describeZone(ref)} to have ${joinAnd(wanted.map(describeCard))}, but ${actual}.`;
 };
 
+/** The zone's cards from the bottom are as many as the wanted ones and each is the kind wanted in its place. */
+const zoneHasInOrder: ExpectFn = (env, args) => {
+  const [ref, wanted] = args as [ZoneRef, CardMatch[]];
+  const cards = zoneCards(env.state, soleZone(ref, env));
+  if (cards.length === wanted.length && cards.every((card, at) => matchesCard(card, wanted[at]))) return true;
+  const actual = cards.length === 0 ? 'it is empty' : `it has ${describeCards(cards, env.game)}`;
+  return `Expected ${describeZone(ref)} to have ${joinAnd(wanted.map(describeCard))}, in that order, but ${actual}.`;
+};
+
+/** Whether the first card of that kind, counted from the bottom, is within the bottom few cards of the zone. */
+const cardIsAmongBottom: ExpectFn = (env, args) => {
+  const [match, count, ref] = args as [CardMatch, number, ZoneRef];
+  const place = zoneCards(env.state, soleZone(ref, env)).findIndex((card) => matchesCard(card, match));
+  if (place >= 0 && place < count) return true;
+  const actual = place < 0
+    ? `${describeZone(ref)} has no ${describeCard(match).replace(/^(?:an?|the) /, '')}`
+    : `it is card ${place + 1} from the bottom`;
+  return `Expected ${describeCard(match)} to be among the bottom ${count} cards of ${describeZone(ref)}, but ${actual}.`;
+};
+
 /** Whether the card at one end of a zone is the named one; otherwise what an example should say about it. */
 const endCardIs = (end: 'top' | 'bottom', pick: (state: GameState, zoneId: string) => CardState | undefined): ExpectFn => (env, args) => {
   const [ref, match] = args as [ZoneRef, CardMatch];
@@ -271,8 +291,10 @@ export function registerExamplePhrases(lib: PhraseLibrary): PhraseLibrary {
     .expect('the phase is {phase}', phaseIsExpected)
     .expect('{player} holds {int} card(s)', holdsCount)
     .expect('{zone} has {cardlist}', zoneHasExactly)
+    .expect('{zone} has {cardlist}, in that order', zoneHasInOrder)
     .expect('the top card of {zone} is {card}', topCardIs)
     .expect('the bottom card of {zone} is {card}', bottomCardIs)
+    .expect('{card} is among the bottom {int} cards of {zone}', cardIsAmongBottom)
     .expect('{player} scores {int}', scoresExpected)
     .expect('{player} wins', winsExpected);
 }

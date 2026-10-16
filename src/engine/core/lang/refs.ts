@@ -298,6 +298,15 @@ const misnamedWord = (what: string, names: (vocab: Vocab) => string[]) => (text:
   holdsName(text, names(vocab)) ? null : missing(what, text, closestOrFirst(text, names(vocab)));
 
 const PERZONE = wordType('perzone', '[zone]', (v) => v.playerZones.map((z) => [z, z]), looseAs(ANY_TEXT, misnamedPlayerZone));
+/** A name that is no zone, shared or not; the zones everyone shares are the ones suggested, as only those fit. */
+function misnamedSharedZone(text: string, vocab: Vocab): NameProblem | null {
+  const name = OWNED_NAME.exec(text)?.[1] ?? text;
+  return holdsName(name, allZones(vocab)) ? null : missing('zone', name, closestOrFirst(name, vocab.sharedZones));
+}
+
+// A zone everyone shares, said as “the shop”, standing for the name alone. A phrase that asks about a shared zone takes this and not
+// `{zone}`, which also reads “their stash”: “their stash has a Ruby” would then fit two phrases.
+const SHAREDZONE = wordType('sharedzone', '[zone]', (v) => v.sharedZones.map((z) => [`the ${z}`, z]), looseAs(ANY_TEXT, misnamedSharedZone));
 const PHASE = wordType('phase', '[phase]', (v) => v.phases.map((p) => [p, p]), looseAs(ANY_TEXT, misnamedWord('phase', (v) => v.phases)));
 const MOVE = wordType(
   'move', '[action]', (v) => v.verbs.map((verb) => [thirdPerson(verb), verb]),
@@ -763,7 +772,7 @@ const DONE: ParamType = {
 
 /** Parameter types whose text depends on the game being compiled. */
 export const VOCAB_TYPES: ParamType[] = [
-  ZONE, ZONES, PERZONE, PLAYER, PHASE, MOVE, ATTRIBUTE, CARD, CARDLIST, CARDCLASS, SPACE, SPACECLASS, SPACEATTR, COUNTER, ACTION, TARGETACTION,
+  ZONE, ZONES, PERZONE, SHAREDZONE, PLAYER, PHASE, MOVE, ATTRIBUTE, CARD, CARDLIST, CARDCLASS, SPACE, SPACECLASS, SPACEATTR, COUNTER, ACTION, TARGETACTION,
   AMOUNTACTION, PICKACTION, DONE, SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, PLAYERFLAG, PLAYERNUMBER, GAMENUMBER, BANKED, HOLDER,
 ];
 

@@ -41,6 +41,30 @@ describe('card tables', () => {
     const ids = expandCardTable({ columns: ['a', 'b'], rows: [{ cells: ['1 to 2', '5 to 6'], line: 3 }] });
     expect(ids.map((c) => c.faceKey)).toEqual(['t:a=1;b=5', 't:a=1;b=6', 't:a=2;b=5', 't:a=2;b=6']);
   });
+  it('leaves out the attribute of a blank cell, in the card and in its face key', () => {
+    const table = { columns: ['name', 'colour', 'copies'], rows: [{ cells: ['Ruby', '', '1'], line: 3 }, { cells: ['Opal', '   ', '1'], line: 4 }] };
+    expect(expandCardTable(table)).toEqual([
+      { attrs: { name: 'Ruby' }, faceKey: textFaceKey({ name: 'Ruby' }) },
+      { attrs: { name: 'Opal' }, faceKey: textFaceKey({ name: 'Opal' }) },
+    ]);
+    expect(expandCardTable(table)[0].faceKey).toBe('t:name=Ruby');
+  });
+  it('keeps the attribute of a cell that has a value', () => {
+    const [card] = expandCardTable({ columns: ['name', 'colour', 'copies'], rows: [{ cells: ['Ruby', 'red', '1'], line: 3 }] });
+    expect(card).toEqual({ attrs: { name: 'Ruby', colour: 'red' }, faceKey: textFaceKey({ name: 'Ruby', colour: 'red' }) });
+  });
+  it('leaves a blank cell out wherever it stands, and a 0 stays a number', () => {
+    const [card] = expandCardTable({ columns: ['colour', 'name', 'cost', 'copies'], rows: [{ cells: ['', 'Ruby', '0', '1'], line: 3 }] });
+    expect(card).toEqual({ attrs: { name: 'Ruby', cost: 0 }, faceKey: 't:name=Ruby;cost=0' });
+  });
+  it('makes as many cards of a row as its other cells say, whatever is blank', () => {
+    const ids = expandCardTable({ columns: ['name', 'colour', 'n', 'copies'], rows: [{ cells: ['Ruby', '', '1 to 3', '2'], line: 3 }] });
+    expect(ids).toHaveLength(6);
+    expect(ids.every((id) => !('colour' in id.attrs))).toBe(true);
+  });
+  it('still wants a whole number in the copies column when it is blank', () => {
+    expect(() => expandCardTable({ columns: ['name', 'copies'], rows: [{ cells: ['Ruby', ''], line: 3 }] })).toThrow('copies must be a whole number');
+  });
   it('rejects a range that counts down', () => {
     expect(() => expandCardTable({ columns: ['n'], rows: [{ cells: ['9 to 1'], line: 4 }] })).toThrow('smaller number first');
   });

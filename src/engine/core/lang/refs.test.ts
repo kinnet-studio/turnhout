@@ -41,7 +41,7 @@ const FACTS = vocabFrom({
 describe('vocabulary types', () => {
   it('declares every type with its label and stub order', () => {
     expect(VOCAB_TYPES.map((t) => [t.name, t.label])).toEqual([
-      ['zone', '[zone]'], ['zones', '[zones]'], ['perzone', '[zone]'], ['player', '[player]'], ['phase', '[phase]'],
+      ['zone', '[zone]'], ['zones', '[zones]'], ['perzone', '[zone]'], ['sharedzone', '[zone]'], ['player', '[player]'], ['phase', '[phase]'],
       ['move', '[action]'], ['attribute', '[attribute]'], ['card', '[card]'], ['cardlist', '[cards]'], ['cardclass', '[kind of card]'],
       ['space', '[space]'], ['spaceclass', '[kind of space]'], ['spaceattr', '[space detail]'], ['counter', '[counter]'],
       ['action', '[action]'], ['targetaction', '[action]'], ['amountaction', '[action]'], ['pickaction', '[action]'], ['done', '[action done]'],

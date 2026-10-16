@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { zoneCards, type GameState } from '../../game-state';
 import type { CardState } from '../../scene';
+import { compileGame } from '../compile';
 import { RuleError } from '../diagnostics';
 import {
-  fixtureCard, fixtureColorGame, fixtureEnv, fixtureGame, fixtureMove, fixturePhase, fixtureState, runPhrase, vocabFor,
+  COUNTER_GAME, fixtureCard, fixtureColorGame, fixtureEnv, fixtureGame, fixtureMove, fixturePhase, fixtureState, runPhrase, vocabFor,
 } from '../testing';
 import type { ExampleEnv, PhraseEnv, PhraseKind } from '../types';
 import { BOX_ZONE, matchesCard } from '../zones';
@@ -500,6 +501,59 @@ describe('expect: the state of the table', () => {
   });
 });
 
+describe('expect: a queue', () => {
+  const compiled = compileGame(COUNTER_GAME, lib);
+  // Read when a test runs, so a game that does not compile fails its own tests and not the whole file.
+  const at = (cards: CardState[]) => fixtureEnv(fixtureState(cards), { game: compiled.game! });
+  // A card with only its name, so that the messages say it as a designer would: “an Opal”, not “an Opal 1”.
+  const gem = (id: string, zoneId: string, name: string, slot: number) => fixtureCard(id, zoneId, { name }, { slot });
+
+  it('a zone has some cards in that order, from the bottom', () => {
+    const env = at([gem('c1', 'shop', 'Ruby', 1), gem('c0', 'shop', 'Opal', 0)]);
+    expect(expectThat('the shop has an Opal and a Ruby, in that order', env)).toBe(true);
+    expect(expectThat('the shop has a Ruby and an Opal, in that order', env))
+      .toBe('Expected the shop to have a Ruby and an Opal, in that order, but it has an Opal and a Ruby.');
+  });
+  it('a zone that holds other cards, or too few, is not in that order', () => {
+    const env = at([gem('c0', 'shop', 'Opal', 0), gem('c1', 'shop', 'Ruby', 1), gem('c2', 'shop', 'Ruby', 2)]);
+    expect(expectThat('the shop has an Opal and a Ruby, in that order', env))
+      .toBe('Expected the shop to have an Opal and a Ruby, in that order, but it has an Opal, a Ruby and a Ruby.');
+    expect(expectThat('the shop has an Opal, a Ruby, a Ruby and a Ruby, in that order', env))
+      .toBe('Expected the shop to have an Opal, a Ruby, a Ruby and a Ruby, in that order, but it has an Opal, a Ruby and a Ruby.');
+  });
+  it('a zone with no cards is said to be empty', () => {
+    expect(expectThat('the shop has a Ruby, in that order', at([]))).toBe('Expected the shop to have a Ruby, in that order, but it is empty.');
+  });
+  it('a card named by one of its attributes stands for the whole card in its place', () => {
+    const env = at([fixtureCard('c0', 'shop', { name: 'Opal', cost: 1 }, { slot: 0 }), fixtureCard('c1', 'shop', { name: 'Ruby', cost: 3 }, { slot: 1 })]);
+    expect(expectThat('the shop has an Opal and a Ruby, in that order', env)).toBe(true);
+    expect(expectThat('the shop has a Ruby and an Opal, in that order', env)).toMatch(/^Expected the shop to have a Ruby and an Opal, in that order/);
+  });
+  it('is not the phrase that takes the cards in any order', () => {
+    const vocab = vocabFor(compiled.game!);
+    expect(lib.match('expect', 'the shop has an Opal and a Ruby, in that order', vocab))
+      .toMatchObject({ status: 'ok', pattern: '{zone} has {cardlist}, in that order' });
+    expect(lib.match('expect', 'the shop has an Opal and a Ruby', vocab)).toMatchObject({ status: 'ok', pattern: '{zone} has {cardlist}' });
+  });
+
+  it('a card is among the bottom cards of a zone', () => {
+    const pile = (rubyAt: number) => at(Array.from({ length: 3 }, (_, i) => gem(`c${i}`, 'pile', i === rubyAt ? 'Ruby' : 'Opal', i)));
+    expect(expectThat('a Ruby is among the bottom 2 cards of the pile', pile(1))).toBe(true);
+    expect(expectThat('a Ruby is among the bottom 2 cards of the pile', pile(0))).toBe(true);
+    expect(expectThat('a Ruby is among the bottom 2 cards of the pile', pile(2)))
+      .toBe('Expected a Ruby to be among the bottom 2 cards of the pile, but it is card 3 from the bottom.');
+  });
+  it('counts the first matching card, from the bottom, whatever order the cards are listed in', () => {
+    const env = at([gem('c2', 'pile', 'Ruby', 2), gem('c0', 'pile', 'Opal', 0), gem('c1', 'pile', 'Ruby', 1)]);
+    expect(expectThat('a Ruby is among the bottom 2 cards of the pile', env)).toBe(true);
+    expect(expectThat('a Ruby is among the bottom 1 cards of the pile', env)).toMatch(/but it is card 2 from the bottom\.$/);
+  });
+  it('says so when the zone has no such card', () => {
+    expect(expectThat('a Ruby is among the bottom 2 cards of the pile', at([gem('c0', 'pile', 'Opal', 0)])))
+      .toBe('Expected a Ruby to be among the bottom 2 cards of the pile, but the pile has no Ruby.');
+  });
+});
+
 describe('expect: how the game ended', () => {
   const ended = fixtureEnv(fixtureState([], { result: { scores: { p0: 14, p1: 1, p2: 0, p3: 0 }, winner: 'p2' } }));
   const noScores = fixtureEnv(fixtureState([], { result: { winner: 'p0' } }));
@@ -560,6 +614,8 @@ describe('the default library', () => {
     ['expect', 'the trick has the 2 of clubs', '{zone} has {cardlist}'],
     ['expect', 'the top card of the trick is the 2 of clubs', 'the top card of {zone} is {card}'],
     ['expect', 'the bottom card of the trick is the 2 of clubs', 'the bottom card of {zone} is {card}'],
+    ['expect', 'the trick has the 2 of clubs and the 3 of clubs, in that order', '{zone} has {cardlist}, in that order'],
+    ['expect', 'the queen of spades is among the bottom 2 cards of the trick', '{card} is among the bottom {int} cards of {zone}'],
     ['expect', 'p0 scores 14', '{player} scores {int}'],
     ['expect', 'p0 wins', '{player} wins'],
   ])('reads an example %s line exactly one way: “%s”', (kind, text, pattern) => {
