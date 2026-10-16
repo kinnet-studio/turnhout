@@ -11,6 +11,7 @@ import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { parseParam, VOCAB_TYPES } from './refs';
 import {
   COUNTER_GAME, CREW_GAME, HOLDING_BOARD, INTERRUPT_BOARD, PICK_BOARD, ROUNDS_GAME, TINY_BOARD_HEAD, TURN_GAME, WORKED_GAME, deckGameText, vocabFor,
+  SUBJECT,
 } from './testing';
 import type { ParamType } from './types';
 
@@ -1326,5 +1327,29 @@ describe('values worked out for cards', () => {
     expect(diagnostics).toEqual([]);
     expect(game!).not.toHaveProperty('worked');
     expect(game!.columns.rent).toHaveLength(5);
+  });
+});
+
+describe('values worked out from the card a line is about', () => {
+  /** The 1-based number of `line` in `text`. */
+  const at = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+
+  it('compiles SUBJECT with no problems', () => expect(compileGame(SUBJECT, lib).diagnostics).toEqual([]));
+  it('keeps both lines of a value that goes down by another', () => {
+    const { game } = compileGame(SUBJECT, lib);
+    // An array in toMatchObject must have just as many items, so this says there are 2 refs.
+    expect(game!.worked!['red left']).toMatchObject({
+      kind: 'number',
+      refines: false,
+      refs: [
+        { kind: 'value', phrase: "a card's {attribute} is its {attribute}", args: ['red left', 'red need'] },
+        { kind: 'value', phrase: "a card's {attribute} goes down by its {attribute}", args: ['red left', 'red cut'] },
+      ],
+    });
+  });
+  it('refuses a line that takes another value down, on its line', () => {
+    const line = "  A card's red cut goes down by its red need.";
+    const text = SUBJECT.replace("  A card's red left goes down by its red cut.", `  A card's red left goes down by its red cut.\n${line}`);
+    expect(messages(text)).toEqual([[at(text, line), 'This line is about “red cut”, but it is under Red left:.']]);
   });
 });

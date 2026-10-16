@@ -71,8 +71,11 @@ const FIRST_PHASE_STARTS =
 const ONLY_IF_LINE = /^only if /i;
 /** A line of a section that works out a number for cards: “A red card's …”, “A card's …”. */
 const ABOUT_A_CARD = /^an? (?:.+ )?card['‘’]s /i;
-/** What a line of a number section says it is about: group 1 is the name between “card's” and the first “is” or “are”. */
-const LINE_ABOUT = /card['‘’]s (.+?) (?:is|are) /i;
+/**
+ * What a line of a number section says it is about: group 1 is the name between “card's” and the first “is”, “are” or “goes down by”, as
+ * a line that takes the value down names it too.
+ */
+const LINE_ABOUT = /card['‘’]s (.+?) (?:is|are|goes down by) /i;
 const MIXED_LINES = "Write a worked-out value's lines all as “Only if …” (it holds when they all do) or all as “A … card's … is …”, not both.";
 const WORKED_IS_A_FACT = (name: string) => `“${name}” is already a fact cards keep; a value worked out from lines needs a name of its own.`;
 const FLAG_IS_A_COLUMN = (name: string) =>

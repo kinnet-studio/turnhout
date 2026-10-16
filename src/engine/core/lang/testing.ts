@@ -426,6 +426,18 @@ export const WORKED_GAME = [
 /** WORKED_GAME with a job's crew red: the red work of the cards on it, added up. */
 export const TOTALS_GAME = [WORKED_GAME, '', 'Crew red:', "  A card's crew red is the total red work of the cards on it."].join('\n');
 
+/**
+ * CREW_GAME with a cut a job's red need can be given, and values worked out from what kind of card each is and what is on it: the red a
+ * job has left once its cut is taken off, whether a hand is working (a red one that is not tired), and whether a job is busy (some card
+ * on it is working).
+ */
+export const SUBJECT = [
+  CREW_GAME.replace('  Cards can be tired.', '  Cards can be tired.\n  Cards can have red cut.'), '',
+  'Red left:', "  A card's red left is its red need.", "  A card's red left goes down by its red cut.", '',
+  'Working:', '  Only if it is a red card.', '  Only if it is not tired.', '',
+  'Busy:', '  Only if some card on it is working.',
+].join('\n');
+
 /** The loop of the board fixtures: a start, two streets, a tax, a station, a utility and two chance spaces. */
 export const FIXTURE_SPACES: SpaceSpec[] = [
   { name: 'Go', attrs: { kind: 'go' } },
