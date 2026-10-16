@@ -107,6 +107,15 @@ export function canRead(kind: PhraseKind, text: string, ctx: LineCtx): boolean {
   return tryMatch(kind, text, ctx).status === 'ok';
 }
 
+/**
+ * True when the library has something to say about `text` as a phrase of `kind`: a phrase matches it (even to refuse it), phrases are
+ * alike enough to be suggested, or a name in it was never defined by the game. Words that are like nothing in the library say nothing.
+ */
+export function libraryHasSayOn(kind: PhraseKind, text: string, ctx: LineCtx): boolean {
+  const result = tryMatch(kind, text, ctx);
+  return result.status !== 'unknown' || result.suggestions.length > 0 || tryMisnamed([kind], text, ctx) !== null;
+}
+
 /** A name in a line no phrase matched that the game never defined; a library that fails here just says nothing. */
 function tryMisnamed(kinds: PhraseKind[], text: string, ctx: LineCtx): Misnamed | null {
   try {

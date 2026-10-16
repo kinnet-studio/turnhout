@@ -774,6 +774,18 @@ describe('Rent Day (designer language)', () => {
     expect(compiled.game).toBeUndefined();
   });
 
+  it('leaves a plain button whose words only start like a pick a plain button, even after a kind of space or a color', () => {
+    const wordings = ['pay a tax bill', 'use a jail pass', 'collect a station bonus', 'claim a red bonus', 'pay a street fine', 'pay a utility fee'];
+    const end = '  A player may end their turn.\n';
+    expect(RENT_DAY).toContain(end);
+    const extended = compileGame(RENT_DAY.replace(end, `${wordings.map((w) => `  A player may ${w}.\n`).join('')}${end}`), lib);
+    expect(extended.diagnostics).toEqual([]);
+    const playing = extended.game!.phases.find((phase) => phase.id === 'playing')!;
+    expect(playing.actions.filter((a) => wordings.includes(a.words)).map((a) => [a.words, a.label, a.target])).toEqual(
+      wordings.map((w) => [w, `${w[0].toUpperCase()}${w.slice(1)}`, null]),
+    );
+  });
+
   it('has the 40 spaces of the table, starting at Go', () => {
     const spaces = game!.board!.spaces;
     expect(spaces).toHaveLength(SPACES);

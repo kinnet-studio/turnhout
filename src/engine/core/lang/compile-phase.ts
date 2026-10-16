@@ -1,4 +1,4 @@
-import { addProblem, canRead, isMissing, matchEffectLine, matchLine, phaseId, rejectChildren, type LineCtx } from './compile-util';
+import { addProblem, canRead, isMissing, libraryHasSayOn, matchEffectLine, matchLine, phaseId, rejectChildren, type LineCtx } from './compile-util';
 import type { OutlineNode } from './outline';
 import { normalizeLine, suggestNames } from './phrases';
 import { joinOr, parseParam, secondPersonWords, thirdPerson, thirdPersonWords, VOCAB_TYPES } from './refs';
@@ -286,15 +286,17 @@ function startsLikePick(text: string, vocab: Vocab): boolean {
 
 /**
  * How a pick without “on” is told from words that pick nothing, as the player who presses the button: `reads` is true for words a
- * target phrase reads, and `meant` for words that start the way a pick does yet read no target. Those are a pick with a mistake in it
- * (“a space the rivel owns”), reported as one written with “on” is, and never a plain button that would act on the presser's own
- * space. A pick said with another word (“a space on any … they own”) is not meant here: its line is told to say “on a …” instead.
+ * target phrase reads, and `meant` for words that start the way a pick does, read no target, and look like one: the library has
+ * something to say about them as a target, being close to a target phrase or naming a fact the game never defined. Those are a pick
+ * with a mistake in it (“a space the rivel owns”), reported as one written with “on” is, and never a plain button that would act on
+ * the presser's own space. Words that only start like a pick and are like no target (“a tax bill” on a board with a tax kind) stay a
+ * plain button. A pick said with another word (“a space on any … they own”) is not meant here: its line is told to say “on a …” instead.
  */
 export type TargetWords = { reads: (text: string) => boolean; meant: (text: string) => boolean };
 
 export const targetWords = (ctx: LineCtx): TargetWords => ({
   reads: (text) => canRead('target', text, { ...ctx, player: true }),
-  meant: (text) => startsLikePick(text, ctx.vocab) && otherPick(text, ctx.vocab) === null,
+  meant: (text) => startsLikePick(text, ctx.vocab) && otherPick(text, ctx.vocab) === null && libraryHasSayOn('target', text, ctx),
 });
 
 /** What an action's button says: its words in the second person, as the player reads them. */

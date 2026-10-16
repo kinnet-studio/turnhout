@@ -1114,6 +1114,35 @@ describe('a pick without “on” whose words read no target', () => {
       ['trade with another player', 'trade with', 'Trade with another player', null, false, true],
     ]);
   });
+  it('leaves a button a plain one when its words only start like a pick and the library has nothing to say about them as a target', () => {
+    // Kinds tax, station, utility, jail and street, and the colours brown, orange and red: each of the buttons below has a " a …" tail that begins with one.
+    const board = TINY_BOARD_HEAD.replace(
+      '    | Rose Lane  | street | orange | 180   | 14   |     |',
+      [
+        '    | Rose Lane  | street | orange | 180   | 14   |     |', '    | Market Sq  | street | red    | 220   | 18   |     |',
+        '    | North Stn  | station |       | 200   |      |     |', '    | Power Co   | utility |       | 150   |      |     |',
+        '    | Jail       | jail   |        |       |      |     |',
+      ].join('\n'),
+    );
+    const buttons = ['pay a tax bill', 'use a jail pass', 'collect a station bonus', 'claim a red bonus', 'pay a street fine', 'pay a utility fee'];
+    const end = '\nEnd:\n  The game ends when one player is left.\n  That player wins.';
+    const { game, diagnostics } = compileGame(`${board}\n${buttons.map((b) => `  A player may ${b}.`).join('\n')}\n${end}`, lib);
+    expect(diagnostics).toEqual([]);
+    expect(game!.phases[0].actions.map((a) => [a.words, a.base, a.label, a.target?.text ?? null])).toEqual([
+      ['pay a tax bill', 'pay a tax bill', 'Pay a tax bill', null],
+      ['use a jail pass', 'use a jail pass', 'Use a jail pass', null],
+      ['collect a station bonus', 'collect a station bonus', 'Collect a station bonus', null],
+      ['claim a red bonus', 'claim a red bonus', 'Claim a red bonus', null],
+      ['pay a street fine', 'pay a street fine', 'Pay a street fine', null],
+      ['pay a utility fee', 'pay a utility fee', 'Pay a utility fee', null],
+    ]);
+  });
+  it('still reports a pick whose words the library is close to reading as a target', () => {
+    for (const rest of ['a space tehy own', 'a space they onw', 'a street they onw', 'an orange street they onw', 'a space the trade partnr owns']) {
+      // A plain button would be read with no diagnostics at all, so one error at the button's line is a pick that was meant.
+      expect(compileGame(withButton(`A player may seize ${rest}.`), lib).diagnostics.map((d) => [d.line, d.severity]), rest).toEqual([[24, 'error']]);
+    }
+  });
   it('still tells the designer to write “on a …” for a pick said with another word', () => {
     expect(messages(withButton('A player may seize a space on any street they own.'))).toEqual([[24, 'Write “on a street they own” so the player picks one.']]);
     expect(buttonsOf(withButton('A player may seize a street they own.'))).toEqual(['mark a space they own', 'seize a street they own', 'end their turn']);
