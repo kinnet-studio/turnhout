@@ -390,7 +390,8 @@ function playTurn(
     return move;
   };
 
-  const salary = (card: CardState) => card.data?.salary as number;
+  /** A card's salary as the rules work it out, which a trait may change from the printed one (§20.B.1). */
+  const salary = (card: CardState) => runtime.workedValue(engine.getState(), card.id, 'salary') as number;
   /** The card in the row with the highest salary above 0, the first of those. */
   const highestPaid = (row: CardState[]) =>
     row.reduce<CardState | undefined>((top, card) => (salary(card) > (top ? salary(top) : 0) ? card : top), undefined);
@@ -774,7 +775,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(84);
+    expect(results).toHaveLength(88);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -1323,6 +1324,16 @@ describe('Startup Simulator (designer language)', () => {
       expect(counterOf(engine.getState(), 'capital', 'p1')).toBe(8);
       play(engine, { type: PAY_SALARIES, by: 'p1' }, rules);
       expect(counterOf(engine.getState(), 'capital', 'p1')).toBe(7);
+    });
+
+    it('lets go of the dearest staff by the salary the rules work out: the Engineer costs $1 in the ops team, so the Architect goes first (§20.B.1)', () => {
+      const arranged = arrange({ 'operations-p1': [idOf('USB Gadget')], 'ops-team-p1': [idOf('Engineer'), idOf('Architect')] });
+      const { engine, runtime } = createEngine(game!, lib, 2, arranged.getState());
+      expect(engine.dispatch({ type: END_ACTIONS, by: 'p0' }).ok).toBe(true);
+      expect(engine.getState().turn).toMatchObject({ current: 'p1', phase: 'income' });
+      // On turn 5 the auto-player lets a card go at Income though it can pay, and on an odd turn it looks in the ops team first.
+      playTurn(engine, 5, 'researches', () => {}, (log) => log.length >= 2, runtime, false);
+      expect(engine.getLog()[1]).toEqual({ type: LET_GO['ops team'], by: 'p1', cardId: idOf('Architect') });
     });
 
     it('a refused press spends nothing', () => {

@@ -1358,6 +1358,14 @@ Example: a Tier 2 Software project with only a Hardware Senior and a Specialist 
   Then the Neobank in p0's development has 0 blue cubes
   And the Neobank in p0's development is stalled
 
+Example: a Tier 2 Hardware project with only a Software Senior is Stalled, so its Hardware Junior generates nothing (section 3, section 7)
+  Given the phase is actions
+  And p0's development has a Server Farm
+  And the Server Farm in p0's development has the Hacker and a Junior Hardware Eng on it
+  When p0 ends their actions
+  Then the Server Farm in p0's development has 0 red cubes
+  And the Server Farm in p0's development is stalled
+
 Example: a hybrid led by one Senior Backend progresses, its Hardware Junior generating Red too (section 3, section 7)
   Given the phase is actions
   And p0's development has a Drone Delivery
@@ -1382,6 +1390,16 @@ Example: a hybrid Launches only with both leads or one cross-functional lead (se
   Then it is accepted
   And p0's operations has a Drone Delivery
 
+Example: a Tier 1 hybrid built by Juniors Launches with no lead (section 3, section 6)
+  Given the phase is actions
+  And p0's development has a Smart Toy
+  And the Smart Toy in p0's development has 1 blue cube
+  And the Smart Toy in p0's development has 3 red cubes
+  And the Smart Toy in p0's development has a Junior Software Dev and a Junior Hardware Eng on it
+  When p0 launches the Smart Toy
+  Then it is accepted
+  And p0's operations has a Smart Toy
+
 Example: an onboarding Senior leads nothing that turn (section 6, ruling 8)
   Given the phase is actions
   And p0's development has a Neobank and a Dating App
@@ -1395,6 +1413,16 @@ Example: an onboarding Senior leads nothing that turn (section 6, ruling 8)
   And p0 ends their actions
   Then p0 has 5 capital
   And the Neobank in p0's development has 4 blue cubes
+
+Example: an onboarding Hardware Senior leads nothing until the next turn starts (section 6, ruling 8)
+  Given the phase is actions
+  And p0's development has a Server Farm and a Smart Lock
+  And the Smart Lock in p0's development has the Fixer on it
+  When p0 reassigns the Fixer to the Server Farm
+  Then the Server Farm in p0's development is stalled
+  When p0 ends their actions
+  Then it is p1's turn
+  And the Server Farm in p0's development is not stalled
 
 Example: a Launch is refused when its only lead was Reassigned away this turn (section 6)
   Given the phase is actions
@@ -1413,7 +1441,7 @@ Example: Greenlighting without a lead is allowed, and the project is Stalled (se
   Then it is accepted
   And the Neobank in p0's development is stalled
 
-Example: the type follows the cut: Smart Grid cut by 2 blue is pure Hardware (this slice's call)
+Example: the type follows the cut: Smart Grid cut by 2 blue is pure Hardware (section 19, this slice's call)
   Given the phase is actions
   And p0's operations has a Smart Thermostat
   And p0's backlog has a Smart Grid
@@ -1426,6 +1454,17 @@ Example: the type follows the cut: Smart Grid cut by 2 blue is pure Hardware (th
   Then the Smart Grid in p0's development is not stalled
   When p0 launches the Smart Grid
   Then it is accepted
+
+Example: Smart Grid cut by 2 blue Launches with one Hardware Senior, as the type follows the cut (section 3, section 6, section 19)
+  Given the phase is actions
+  And p0's operations has a Smart Thermostat
+  And p0's backlog has a Smart Grid
+  When p0 greenlights the Smart Grid, choosing cut 2 blue
+  Given the Smart Grid in p0's development has 10 red cubes
+  And the Smart Grid in p0's development has the Engineer on it
+  When p0 launches the Smart Grid
+  Then it is accepted
+  And p0's operations has a Smart Thermostat and a Smart Grid
 
 Example: the Diva can't be Reassigned from a project (section 6, section 20)
   Given the phase is actions
