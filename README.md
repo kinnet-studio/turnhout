@@ -167,6 +167,10 @@ Phase: playing
   - only a number each player has each turn can be a cost.
 - **Examples** name the card: `When p0 buys the Ruby`, `When p0 shows the Opal to the Ruby` and `When p0 trades the Ruby and the Opal`. When two buttons could take the card, the example says where it goes (`When p0 buys the Ruby to p0's case`) or where it comes from (`When p0 hires a Sales Rep from the open job market`), and the error says which would tell them apart.
 - **In the playtest,** pressing the button lists the cards it may pick under the buttons, a refused one greyed with the reason on hover. A set ends with Confirm, and Cancel closes the list.
+- **Clicking.**
+  - Click a card on the table to see the buttons that take it.
+  - A button that picks cards takes clicks on the table as well as on its list.
+  - A set ends with Confirm, or with a click on the card they go to.
 - **Startup Simulator** is played by picking cards.
 
 **Cards on cards, values and totals.** A card can sit on another card, a section can work out a number or a yes-or-no for each card, and a rule can add a number up over cards or run once for each card:
@@ -214,6 +218,11 @@ Phase: playing
 - **The table.** The shared zones wrap onto lines across the top, each named above it. The seat's own zones run along the bottom, and the other seats' zones are left off. A row's cards stand side by side, so every face can be read; a longer row squeezes them to stay in its place.
 - **The other seats.** Every player's line shows their numbers, how many cards each of their zones holds, and the start player: `p0 7 capital, 3 actions, 0 market share · bench 3 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0 · start player`.
 - **Faces.** A card face shows its name and its first three columns, so a card table puts its key columns first. Pointing at a card shows all of it under the table: `Architect — cost 7 · skill software · output 3 · salary 2 · role Senior Developer · trait Clean Code`.
+- **The Board.**
+  - The seat's cards that everyone can see sit in a band between the shared zones and the seat's own strip.
+  - A card that sits on a card hangs under it.
+  - A number kept on cards shows under a card against the column whose name starts with the same words: `blue cubes` against `blue cost` reads `Blue 3/6`. One named with words before another's shows beside it when it isn't 0: `Blue 3/6 +4 new`.
+  - Under each seat's line, its public cards are listed by zone, with what sits on each: `development: Dating App [Blue 4/6, Red 0/0] with Junior Software Dev and Architect (onboarding) · operations: To-Do List [Blue 4/4, Red 0/0] · ops team: QA Engineer`.
 - **Startup Simulator** plays this way.
 
 **Saying a button was pressed.** `they have rolled this turn` means any roll button was pressed, so a game with `A player may roll the dice.` and `A player may roll for a double.` reads "rolled" as either. To name one, write its whole wording in the past: `they have rolled for a double this turn`.

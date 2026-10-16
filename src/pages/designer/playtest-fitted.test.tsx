@@ -781,3 +781,47 @@ describe('picking cards by clicking them', () => {
     ]);
   });
 });
+
+describe('the Board played by clicking', () => {
+  const tab = (name: string) => screen.getByRole('tab', { name });
+  const selected = (name: string) => tab(name).getAttribute('aria-selected');
+  const T = after(N, 3);
+
+  it('builds, generates, launches and earns Market Share, by clicking cards', () => {
+    let set = setUp();
+    const todo = idOf(set, 'To-Do List');
+    set = relocate(set, [todo], `development-${S}`, game);
+    mount({ initial: changeCard(set, todo, { 'blue cubes': 3 }, game) });
+
+    click(named(`bench-${S}`, 'Junior Software Dev'));
+    choose('Assign some cards from your bench to a card in your development');
+    click(todo);
+    expect(lineOf(S)).toContain('2 actions');
+
+    // Generate: the Junior's 1 blue takes the card to its blue cost.
+    press('End your actions');
+    fireEvent.click(tab(S));
+    expect(table!.decor![todo].caption).toBe('Blue 4/4\nRed 0/0');
+
+    // The tabs follow the turn only when the seat to act changes, and S's tab was clicked while N was to act.
+    fireEvent.click(tab(`${N} — to act`));
+    press('End your actions');
+    expect(selected(`${T} — to act`)).toBe('true');
+    press('End your actions');
+    expect(selected(`${S} — to act`)).toBe('true');
+    // Income paid nothing, with no card in operations, and the payroll of $0 (a Junior's) skipped straight to actions.
+    expect(lineOf(S)?.startsWith(`${S} 7 capital, 3 actions, 0 market share · `)).toBe(true);
+    expect(status()).toBe(`seat: ${S} — Your turn — ${hint('actions')}`);
+
+    click(todo);
+    choose('Launch a card from your development to your operations');
+    expect(screen.getByTestId(`board-${S}`).textContent).toBe('operations: To-Do List [Blue 4/4, Red 0/0] · ops team: Junior Software Dev');
+
+    // Income: the To-Do List's rev of 1 is paid, and its rev earns 1 market share.
+    for (const seat of [S, N, T]) {
+      expect(selected(`${seat} — to act`)).toBe('true');
+      press('End your actions');
+    }
+    expect(lineOf(S)?.startsWith(`${S} 8 capital, 3 actions, 1 market share · `)).toBe(true);
+  });
+});
