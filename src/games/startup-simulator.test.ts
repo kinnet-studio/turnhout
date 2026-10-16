@@ -5,16 +5,16 @@ import { createDefaultLibrary } from '@/engine/core/lang/library';
 import { runExamples } from '@/engine/core/lang/examples';
 import { createEngine, initialState, seatsFor, tableDefFor } from '@/engine/core/lang/build';
 import { COUNTERS_KEY, counterOf, setCounter } from '@/engine/core/lang/board-state';
-import { seatExtras, type PickCardView, type SeatExtras } from '@/engine/core/lang/board-view';
-import { putOn } from '@/engine/core/lang/attach';
+import { seatExtras, type CardPickView, type SeatExtras } from '@/engine/core/lang/board-view';
+import { cardsOn, putOn } from '@/engine/core/lang/attach';
 import { deckOf, NEXT_CARD_KEY } from '@/engine/core/lang/cards';
-import { cardCandidates, hasCost } from '@/engine/core/lang/declared-actions';
+import { cardCandidates, hasCost, ontoCandidates } from '@/engine/core/lang/declared-actions';
 import { moveZoneId } from '@/engine/core/lang/declared-moves';
 import { RuleError } from '@/engine/core/lang/diagnostics';
 import type { LangRuntime } from '@/engine/core/lang/runtime';
 import type { ZoneRef } from '@/engine/core/lang/types';
 import { markTurnStarted, ROUND_KEY, START_PLAYER_KEY, startPlayerOf, TURN_OF_KEY } from '@/engine/core/lang/turns';
-import { relocate, zoneIdFor, zoneInfo } from '@/engine/core/lang/zones';
+import { HOLDER_KEY, relocate, zoneIdFor, zoneInfo } from '@/engine/core/lang/zones';
 import { HIDDEN_FACE_KEY, deriveScene } from '@/engine/core/derive-scene';
 import { cardById, zoneCards, type GameState } from '@/engine/core/game-state';
 import type { GameEngine } from '@/engine/core/game-engine';
@@ -91,7 +91,7 @@ const DISCARD_BACKLOG = 'discard a card in their backlog';
 /** The rows that keep only their 5 newest cards, letting the oldest go to the box. */
 const POOLS = ['open-job-market', 'open-idea-pool'];
 /** The rows each player has that only they can see. */
-const OWN_ROWS = ['bench', 'backlog', 'research'];
+const OWN_ROWS = ['bench', 'backlog', 'research', 'scouting'];
 /** The rows of each player's Board, which everyone can see: projects, products in operation, the staff on projects and the ops staff (§3). */
 const BOARD_ROWS = ['development', 'operations', 'development team', 'ops team'];
 /** The phases of a turn, in order (§5): Income, Actions with its two interrupts, the Engine's Generate and Commit, and Cleanup. */
@@ -103,6 +103,36 @@ const DISMISS_FROM_PROJECT = 'dismiss a card in their development team';
 const PIVOT = 'pivot a card in their development';
 const LAY_OFF = 'lay off some cards from their bench to the open job market';
 const PASS_ON_THE_REST = 'pass on the rest';
+/** Income's buttons (§5): let go of a staff member whose salary won't be paid, from a project or the ops team, and pay the rest. */
+const LET_GO: Record<string, string> = {
+  'development team': 'let go of a card in their development team',
+  'ops team': 'let go of a card in their ops team',
+};
+const PAY_SALARIES = 'pay salaries';
+// The Board's other buttons in the actions phase (§6, rulings 7, 20 and 25).
+const HIRE_AGENCY_TO_PROJECT = 'hire a card from the agency row to a card in their development';
+const HIRE_AGENCY_TO_OPS = 'hire a card from the agency row to their ops team';
+const GREENLIGHT = 'greenlight a card in their backlog';
+const ASSIGN_TO_PROJECT = 'assign some cards from their bench to a card in their development';
+const ASSIGN_TO_OPS = 'assign some cards from their bench to their ops team';
+const REASSIGN_FROM_OPS = 'reassign a card from their ops team to a card in their development';
+const RECALL = 'recall some cards from their ops team to their bench';
+const DISMISS_FROM_OPS = 'dismiss a card in their ops team';
+const LAUNCH = 'launch a card from their development to their operations';
+/** Sourcing's hires (§13.B): the cards a Layoff found, at their printed cost, to the bench, the ops team or a project. */
+const SOURCE_HIRES = [
+  'hire some cards from their scouting to their bench',
+  'hire some cards from their scouting to their ops team',
+  'hire some cards from their scouting to a card in their development',
+];
+/** The hires from the agency row, which cost the card's cost. */
+const AGENCY_HIRES = [HIRE_AGENCY, HIRE_AGENCY_TO_PROJECT, HIRE_AGENCY_TO_OPS];
+/** Every button that hires: an agency card that reaches the open job market in any other move was pushed out of its row. */
+const HIRES = [...AGENCY_HIRES, HIRE_MARKET, ...SOURCE_HIRES];
+/** What the tally calls a product in operation paying its rev at Income (§5). */
+const EARNS = 'a product in operation earns its rev';
+/** What the tally calls a card pushed out of the agency row into the open job market (§13.B, R7). */
+const PUSHED_OUT = 'the agency row pushes a card out to the open job market';
 /** The row each Cleanup phase discards from, and the button that discards from it. */
 const CLEANUPS: Record<string, { row: string; discard: string }> = {
   'bench cleanup': { row: 'bench', discard: DISCARD_BENCH },
@@ -116,6 +146,21 @@ const ACTIONS_EACH_TURN = 3;
 /** The button of the phase `state` is in whose move type is `type`, as the game declares it. */
 const buttonOf = (state: GameState, type: string) =>
   game!.phases.find((phase) => phase.id === state.turn?.phase)?.actions.find((action) => action.words === type);
+
+/** How many of a kind of cube a card has: a count the game declares on cards, 0 until a rule changes it. */
+const cubesOn = (card: CardState, kind: string) => (card.data?.[kind] as number | undefined) ?? 0;
+/** `seat`'s products in operation. */
+const operationsOf = (state: GameState, seat: PlayerId) => zoneCards(state, zoneIdFor('operations', seat));
+/** Whether a product in operation earns at Income, and so gives a market share: its rev is more than 0 (§5, ruling 25). */
+const earns = (product: CardState) => (product.data?.rev as number) > 0;
+/** What `seat` pays at Income: the salary of every staff member on its Board, on its projects and in its ops team (§5). */
+const payrollOf = (state: GameState, seat: PlayerId) =>
+  sum([...zoneCards(state, zoneIdFor('development team', seat)), ...zoneCards(state, zoneIdFor('ops team', seat))], 'salary');
+/** The colors of cube each skill makes in 1b: flex staff work in blue until modes arrive (§11), and QA and the Specialists make none. */
+const COLOR_OF_SKILL: Record<string, string> = { software: 'blue', flex: 'blue', hardware: 'red' };
+/** The colors a project's tracks still lack cubes of; none once it is feature complete (§6). */
+const lacking = (project: CardState) =>
+  ['blue', 'red'].filter((color) => cubesOn(project, `${color} cubes`) < (project.data?.[`${color} cost`] as number));
 
 /**
  * How an auto-player gets its growth ideas: by researching the growth deck, or by drafting from the growth market. A game that
@@ -137,80 +182,193 @@ function play(engine: GameEngine, move: Move, watch: Watch): void {
 /**
  * The cards `extras`, the page's view of `seat` in `state`, offers for the button `type`, once the view is checked against the
  * rules: they are the button's candidates, which are the cards of `zoneId` in slot order, each is named by its card's name, and
- * the button is allowed exactly when some card is.
+ * the button is allowed exactly when some card is. A button that puts its cards on a card picks that card in `ontoZoneId`, and the
+ * view lists for each card the cards it may go on: the button's targets, which are the cards of `ontoZoneId` in slot order, each
+ * named by its card's name, and the card is allowed exactly when some target takes it.
  */
 function viewedCards(
-  runtime: LangRuntime, extras: SeatExtras, state: GameState, seat: PlayerId, type: string, zoneId: string,
-): PickCardView[] {
+  runtime: LangRuntime, extras: SeatExtras, state: GameState, seat: PlayerId, type: string, zoneId: string, ontoZoneId: string | null,
+): CardPickView {
   const at = `${seat}'s ${type} in ${state.turn!.phase}`;
   const button = extras.actions.find((action) => action.move === type);
   expect(button?.cards, `the cards the view offers for ${at}`).toBeDefined();
-  const offered = button!.cards!.cards;
+  const picking = button!.cards!;
+  const offered = picking.cards;
   const zone = zoneCards(state, zoneId);
   expect(cardCandidates(runtime, buttonOf(state, type)!, state, seat), `the candidates of ${at}`).toEqual(zone.map((card) => card.id));
   expect(offered.map((card) => card.id), `the cards the view offers for ${at}`).toEqual(zone.map((card) => card.id));
   expect(offered.map((card) => card.name), `the names the view gives the cards of ${at}`).toEqual(zone.map(nameOf));
+  expect(picking.onto === null, `whether ${at} puts its cards on a card`).toBe(ontoZoneId === null);
+  if (picking.onto !== null) {
+    const targets = zoneCards(state, ontoZoneId!);
+    expect(ontoCandidates(runtime, buttonOf(state, type)!, state, seat), `the targets of ${at}`).toEqual(targets.map((card) => card.id));
+    expect(Object.keys(picking.onto.targets), `the cards the view lists targets for in ${at}`).toEqual(zone.map((card) => card.id));
+    for (const card of offered) {
+      const goes = picking.onto.targets[card.id];
+      const named = targets.map((target) => [target.id, nameOf(target)]);
+      expect(goes.map(({ id, name }) => [id, name]), `the targets the view offers ${card.id} in ${at}`).toEqual(named);
+      expect(card.allowed === true, `whether ${at} allows ${card.id}, with ${JSON.stringify(goes)}`).toBe(goes.some((t) => t.allowed === true));
+    }
+  }
   const some = offered.some((card) => card.allowed === true);
   expect(button!.allowed === true, `whether ${at} is allowed, with ${JSON.stringify(offered)}`).toBe(some);
-  return offered;
+  return picking;
 }
 
 /**
+ * Where a button that puts its cards on a card puts them: on the card `which` finds among the cards of `zoneId` that `card`, the first
+ * card picked, may go on.
+ */
+type Onto = { zoneId: string; which: (targets: CardState[], card: CardState) => CardState | undefined };
+
+/**
+ * The actions `playTurn` falls back on when the one it chose is refused or has nothing to pick: the Board moves 3 to 7 (assign to a
+ * project, assign to the ops team, reassign, recall and pivot), which cost no capital, in the cycle's order after `action`.
+ */
+const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => (action + 1 + i) % 9).filter((next) => next >= 3 && next <= 7);
+
+/**
  * Takes the turn of the seat whose turn it is, the game's turn `t` (counted from 0), until the turn passes, the game ends or
- * the log holds `moves` moves. `a` counts the actions taken so far in this turn.
+ * `stop` says the log holds enough. `a` counts the actions taken so far in this turn.
  *
- * - The first action is an Ideation, by `t % 4`: a growth idea (0 and 2), draft the growth market's first card (1), or (3) by
+ * - **Income.** While the payroll is more than the seat's capital, or once when `t % 6 === 5`, it lets go of its salaried card
+ *   with the highest salary (the first of those), from the development team on an even `t` and the ops team on an odd one, or
+ *   from the other when that one has none. Then it pays salaries.
+ * - **Free moves** come first in the actions phase, each at most once a turn: it greenlights the backlog's first Tier 1 card while
+ *   its development has fewer than 3, and it dismisses the ops team's first card when `t % 9 === 4` and the development team's
+ *   first when `t % 9 === 8`.
+ * - **The first action** is an Ideation, by `t % 4`: a growth idea (0 and 2), draft the growth market's first card (1), or (3) by
  *   `⌊t / 4⌋ % 3` research the seed deck, draft the seed market's first card or draft the open idea pool's first card. A growth
  *   idea researches the growth deck when the `style` researches, and drafts the growth market's first card when it drafts.
  *   When the rules refuse that, it tries researching the growth deck, drafting the growth market's first card, researching the
  *   seed deck and drafting the seed market's first card, in that order, and with none allowed it recruits instead.
- * - Each later action is a recruit, by `(t + a) % 4`: the Junior of kind `(t + a) % 3` (0), the first agency card it can pay
- *   for (1), the open job market's first card (2), or the end of its actions (3). When the rules refuse that, or there is no
- *   such card, it recruits that Junior, else ends its actions.
+ * - **Each later action** launches the first project that is feature complete; with none, it is one by `(t + a) % 9`:
+ *   0. recruit the Junior of kind `(t + a) % 3`;
+ *   1. hire the first agency card it can pay for, to its bench, its first project or its ops team, by `(t + ⌊t / 9⌋) % 3`;
+ *   2. hire the open job market's first card;
+ *   3. assign the bench cards whose skill makes a color the first unfinished project still lacks (the bench's first card when none
+ *      does) to that project;
+ *   4. assign the bench's first two cards (or its one) to the ops team;
+ *   5. reassign the ops team's first card to the first project, else the first development team card with another project to go
+ *      on, to the first such project;
+ *   6. recall every ops team card;
+ *   7. pivot the first project with no cubes and no staff, else, when `t % 13 === 0`, the first project;
+ *   8. lay off the bench's first card, or its first two on an odd `t`.
+ *
+ *   When the rules refuse that, or it has nothing to pick, it makes the first of the Board moves 3 to 7 after it in the cycle that
+ *   it can (see `boardMovesAfter`); with none, it recruits the Junior of kind `(t + a) % 3`, else ends its actions.
+ * - **Sourcing.** It hires the first card in its scouting it can pay for, to its bench, its ops team or its first project, by
+ *   `(t + ⌊t / 9⌋) % 3`; when it can pay for none, or the rules refuse the hire, it passes on the rest.
  * - In research it keeps the research row's card at `t` (mod the row's length); in each Cleanup it discards the row's first card.
  *
- * Without a `runtime` it finds the card a button picks in the zone. With one, it finds it as a player at the page would: among
- * the cards the page's view of the seat offers for the button (checked by `viewedCards`), and the view must allow the card it
- * presses and grey each card it passes over because the engine refuses it. It chooses the same card either way, so a game plays
- * the same.
+ * A hire's place goes by `(t + ⌊t / 9⌋) % 3`, not `t % 3`: the action that hires from the agency row comes only when `t % 9` is 0
+ * or 8, and the Layoff before a sourcing only when it is 6 or 7, so `t % 3` would never send either to one of its three places.
+ * The Board moves come before a recruit as the fallback because a recruit alone spends a seat's capital on Juniors before it can hire
+ * staff for its Board, and a seat that can't pay for one ends its turn with actions left; the Board moves cost nothing.
+ *
+ * Without a `runtime` it finds the cards a button picks in the zones. With one, it finds them as a player at the page would: among
+ * the cards the page's view of the seat offers for the button and the cards each may go on (both checked by `viewedCards`). The
+ * view must judge each card it picks as the engine judges a press of that card alone, with its target, and allow every card of a
+ * press the engine takes. A set is judged whole (R1), so the engine's word on the press is no one card's. It chooses the same
+ * cards either way, so a game plays the same.
  */
-function playTurn(engine: GameEngine, t: number, style: Style, watch: Watch, moves: number, runtime: LangRuntime | null): void {
+function playTurn(
+  engine: GameEngine, t: number, style: Style, watch: Watch, stop: (log: readonly Move[]) => boolean, runtime: LangRuntime | null,
+): void {
   const by = engine.getState().turn!.current;
   const cards = (zoneId: string) => zoneCards(engine.getState(), zoneId);
+  const own = (row: string) => zoneIdFor(row, by);
+  const capital = () => counterOf(engine.getState(), 'capital', by);
   const press = (type: string): Move => ({ type, by });
   /** The page's view of the seat, read once for each state a card is picked in. */
   let view: { of: GameState; extras: SeatExtras } | null = null;
-  /** The view's word on each move whose card was found through the view. */
-  const verdicts = new Map<Move, PickCardView>();
-  /** The move that presses `type` with the card `which` finds among the cards of `zoneId`, or null when it finds none. */
-  const pick = (type: string, zoneId: string, which: (row: CardState[]) => CardState | undefined): Move | null => {
-    if (runtime === null) {
-      const card = which(cards(zoneId));
-      return card ? { type, cardId: card.id, by } : null;
-    }
+  /** The view's word on each card of each move whose cards were found through the view, on the card it goes on when it goes on one. */
+  const verdicts = new Map<Move, { id: string; allowed: true | string }[]>();
+  /**
+   * The cards `type` offers from `zoneId`, and for each the cards of `ontoZoneId` it may go on: the zones' cards, or, with a runtime,
+   * the ones the page's view lists, with the view itself.
+   */
+  const offers = (type: string, zoneId: string, ontoZoneId: string | null) => {
     const state = engine.getState();
+    const byId = (id: string) => cardById(state, id)!;
+    if (runtime === null) {
+      return { row: zoneCards(state, zoneId), targetsOf: (_id: string) => (ontoZoneId === null ? [] : zoneCards(state, ontoZoneId)), seen: null };
+    }
     if (view?.of !== state) view = { of: state, extras: seatExtras(engine, runtime, state, by) };
-    const offered = viewedCards(runtime, view.extras, state, by, type, zoneId);
-    const card = which(offered.map((candidate) => cardById(state, candidate.id)!));
-    if (!card) return null;
-    const move: Move = { type, cardId: card.id, by };
-    verdicts.set(move, offered.find((candidate) => candidate.id === card.id)!);
+    const seen = viewedCards(runtime, view.extras, state, by, type, zoneId, ontoZoneId);
+    return { row: seen.cards.map(({ id }) => byId(id)), targetsOf: (id: string) => seen.onto!.targets[id].map((target) => byId(target.id)), seen };
+  };
+  /**
+   * The move that presses `type` with the cards `which` finds among those it offers from `zoneId`, as a set when `some`, and, for a
+   * button that puts them on a card, on the card `onto` finds; null when either finds none.
+   */
+  const pickFrom = (type: string, zoneId: string, some: boolean, which: (row: CardState[]) => CardState[], onto?: Onto): Move | null => {
+    const { row, targetsOf, seen } = offers(type, zoneId, onto?.zoneId ?? null);
+    const picked = which(row);
+    if (picked.length === 0) return null;
+    const target = onto?.which(targetsOf(picked[0].id), picked[0]);
+    if (onto && !target) return null;
+    const move: Move = {
+      type, by, ...(some ? { cardIds: picked.map((card) => card.id) } : { cardId: picked[0].id }), ...(target ? { onto: target.id } : {}),
+    };
+    if (seen !== null) {
+      const verdictOf = (id: string) => (target
+        ? seen.onto!.targets[id].find((card) => card.id === target.id)!
+        : seen.cards.find((card) => card.id === id)!).allowed;
+      verdicts.set(move, picked.map(({ id }) => ({ id, allowed: verdictOf(id) })));
+    }
     return move;
   };
+  const pick = (type: string, zoneId: string, which: (row: CardState[]) => CardState | undefined, onto?: Onto) =>
+    pickFrom(type, zoneId, false, (row) => {
+      const card = which(row);
+      return card ? [card] : [];
+    }, onto);
+  const pickSome = (type: string, zoneId: string, which: (row: CardState[]) => CardState[], onto?: Onto) =>
+    pickFrom(type, zoneId, true, which, onto);
   const first = (type: string, zoneId: string) => pick(type, zoneId, (row) => row[0]);
+  /** On the project `which` finds in the seat's development, its first by default. */
+  const onProject = (which: Onto['which'] = (projects) => projects[0]): Onto => ({ zoneId: own('development'), which });
   /**
-   * Whether the engine accepts `move`. For a card found through the view, the view must say the same: the card the seat presses is
-   * one the view allows, and each card it passes over because the engine refuses it is one the view greys.
+   * Whether the engine accepts `move`. For cards found through the view, the view must say what the engine says of a press of each
+   * card alone, on the card it goes on: it allows the cards the seat presses, and greys each one the seat passes over because the
+   * engine refuses it. A set is judged whole, so a press the engine takes is made only of cards the view allows, but one it refuses
+   * may still be made of them.
    */
   const accepts = (move: Move): boolean => {
     const accepted = engine.canDispatch(move) === true;
-    const verdict = verdicts.get(move);
-    if (verdict) expect(verdict.allowed === true, `whether the view allows ${by}'s ${move.type} ${move.cardId}: ${verdict.allowed}`).toBe(accepted);
+    const picks = verdicts.get(move) ?? [];
+    for (const { id, allowed } of picks) {
+      const alone = move.cardIds === undefined ? accepted : engine.canDispatch({ ...move, cardIds: [id] }) === true;
+      const onto = move.onto === undefined ? '' : ` on ${move.onto}`;
+      expect(allowed === true, `whether the view allows ${by}'s ${move.type} ${id}${onto}: ${allowed}`).toBe(alone);
+    }
+    if (accepted) expect(picks.filter(({ allowed }) => allowed !== true), `the cards of ${by}'s ${move.type} the view greys`).toEqual([]);
     return accepted;
   };
   const choose = (choices: (Move | null)[]): Move => {
     const move = choices.find((choice) => choice !== null && accepts(choice));
     if (!move) throw new Error(`${by} has no move in turn ${t}, phase ${engine.getState().turn!.phase}.`);
+    return move;
+  };
+
+  const salary = (card: CardState) => card.data?.salary as number;
+  /** The card in the row with the highest salary above 0, the first of those. */
+  const highestPaid = (row: CardState[]) =>
+    row.reduce<CardState | undefined>((top, card) => (salary(card) > (top ? salary(top) : 0) ? card : top), undefined);
+  const lettingGo = () => (t % 2 === 0 ? ['development team', 'ops team'] : ['ops team', 'development team'])
+    .map((row) => pick(LET_GO[row], own(row), highestPaid));
+  /** The free moves this turn has made, each at most once. */
+  const made = new Set<string>();
+  /** The free move to make now, or null. */
+  const freeMove = (): Move | null => {
+    const dismiss = t % 9 === 4 ? DISMISS_FROM_OPS : t % 9 === 8 ? DISMISS_FROM_PROJECT : null;
+    const mayGreenlight = !made.has(GREENLIGHT) && cards(own('development')).length < 3;
+    const move = [
+      mayGreenlight ? pick(GREENLIGHT, own('backlog'), (row) => row.find((card) => card.data?.tier === 'Tier 1')) : null,
+      dismiss !== null && !made.has(dismiss) ? first(dismiss, own(dismiss === DISMISS_FROM_OPS ? 'ops team' : 'development team')) : null,
+    ].find((choice) => choice !== null && accepts(choice)) ?? null;
+    if (move !== null) made.add(move.type);
     return move;
   };
   const ideation = (): (Move | null)[] => {
@@ -219,46 +377,122 @@ function playTurn(engine: GameEngine, t: number, style: Style, watch: Watch, mov
     const planned = [growth, first(DRAFT_GROWTH, 'growth-market'), growth, seedSide[Math.floor(t / 4) % 3]];
     return [planned[t % 4], press(RESEARCH_GROWTH), first(DRAFT_GROWTH, 'growth-market'), press(RESEARCH_SEED), first(DRAFT_SEED, 'seed-market')];
   };
-  const recruiting = (a: number): (Move | null)[] => {
-    const capital = counterOf(engine.getState(), 'capital', by);
-    const junior = press(RECRUITS[(t + a) % 3]);
-    const affordable = pick(HIRE_AGENCY, 'agency-row', (row) => row.find((card) => (card.data?.cost as number) <= capital));
-    const planned = [junior, affordable, first(HIRE_MARKET, 'open-job-market'), press(END_ACTIONS)];
-    return [planned[(t + a) % 4], junior, press(END_ACTIONS)];
+  const recruit = (a: number) => press(RECRUITS[(t + a) % 3]);
+  /** The first card of a row the seat can pay for. */
+  const affordable = (row: CardState[]) => row.find((card) => (card.data?.cost as number) <= capital());
+  /** Which of its three places a hire goes to this turn. */
+  const place = (t + Math.floor(t / 9)) % 3;
+  const launch = () => pick(LAUNCH, own('development'), (projects) => projects.find((project) => lacking(project).length === 0));
+  /** The move the action numbered `action` makes as the turn's action `a`, or null when it has nothing to pick (see above). */
+  const boardAction = (action: number, a: number): Move | null => {
+    const projects = cards(own('development'));
+    const holderOf = (card: CardState) => card.data?.[HOLDER_KEY];
+    switch (action) {
+      case 0:
+        return recruit(a);
+      case 1:
+        return [
+          () => pick(HIRE_AGENCY, 'agency-row', affordable),
+          () => pick(HIRE_AGENCY_TO_PROJECT, 'agency-row', affordable, onProject()),
+          () => pick(HIRE_AGENCY_TO_OPS, 'agency-row', affordable),
+        ][place]();
+      case 2:
+        return first(HIRE_MARKET, 'open-job-market');
+      case 3: {
+        const unfinished = projects.find((project) => lacking(project).length > 0);
+        if (unfinished === undefined) return null;
+        const makers = (bench: CardState[]) => bench.filter((card) => lacking(unfinished).includes(COLOR_OF_SKILL[card.data?.skill as string]));
+        return pickSome(ASSIGN_TO_PROJECT, own('bench'), (bench) => (makers(bench).length > 0 ? makers(bench) : bench.slice(0, 1)),
+          onProject((targets) => targets.find((project) => project.id === unfinished.id)));
+      }
+      case 4:
+        return pickSome(ASSIGN_TO_OPS, own('bench'), (bench) => bench.slice(0, 2));
+      case 5:
+        return pick(REASSIGN_FROM_OPS, own('ops team'), (row) => row[0], onProject())
+          ?? pick(REASSIGN_FROM_PROJECT, own('development team'),
+            (row) => row.find((card) => projects.some((project) => project.id !== holderOf(card))),
+            onProject((targets, card) => targets.find((project) => project.id !== holderOf(card))));
+      case 6:
+        return pickSome(RECALL, own('ops team'), (row) => row);
+      case 7: {
+        const idle = (project: CardState) =>
+          cubesOn(project, 'blue cubes') + cubesOn(project, 'red cubes') === 0 && cardsOn(engine.getState(), project.id).length === 0;
+        return pick(PIVOT, own('development'), (row) => row.find(idle) ?? (t % 13 === 0 ? row[0] : undefined));
+      }
+      default:
+        return pickSome(LAY_OFF, own('bench'), (bench) => bench.slice(0, 1 + (t % 2)));
+    }
   };
+  const sourcing = (): Move | null => {
+    const found = (row: CardState[]) => {
+      const card = affordable(row);
+      return card ? [card] : [];
+    };
+    const [toBench, toOps, toProject] = SOURCE_HIRES;
+    return [
+      () => pickSome(toBench, own('scouting'), found),
+      () => pickSome(toOps, own('scouting'), found),
+      () => pickSome(toProject, own('scouting'), found, onProject()),
+    ][place]();
+  };
+
   const going = () => {
     const state = engine.getState();
-    return state.result === undefined && state.turn!.current === by && engine.getLog().length < moves;
+    return state.result === undefined && state.turn!.current === by && !stop(engine.getLog());
   };
+  /** Whether this turn has let a card go at Income. */
+  let letGo = false;
   for (let a = 0; going();) {
     const { phase } = engine.getState().turn!;
-    if (phase === 'actions') {
-      play(engine, choose(a === 0 ? [...ideation(), ...recruiting(a)] : recruiting(a)), watch);
+    if (phase === 'income') {
+      if (payrollOf(engine.getState(), by) > capital() || (t % 6 === 5 && !letGo)) {
+        letGo = true;
+        play(engine, choose(lettingGo()), watch);
+      } else {
+        play(engine, choose([press(PAY_SALARIES)]), watch);
+      }
+    } else if (phase === 'actions') {
+      const free = freeMove();
+      if (free !== null) {
+        play(engine, free, watch);
+        continue;
+      }
+      const action = (t + a) % 9;
+      const planned = a === 0 ? ideation() : [launch() ?? boardAction(action, a), ...boardMovesAfter(action).map((next) => boardAction(next, a))];
+      play(engine, choose([...planned, recruit(a), press(END_ACTIONS)]), watch);
       a++;
     } else if (phase === 'research') {
-      play(engine, choose([pick(KEEP, zoneIdFor('research', by), (row) => row[t % row.length])]), watch);
+      play(engine, choose([pick(KEEP, own('research'), (row) => row[t % row.length])]), watch);
+    } else if (phase === 'sourcing') {
+      play(engine, choose([sourcing(), press(PASS_ON_THE_REST)]), watch);
     } else {
       const cleanup = CLEANUPS[phase!];
       if (cleanup === undefined) throw new Error(`The long runs don't play the ${phase} phase.`);
-      play(engine, choose([first(cleanup.discard, zoneIdFor(cleanup.row, by))]), watch);
+      play(engine, choose([first(cleanup.discard, own(cleanup.row))]), watch);
     }
   }
 }
 
-/** How a long run plays: until the log holds `moves` moves, and with `throughView` finding each card to pick through the page's view. */
-type Run = { moves?: number; throughView?: boolean };
+/**
+ * How a long run plays: until the log holds `moves` moves or `until` says it holds enough, and with `throughView` finding each card
+ * to pick through the page's view.
+ */
+type Run = { moves?: number; throughView?: boolean; until?: (log: readonly Move[]) => boolean };
 
 /**
- * Plays a game of `players` from Setup at `seed`, turn after turn, until it has a result, `MAX_TURNS` turns are played or the
- * log holds `moves` moves; the engine as it is then. At an odd seed every seat researches the growth deck for its growth ideas,
- * and at an even seed it drafts them from the growth market, so that the Crash comes out of each. With `throughView` each seat
- * finds the cards it picks through the page's view of it, as `playTurn` says.
+ * Plays a game of `players` from Setup at `seed`, turn after turn, until it has a result, `MAX_TURNS` turns are played, the log
+ * holds `moves` moves or `until` says it holds enough; the engine as it is then. At an odd seed every seat researches the growth
+ * deck for its growth ideas, and at an even seed it drafts them from the growth market, so that the Crash comes out of each. With
+ * `throughView` each seat finds the cards it picks through the page's view of it, as `playTurn` says.
  */
-function playGame(players: number, seed: number, watch: Watch, { moves = Infinity, throughView = false }: Run = {}): GameEngine {
+function playGame(
+  players: number, seed: number, watch: Watch, { moves = Infinity, throughView = false, until = () => false }: Run = {},
+): GameEngine {
   const { engine, runtime } = createEngine(game!, lib, players, initialState(game!, seed));
   const style: Style = seed % 2 === 0 ? 'drafts' : 'researches';
-  for (let t = 0; t < MAX_TURNS && engine.getState().result === undefined && engine.getLog().length < moves; t++) {
-    playTurn(engine, t, style, watch, moves, throughView ? runtime : null);
+  const stop = (log: readonly Move[]) => log.length >= moves || until(log);
+  for (let t = 0; t < MAX_TURNS && engine.getState().result === undefined && !stop(engine.getLog()); t++) {
+    playTurn(engine, t, style, watch, stop, throughView ? runtime : null);
   }
   return engine;
 }
@@ -267,10 +501,18 @@ function playGame(players: number, seed: number, watch: Watch, { moves = Infinit
 const turnsIn = (log: readonly Move[]): PlayerId[] =>
   log.filter((move, i) => i === 0 || move.by !== log[i - 1].by).map((move) => move.by as PlayerId);
 
+/** The seat whose turn started in the move from `before` to `after`: the turn marker became it, from no seat or from another one. */
+function turnStarted(before: GameState, after: GameState): PlayerId | null {
+  const turnOf = after.data[TURN_OF_KEY];
+  return typeof turnOf === 'string' && turnOf !== before.data[TURN_OF_KEY] ? turnOf : null;
+}
+
 /**
- * What else a move made happen that the tally counts: each card a pool let go of to the box, and the Market Crash reaching the
- * crash pile, by where it came from. A draft from the growth market draws the Crash only through the market's refill, and a
- * research of the growth deck only into the research row, so the move says which way it came.
+ * What else a move made happen that the tally counts: each card a pool let go of to the box, the Market Crash reaching the
+ * crash pile, by where it came from, each card the agency row pushed out to the open job market, and each product in operation
+ * that earned when a turn started. A draft from the growth market draws the Crash only through the market's refill, and a
+ * research of the growth deck only into the research row, so the move says which way it came. A card leaves the agency row for
+ * the open job market only when cards entering the row's left end push it out, never by a hire (R7).
  */
 function happenings(before: GameState, move: Move, after: GameState): string[] {
   const boxed = new Set(zoneCards(before, 'box').map((c) => c.id));
@@ -284,30 +526,47 @@ function happenings(before: GameState, move: Move, after: GameState): string[] {
       : move.type === RESEARCH_GROWTH ? 'from a research row' : `after ${move.type}`;
     keys.push(`the Market Crash reaches the crash pile ${from}`);
   }
+  if (!HIRES.includes(move.type)) {
+    const agency = new Set(zoneCards(before, 'agency-row').map((c) => c.id));
+    keys.push(...zoneCards(after, 'open-job-market').filter((c) => agency.has(c.id)).map(() => PUSHED_OUT));
+  }
+  const started = turnStarted(before, after);
+  if (started !== null) keys.push(...operationsOf(after, started).filter(earns).map(() => EARNS));
   return keys;
 }
 
-/** A score as ruling 24 counts it: a point for every 5 capital, less the backlog's vaporware. */
+/**
+ * A score as §12 and rulings 5, 24 and 25 count it: a point for every 5 capital, the val of each product in operation and 2 points
+ * for each market share, less the backlog's vaporware.
+ */
 function scoreOf(state: GameState, seat: PlayerId): number {
   const vaporware = zoneCards(state, zoneIdFor('backlog', seat)).reduce((sum, card) => sum + VAPORWARE[card.data?.tier as string], 0);
-  return Math.floor(counterOf(state, 'capital', seat) / 5) - vaporware;
+  const val = sum(operationsOf(state, seat), 'val');
+  return Math.floor(counterOf(state, 'capital', seat) / 5) + val + 2 * counterOf(state, 'market share', seat) - vaporware;
 }
 
 /**
  * A watch that checks, after every move of a game at `seats` played from Setup:
  *
- * - Money is only paid to the bank, by the mover: 2 for a recruit, the card's cost for a hire from the agency row and 1 for one
- *   from the open job market, nothing for anything else, and no one else's capital changes.
+ * - Money is conserved: each seat's capital changes by what it earned less what it paid. The mover pays the bank 2 for a recruit,
+ *   the card's cost for a hire from the agency row, 1 for one from the open job market, the total cost of the picked cards for a
+ *   hire from its scouting, its payroll for paying salaries, and nothing for anything else. The seat whose turn started in the move
+ *   earns the total rev of its products in operation, and no one else earns anything.
+ * - Market Share changes only for the seat whose turn started, which gains 1 for each of its products in operation that earned.
  * - No zone holds more than it may: the agency row 4, each market 2, each pool 5 and the crash pile 1; the bench of a player
  *   whose turn it is not 5, their backlog 3 and their research nothing; the player whose turn it is holds at most 4 in their
  *   backlog and 3 in their research, which has cards only in the research phase.
+ * - The Board: no development holds more than 3 projects; every card that sits on a card is in a development team, on a project
+ *   in the same seat's development, and every card in a development team sits on one; no card has more blue or red cubes than its
+ *   blue or red cost, and none keeps new cubes, which the Engine commits in the move that generates them.
+ * - Only the seat in the sourcing phase has cards in its scouting row.
  * - Each market refills at once: the agency row holds 4 and each product market 2 while its deck has cards, and the Market
  *   Crash is never anywhere but the growth deck or the crash pile.
  * - Each pool holds the 5 cards that entered it last, in the order they entered, every card it let go of is in the box, and
  *   nothing else ever goes there.
  * - Each turn that starts is the next seat's after the turn before, the first is the start player's, and a round starts with a
  *   turn exactly when that turn is the start player's.
- * - Every card in a player's bench, backlog or research shows its back to every other player and its face to its owner.
+ * - Every card in a player's bench, backlog, research or scouting shows its back to every other player and its face to its owner.
  */
 function keepsTheRules(seats: PlayerId[]): Watch {
   const tableDef = tableDefFor(game!, seats);
@@ -332,13 +591,23 @@ function keepsTheRules(seats: PlayerId[]): Watch {
       expect(before.data[ROUND_KEY], 'the round of the first turn').toBe(1);
     }
 
-    // Money is paid to the bank only.
+    // Money is conserved: paid to the bank by the mover, earned at Income by the seat whose turn started.
+    const started = turnStarted(before, after);
     const capital = (state: GameState, seat: PlayerId) => counterOf(state, 'capital', seat);
+    const costOf = (ids: string[]) => sum(ids.map((id) => cardById(before, id)!), 'cost');
     const paid = RECRUITS.includes(move.type) ? 2
-      : move.type === HIRE_AGENCY ? (card!.data?.cost as number)
-        : move.type === HIRE_MARKET ? 1 : 0;
-    const spent = seats.map((seat) => capital(before, seat) - capital(after, seat));
-    expect(spent, `capital paid by ${seats.join(', ')} ${at}`).toEqual(seats.map((seat) => (seat === by ? paid : 0)));
+      : AGENCY_HIRES.includes(move.type) ? (card!.data?.cost as number)
+        : move.type === HIRE_MARKET ? 1
+          : SOURCE_HIRES.includes(move.type) ? costOf(move.cardIds as string[])
+            : move.type === PAY_SALARIES ? payrollOf(before, by) : 0;
+    const earned = (seat: PlayerId) => (seat === started ? sum(operationsOf(after, seat), 'rev') : 0);
+    const gained = seats.map((seat) => capital(after, seat) - capital(before, seat));
+    expect(gained, `capital gained by ${seats.join(', ')} ${at}`).toEqual(seats.map((seat) => earned(seat) - (seat === by ? paid : 0)));
+    // Market Share: 1 for each product that earned, when its owner's turn started.
+    const share = (state: GameState, seat: PlayerId) => counterOf(state, 'market share', seat);
+    const shares = seats.map((seat) => share(after, seat) - share(before, seat));
+    const earners = (seat: PlayerId) => (seat === started ? operationsOf(after, seat).filter(earns).length : 0);
+    expect(shares, `market share gained by ${seats.join(', ')} ${at}`).toEqual(seats.map(earners));
     // No one pays what they don't have.
     const inDebt = seats.filter((seat) => capital(after, seat) < 0).map((seat) => `${seat} has ${capital(after, seat)} capital`);
     expect(inDebt, `capital below 0 ${at}`).toEqual([]);
@@ -362,7 +631,29 @@ function keepsTheRules(seats: PlayerId[]): Watch {
         atMost(own('backlog'), 3);
         atMost(own('research'), 0);
       }
+      atMost(own('development'), 3);
+      // A Layoff's cards wait in scouting only while their seat sources (§13.B).
+      if (seat !== current || phase !== 'sourcing') atMost(own('scouting'), 0);
     }
+
+    // The Board: staff sit on their own seat's projects, and the tracks hold at most their cost.
+    const projectsOf = new Map(seats.map((seat) => [zoneIdFor('development team', seat), zoneIdFor('development', seat)]));
+    const board: string[] = [];
+    for (const c of after.cards) {
+      const which = `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
+      const holder = c.data?.[HOLDER_KEY];
+      const holderZone = typeof holder === 'string' ? cardById(after, holder)?.zoneId : undefined;
+      if (holder !== undefined && (!projectsOf.has(c.zoneId) || holderZone !== projectsOf.get(c.zoneId))) {
+        board.push(`${which} is on ${JSON.stringify(holder)}, in ${holderZone}`);
+      }
+      if (holder === undefined && projectsOf.has(c.zoneId)) board.push(`${which} is on no card`);
+      for (const color of ['blue', 'red']) {
+        const cost = (c.data?.[`${color} cost`] as number | undefined) ?? 0;
+        if (cubesOn(c, `${color} cubes`) > cost) board.push(`${which} has ${cubesOn(c, `${color} cubes`)} ${color} cubes for a cost of ${cost}`);
+        if (cubesOn(c, `new ${color} cubes`) !== 0) board.push(`${which} keeps ${cubesOn(c, `new ${color} cubes`)} new ${color} cubes`);
+      }
+    }
+    expect(board, `the Board ${at}`).toEqual([]);
 
     // Markets refill at once.
     const refilled = (row: string, deck: string, full: number) => {
@@ -398,17 +689,15 @@ function keepsTheRules(seats: PlayerId[]): Watch {
     // This assumes only the pools send cards to the box, as in slice 1a; a later slice that boxes cards some other way must widen it.
     expect(box.filter((id) => !boxed.has(id)).sort(), `cards new in the box ${at}`).toEqual(letGoNow.sort());
 
-    // Turns: a turn starts when the turn marker becomes a seat, from no seat or from another one.
-    const turnOf = after.data[TURN_OF_KEY];
-    const started = typeof turnOf === 'string' && turnOf !== before.data[TURN_OF_KEY];
+    // Turns: each one that starts is the next seat's.
     const rounds = (after.data[ROUND_KEY] as number) - (before.data[ROUND_KEY] as number);
-    if (started) {
-      expect(turnOf, `the turn that started ${at}`).toBe(seats[(seats.indexOf(lastTurn) + 1) % seats.length]);
-      lastTurn = turnOf;
+    if (started !== null) {
+      expect(started, `the turn that started ${at}`).toBe(seats[(seats.indexOf(lastTurn) + 1) % seats.length]);
+      lastTurn = started;
     }
-    expect(rounds, `rounds started ${at}`).toBe(started && turnOf === startPlayerOf(after, seats) ? 1 : 0);
+    expect(rounds, `rounds started ${at}`).toBe(started !== null && started === startPlayerOf(after, seats) ? 1 : 0);
 
-    // Hidden zones: only the owner sees the face of a card in their bench, backlog or research.
+    // Hidden zones: only the owner sees the face of a card in their bench, backlog, research or scouting.
     for (const viewer of seats) {
       const wrong = deriveScene(tableDef, { cards: after.cards }, viewer).cards
         .filter((c) => owners.has(c.zoneId) && (c.faceKey === HIDDEN_FACE_KEY) !== (owners.get(c.zoneId) !== viewer))
@@ -834,8 +1123,10 @@ describe('Startup Simulator (designer language)', () => {
   describe('long runs, with every rule kept after every move', () => {
     /** How many times the runs below made each move, by its type, and saw each happening: see `happenings`. */
     const tally: Record<string, number> = {};
+    /** The market share every seat ended those runs with, summed. */
+    let marketShare = 0;
 
-    it.each([2, 3, 4, 5])('plays %i players to the Market Crash and a score at seeds 1 to 5, seed 1 through the page’s view', (players) => {
+    it.each([2, 3, 4, 5])('plays %i players, building on the Board, to the Market Crash and a score at seeds 1 to 5, seed 1 through the page’s view', (players) => {
       const seats = seatsFor(players);
       for (let seed = 1; seed <= 5; seed++) {
         const where = `${players} players, seed ${seed}`;
@@ -863,17 +1154,36 @@ describe('Startup Simulator (designer language)', () => {
         const top = Math.max(...Object.values(scores));
         const winners = seats.filter((seat) => scores[seat] === top);
         expect(state.result, where).toEqual({ scores, winner: winners[0], winners });
+        for (const seat of seats) marketShare += counterOf(state, 'market share', seat);
       }
-    }, 60_000);
+    }, 120_000);
 
-    it('made every move in those runs, and the idea pool let cards go and the Crash came out of the market and of research', () => {
+    it('made every move in those runs, and the pools let cards go, the agency row pushed cards out and the Crash came out of the market and of research', () => {
       const every = [
+        // Slice 1a's.
         ...RECRUITS, HIRE_AGENCY, HIRE_MARKET, DRAFT_SEED, DRAFT_GROWTH, DRAFT_POOL,
         RESEARCH_SEED, RESEARCH_GROWTH, KEEP, END_ACTIONS, DISCARD_BENCH, DISCARD_BACKLOG,
-        'open idea pool lets a card go to the box',
+        // The Board's.
+        HIRE_AGENCY_TO_PROJECT, HIRE_AGENCY_TO_OPS, GREENLIGHT, ASSIGN_TO_PROJECT, ASSIGN_TO_OPS,
+        REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS, RECALL, DISMISS_FROM_PROJECT, DISMISS_FROM_OPS,
+        // Income's, Launch, Pivot, Layoff and Source.
+        ...Object.values(LET_GO), PAY_SALARIES, LAUNCH, PIVOT, LAY_OFF, ...SOURCE_HIRES, PASS_ON_THE_REST,
+        // What the rules make happen on their own.
+        'open idea pool lets a card go to the box', 'open job market lets a card go to the box', PUSHED_OUT,
         'the Market Crash reaches the crash pile from the growth market', 'the Market Crash reaches the crash pile from a research row',
       ];
       expect(every.filter((key) => !(tally[key] > 0)), `never made or seen: ${JSON.stringify(tally)}`).toEqual([]);
+    });
+
+    it('played the Board in those runs: products launched and earned, projects were pivoted, staff were let go, and seats ended with market share', () => {
+      const played = {
+        launches: tally[LAUNCH] ?? 0,
+        'products earning': tally[EARNS] ?? 0,
+        pivots: tally[PIVOT] ?? 0,
+        'let-gos': Object.values(LET_GO).reduce((count, type) => count + (tally[type] ?? 0), 0),
+        'market share': marketShare,
+      };
+      expect(Object.keys(played).filter((what) => !(played[what as keyof typeof played] > 0)), JSON.stringify(played)).toEqual([]);
     });
 
     it('plays the same game through the page’s view as without it (2 players, seed 1)', () => {
@@ -932,5 +1242,34 @@ describe('Startup Simulator (designer language)', () => {
       engine.undo();
       expect(engine.getState()).toEqual(fresh().getState());
     });
+
+    it('takes back every move with undo, and rebuilds the game from its log, across an assign, a launch, a pivot and a reassign (Review Focus: 3 players, seed 1)', () => {
+      const made = (log: readonly Move[], types: string[]) => log.some((move) => types.includes(move.type));
+      // The brief asks for a launch or a pivot; the Review Focus names both, and the run that has both is still short.
+      const board = (log: readonly Move[]) => made(log, [ASSIGN_TO_PROJECT, ASSIGN_TO_OPS]) && made(log, [LAUNCH]) && made(log, [PIVOT])
+        && made(log, [REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS]);
+      const states: GameState[] = [];
+      const engine = playGame(3, 1, (_before, _move, after) => states.push(after), { until: board });
+      const log = [...engine.getLog()];
+      expect(board(log), `the moves made: ${[...new Set(log.map((move) => move.type))].join(', ')}`).toBe(true);
+      expect(states).toHaveLength(log.length);
+      // Staff sat on projects, tracks filled with cubes and reassigned staff were onboarding on the way, so undo has all three to give back.
+      const some = (has: (card: CardState) => boolean) => states.some((state) => state.cards.some(has));
+      expect(some((card) => typeof card.data?.[HOLDER_KEY] === 'string'), 'a card on a card').toBe(true);
+      expect(some((card) => cubesOn(card, 'blue cubes') + cubesOn(card, 'red cubes') > 0), 'a project with cubes').toBe(true);
+      expect(some((card) => card.data?.onboarding === true), 'an onboarding card').toBe(true);
+
+      const fresh = () => createEngine(game!, lib, 3, initialState(game!, 1)).engine;
+      const replayed = fresh();
+      replayed.loadLog(log);
+      expect(replayed.getState()).toEqual(engine.getState());
+
+      for (let i = states.length - 2; i >= 0; i--) {
+        engine.undo();
+        expect(engine.getState(), `after undoing back to move ${i + 1}, ${log[i].type}`).toEqual(states[i]);
+      }
+      engine.undo();
+      expect(engine.getState()).toEqual(fresh().getState());
+    }, 120_000);
   });
 });
