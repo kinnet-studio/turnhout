@@ -147,10 +147,10 @@ Phase: playing
   - A blank cell in a card table is left out, so the card has no value for that column.
   - Rows and queues: `Move the bottom card of the open idea pool to the box.`, `When the growth market has the market crash:`, `Move the market crash from their research to the crash pile.`, `Deal up to 3 cards from the seed deck to their research.` (it takes what's there), `Deal 1 card from the seed deck to each backlog.` and `The market crash goes into the bottom fifth of the growth deck.`
   - Examples check the order of a row with `…, in that order` and where a card lies with `the market crash is among the bottom 8 cards of the growth deck`.
-- **Startup Simulator (slice 1a)** plays the table, money and turns: recruiting, drafting, Research, Cleanup, the Market Crash and a first score. Its 25 examples pin rulings 10, 12, 13, 18, 20, 24 and 25.
-  - Building products comes in slice 1b.
-  - The game still leaves out the game-end Ops check (§12.2) and the last Milestone check (§12.3).
-  - Growth cards are drafted but can't be built until slice 3.
+- **Startup Simulator (slice 1b)** plays the table, money and turns (recruiting, drafting, Research, Cleanup and the Market Crash), and now builds Tier 1 products: the Board (Greenlight, Assign, Reassign, Recall and Dismiss), Income with Market Share and Salaries, the Engine, Launch, Pivot, Layoff / Source and the score's Val and Market Share. Its 54 examples pin rulings 5, 7, 8, 10, 12, 13, 18, 20, 24 and 25.
+  - It still leaves out Ops bandwidth and Offline, Bugs and QA, modes, XP and the Specialists' effects, the Senior Developers' traits, Tier 2/3, Face-Down Greenlight and the Audit, Dividends, Integration, and Hype and Scandal. Each comes in a later slice.
+  - Until modes arrive, flex staff work in Blue; until Tier 2/3, growth cards are drafted but can't be greenlit.
+  - The game-end Ops check (§12.2) and the last Milestone check (§12.3) are still left out too.
 
 **Buttons that pick cards.** A button can ask the player for a card, for a card and the card it goes to, or for a set of cards, and can cost a number each player has each turn:
 
@@ -165,15 +165,54 @@ Phase: playing
   - it refuses with "they have at least 1 action" before every `Only if`;
   - it spends before the `Then:` lines;
   - only a number each player has each turn can be a cost.
-- **Examples** name the card: `When p0 hires the Hacker`, `When p0 shows the Opal to the Ruby` and `When p0 trades the Ruby and the Opal`. When two buttons could take the card, the example says where it goes (`When p0 buys the Ruby to p0's case`) or where it comes from (`When p0 hires a Sales Rep from the open job market`), and the error says which would tell them apart.
+- **Examples** name the card: `When p0 buys the Ruby`, `When p0 shows the Opal to the Ruby` and `When p0 trades the Ruby and the Opal`. When two buttons could take the card, the example says where it goes (`When p0 buys the Ruby to p0's case`) or where it comes from (`When p0 hires a Sales Rep from the open job market`), and the error says which would tell them apart.
 - **In the playtest,** pressing the button lists the cards it may pick under the buttons, a refused one greyed with the reason on hover. A set ends with Confirm, and Cancel closes the list.
 - **Startup Simulator** is played by picking cards.
+
+**Cards on cards, values and totals.** A card can sit on another card, a section can work out a number or a yes-or-no for each card, and a rule can add a number up over cards or run once for each card:
+
+- **Cards on cards.**
+  - A zone line each player has that ends ", where every card is on a card" holds cards that each sit on a card: `Each player has a development team row that everyone can see, where every card is on a card.`
+  - A button that picks a card and the card it goes to puts it there with `It goes to their development team, on the target card.` A set goes with `The picked cards go to their development team, on the target card.` Its `Only if` lines can ask `it is not on the target card`.
+  - Every move takes a card off the card it sat on. A rule that moves a card says where the cards on it go: `Every card on it goes to their bench.` `Every card on it is onboarding.` sets a flag on each of them.
+  - After every Setup line, press and rule, and every line that starts a phase or a turn, the table is checked. Each card in a marked zone must sit on a card, no card anywhere else may, and the card it sits on must still be in a zone of the same player's that everyone can see.
+  - A rule that moves a card and forgets the cards on it is refused, and the game stays as it was before the press: `The Architect in p0's development team is on the Dating App, which is now in the open idea pool. Move the cards on a card along with it.`
+- **Numbers on cards.** `Cards can have blue cubes, red cubes, new blue cubes and new red cubes.` declares numbers that start at 0 on every card. Rules change them with `Its blue cubes go up by its new blue cubes, up to its blue cost.` (the cap is optional) and `It loses its new blue cubes.` Rules ask about any number on a card: `its blue cubes are at least its blue cost` and `its salary is more than 0`.
+- **Values worked out for cards.** A section named after a value says what it comes to for each kind of card. Like `Rent:`, each line overrides the ones before it for the cards it fits:
+
+  ```
+  Blue output:
+    A software card's blue output is its output.
+    A flex card's blue output is its output.
+    An onboarding card's blue output is 0.
+  ```
+
+  - A card that no line fits has no such value.
+  - A section of `Only if` lines works out a yes-or-no: under `Feature complete:`, `Only if its blue cubes are at least its blue cost.` and `Only if its red cubes are at least its red cost.` make `it is feature complete` true for a card that meets both. A card that lacks a number its lines read isn't that kind of card, so the answer is no.
+  - A section named after a column, such as `Salary:`, refines that column.
+  - Every rule that reads a card's number or yes-or-no reads the worked-out one. A value worked out from itself, directly or through another value, is reported on the line that asked.
+- **Totals.** `the total salary of the cards in their development team and their ops team`, `the total blue output of the cards on it` and `the total cost of the picked cards` add a number up. A card without that number counts as 0. `the cards in their operations whose rev is more than 0` keeps only some cards. Rules say:
+  - `They get the total rev of the cards in their operations.` and `They pay the total cost of the picked cards.`;
+  - `Only if they have at least the total cost of the picked cards in capital.`;
+  - `A card's blue team output is the total blue output of the cards on it.` in a section that works out a value.
+- **For each card.** `For each card in their development, its blue cubes go up by its new blue cubes.` runs the rest of the line once for each card that was there when it began, in order, as "it". `For each card in their operations whose rev is more than 0, they get 1 market share.` runs it once for each card that passes the filter.
+- **Going to a phase.** `Go to commit.` moves on to the named phase and runs its `When this phase starts:` lines, so a phase that only works at its start can hand on to the next one. A chain of `Go to` lines that comes back to a phase it went through is refused, in words that name the phases.
+- **Rows.**
+  - `Deal up to as many cards as they picked from the talent deck to their scouting.` deals one card for each card the button picked, or what the deck has.
+  - `Move their scouting to the left end of the agency row.` puts the cards at the row's left end, in the order they sat.
+  - With `When the agency row has more than 4 cards: Move the top card of the agency row to the open job market.`, cards that come in push the rightmost cards out one at a time: two cards push out the old 4th, then the old 3rd.
+- **The score.** `Each card in a player's operations scores its val.` (a card without one scores 0) and `Each player scores 2 points for each market share.`
+- **Examples.**
+  - `Given the Dating App in p0's development has a Junior Software Dev and the Architect on it` puts those cards on it, in the player's zone marked for cards on cards.
+  - `Then the Dating App in p0's development has the Architect on it` and `… has no cards on it` check what sits on a card.
+  - `the Dating App in p0's development has 4 blue cubes` sets or checks a number, and `the Architect in p0's bench is onboarding` a yes-or-no. A check reads a worked-out one too: `the Dating App in p0's development is feature complete`.
+- **Startup Simulator** builds its Board this way.
 
 **A table too big for one screen.** When a game's zones don't fit the table, the playtest shows one seat at a time, with a tab for each seat:
 
 - **The tabs.** A tab reads `p1`, or `p1 — to act` for the seat that must act. The tabs jump to the seat that must act when the turn moves on, Undo included; in between, any seat's tab can be opened to look at its table.
 - **The table.** The shared zones wrap onto lines across the top, each named above it. The seat's own zones run along the bottom, and the other seats' zones are left off. A row's cards stand side by side, so every face can be read; a longer row squeezes them to stay in its place.
-- **The other seats.** Every player's line shows their numbers, how many cards each of their zones holds, and the start player: `p0 7 capital, 3 actions · bench 3 · backlog 1 · research 0 · start player`.
+- **The other seats.** Every player's line shows their numbers, how many cards each of their zones holds, and the start player: `p0 7 capital, 3 actions, 0 market share · bench 3 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0 · start player`.
 - **Faces.** A card face shows its name and its first three columns, so a card table puts its key columns first. Pointing at a card shows all of it under the table: `Architect — cost 7 · skill software · output 3 · salary 2 · role Senior Developer · trait Clean Code`.
 - **Startup Simulator** plays this way.
 

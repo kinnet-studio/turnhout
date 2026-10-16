@@ -85,7 +85,7 @@ describe('Playtest of a game too big for one table', () => {
   it("lists every player's tableau", () => {
     mount();
     for (const seat of seatsOf(3)) {
-      expect(lineOf(seat)).toBe(`${seat} 7 capital, 3 actions · bench 3 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0${seat === S ? ' · start player' : ''}`);
+      expect(lineOf(seat)).toBe(`${seat} 7 capital, 3 actions, 0 market share · bench 3 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0${seat === S ? ' · start player' : ''}`);
     }
   });
 
@@ -134,7 +134,7 @@ describe('Playtest of a game too big for one table', () => {
     const cost = Number(parseTextFaceKey(card!.faceKey)!.cost);
     press('Hire a card from the agency row to your bench');
     pickNamed(parseTextFaceKey(card!.faceKey)!.name);
-    const expected = `${S} ${7 - cost} capital, 2 actions · bench 4`;
+    const expected = `${S} ${7 - cost} capital, 2 actions, 0 market share · bench 4`;
     expect(lineOf(S)?.slice(0, expected.length)).toBe(expected);
   });
 
@@ -221,7 +221,7 @@ describe('a round played through the page', () => {
   it('recruits from every source, drafts, researches, discards and passes the turn', () => {
     mount();
     for (let i = 0; i < 3; i++) press('Recruit a junior software dev');
-    expect(lineOf(S)).toBe(`${S} 1 capital, 0 actions · bench 6 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · start player`);
+    expect(lineOf(S)).toBe(`${S} 1 capital, 0 actions, 0 market share · bench 6 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0 · start player`);
     expect(status()).toBe(`seat: ${S} — Your turn — ${hint('bench cleanup')}`);
 
     press('Discard a card in your bench');
@@ -232,14 +232,14 @@ describe('a round played through the page', () => {
 
     press('Hire a card from the open job market to your bench');
     pickFirst();
-    begins(N, `${N} 6 capital, 2 actions · bench 4`);
+    begins(N, `${N} 6 capital, 2 actions, 0 market share · bench 4`);
 
     const hire = cardsIn('agency-row').find((c) => Number(parseTextFaceKey(c.faceKey)!.cost) <= 6);
     expect(hire, 'seed 1 deals an agency card that 6 capital buys').toBeDefined();
     const cost = Number(parseTextFaceKey(hire!.faceKey)!.cost);
     press('Hire a card from the agency row to your bench');
     pickNamed(parseTextFaceKey(hire!.faceKey)!.name);
-    begins(N, `${N} ${6 - cost} capital, 1 action · bench 5`);
+    begins(N, `${N} ${6 - cost} capital, 1 action, 0 market share · bench 5`);
 
     press('Research the seed deck');
     const drawn = cardsIn(`research-${N}`);
@@ -256,16 +256,16 @@ describe('a round played through the page', () => {
     pickFirst();
     selected(`${T} — to act`);
     expect(cardsIn('open-idea-pool')).toHaveLength(2);
-    expect(lineOf(N)).toContain('0 actions · bench 5 · backlog 2 · research 0 · development 0 · operations 0 · development team 0 · ops team 0');
+    expect(lineOf(N)).toContain('0 actions, 0 market share · bench 5 · backlog 2 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0');
 
     press('Draft a card from the seed market to your backlog');
     pickFirst();
-    begins(T, `${T} 7 capital, 2 actions · bench 3 · backlog 2`);
+    begins(T, `${T} 7 capital, 2 actions, 0 market share · bench 3 · backlog 2`);
     expect(cardsIn('seed-market')).toHaveLength(2);
 
     press('End your actions');
     selected(`${S} — to act`);
-    begins(S, `${S} 1 capital, 3 actions · bench 5`);
+    begins(S, `${S} 1 capital, 3 actions, 0 market share · bench 5`);
   });
 
   it('ends once the round is finished after the Market Crash, in a tie', () => {

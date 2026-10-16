@@ -4,11 +4,13 @@ import { compileGame } from '@/engine/core/lang/compile';
 import { createDefaultLibrary } from '@/engine/core/lang/library';
 import { runExamples } from '@/engine/core/lang/examples';
 import { createEngine, initialState, seatsFor, tableDefFor } from '@/engine/core/lang/build';
-import { counterOf, setCounter } from '@/engine/core/lang/board-state';
+import { COUNTERS_KEY, counterOf, setCounter } from '@/engine/core/lang/board-state';
 import { seatExtras, type PickCardView, type SeatExtras } from '@/engine/core/lang/board-view';
+import { putOn } from '@/engine/core/lang/attach';
 import { deckOf, NEXT_CARD_KEY } from '@/engine/core/lang/cards';
 import { cardCandidates, hasCost } from '@/engine/core/lang/declared-actions';
 import { moveZoneId } from '@/engine/core/lang/declared-moves';
+import { RuleError } from '@/engine/core/lang/diagnostics';
 import type { LangRuntime } from '@/engine/core/lang/runtime';
 import type { ZoneRef } from '@/engine/core/lang/types';
 import { markTurnStarted, ROUND_KEY, START_PLAYER_KEY, startPlayerOf, TURN_OF_KEY } from '@/engine/core/lang/turns';
@@ -92,9 +94,15 @@ const POOLS = ['open-job-market', 'open-idea-pool'];
 const OWN_ROWS = ['bench', 'backlog', 'research'];
 /** The rows of each player's Board, which everyone can see: projects, products in operation, the staff on projects and the ops staff (§3). */
 const BOARD_ROWS = ['development', 'operations', 'development team', 'ops team'];
+/** The phases of a turn, in order (§5): Income, Actions with its two interrupts, the Engine's Generate and Commit, and Cleanup. */
+const PHASES = ['income', 'actions', 'research', 'sourcing', 'engine', 'commit', 'bench cleanup', 'backlog cleanup'];
 // The two buttons that pick a card from a project's staff.
 const REASSIGN_FROM_PROJECT = 'reassign a card from their development team to a card in their development';
 const DISMISS_FROM_PROJECT = 'dismiss a card in their development team';
+/** Pivot scraps a project, and Layoff sends staff to the open job market to look at as many cards of the talent deck (§6, §13.B). */
+const PIVOT = 'pivot a card in their development';
+const LAY_OFF = 'lay off some cards from their bench to the open job market';
+const PASS_ON_THE_REST = 'pass on the rest';
 /** The row each Cleanup phase discards from, and the button that discards from it. */
 const CLEANUPS: Record<string, { row: string; discard: string }> = {
   'bench cleanup': { row: 'bench', discard: DISCARD_BENCH },
@@ -437,7 +445,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(35);
+    expect(results).toHaveLength(54);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -577,7 +585,7 @@ describe('Startup Simulator (designer language)', () => {
     });
   });
 
-  it('lays out the table: each player’s bench, backlog and research are rows only they can see, and their Board rows everyone can', () => {
+  it('lays out the table: each player’s bench, backlog, research and scouting are rows only they can see, and their Board rows everyone can', () => {
     const zones = game!.zones.map(({ name, perPlayer, layout, visibility }) => [zoneIdFor(name), perPlayer, layout, visibility]);
     expect(zones).toEqual([
       ['talent-deck', false, 'pile', 'secret'],
@@ -597,6 +605,7 @@ describe('Startup Simulator (designer language)', () => {
       ['operations', true, 'row', 'public'],
       ['development-team', true, 'row', 'public'],
       ['ops-team', true, 'row', 'public'],
+      ['scouting', true, 'row', 'owner'],
     ]);
     // Staff on a project sit on it (§3); the ops team is a pool that runs every product in operation.
     const marked = game!.zones.filter((zone) => zone.onCards !== undefined).map(({ name, onCards }) => [name, onCards]);
@@ -630,6 +639,8 @@ describe('Startup Simulator (designer language)', () => {
     const seeds = Array.from({ length: 10 }, (_, i) => i + 1);
 
     it.each(counts)('sets up a table of %i players at every seed', (players) => {
+      // A turn starts in income, which has no salary to pay while every Board is empty, so it goes on to actions.
+      expect(game!.phases.map((phase) => phase.id)).toEqual(PHASES);
       for (const seed of seeds) {
         const state = setUp(players, seed);
         const at = `${players} players, seed ${seed}`;
@@ -647,6 +658,9 @@ describe('Startup Simulator (designer language)', () => {
           const backlog = zoneCards(state, `backlog-p${p}`);
           expect(backlog.map((card) => [card.faceUp, card.data?.tier]), `${at}, p${p}'s backlog`).toEqual([[false, 'Tier 1']]);
           for (const row of BOARD_ROWS) expect(zoneCards(state, zoneIdFor(row, `p${p}`)), `${at}, p${p}'s ${row}`).toEqual([]);
+          expect(zoneCards(state, `scouting-p${p}`), `${at}, p${p}'s scouting`).toEqual([]);
+          const counters = state.data[COUNTERS_KEY] as Record<string, Record<string, number>>;
+          expect(counters['market share']?.[`p${p}`], `${at}, p${p}'s market share`).toBe(0);
         }
         expect(zoneCards(state, 'agency-row'), at).toHaveLength(4);
         expect(zoneCards(state, 'seed-market'), at).toHaveLength(2);
@@ -745,6 +759,76 @@ describe('Startup Simulator (designer language)', () => {
     expect(seen('p1').map((card) => card.faceKey)).toEqual(ownCards.map(() => HIDDEN_FACE_KEY));
     expect(seen('p0').map((card) => card.faceKey)).toEqual(ownCards.map((card) => card.faceKey));
     expect(ownCards.every((card) => card.faceKey !== HIDDEN_FACE_KEY)).toBe(true);
+  });
+
+  it('shows the cards a Layoff finds in the scouting row only to the player who laid off (§13.B, the spec’s anti-goal)', () => {
+    const engine = arrange({
+      'bench-p0': [idOf('Engineer')],
+      'agency-row': ['Hacker', 'Architect', 'Veteran', 'Diva'].map(idOf),
+      'talent-deck': ['Sales Rep', 'QA Engineer', 'Fixer'].map(idOf),
+    });
+    expect(engine.dispatch({ type: LAY_OFF, by: 'p0', cardIds: [idOf('Engineer')] }).ok).toBe(true);
+
+    const state = engine.getState();
+    expect(state.turn).toMatchObject({ current: 'p0', phase: 'sourcing' });
+    expect(namesIn(state, 'scouting-p0')).toEqual(['Fixer']);
+    const [found] = zoneCards(state, 'scouting-p0');
+    expect(found.faceKey).not.toBe(HIDDEN_FACE_KEY);
+    const tableDef = tableDefFor(game!, seatsFor(2));
+    const seen = (viewer: string) => deriveScene(tableDef, { cards: state.cards }, viewer).cards.filter((card) => card.zoneId === 'scouting-p0');
+    expect(seen('p1').map((card) => card.faceKey)).toEqual([HIDDEN_FACE_KEY]);
+    expect(seen('p0').map((card) => card.faceKey)).toEqual([found.faceKey]);
+  });
+
+  it('hands the turn back once the cards a Layoff with the last action found are passed on, and the turn goes on to the next player (Review Focus)', () => {
+    const arranged = arrange({
+      'bench-p0': [idOf('Engineer')],
+      'agency-row': ['Hacker', 'Architect', 'Veteran', 'Diva'].map(idOf),
+      'talent-deck': ['Sales Rep', 'QA Engineer', 'Fixer'].map(idOf),
+    }).getState();
+    const { engine } = createEngine(game!, lib, 2, setCounter(arranged, 'actions', 'p0', 1));
+    expect(engine.dispatch({ type: LAY_OFF, by: 'p0', cardIds: [idOf('Engineer')] }).ok).toBe(true);
+    const sourcing = engine.getState();
+    expect(sourcing.turn).toMatchObject({ current: 'p0', phase: 'sourcing' });
+    expect(counterOf(sourcing, 'actions', 'p0')).toBe(0);
+    expect(namesIn(sourcing, 'scouting-p0')).toEqual(['Fixer']);
+
+    expect(engine.dispatch({ type: PASS_ON_THE_REST, by: 'p0' }).ok).toBe(true);
+    const passed = engine.getState();
+    expect(passed.turn).toMatchObject({ current: 'p1', phase: 'actions' });
+    expect(counterOf(passed, 'actions', 'p1')).toBe(ACTIONS_EACH_TURN);
+    expect(zoneCards(passed, 'scouting-p0')).toEqual([]);
+    // The Fixer enters at the left end and pushes the Diva out (R7).
+    expect(namesIn(passed, 'agency-row')).toEqual(['Fixer', 'Hacker', 'Architect', 'Veteran']);
+    expect(namesIn(passed, 'open-job-market')).toEqual(['Engineer', 'Diva']);
+  });
+
+  describe('Review Focus: a Pivot that forgets the staff on its project', () => {
+    const forgotten = '      Every card on it goes to their bench.\n';
+    const BROKEN = STARTUP_SIMULATOR.replace(forgotten, '');
+    const broken = compileGame(BROKEN, lib);
+    const LEFT_BEHIND =
+      "The Architect in p0's development team is on the Dating App, which is now in the open idea pool. Move the cards on a card along with it.";
+
+    it('is the rules without the line that sends a pivoted project’s staff to the bench, and they compile', () => {
+      expect(STARTUP_SIMULATOR.split(forgotten)).toHaveLength(2);
+      expect(broken.diagnostics).toEqual([]);
+    });
+
+    it('refuses the pivot with both cards named and where the project went, and keeps the state from before it', () => {
+      const rules = broken.game!;
+      let state: GameState = { ...initialState(rules, 1), turn: { current: 'p0', phase: 'actions' } };
+      const id = (name: string) => state.cards.find((card) => nameOf(card) === name)!.id;
+      const [app, architect] = [id('Dating App'), id('Architect')];
+      state = relocate(state, [app], 'development-p0', rules);
+      state = putOn(state, [architect], 'development-team-p0', app, rules);
+      const { engine } = createEngine(rules, lib, 2, markTurnStarted(state));
+      const before = engine.getState();
+
+      expect(() => engine.dispatch({ type: PIVOT, by: 'p0', cardId: app })).toThrow(new RuleError(LEFT_BEHIND));
+      expect(engine.getState()).toBe(before);
+      expect(engine.getLog()).toEqual([]);
+    });
   });
 
   describe('long runs, with every rule kept after every move', () => {

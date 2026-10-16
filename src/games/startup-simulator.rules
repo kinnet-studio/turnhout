@@ -2,6 +2,7 @@ Game: Startup Simulator
 Players: 2 to 5
   Each player has 7 capital that everyone can see.
   Each player has 3 actions each turn.
+  Each player has 0 market share that everyone can see.
   Players pay with capital.
 
 Cards:
@@ -100,6 +101,7 @@ Cards:
     | Asteroid Mining | Tier 3 | 8 | 18 | 12 | 18 | 0 | 3 | Deep Tech | Robotics | Cloud |  | 1 |
     | Planetary Wi-Fi | Tier 3 | 6 | 16 | 8 | 16 | 0 | 3 | Infra | Cloud | IoT |  | 1 |
   Cards can be onboarding.
+  Cards can have blue cubes, red cubes, new blue cubes and new red cubes.
 
 Table:
   The talent deck is a pile in the center that no one can see.
@@ -119,6 +121,26 @@ Table:
   Each player has an operations row that everyone can see.
   Each player has a development team row that everyone can see, where every card is on a card.
   Each player has an ops team row that everyone can see.
+  Each player has a scouting row that only they can see.
+
+Blue output:
+  A software card's blue output is its output.
+  A flex card's blue output is its output.
+  An onboarding card's blue output is 0.
+
+Red output:
+  A hardware card's red output is its output.
+  An onboarding card's red output is 0.
+
+Blue team output:
+  A card's blue team output is the total blue output of the cards on it.
+
+Red team output:
+  A card's red team output is the total red output of the cards on it.
+
+Feature complete:
+  Only if its blue cubes are at least its blue cost.
+  Only if its red cubes are at least its red cost.
 
 Setup:
   Shuffle the talent deck.
@@ -137,6 +159,8 @@ In every phase:
   When the agency row has fewer than 4 cards:
     Only if the talent deck is not empty.
     Move the top card of the talent deck to the agency row.
+  When the agency row has more than 4 cards:
+    Move the top card of the agency row to the open job market.
   When the seed market has fewer than 2 cards:
     Only if the seed deck is not empty.
     Move the top card of the seed deck to the seed market.
@@ -149,6 +173,26 @@ In every phase:
     Move the bottom card of the open job market to the box.
   When the open idea pool has more than 5 cards:
     Move the bottom card of the open idea pool to the box.
+
+Phase: income
+  Hint: Pay every salary on your board. If you can't, or won't, let go of the staff you won't pay.
+  When a player's turn starts:
+    They get the total rev of the cards in their operations.
+    For each card in their operations whose rev is more than 0, they get 1 market share.
+  A player may let go of a card in their development team.
+    Only if its salary is more than 0.
+    Then:
+      Move it to the open job market.
+  A player may let go of a card in their ops team.
+    Only if its salary is more than 0.
+    Then:
+      Move it to the open job market.
+  A player may pay salaries.
+    Only if they have at least the total salary of the cards in their development team and their ops team in capital.
+    Then:
+      They pay the total salary of the cards in their development team and their ops team.
+      Go to actions.
+  When the total salary of the cards in their development team and their ops team is 0, go to actions.
 
 Phase: actions
   Players take turns.
@@ -247,10 +291,28 @@ Phase: actions
     Then:
       Deal up to 3 cards from the growth deck to their research.
       The research phase starts with them.
+  A player may launch a card from their development to their operations.
+    It costs 1 action.
+    Only if it is feature complete.
+    Then:
+      Every card on it goes to their ops team.
+  A player may pivot a card in their development.
+    It costs 1 action.
+    Then:
+      Every card on it is onboarding.
+      Every card on it goes to their bench.
+      It loses its blue cubes.
+      It loses its red cubes.
+      Move it to the open idea pool.
+  A player may lay off some cards from their bench to the open job market.
+    It costs 1 action.
+    Then:
+      Deal up to as many cards as they picked from the talent deck to their scouting.
+      The sourcing phase starts with them.
   A player may end their actions.
     Then:
       Their actions go back to 0.
-  When they have less than 1 action, go to bench cleanup.
+  When they have less than 1 action, go to engine.
 
 Phase: research
   Hint: Keep one of the cards you drew. The rest go to the open idea pool.
@@ -264,6 +326,42 @@ Phase: research
     If the growth deck is not empty, move the top card of the growth deck to their research.
   When their research is empty:
     Go back to the interrupted turn.
+
+Phase: sourcing
+  Hint: Hire any of the cards you found at their printed cost, to your bench or straight onto your board. The rest go to the agency row.
+  A player may hire some cards from their scouting to their bench.
+    Only if they have at least the total cost of the picked cards in capital.
+    Then:
+      They pay the total cost of the picked cards.
+  A player may hire some cards from their scouting to their ops team.
+    Only if their operations is not empty.
+    Only if they have at least the total cost of the picked cards in capital.
+    Then:
+      They pay the total cost of the picked cards.
+  A player may hire some cards from their scouting to a card in their development.
+    Only if they have at least the total cost of the picked cards in capital.
+    Then:
+      They pay the total cost of the picked cards.
+      The picked cards go to their development team, on the target card.
+  A player may pass on the rest.
+    Then:
+      Move their scouting to the left end of the agency row.
+  When their scouting is empty:
+    Go back to the interrupted turn.
+
+Phase: engine
+  When this phase starts:
+    For each card in their development, its new blue cubes go up by its blue team output.
+    For each card in their development, its new red cubes go up by its red team output.
+    Go to commit.
+
+Phase: commit
+  When this phase starts:
+    For each card in their development, its blue cubes go up by its new blue cubes, up to its blue cost.
+    For each card in their development, its red cubes go up by its new red cubes, up to its red cost.
+    For each card in their development, it loses its new blue cubes.
+    For each card in their development, it loses its new red cubes.
+    Go to bench cleanup.
 
 Phase: bench cleanup
   Hint: Your bench holds 5 cards. Discard the rest to the open job market.
@@ -285,6 +383,8 @@ Phase: backlog cleanup
 End:
   The game ends when the crash pile is not empty and the round is finished.
   Each player scores 1 point for every 5 capital.
+  Each card in a player's operations scores its val.
+  Each player scores 2 points for each market share.
   Each Tier 1 card in a player's backlog scores -2 points.
   Each Tier 2 card in a player's backlog scores -5 points.
   Each Tier 3 card in a player's backlog scores -10 points.
@@ -727,3 +827,228 @@ Example: dismissing board staff is free (section 18, ruling 25)
   And p0 has 3 actions
   And the open job market has the Architect and a Junior QA Tester, in that order
   And p0's ops team is empty
+
+Example: income pays the total rev of the products in operations, and 1 market share for each that earned (section 5, ruling 25)
+  Given p1's operations has a Dating App, a Trading Bot and a DAO Nation
+  And the turn passes to the left
+  Then it is p1's turn
+  And p1 has 12 capital
+  And p1 has 2 market share
+  And the phase is actions
+
+Example: salaries are paid for every staff member on the board (section 5)
+  Given p1's development has a Dating App
+  And the Dating App in p1's development has the Architect and a Junior Software Dev on it
+  And p1's operations has a To-Do List
+  And p1's ops team has a QA Engineer
+  And the turn passes to the left
+  Then the phase is income
+  And p1 has 8 capital
+  When p1 pays salaries
+  Then it is accepted
+  And p1 has 5 capital
+  And the phase is actions
+
+Example: a player who can't pay everyone chooses whom to let go (ruling 25)
+  Given p1 has 1 capital
+  And p1's development has a Smart Lock
+  And the Smart Lock in p1's development has the Engineer, the Diva and a Junior Hardware Eng on it
+  And the turn passes to the left
+  When p1 pays salaries
+  Then it is rejected because "they have at least the total salary of the cards in their development team and their ops team in capital"
+  When p1 lets go of the Junior Hardware Eng
+  Then it is rejected because "its salary is more than 0"
+  When p1 lets go of the Engineer
+  Then it is accepted
+  And the open job market has the Engineer
+  When p1 pays salaries
+  Then it is accepted
+  And p1 has 0 capital
+  And the Smart Lock in p1's development has the Diva and a Junior Hardware Eng on it
+
+Example: with no salary to pay, the step is skipped (section 5)
+  Given p1's development has a Dating App
+  And the Dating App in p1's development has a Junior Software Dev on it
+  And the turn passes to the left
+  Then it is p1's turn
+  And the phase is actions
+
+Example: a team generates cubes in its colors, and they go onto the tracks (section 5)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And the Dating App in p0's development has a Junior Software Dev and the Architect on it
+  When p0 ends their actions
+  Then the Dating App in p0's development has 4 blue cubes
+  And the Dating App in p0's development has 0 new blue cubes
+  And the Dating App in p0's development is not feature complete
+
+Example: cubes beyond the cost are lost (section 6)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And the Dating App in p0's development has 4 blue cubes
+  And the Dating App in p0's development has a Junior Software Dev and the Architect on it
+  When p0 ends their actions
+  Then the Dating App in p0's development has 6 blue cubes
+  And the Dating App in p0's development has 0 new blue cubes
+  And the Dating App in p0's development is feature complete
+
+Example: staff of the wrong color add nothing (section 6)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And the Dating App in p0's development has a Junior Hardware Eng and a Junior QA Tester on it
+  When p0 ends their actions
+  Then the Dating App in p0's development has 0 blue cubes
+  And the Dating App in p0's development has 0 red cubes
+
+Example: flex staff work in blue until modes arrive (section 11)
+  Given the phase is actions
+  And p0's development has a Smart Lock
+  And the Smart Lock in p0's development has the Firmware Specialist on it
+  When p0 ends their actions
+  Then the Smart Lock in p0's development has 1 blue cube
+  And the Smart Lock in p0's development has 0 red cubes
+
+Example: an onboarding staff member generates nothing this turn and works the next (rulings 8 and 25)
+  Given the phase is actions
+  And p0's development has a Dating App and a To-Do List
+  And the Dating App in p0's development has the Architect on it
+  When p0 reassigns the Architect to the To-Do List
+  And p0 ends their actions
+  Then the To-Do List in p0's development has 0 blue cubes
+  And the Dating App in p0's development has 0 blue cubes
+  And it is p1's turn
+  When p1 ends their actions
+  Then it is p0's turn
+  When p0 pays salaries
+  And p0 ends their actions
+  Then p0 has 5 capital
+  And the To-Do List in p0's development has 3 blue cubes
+
+Example: staff pivoted this turn stay onboarding when assigned again (ruling 8)
+  Given the phase is actions
+  And p0's development has a Dating App and a To-Do List
+  And the Dating App in p0's development has the Architect on it
+  When p0 pivots the Dating App
+  And p0 assigns the Architect to the To-Do List
+  Then the Architect in p0's development team is onboarding
+  When p0 ends their actions
+  Then the To-Do List in p0's development has 0 blue cubes
+
+Example: launching needs both tracks full and moves the team to the ops team (ruling 7)
+  Given the phase is actions
+  And p0's development has a Smart Lock
+  And the Smart Lock in p0's development has 1 blue cube
+  And the Smart Lock in p0's development has 4 red cubes
+  And the Smart Lock in p0's development has a Junior Hardware Eng and the Diva on it
+  When p0 launches the Smart Lock
+  Then it is rejected because "it is feature complete"
+  Given the Smart Lock in p0's development has 5 red cubes
+  When p0 launches the Smart Lock
+  Then it is accepted
+  And p0 has 2 actions
+  And p0's operations has a Smart Lock
+  And p0's ops team has a Junior Hardware Eng and the Diva
+  And p0's development is empty
+
+Example: an ops zone runs any number of products (ruling 24)
+  Given the phase is actions
+  And p0's operations has a To-Do List, a Mobile Wallet and a Trading Bot
+  And p0's development has a Dating App
+  And the Dating App in p0's development has 6 blue cubes
+  When p0 launches the Dating App
+  Then it is accepted
+  And p0's operations has a To-Do List, a Mobile Wallet, a Trading Bot and a Dating App
+
+Example: a pivot scraps the project, its cubes and all, and costs 1 action even when empty (ruling 7)
+  Given the phase is actions
+  And p0's development has a Dating App and a Smart Lock
+  And the Dating App in p0's development has 3 blue cubes
+  And the Dating App in p0's development has a Junior Software Dev and the Architect on it
+  When p0 pivots the Dating App
+  Then it is accepted
+  And p0 has 2 actions
+  And the open idea pool has a Dating App
+  And the Dating App in the open idea pool has 0 blue cubes
+  And p0's bench has a Junior Software Dev and the Architect
+  And the Architect in p0's bench is onboarding
+  When p0 pivots the Smart Lock
+  Then it is accepted
+  And p0 has 1 action
+
+Example: sourcing looks at as many cards as were laid off and hires at the printed cost (section 13, ruling 25)
+  Given p0's bench has a Junior Software Dev, a Junior QA Tester and a Junior Hardware Eng
+  And the agency row has the Hacker, the Architect, the Veteran and the Diva
+  And the talent deck has a Sales Rep, a QA Engineer and the Fixer
+  When p0 lays off the Junior Software Dev and the Junior QA Tester
+  Then it is accepted
+  And p0 has 2 actions
+  And the phase is sourcing
+  And p0's scouting has a QA Engineer and the Fixer, in that order
+  And the open job market has a Junior Software Dev and a Junior QA Tester, in that order
+  When p0 hires the Fixer to p0's bench
+  Then it is accepted
+  And p0 has 0 capital
+  And p0 has 2 actions
+  And p0's bench has a Junior Hardware Eng and the Fixer
+  When p0 passes on the rest
+  Then the phase is actions
+  And the agency row has a QA Engineer, the Hacker, the Architect and the Veteran, in that order
+  And the open job market has a Junior Software Dev, a Junior QA Tester and the Diva, in that order
+
+Example: passed cards enter the agency row at its left end and push out the old 4th, then the old 3rd (section 13)
+  Given p0's bench has a Junior Software Dev and a Junior QA Tester
+  And the agency row has the Hacker, the Architect, the Veteran and the Diva
+  And the talent deck has a Sales Rep, a QA Engineer and the Fixer
+  When p0 lays off the Junior Software Dev and the Junior QA Tester
+  And p0 passes on the rest
+  Then the agency row has a QA Engineer, the Fixer, the Hacker and the Architect, in that order
+  And the open job market has a Junior Software Dev, a Junior QA Tester, the Diva and the Veteran, in that order
+
+Example: a short talent deck shows what it has, and a sourced card may go straight onto a project (section 13, ruling 20)
+  Given p0's development has a Smart Lock
+  And p0's bench has a Junior Software Dev and a Junior QA Tester
+  And the agency row has the Hacker, the Architect, the Veteran and the Diva
+  And the talent deck has the Fixer
+  When p0 lays off the Junior Software Dev and the Junior QA Tester
+  Then p0's scouting has the Fixer
+  And the talent deck is empty
+  When p0 hires the Fixer to the Smart Lock
+  Then it is accepted
+  And p0 has 0 capital
+  And the Smart Lock in p0's development has the Fixer on it
+  And the phase is actions
+
+Example: sourcing from an empty talent deck with the last action reveals nothing, and the turn goes on (this slice's call)
+  Given p0 has 1 action
+  And p0's bench has a Junior Software Dev
+  And the talent deck is empty
+  When p0 lays off the Junior Software Dev
+  Then it is accepted
+  And it is p1's turn
+  And p1 has 3 actions
+  And p0's scouting is empty
+  And the open job market has a Junior Software Dev
+
+Example: the round ends before the start player's next income (rulings 13 and 25)
+  Given the crash pile has the Market Crash
+  And p0's operations has a Trading Bot
+  And it is p1's turn
+  When p1 ends their actions
+  Then the game is over
+  And p0 has 7 capital
+
+Example: the score adds each product's val in operations and 2 points for each market share (section 12, rulings 5 and 25)
+  Given the crash pile has the Market Crash
+  And p0 has 12 capital
+  And p0 has 3 market share
+  And p0's operations has a Dating App and a Smart Lock
+  And p0's development has a Mobile Wallet
+  And p0's backlog has a To-Do List
+  And p1 has 5 capital
+  And it is p1's turn
+  When p1 ends their actions
+  Then the game is over
+  And p0 has 12 capital
+  And p0 scores 14
+  And p1 scores 1
+  And p0 wins

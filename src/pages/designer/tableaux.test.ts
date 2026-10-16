@@ -29,12 +29,12 @@ describe('tableauLine', () => {
     expect(SEATS).toContain(S);
     const all = lines(start);
     for (const seat of SEATS) {
-      expect(all[seat]).toBe(`${seat} 7 capital, 3 actions · bench 3 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0${seat === S ? ' · start player' : ''}`);
+      expect(all[seat]).toBe(`${seat} 7 capital, 3 actions, 0 market share · bench 3 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0${seat === S ? ' · start player' : ''}`);
     }
   });
 
   it('reads a number at exactly 1 in the singular', () => {
-    expect(lines(setCounter(start, 'actions', S, 1))[S]).toContain('7 capital, 1 action ·');
+    expect(lines(setCounter(start, 'actions', S, 1))[S]).toContain('7 capital, 1 action, 0 market share ·');
   });
 
   it('says only that a seat is out', () => {
