@@ -655,7 +655,7 @@ Example: the ops team takes staff only while operations runs a product (the over
   And p0's ops team has a Junior Software Dev
   And p0 has 2 actions
 
-Example: an agency hire may go straight onto the board (ruling 20)
+Example: an agency hire may go straight onto the board (ruling 20, costs from section 20)
   Given the phase is actions
   And p0 has 13 capital
   And the agency row has the Hacker, the Architect, the Veteran and the Diva

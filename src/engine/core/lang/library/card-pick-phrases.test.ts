@@ -191,10 +191,49 @@ describe('examples that press a button that picks a card', () => {
       ].join('\n');
       const [result] = run(SHOWS, showing('p0 shows the Opal to the Opal', ['Then it is accepted']));
       expect(result.status).toBe('fail');
-      const ask = 'Say which: “… from the shop to an Opal”. “show a card from their stash to a card in their case” and “show some cards from their stash to a card in their case” need different words.';
+      const ask = 'Say which: “… from the shop to the Opal”. “show a card from their stash to a card in their case” and “show some cards from their stash to a card in their case” need different words.';
       expect(result.message!.slice(-ask.length)).toBe(ask);
       const [shop] = run(SHOWS, showing(`p0 shows the Opal ${wordingsIn(ask)[0]}`, ['Then it is accepted', 'And the shop is empty', "And p0's case has an Opal and an Opal"]));
       expect(shop).toEqual(expect.objectContaining({ status: 'pass', message: null }));
+    });
+    it('says a single button with no words of its own needs different words', () => {
+      // A buy in the shop that takes the card nowhere shares the shop with the buy to the stash, which shares the stash with the stall's.
+      const NOWHERE_TOO = withStall([
+        '  A player may buy a card in the shop.', '    Then:', '      Move it to the pile.',
+        '  A player may buy a card from the stall to their stash.', '    It costs 1 move.',
+      ]);
+      const [result] = run(NOWHERE_TOO, inBoth('p0 buys the Ruby', ['Then it is accepted']));
+      expect(result.status).toBe('fail');
+      const ask = "Say which: “… from the shop to p0's stash” or “… from the stall”. “buy a card in the shop” needs different words.";
+      expect(result.message!.slice(-ask.length)).toBe(ask);
+    });
+  });
+
+  describe('Review Focus: two buttons that pick a card for theirs to go to, each from a zone of its own', () => {
+    /** CARD_PICK_GAME with a second show, from the shop: both show a card on a card in the case. */
+    const TWO_SHOWS = CARD_PICK_GAME.replace('  A player may stop.\n', [
+      '  A player may show a card from the shop to a card in their case.', '    Then:', '      Move it to their case.', '  A player may stop.', '',
+    ].join('\n'));
+    const showing = (when: string, then: string[]) => [
+      'Example: showing an Opal', "  Given p0's stash has an Opal", '  And the shop has an Opal', "  And p0's case has an Opal", `  When ${when}`,
+      ...then.map((line) => `  ${line}`),
+    ].join('\n');
+
+    it('says where it comes from in words that keep the card it goes to, and each of them presses its one button', () => {
+      const [result] = run(TWO_SHOWS, showing('p0 shows the Opal to the Opal', ['Then it is accepted']));
+      expect(result.status).toBe('fail');
+      const ask = "Say where it comes from: “… from p0's stash to the Opal” or “… from the shop to the Opal”.";
+      expect(result.message!.slice(-ask.length)).toBe(ask);
+      const lands: Record<string, string[]> = {
+        "from p0's stash to the Opal": ["And p0's stash is empty", 'And the shop has an Opal'],
+        'from the shop to the Opal': ["And p0's stash has an Opal", 'And the shop is empty'],
+      };
+      const wordings = [...ask.matchAll(/“… ([^”]+)”/g)].map(([, wording]) => wording);
+      expect(wordings.sort()).toEqual(Object.keys(lands).sort());
+      for (const wording of wordings) {
+        const then = ['Then it is accepted', "And p0's case has an Opal and an Opal", ...lands[wording]];
+        expect(run(TWO_SHOWS, showing(`p0 shows the Opal ${wording}`, then)), wording).toEqual([expect.objectContaining({ status: 'pass', message: null })]);
+      }
     });
   });
 

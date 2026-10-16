@@ -97,10 +97,15 @@ function wordingsOf(env: PhraseEnv, by: PlayerId, pick: CardPick): Wording[] {
   return [...whence, { form: 'to zone', from: null, to }, ...(from === null ? [] : [{ form: 'to zone', from, to } satisfies Wording])];
 }
 
-/** A wording as the words an example adds after its cards: “… from the stall to p0's stash”. */
+/**
+ * A wording as the words an example adds after its cards: “… from the stall to p0's stash”, or “… from the stall to the Ruby” with the
+ * card `target` the example named for them to go to.
+ */
 function sayWording(env: PhraseEnv, { form, from, to }: Wording, target: CardMatch | null): string {
   const whence = from === null ? '' : ` from ${zoneNameOf(env.game, from)}`;
-  const where = form === 'to zone' ? ` to ${zoneNameOf(env.game, to!)}` : form === 'to card' ? ` to ${describeCard(target!)}` : '';
+  // The card it goes to is one the example named on the table, so it is “the Ruby”, as the example would say it.
+  const where = form === 'to zone' ? ` to ${zoneNameOf(env.game, to!)}`
+    : form === 'to card' ? ` to ${describeCard(target!).replace(/^an? /, 'the ')}` : '';
   return `“…${whence}${where}”`;
 }
 
@@ -108,13 +113,15 @@ function sayWording(env: PhraseEnv, { form, from, to }: Wording, target: CardMat
  * What an example has to say to press one of several buttons that could take its cards: where they come from, when each takes them from
  * a zone of its own; else where they go, when each puts them somewhere else. When neither alone is enough, each button gets the fewest
  * words that press it and no other: where its cards come from, where they go, or both. A button no words can press alone needs other
- * words. `target` is the card an example named for its cards to go to, if it named one.
+ * words. `target` is the card an example named for its cards to go to, if it named one: its wordings keep it, since only “… to {card}”
+ * fits a button that picks one.
  */
 function tellApart(env: PhraseEnv, press: Press, takers: DeclaredAction[], target: CardMatch | null): string {
   const { by } = press;
-  const sources = takers.map((action) => moveZoneId(action.pick!.from, env.seats, by));
-  if (allDifferent(sources)) {
-    const named = sources.flatMap((zoneId) => (zoneId === null ? [] : [`“… from ${zoneNameOf(env.game, zoneId)}”`]));
+  const takenFrom = takers.map((action) => moveZoneId(action.pick!.from, env.seats, by));
+  if (allDifferent(takenFrom)) {
+    const form: Form = target === null ? 'alone' : 'to card';
+    const named = takenFrom.flatMap((zoneId) => (zoneId === null ? [] : [sayWording(env, { form, from: zoneId, to: null }, target)]));
     return `Say where it comes from: ${joinOr(named)}.`;
   }
   const goes = takers.map(({ pick }) => (pick!.onto !== null ? 'a card' : pick!.to === null ? 'nowhere' : moveZoneId(pick!.to, env.seats, by)));
@@ -127,7 +134,8 @@ function tellApart(env: PhraseEnv, press: Press, takers: DeclaredAction[], targe
   const said = own.flatMap((wording) => (wording === null ? [] : [sayWording(env, wording, target)]));
   if (said.length === 0) return 'Give the buttons different words.';
   const unsaid = takers.filter((_, i) => own[i] === null).map((action) => `“${action.words}”`);
-  return `Say which: ${joinOr(said)}.${unsaid.length === 0 ? '' : ` ${joinAnd(unsaid)} need different words.`}`;
+  const needs = unsaid.length === 1 ? 'needs' : 'need';
+  return `Say which: ${joinOr(said)}.${unsaid.length === 0 ? '' : ` ${joinAnd(unsaid)} ${needs} different words.`}`;
 }
 
 /**

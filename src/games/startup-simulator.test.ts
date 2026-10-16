@@ -470,6 +470,34 @@ describe('Startup Simulator (designer language)', () => {
     expect(pressed.map(({ status, message }) => [status, message])).toEqual(wordings.map(() => ['pass', null]));
   });
 
+  it('asks an example which reassign it means when a project and the ops team both have the staff member, keeping the project it goes to', () => {
+    const given = [
+      '  Given the phase is actions', "  And p0's development has a Dating App and a To-Do List",
+      "  And the Dating App in p0's development has a Junior Software Dev on it", "  And p0's operations has a Mobile Wallet",
+      "  And p0's ops team has a Junior Software Dev",
+    ];
+    const bare = ['Example: a Junior Software Dev on a project and in the ops team', ...given, '  When p0 reassigns a Junior Software Dev to the To-Do List'];
+    const results = runExamples(compileGame(`${STARTUP_SIMULATOR}\n\n${bare.join('\n')}\n`, lib).game!, lib);
+    expect(results.at(-1)!.status).toBe('fail');
+    const ask = ". Say where it comes from: “… from p0's development team to the To-Do List” or “… from p0's ops team to the To-Do List”.";
+    const message = results.at(-1)!.message!;
+    expect(message.slice(-ask.length)).toBe(ask);
+
+    // Each wording the advice gives moves the Junior from where it says onto the To-Do List.
+    const lands: Record<string, string[]> = {
+      "from p0's development team to the To-Do List": ["And the Dating App in p0's development has no cards on it", "And p0's ops team has a Junior Software Dev"],
+      "from p0's ops team to the To-Do List": ["And the Dating App in p0's development has a Junior Software Dev on it", "And p0's ops team is empty"],
+    };
+    const wordings = [...message.matchAll(/“… ([^”]+)”/g)].map(([, wording]) => wording);
+    expect(wordings.sort()).toEqual(Object.keys(lands).sort());
+    const pressing = wordings.map((wording) => [
+      `Example: reassigning the Junior ${wording}`, ...given, `  When p0 reassigns a Junior Software Dev ${wording}`, '  Then it is accepted',
+      "  And the To-Do List in p0's development has a Junior Software Dev on it", ...lands[wording].map((line) => `  ${line}`),
+    ].join('\n'));
+    const pressed = runExamples(compileGame(`${STARTUP_SIMULATOR}\n\n${pressing.join('\n\n')}\n`, lib).game!, lib).slice(-wordings.length);
+    expect(pressed.map(({ status, message }) => [status, message])).toEqual(wordings.map(() => ['pass', null]));
+  });
+
   describe('the cards (§20)', () => {
     it('has 87 cards: 22 talent, 30 seed products, and 34 growth products with the Market Crash', () => {
       const { cards } = fresh();
