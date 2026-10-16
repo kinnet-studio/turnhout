@@ -83,6 +83,12 @@ const CLEANUPS: Record<string, string> = { 'bench cleanup': 'bench', 'backlog cl
 /** What each card left in a backlog costs at the end, by its tier: vaporware (ruling 24). */
 const VAPORWARE: Record<string, number> = { 'Tier 1': 2, 'Tier 2': 5, 'Tier 3': 10 };
 
+/**
+ * How an auto-player gets its growth ideas: by researching the growth deck, or by drafting from the growth market. A game that
+ * drafts them runs the growth deck down only through the market's refills, so the Crash comes out there.
+ */
+type Style = 'researches' | 'drafts';
+
 /** Sees each move of a long run, with the state before it and the state after. */
 type Watch = (before: GameState, move: Move, after: GameState) => void;
 
@@ -98,8 +104,9 @@ function play(engine: GameEngine, move: Move, watch: Watch): void {
  * Takes the turn of the seat whose turn it is, the game's turn `t` (counted from 0), until the turn passes, the game ends or
  * the log holds `moves` moves. `a` counts the actions taken so far in this turn.
  *
- * - The first action is an Ideation, by `t % 4`: research the growth deck (0 and 2), draft the growth market's first card (1),
- *   or (3) by `⌊t / 4⌋ % 3` research the seed deck, draft the seed market's first card or draft the open idea pool's first card.
+ * - The first action is an Ideation, by `t % 4`: a growth idea (0 and 2), draft the growth market's first card (1), or (3) by
+ *   `⌊t / 4⌋ % 3` research the seed deck, draft the seed market's first card or draft the open idea pool's first card. A growth
+ *   idea researches the growth deck when the `style` researches, and drafts the growth market's first card when it drafts.
  *   When the rules refuse that, it tries researching the growth deck, drafting the growth market's first card, researching the
  *   seed deck and drafting the seed market's first card, in that order, and with none allowed it recruits instead.
  * - Each later action is a recruit, by `(t + a) % 4`: the Junior of kind `(t + a) % 3` (0), the first agency card it can pay
@@ -107,7 +114,7 @@ function play(engine: GameEngine, move: Move, watch: Watch): void {
  *   such card, it recruits that Junior, else ends its actions.
  * - In research it keeps the research row's card at `t` (mod the row's length); in each Cleanup it discards the row's first card.
  */
-function playTurn(engine: GameEngine, t: number, watch: Watch, moves = Infinity): void {
+function playTurn(engine: GameEngine, t: number, style: Style, watch: Watch, moves = Infinity): void {
   const by = engine.getState().turn!.current;
   const cards = (zoneId: string) => zoneCards(engine.getState(), zoneId);
   const press = (type: string): Move => ({ type, by });
@@ -120,7 +127,8 @@ function playTurn(engine: GameEngine, t: number, watch: Watch, moves = Infinity)
   };
   const ideation = (): (Move | null)[] => {
     const seedSide = [press(RESEARCH_SEED), first('draft', 'seed-market'), first('draft', 'open-idea-pool')];
-    const planned = [press(RESEARCH_GROWTH), first('draft', 'growth-market'), press(RESEARCH_GROWTH), seedSide[Math.floor(t / 4) % 3]];
+    const growth = style === 'drafts' ? first('draft', 'growth-market') : press(RESEARCH_GROWTH);
+    const planned = [growth, first('draft', 'growth-market'), growth, seedSide[Math.floor(t / 4) % 3]];
     return [planned[t % 4], press(RESEARCH_GROWTH), first('draft', 'growth-market'), press(RESEARCH_SEED), first('draft', 'seed-market')];
   };
   const recruiting = (a: number): (Move | null)[] => {
@@ -152,12 +160,14 @@ function playTurn(engine: GameEngine, t: number, watch: Watch, moves = Infinity)
 
 /**
  * Plays a game of `players` from Setup at `seed`, turn after turn, until it has a result, `MAX_TURNS` turns are played or the
- * log holds `moves` moves; the engine as it is then.
+ * log holds `moves` moves; the engine as it is then. At an odd seed every seat researches the growth deck for its growth ideas,
+ * and at an even seed it drafts them from the growth market, so that the Crash comes out of each.
  */
 function playGame(players: number, seed: number, watch: Watch, moves = Infinity): GameEngine {
   const { engine } = createEngine(game!, lib, players, initialState(game!, seed));
+  const style: Style = seed % 2 === 0 ? 'drafts' : 'researches';
   for (let t = 0; t < MAX_TURNS && engine.getState().result === undefined && engine.getLog().length < moves; t++) {
-    playTurn(engine, t, watch, moves);
+    playTurn(engine, t, style, watch, moves);
   }
   return engine;
 }
@@ -170,6 +180,27 @@ const turnsIn = (log: readonly Move[]): PlayerId[] =>
 function tallyKey(before: GameState, move: Move): string {
   if (!CARD_MOVES.includes(move.type)) return move.type;
   return `${move.type} from ${zoneInfo(game!, cardById(before, move.cardId as string)!.zoneId)!.spec.name}`;
+}
+
+/**
+ * What else a move made happen that the tally counts: each card a pool let go of to the box, and the Market Crash reaching the
+ * crash pile, by where it came from. A draft from the growth market draws the Crash only through the market's refill, and a
+ * research of the growth deck only into the research row, so the move says which way it came.
+ */
+function happenings(before: GameState, move: Move, after: GameState): string[] {
+  const boxed = new Set(zoneCards(before, 'box').map((c) => c.id));
+  const newInBox = zoneCards(after, 'box').filter((c) => !boxed.has(c.id));
+  const keys = POOLS.flatMap((pool) => {
+    const held = new Set(zoneCards(before, pool).map((c) => c.id));
+    return newInBox.filter((c) => held.has(c.id)).map(() => `${zoneInfo(game!, pool)!.spec.name} lets a card go to the box`);
+  });
+  if (zoneCards(before, 'crash-pile').length === 0 && zoneCards(after, 'crash-pile').length > 0) {
+    const way = tallyKey(before, move);
+    const from = way === 'draft from growth market' ? 'from the growth market'
+      : way === RESEARCH_GROWTH ? 'from a research row' : `after ${way}`;
+    keys.push(`the Market Crash reaches the crash pile ${from}`);
+  }
+  return keys;
 }
 
 /** A score as ruling 24 counts it: a point for every 5 capital, less the backlog's vaporware. */
@@ -514,7 +545,7 @@ describe('Startup Simulator (designer language)', () => {
   });
 
   describe('long runs, with every rule kept after every move', () => {
-    /** How many times the runs below made each move: see `tallyKey`. */
+    /** How many times the runs below made each move and saw each happening: see `tallyKey` and `happenings`. */
     const tally: Record<string, number> = {};
 
     it.each([2, 3, 4, 5])('plays %i players to the Market Crash and a score at seeds 1 to 5', (players) => {
@@ -524,8 +555,7 @@ describe('Startup Simulator (designer language)', () => {
         const rules = keepsTheRules(seats);
         const engine = playGame(players, seed, (before, move, after) => {
           rules(before, move, after);
-          const key = tallyKey(before, move);
-          tally[key] = (tally[key] ?? 0) + 1;
+          for (const key of [tallyKey(before, move), ...happenings(before, move, after)]) tally[key] = (tally[key] ?? 0) + 1;
         });
         const state = engine.getState();
         const turns = turnsIn(engine.getLog());
@@ -545,13 +575,15 @@ describe('Startup Simulator (designer language)', () => {
       }
     }, 60_000);
 
-    it('made every move somewhere in those runs: each button, and each card move from each zone it takes from', () => {
+    it('made every move in those runs, and the idea pool let cards go and the Crash came out of the market and of research', () => {
       const every = [
         ...RECRUITS, 'hire from agency row', 'hire from open job market',
         'draft from seed market', 'draft from growth market', 'draft from open idea pool',
         RESEARCH_SEED, RESEARCH_GROWTH, 'keep', END_ACTIONS, 'discard from bench', 'discard from backlog',
+        'open idea pool lets a card go to the box',
+        'the Market Crash reaches the crash pile from the growth market', 'the Market Crash reaches the crash pile from a research row',
       ];
-      expect(every.filter((key) => !(tally[key] > 0)), `moves never made: ${JSON.stringify(tally)}`).toEqual([]);
+      expect(every.filter((key) => !(tally[key] > 0)), `never made or seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
     it('takes back every move with undo, and rebuilds the game from its log, through recruits and research (3 players, seed 1)', () => {
