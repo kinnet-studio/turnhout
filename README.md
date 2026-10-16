@@ -157,10 +157,10 @@ Phase: playing
 - **The forms.**
   - `A player may buy a card from the shop to their stash.` with a cost line under it is a button that asks for a card from the shop. The card moves to the stash before the `Then:` lines.
   - `… a card in their stash` picks one card and moves nothing by itself.
-  - `… a card from their stash to a card in their case` picks a card and the card it goes to.
-  - `… some cards from their stash` picks one or more.
-- **What the lines call them.** The picked card is "it" and "the card", the card it goes to is "the target card", and a set is "the picked cards": `Move the picked cards to the pile.` and `Only if they picked at most 2 cards.`
-- **Card moves.** A line with no cost that reads exactly "a card from … to …" is still a card move, moved by dragging.
+  - `… a card from their stash to a card in their case` picks a card and the card it goes to, and moves nothing by itself: its `Then:` lines say `Move it to their case.`
+  - `… some cards from their stash` picks one or more. From a pile only the top card can be taken, so such a set is always one card.
+- **What the lines call them.** The picked card is "it" and "the card", the card it goes to is "the target card", and a set is "the picked cards": `Move the picked cards to the pile.` and `Only if they picked at most 2 cards.` An `Only if` line can't read a card the player can't see, such as one in the other player's stash: a refused press would tell them what it is.
+- **Card moves.** A line with no cost that reads exactly "a card from … to …" is still a card move, moved by dragging. A free button that moves a card is written `A player may sell a card in their stash.` with `Then: Move it to the pile.` under it. `It costs 0 actions.` under a "from … to …" line makes a button too, but one that counts as an action, which slice 7's Veto can answer.
 - **Costs.** `It costs 1 action.` goes under any button:
   - it refuses with "they have at least 1 action" before every `Only if`;
   - it spends before the `Then:` lines;
