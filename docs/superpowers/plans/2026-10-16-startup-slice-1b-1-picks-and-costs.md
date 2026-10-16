@@ -38,6 +38,10 @@
 
 ## Global Constraints
 
+- **Controller amendment (after plan 1a-1's final review, before this plan runs).**
+  - **Tally keys.** 1a-1's Task 10 also tallies three rule paths so the auto-player can't hide a rule (the overview's anti-goal): the open idea pool letting a card go to the box, the Market Crash reaching the crash pile from the growth market, and from a research row. Wherever this plan lists the tally keys, keep those three as well and expect each above 0.
+  - **Example counts.** 1a-1's final fix wave adds examples to `startup-simulator.rules` (research with the last action, a 1-card research deck, the Crash on the last seat's turn) and moves the Market Crash into the growth products table as its first row (its card id is no longer fixed). Wherever this plan says "21 examples" or "21 of 21", read the count the committed file has when this plan starts, and add this plan's examples to it.
+
 - **Hard constraints (verbatim):**
   - Protected files must not change: `src/engine/core/game-state.ts`, `src/engine/core/flow.ts`, `src/engine/core/game-engine.ts`, and anything under `src/pages/hearts-demo/**`.
   - The core is pure: no pixi/react/DOM imports in `src/engine/core/**`, no `Math.random` or `Date.now`.
