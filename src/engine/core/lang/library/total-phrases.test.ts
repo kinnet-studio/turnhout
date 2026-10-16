@@ -124,7 +124,7 @@ describe('the picked cards', () => {
     expect(counting(4).engine.dispatch(count)).toMatchObject({ ok: true });
     expect(counting(3).engine.dispatch(count)).toMatchObject({ ok: false, reason: 'they have at least the total wage of the picked cards in coins' });
   });
-  it('counts as reading the cards of the press, so a face-down pick is judged without it (P8)', () => {
+  it('counts as reading the cards of the press, so a face-down pick is judged without it', () => {
     const built = counting(0);
     const action = rules.phases[0].actions.find((a) => a.words === 'count some cards from the hall')!;
     expect(built.runtime.readsCard(action.conditions[0])).toBe(true);

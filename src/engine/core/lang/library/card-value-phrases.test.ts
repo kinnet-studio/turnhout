@@ -260,7 +260,7 @@ describe('a card without a number the lines of a value read', () => {
     const reading = createEngine(rules, lib, 2, initialState(rules, 1)).runtime;
     expect(reading.workedValue(setUp, vase, 'reach')).toBe(2);
   });
-  it('lets a line read a worked flag that cards without its numbers are not (P4)', () => {
+  it('lets a line read a worked flag that cards without its numbers are not', () => {
     const rules = compiled(WORKED_GAME.replace("  A Tinker card's wage is 1.", "  A Tinker card's wage is 1.\n  A done card's wage is 0."));
     const reading = createEngine(rules, lib, 2, initialState(rules, 1)).runtime;
     expect([potter, smith, tinker].map((id) => reading.workedValue(setUp, id, 'wage'))).toEqual([1, 2, 1]);

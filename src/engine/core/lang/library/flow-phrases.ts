@@ -149,8 +149,9 @@ const wentThrough = new WeakMap<object, string[]>();
  * same player's. Only the start lines run: a phase's “When a player's turn starts:” lines run as a turn starts, never as a phase
  * is gone to, so a first phase that starts each turn is not started again by a “go to” that comes back to it.
  *
- * A start line that goes back to a phase the chain already went to would never stop, so it is refused, naming the phases, rather
- * than left to the cap on lines inside lines, whose words are about cards.
+ * A start line that goes back to a phase the chain already went to could go round for ever, so it is refused, naming the phases, rather
+ * than left to the cap on lines inside lines, whose words are about cards. That refuses a chain that would have stopped too (“If …, go to
+ * tidying.” among tidying's own start lines): telling the two apart would mean counting visits, which no game needs yet.
  */
 const goToPhase: EffectFn = (env, [phase]) => {
   if (!env.state.turn) throw new RuleError('There is no turn to move on.');
