@@ -221,10 +221,15 @@ function playTurn(table: Table, watch: Watch = () => {}): void {
     const mortgage = firstBest(accepted(table, debtor, MORTGAGE), (at) => attr(at, 'price'), (a, b) => a < b);
     make(mortgage === null ? { type: GIVE_UP, by: debtor } : { type: MORTGAGE, by: debtor, target: mortgage });
   };
-  // While anyone owes, the turn's own buttons wait: the engine refuses every one of them to the player whose turn it is.
+  // While anyone owes, the turn's own buttons wait: the engine refuses every one of them to the player whose turn it is, the
+  // trade too, even with the pick it would otherwise take (another seat still in).
   const turnWaits = () => {
-    const current = engine.getState().turn!.current;
+    const state = engine.getState();
+    const current = state.turn!.current;
     for (const type of TURN_BUTTONS) expect(engine.canDispatch({ type, by: current }), `${current} may ${type} while someone owes`).not.toBe(true);
+    const other = playersIn(state, runtime.seats).find((seat) => seat !== current);
+    if (other === undefined) throw new Error('No other seat is still in while someone owes.');
+    expect(engine.canDispatch({ type: TRADE, by: current, player: other }), `${current} may trade with ${other} while someone owes`).not.toBe(true);
     expect(buildable(table, current), `a street ${current} may build on while someone owes`).toBeNull();
   };
   const settle = () => {
@@ -964,9 +969,10 @@ describe('Rent Day (designer language)', () => {
     expect(playersIn(table.engine.getState(), seatsFor(n))).toEqual([winner]);
   });
 
-  it('undo takes back every move, and the log rebuilds the same game, through an auction and back', () => {
-    // Seed 2 auctions a space in the 21st turn and someone wins it, so undo and replay go into the interrupted turn and back out.
-    const fresh = () => createEngine(game!, lib, 4, initialState(game!, 2));
+  it('undo takes back every move, and the log rebuilds the same game, through an auction and a trade and back', () => {
+    // Seed 1 buys, auctions a space that is bid on and dropped out of, and makes a trade that is accepted, all in its first 40 turns,
+    // so undo and replay go into both interrupted turns and back out.
+    const fresh = () => createEngine(game!, lib, 4, initialState(game!, 1));
     const table = fresh();
     const { engine } = table;
     const states = [engine.getState()];
@@ -979,6 +985,8 @@ describe('Rent Day (designer language)', () => {
     expect(log.some((move) => move.type === BUY)).toBe(true);
     expect(log.some((move) => move.type === BID)).toBe(true);
     expect(log.some((move) => move.type === DROP)).toBe(true);
+    expect(log.some((move) => move.type === TRADE)).toBe(true);
+    expect(log.some((move) => move.type === ACCEPT)).toBe(true);
 
     // The same moves from the same seed roll the same dice and fire the same moments.
     const replayed = fresh().engine;
