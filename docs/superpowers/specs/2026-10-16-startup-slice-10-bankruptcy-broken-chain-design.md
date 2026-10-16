@@ -1,7 +1,7 @@
 # Startup Simulator, Slice 10: Bankruptcy and the Broken Chain
 
 **Date:** 2026-10-16
-**Status:** Draft, waiting for its builder check. The user handed over every design call for the full implementation;
+**Status:** Settled after its builder check (see "Builder-check rulings" at the end). The user handed over every design call for the full implementation;
 the calls below are the builder's.
 **Part of:** `2026-10-16-startup-simulator-overview-design.md`. Its decisions, calls, anti-goals and constraints apply.
 **Builds on:** slices 1a to 9.
@@ -64,11 +64,15 @@ The game after this slice:
 | Bankruptcy from a Fold | Equity seized first; products sold until the fine is covered |
 | Keep a $0 product | a product whose Fire Sale pays $0 is kept |
 | Forgiven shortfall | a Fold fine still unpaid after liquidation is forgiven |
-| Broken Chain on a Fire Sale | a rival's bluff on that Tag may Come Clean for free and gains Legacy Status |
-| Broken Chain on a Market Sale | Come Clean costs $3 to the new owner; $0 if Partners; impossible without $3 |
+| Broken Chain on a Fire Sale | a Partner whose project the sale turned into a bluff may Come Clean for free and gains Legacy Status |
+| Broken Chain on a Market Sale | Come Clean costs $3 to the new owner; impossible without $3 spare; a Partner of the new owner keeps access and isn't asked |
 | Still illegal | Come Clean revealing a second missing Tag: Fold or Settle with no Whistleblower |
 | No chain on a lost Partnership | a Buyback ending a Partnership exposes nothing |
-| Legacy reset | a Legacy product sold loses the status |
+| Legacy reset | a Legacy product sold, pivoted or folded loses the status |
+| Seller's own project | the seller's Face-Down project that relied on its own sold Tag is offered Come Clean (asked last) |
+| Offer hides the card | an exposed owner with a Face-Down project that doesn't need the Tag is still asked, and stays hidden |
+| Debt set aside | a bankrupt with a $6 Settlement owed can't spend the liquidation's cash on a Come Clean or a Market Sale purchase |
+| Two debts | a second Settlement of the same bankrupt joins the first; Settle is offered only if both are covered; paid in order |
 | Nested | an Audit → Fold → Bankruptcy → Market Sale → Come Clean chain resolves in order |
 | The full valuation | a game end scored line by line against §12 |
 
@@ -94,3 +98,48 @@ The game after this slice:
 ## Left to the builder
 
 - Exact wordings; the auto-player's choices.
+
+## Builder-check rulings
+
+The builder check (`builder-check-startup-10.md`) raised two questions and listed points it would settle itself. The
+user handed every design call to the builder; these are the calls.
+
+- **R1. Who is vulnerable at a sale, and who is asked.**
+  - **Vulnerable:** a Face-Down project that needs the sold Tag, whose owner had Secured Access to that Tag before the
+    sale and has none after it, checked after the card has moved. That is the seller and the seller's Partners. Owners
+    who keep access through another provider, or as Partners of the buyer, are not vulnerable. A bluff the sale didn't
+    cause is not offered Come Clean ("bluff" in the examples means a project the sale turned into one). Why: §7.E's "you
+    lose access to it" and its Market Sale scenario, and Rust's `broken_chain::open`; including every bluff would let any
+    sale legalise a bluff cheaply and would prompt almost every player at almost every sale.
+  - **The seller is included** (§7.E: "Any Stealth Products"; Rust agrees), asked last in the from-the-seller's-left
+    order. The spec's "rival" is widened accordingly.
+  - **Who is asked:** every such owner who has any Face-Down project, whether or not one of them needs the Tag and
+    whether or not they can pay. The prompt lists the vulnerable projects (possibly none) and always offers to stay
+    hidden, so the offer reads only public facts (Partnerships, Tag providers, Face-Down counts, cash) and reveals
+    nothing about a hidden card (slice 9 R3).
+  - The $0 Partner rate (§17.B.3's table) has no case that can happen here: a Partner of the new owner keeps access. On
+    the owner's list.
+- **R2. A bankrupt's debt is set aside.**
+  - From the moment a player goes Bankrupt until their liquidation ends, they may spend only cash above what they owe:
+    on a Come Clean fee (as Rust's spare cash) and on buying in another player's Market Sale (they are asked only if that
+    spare cash covers the price and they have the bandwidth).
+  - A second audit cost of the same player joins what they already owe, with no second seizure. Settle is offered for
+    it only if cash plus the Fire Sale value of their products covers everything owed. The liquidation goes on until the
+    total is covered, the debts are paid in the order they arose (the first Fold's Whistleblower first), and only a Fold
+    fine can be left unpaid and forgiven. Debts of different players stay separate.
+  - Why: it keeps "a Settlement is always paid" true at every depth; spending the raised cash breaks it (worked example
+    in the builder check).
+- **R3 (the builder's own).**
+  - Ghost Progress can't arise at a Come Clean reveal (slice 9 R2), so the reveal checks Missing Dependency only, with
+    the sold Tag excused.
+  - Legacy Status is cleared whenever the card leaves its owner's Board (Pivot, a Fold, any sale), not only on a sale:
+    a fact moves with its card, and a scrapped card redrafted later must not carry an old exception (Rust clears it only
+    on sales — a bug not copied).
+  - A Come Clean after a Market Sale or Acquisition also grants Legacy Status (§7.E: "the timing and rules are the same
+    as the fire sale").
+  - A Settlement's cost and payees are fixed when it is chosen, before the seizure ends any Partnership. The audited
+    card is already Face-Up, so it is never offered Come Clean during its own liquidation.
+  - Slice 9's Fold and Settle are generalised here to any owner at any moment (including sales in Phase C) and to no
+    Whistleblower.
+  - Nested interrupts become a stack, each level with its own context kept in facts (not the turn log, which a resume
+    restores).
