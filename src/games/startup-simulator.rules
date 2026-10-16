@@ -1,0 +1,328 @@
+Game: Startup Simulator
+Players: 2 to 5
+  Each player has 7 capital that everyone can see.
+  Each player has 3 actions each turn.
+  Players pay with capital.
+
+Cards:
+  A deck called talent cards, starting in the talent deck:
+    | name                | cost | skill    | output | salary | role             | trait          | copies |
+    | Hacker              | 6    | software | 3      | 2      | Senior Developer | Spaghetti Code | 1      |
+    | Architect           | 7    | software | 3      | 2      | Senior Developer | Clean Code     | 1      |
+    | Veteran             | 6    | software | 3      | 2      | Senior Developer | Mentor         | 1      |
+    | Diva                | 5    | hardware | 3      | 1      | Senior Developer | Ego            | 1      |
+    | Engineer            | 6    | hardware | 3      | 2      | Senior Developer | Efficient      | 1      |
+    | Fixer               | 7    | hardware | 3      | 2      | Senior Developer | QA Skill       | 1      |
+    | Firmware Specialist | 6    | flex     | 2      | 2      | Senior Developer | Versatile      | 2      |
+    | Full Stack Ninja    | 8    | flex     | 3      | 3      | Senior Developer | Mercenary      | 2      |
+    | QA Engineer         | 4    |          | 0      | 1      | Specialist       | Bug Hunter     | 3      |
+    | Sales Rep           | 4    |          | 0      | 0      | Specialist       | Rainmaker      | 3      |
+    | HR Manager          | 5    |          | 0      | 1      | Specialist       | Gatekeeper     | 2      |
+    | Junior PM           | 5    |          | 0      | 1      | Specialist       | Synergy        | 2      |
+    | Senior PM           | 8    |          | 0      | 3      | Specialist       | Agile Synergy  | 1      |
+    | Growth Hacker       | 5    |          | 0      | 2      | Specialist       | Viral Loop     | 1      |
+  A stack called junior software devs that never runs out:
+    | name                | cost | skill    | output | salary |
+    | Junior Software Dev | 2    | software | 1      | 0      |
+  A stack called junior hardware engineers that never runs out:
+    | name                | cost | skill    | output | salary |
+    | Junior Hardware Eng | 2    | hardware | 1      | 0      |
+  A stack called junior qa testers that never runs out:
+    | name             | cost | skill | output | salary |
+    | Junior QA Tester | 2    | qa    | 1      | 0      |
+  A deck called seed products, starting in the seed deck:
+    | name | tier | blue cost | red cost | rev | val | blue maint | red maint | sector | requires | also requires | tag | copies |
+    | To-Do List | Tier 1 | 4 | 0 | 1 | 1 | 1 | 0 | Concept |  |  | App | 1 |
+    | Flashlight App | Tier 1 | 4 | 0 | 1 | 1 | 1 | 0 | Concept |  |  | App | 1 |
+    | Basic Website | Tier 1 | 4 | 0 | 1 | 1 | 1 | 0 | Concept |  |  | Platform | 1 |
+    | USB Gadget | Tier 1 | 4 | 0 | 1 | 1 | 1 | 0 | Concept |  |  | Device | 1 |
+    | Dating App | Tier 1 | 6 | 0 | 1 | 5 | 1 | 0 | Consumer |  |  | Social | 1 |
+    | Viral Video App | Tier 1 | 6 | 0 | 2 | 3 | 1 | 0 | Consumer |  |  | Social | 1 |
+    | Messaging App | Tier 1 | 4 | 0 | 1 | 2 | 1 | 0 | Consumer |  |  | Social | 1 |
+    | Mobile Wallet | Tier 1 | 4 | 0 | 2 | 2 | 1 | 0 | FinTech |  |  | Commerce | 1 |
+    | Payment Gateway | Tier 1 | 6 | 0 | 3 | 2 | 1 | 0 | FinTech |  |  | Commerce | 1 |
+    | Trading Bot | Tier 1 | 6 | 0 | 4 | 1 | 2 | 0 | FinTech |  |  | Commerce | 1 |
+    | Smart Thermostat | Tier 1 | 2 | 4 | 2 | 3 | 0 | 1 | Deep Tech |  |  | IoT | 1 |
+    | Fitness Wearable | Tier 1 | 2 | 4 | 2 | 3 | 0 | 1 | Deep Tech |  |  | IoT | 1 |
+    | Smart Lock | Tier 1 | 1 | 5 | 2 | 3 | 0 | 1 | Deep Tech |  |  | IoT | 1 |
+    | Health Tracker | Tier 1 | 4 | 0 | 1 | 2 | 1 | 0 | Life Sci |  |  | Data | 1 |
+    | Genetics Kit | Tier 1 | 0 | 8 | 3 | 4 | 0 | 1 | Life Sci |  |  | Data | 1 |
+    | Telehealth Platform | Tier 1 | 6 | 0 | 2 | 3 | 1 | 0 | Life Sci |  |  | Data | 1 |
+    | Tech Blog | Tier 1 | 4 | 0 | 1 | 1 | 1 | 0 | Infra |  |  | Platform | 1 |
+    | Cloud Storage | Tier 1 | 4 | 4 | 3 | 2 | 0 | 1 | Infra |  |  | Platform | 1 |
+    | Gig Economy | Tier 1 | 8 | 0 | 3 | 2 | 1 | 0 | Infra |  |  | Platform | 1 |
+    | App Store | Tier 1 | 6 | 0 | 4 | 3 | 1 | 0 | Infra |  |  | Platform | 1 |
+    | Indie Game Hit | Tier 1 | 6 | 0 | 3 | 1 | 1 | 0 | Consumer |  |  | App | 1 |
+    | News Aggregator | Tier 1 | 4 | 0 | 1 | 3 | 1 | 0 | Consumer |  |  | Platform | 1 |
+    | Crowdfunding Page | Tier 1 | 4 | 0 | 1 | 3 | 1 | 0 | FinTech |  |  | Platform | 1 |
+    | Budgeting App | Tier 1 | 4 | 0 | 2 | 1 | 1 | 0 | FinTech |  |  | App | 1 |
+    | Smart Toy | Tier 1 | 1 | 3 | 2 | 2 | 0 | 1 | Deep Tech |  |  | Device | 1 |
+    | Pet Tracker | Tier 1 | 2 | 4 | 2 | 3 | 0 | 1 | Deep Tech |  |  | IoT | 1 |
+    | Sleep Monitor | Tier 1 | 2 | 4 | 1 | 4 | 0 | 1 | Life Sci |  |  | Data | 1 |
+    | Meditation App | Tier 1 | 4 | 0 | 1 | 2 | 1 | 0 | Life Sci |  |  | Data | 1 |
+    | VPN Service | Tier 1 | 4 | 0 | 2 | 2 | 1 | 0 | Infra |  |  | Platform | 1 |
+    | Dev Tools | Tier 1 | 6 | 0 | 3 | 2 | 1 | 0 | Infra |  |  | Platform | 1 |
+  A deck called the market crash, starting in the growth deck:
+    | name         |
+    | Market Crash |
+  A deck called growth products, starting in the growth deck:
+    | name | tier | blue cost | red cost | rev | val | blue maint | red maint | sector | requires | also requires | tag | copies |
+    | Streaming Service | Tier 2 | 10 | 0 | 6 | 6 | 2 | 0 | Consumer | Social |  | Media | 1 |
+    | Esports League | Tier 2 | 10 | 0 | 5 | 8 | 2 | 0 | Consumer | Social |  | Media | 1 |
+    | Social VR Space | Tier 2 | 12 | 0 | 4 | 8 | 2 | 0 | Consumer | Social |  | Media | 1 |
+    | Neobank | Tier 2 | 10 | 0 | 3 | 10 | 1 | 0 | FinTech | Commerce |  | Crypto | 1 |
+    | NFT Marketplace | Tier 2 | 10 | 0 | 5 | 6 | 2 | 0 | FinTech | Platform |  | Crypto | 1 |
+    | P2P Lending | Tier 2 | 12 | 0 | 6 | 5 | 2 | 0 | FinTech | Commerce |  | Crypto | 1 |
+    | Drone Delivery | Tier 2 | 6 | 6 | 5 | 8 | 1 | 1 | Deep Tech | IoT |  | Robotics | 1 |
+    | Smart Grid | Tier 2 | 2 | 10 | 7 | 5 | 0 | 2 | Deep Tech | IoT |  | Energy | 1 |
+    | Auto Warehouse | Tier 2 | 4 | 8 | 6 | 6 | 0 | 2 | Deep Tech | IoT |  | Robotics | 1 |
+    | AI Diagnostician | Tier 2 | 14 | 0 | 2 | 12 | 2 | 0 | Life Sci | Data |  | Bio | 1 |
+    | Lab-Grown Meat | Tier 2 | 8 | 6 | 4 | 8 | 1 | 1 | Life Sci | Data |  | Bio | 1 |
+    | Smart Prosthetics | Tier 2 | 4 | 8 | 5 | 8 | 1 | 1 | Life Sci | Data |  | Bio | 1 |
+    | Server Farm | Tier 2 | 0 | 8 | 7 | 4 | 0 | 2 | Infra | Platform |  | Cloud | 1 |
+    | Search Engine | Tier 2 | 12 | 0 | 6 | 8 | 2 | 0 | Infra | Platform |  | AI | 1 |
+    | Cybersecurity Firm | Tier 2 | 14 | 0 | 8 | 4 | 2 | 0 | Infra | Platform |  | Cloud | 1 |
+    | The Metaverse | Tier 3 | 16 | 0 | 0 | 25 | 3 | 0 | Consumer | Media | Cloud | Metaverse | 1 |
+    | Global Currency | Tier 3 | 18 | 0 | 2 | 22 | 2 | 0 | FinTech | Crypto | Cloud | DeFi | 1 |
+    | Fusion Reactor | Tier 3 | 4 | 20 | 10 | 20 | 0 | 3 | Deep Tech | Robotics | AI | Fusion | 1 |
+    | Immortality Pill | Tier 3 | 10 | 10 | 15 | 25 | 2 | 2 | Life Sci | Bio | AI | Longevity | 1 |
+    | Quantum Computer | Tier 3 | 0 | 18 | 10 | 15 | 0 | 3 | Infra | AI |  | Quantum | 1 |
+    | Influencer Agency | Tier 2 | 10 | 0 | 7 | 5 | 2 | 0 | Consumer | Social |  | Media | 1 |
+    | Music API | Tier 2 | 12 | 0 | 4 | 8 | 2 | 0 | Consumer | Platform |  | Media | 1 |
+    | InsurTech Platform | Tier 2 | 12 | 0 | 5 | 7 | 2 | 0 | FinTech | Data |  | Crypto | 1 |
+    | Algo-Trading Firm | Tier 2 | 14 | 0 | 9 | 2 | 2 | 0 | FinTech | Commerce |  | Crypto | 1 |
+    | Vertical Farm | Tier 2 | 4 | 10 | 6 | 6 | 0 | 2 | Deep Tech | IoT |  | Robotics | 1 |
+    | Exoskeleton Suit | Tier 2 | 6 | 8 | 5 | 8 | 1 | 1 | Deep Tech | Device |  | Robotics | 1 |
+    | Genome Editor | Tier 2 | 15 | 0 | 3 | 12 | 2 | 0 | Life Sci | Data |  | Bio | 1 |
+    | Bio-Fuel Cell | Tier 2 | 2 | 12 | 6 | 6 | 0 | 2 | Life Sci | IoT |  | Energy | 1 |
+    | Blockchain Ledger | Tier 2 | 10 | 0 | 4 | 6 | 2 | 0 | Infra | Platform |  | Cloud | 1 |
+    | Quantum Prototype | Tier 2 | 2 | 12 | 1 | 10 | 0 | 2 | Infra | Platform |  | AI | 1 |
+    | Neural Social Grid | Tier 3 | 18 | 0 | 2 | 24 | 3 | 0 | Consumer | Media | Bio |  | 1 |
+    | DAO Nation | Tier 3 | 20 | 0 | 0 | 28 | 2 | 0 | FinTech | Crypto | Social |  | 1 |
+    | Asteroid Mining | Tier 3 | 8 | 18 | 12 | 18 | 0 | 3 | Deep Tech | Robotics | Cloud |  | 1 |
+    | Planetary Wi-Fi | Tier 3 | 6 | 16 | 8 | 16 | 0 | 3 | Infra | Cloud | IoT |  | 1 |
+
+Table:
+  The talent deck is a pile in the center that no one can see.
+  The agency row is a row in the center that everyone can see.
+  The open job market is a row in the center that everyone can see.
+  The seed deck is a pile in the center that no one can see.
+  The growth deck is a pile in the center that no one can see.
+  The seed market is a row in the center that everyone can see.
+  The growth market is a row in the center that everyone can see.
+  The open idea pool is a row in the center that everyone can see.
+  The crash pile is a pile in the center that everyone can see.
+  The box is a pile in the center that no one can see.
+  Each player has a bench row that only they can see.
+  Each player has a backlog row that only they can see.
+  Each player has a research row that only they can see.
+
+Setup:
+  Shuffle the talent deck.
+  Shuffle the seed deck.
+  Shuffle the growth deck.
+  The market crash goes into the bottom fifth of the growth deck.
+  The start player is chosen at random.
+  A new Junior Software Dev goes to each bench.
+  A new Junior Hardware Eng goes to each bench.
+  A new Junior QA Tester goes to each bench.
+  Deal 1 card from the seed deck to each backlog.
+
+In every phase:
+  When the agency row has fewer than 4 cards:
+    Only if the talent deck is not empty.
+    Move the top card of the talent deck to the agency row.
+  When the seed market has fewer than 2 cards:
+    Only if the seed deck is not empty.
+    Move the top card of the seed deck to the seed market.
+  When the growth market has fewer than 2 cards:
+    Only if the growth deck is not empty.
+    Move the top card of the growth deck to the growth market.
+  When the growth market has the market crash:
+    Move the market crash from the growth market to the crash pile.
+  When the open job market has more than 5 cards:
+    Move the bottom card of the open job market to the box.
+  When the open idea pool has more than 5 cards:
+    Move the bottom card of the open idea pool to the box.
+
+Phase: actions
+  Players take turns.
+  Hint: Spend 3 actions: recruit, draft ideas or research. Drag a card from the agency row or a market to hire or draft it.
+  A player may recruit a junior software dev.
+    Only if they have at least 1 action.
+    Only if they have at least 2 capital.
+    Then:
+      They pay 2.
+      They spend 1 action.
+      A new Junior Software Dev goes to their bench.
+  A player may recruit a junior hardware eng.
+    Only if they have at least 1 action.
+    Only if they have at least 2 capital.
+    Then:
+      They pay 2.
+      They spend 1 action.
+      A new Junior Hardware Eng goes to their bench.
+  A player may recruit a junior qa tester.
+    Only if they have at least 1 action.
+    Only if they have at least 2 capital.
+    Then:
+      They pay 2.
+      They spend 1 action.
+      A new Junior QA Tester goes to their bench.
+  A player may hire a card from the agency row to their bench.
+    Only if they have at least 1 action.
+    Only if they have at least the card's cost in capital.
+    Then:
+      They pay the card's cost.
+      They spend 1 action.
+  A player may hire a card from the open job market to their bench.
+    Only if they have at least 1 action.
+    Only if they have at least 1 capital.
+    Then:
+      They pay 1.
+      They spend 1 action.
+  A player may end their actions.
+    Then:
+      Their actions go back to 0.
+  When they have less than 1 action, go to bench cleanup.
+
+Phase: bench cleanup
+  Hint: Your bench holds 5 cards. Drag the rest to the open job market.
+  A player may discard a card from their bench to the open job market.
+    Only if their bench has more than 5 cards.
+  When their bench has fewer than 6 cards, go to backlog cleanup.
+
+Phase: backlog cleanup
+  Hint: Your backlog holds 3 cards. Drag the rest to the open idea pool.
+  A player may discard a card from their backlog to the open idea pool.
+    Only if their backlog has more than 3 cards.
+  When their backlog has fewer than 4 cards:
+    The turn passes to the left.
+
+End:
+  The game ends when the crash pile is not empty and the round is finished.
+  Each player scores 1 point for every 5 capital.
+  Each Tier 1 card in a player's backlog scores -2 points.
+  Each Tier 2 card in a player's backlog scores -5 points.
+  Each Tier 3 card in a player's backlog scores -10 points.
+  The highest score wins, and tied players share the win.
+
+Example: setting up (ruling 25)
+  Given the game is set up
+  Then p0 has 7 capital
+  And p1 has 7 capital
+  And p0 has 3 actions
+  And p0's bench has a Junior Software Dev, a Junior Hardware Eng and a Junior QA Tester
+  And p1's bench has a Junior Software Dev, a Junior Hardware Eng and a Junior QA Tester
+  And p0's backlog has 1 card
+  And p1's backlog has 1 card
+  And the agency row has 4 cards
+  And the seed market has 2 cards
+  And the growth market has 2 cards
+  And the talent deck has 18 cards
+  And the seed deck has 26 cards
+  And the growth deck has 33 cards
+  And the market crash is among the bottom 8 cards of the growth deck
+  And the open job market is empty
+  And the open idea pool is empty
+
+Example: a turn has 3 actions
+  Given p0's bench has a QA Engineer, a QA Engineer and a Sales Rep
+  When p0 recruits a junior software dev
+  And p0 recruits a junior hardware eng
+  And p0 recruits a junior qa tester
+  Then it is accepted
+  And p0 has 0 actions
+  And p0 has 1 capital
+  And the phase is bench cleanup
+  And it is p0's turn
+  And p0's bench has a QA Engineer, a QA Engineer, a Sales Rep, a Junior Software Dev, a Junior Hardware Eng and a Junior QA Tester
+
+Example: you can't pay, so you can't act (section 6)
+  Given p0 has 4 capital
+  And the agency row has the Hacker, the Architect, the Veteran and the Diva
+  When p0 hires the Diva
+  Then it is rejected because "they have at least the card's cost in capital"
+  And p0 has 3 actions
+  And p0 has 4 capital
+  And the agency row has the Hacker, the Architect, the Veteran and the Diva
+  Given p0 has 1 capital
+  When p0 recruits a junior software dev
+  Then it is rejected because "they have at least 2 capital"
+  And p0 has 3 actions
+
+Example: the University costs 2 and hires to the bench (ruling 20)
+  When p0 recruits a junior software dev
+  Then it is accepted
+  And p0 has 5 capital
+  And p0 has 2 actions
+  And p0's bench has a Junior Software Dev
+
+Example: the agency row slides left and refills from the talent deck, which never reshuffles (section 13)
+  Given the agency row has the Hacker, the Architect, the Veteran and the Diva
+  And the talent deck has a Sales Rep
+  When p0 hires the Architect
+  Then it is accepted
+  And p0 has 0 capital
+  And p0's bench has the Architect
+  And the agency row has the Hacker, the Veteran, the Diva and a Sales Rep, in that order
+  And the talent deck is empty
+  Given p0 has 7 capital
+  When p0 hires the Hacker
+  Then it is accepted
+  And the agency row has the Veteran, the Diva and a Sales Rep, in that order
+
+Example: the open job market costs 1 and hires to the bench (ruling 20)
+  Given the open job market has the Fixer
+  When p0 hires the Fixer
+  Then it is accepted
+  And p0 has 6 capital
+  And p0 has 2 actions
+  And p0's bench has the Fixer
+  And the open job market is empty
+
+Example: the bench is cut to 5, and the open job market keeps the 5 newest (rulings 10 and 12)
+  Given the phase is bench cleanup
+  And p0's bench has a QA Engineer, a QA Engineer, a QA Engineer, a Sales Rep, a Sales Rep and a Sales Rep
+  And the open job market has an HR Manager, a Junior PM, a Junior PM, a Growth Hacker and an HR Manager
+  When p0 recruits a junior software dev
+  Then it is rejected because "You can't recruit a junior software dev during bench cleanup."
+  When p0 discards a Sales Rep
+  Then it is accepted
+  And the open job market has a Junior PM, a Junior PM, a Growth Hacker, an HR Manager and a Sales Rep, in that order
+  And the box has an HR Manager
+  And p0's bench has 5 cards
+  And it is p1's turn
+
+Example: the backlog is cut to 3 (ruling 10)
+  Given the phase is backlog cleanup
+  And p0's backlog has a To-Do List, a Smart Lock, a Dating App and a Mobile Wallet
+  When p0 discards the Smart Lock
+  Then it is accepted
+  And the open idea pool has a Smart Lock
+  And p0's backlog has a To-Do List, a Dating App and a Mobile Wallet
+  And it is p1's turn
+
+Example: ending your actions early loses the rest
+  Given p0 has 2 actions
+  And p1 has 1 action
+  When p0 ends their actions
+  Then it is accepted
+  And p0 has 0 actions
+  And it is p1's turn
+  And the phase is actions
+  And p1 has 3 actions
+
+Example: each round starts with the start player (ruling 13)
+  Given 3 players
+  And p1 is the start player
+  And it is p1's turn
+  When p0 recruits a junior software dev
+  Then it is rejected because "It's p1's turn."
+  When p1 ends their actions
+  Then it is p2's turn
+  When p2 ends their actions
+  Then it is p0's turn
+  When p0 ends their actions
+  Then it is p1's turn
+  And p1 has 3 actions
