@@ -13,6 +13,9 @@ import COLOR_MATCH from '@/games/color-match.rules?raw';
 import HEARTS from '@/games/hearts.rules?raw';
 import RENT_DAY from '@/games/rent-day.rules?raw';
 import VENOM from '@/games/venom.rules?raw';
+import { CARD_HEIGHT } from '../scene';
+import { stackOnHolders } from './fit-layout';
+import { fixtureCard } from './testing';
 
 const lib = createDefaultLibrary();
 const seats = (n: number) => Array.from({ length: n }, (_, i) => `p${i}`);
@@ -163,5 +166,154 @@ describe('fittedLayout', () => {
     expect(at(defs, 'peek-p0')).toEqual({ x: 0, y: 292 });
     for (const def of defs) expect(inside(box(def)), `${def.id} leaves the world`).toBe(true);
     expect(unreachableZones(defs, 7)).toEqual([]);
+  });
+});
+
+// A seat with public zones: two shared zones on one line, two private rows along the bottom, and three public rows, one of them
+// a zone where every card sits on a card.
+const BOARD: ZoneSpec[] = [
+  { name: 'stock', perPlayer: false, layout: 'pile', visibility: 'secret' },
+  { name: 'stall', perPlayer: false, layout: 'row', visibility: 'public' },
+  { name: 'stash', perPlayer: true, layout: 'row', visibility: 'owner' },
+  { name: 'peek', perPlayer: true, layout: 'row', visibility: 'owner' },
+  { name: 'workshop', perPlayer: true, layout: 'row', visibility: 'public' },
+  { name: 'crew', perPlayer: true, layout: 'row', visibility: 'public', onCards: 'every' },
+  { name: 'idle', perPlayer: true, layout: 'row', visibility: 'public' },
+];
+const publicRow = (name: string): ZoneSpec => ({ name, perPlayer: true, layout: 'row', visibility: 'public' });
+// Five board rows: three fill the band's first line and two wrap onto a second.
+const TWO_LINES = [...BOARD, publicRow('shelf'), publicRow('rack'), publicRow('bin')];
+
+/**
+ * What keeps a fitted table from fitting, with a row of 8 and a pile of 40 in each slot: a slot outside the world, two slots that
+ * overlap, or a board row (a public row of the seat's) less than a card tall. A free zone has no slot of its own.
+ */
+const misfits = (defs: ZoneDef[]): string[] => {
+  const slotted = defs.filter((d) => d.layout !== 'free').map((d) => [d.id, box(d)] as const);
+  const problems = slotted.filter(([, b]) => !inside(b)).map(([id]) => `${id} leaves the world`);
+  slotted.forEach(([a, ab], i) => {
+    for (const [b, bb] of slotted.slice(i + 1)) if (overlap(ab, bb)) problems.push(`${a} overlaps ${b}`);
+  });
+  for (const d of defs) {
+    const boardRow = d.owner !== 'shared' && d.visibility === 'public' && d.layout === 'row';
+    if (boardRow && (d.bounds?.height ?? 0) < CARD_HEIGHT) problems.push(`${d.id} is less than a card tall`);
+  }
+  return problems;
+};
+
+describe("a band for the seat's public zones", () => {
+  const defs = fittedLayout(BOARD, 'p1');
+  const get = (id: string) => defs.find((d) => d.id === id)!;
+
+  it('lists the private and board zones in Table order, then the shared ones, then the zone of cards on cards', () => {
+    expect(defs.map((d) => d.id)).toEqual(['stash-p1', 'peek-p1', 'workshop-p1', 'idle-p1', 'stock', 'stall', 'crew-p1']);
+  });
+
+  it('keeps the shared lines at the top and the private strip at the bottom, and puts the board between them', () => {
+    expect(at(defs, 'stock')).toEqual({ x: -210, y: -486 });
+    expect(at(defs, 'stall')).toEqual({ x: 60, y: -486 });
+    expect(at(defs, 'stash-p1')).toEqual({ x: -210, y: 510 });
+    expect(at(defs, 'peek-p1')).toEqual({ x: 210, y: 510 });
+    expect(at(defs, 'workshop-p1')).toEqual({ x: -210, y: -306 });
+    expect(at(defs, 'idle-p1')).toEqual({ x: 210, y: -306 });
+    expect(at(defs, 'crew-p1')).toEqual({ x: -210, y: -306 });
+  });
+
+  it('gives a board row the whole band, named, its cards a little apart at the top of it', () => {
+    for (const id of ['workshop-p1', 'idle-p1']) {
+      expect(get(id).label).toBe(id.replace('-p1', ''));
+      expect(get(id).layoutOptions).toEqual({ spacing: 110, maxWidth: 400 });
+      expect(get(id).bounds).toEqual({ width: 400, height: 776, anchor: { x: 0.5, y: 70 / 776 } });
+    }
+    const b = placeZone(get('workshop-p1'), []);
+    expect(b.y - b.height / 2).toBeCloseTo(-376);
+    expect(b.y + b.height / 2).toBeCloseTo(400);
+  });
+
+  // Only a zone where every card sits on a card hangs under its holders; a public zone of the seat's with no mark is a board row.
+  it('makes a public zone with no mark a board row', () =>
+    expect(get('idle-p1')).toMatchObject({ layout: 'row', bounds: { height: 776 } }));
+
+  it('gives the zone of cards on cards no slot: it is free, at the first board zone, with no name and no bounds', () => {
+    const crew = get('crew-p1');
+    expect(crew).toMatchObject({ layout: 'free', owner: 'p1', visibility: 'public', transform: at(defs, 'workshop-p1') });
+    expect('label' in crew).toBe(false);
+    expect('bounds' in crew).toBe(false);
+    expect('layoutOptions' in crew).toBe(false);
+  });
+
+  it('shares the band evenly between two lines of board zones', () => {
+    const two = fittedLayout(TWO_LINES, 'p1');
+    for (const zone of ['workshop', 'idle', 'shelf', 'rack', 'bin']) {
+      expect(two.find((d) => d.id === `${zone}-p1`)!.bounds!.height, zone).toBe(368);
+    }
+    for (const zone of ['workshop', 'idle', 'shelf']) expect(at(two, `${zone}-p1`).y, zone).toBe(-306);
+    expect(at(two, 'rack-p1')).toEqual({ x: -210, y: 102 });
+    expect(at(two, 'bin-p1')).toEqual({ x: 210, y: 102 });
+  });
+
+  // Closes 1a-2's parked guard on the top and bottom lines: the band between them never runs into either, nor closes up.
+  describe.each([['one line', BOARD], ['two lines', TWO_LINES]] as const)('with the board on %s, long rows and tall piles', (_, zones) => {
+    for (const viewer of seats(5)) {
+      it(`keeps every slot inside the world, apart and at least a card tall, and every zone reachable, for ${viewer}`, () => {
+        const table = fittedLayout(zones, viewer);
+        expect(misfits(table)).toEqual([]);
+        // The zone of cards on cards comes last, so a drop at its place lands in it.
+        expect(unreachableZones(table, 7)).toEqual([]);
+      });
+    }
+  });
+});
+
+describe('cards stacked under the card they sit on', () => {
+  const defs = fittedLayout(BOARD, 'p1');
+  const crew = defs.find((d) => d.id === 'crew-p1')!;
+  const on = (id: string, holder: string, slot: number) => fixtureCard(id, 'crew-p1', { 'lang:on': holder }, { slot });
+  const CARDS = [
+    fixtureCard('j1', 'workshop-p1', {}, { slot: 0 }),
+    fixtureCard('j2', 'workshop-p1', {}, { slot: 1 }),
+    on('w1', 'j1', 0),
+    on('w2', 'j2', 1),
+    on('w3', 'j1', 2),
+    fixtureCard('s1', 'stash-p1', {}),
+  ];
+  const find = (cards: CardState[], id: string) => cards.find((c) => c.id === id)!;
+  const where = (cards: CardState[], id: string) => ({ x: find(cards, id).data!.x, y: find(cards, id).data!.y });
+
+  it('hangs them in a column under their holder, in slot order, one step apart', () => {
+    const out = stackOnHolders(defs, CARDS);
+    expect(where(out, 'w1')).toEqual({ x: -265, y: -130 });
+    expect(where(out, 'w3')).toEqual({ x: -265, y: -96 });
+    expect(where(out, 'w2')).toEqual({ x: -155, y: -130 });
+    expect(find(out, 'w1').data!['lang:on']).toBe('j1');
+    for (const id of ['j1', 'j2', 's1']) expect(find(out, id), id).toBe(find(CARDS, id));
+    expect(out.map((c) => c.id)).toEqual(CARDS.map((c) => c.id));
+  });
+
+  it('puts them where the free layout reads them', () => {
+    const out = stackOnHolders(defs, CARDS);
+    const held = out.filter((c) => c.zoneId === 'crew-p1');
+    const poses = computeZoneLayout(crew, held);
+    for (const card of held) expect({ x: poses.get(card.id)!.x, y: poses.get(card.id)!.y }, card.id).toEqual(where(out, card.id));
+  });
+
+  it('leaves a card whose holder is not on the table as it is', () => {
+    const stray = on('w9', 'c999', 3);
+    expect(find(stackOnHolders(defs, [...CARDS, stray]), 'w9')).toBe(stray);
+  });
+
+  // Twenty on one card still end inside its slot, above the private strip, with even steps.
+  it('closes the steps up evenly so a long column stays inside the holder\'s slot', () => {
+    const many = Array.from({ length: 20 }, (_, i) => on(`m${i}`, 'j1', i));
+    const out = stackOnHolders(defs, [...CARDS.slice(0, 2), ...many]).filter((c) => c.zoneId === 'crew-p1');
+    expect(out.every((c) => c.data!.x === -265)).toBe(true);
+    const ys = out.map((c) => c.data!.y!);
+    for (const step of ys.slice(1).map((y, i) => y - ys[i])) expect(step).toBeCloseTo(460 / 19);
+    const slot = placeZone(defs.find((d) => d.id === 'workshop-p1')!, []);
+    expect(ys.at(-1)! + 70).toBeCloseTo(slot.y + slot.height / 2);
+    expect(ys.at(-1)! + 70).toBeCloseTo(400);
+
+    const two = stackOnHolders(defs, [...CARDS.slice(0, 2), ...many.slice(0, 2)]).filter((c) => c.zoneId === 'crew-p1');
+    expect(two[1].data!.y! - two[0].data!.y!).toBe(34);
   });
 });

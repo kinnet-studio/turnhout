@@ -15,6 +15,10 @@ import type { CardTableProps } from '@/engine/react';
 import { BUTTON_ROW } from './board-controls';
 import { cardDetail } from './card-detail';
 import { Playtest } from './playtest';
+import { unreachableZones } from '@/engine/core/lang/testing';
+import { CARD_HEIGHT, TABLE_BOUNDS, type CardState } from '@/engine/core/scene';
+import type { ZoneDef } from '@/engine/core/table-def';
+import { placeZone } from '@/engine/core/zone-geometry';
 
 // The canvas a seat is drawn on: keep what its app was last made with.
 let canvasMadeWith: unknown = null;
@@ -325,5 +329,64 @@ describe("the buttons' room", () => {
     mount({ game: compileGame(RENT_DAY, lib).game! });
     expect(screen.getAllByRole('button', { name: 'Roll the dice' }).length).toBeGreaterThan(0);
     expect(screen.queryAllByTestId('seat-buttons')).toEqual([]);
+  });
+});
+
+// A fitted slot's box with a row of 8 or a pile of 40 in it, the most a long turn puts there.
+const fullBox = (def: ZoneDef) => placeZone(def, Array.from({ length: def.layout === 'row' ? 8 : 40 }, (_, i): CardState =>
+  ({ id: `${def.id}#${i}`, zoneId: def.id, faceUp: false, faceKey: 'back' })));
+type FullBox = ReturnType<typeof fullBox>;
+const boxesOverlap = (a: FullBox, b: FullBox) =>
+  Math.abs(a.x - b.x) < (a.width + b.width) / 2 && Math.abs(a.y - b.y) < (a.height + b.height) / 2;
+const inWorld = (b: FullBox) =>
+  b.x - b.width / 2 >= TABLE_BOUNDS.min.x && b.x + b.width / 2 <= TABLE_BOUNDS.max.x &&
+  b.y - b.height / 2 >= TABLE_BOUNDS.min.y && b.y + b.height / 2 <= TABLE_BOUNDS.max.y;
+/**
+ * What keeps a fitted table from fitting: a slot outside the world, two slots that overlap, or a board row (a public row of the
+ * seat's) less than a card tall. A free zone has no slot of its own.
+ */
+const misfits = (defs: ZoneDef[]): string[] => {
+  const slotted = defs.filter((d) => d.layout !== 'free').map((d) => [d.id, fullBox(d)] as const);
+  const problems = slotted.filter(([, b]) => !inWorld(b)).map(([id]) => `${id} leaves the world`);
+  slotted.forEach(([a, ab], i) => {
+    for (const [b, bb] of slotted.slice(i + 1)) if (boxesOverlap(ab, bb)) problems.push(`${a} overlaps ${b}`);
+  });
+  for (const d of defs) {
+    const boardRow = d.owner !== 'shared' && d.visibility === 'public' && d.layout === 'row';
+    if (boardRow && (d.bounds?.height ?? 0) < CARD_HEIGHT) problems.push(`${d.id} is less than a card tall`);
+  }
+  return problems;
+};
+/** The def a seat's zone has on the fitted table that seat sees. */
+const fittedZone = (seat: string, zone: string) => fittedLayout(game.zones, seat).find((d) => d.id === `${zone}-${seat}`)!;
+
+describe("the Board's place on the table", () => {
+  const get = (zone: string) => fittedZone('p1', zone);
+
+  it('keeps the private rows in the strip along the bottom, the scouting on a second line', () => {
+    expect(get('bench').transform).toEqual({ x: -420, y: 510 });
+    expect(get('backlog').transform).toEqual({ x: 0, y: 510 });
+    expect(get('research').transform).toEqual({ x: 420, y: 510 });
+    expect(get('scouting').transform).toEqual({ x: 0, y: 330 });
+  });
+
+  it('puts the Board in one line between the shared lines and the strip, each slot 416 tall', () => {
+    expect(get('development').transform).toEqual({ x: -420, y: -126 });
+    expect(get('operations').transform).toEqual({ x: 0, y: -126 });
+    expect(get('ops-team').transform).toEqual({ x: 420, y: -126 });
+    for (const zone of ['development', 'operations', 'ops-team']) expect(get(zone).bounds?.height, zone).toBe(416);
+  });
+
+  it('hangs the development team under the development, as a free zone last in the list', () => {
+    expect(get('development-team')).toMatchObject({ layout: 'free', transform: { x: -420, y: -126 } });
+    expect(fittedLayout(game.zones, 'p1').at(-1)?.id).toBe('development-team-p1');
+  });
+
+  // Closes 1a-2's parked guard on the top and bottom lines for the real game. The layout depends only on the viewer, so p0 to p4
+  // cover 2 to 5 seats.
+  it.each(seatsOf(5))('keeps every slot inside the world, apart and at least a card tall, and every zone reachable, for %s', (viewer) => {
+    const placed = fittedLayout(game.zones, viewer);
+    expect(misfits(placed)).toEqual([]);
+    expect(unreachableZones(placed, 7)).toEqual([]);
   });
 });
