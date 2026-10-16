@@ -3,7 +3,7 @@ import { StrictMode, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import COLOR_MATCH from '@/games/color-match.rules?raw';
 import RENT_DAY from '@/games/rent-day.rules?raw';
-import { markOut, placePiece, queueRoll, setCounter, setOwner, setPlayerFact, withBoardData } from '@/engine/core/lang/board-state';
+import { markOut, placePiece, playerFact, queueRoll, setCounter, setOwner, setPlayerFact, withBoardData } from '@/engine/core/lang/board-state';
 import { createEngine, initialState } from '@/engine/core/lang/build';
 import { compileGame } from '@/engine/core/lang/compile';
 import { createDefaultLibrary } from '@/engine/core/lang/library';
@@ -558,5 +558,105 @@ describe('Playtest: a trade', () => {
     expect(document.querySelectorAll('[data-stripes]')).toHaveLength(0);
     expect(screen.getAllByTitle('Owned by p1')).toHaveLength(6);
     expect(screen.getByText('seat: p0 — Your turn — Roll the dice, then buy, build, or end your turn. A double rolls again.')).toBeTruthy();
+  });
+});
+
+describe('Playtest: picking another player', () => {
+  const PLAYING = 'Roll the dice, then buy, build, or end your turn. A double rolls again.';
+  const TRADE_BUTTON = 'Trade with another player';
+  const seatsOf = (n: number) => ['p0', 'p1', 'p2'].slice(0, n);
+  const fresh = (n = 3) => ({ ...withBoardData(initialState(rentDay, SEED), rentDay, seatsOf(n)), turn: { current: 'p0', phase: 'playing' } });
+  const picker = () => screen.queryByRole('status');
+  /** A seat's whole panel: what holds its status line. */
+  const panelOf = (seat: string) => screen.getByText(new RegExp(`^seat: ${seat} `)).parentElement!;
+  const tradeOf = (seat: string) => within(panelOf(seat)).getByRole('button', { name: TRADE_BUTTON });
+  const submit = () => vi.spyOn(GameServer.prototype, 'submit');
+
+  it('closes on Cancel without sending, and the turn goes on as it was', () => {
+    mountRentDay({ initial: fresh() });
+    fireEvent.click(tradeOf('p0'));
+    // The banner sits in the room kept for it above the board.
+    expect(picker()!.parentElement!.style.minHeight).toBe('28px');
+    const sent = submit();
+    fireEvent.click(within(picker()!).getByRole('button', { name: 'Cancel' }));
+    expect(picker()).toBeNull();
+    expect(sent).not.toHaveBeenCalled();
+    expect(screen.getByText(`seat: p0 — Your turn — ${PLAYING}`)).toBeTruthy();
+    expect(tradeOf('p0').getAttribute('aria-disabled')).toBe('false');
+  });
+  it('flashes why a seat may not be picked when it is pressed, sends nothing, and stays open', () => {
+    // A phrase only this test has, so that one seat is refused while another may be picked: no trading with a player in jail.
+    const library = createDefaultLibrary().condition(
+      'that player is not {playerflag}', (env, [flag]) => playerFact(env.state, env.subject!.picked!, flag as string) !== true, { needsPick: true },
+    );
+    const gate = '  A player may trade with another player.\n    Only if no player has less than 0 money.\n';
+    expect(RENT_DAY).toContain(gate);
+    const compiled = compileGame(RENT_DAY.replace(gate, `${gate}    Only if that player is not in jail.\n`), library);
+    expect(compiled.diagnostics).toEqual([]);
+    const game = compiled.game!;
+    const jailed = setPlayerFact({ ...withBoardData(initialState(game, SEED), game, seatsOf(3)), turn: { current: 'p0', phase: 'playing' } }, 'p2', 'in jail', true);
+    mountRentDay({ game, library, initial: jailed });
+    fireEvent.click(tradeOf('p0'));
+    const p2 = within(picker()!).getByRole('button', { name: 'Pick p2' });
+    expect([p2.getAttribute('aria-disabled'), p2.getAttribute('title')]).toEqual(['true', 'that player is not in jail']);
+    expect(within(picker()!).getByRole('button', { name: 'Pick p1' }).getAttribute('aria-disabled')).toBe('false');
+    const sent = submit();
+    fireEvent.click(p2);
+    expect(sent).not.toHaveBeenCalled();
+    expect(within(panelOf('p0')).getByText('that player is not in jail')).toBeTruthy();
+    expect(picker()).not.toBeNull();
+    expect(screen.getByText(`seat: p0 — Your turn — ${PLAYING}`)).toBeTruthy();
+  });
+  it('ends once Undo hands the turn back and the button greys, and does not open again by itself', () => {
+    // p0 rolls 1 and 3 onto Income Tax, which has no price, so the turn may end at once.
+    mountRentDay({ players: 2, initial: queueRoll(fresh(2), [1, 3]) });
+    fireEvent.click(within(panelOf('p0')).getByRole('button', { name: 'Roll the dice' }));
+    fireEvent.click(within(panelOf('p0')).getByRole('button', { name: 'End your turn' }));
+    fireEvent.click(tradeOf('p1'));
+    expect(within(panelOf('p1')).getByRole('status')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(tradeOf('p1').getAttribute('title')).toBe("It's p0's turn.");
+    expect(picker()).toBeNull();
+    fireEvent.click(within(panelOf('p0')).getByRole('button', { name: 'End your turn' }));
+    expect(tradeOf('p1').getAttribute('aria-disabled')).toBe('false');
+    expect(picker()).toBeNull();
+  });
+  it('ends once the button greys while it is open: Undo brings back a debt that stops every trade', () => {
+    // p1 owes, and settles it by mortgaging Mill Lane, which lets p0 trade; undoing the mortgage puts p1 back in debt.
+    const owing = setOwner(setCounter(fresh(2), 'money', 'p1', -10), 1, 'p1');
+    mountRentDay({ players: 2, initial: owing });
+    expect(tradeOf('p0').getAttribute('title')).toBe('no player has less than 0 money');
+    fireEvent.click(within(panelOf('p1')).getByRole('button', { name: 'Take a mortgage' }));
+    fireEvent.click(within(panelOf('p1')).getByRole('button', { name: 'Pick Mill Lane' }));
+    fireEvent.click(tradeOf('p0'));
+    expect(within(panelOf('p0')).getByRole('status')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(tradeOf('p0').getAttribute('title')).toBe('no player has less than 0 money');
+    expect(picker()).toBeNull();
+    // Settled again, the button is live again, and the pick that was ended stays ended.
+    fireEvent.click(within(panelOf('p1')).getByRole('button', { name: 'Take a mortgage' }));
+    fireEvent.click(within(panelOf('p1')).getByRole('button', { name: 'Pick Mill Lane' }));
+    expect(tradeOf('p0').getAttribute('aria-disabled')).toBe('false');
+    expect(picker()).toBeNull();
+  });
+  it("opens on the pressing seat's panel only: the other seats' panels and buttons are as they were, and a press there leaves it open", () => {
+    mountRentDay({ initial: fresh() });
+    fireEvent.click(tradeOf('p0'));
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(within(panelOf('p0')).getByRole('status')).toBeTruthy();
+    for (const seat of ['p1', 'p2']) {
+      expect(within(panelOf(seat)).queryByRole('status'), seat).toBeNull();
+      expect(within(panelOf(seat)).queryByText('Pick another player'), seat).toBeNull();
+      expect(tradeOf(seat).getAttribute('title'), seat).toBe("It's p0's turn.");
+    }
+    const sent = submit();
+    fireEvent.click(tradeOf('p1'));
+    expect(sent).not.toHaveBeenCalled();
+    expect(within(panelOf('p1')).getByText("It's p0's turn.")).toBeTruthy();
+    expect(within(panelOf('p0')).queryByText("It's p0's turn.")).toBeNull();
+    expect(within(panelOf('p0')).getByRole('status')).toBeTruthy();
+    fireEvent.click(within(panelOf('p0')).getByRole('button', { name: 'Pick p2' }));
+    expect(picker()).toBeNull();
+    expect(screen.getByText('seat: p2 — trade — Offer and ask for spaces, cash and kept cards, then propose. The other player accepts or declines. — waiting for p0')).toBeTruthy();
   });
 });

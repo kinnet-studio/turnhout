@@ -81,11 +81,12 @@ const OUTLINE_LAYER = { position: 'absolute', inset: 0, zIndex: 3, pointerEvents
 const TAG_STYLE = { padding: '0 2px', borderRadius: 2, background: '#111827', color: '#fff', font: 'bold 7px/8px sans-serif' } as const;
 
 /**
- * One line of a striped space's name, which it keeps when its tags are stacked, so the name is never squeezed out. The name and
- * the row of owner and pieces take less room there (a tight line height, no padding round the name, and a row that is the mark
- * and its padding in all, not on top of them), so that under two tags the owner mark still shows: a space is about 50px tall.
+ * The size and line of a striped space's name, one line of which it always keeps. A space is about 50px tall, and a striped one
+ * holds its band, its tags, a name of two lines and a row of owner and ringed pieces: the tags lie over the band (which grows to
+ * hold them), and the name and that row take less room there (a smaller name on tight lines with no padding round it, and a row
+ * that is the mark and its padding in all, not on top of them), so a tag never covers a line of the name.
  */
-const NAME_LINE = 8;
+const NAME_LINE = 7;
 
 const markStyle = { flex: '0 0 auto', height: '70%', boxSizing: 'border-box', border: '1px solid #111827' } as const;
 
@@ -158,6 +159,18 @@ function Space({ space, seats, playerFacts, row, col, index, picking }: {
   const marks = factMarks(space);
   const striped = space.stripes.length > 0;
   const { style: pickStyle, outline, ...pick } = pickProps(index, space.name, picking);
+  // The color band, and what the space has drawn on it; on a striped space it fills the top it shares with the tags.
+  const band = (paint !== null || marks.length > 0) && (
+    <div
+      data-testid={paint !== null ? 'band' : undefined}
+      style={{
+        flex: '0 0 auto', ...(striped ? { gridArea: '1 / 1' } : { height: '22%' }), minHeight: marks.length > 0 ? FACT_BAND_MIN : 5,
+        background: paint ?? 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1,
+      }}
+    >
+      {marks}
+    </div>
+  );
   return (
     <div
       title={hoverText(space, seats, playerFacts)}
@@ -169,21 +182,17 @@ function Space({ space, seats, playerFacts, row, col, index, picking }: {
         font: '8px/1.1 sans-serif', ...pickStyle,
       }}
     >
-      {(paint !== null || marks.length > 0) && (
-        <div
-          data-testid={paint !== null ? 'band' : undefined}
-          style={{ flex: '0 0 auto', height: '22%', minHeight: marks.length > 0 ? FACT_BAND_MIN : 5, background: paint ?? 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}
-        >
-          {marks}
+      {striped ? (
+        // The band and the tags share the top of the space, the tags over the band, which is as tall as they need.
+        <div style={{ flex: '0 0 auto', display: 'grid', minHeight: '22%' }}>
+          {band}
+          <div style={{ ...ABOVE_STRIPES, gridArea: '1 / 1', display: 'flex', flexWrap: 'wrap', alignContent: 'center', justifyContent: 'center', columnGap: 1, padding: '0 1px' }}>
+            {space.stripes.map((flag) => <span key={flag} data-testid="tag" style={TAG_STYLE}>{flag}</span>)}
+          </div>
         </div>
-      )}
+      ) : band}
       {striped && <div aria-hidden="true" data-testid="stripes" style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none', backgroundImage: STRIPE_FILL }} />}
-      <div style={{ ...ABOVE_STRIPES, flex: '1 1 auto', minHeight: striped ? NAME_LINE : 0, padding: striped ? '0 2px' : '1px 2px', lineHeight: striped ? 1 : undefined, textAlign: 'center', overflow: 'hidden', overflowWrap: 'anywhere' }}>{space.name}</div>
-      {striped && (
-        <div style={{ ...ABOVE_STRIPES, flex: '0 0 auto', display: 'flex', flexWrap: 'wrap', justifyContent: 'center', columnGap: 1, padding: '0 1px' }}>
-          {space.stripes.map((flag) => <span key={flag} data-testid="tag" style={TAG_STYLE}>{flag}</span>)}
-        </div>
-      )}
+      <div style={{ ...ABOVE_STRIPES, flex: '1 1 auto', minHeight: striped ? NAME_LINE : 0, padding: striped ? '0 2px' : '1px 2px', font: striped ? `${NAME_LINE}px/1 sans-serif` : undefined, textAlign: 'center', overflow: 'hidden', overflowWrap: 'anywhere' }}>{space.name}</div>
       <div style={{ ...ABOVE_STRIPES, flex: '0 0 auto', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 2, padding: 2, minHeight: MARK + 4, boxSizing: striped ? 'border-box' : undefined }}>
         {space.owner !== null
           ? <span title={`Owned by ${space.owner}`} style={{ width: MARK, height: MARK, borderRadius: 2, boxSizing: 'border-box', border: '1px solid #111827', backgroundColor: seatColor(space.owner) }} />

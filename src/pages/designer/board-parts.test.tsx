@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { BoardView } from '@/engine/core/lang/board-view';
-import { ActionButtons, MoneyLine, PlayerPicker } from './board-controls';
+import { ActionButtons, BANNER_SLOT, MoneyLine, PlayerPicker } from './board-controls';
 import { BoardGrid, factWords } from './board-grid';
 import { seatColor } from './seat-colors';
 
@@ -495,5 +495,30 @@ describe('the offer on the board and the money line, and picking another player'
     expect(onPick).toHaveBeenLastCalledWith('p10');
     fireEvent.click(within(picker).getByRole('button', { name: 'Cancel' }));
     expect(onCancel).toHaveBeenCalled();
+  });
+  it('keeps each seat on the picker no taller than the room the page keeps for a banner, so the board below it stays put', () => {
+    render(<PlayerPicker players={{ p1: true, p2: true }} onPick={vi.fn()} onRefused={vi.fn()} onCancel={vi.fn()} />);
+    const picker = screen.getByRole('status');
+    for (const seat of within(picker).getAllByRole('button', { name: /^Pick p/ })) {
+      // The height takes in the seat's border and padding, and the banner's own room above and below goes on top of it.
+      expect(seat.style.boxSizing).toBe('border-box');
+      expect(parseFloat(seat.style.height) + parseFloat(picker.style.paddingTop) + parseFloat(picker.style.paddingBottom)).toBeLessThanOrEqual(BANNER_SLOT);
+    }
+  });
+  it('lays the tags of a striped space over its band, above the name, so they never cover a line of it', () => {
+    const spaces = [space('Go'), space('Market Square', { color: 'red', facts: { pledged: true, lent: true }, stripes: ['pledged', 'lent'] }), space('Treasury'), space('Ferry Row')];
+    render(<BoardGrid board={board({ spaces, pieces: { p0: 1 }, playerFacts: { p0: { asleep: true } } })} />);
+    const market = screen.getByTitle(/^Market Square/);
+    const tags = within(market).getAllByTestId('tag');
+    const top = tags[0].parentElement!.parentElement!;
+    // The band and the tags share the top of the space, which grows to hold the tags; the name comes after it, on its own.
+    expect(within(top).getByTestId('band')).toBe(within(market).getByTestId('band'));
+    expect(top.style.display).toBe('grid');
+    expect([within(top).getByTestId('band').style.gridArea, tags[0].parentElement!.style.gridArea]).toEqual(['1 / 1', '1 / 1']);
+    const name = [...market.children].find((child) => child.textContent === 'Market Square') as HTMLElement;
+    expect(top.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(name.contains(tags[0])).toBe(false);
+    // A space with no stripes keeps its band as it was.
+    expect(within(screen.getByTitle('Go')).queryByTestId('tag')).toBeNull();
   });
 });

@@ -18,7 +18,7 @@ import { loopbackChannel } from '@/engine/net/loopback';
 import type { ClientChannel, ClientView } from '@/engine/net/protocol';
 import { designerFaceRenderer } from '@/engine/pixi/text-faces';
 import { makeInitApp } from '@/utils/init-app';
-import { ActionButtons, BANNER_STYLE, MoneyLine, PlayerPicker } from './board-controls';
+import { ActionButtons, BANNER_SLOT, BANNER_STYLE, MoneyLine, PlayerPicker } from './board-controls';
 import { BoardGrid } from './board-grid';
 import { seatStatus } from './seat-status';
 
@@ -173,7 +173,7 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError }: {
       <div style={{ ...PANEL_STYLE, boxSizing: 'content-box', padding: 8, display: 'flex', flexDirection: 'column', gap: 8, font: '14px sans-serif', color: '#eee' }}>
         <div>{status}</div>
         {/* Room for the notice and the banner is kept, so the board does not jump when either appears. */}
-        <div style={{ minHeight: 28, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ minHeight: BANNER_SLOT, display: 'flex', alignItems: 'center', gap: 12 }}>
           {choosing && (
             <div role="status" style={BANNER_STYLE}>
               <span>{choosing.prompt}</span>

@@ -132,8 +132,16 @@ export function ActionButtons({ actions, onPress, onPick, onRefused }: {
   );
 }
 
+/** How tall the page keeps the room for a banner above the board, whether one is open or not, so the board does not jump. */
+export const BANNER_SLOT = 28;
+/** The banner's room above and below its buttons. */
+const BANNER_PAD = 2;
+
 /** The banner while the player picks a space or another player: a status line with room for its buttons. */
-export const BANNER_STYLE = { display: 'flex', alignItems: 'center', gap: 8, padding: '2px 8px', background: '#78350f', color: '#fff' } as const;
+export const BANNER_STYLE = { display: 'flex', alignItems: 'center', gap: 8, padding: `${BANNER_PAD}px 8px`, background: '#78350f', color: '#fff' } as const;
+
+/** A seat on the player picker: a bold name in the seat's color, no taller than the banner's room leaves, so the picker fits it. */
+const SEAT_BUTTON_STYLE = { height: BANNER_SLOT - 2 * BANNER_PAD, boxSizing: 'border-box', padding: '0 10px', font: 'bold 14px sans-serif' } as const;
 
 /**
  * The banner while the player picks another player: one button for each seat in seat order, in the seat's color, then Cancel. A
@@ -161,7 +169,7 @@ export function PlayerPicker({ players, onPick, onRefused, onCancel }: {
             title={live ? undefined : verdict}
             onClick={() => (live ? onPick(seat) : onRefused(verdict))}
             style={{
-              ...BUTTON_STYLE, font: 'bold 14px sans-serif', background: '#111827', color: seatColor(seat), border: `2px solid ${seatColor(seat)}`,
+              ...SEAT_BUTTON_STYLE, background: '#111827', color: seatColor(seat), border: `2px solid ${seatColor(seat)}`,
               opacity: live ? 1 : 0.5, cursor: live ? 'pointer' : 'not-allowed',
             }}
           >
