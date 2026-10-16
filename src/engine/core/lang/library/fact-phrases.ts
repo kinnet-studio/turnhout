@@ -3,6 +3,7 @@ import type { CardState, PlayerId } from '../../scene';
 import { bankItemOf } from '../board';
 import { bankOf, holderOf, ownerOf, setBank, setOwner, setSpaceFact, spaceFact } from '../board-state';
 import { changeCard } from '../card-facts';
+import { WORKED_NOT_GIVEN } from '../compile-util';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import { counted, joinAnd, singularForms } from '../refs';
@@ -376,7 +377,7 @@ export const noCardIn = (match: CardMatch, ref: ZoneRef): string => `no ${descri
 
 // An example arranges what a card keeps; a value worked out from lines follows from that and is never arranged itself.
 const cardInZoneIsGiven: EffectFn = (env, [match, zone, fact]) => {
-  mustBeKept(env, fact as string);
+  mustBeKept(env, fact as string, WORKED_NOT_GIVEN);
   const card = namedCardIn(env, match as CardMatch, zone as ZoneRef);
   if (!card) throw new RuleError(`There is ${noCardIn(match as CardMatch, zone as ZoneRef)}.`);
   return changeCard(env.state, card.id, { [fact as string]: true }, env.game);
@@ -384,7 +385,7 @@ const cardInZoneIsGiven: EffectFn = (env, [match, zone, fact]) => {
 
 /** Sets the number the first card of the zone that is the named one has, whatever it had. */
 const cardInZoneHasGiven: EffectFn = (env, [match, zone, n, attribute]) => {
-  mustBeKept(env, attribute as string);
+  mustBeKept(env, attribute as string, WORKED_NOT_GIVEN);
   const card = namedCardIn(env, match as CardMatch, zone as ZoneRef);
   if (!card) throw new RuleError(`There is ${noCardIn(match as CardMatch, zone as ZoneRef)}.`);
   return changeCard(env.state, card.id, { [attribute as string]: n as number }, env.game);
@@ -495,12 +496,12 @@ export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('their {banked} go back to the bank', theirGoBack, { needsPlayer: true, needsBoard: true })
     .effect('they pay {int} for each of their {banked}', paysForEach, { needsPlayer: true, needsBoard: true, needsPayment: true })
     .effect('move it to {zone}', moveItTo, { needsCard: true })
-    .effect('every card in {zone} is {cardflag}', everyCardIsFlagged)
+    .effect('every card in {zone} is {cardflag}', everyCardIsFlagged, { writes: 1 })
     .effect('every card that is {cardflag} goes to {zone}', everyFlaggedCardGoesTo)
-    .effect('no card is {cardflag}', noCardIs)
-    .effect('it gains {int} {attribute}', itGains, { needsCard: true })
-    .effect('each {cardflag} card in {zone} gains {int} {attribute}', eachFlaggedGains)
-    .effect('each {cardflag} card in {zone} loses {int} {attribute}', eachFlaggedLoses)
+    .effect('no card is {cardflag}', noCardIs, { writes: 0 })
+    .effect('it gains {int} {attribute}', itGains, { needsCard: true, writes: 1 })
+    .effect('each {cardflag} card in {zone} gains {int} {attribute}', eachFlaggedGains, { writes: 3 })
+    .effect('each {cardflag} card in {zone} loses {int} {attribute}', eachFlaggedLoses, { writes: 3 })
     .winner('the player with the most cards in their {perzone} wins', mostCardsWins)
     .given('{space} has {int} {spacenumber}', spaceHasGiven)
     .given('{space} has a {spaceflag}', spaceHasFlagGiven)
@@ -508,8 +509,8 @@ export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
     .given('{space} is {spaceflag}', spaceIsGiven(true))
     .given('{space} is not {spaceflag}', spaceIsGiven(false))
     .given('the bank has {int} {banked}', bankHasGiven)
-    .given('{card} in {zone} is {cardflag}', cardInZoneIsGiven)
-    .given('{card} in {zone} has {int} {attribute}', cardInZoneHasGiven)
+    .given('{card} in {zone} is {cardflag}', cardInZoneIsGiven, { writes: 2 })
+    .given('{card} in {zone} has {int} {attribute}', cardInZoneHasGiven, { writes: 3 })
     .expect('{space} has {int} {spacenumber}', spaceHasExpected)
     .expect('{space} has a {spaceflag}', spaceHasFlagExpected)
     .expect('{space} has an {spaceflag}', spaceHasFlagExpected)

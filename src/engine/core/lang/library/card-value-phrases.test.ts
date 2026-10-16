@@ -34,6 +34,11 @@ const aboutCard = (id: string): Subject => ({ player: 'p0', space: null, card: i
 const worked = (state: GameState, id: string, name: string) => runtime.workedValue(state, id, name);
 const workedFlag = (state: GameState, id: string, flag: string) => runtime.workedFlag(state, id, flag);
 const kept = (name: string) => new RuleError(`“${name}” is worked out from its lines, so no rule can change it.`);
+const arranged = (name: string) => `“${name}” is worked out from its lines, so no example or rule can set it.`;
+/** The problems of `text`, each on its line. */
+const problems = (text: string) => compileGame(text, lib).diagnostics.map((d) => [d.line, d.message]);
+/** The 1-based number of `line` in `text`. */
+const at = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
 const itself = (name: string) => `“${name}” is worked out from itself.`;
 
 describe('a number worked out for a card', () => {
@@ -132,11 +137,59 @@ describe('a worked value is never written', () => {
     expect(effect('its wage go up by its skill', potter)).toThrow(kept('wage'));
     expect(effect('it loses its red work', potter)).toThrow(kept('red work'));
   });
-  it('refuses an example that arranges one', () => {
-    const example = ['Example: a Vase said to be done', "  Given p0's workshop has a Vase", "  And the Vase in p0's workshop is done"].join('\n');
-    expect(runExamples(compiled(`${WORKED_GAME}\n\n${example}`), lib)).toEqual([
-      expect.objectContaining({ status: 'fail', message: expect.stringContaining('“done” is worked out from its lines, so no rule can change it.') }),
-    ]);
+  it('refuses an example that arranges one, when the rules are read', () => {
+    const GIVEN = "  And the Vase in p0's workshop is done";
+    const text = `${WORKED_GAME}\n\n${['Example: a Vase said to be done', "  Given p0's workshop has a Vase", GIVEN].join('\n')}`;
+    expect(problems(text)).toEqual([[at(text, GIVEN), arranged('done')]]);
+  });
+  it('refuses an example that arranges one, should it get as far as running', () => {
+    const vaseIn = runtime.env(relocate(setUp, [vase], 'workshop-p0', game), undefined, { last: null, claim: () => { throw new Error('unused'); }, setUp: (s) => s });
+    expect(() => runPhrase(lib, 'given', "the Vase in p0's workshop is done", vaseIn)).toThrow(new RuleError(arranged('done')));
+    expect(() => runPhrase(lib, 'given', "the Vase in p0's workshop has 2 red work", vaseIn)).toThrow(new RuleError(arranged('red work')));
+  });
+});
+
+describe('a worked value is never written, said on the line when the rules are read', () => {
+  /** WORKED_GAME with `line` among the lines a job's finish runs. */
+  const finishing = (line: string) => WORKED_GAME.replace('      Every card on it is tired.', `      Every card on it is tired.\n      ${line}`);
+  const refused = (line: string, name: string) => {
+    const text = finishing(line);
+    expect(problems(text), line).toEqual([[at(text, `      ${line}`), kept(name).message]]);
+  };
+
+  it('refuses a number of the card a rule is about that goes up, is gained or is lost', () => {
+    refused('Its red work goes up by its skill.', 'red work');
+    refused('Its red work goes up by its skill, up to its red need.', 'red work');
+    refused('It gains 1 gold work.', 'gold work');
+    refused('It loses its red work.', 'red work');
+  });
+  it('refuses a column it refines', () => {
+    refused('Its wage goes up by its skill.', 'wage');
+    refused('It loses its wage.', 'wage');
+  });
+  it('refuses a flag set on the card, the cards on it, the cards of a zone or every card', () => {
+    refused('It is done.', 'done');
+    refused('It is not done.', 'done');
+    refused('Every card on it is done.', 'done');
+    refused('Every card in the scrap is done.', 'done');
+    refused('No card is done.', 'done');
+  });
+  it('refuses the number each card of a zone that is so gains or loses', () => {
+    refused('Each tired card in the hall gains 1 red work.', 'red work');
+    refused('Each tired card in the hall loses 1 red work.', 'red work');
+  });
+  it('refuses one inside a line that runs for each card, or only if', () => {
+    refused('For each card on it, it is done.', 'done');
+    refused('If it is tired, it gains 1 red work.', 'red work');
+  });
+  it('refuses a number an example arranges', () => {
+    const GIVEN = "  And the Potter in p0's crew has 2 red work";
+    const text = `${WORKED_GAME}\n\n${['Example: a Potter said to work', "  Given p0's workshop has a Vase", "  And the Vase in p0's workshop has a Potter on it", GIVEN].join('\n')}`;
+    expect(problems(text)).toEqual([[at(text, GIVEN), arranged('red work')]]);
+  });
+  it('(guard: passes before and after) reads a worked value into a number the cards keep', () => {
+    expect(problems(finishing('Its red done goes up by its red work, up to its red need.'))).toEqual([]);
+    expect(problems(finishing('Its red done goes up by its red work.'))).toEqual([]);
   });
 });
 

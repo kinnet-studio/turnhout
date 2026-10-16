@@ -686,7 +686,11 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   // since the words a button picks a space with may name one, and no card or declare line reads a button.
   const actions = readActions(named, stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board, facts, worked })));
 
-  const ctx = stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board, actions, facts, worked }));
+  // A line may read a value worked out for cards, but never change one: the compiler refuses it on that line.
+  const ctx: LineCtx = {
+    ...stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board, actions, facts, worked })),
+    ...(worked.length > 0 ? { worked: worked.map(({ name }) => name) } : {}),
+  };
   const setup = linesOf(of('setup')).map((node) => {
     rejectChildren(node, diagnostics);
     return matchEffectLine(node.text, node.line, ctx);

@@ -1,7 +1,7 @@
 import type { Json } from '../table-def';
 import { RuleError, type Diagnostic } from './diagnostics';
 import type { OutlineNode } from './outline';
-import { normalizeLine, stubFor, type MatchResult, type Misnamed, type PhraseLibrary, type PhraseOpts } from './phrases';
+import { normalizeLine, stubFor, type MatchResult, type Misnamed, type PhraseLibrary, type RegisteredOpts } from './phrases';
 import { misnamedParam, parseParam } from './refs';
 import type { CardGroup, CondGroup, ParamType, PhraseKind, PhraseRef, Vocab } from './types';
 
@@ -12,11 +12,12 @@ import type { CardGroup, CondGroup, ParamType, PhraseKind, PhraseRef, Vocab } fr
  * `amount` is true only for the lines of a button whose wording ends in “an amount”: its press carries a number. `picked` is true
  * only for the lines of a button whose wording ends in “another player”: its press picks a player. `cards` is true only for the lines
  * of a button that picks some cards (“the picked cards”), and `onto` only for those of a button that picks a card for its cards to go
- * to (“the target card”); absent means false.
+ * to (“the target card”); absent means false. `worked` names the values the game works out for cards, which no line may change;
+ * absent means none.
  */
 export type LineCtx = {
   library: PhraseLibrary; vocab: Vocab; gameName: string; inMove: boolean; player: boolean; space: boolean; card: boolean; drawn: boolean;
-  amount: boolean; picked: boolean; cards?: boolean; onto?: boolean; diagnostics: Diagnostic[];
+  amount: boolean; picked: boolean; cards?: boolean; onto?: boolean; worked?: readonly string[]; diagnostics: Diagnostic[];
 };
 
 const MAX_SUGGESTIONS = 3;
@@ -37,6 +38,10 @@ const NEEDS_PICK = (clean: string) =>
 const NEEDS_CARDS = (clean: string) => `“${clean}” only makes sense in a button that picks some cards, like “A player may discard some cards from their hand.”`;
 const NEEDS_ONTO = (clean: string) =>
   `“${clean}” only makes sense in a button that picks a card and the card it goes to, like “A player may stack a card from their hand to a card in the row.”`;
+/** What a rule that would change a value worked out for cards is told, by the compiler and by a phrase that finds out only when it runs. */
+export const WORKED_KEPT = (name: string) => `“${name}” is worked out from its lines, so no rule can change it.`;
+/** The same for an example's Given, which would set one. */
+export const WORKED_NOT_GIVEN = (name: string) => `“${name}” is worked out from its lines, so no example or rule can set it.`;
 const IF_FRAME = /^if\s+(.+)$/i;
 const FOR_FRAME = /^for\s+(.+)$/i;
 /** group 1 = the words after “For each card ”, which say which cards and then, after a comma, what happens to each */
@@ -180,7 +185,7 @@ export function readsPressCard(library: PhraseLibrary, group: CondGroup): boolea
  * of cards among `groups` needs what it reads: “the cards on it” a card, “the picked cards” a button that picks some, and the cards
  * in their zones a player, as any of their zones does.
  */
-function unmetNeed(entry: Required<PhraseOpts> | undefined, args: Json[], clean: string, ctx: LineCtx, groups: CardGroup[] = []): string | null {
+function unmetNeed(entry: RegisteredOpts | undefined, args: Json[], clean: string, ctx: LineCtx, groups: CardGroup[] = []): string | null {
   // A game has a board when its Board: section has a loop of spaces, and dice only come with a board.
   if (entry?.needsBoard && ctx.vocab.spaces.length === 0) return NEEDS_BOARD(clean);
   if (entry?.needsDice && !ctx.vocab.dice) return NEEDS_DICE(clean);
@@ -200,6 +205,13 @@ function unmetNeed(entry: Required<PhraseOpts> | undefined, args: Json[], clean:
   if (!ctx.onto && entry?.needsOnto) return NEEDS_ONTO(clean);
   if (entry?.needsPayment && ctx.vocab.payWith === null) return NEEDS_PAYMENT;
   return null;
+}
+
+/** What is wrong with a line that writes a number or flag of cards that the game works out from lines; null for any other line. */
+function writesWorked(entry: RegisteredOpts | undefined, args: Json[], kind: PhraseKind, ctx: LineCtx): string | null {
+  const name = entry?.writes === undefined ? undefined : args[entry.writes];
+  if (typeof name !== 'string' || !ctx.worked?.includes(name)) return null;
+  return kind === 'given' ? WORKED_NOT_GIVEN(name) : WORKED_KEPT(name);
 }
 
 /**
@@ -229,7 +241,8 @@ export function matchLine(
   switch (result.status) {
     case 'ok': {
       const entry = ctx.library.get(found, result.pattern);
-      const problem = unmetNeed(entry, result.args, clean, ctx, cardGroupsOf(result.pattern, result.args));
+      const problem = unmetNeed(entry, result.args, clean, ctx, cardGroupsOf(result.pattern, result.args))
+        ?? writesWorked(entry, result.args, found, ctx);
       if (problem) {
         addProblem(ctx.diagnostics, line, problem, { kind: 'invalid', text: clean });
         return missingRef(found, clean, line);

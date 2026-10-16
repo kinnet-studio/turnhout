@@ -56,13 +56,13 @@ const moreThan: ConditionFn = (env, [name, n]) => cardNumber(env, itCard(env), n
  */
 export function registerCardNumberPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
-    .effect('it loses its {attribute}', itLoses, { needsCard: true })
-    .effect('its {attribute} go up by its {attribute}', itsGoUp, { needsCard: true })
-    .effect('its {attribute} goes up by its {attribute}', itsGoUp, { needsCard: true })
-    .effect('its {attribute} go up by its {attribute}, up to its {attribute}', itsGoUpToCap, { needsCard: true })
-    .effect('its {attribute} goes up by its {attribute}, up to its {attribute}', itsGoUpToCap, { needsCard: true })
-    .effect('it is {cardflag}', itIs(true), { needsCard: true })
-    .effect('it is not {cardflag}', itIs(false), { needsCard: true })
+    .effect('it loses its {attribute}', itLoses, { needsCard: true, writes: 0 })
+    .effect('its {attribute} go up by its {attribute}', itsGoUp, { needsCard: true, writes: 0 })
+    .effect('its {attribute} goes up by its {attribute}', itsGoUp, { needsCard: true, writes: 0 })
+    .effect('its {attribute} go up by its {attribute}, up to its {attribute}', itsGoUpToCap, { needsCard: true, writes: 0 })
+    .effect('its {attribute} goes up by its {attribute}, up to its {attribute}', itsGoUpToCap, { needsCard: true, writes: 0 })
+    .effect('it is {cardflag}', itIs(true), { needsCard: true, writes: 0 })
+    .effect('it is not {cardflag}', itIs(false), { needsCard: true, writes: 0 })
     .condition('its {attribute} is at least its {attribute}', atLeast, { needsCard: true })
     .condition('its {attribute} are at least its {attribute}', atLeast, { needsCard: true })
     .condition('its {attribute} is more than {int}', moreThan, { needsCard: true })

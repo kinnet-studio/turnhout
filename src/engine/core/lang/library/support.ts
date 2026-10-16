@@ -4,6 +4,7 @@ import type { Json } from '../../table-def';
 import { cardsOn } from '../attach';
 import { pieceAt } from '../board-state';
 import { cardAttribute, cardFact } from '../card-facts';
+import { WORKED_KEPT } from '../compile-util';
 import { noSuchNumber, RuleError } from '../diagnostics';
 import type { CardGroup, MoveInfo, PhraseEnv, ZoneRef } from '../types';
 import { resolveSeat, resolveZoneIds } from '../zones';
@@ -109,9 +110,12 @@ export function cardHasFlag(env: PhraseEnv, card: CardState, flag: string): bool
   return env.workedFlag && isWorked(env, flag) ? env.workedFlag(env.state, card.id, flag) : cardFact(card, flag) === true;
 }
 
-/** A value worked out from lines is what they say, so a rule that would change one under that name is a mistake in the rule. */
-export function mustBeKept(env: PhraseEnv, name: string): void {
-  if (isWorked(env, name)) throw new RuleError(`“${name}” is worked out from its lines, so no rule can change it.`);
+/**
+ * A value worked out from lines is what they say, so a rule that would change one under that name is a mistake in the rule, and `said` is
+ * how it is told (an example's Given is told it can't set one). The compiler refuses such a line first; this is for a line run without it.
+ */
+export function mustBeKept(env: PhraseEnv, name: string, said: (name: string) => string = WORKED_KEPT): void {
+  if (isWorked(env, name)) throw new RuleError(said(name));
 }
 
 /**

@@ -88,7 +88,7 @@ export function registerAttachPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('it goes to {zone}, on the target card', itGoesOnTarget, { needsCard: true, needsOnto: true })
     .effect('the picked cards go to {zone}, on the target card', pickedGoOnTarget, { needsCards: true, needsOnto: true })
     .effect('every card on it goes to {zone}', everyCardOnItGoesTo, { needsCard: true })
-    .effect('every card on it is {cardflag}', everyCardOnItIs, { needsCard: true })
+    .effect('every card on it is {cardflag}', everyCardOnItIs, { needsCard: true, writes: 0 })
     .given('{card} in {zone} has {cardlist} on it', cardHasOnItGiven)
     .expect('{card} in {zone} has {cardlist} on it', cardHasOnItExpected)
     .expect('{card} in {zone} has no cards on it', cardHasNothingOnItExpected);

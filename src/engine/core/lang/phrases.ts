@@ -224,13 +224,16 @@ export type MatchResult =
  * reads the set of cards a button's press picked (“the picked cards”), which only a button that picks some cards has, and `needsOnto`
  * for one that reads the card a press picked for its cards to go to (“the target card”), which only a button that picks one has.
  * `entersPhase` is no need: it says the phrase's first argument is a phase the line enters, so that the compiler counts the line as
- * leading there.
+ * leading there. Nor is `writes`: it is the place, among the phrase's arguments, of the name of a number or flag of cards that the
+ * phrase changes (or an example's Given sets), so that the compiler refuses one the game works out from lines, on the line that names it.
  */
 export type PhraseOpts = {
   needsMove?: boolean; needsPlayer?: boolean; needsSpace?: boolean; needsCard?: boolean; needsDrawnCard?: boolean; needsPayment?: boolean;
   needsBoard?: boolean; needsDice?: boolean; needsTwoDice?: boolean; needsAmount?: boolean; needsPick?: boolean; needsCards?: boolean;
-  needsOnto?: boolean; entersPhase?: boolean;
+  needsOnto?: boolean; entersPhase?: boolean; writes?: number;
 };
+/** A registered phrase's options: every need true or false, and `writes` only on a phrase that writes a card's number or flag. */
+export type RegisteredOpts = Required<Omit<PhraseOpts, 'writes'>> & Pick<PhraseOpts, 'writes'>;
 
 type Part = { literal: string } | { type: ParamType };
 type Entry = {
@@ -240,7 +243,7 @@ type Entry = {
   literal: string; // pattern text with the parameters removed, for suggestions
   specificity: number; // how many letters of the pattern are its own words rather than parameters
   fn: unknown;
-} & Required<PhraseOpts>;
+} & RegisteredOpts;
 
 /** Regexes built for one vocabulary: each phrase strictly and loosely (null: nothing to loosen), and each whole parameter. */
 type VocabCache = { strict: Map<Entry, RegExp>; loose: Map<Entry, RegExp | null>; whole: Map<ParamType, RegExp> };
@@ -371,13 +374,13 @@ export class PhraseLibrary {
   target(p: string, fn: TargetFn, opts?: PhraseOpts): this { return this.add('target', p, fn, opts); }
   expect(p: string, fn: ExpectFn): this { return this.add('expect', p, fn); }
 
-  get(kind: PhraseKind, pattern: string): ({ fn: unknown } & Required<PhraseOpts>) | undefined {
+  get(kind: PhraseKind, pattern: string): ({ fn: unknown } & RegisteredOpts) | undefined {
     const entry = this.entries.get(kind)?.get(pattern.toLowerCase());
     return entry && {
       fn: entry.fn, needsMove: entry.needsMove, needsPlayer: entry.needsPlayer, needsSpace: entry.needsSpace, needsCard: entry.needsCard,
       needsDrawnCard: entry.needsDrawnCard, needsPayment: entry.needsPayment, needsBoard: entry.needsBoard, needsDice: entry.needsDice,
       needsTwoDice: entry.needsTwoDice, needsAmount: entry.needsAmount, needsPick: entry.needsPick, needsCards: entry.needsCards,
-      needsOnto: entry.needsOnto, entersPhase: entry.entersPhase,
+      needsOnto: entry.needsOnto, entersPhase: entry.entersPhase, ...(entry.writes === undefined ? {} : { writes: entry.writes }),
     };
   }
 
@@ -472,7 +475,7 @@ export class PhraseLibrary {
       needsCard: opts.needsCard ?? false, needsDrawnCard: opts.needsDrawnCard ?? false, needsPayment: opts.needsPayment ?? false,
       needsBoard: opts.needsBoard ?? false, needsDice: opts.needsDice ?? false, needsTwoDice: opts.needsTwoDice ?? false,
       needsAmount: opts.needsAmount ?? false, needsPick: opts.needsPick ?? false, needsCards: opts.needsCards ?? false,
-      needsOnto: opts.needsOnto ?? false, entersPhase: opts.entersPhase ?? false,
+      needsOnto: opts.needsOnto ?? false, entersPhase: opts.entersPhase ?? false, ...(opts.writes === undefined ? {} : { writes: opts.writes }),
     });
     return this;
   }
