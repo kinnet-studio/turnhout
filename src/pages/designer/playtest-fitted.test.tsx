@@ -85,7 +85,7 @@ describe('Playtest of a game too big for one table', () => {
   it("lists every player's tableau", () => {
     mount();
     for (const seat of seatsOf(3)) {
-      expect(lineOf(seat)).toBe(`${seat} 7 capital, 3 actions · bench 3 · backlog 1 · research 0${seat === S ? ' · start player' : ''}`);
+      expect(lineOf(seat)).toBe(`${seat} 7 capital, 3 actions · bench 3 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0${seat === S ? ' · start player' : ''}`);
     }
   });
 
@@ -221,7 +221,7 @@ describe('a round played through the page', () => {
   it('recruits from every source, drafts, researches, discards and passes the turn', () => {
     mount();
     for (let i = 0; i < 3; i++) press('Recruit a junior software dev');
-    expect(lineOf(S)).toBe(`${S} 1 capital, 0 actions · bench 6 · backlog 1 · research 0 · start player`);
+    expect(lineOf(S)).toBe(`${S} 1 capital, 0 actions · bench 6 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · start player`);
     expect(status()).toBe(`seat: ${S} — Your turn — ${hint('bench cleanup')}`);
 
     press('Discard a card in your bench');
@@ -256,7 +256,7 @@ describe('a round played through the page', () => {
     pickFirst();
     selected(`${T} — to act`);
     expect(cardsIn('open-idea-pool')).toHaveLength(2);
-    expect(lineOf(N)).toContain('0 actions · bench 5 · backlog 2 · research 0');
+    expect(lineOf(N)).toContain('0 actions · bench 5 · backlog 2 · research 0 · development 0 · operations 0 · development team 0 · ops team 0');
 
     press('Draft a card from the seed market to your backlog');
     pickFirst();

@@ -99,6 +99,7 @@ Cards:
     | DAO Nation | Tier 3 | 20 | 0 | 0 | 28 | 2 | 0 | FinTech | Crypto | Social |  | 1 |
     | Asteroid Mining | Tier 3 | 8 | 18 | 12 | 18 | 0 | 3 | Deep Tech | Robotics | Cloud |  | 1 |
     | Planetary Wi-Fi | Tier 3 | 6 | 16 | 8 | 16 | 0 | 3 | Infra | Cloud | IoT |  | 1 |
+  Cards can be onboarding.
 
 Table:
   The talent deck is a pile in the center that no one can see.
@@ -114,6 +115,10 @@ Table:
   Each player has a bench row that only they can see.
   Each player has a backlog row that only they can see.
   Each player has a research row that only they can see.
+  Each player has a development row that everyone can see.
+  Each player has an operations row that everyone can see.
+  Each player has a development team row that everyone can see, where every card is on a card.
+  Each player has an ops team row that everyone can see.
 
 Setup:
   Shuffle the talent deck.
@@ -127,6 +132,8 @@ Setup:
   Deal 1 card from the seed deck to each backlog.
 
 In every phase:
+  When a player's turn starts:
+    No card is onboarding.
   When the agency row has fewer than 4 cards:
     Only if the talent deck is not empty.
     Move the top card of the talent deck to the agency row.
@@ -145,7 +152,7 @@ In every phase:
 
 Phase: actions
   Players take turns.
-  Hint: Spend 3 actions: recruit, draft ideas or research. Press hire or draft, then pick the card.
+  Hint: Spend 3 actions on hiring, drafting, research and your board. Greenlighting and dismissing are free. Press a button, then pick the cards.
   A player may recruit a junior software dev.
     It costs 1 action.
     Only if they have at least 2 capital.
@@ -174,6 +181,49 @@ Phase: actions
     Only if they have at least 1 capital.
     Then:
       They pay 1.
+  A player may hire a card from the agency row to a card in their development.
+    It costs 1 action.
+    Only if they have at least the card's cost in capital.
+    Then:
+      They pay the card's cost.
+      It goes to their development team, on the target card.
+  A player may hire a card from the agency row to their ops team.
+    It costs 1 action.
+    Only if their operations is not empty.
+    Only if they have at least the card's cost in capital.
+    Then:
+      They pay the card's cost.
+  A player may greenlight a card in their backlog.
+    Only if their development has fewer than 3 cards.
+    Only if the card is a Tier 1 card.
+    Then:
+      Move it to their development.
+  A player may assign some cards from their bench to a card in their development.
+    It costs 1 action.
+    Then:
+      The picked cards go to their development team, on the target card.
+  A player may assign some cards from their bench to their ops team.
+    It costs 1 action.
+    Only if their operations is not empty.
+  A player may reassign a card from their development team to a card in their development.
+    It costs 1 action.
+    Only if it is not on the target card.
+    Then:
+      It goes to their development team, on the target card.
+      It is onboarding.
+  A player may reassign a card from their ops team to a card in their development.
+    It costs 1 action.
+    Then:
+      It goes to their development team, on the target card.
+      It is onboarding.
+  A player may recall some cards from their ops team to their bench.
+    It costs 1 action.
+  A player may dismiss a card in their development team.
+    Then:
+      Move it to the open job market.
+  A player may dismiss a card in their ops team.
+    Then:
+      Move it to the open job market.
   A player may draft a card from the seed market to their backlog.
     It costs 1 action.
     Only if their backlog has fewer than 4 cards.
@@ -274,7 +324,7 @@ Example: a turn has 3 actions
 Example: you can't pay, so you can't act (section 6)
   Given p0 has 4 capital
   And the agency row has the Hacker, the Architect, the Veteran and the Diva
-  When p0 hires the Diva
+  When p0 hires the Diva to p0's bench
   Then it is rejected because "they have at least the card's cost in capital"
   And p0 has 3 actions
   And p0 has 4 capital
@@ -294,14 +344,14 @@ Example: the University costs 2 and hires to the bench (ruling 20)
 Example: the agency row slides left and refills from the talent deck, which never reshuffles (section 13)
   Given the agency row has the Hacker, the Architect, the Veteran and the Diva
   And the talent deck has a Sales Rep
-  When p0 hires the Architect
+  When p0 hires the Architect to p0's bench
   Then it is accepted
   And p0 has 0 capital
   And p0's bench has the Architect
   And the agency row has the Hacker, the Veteran, the Diva and a Sales Rep, in that order
   And the talent deck is empty
   Given p0 has 7 capital
-  When p0 hires the Hacker
+  When p0 hires the Hacker to p0's bench
   Then it is accepted
   And the agency row has the Veteran, the Diva and a Sales Rep, in that order
 
@@ -562,3 +612,118 @@ Example: the highest score wins
   And p0 scores 2
   And p1 scores 1
   And p0 wins
+
+Example: greenlighting is free (ruling 7)
+  Given p0's backlog has a Dating App and a Smart Lock
+  When p0 greenlights the Dating App
+  Then it is accepted
+  And p0 has 3 actions
+  And p0's development has a Dating App
+  And p0's backlog has a Smart Lock
+
+Example: three projects at most (section 3)
+  Given p0's development has a To-Do List, a Dating App and a Mobile Wallet
+  And p0's backlog has a Smart Lock
+  When p0 greenlights the Smart Lock
+  Then it is rejected because "their development has fewer than 3 cards"
+  And p0's backlog has a Smart Lock
+
+Example: only Tier 1 products are greenlit until Leads and Tags arrive (this slice's call)
+  Given p0's backlog has a Neobank
+  When p0 greenlights the Neobank
+  Then it is rejected because "the card is a Tier 1 card"
+  And p0's backlog has a Neobank
+
+Example: assigning several staff to one project costs 1 action (section 6)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And p0's bench has a Junior Software Dev, the Architect and a Junior QA Tester
+  When p0 assigns the Junior Software Dev and the Architect to the Dating App
+  Then it is accepted
+  And p0 has 2 actions
+  And the Dating App in p0's development has a Junior Software Dev and the Architect on it
+  And p0's bench has a Junior QA Tester
+
+Example: the ops team takes staff only while operations runs a product (the overview's call)
+  Given p0's bench has a Junior Software Dev
+  When p0 assigns the Junior Software Dev to p0's ops team
+  Then it is rejected because "their operations is not empty"
+  And p0 has 3 actions
+  Given p0's operations has a To-Do List
+  When p0 assigns the Junior Software Dev to p0's ops team
+  Then it is accepted
+  And p0's ops team has a Junior Software Dev
+  And p0 has 2 actions
+
+Example: an agency hire may go straight onto the board (ruling 20)
+  Given the phase is actions
+  And p0 has 13 capital
+  And the agency row has the Hacker, the Architect, the Veteran and the Diva
+  And p0's development has a Dating App
+  And p0's operations has a To-Do List
+  When p0 hires the Architect to the Dating App
+  Then it is accepted
+  And p0 has 6 capital
+  And p0 has 2 actions
+  And the Dating App in p0's development has the Architect on it
+  When p0 hires the Veteran to p0's ops team
+  Then it is accepted
+  And p0 has 0 capital
+  And p0's ops team has the Veteran
+
+Example: a reassigned staff member is onboarding until the next turn starts (ruling 8)
+  Given the phase is actions
+  And p0's development has a Dating App and a To-Do List
+  And the Dating App in p0's development has a Junior Software Dev on it
+  When p0 reassigns the Junior Software Dev to the Dating App
+  Then it is rejected because "it is not on the target card"
+  When p0 reassigns the Junior Software Dev to the To-Do List
+  Then it is accepted
+  And p0 has 2 actions
+  And the To-Do List in p0's development has a Junior Software Dev on it
+  And the Dating App in p0's development has no cards on it
+  And the Junior Software Dev in p0's development team is onboarding
+  When p0 ends their actions
+  Then it is p1's turn
+  And the Junior Software Dev in p0's development team is not onboarding
+
+Example: pooled ops staff may move to a project (ruling 25)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And p0's operations has a To-Do List
+  And p0's ops team has a Junior Software Dev and a Junior QA Tester
+  When p0 reassigns the Junior Software Dev to the Dating App
+  Then it is accepted
+  And the Dating App in p0's development has a Junior Software Dev on it
+  And p0's ops team has a Junior QA Tester
+  And the Junior Software Dev in p0's development team is onboarding
+
+Example: recall brings any number of ops staff back to the bench, but never project staff (section 6)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And the Dating App in p0's development has the Veteran on it
+  And p0's operations has a To-Do List
+  And p0's ops team has a Junior Software Dev, a Junior QA Tester and the Architect
+  When p0 recalls the Veteran
+  Then it is rejected because "Pick one or more cards from your ops team to recall."
+  When p0 recalls the Junior Software Dev and the Architect
+  Then it is accepted
+  And p0 has 2 actions
+  And p0's bench has a Junior Software Dev and the Architect
+  And p0's ops team has a Junior QA Tester
+
+Example: dismissing board staff is free (section 18, ruling 25)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And the Dating App in p0's development has the Architect on it
+  And p0's operations has a To-Do List
+  And p0's ops team has a Junior QA Tester
+  When p0 dismisses the Architect
+  Then it is accepted
+  And p0 has 3 actions
+  And the Dating App in p0's development has no cards on it
+  When p0 dismisses the Junior QA Tester
+  Then it is accepted
+  And p0 has 3 actions
+  And the open job market has the Architect and a Junior QA Tester, in that order
+  And p0's ops team is empty

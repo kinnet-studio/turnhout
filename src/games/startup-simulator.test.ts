@@ -8,7 +8,9 @@ import { counterOf, setCounter } from '@/engine/core/lang/board-state';
 import { seatExtras, type PickCardView, type SeatExtras } from '@/engine/core/lang/board-view';
 import { deckOf, NEXT_CARD_KEY } from '@/engine/core/lang/cards';
 import { cardCandidates, hasCost } from '@/engine/core/lang/declared-actions';
+import { moveZoneId } from '@/engine/core/lang/declared-moves';
 import type { LangRuntime } from '@/engine/core/lang/runtime';
+import type { ZoneRef } from '@/engine/core/lang/types';
 import { markTurnStarted, ROUND_KEY, START_PLAYER_KEY, startPlayerOf, TURN_OF_KEY } from '@/engine/core/lang/turns';
 import { relocate, zoneIdFor, zoneInfo } from '@/engine/core/lang/zones';
 import { HIDDEN_FACE_KEY, deriveScene } from '@/engine/core/derive-scene';
@@ -88,6 +90,11 @@ const DISCARD_BACKLOG = 'discard a card in their backlog';
 const POOLS = ['open-job-market', 'open-idea-pool'];
 /** The rows each player has that only they can see. */
 const OWN_ROWS = ['bench', 'backlog', 'research'];
+/** The rows of each player's Board, which everyone can see: projects, products in operation, the staff on projects and the ops staff (§3). */
+const BOARD_ROWS = ['development', 'operations', 'development team', 'ops team'];
+// The two buttons that pick a card from a project's staff.
+const REASSIGN_FROM_PROJECT = 'reassign a card from their development team to a card in their development';
+const DISMISS_FROM_PROJECT = 'dismiss a card in their development team';
 /** The row each Cleanup phase discards from, and the button that discards from it. */
 const CLEANUPS: Record<string, { row: string; discard: string }> = {
   'bench cleanup': { row: 'bench', discard: DISCARD_BENCH },
@@ -430,18 +437,37 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(25);
+    expect(results).toHaveLength(35);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
-  it('asks an example to say where a hire comes from when both rows hold the card', () => {
+  it('asks an example which hire it means when both rows hold the card, in words that each press one button', () => {
     const bare = [
       'Example: a Sales Rep in both rows', '  Given the agency row has the Hacker, the Architect, the Veteran and a Sales Rep',
       '  And the open job market has a Sales Rep', '  When p0 hires a Sales Rep', '  Then it is accepted',
     ].join('\n');
     const results = runExamples(compileGame(`${STARTUP_SIMULATOR}\n\n${bare}\n`, lib).game!, lib);
     expect(results.at(-1)!.status).toBe('fail');
-    expect(results.at(-1)!.message).toMatch(/Say where it comes from: “… from the agency row” or “… from the open job market”\.$/);
+    // Three buttons hire from the agency row or to the bench, so neither where the card comes from nor where it goes is enough alone.
+    const ask = '. Say which: “… from the agency row to p0\'s bench”, “… from the open job market” or “… to p0\'s ops team”.';
+    const message = results.at(-1)!.message!;
+    expect(message.slice(-ask.length)).toBe(ask);
+
+    // Each wording the advice gives hires the Sales Rep from where it says, to where it says.
+    const lands: Record<string, string[]> = {
+      "from the agency row to p0's bench": ["Then p0's bench has a Sales Rep", 'And the open job market has a Sales Rep'],
+      'from the open job market': ["Then p0's bench has a Sales Rep", 'And the open job market is empty'],
+      "to p0's ops team": ["Then p0's ops team has a Sales Rep", 'And the open job market has a Sales Rep'],
+    };
+    const wordings = [...message.matchAll(/“… ([^”]+)”/g)].map(([, wording]) => wording);
+    expect(wordings.sort()).toEqual(Object.keys(lands).sort());
+    const pressing = wordings.map((wording) => [
+      `Example: hiring the Sales Rep ${wording}`, '  Given the agency row has the Hacker, the Architect, the Veteran and a Sales Rep',
+      '  And the open job market has a Sales Rep', "  And p0's operations has a To-Do List", `  When p0 hires a Sales Rep ${wording}`,
+      ...lands[wording].map((line) => `  ${line}`),
+    ].join('\n'));
+    const pressed = runExamples(compileGame(`${STARTUP_SIMULATOR}\n\n${pressing.join('\n\n')}\n`, lib).game!, lib).slice(-wordings.length);
+    expect(pressed.map(({ status, message }) => [status, message])).toEqual(wordings.map(() => ['pass', null]));
   });
 
   describe('the cards (§20)', () => {
@@ -523,7 +549,7 @@ describe('Startup Simulator (designer language)', () => {
     });
   });
 
-  it('lays out the table: each player’s bench, backlog and research are rows only they can see', () => {
+  it('lays out the table: each player’s bench, backlog and research are rows only they can see, and their Board rows everyone can', () => {
     const zones = game!.zones.map(({ name, perPlayer, layout, visibility }) => [zoneIdFor(name), perPlayer, layout, visibility]);
     expect(zones).toEqual([
       ['talent-deck', false, 'pile', 'secret'],
@@ -539,7 +565,36 @@ describe('Startup Simulator (designer language)', () => {
       ['bench', true, 'row', 'owner'],
       ['backlog', true, 'row', 'owner'],
       ['research', true, 'row', 'owner'],
+      ['development', true, 'row', 'public'],
+      ['operations', true, 'row', 'public'],
+      ['development-team', true, 'row', 'public'],
+      ['ops-team', true, 'row', 'public'],
     ]);
+    // Staff on a project sit on it (§3); the ops team is a pool that runs every product in operation.
+    const marked = game!.zones.filter((zone) => zone.onCards !== undefined).map(({ name, onCards }) => [name, onCards]);
+    expect(marked).toEqual([['development team', 'every']]);
+  });
+
+  describe('where the buttons of the actions phase move staff', () => {
+    const actions = () => game!.phases.find((phase) => phase.id === 'actions')!.actions;
+    /** The zone `ref` names for p0's press, in a game of two. */
+    const zoneOf = (ref: ZoneRef | null) => (ref === null ? null : moveZoneId(ref, seatsFor(2), 'p0'));
+    const pickingFrom = (zoneId: string) => actions().filter((action) => action.pick !== undefined && zoneOf(action.pick.from) === zoneId);
+
+    it('hires from the open job market and the University only to the bench (ruling 20)', () => {
+      expect(pickingFrom('open-job-market').map(({ words, pick }) => [words, zoneOf(pick!.to)])).toEqual([[HIRE_MARKET, 'bench-p0']]);
+      const recruits = actions().filter((action) => RECRUITS.includes(action.words));
+      expect(recruits.map((action) => action.words)).toEqual(RECRUITS);
+      expect(recruits.filter((action) => action.pick !== undefined)).toEqual([]);
+    });
+
+    it('moves a project’s staff by a press only to another project or out of the company (§6, ruling 25)', () => {
+      const fromProjects = pickingFrom('development-team-p0').map(({ words, pick }) => [words, zoneOf(pick!.to), zoneOf(pick!.onto)]);
+      expect(fromProjects).toEqual([
+        [REASSIGN_FROM_PROJECT, null, 'development-p0'],
+        [DISMISS_FROM_PROJECT, null, null],
+      ]);
+    });
   });
 
   describe('setup (§4)', () => {
@@ -563,6 +618,7 @@ describe('Startup Simulator (designer language)', () => {
           expect(zoneCards(state, `bench-p${p}`).map(nameOf), `${at}, p${p}'s bench`).toEqual(JUNIORS);
           const backlog = zoneCards(state, `backlog-p${p}`);
           expect(backlog.map((card) => [card.faceUp, card.data?.tier]), `${at}, p${p}'s backlog`).toEqual([[false, 'Tier 1']]);
+          for (const row of BOARD_ROWS) expect(zoneCards(state, zoneIdFor(row, `p${p}`)), `${at}, p${p}'s ${row}`).toEqual([]);
         }
         expect(zoneCards(state, 'agency-row'), at).toHaveLength(4);
         expect(zoneCards(state, 'seed-market'), at).toHaveLength(2);
