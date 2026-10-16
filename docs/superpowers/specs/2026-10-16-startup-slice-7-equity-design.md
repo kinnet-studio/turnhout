@@ -1,7 +1,7 @@
 # Startup Simulator, Slice 7: Equity and the Stock Market
 
 **Date:** 2026-10-16
-**Status:** Draft, waiting for its builder check. The user handed over every design call for the full implementation;
+**Status:** Settled after its builder check (see "Builder-check rulings" at the end). The user handed over every design call for the full implementation;
 the calls below are the builder's.
 **Part of:** `2026-10-16-startup-simulator-overview-design.md`. Its decisions (notably the Veto and "Equity tokens are
 cards"), calls, anti-goals and constraints apply.
@@ -102,6 +102,9 @@ The game after this slice:
 | No Veto on free actions | a Greenlight opens no window |
 | Buyback | at the current Share Price, with consent |
 | Secondary Trade | to a third player, with the buyer's consent; the Founder can't stop it |
+| Founder vetoes a trade of their own token | A holds B's token; B offers A's token to C; A vetoes with B's token, which goes back to B |
+| Launch keeps the Consultant | a Launch moves the Founder's staff to Ops; the Investor's token stays on the product |
+| Pivot returns the Consultant | a Pivot sends the Founder's staff to the Bench and the Investor's token back to the Investor, unplaced |
 | Non-Compete Suit | $4 card, $5 to the Investor, the token returns |
 | Portfolio | 5 VP per rival token; own tokens 0 |
 | Venture Capital Rain | +$3 to the Founder on an Invest this round |
@@ -128,3 +131,33 @@ The game after this slice:
 ## Left to the builder
 
 - Exact wordings; the look of tokens and windows; the auto-player's choices.
+
+## Builder-check rulings
+
+The builder check (`builder-check-startup-7.md`) raised two questions. The user handed every design call to the builder;
+these are the calls.
+
+- **R1. A placed Consultant is a cross-seat attachment: one attachment mechanism, widened for marked zones.**
+  - The placed token keeps the holder reference (`lang:on`) and stays in the Investor's own per-player zone ("their
+    consultants"). That zone is marked as one whose cards sit on other players' cards.
+  - The integrity check accepts a holder in another seat only for a card in such a marked zone, and only in a public
+    zone of the seat the holder had when the token was placed (stored with the token). A product sold to a third player
+    with the token still on it therefore trips the check, which catches a forgotten return.
+  - "The cards on it" and "every card on it" mean the cards on it that belong to the holder's owner. A separate phrase
+    reads the others ("the consultants on it", "every other player's card on it"). So every 1b–6 line keeps its
+    meaning: Launch moves the Founder's staff and leaves the token; team totals, Stalled, leads, Synergy and graduation
+    never see it. The Consultant's +1 is its own value line.
+  - Rules that take a product off its Founder's Board return the tokens on it explicitly, unplaced: Pivot in this
+    slice, product sales in slice 8, Fold and Liquidation in slice 10.
+  - Ownership stays the zone's seat, so dividends, Partners, the Veto window, Portfolio scoring and trades read only the
+    Investor's zones.
+  - The page draws a rival's token on the viewer's product in the viewer's Board, and lists the viewer's own placed
+    tokens with the product they sit on in the viewer's tableau line.
+  - Why: it keeps the overview's single attachment mechanism and its check, where a second placement relation (a
+    parallel mechanism) or a token moved to the Founder's side (breaking ownership by zone) would not. Slice 6 R2's
+    counts don't carry over, because a token's identity matters (whose it is, which one moves on a trade).
+  - The overview's attachment bullet is amended to match.
+- **R2. A Founder may veto a Secondary Trade of their own token** when they hold the seller's Equity. The Veto is a perk
+  of holding the seller's Equity, paid for with one of the seller's tokens. "The Founder cannot prevent this sale"
+  (§17.C.5) says the Founder's consent isn't needed, as against Buyback; it isn't an exception to the Veto, which
+  covers every AP action (§17.B.5). The Veto window stays uniform: every AP action, every holder. Pinned by an example.

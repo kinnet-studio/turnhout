@@ -99,6 +99,9 @@ rulebook as written, every rule and every card.
   - A move "with everything on it" moves what is attached, transitively.
   - After every move the runtime checks that each holder is a card in play with the same owner, which catches a rule that
     forgot to free an attached card.
+  - One exception (slice 7 R1): a card in a zone marked as sitting on other players' cards (a placed Consultant) may
+    have a holder in another seat's public zone, the seat fixed when it was placed. "The cards on it" reads only the
+    holder owner's cards; a separate phrase reads the others.
   - No protected file and no `CardState` change is needed.
 - **Equity tokens are cards** (three per player, with a `founder` column). Invest, Consultant, Vest and CTO become zones
   plus attachment, and "holds B's Equity" and "Partners" become conditions over cards. No facts between pairs of players
