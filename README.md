@@ -66,7 +66,7 @@ The designer page is a text editor for the rule language, with a line-numbered e
 - Start from a sample: **Load sample** has Hearts, Color Match, Rent Day, Startup Simulator and Venom (`src/games/hearts.rules`, `src/games/color-match.rules`, `src/games/rent-day.rules`, `src/games/startup-simulator.rules`, `src/games/venom.rules`).
 - A phrase the language doesn't know yet is flagged with the closest phrases it does know. **Copy for developer** copies a stub for a developer to implement; designers don't write code.
 - A name the rules never defined (a zone, phase, move, card value or attribute) is flagged with the closest names they do define, for the designer to fix.
-- **Play** is available once the rules read cleanly. It puts every seat on one screen (or one seat at a time, see below; pick the player count first when the game allows a range), with undo and restart. Editing the rules ends the playtest; Play starts a fresh game under the new rules.
+- **Play** is available once the rules read cleanly. It puts every seat on one screen, or one seat at a time when the table is too big for one (see below), with undo and restart; pick the player count first when the game allows a range. Editing the rules ends the playtest; Play starts a fresh game under the new rules.
 - **Download** and **Upload** move the text to and from a `.rules` file.
 
 **Board games.** A game can have a `Board:` section: a table of spaces for the pieces to loop round (a `color` column is drawn as a band on the space), a piece for each player, numbers each player holds (money, say) and dice. In a phase, each `A player may …` line becomes a button on that seat's panel, greyed with the reason on hover while it is not allowed. `When a piece passes …` and `When a player lands on …` rules run as pieces move. Each seat's panel in the playtest draws the board with its pieces and owners, a line with everyone's numbers, and the seat's buttons. `src/games/rent-day.rules` is a 2 to 8 player property-trading game written this way, with 108 examples:
@@ -155,7 +155,7 @@ Phase: playing
 **A table too big for one screen.** When a game's zones don't fit the table, the playtest shows one seat at a time, with a tab for each seat:
 
 - **The tabs.** A tab reads `p1`, or `p1 — to act` for the seat that must act. The tabs jump to the seat that must act when the turn moves on, Undo included; in between, any seat's tab can be opened to look at its table.
-- **The table.** The shared zones wrap onto lines across the top, each named above it. The seat's own zones run along the bottom, and the other seats' zones are left off. A row squeezes its cards to stay in its place.
+- **The table.** The shared zones wrap onto lines across the top, each named above it. The seat's own zones run along the bottom, and the other seats' zones are left off. A row's cards stand side by side, so every face can be read; a longer row squeezes them to stay in its place.
 - **The other seats.** Every player's line shows their numbers, how many cards each of their zones holds, and the start player: `p0 7 capital, 3 actions · bench 3 · backlog 1 · research 0 · start player`.
 - **Faces.** A card face shows its name and its first three columns, so a card table puts its key columns first. Pointing at a card shows all of it under the table: `Architect — cost 7 · skill software · output 3 · salary 2 · role Senior Developer · trait Clean Code`.
 - **Startup Simulator** plays this way.
