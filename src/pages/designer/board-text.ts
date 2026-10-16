@@ -9,6 +9,7 @@ import { joinAnd } from '@/engine/core/lang/refs';
 import type { CompiledGame, ZoneSpec } from '@/engine/core/lang/types';
 import { zoneIdFor, zoneInfo } from '@/engine/core/lang/zones';
 import { cardsByZone, type CardState, type PlayerId } from '@/engine/core/scene';
+import { seatNumber } from './board-controls';
 
 /**
  * A zone of a seat's Board: one each player has, that everyone can see. A zone where every card sits on a card is not one: its
@@ -29,7 +30,7 @@ const leadingWords = (name: string): string => {
   return last < 0 ? '' : name.slice(0, last);
 };
 
-const capitalized = (words: string): string => words.charAt(0).toUpperCase() + words.slice(1);
+const upperFirst = (words: string): string => words.charAt(0).toUpperCase() + words.slice(1);
 
 /**
  * The counts on a card read against its columns, one part each: 'Red 1/2 +3 new'. A count is read against the first column in
@@ -55,7 +56,7 @@ export function countParts(card: CardState, game: CompiledGame): string[] {
       const value = cardAttribute(card, rider, game);
       return value === 0 ? [] : [` +${value} ${rider.slice(0, -(count.length + 1))}`];
     });
-    return [`${capitalized(lead)} ${cardAttribute(card, count, game)}/${data[column]}${extras.join('')}`];
+    return [`${upperFirst(lead)} ${cardAttribute(card, count, game)}/${data[column]}${extras.join('')}`];
   });
 }
 
@@ -75,7 +76,7 @@ function cardsOnCards(game: CompiledGame, byZone: Map<string, CardState[]>): Map
   const rank = (zoneId: string): [number, number] => {
     const info = zoneInfo(game, zoneId);
     if (!info) return [game.zones.length, 0];
-    return [game.zones.indexOf(info.spec), info.seat === null ? 0 : Number(info.seat.slice(1))];
+    return [game.zones.indexOf(info.spec), info.seat === null ? 0 : seatNumber(info.seat)];
   };
   const zoneIds = [...byZone.keys()].sort((a, b) => {
     const [zoneA, seatA] = rank(a);

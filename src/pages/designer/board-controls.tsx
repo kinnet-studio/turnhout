@@ -5,7 +5,7 @@ import { factWords } from './board-grid';
 import { seatColor } from './seat-colors';
 
 /** The seat's number, so p10 comes after p9; anything that is not `p<n>` goes last. */
-const seatNumber = (seat: string): number => Number(/^p(\d+)$/.exec(seat)?.[1] ?? Infinity);
+export const seatNumber = (seat: string): number => Number(/^p(\d+)$/.exec(seat)?.[1] ?? Infinity);
 
 /** Every seat the board knows of, in seat order: those with a piece, a number to show, or already out. */
 function seatsOf(board: BoardView): string[] {
