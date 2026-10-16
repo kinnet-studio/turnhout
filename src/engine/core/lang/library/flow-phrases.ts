@@ -227,7 +227,7 @@ const oneCardScores: ScoreFn = (env, args, seat) => {
  * through the values worked out for cards, and a card without it counting 0, since a zone may well hold cards of several kinds.
  */
 const everyCardScoresItsNumber: ScoreFn = (env, [zone, attribute], seat) =>
-  totalOf(env, attribute as string, { kind: 'in', zones: [{ of: { seat }, zone: zone as string }], whose: null });
+  totalOf(env, attribute as string, { kind: 'in', zones: [{ of: { seat }, zone: zone as string }] });
 
 /** The seat whose score `better` prefers; a tie goes to the earlier seat. */
 const bestScore = (better: (score: number, best: number) => boolean): WinnerFn => (env: PhraseEnv, _args, scores) => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { innerEffect, matchEffectLine, matchLine, type LineCtx } from './compile-util';
+import { readsPressCard } from './compile-util';
 import type { Diagnostic } from './diagnostics';
 import { PhraseLibrary, STATIC_TYPES, emptyVocab } from './phrases';
 import { VOCAB_TYPES } from './refs';
@@ -7,6 +8,7 @@ import type { PhraseRef } from './types';
 import { compileGame } from './compile';
 import { createDefaultLibrary } from './library/index';
 import { TOTALS_GAME, vocabFor } from './testing';
+import { GUILD_GAME } from './testing';
 
 const library = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
   .cards('a deck called {name}', () => ({ kind: 'table', identities: [], start: 'deck', acesHigh: false }))
@@ -171,7 +173,7 @@ describe('a line run for each card of a group', () => {
     expect(matchEffectLine('For each card in their workshop, it loses its new red.', 5, button)).toEqual({
       kind: 'lang', phrase: 'for each', line: 5, text: 'For each card in their workshop, it loses its new red',
       args: [
-        { kind: 'in', zones: [{ of: { who: 'actor' }, zone: 'workshop' }], whose: null },
+        { kind: 'in', zones: [{ of: { who: 'actor' }, zone: 'workshop' }] },
         { kind: 'effect', phrase: 'it loses its {attribute}', args: ['new red'], line: 5, text: 'it loses its new red' },
       ],
     });
@@ -293,5 +295,51 @@ describe('the effect a line run for each card runs', () => {
   it('is the line it runs for each card', () => {
     const effect: PhraseRef = { kind: 'effect', phrase: 'it is {cardflag}', args: ['tired'], line: 3, text: 'it is tired' };
     expect(innerEffect({ kind: 'lang', phrase: 'for each', args: [{ kind: 'on it' }, effect], line: 3, text: 'For each card on it, it is tired' })).toBe(effect);
+  });
+});
+
+const guild = compileGame(GUILD_GAME, defaultLibrary).game!;
+/** The context of a line of GUILD_GAME, read with the default library, in a rule about what `about` says. */
+const guildCtx = (about: Partial<LineCtx> = {}): LineCtx & { diagnostics: Diagnostic[] } => ({
+  ...ctx(), library: defaultLibrary, vocab: vocabFor(guild), gameName: 'Guild', ...about, diagnostics: [],
+});
+
+describe('a test of a card that compares it with another', () => {
+  const NEEDS_MOVE = (line: string) => `“${line}” only makes sense in a rule about a player's move.`;
+  const NEEDS_CARD = (line: string) => `“${line}” only makes sense in a rule about a card, such as “When a card …”.`;
+  const WANTED = "they have a card in their workshop whose mark is the card's wants";
+  /** GUILD_GAME with `line` as the first Only if line of the button `button`. */
+  const guarded = (button: string, line: string) => GUILD_GAME.replace(`  ${button}\n`, `  ${button}\n    ${line}\n`);
+  const messages = (text: string) => compileGame(text, defaultLibrary).diagnostics.map((d) => [d.line, d.message]);
+  const lineOf = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+
+  it('needs a card move for the card it is compared with, on its line', () => {
+    const text = guarded('A player may stop.', `Only if ${WANTED}.`);
+    expect(messages(text)).toEqual([[lineOf(text, `    Only if ${WANTED}.`), NEEDS_MOVE(WANTED)]]);
+  });
+  it('reads it in a button that picks a card, whose press moves one', () => {
+    expect(messages(guarded('A player may start a card in their stash.', `Only if ${WANTED}.`))).toEqual([]);
+  });
+  it('needs a card for “its”, in a group of cards as well as alone', () => {
+    const alone = guildCtx({ player: true });
+    matchLine('condition', 'they have a card in their workshop whose mark is its wants', 4, alone);
+    matchLine('condition', 'the total red size of the cards in their workshop whose mark is its wants is 4', 5, alone);
+    expect(alone.diagnostics.map((d) => [d.line, d.message])).toEqual([
+      [4, NEEDS_CARD('they have a card in their workshop whose mark is its wants')],
+      [5, NEEDS_CARD('the total red size of the cards in their workshop whose mark is its wants is 4')],
+    ]);
+    const aboutCard = guildCtx({ player: true, card: true });
+    expect(matchLine('condition', 'they have a card in their workshop whose mark is its wants', 4, aboutCard)).toMatchObject({ kind: 'condition' });
+    expect(aboutCard.diagnostics).toEqual([]);
+  });
+  it('counts as reading the card of a press when it compares with one, and not when it compares with a value', () => {
+    const press = guildCtx({ inMove: true, player: true, card: true });
+    const readsCard = (line: string) =>
+      readsPressCard(defaultLibrary, { mode: 'all', refs: [matchLine('condition', line, 4, press)], text: line, line: 4 });
+    expect(readsCard(WANTED)).toBe(true);
+    expect(readsCard('they have a card in their workshop whose mark is clay')).toBe(false);
+    expect(readsCard('the total red size of the cards in their workshop whose mark is the card\'s wants is 4')).toBe(true);
+    expect(readsCard('the total red size of the cards in their workshop whose mark is clay is 4')).toBe(false);
+    expect(press.diagnostics).toEqual([]);
   });
 });

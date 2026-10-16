@@ -13,13 +13,21 @@ export type SeatRef = { seat: string } | { who: 'actor' | 'winner' | 'other' };
 export type ZoneRef = { shared: string } | { each: string } | { of: SeatRef; zone: string };
 export type CardMatch = { [attr: string]: Json };
 /**
- * Some cards a rule adds up or walks through: those in the zones, slot by slot, keeping only a card whose number `whose` names is more
- * than `above` when there is one; those on “it”, the card the rule is about; or the set a button's press picked.
+ * One test a card of a group passes: a number above a whole number, a value equal to one written, or equal to a value of the card
+ * a rule is about ('the card' a press moves, or 'it'). A card without the value never passes an equality.
+ */
+export type CardFilter =
+  | { attribute: string; above: number }
+  | { attribute: string; is: Json }
+  | { attribute: string; sameAs: { of: 'the card' | 'it'; attribute: string } };
+/**
+ * Some cards a rule adds up or walks through: those in the zones, slot by slot; those on “it”, the card the rule is about; or the set a
+ * button's press picked. Of any of them, only the cards that pass every test of `whose`, when there are some.
  */
 export type CardGroup =
-  | { kind: 'in'; zones: ZoneRef[]; whose: { attribute: string; above: number } | null }
-  | { kind: 'on it' }
-  | { kind: 'picked' };
+  | { kind: 'in'; zones: ZoneRef[]; whose?: CardFilter[] }
+  | { kind: 'on it'; whose?: CardFilter[] }
+  | { kind: 'picked'; whose?: CardFilter[] };
 /**
  * `onCards` is there only for a zone each player has whose line ends “, where every card is on a card”: every card in it must sit on
  * a card, and only such a zone may hold a card that sits on one.

@@ -1,0 +1,136 @@
+import { describe, expect, it } from 'vitest';
+import { cardById, zoneCards, type GameState } from '../../game-state';
+import type { PlayerId } from '../../scene';
+import { markOut } from '../board-state';
+import { createEngine, initialState } from '../build';
+import { compileGame } from '../compile';
+import { GUILD_GAME, runPhrase } from '../testing';
+import type { CompiledGame } from '../types';
+import { HOLDER_KEY, relocate } from '../zones';
+import { createDefaultLibrary } from './index';
+
+const lib = createDefaultLibrary();
+
+/** Compiles rules that must have no problems at all. */
+function compiled(text: string): CompiledGame {
+  const { game, diagnostics } = compileGame(text, lib);
+  expect(diagnostics).toEqual([]);
+  return game!;
+}
+
+const game = compiled(GUILD_GAME);
+const SEATS: PlayerId[] = ['p0', 'p1', 'p2'];
+const { engine, runtime } = createEngine(game, lib, 3, initialState(game, 1));
+/** The state once Setup has run, from seed 1: two jobs in each stash, the rest in the pile, the hands in the hall. */
+const setUp = engine.getState();
+const all = (name: string) => setUp.cards.filter((card) => card.data?.name === name).map((card) => card.id);
+const [vase, secondVase] = all('Vase');
+const [bowl] = all('Bowl');
+const [statue, secondStatue] = all('Statue');
+const [tower, secondTower] = all('Tower');
+const [potter] = all('Potter');
+const [smith] = all('Smith');
+
+/**
+ * p0's workshop holding a Vase (clay), p1's a Bowl (clay) and a Statue (stone), and p2's a Tower (no mark); and in p0's stash the other
+ * Vase (wanting nothing), Statue (wanting clay) and Tower (wanting stone), for p0 to move.
+ */
+const table = [
+  (state: GameState) => relocate(state, [vase], 'workshop-p0', game),
+  (state: GameState) => relocate(state, [bowl, statue], 'workshop-p1', game),
+  (state: GameState) => relocate(state, [tower], 'workshop-p2', game),
+  (state: GameState) => relocate(state, [secondVase, secondStatue, secondTower], 'stash-p0', game),
+].reduce((state, arrange) => arrange(state), setUp);
+
+/**
+ * A condition judged about `seat` for p0's press of the card `moved` in their stash, as the press of a button that picks a card is
+ * judged: “the card” is the card the press moves, and “they” the seat it is judged about.
+ */
+const holds = (text: string, moved: string, seat: PlayerId, state: GameState = table) => runPhrase<boolean>(lib, 'condition', text, runtime.env(
+  state, { verb: 'start', by: 'p0', cardId: moved, from: 'stash-p0', to: 'stash-p0' }, undefined, { player: seat, space: null, card: moved },
+));
+/** The seats a condition holds about, for p0's press of the card `moved`. */
+const holdsAbout = (text: string, moved: string, state: GameState = table) => SEATS.filter((seat) => holds(text, moved, seat, state));
+
+const HAVE = "they have a card in their workshop whose mark is the card's wants";
+const HAVE_NO = "they have no card in their workshop whose mark is the card's wants";
+const SOME = "some player has a card in their workshop whose mark is the card's wants";
+const ANOTHER = "another player has a card in their workshop whose mark is the card's wants";
+
+describe('a card of theirs compared with the card a press moves', () => {
+  it('finds a card whose mark is what the card wants, in the zone of the player it is judged about', () => {
+    // A Statue wants clay: p0's Vase and p1's Bowl make it, and p2's Tower makes nothing.
+    expect(holdsAbout(HAVE, secondStatue)).toEqual(['p0', 'p1']);
+    // A Tower wants stone: only p1's Statue makes it.
+    expect(holdsAbout(HAVE, secondTower)).toEqual(['p1']);
+  });
+  it('Review Focus: blank against blank: a card that wants nothing is given it by no card, not even one that makes nothing', () => {
+    expect(holdsAbout(HAVE, secondVase)).toEqual([]);
+    expect(holds(HAVE, secondVase, 'p2')).toBe(false);
+  });
+  it('says the opposite when they have no such card', () => {
+    expect(holdsAbout(HAVE_NO, secondStatue)).toEqual(['p2']);
+    expect(holdsAbout(HAVE_NO, secondTower)).toEqual(['p0', 'p2']);
+    expect(holdsAbout(HAVE_NO, secondVase)).toEqual(['p0', 'p1', 'p2']);
+  });
+  it('compares with a value written, a card without the value never passing', () => {
+    expect(holdsAbout('they have a card in their workshop whose mark is clay', secondVase)).toEqual(['p0', 'p1']);
+    expect(holdsAbout('they have a card in their workshop whose red size is 0', secondVase)).toEqual(['p2']);
+    expect(holdsAbout('they have a card in their workshop whose gold size is more than 3', secondVase)).toEqual(['p1', 'p2']);
+  });
+});
+
+describe('a card of any player compared with the card a press moves', () => {
+  it('finds one in the zone of any player still in, the one it is judged about included', () => {
+    expect(holds(SOME, secondTower, 'p0')).toBe(true);
+    expect(holds(SOME, secondTower, 'p1')).toBe(true);
+    expect(holds(SOME, secondVase, 'p0')).toBe(false);
+  });
+  it('finds one of another player only in the zones of the others', () => {
+    // Only p1 makes stone.
+    expect(holds(ANOTHER, secondTower, 'p1')).toBe(false);
+    expect(holds(ANOTHER, secondTower, 'p0')).toBe(true);
+  });
+  it('leaves out a player who is out', () => {
+    expect(holds(SOME, secondTower, 'p0', markOut(table, 'p1'))).toBe(false);
+    expect(holds(ANOTHER, secondTower, 'p0', markOut(table, 'p1'))).toBe(false);
+  });
+});
+
+describe('a value a card has none of', () => {
+  it('reads the card a press moves', () => {
+    expect(holds('the card has no wants', secondVase, 'p0')).toBe(true);
+    expect(holds('the card has no wants', secondStatue, 'p0')).toBe(false);
+  });
+  it('reads the card a rule is about', () => {
+    const about = (id: string) => runtime.env(table, undefined, undefined, { player: null, space: null, card: id });
+    expect(runPhrase<boolean>(lib, 'condition', 'it has no mark', about(tower))).toBe(true);
+    expect(runPhrase<boolean>(lib, 'condition', 'it has no mark', about(vase))).toBe(false);
+  });
+});
+
+describe('a group of cards kept by a test', () => {
+  it('adds up only the cards that pass it', () => {
+    const aboutP1 = (state: GameState) => runtime.env(state, undefined, undefined, { player: 'p1', space: null, card: null });
+    const total = (n: number, state: GameState) =>
+      runPhrase<boolean>(lib, 'condition', `the total red size of the cards in their workshop whose mark is clay is ${n}`, aboutP1(state));
+    // The Bowl's 1, and with the Vase its 3 too; the Statue's stone mark is left out.
+    expect(total(1, table)).toBe(true);
+    expect(total(4, relocate(table, [secondVase], 'workshop-p1', game))).toBe(true);
+  });
+});
+
+describe('finishing a job', () => {
+  const HIRE = 'hire a card from the hall to a card in their workshop';
+
+  it('sends the grumpy hands on it to the scrap and the rest to the hall, then the job to the scrap', () => {
+    const { engine: playing } = createEngine(game, lib, 3, relocate(setUp, [vase], 'workshop-p0', game));
+    expect(playing.dispatch({ type: HIRE, by: 'p0', cardId: smith, onto: vase })).toMatchObject({ ok: true });
+    expect(playing.dispatch({ type: HIRE, by: 'p0', cardId: potter, onto: vase })).toMatchObject({ ok: true });
+    expect(playing.dispatch({ type: 'finish a card in their workshop', by: 'p0', cardId: vase })).toMatchObject({ ok: true });
+    const state = playing.getState();
+    expect(zoneCards(state, 'scrap').map((card) => card.id)).toEqual([smith, vase]);
+    expect(cardById(state, potter)?.zoneId).toBe('hall');
+    expect(state.cards.filter((card) => card.data !== undefined && Object.hasOwn(card.data, HOLDER_KEY))).toEqual([]);
+  });
+});

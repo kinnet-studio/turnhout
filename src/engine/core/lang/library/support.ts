@@ -6,7 +6,8 @@ import { pieceAt } from '../board-state';
 import { cardAttribute, cardFact } from '../card-facts';
 import { WORKED_KEPT } from '../compile-util';
 import { noSuchNumber, RuleError } from '../diagnostics';
-import type { CardGroup, MoveInfo, PhraseEnv, ZoneRef } from '../types';
+import { canon } from '../refs';
+import type { CardFilter, CardGroup, MoveInfo, PhraseEnv, ZoneRef } from '../types';
 import { resolveSeat, resolveZoneIds } from '../zones';
 
 const OWNER_WORDS = { actor: 'their', winner: "the winner's", other: "the other player's" };
@@ -140,30 +141,64 @@ function numberIfAny(env: PhraseEnv, card: CardState, name: string): number | nu
   return value;
 }
 
-/** Every card in the zones a reference names, zone by zone and slot by slot. */
-export const cardsInZones = (env: PhraseEnv, ref: ZoneRef): CardState[] => resolveZoneIds(ref, env).flatMap((id) => zoneCards(env.state, id));
+/** Every card in the zones a reference names, zone by zone and slot by slot. `actor` is who “their” means. */
+export const cardsInZones = (env: PhraseEnv, ref: ZoneRef, actor?: PlayerId): CardState[] =>
+  resolveZoneIds(ref, env, actor).flatMap((id) => zoneCards(env.state, id));
+
+/** The card a test compares a card with: the card the press moves, or “it”, the card the rule is about. */
+function comparedCard(env: PhraseEnv, of: 'the card' | 'it'): CardState {
+  if (of === 'the card') return movedCard(env);
+  const id = cardOf(env);
+  const card = cardById(env.state, id);
+  if (!card) throw new Error(`No card ${id} to judge.`);
+  return card;
+}
 
 /**
- * The cards of a group, as a rule that adds them up or walks through them reads them: those in its zones, zone by zone and slot by slot,
- * keeping only a card whose number is more than the group says when it says one (a card without that number is not kept); those on the
- * card the rule is about; or the set the button's press picked, in the order it gave them.
+ * Whether two values are the same as a test of a card compares them: text in any capitals, a number only with the same number. A card
+ * without the value matches nothing, not even a card without it: a card that wants nothing is given it by no card, though some make nothing.
+ */
+function sameValue(have: Json | null, wanted: Json | null): boolean {
+  if (have === null || wanted === null) return false;
+  if (typeof have === 'string' && typeof wanted === 'string') return canon(have) === canon(wanted);
+  return have === wanted;
+}
+
+/**
+ * Whether a card passes every test: a number more than a whole number, read as a group reads numbers (a card without that number does not
+ * pass); or a value the same as one written, or as a value of the card the test compares it with, each read as every phrase reads one.
+ */
+export function passes(env: PhraseEnv, card: CardState, filters: CardFilter[]): boolean {
+  return filters.every((filter) => {
+    if ('above' in filter) {
+      const have = numberIfAny(env, card, filter.attribute);
+      return have !== null && have > filter.above;
+    }
+    const wanted = 'is' in filter ? filter.is : cardValueOf(env, comparedCard(env, filter.sameAs.of), filter.sameAs.attribute);
+    return sameValue(cardValueOf(env, card, filter.attribute), wanted);
+  });
+}
+
+/** The cards a group names before its tests: those in its zones, those on the card the rule is about, or the set the press picked. */
+function cardsNamed(env: PhraseEnv, group: CardGroup): CardState[] {
+  if (group.kind === 'on it') return cardsOn(env.state, cardOf(env));
+  if (group.kind === 'in') return group.zones.flatMap((ref) => cardsInZones(env, ref));
+  return thePickedCards(env).map((id) => {
+    const card = cardById(env.state, id);
+    if (!card) throw new Error(`No card ${id} among the picked cards.`);
+    return card;
+  });
+}
+
+/**
+ * The cards of a group, as a rule that adds them up or walks through them reads them: those in its zones, zone by zone and slot by slot;
+ * those on the card the rule is about; or the set the button's press picked, in the order it gave them. Of those, only the cards that
+ * pass the group's tests, when it has some (see `passes`).
  */
 export function cardsIn(env: PhraseEnv, group: CardGroup): CardState[] {
-  if (group.kind === 'on it') return cardsOn(env.state, cardOf(env));
-  if (group.kind === 'picked') {
-    return thePickedCards(env).map((id) => {
-      const card = cardById(env.state, id);
-      if (!card) throw new Error(`No card ${id} among the picked cards.`);
-      return card;
-    });
-  }
-  const { zones, whose } = group;
-  const cards = zones.flatMap((ref) => cardsInZones(env, ref));
-  if (whose === null) return cards;
-  return cards.filter((card) => {
-    const have = numberIfAny(env, card, whose.attribute);
-    return have !== null && have > whose.above;
-  });
+  const cards = cardsNamed(env, group);
+  const whose = group.whose ?? [];
+  return whose.length === 0 ? cards : cards.filter((card) => passes(env, card, whose));
 }
 
 /**

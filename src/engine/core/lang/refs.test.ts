@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   STANDARD_RANKS, STANDARD_SUITS, VOCAB_TYPES, counted, misnamedParam, parseParam, participle, pastWording, plural, secondPersonWords, singularForms, thirdPerson, thirdPersonWords,
 } from './refs';
+import { compileGame } from './compile';
+import { createDefaultLibrary } from './library/index';
 import { PhraseLibrary, STATIC_TYPES, emptyVocab, stubFor, vocabFrom } from './phrases';
 import { FIXTURE_SPACES, fixtureBoardGame } from './testing';
+import { GUILD_GAME, vocabFor } from './testing';
 import type { Vocab } from './types';
 
 const V: Vocab = {
@@ -47,7 +50,7 @@ describe('vocabulary types', () => {
       ['action', '[action]'], ['targetaction', '[action]'], ['amountaction', '[action]'], ['pickaction', '[action]'], ['cardaction', '[action]'], ['done', '[action done]'],
       ['spacekind', '[kind of space]'], ['spaceflag', '[space fact]'], ['spacenumber', '[space fact]'], ['cardflag', '[card fact]'],
       ['playerflag', '[player fact]'], ['playernumber', '[player fact]'], ['gamenumber', '[game number]'], ['banked', '[bank item]'],
-      ['holder', '[the player who is …]'], ['cardgroup', '[cards]'],
+      ['holder', '[the player who is …]'], ['cardgroup', '[cards]'], ['cardfilter', '[test]'],
     ]);
     const order = Object.fromEntries(VOCAB_TYPES.filter((t) => t.stubOrder !== undefined).map((t) => [t.name, t.stubOrder]));
     // A stub never turns words into a space: a name like "Go To Jail" would swallow the words of an ordinary sentence.
@@ -991,16 +994,16 @@ describe('a group of cards', () => {
 
   it('reads the cards in one or more zones', () => {
     expect(parseParam('cardgroup', 'the cards in their crew and their idle', CREW)).toEqual({
-      value: { kind: 'in', zones: [their('crew'), their('idle')], whose: null },
+      value: { kind: 'in', zones: [their('crew'), their('idle')] },
     });
-    expect(parseParam('cardgroup', 'the cards in the hall', CREW)).toEqual({ value: { kind: 'in', zones: [{ shared: 'hall' }], whose: null } });
+    expect(parseParam('cardgroup', 'the cards in the hall', CREW)).toEqual({ value: { kind: 'in', zones: [{ shared: 'hall' }] } });
   });
   it('reads the cards in a zone whose number is more than some', () => {
     expect(parseParam('cardgroup', 'the cards in the hall whose skill is more than 1', CREW)).toEqual({
-      value: { kind: 'in', zones: [{ shared: 'hall' }], whose: { attribute: 'skill', above: 1 } },
+      value: { kind: 'in', zones: [{ shared: 'hall' }], whose: [{ attribute: 'skill', above: 1 }] },
     });
     expect(parseParam('cardgroup', 'the cards in their crew whose wage are more than 0', CREW)).toEqual({
-      value: { kind: 'in', zones: [their('crew')], whose: { attribute: 'wage', above: 0 } },
+      value: { kind: 'in', zones: [their('crew')], whose: [{ attribute: 'wage', above: 0 }] },
     });
   });
   it('reads the cards on it and the picked cards', () => {
@@ -1022,5 +1025,55 @@ describe('a group of cards', () => {
     expect(misnamedParam('cardgroup', 'the cards in the hall whose skil is more than 1', CREW)).toMatchObject({ suggestions: ['skill'] });
     expect(misnamedParam('cardgroup', 'the cards in the hall whose skill is more than 1', CREW)).toBeNull();
     expect(misnamedParam('cardgroup', 'the cards under it', CREW)).toBeNull();
+  });
+});
+
+describe('a test of a card', () => {
+  // The words of a game whose jobs want a mark another job makes: a mark, what a job wants, its sizes, and a hand's mood.
+  const GUILD = vocabFor(compileGame(GUILD_GAME, createDefaultLibrary()).game!);
+  const their = (zone: string) => ({ of: { who: 'actor' }, zone });
+  const test = (text: string) => parseParam('cardfilter', text, GUILD);
+
+  it('compares a value with one of the card a press moves, or of the card a rule is about', () => {
+    expect(test("mark is the card's wants")).toEqual({ value: { attribute: 'mark', sameAs: { of: 'the card', attribute: 'wants' } } });
+    expect(test('mark is its wants')).toEqual({ value: { attribute: 'mark', sameAs: { of: 'it', attribute: 'wants' } } });
+  });
+  it('compares a value with one some card has, kept as the table writes it', () => {
+    expect(test('mood is Grumpy')).toEqual({ value: { attribute: 'mood', is: 'grumpy' } });
+    expect(test('red size is 3')).toEqual({ value: { attribute: 'red size', is: 3 } });
+  });
+  it('keeps a number above a whole number', () => {
+    expect(test('red size is more than 1')).toEqual({ value: { attribute: 'red size', above: 1 } });
+    expect(test('red size are more than 1')).toEqual({ value: { attribute: 'red size', above: 1 } });
+  });
+  it('says so of a value no card has under that name', () => {
+    expect(test('mood is glum')).toEqual({ error: 'No card has “glum” as its mood.' });
+    // Clay is a mark, not a mood.
+    expect(test('mood is clay')).toEqual({ error: 'No card has “clay” as its mood.' });
+  });
+  it('names a misnamed attribute as the attribute type does, on either side', () => {
+    expect(test('mod is grumpy')).toBeNull();
+    expect(misnamedParam('cardfilter', 'mod is grumpy', GUILD)).toEqual(misnamedParam('attribute', 'mod', GUILD));
+    expect(misnamedParam('cardfilter', "mark is the card's wnats", GUILD)).toEqual(misnamedParam('attribute', 'wnats', GUILD));
+    expect(misnamedParam('cardfilter', 'mark is its wnats', GUILD)).toMatchObject({ suggestions: ['wants'] });
+    expect(misnamedParam('cardfilter', 'mark is clay', GUILD)).toBeNull();
+  });
+  it('reads a group of cards kept by a test', () => {
+    expect(parseParam('cardgroup', 'the cards in their workshop whose mark is clay', GUILD)).toEqual({
+      value: { kind: 'in', zones: [their('workshop')], whose: [{ attribute: 'mark', is: 'clay' }] },
+    });
+    expect(parseParam('cardgroup', 'the cards on it whose mood is grumpy', GUILD)).toEqual({
+      value: { kind: 'on it', whose: [{ attribute: 'mood', is: 'grumpy' }] },
+    });
+    expect(parseParam('cardgroup', "the picked cards whose mark is the card's wants", GUILD)).toEqual({
+      value: { kind: 'picked', whose: [{ attribute: 'mark', sameAs: { of: 'the card', attribute: 'wants' } }] },
+    });
+  });
+  it('(guard: passes before and after) reads a group with no test without one', () => {
+    expect(parseParam('cardgroup', 'the cards on it', GUILD)).toEqual({ value: { kind: 'on it' } });
+  });
+  it('passes on what is wrong with the test of a group', () => {
+    expect(parseParam('cardgroup', 'the cards on it whose mood is glum', GUILD)).toEqual({ error: 'No card has “glum” as its mood.' });
+    expect(misnamedParam('cardgroup', 'the cards in their workshop whose mod is grumpy', GUILD)).toEqual(misnamedParam('attribute', 'mod', GUILD));
   });
 });

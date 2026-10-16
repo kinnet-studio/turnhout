@@ -3,7 +3,7 @@ import { RuleError, type Diagnostic } from './diagnostics';
 import type { OutlineNode } from './outline';
 import { normalizeLine, stubFor, type MatchResult, type Misnamed, type PhraseLibrary, type RegisteredOpts } from './phrases';
 import { misnamedParam, parseParam } from './refs';
-import type { CardGroup, CondGroup, ParamType, PhraseKind, PhraseRef, Vocab } from './types';
+import type { CardFilter, CardGroup, CondGroup, ParamType, PhraseKind, PhraseRef, Vocab } from './types';
 
 /**
  * What every line of one compile stage shares. Never change `vocab` after a line has been matched with it. `inMove`,
@@ -152,56 +152,75 @@ function tryMisnamed(kinds: PhraseKind[], text: string, ctx: LineCtx): Misnamed 
 
 const PARAM = /\{([^{}]+)\}/g;
 
-/** The groups of cards among a phrase's arguments: those its pattern reads as `{cardgroup}`, as the library gives one argument a parameter. */
-function cardGroupsOf(pattern: string, args: Json[]): CardGroup[] {
-  // Asked of every line read and of every press judged, so the many phrases without a group skip the reading of their parameters.
-  if (!pattern.includes('{cardgroup}')) return [];
+/** The groups of cards among a phrase's arguments, and every test of a card among them: alone, or a test of one of the groups. */
+type CardArgs = { groups: CardGroup[]; filters: CardFilter[] };
+const NO_CARD_ARGS: CardArgs = { groups: [], filters: [] };
+
+/** The groups and the tests a line reads, given those it has alone: each group's own tests are read with them. */
+const withTheirTests = (groups: CardGroup[], filters: CardFilter[] = []): CardArgs =>
+  ({ groups, filters: [...filters, ...groups.flatMap((group) => group.whose ?? [])] });
+
+/** The groups and tests of cards among a phrase's arguments: those its pattern reads as `{cardgroup}` and `{cardfilter}`. */
+function cardArgsOf(pattern: string, args: Json[]): CardArgs {
+  // Asked of every line read and of every press judged, so the many phrases without either skip the reading of their parameters.
+  if (!pattern.includes('{cardgroup}') && !pattern.includes('{cardfilter}')) return NO_CARD_ARGS;
   const types = [...pattern.matchAll(PARAM)].map((found) => found[1]);
-  return args.filter((_, at) => types[at] === 'cardgroup') as CardGroup[];
+  const ofType = <T>(type: string) => args.filter((_, at) => types[at] === type) as T[];
+  return withTheirTests(ofType<CardGroup>('cardgroup'), ofType<CardFilter>('cardfilter'));
 }
 
-/** Whether a group is “the cards on it”, which reads the card the rule is about, or “the picked cards”, which reads a press's set. */
-const readsItsCard = (groups: CardGroup[]): boolean => groups.some((group) => group.kind === 'on it');
-const readsPickedCards = (groups: CardGroup[]): boolean => groups.some((group) => group.kind === 'picked');
+/** Whether a test compares a card with the card a press moves (“the card's”) or with the card the rule is about (“its”). */
+const comparesWith = (of: 'the card' | 'it') => (filter: CardFilter): boolean => 'sameAs' in filter && filter.sameAs.of === of;
+
+/**
+ * Whether the groups and tests read “it”, the card the rule is about: “the cards on it”, or a test that compares with “its” value. Whether
+ * they read the card a press moves: a test that compares with “the card's” value. Whether they read “the picked cards” of a press's set.
+ */
+const readsItsCard = ({ groups, filters }: CardArgs): boolean => groups.some((group) => group.kind === 'on it') || filters.some(comparesWith('it'));
+const readsMovedCard = ({ filters }: CardArgs): boolean => filters.some(comparesWith('the card'));
+const readsPickedCards = ({ groups }: CardArgs): boolean => groups.some((group) => group.kind === 'picked');
 
 /**
  * Whether a line of the group reads a card a press is about: the card a move makes, or “it”, the picked cards of a set, or the
- * target card. It may read one through a group of cards too: a total of “the cards on it” or of “the picked cards” changes with the cards
- * pressed as surely as “it” does, so it can't be judged before they are known, nor read from a zone the presser can't see. Only such
- * phrases may, so a group without one says the same of every card. A ref nobody wrote a phrase for reads nothing.
+ * target card. It may read one through a group of cards or a test of one too: a total of “the cards on it” or of “the picked cards”, or a
+ * test that compares a card with “the card's” value or “its”, changes with the cards pressed as surely as “it” does, so it can't be judged
+ * before they are known, nor read from a zone the presser can't see. Only such phrases may, so a group without one says the same of every
+ * card. A ref nobody wrote a phrase for reads nothing.
  */
 export function readsPressCard(library: PhraseLibrary, group: CondGroup): boolean {
   return group.refs.some((ref) => {
     const entry = ref.kind === 'lang' ? undefined : library.get(ref.kind, ref.phrase);
     if (entry === undefined) return false;
-    const groups = cardGroupsOf(ref.phrase, ref.args);
-    return entry.needsMove || entry.needsCard || entry.needsCards || entry.needsOnto || readsItsCard(groups) || readsPickedCards(groups);
+    const cards = cardArgsOf(ref.phrase, ref.args);
+    return entry.needsMove || entry.needsCard || entry.needsCards || entry.needsOnto
+      || readsItsCard(cards) || readsMovedCard(cards) || readsPickedCards(cards);
   });
 }
 
 /**
  * What a phrase needs that the game or the rule around it does not give, said for the designer; null when it has all it
  * needs. The first lack is the one reported, and a board or dice comes first: no rule can make up for a game without them. A group
- * of cards among `groups` needs what it reads: “the cards on it” a card, “the picked cards” a button that picks some, and the cards
- * in their zones a player, as any of their zones does.
+ * of cards or a test among `cards` needs what it reads: “the cards on it” a card, “the picked cards” a button that picks some, the cards
+ * in their zones a player, as any of their zones does, a test that compares with “the card's” value a card move, and one that compares
+ * with “its” a card.
  */
-function unmetNeed(entry: RegisteredOpts | undefined, args: Json[], clean: string, ctx: LineCtx, groups: CardGroup[] = []): string | null {
+function unmetNeed(entry: RegisteredOpts | undefined, args: Json[], clean: string, ctx: LineCtx, cards: CardArgs = NO_CARD_ARGS): string | null {
   // A game has a board when its Board: section has a loop of spaces, and dice only come with a board.
   if (entry?.needsBoard && ctx.vocab.spaces.length === 0) return NEEDS_BOARD(clean);
   if (entry?.needsDice && !ctx.vocab.dice) return NEEDS_DICE(clean);
   if (entry?.needsTwoDice && ctx.vocab.diceCount !== 2) return NEEDS_TWO_DICE;
   const aboutPlayer = ctx.inMove || ctx.player;
-  if (!ctx.inMove && entry?.needsMove) return `“${clean}” only makes sense in a rule about a player's move.`;
+  if (!ctx.inMove && (entry?.needsMove || readsMovedCard(cards))) return `“${clean}” only makes sense in a rule about a player's move.`;
   if (!aboutPlayer && entry?.needsPlayer) {
     return `“${clean}” only makes sense in a rule about a player, such as a move, an action or a “When a player …” rule.`;
   }
   if (!aboutPlayer && args.some(mentionsActor)) return `“${clean}” only makes sense in a rule about a player's move.`;
   if (!ctx.space && entry?.needsSpace) return `“${clean}” only makes sense in a rule about a space, such as an action or a “lands on” rule.`;
-  if (!ctx.card && (entry?.needsCard || readsItsCard(groups))) return `“${clean}” only makes sense in a rule about a card, such as “When a card …”.`;
+  if (!ctx.card && (entry?.needsCard || readsItsCard(cards))) return `“${clean}” only makes sense in a rule about a card, such as “When a card …”.`;
   if (!ctx.drawn && entry?.needsDrawnCard) return `“${clean}” only makes sense in a card's says column.`;
   if (!ctx.amount && entry?.needsAmount) return NEEDS_AMOUNT(clean);
   if (!ctx.picked && entry?.needsPick) return NEEDS_PICK(clean);
-  if (!ctx.cards && (entry?.needsCards || readsPickedCards(groups))) return NEEDS_CARDS(clean);
+  if (!ctx.cards && (entry?.needsCards || readsPickedCards(cards))) return NEEDS_CARDS(clean);
   if (!ctx.onto && entry?.needsOnto) return NEEDS_ONTO(clean);
   if (entry?.needsPayment && ctx.vocab.payWith === null) return NEEDS_PAYMENT;
   return null;
@@ -241,7 +260,7 @@ export function matchLine(
   switch (result.status) {
     case 'ok': {
       const entry = ctx.library.get(found, result.pattern);
-      const problem = unmetNeed(entry, result.args, clean, ctx, cardGroupsOf(result.pattern, result.args))
+      const problem = unmetNeed(entry, result.args, clean, ctx, cardArgsOf(result.pattern, result.args))
         ?? writesWorked(entry, result.args, found, ctx);
       if (problem) {
         addProblem(ctx.diagnostics, line, problem, { kind: 'invalid', text: clean });
@@ -335,7 +354,7 @@ function matchForEachLine(body: string, clean: string, line: number, ctx: LineCt
   const group = read.value as CardGroup;
   // The words before the comma, as written: “For each card in their workshop”.
   const written = clean.slice(0, clean.length - body.length + chosen.head.length);
-  const unmet = unmetNeed(undefined, [group], written, ctx, [group]);
+  const unmet = unmetNeed(undefined, [group], written, ctx, withTheirTests([group]));
   if (unmet !== null) return refuse(unmet);
   return { kind: 'lang', phrase: 'for each', args: [group, matchLine('effect', chosen.effect, line, each)], line, text: clean };
 }

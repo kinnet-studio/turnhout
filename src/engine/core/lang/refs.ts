@@ -511,46 +511,122 @@ const CARDCLASS: ParamType = {
   loose: looseAs(ANY_TEXT, misnamedCardClass),
 };
 
-const ON_IT = /^the cards on it$/i;
-const PICKED = /^the picked cards$/i;
-/** group 1 = the zones, group 2 = the number that must be more than group 3, when there is one */
-const CARDS_IN = /^the cards in (.+?)(?: whose (.+) (?:is|are) more than (-?\d+))?$/i;
+// ---- tests of a card -----------------------------------------------------------------------------
 
-const cardGroupSource = (vocab: Vocab): string =>
-  `(?:the cards on it|the picked cards|the cards in ${ZONES.source(vocab)}(?: whose ${ATTRIBUTE.source(vocab)} (?:is|are) more than -?\\d+)?)`;
+/** The words after “is ” that make a test some other test than a value written: a number above some, or a value of another card. */
+const NOT_WRITTEN = `(?!more than |the card${APOSTROPHE}s |its )`;
 
-/** The zones and the number of “the cards in …”, each read by its own type, so that each says what is wrong with it. */
-function resolveCardGroup(text: string, vocab: Vocab): Parsed {
-  if (ON_IT.test(text)) return { value: { kind: 'on it' } };
-  if (PICKED.test(text)) return { value: { kind: 'picked' } };
-  const found = CARDS_IN.exec(text);
-  if (!found) return unknownText(text);
-  const [, zonesText, attribute, above] = found;
-  const zones = parseParam('zones', zonesText, vocab) ?? unknownText(zonesText);
-  if ('error' in zones) return zones;
-  if (attribute === undefined) return { value: { kind: 'in', zones: zones.value, whose: null } };
-  const named = parseParam('attribute', attribute, vocab) ?? unknownText(attribute);
-  if ('error' in named) return named;
-  return { value: { kind: 'in', zones: zones.value, whose: { attribute: named.value as string, above: Number(above) } } };
+/**
+ * A test of a card: “{attribute} is/are more than {int}”, “{attribute} is the card's {attribute}”, “{attribute} is its {attribute}”,
+ * or “{attribute} is” a number or a value written. Any written words are read as a value, so that one no card has is told so.
+ */
+const cardFilterSource = (vocab: Vocab): string => {
+  const attribute = ATTRIBUTE.source(vocab);
+  return `${attribute} (?:(?:is|are) more than -?\\d+|is the card${APOSTROPHE}s ${attribute}|is its ${attribute}|is ${NOT_WRITTEN}${ANY_TEXT})`;
+};
+
+/** group 1 = the attribute tested; then one of: 2 = the number to be more than, 3 = an attribute of the card, 4 = one of it, 5 = a value */
+const filterParts = (vocab: Vocab): RegExp =>
+  memo(vocab, 'filter-parts', () => {
+    const attribute = ATTRIBUTE.source(vocab);
+    return new RegExp(
+      `^(${attribute}) (?:(?:is|are) more than (-?\\d+)|is the card${APOSTROPHE}s (${attribute})|is its (${attribute})|is ${NOT_WRITTEN}(.+))$`, 'i',
+    );
+  });
+
+/** The same parts as `filterParts`, with any text for the attributes: group 1 = the attribute tested, 2 or 3 = the other card's. */
+const LOOSE_FILTER = new RegExp(`^(.+?) (?:(?:is|are) more than -?\\d+|is the card${APOSTROPHE}s (.+)|is its (.+)|is .+)$`, 'i');
+const WHOLE_NUMBER = /^-?\d+$/;
+
+/** A value written in a test, as the table writes it: a whole number, or a value some card has under that attribute, in any capitals. */
+function writtenValue(attribute: string, text: string, vocab: Vocab): Parsed {
+  if (WHOLE_NUMBER.test(text)) return { value: Number(text) };
+  const found = vocab.cardValues.find((v) => v.attribute === attribute && canon(String(v.value)) === canon(text));
+  return found ? { value: found.value } : { error: `No card has “${text}” as its ${attribute}.` };
 }
 
-/** “the cards in their crwe”: a zone, or the number after “whose”, that the game never defined, as its own type says it. */
+function resolveCardFilter(text: string, vocab: Vocab): Parsed {
+  const found = filterParts(vocab).exec(text);
+  if (!found) return unknownText(text);
+  const [, tested, above, theCards, its, written] = found;
+  // Each attribute is one the strict pattern found, so it reads as one: the declared name, for a singular too.
+  const named = (words: string) => (parseParam('attribute', words, vocab) as { value: string }).value;
+  const attribute = named(tested);
+  if (above !== undefined) return { value: { attribute, above: Number(above) } };
+  if (theCards !== undefined) return { value: { attribute, sameAs: { of: 'the card', attribute: named(theCards) } } };
+  if (its !== undefined) return { value: { attribute, sameAs: { of: 'it', attribute: named(its) } } };
+  const value = writtenValue(attribute, written, vocab);
+  return 'error' in value ? value : { value: { attribute, is: value.value } };
+}
+
+/** “mod is grumpy” or “mark is the card's wnats”: an attribute on either side that the game never defined, as the attribute type says it. */
+function misnamedCardFilter(text: string, vocab: Vocab): NameProblem | null {
+  const found = LOOSE_FILTER.exec(text);
+  if (!found) return null;
+  const [, tested, other = found[3]] = found;
+  return misnamedParam('attribute', tested, vocab) ?? (other === undefined ? null : misnamedParam('attribute', other, vocab));
+}
+
+/** One test a card of a group passes (a `CardFilter`): what follows “whose”. */
+const CARDFILTER: ParamType = {
+  name: 'cardfilter', label: '[test]',
+  source: (vocab) => bounded(cardFilterSource(vocab)),
+  resolve: resolveCardFilter,
+  loose: looseAs(`${ANY_TEXT} (?:is|are) ${ANY_TEXT}`, misnamedCardFilter),
+};
+
+// ---- groups of cards -----------------------------------------------------------------------------
+
+/** group 1 = the test after “whose”, here and in PICKED, when there is one */
+const ON_IT = /^the cards on it(?: whose (.+))?$/i;
+const PICKED = /^the picked cards(?: whose (.+))?$/i;
+/** group 1 = the zones, group 2 = the test after “whose”, when there is one */
+const CARDS_IN = /^the cards in (.+?)(?: whose (.+))?$/i;
+
+const cardGroupSource = (vocab: Vocab): string =>
+  `(?:the cards on it|the picked cards|the cards in ${ZONES.source(vocab)})(?: whose ${CARDFILTER.source(vocab)})?`;
+
+/** The group with the test written after “whose”, read by its own type, as a one-item `whose`; with none written, it has no `whose`. */
+function withTest(group: { [key: string]: Json }, test: string | undefined, vocab: Vocab): Parsed {
+  if (test === undefined) return { value: group };
+  const filter = parseParam('cardfilter', test, vocab) ?? unknownText(test);
+  return 'error' in filter ? filter : { value: { ...group, whose: [filter.value] } };
+}
+
+/** The zones and the test of a group, each read by its own type, so that each says what is wrong with it. */
+function resolveCardGroup(text: string, vocab: Vocab): Parsed {
+  const onIt = ON_IT.exec(text);
+  if (onIt) return withTest({ kind: 'on it' }, onIt[1], vocab);
+  const picked = PICKED.exec(text);
+  if (picked) return withTest({ kind: 'picked' }, picked[1], vocab);
+  const found = CARDS_IN.exec(text);
+  if (!found) return unknownText(text);
+  const [, zonesText, test] = found;
+  const zones = parseParam('zones', zonesText, vocab) ?? unknownText(zonesText);
+  if ('error' in zones) return zones;
+  return withTest({ kind: 'in', zones: zones.value }, test, vocab);
+}
+
+/** “the cards in their crwe”: a zone, or an attribute of the test after “whose”, that the game never defined, as its own type says it. */
 function misnamedCardGroup(text: string, vocab: Vocab): NameProblem | null {
+  const tested = (test: string | undefined) => (test === undefined ? null : misnamedParam('cardfilter', test, vocab));
+  const others = ON_IT.exec(text) ?? PICKED.exec(text);
+  if (others) return tested(others[1]);
   const found = CARDS_IN.exec(text);
   if (!found) return null;
-  const [, zones, attribute] = found;
-  return misnamedParam('zones', zones, vocab) ?? (attribute === undefined ? null : misnamedParam('attribute', attribute, vocab));
+  const [, zones, test] = found;
+  return misnamedParam('zones', zones, vocab) ?? tested(test);
 }
 
 /**
- * Some cards a rule adds up or walks through (a `CardGroup`): “the cards in {zones}”, maybe with “whose {attribute} is more than {int}”,
- * “the cards on it” or “the picked cards”.
+ * Some cards a rule adds up or walks through (a `CardGroup`): “the cards in {zones}”, “the cards on it” or “the picked cards”, each
+ * maybe with “whose {cardfilter}”.
  */
 const CARDGROUP: ParamType = {
   name: 'cardgroup', label: '[cards]',
   source: (vocab) => bounded(cardGroupSource(vocab)),
   resolve: resolveCardGroup,
-  loose: looseAs(`the cards in ${ANY_TEXT}`, misnamedCardGroup),
+  loose: looseAs(`(?:the cards in ${ANY_TEXT}|the cards on it whose ${ANY_TEXT}|the picked cards whose ${ANY_TEXT})`, misnamedCardGroup),
 };
 
 // ---- board: spaces, counters and actions -------------------------------------------------------
@@ -833,7 +909,7 @@ const DONE: ParamType = {
 export const VOCAB_TYPES: ParamType[] = [
   ZONE, ZONES, PERZONE, SHAREDZONE, PLAYER, PLAYERS, PHASE, MOVE, ATTRIBUTE, CARD, CARDLIST, CARDCLASS, SPACE, SPACECLASS, SPACEATTR, COUNTER, ACTION,
   TARGETACTION, AMOUNTACTION, PICKACTION, CARDACTION, DONE, SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, PLAYERFLAG, PLAYERNUMBER, GAMENUMBER, BANKED,
-  HOLDER, CARDGROUP,
+  HOLDER, CARDGROUP, CARDFILTER,
 ];
 
 const TYPES_BY_NAME = new Map(VOCAB_TYPES.map((t) => [t.name, t] as const));

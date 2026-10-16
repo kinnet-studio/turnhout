@@ -438,6 +438,36 @@ export const SUBJECT = [
   'Busy:', '  Only if some card on it is working.',
 ].join('\n');
 
+/**
+ * A card game of jobs that want a mark another job makes. Players start jobs from their stash in their workshop, hire hands from the
+ * hall onto a job, and finish a job, which sends a grumpy hand to the scrap and the rest back to the hall. A Vase or Bowl wants no mark
+ * and a Tower makes none.
+ */
+export const GUILD_GAME = [
+  'Game: Guild', 'Players: 2 to 4', '  Each player has 9 coins that everyone can see.', '  Each player has 2 moves each turn.',
+  '  Players pay with coins.', '  The game has a fee of 2.', '',
+  'Cards:', '  A deck called jobs, starting in the pile:',
+  '    | name   | mark  | wants | red size | gold size | copies |', '    | Vase   | clay  |       | 3        | 0         | 2      |',
+  '    | Bowl   | clay  |       | 1        | 1         | 2      |', '    | Statue | stone | clay  | 2        | 4         | 2      |',
+  '    | Tower  |       | stone | 0        | 5         | 2      |',
+  '  A deck called hands, starting in the hall:', '    | name   | craft | mood   | copies |', '    | Potter | red   | calm   | 2      |',
+  '    | Smith  | gold  | grumpy | 1      |',
+  '  Cards can have red trim and gold trim.', '',
+  'Table:', '  The pile is a pile in the center that no one can see.', '  The hall is a row in the center that everyone can see.',
+  '  The scrap is a row in the center that everyone can see.', '  Each player has a stash row that only they can see.',
+  '  Each player has a workshop row that everyone can see.',
+  '  Each player has a crew row that everyone can see, where every card is on a card.', '',
+  'Setup:', '  Deal 2 cards from the pile to each stash.', '',
+  'Phase: working', '  Players take turns.',
+  '  A player may start a card in their stash.', '    Then:', '      Move it to their workshop.',
+  '  A player may hire a card from the hall to a card in their workshop.', '    Then:', '      It goes to their crew, on the target card.',
+  '  A player may finish a card in their workshop.', '    Then:', '      Every card on it whose mood is grumpy goes to the scrap.',
+  '      Every card on it goes to the hall.', '      Move it to the scrap.',
+  '  A player may stop.', '    Then:', '      Their moves go back to 0.',
+  '  When they have less than 1 move:', '    The turn passes to the left.', '',
+  'End:', '  The game ends when the pile is empty.', '  The highest score wins.',
+].join('\n');
+
 /** The loop of the board fixtures: a start, two streets, a tax, a station, a utility and two chance spaces. */
 export const FIXTURE_SPACES: SpaceSpec[] = [
   { name: 'Go', attrs: { kind: 'go' } },

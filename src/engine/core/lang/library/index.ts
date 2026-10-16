@@ -7,6 +7,7 @@ import { registerCardNumberPhrases } from './card-number-phrases';
 import { registerCardPickPhrases } from './card-pick-phrases';
 import { registerCardSubjectPhrases } from './card-subject-phrases';
 import { registerCardValuePhrases } from './card-value-phrases';
+import { registerComparePhrases } from './compare-phrases';
 import { registerDebtPhrases } from './debt-phrases';
 import { registerDrawPhrases } from './draw-phrases';
 import { registerExamplePhrases } from './example-phrases';
@@ -37,6 +38,7 @@ const REGISTRARS: ((lib: PhraseLibrary) => PhraseLibrary)[] = [
   registerCardValuePhrases,
   registerTotalPhrases,
   registerCardSubjectPhrases,
+  registerComparePhrases,
   registerPlayerFactPhrases,
   registerDrawPhrases,
   registerDebtPhrases,
