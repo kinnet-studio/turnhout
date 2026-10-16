@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { cardById, type GameState } from '../game-state';
 import type { Move } from '../moves';
 import type { Json } from '../table-def';
-import { counterOf, markOut, setCounter } from './board-state';
+import { addToCounter, counterOf, markOut, setCounter } from './board-state';
 import { createEngine, initialState } from './build';
 import { fillChoices } from './choices';
 import { compileGame } from './compile';
@@ -78,6 +78,7 @@ describe('a chosen player: compiled', () => {
     expect(at).toBe(0);
     expect(guard).toHaveLength(1);
     expect(who.phrase).toBe('they have a card in {zones} whose {cardfilter}');
+    expect(who.text).toBe("they have a card in their workshop whose mark is the card's wants");
     expect(effect.phrase).toBe('they pay the {gamenumber} to that player');
   });
   it('numbers a button\'s choices in the order written, and fills and runs each by its own place', () => {
@@ -127,10 +128,27 @@ describe('a chosen player: pressed', () => {
     const sponsor: Move = { type: 'sponsor a card in their stash', by: 'p0', cardId: statue };
     expect(pressChoices(runtime, state, sponsor)).toEqual([{ at: 0, kind: 'player', prompt: TWO_PROVIDERS, options: ['p1', 'p2'] }]);
   });
+  it('asks in the words of an effect that does not start with “they”, from its first letter in lower case', () => {
+    // A phrase no game has yet: an effect that names no one before what is done.
+    const giving = createDefaultLibrary().effect('pay {int} {counter} to that player', (env, [n, counter]) => {
+      const amount = n as number;
+      const paid = addToCounter(env.state, counter as string, env.subject!.player!, -amount);
+      return addToCounter(paid, counter as string, env.subject!.picked!, amount);
+    }, { needsPlayer: true, needsPick: true });
+    const PAY = "      Pay 1 coin to another player of their choice who has a card in their workshop whose mark is the card's wants.";
+    const rules = compileGame(edited(GUILD_GAME, CHOICE, PAY), giving);
+    expect(rules.diagnostics).toEqual([]);
+    const { engine, runtime } = createEngine(rules.game!, giving, 3, twoProviders);
+    expect(pressChoices(runtime, twoProviders, open(statue))).toEqual([
+      { at: 0, kind: 'player', prompt: 'Pick who to pay 1 coin to: p1 or p2.', options: ['p1', 'p2'] },
+    ]);
+    expect(engine.dispatch(open(statue, { choices: ['p1'] }))).toMatchObject({ ok: true });
+    expect(coins(engine.getState())).toEqual([8, 10, 9]);
+  });
 });
 
 describe('Review Focus: a press that names a choice wrongly', () => {
-  it('refuses the presser, a seat the table lacks, a number and other capitals, with the prompt', () => {
+  it('refuses the presser, a seat the table lacks, a number and a seat in upper case, with the prompt', () => {
     const { engine } = playing(twoProviders);
     const before = engine.getState();
     for (const named of ['p0', 'p3', 5, 'P2']) {
@@ -175,7 +193,7 @@ describe('a choice the press does not ask', () => {
     const { engine, runtime } = playing(noProvider);
     const before = engine.getState();
     const refusal = "the card has no wants or some player has a card in their workshop whose mark is the card's wants";
-    // The block's lines keep the capitals they are written with; an example compares refusals without them.
+    // The block's lines keep the case they are written in; an example compares refusals in lower case.
     expect((engine.dispatch(open(statue)) as { reason?: string }).reason?.toLowerCase()).toBe(refusal);
     expect((pressChoices(runtime, noProvider, open(statue)) as string).toLowerCase()).toBe(refusal);
     expect(engine.getState()).toBe(before);
@@ -223,6 +241,19 @@ describe('Review Focus: undo and replay of a press whose choice was filled in', 
     engine.undo();
     expect(engine.getState()).toEqual(before);
   });
+  it('replays a move that names its choice to the same payee, and undoes it', () => {
+    const { engine } = playing(twoProviders);
+    const before = engine.getState();
+    expect(engine.dispatch(open(statue, { choices: ['p2'] }))).toMatchObject({ ok: true });
+    const log = [...engine.getLog()];
+    expect(log).toEqual([open(statue, { choices: ['p2'] })]);
+    const replayed = playing(twoProviders).engine;
+    replayed.loadLog(log);
+    expect(replayed.getState()).toEqual(engine.getState());
+    expect(coins(replayed.getState())).toEqual([7, 9, 11]);
+    engine.undo();
+    expect(engine.getState()).toEqual(before);
+  });
 });
 
 describe('a choice in the wrong place', () => {
@@ -249,6 +280,17 @@ describe('a choice in the wrong place', () => {
     const IF = '      If they have no card in their workshop, they pay the fee to another player of their choice who has a card in their workshop.';
     const text = edited(GUILD_GAME, `${GUARD}\n`, `${GUARD}\n${IF}\n`);
     expect(messages(text)).toEqual([[lineOf(text, IF), 'A choice can\'t sit inside “If …,”: write its condition under it as an “Only if …” line.']]);
+  });
+  it('is refused inside “For each card …,” and “For …,”, even in a Then: that may ask for one', () => {
+    const EACH = "      For each card in their workshop, they pay the fee to another player of their choice who has a card in their workshop.";
+    const each = edited(GUILD_GAME, `${GUARD}\n`, `${GUARD}\n${EACH}\n`);
+    expect(messages(each)).toEqual([[lineOf(each, EACH), 'A choice can\'t sit inside “For each card …,”: a press asks each choice once, so write it on a line of its own.']]);
+    // The rival is a holder the game knows, so the choice is all that is wrong with the line.
+    const FOR = '      For the player who is the rival, they pay the fee to another player of their choice who has a card in their workshop.';
+    const rival = edited(GUILD_GAME, '  The game has a fee of 2.\n', '  The game has a fee of 2.\n  Players can be the rival.\n');
+    expect(compileGame(rival, lib).diagnostics).toEqual([]);
+    const held = edited(rival, `${GUARD}\n`, `${GUARD}\n${FOR}\n`);
+    expect(messages(held)).toEqual([[lineOf(held, FOR), 'A choice can\'t sit inside “For …,”: a press asks each choice once, so write it on a line of its own.']]);
   });
   it('takes only Only if lines under it', () => {
     const PAY = '        Pay 1 coin.';

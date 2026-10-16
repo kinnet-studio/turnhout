@@ -1086,4 +1086,8 @@ describe('a clause about one player said of “they”', () => {
   it('takes the third person off any other first word', () => {
     expect([theyForm('owns a field'), theyForm('passes'), theyForm('carries')]).toEqual(['own a field', 'pass', 'carry']);
   });
+  it('gives back the e of a verb that ends in one, and leaves the others whole', () => {
+    const verbs = ['uses', 'passes', 'goes', 'pays', 'loses', 'chooses', 'sizes', 'buzzes', 'waltzes', 'fixes', 'catches', 'washes', 'makes'];
+    expect(verbs.map(theyForm)).toEqual(['use', 'pass', 'go', 'pay', 'lose', 'choose', 'size', 'buzz', 'waltz', 'fix', 'catch', 'wash', 'make']);
+  });
 });

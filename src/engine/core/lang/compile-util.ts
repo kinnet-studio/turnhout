@@ -68,8 +68,18 @@ export const CHOICE_LINE = /^(.+) to another player of their choice who (.+)$/i;
 export const CHOOSE_ONE_LINE = /^they choose one:?$/i;
 /** Where a choice was written that no press could ask: only a button's own `Then:` lines may, and not of every button. */
 const MISPLACED_CHOICE = 'Only the Then: lines of a button that picks a card, or nothing, can ask for a choice.';
-/** A choice is asked when the press is judged, before any Then: line runs, so it can't wait on a condition judged when its line is reached. */
-const CHOICE_IN_IF = 'A choice can\'t sit inside “If …,”: write its condition under it as an “Only if …” line.';
+/**
+ * A choice is asked when the press is judged, before any Then: line runs, and once: so it can't wait on a condition judged when its line is
+ * reached, nor be asked again for each card or of whoever holds a flag.
+ */
+const CHOICE_IN_FRAME = (frame: string, instead: string) => `A choice can't sit inside “${frame}”: ${instead}`;
+const CHOICE_IN_IF = CHOICE_IN_FRAME('If …,', 'write its condition under it as an “Only if …” line.');
+const ONCE = 'a press asks each choice once, so write it on a line of its own.';
+const CHOICE_IN_FOR_EACH = CHOICE_IN_FRAME('For each card …,', ONCE);
+const CHOICE_IN_FOR = CHOICE_IN_FRAME('For …,', ONCE);
+
+/** Whether the words of a frame hold a choice after one of their commas, where the frame's effect may start. */
+const holdsChoice = (body: string): boolean => [...body.matchAll(COMMA)].some((m) => CHOICE_LINE.test(body.slice(m.index + 2)));
 
 /** Records a problem found while reading the rules. Structure errors unless `extra` says otherwise. */
 export function addProblem(diagnostics: Diagnostic[], line: number, message: string, extra: Partial<Diagnostic> = {}): void {
@@ -381,37 +391,34 @@ export function innerEffect(ref: PhraseRef): PhraseRef {
  * player who holds a flag. “If <condition>, <effect>” is tried
  * at every comma, since either part may hold commas; the first comma where both parts are phrases wins. When none does, the
  * part that needs fixing is the one reported. A button's cost line is reported as one in the wrong place, and kept as a placeholder;
- * so is a choice, which a button's `Then:` reads before this when it may ask one, and one inside “If …,”.
+ * so is a choice, which a button's `Then:` reads before this when it may ask one, and one inside any of the frames.
  */
 export function matchEffectLine(text: string, line: number, ctx: LineCtx): PhraseRef {
   const clean = normalizeLine(text);
-  if (COST_LINE.test(clean)) {
-    addProblem(ctx.diagnostics, line, MISPLACED_COST, { text: clean });
+  const refuse = (message: string): PhraseRef => {
+    addProblem(ctx.diagnostics, line, message, { text: clean });
     return missingRef('effect', clean, line);
-  }
+  };
+  if (COST_LINE.test(clean)) return refuse(MISPLACED_COST);
   // Tried before the holder frame, whose “For …” they start like: there, “each card” would be told it names no player.
   const each = FOR_EACH_FRAME.exec(clean);
-  if (each) return matchForEachLine(each[1], clean, line, ctx);
+  if (each) return holdsChoice(each[1]) ? refuse(CHOICE_IN_FOR_EACH) : matchForEachLine(each[1], clean, line, ctx);
   const alone = EACH_CARD_ALONE.exec(clean);
   if (alone) {
     addProblem(ctx.diagnostics, line, NO_GROUP_NAMED(alone[1]), { kind: 'invalid', text: clean });
     return missingRef('effect', clean, line);
   }
   const holding = FOR_FRAME.exec(clean);
-  if (holding) return matchForLine(holding[1], clean, line, ctx);
+  if (holding) return holdsChoice(holding[1]) ? refuse(CHOICE_IN_FOR) : matchForLine(holding[1], clean, line, ctx);
   const frame = IF_FRAME.exec(clean);
   if (!frame) {
-    if (!CHOICE_LINE.test(clean) && !CHOOSE_ONE_LINE.test(clean)) return matchLine('effect', clean, line, ctx);
-    addProblem(ctx.diagnostics, line, MISPLACED_CHOICE, { text: clean });
-    return missingRef('effect', clean, line);
+    if (CHOICE_LINE.test(clean) || CHOOSE_ONE_LINE.test(clean)) return refuse(MISPLACED_CHOICE);
+    return matchLine('effect', clean, line, ctx);
   }
 
   const body = frame[1];
+  if (holdsChoice(body)) return refuse(CHOICE_IN_IF);
   const splits = [...body.matchAll(COMMA)].map((m) => ({ condition: body.slice(0, m.index), effect: body.slice(m.index + 2) }));
-  if (splits.some((split) => CHOICE_LINE.test(split.effect))) {
-    addProblem(ctx.diagnostics, line, CHOICE_IN_IF, { text: clean });
-    return missingRef('effect', clean, line);
-  }
   const reads = (kind: PhraseKind, part: string) => canRead(kind, part, ctx);
   const chosen = splits.find((s) => reads('condition', s.condition) && reads('effect', s.effect))
     ?? splits.find((s) => reads('condition', s.condition))

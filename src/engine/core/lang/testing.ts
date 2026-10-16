@@ -441,8 +441,8 @@ export const SUBJECT = [
 /**
  * A card game of jobs that want a mark another job makes. Players start jobs from their stash in their workshop, hire hands from the
  * hall onto a job, and finish a job, which sends a grumpy hand to the scrap and the rest back to the hall. A job opened from the stash
- * needs its mark made in some workshop, and a player who makes none pays the fee to a player of their choice who does. A Vase or Bowl
- * wants no mark and a Tower makes none.
+ * needs the mark it wants made in some workshop, and a player who makes none pays the fee to a player of their choice who does. A Vase
+ * or Bowl wants no mark and a Tower makes none.
  */
 export const GUILD_GAME = [
   'Game: Guild', 'Players: 2 to 4', '  Each player has 9 coins that everyone can see.', '  Each player has 2 moves each turn.',

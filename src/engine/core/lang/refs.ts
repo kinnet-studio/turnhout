@@ -55,15 +55,20 @@ export const thirdPersonWords = (words: string): string => words.replace(/^\S+/,
 const THEY_FORMS = new Map([['has', 'have'], ['is', 'are'], ['does', 'do']]);
 
 /**
+ * Endings that take “es” in the third person (see `thirdPerson`) and no “e” of their own: 'passes', 'washes', 'catches', 'fixes', 'buzzes',
+ * 'waltzes', 'goes'. A single “s”, or a “z” after a vowel, is where a verb ends in “e” instead: 'uses', 'chooses', 'sizes'.
+ */
+const ES_ENDING = /(?:ss|sh|ch|x|[^aeiou]z|o)es$/i;
+
+/**
  * A clause about one player said of “they”, as a choice asks it of each player who might be picked: 'has a card' is 'have a card',
- * 'passes' is 'pass'. Only its first word changes, from the third person back to the verb (see `thirdPerson`), which English does not
- * always say one way: 'uses' comes out 'us'.
+ * 'passes' is 'pass', 'uses' is 'use'. Only its first word changes, from the third person back to the verb.
  */
 export const theyForm = (words: string): string => words.replace(/^\S+/, (first) => {
   const irregular = THEY_FORMS.get(first.toLowerCase());
   if (irregular !== undefined) return irregular;
   if (/ies$/i.test(first)) return `${first.slice(0, -3)}y`;
-  if (/(?:s|sh|ch|x|z|o)es$/i.test(first)) return first.slice(0, -2);
+  if (ES_ENDING.test(first)) return first.slice(0, -2);
   return first.replace(/s$/i, '');
 });
 

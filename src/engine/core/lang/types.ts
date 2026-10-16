@@ -176,10 +176,10 @@ export type Vocab = {
 /**
  * Who, which space and which card a phrase is about, when a rule is about a player's piece, a space or a card. `amount` is the
  * whole number a button that carries one was pressed with; no other rule has it. `picked` is the player a button that picks one
- * was pressed with, or the one a choice of a press filled in, while that choice's line runs; no other rule has it. `onto` is the id of the card a button that picks one for its cards to go to was pressed
- * with, and `cards` the ids of the set a button that picks some cards was pressed with, in the order the press gave them; no other
- * rule has either. `choices` is what the press of a button whose `Then:` lines ask for choices filled in for each of them, in order, null
- * for one it did not ask; no other rule has it.
+ * was pressed with, or the one a choice of a press filled in, while that choice's line runs; no other rule has it. `onto` is the
+ * id of the card a button that picks one for its cards to go to was pressed with, and `cards` the ids of the set a button that
+ * picks some cards was pressed with, in the order the press gave them; no other rule has either. `choices` is what the press of a
+ * button whose `Then:` lines ask for choices filled in for each of them, in order, null for one it did not ask; no other rule has it.
  */
 export type Subject = {
   player: PlayerId | null; space: number | null; card: string | null; amount?: number; picked?: PlayerId; onto?: string; cards?: string[];

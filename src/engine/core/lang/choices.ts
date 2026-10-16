@@ -27,9 +27,13 @@ export function choicesOf(action: DeclaredAction): PhraseRef[] {
 const THEY = /^they /i;
 const TO_THAT_PLAYER = / to that player$/i;
 
-/** What a choice of a player asks: “Pick who to pay the fee to: p1 or p2.”, in the words of its effect, said to the presser. */
+/**
+ * What a choice of a player asks: “Pick who to pay the fee to: p1 or p2.”, in the words of its effect, said to the presser. The line's
+ * first letter is said in lower case, wherever it starts: “Pay 1 coin to that player” asks “Pick who to pay 1 coin to: …”.
+ */
 function pickPrompt(effect: PhraseRef, options: string[]): string {
-  const doing = secondPersonWords(effect.text.replace(THEY, '').replace(TO_THAT_PLAYER, ''));
+  const said = effect.text.charAt(0).toLowerCase() + effect.text.slice(1);
+  const doing = secondPersonWords(said.replace(THEY, '').replace(TO_THAT_PLAYER, ''));
   return `Pick who to ${doing} to: ${joinOr(options)}.`;
 }
 
@@ -47,8 +51,9 @@ function askPlayer(runtime: LangRuntime, ref: PhraseRef, state: GameState, info:
 
 /**
  * The choices a press asks, judged on `state` about the press: each choice whose guard holds and that has a candidate, in order.
- * A player choice's candidates are the seats still in, other than the presser, in seat order, for which `who` holds about them
- * (`{ ...subject, player: seat }`, with the press's `info`).
+ * A player choice's guard is judged about the press itself, with its `info` and `subject`. Its candidates are the seats still in, other
+ * than the presser, in seat order, for which `who` holds about them as the move's player: with the press's `info` made by that seat
+ * (`{ ...info, by: seat }`) and the subject `{ ...subject, player: seat }`, the card of the press unchanged.
  */
 export function askChoices(runtime: LangRuntime, action: DeclaredAction, state: GameState, info: MoveInfo | undefined, subject: Subject): AskedChoice[] {
   return choicesOf(action).flatMap((ref) => {
