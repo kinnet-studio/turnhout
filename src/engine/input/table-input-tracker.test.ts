@@ -66,4 +66,22 @@ describe('TableInputTracker', () => {
     expect(onHover).toHaveBeenNthCalledWith(1, 'a');
     expect(onHover).toHaveBeenNthCalledWith(2, null);
   });
+
+  it('points at nothing once the pointer leaves, and hovers the same card again when it comes back', () => {
+    const onHover = vi.fn();
+    const t = new TableInputTracker(makeDeps({ intents: { onHover } }));
+    t.pointerMove(0, 0);
+    t.pointerLeave();
+    t.pointerLeave();
+    t.pointerMove(0, 0);
+    expect(onHover.mock.calls).toEqual([['a'], [null], ['a']]);
+  });
+
+  it('says nothing when the pointer leaves without pointing at a card', () => {
+    const onHover = vi.fn();
+    const t = new TableInputTracker(makeDeps({ intents: { onHover } }));
+    t.pointerMove(999, 999);
+    t.pointerLeave();
+    expect(onHover).not.toHaveBeenCalled();
+  });
 });

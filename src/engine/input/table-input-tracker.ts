@@ -69,4 +69,11 @@ export class TableInputTracker {
   pointerDown(clientX: number, clientY: number): void { this.pickUpWorld(this.deps.clientToWorld(clientX, clientY)); }
   pointerMove(clientX: number, clientY: number): void { this.dragToWorld(this.deps.clientToWorld(clientX, clientY)); }
   pointerUp(clientX: number, clientY: number): void { this.dropWorld(this.deps.clientToWorld(clientX, clientY)); }
+
+  /** A pointer off the table points at no card, so the last card it pointed at is no longer hovered. */
+  pointerLeave(): void {
+    if (this.hoverId === null) return;
+    this.hoverId = null;
+    this.deps.intents.onHover?.(null);
+  }
 }

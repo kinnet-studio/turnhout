@@ -134,6 +134,9 @@ export function ActionButtons({ actions, onPress, onPick, onRefused }: {
   );
 }
 
+/** How tall a row of buttons is (14px text, 6px padding and the browser's 2px border), for a page that keeps its room. */
+export const BUTTON_ROW = 32;
+
 /** How tall the page keeps the room for a banner above the board, whether one is open or not, so the board does not jump. */
 export const BANNER_SLOT = 28;
 /** The banner's room above and below its buttons. */

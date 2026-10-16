@@ -5,8 +5,7 @@ import { compileGame } from '@/engine/core/lang/compile';
 import { createDefaultLibrary } from '@/engine/core/lang/library';
 import type { CompiledGame } from '@/engine/core/lang/types';
 import type { ClientView } from '@/engine/net/protocol';
-import { seatStatus } from './seat-status';
-import { seatToAct } from './seat-status';
+import { seatStatus, seatToAct } from './seat-status';
 
 const lib = createDefaultLibrary();
 const colorMatch = compileGame(COLOR_MATCH, lib).game!;

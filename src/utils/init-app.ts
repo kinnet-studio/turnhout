@@ -25,12 +25,15 @@ const defaultRenderer: FaceRenderer = (card) => (container: Container) => {
 };
 
 export const makeInitApp =
-  (faceRenderer: FaceRenderer = defaultRenderer, opts?: { showEmptyZones?: boolean }) =>
+  (faceRenderer: FaceRenderer = defaultRenderer, opts?: { showEmptyZones?: boolean; size?: { width: number; height: number } }) =>
   async (
     canvas: HTMLCanvasElement,
     option: Partial<InitAppOptions> = { fullScreen: true, limitEntireViewPort: false, boundaries: TABLE_BOUNDS },
   ): Promise<AppComponents> => {
     const base: BaseAppComponents = await baseInitApp(canvas, option);
+    // baseInitApp sizes a canvas that is not full screen at Pixi's 800 x 600; the camera follows the renderer, so the fit
+    // below sees the size asked for.
+    if (opts?.size) base.app.renderer.resize(opts.size.width, opts.size.height);
 
     // Custom input: destroy Pixi's event federation; drive input through KMT.
     base.app.renderer.events.destroy();
@@ -107,6 +110,10 @@ export const makeInitApp =
     parser.setUp();
     base.kmtParser = parser;
     base.touchParser.tearDown();
+    // The parser hears the pointer only over the canvas, so without this a card stays hovered after the pointer has left.
+    const leave = () => tracker.pointerLeave();
+    canvas.addEventListener('pointerleave', leave);
+    base.cleanups.push(() => canvas.removeEventListener('pointerleave', leave));
 
     // Fit camera to the table bounds; lock zoom and pan (fixed table).
     // `option.boundaries` isn't guaranteed to reach baseInitApp (main.tsx passes

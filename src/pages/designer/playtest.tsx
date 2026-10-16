@@ -19,7 +19,7 @@ import { loopbackChannel } from '@/engine/net/loopback';
 import type { ClientChannel, ClientView } from '@/engine/net/protocol';
 import { designerFaceRenderer } from '@/engine/pixi/text-faces';
 import { makeInitApp } from '@/utils/init-app';
-import { ActionButtons, BANNER_SLOT, BANNER_STYLE, MoneyLine, PlayerPicker } from './board-controls';
+import { ActionButtons, BANNER_SLOT, BANNER_STYLE, BUTTON_ROW, MoneyLine, PlayerPicker } from './board-controls';
 import { BoardGrid } from './board-grid';
 import { cardDetail } from './card-detail';
 import { seatStatus, seatToAct } from './seat-status';
@@ -40,6 +40,7 @@ const PANEL_STYLE = { width: SEAT_WIDTH, flex: '0 0 auto', border: '1px solid #c
 // A game too big for one table shows one seat at a time, on a canvas that draws the 1600 x 1200 world at three quarters.
 const FITTED_WIDTH = 1200;
 const FITTED_HEIGHT = 900;
+const initFittedApp = makeInitApp(designerFaceRenderer, { showEmptyZones: true, size: { width: FITTED_WIDTH, height: FITTED_HEIGHT } });
 
 type Started = { server: GameServer; session: GameSession; tableDef: TableDef; seats: PlayerId[] } | { error: string };
 
@@ -159,7 +160,7 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
     && (game.board === null || game.board.spaces.length === 0
       || game.phases.some((phase) => phase.moves.length > 0 || phase.rearrange.length > 0));
   const canvas = showsCards && (
-    <Wrapper option={option} initFunction={initAppWithFaces}>
+    <Wrapper option={option} initFunction={fitted ? initFittedApp : initAppWithFaces}>
       <CardTable tableDef={tableDef} placement={placement} viewer={undefined} onDrop={submit} onHover={fitted ? setHovered : undefined} />
     </Wrapper>
   );
@@ -205,6 +206,7 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
     const numbers = fitted
       ? view && <Tableaux game={game} seats={seats} board={board} cards={view.scene.cards} />
       : board && (board.counters.length > 0 || game.facts.length > 0 || board.bank.length > 0) && <MoneyLine board={board} />;
+    const buttons = hasButtons && extras && <ActionButtons actions={extras.actions} onPress={press} onPick={startPicking} onRefused={flash} />;
     const canvasBox = fitted ? { width: FITTED_WIDTH, height: FITTED_HEIGHT } : { height: SEAT_HEIGHT };
     return (
       <div style={{ ...PANEL_STYLE, width: fitted ? FITTED_WIDTH : SEAT_WIDTH, boxSizing: 'content-box', padding: 8, display: 'flex', flexDirection: 'column', gap: 8, font: '14px sans-serif', color: '#eee' }}>
@@ -222,7 +224,8 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
         </div>
         {board && board.spaces.length > 0 && <BoardGrid board={board} picking={picker} />}
         {numbers}
-        {hasButtons && extras && <ActionButtons actions={extras.actions} onPress={press} onPick={startPicking} onRefused={flash} />}
+        {/* A fitted table keeps the buttons' room when a phase has none, so the table under them does not jump. */}
+        {fitted && hasButtons ? <div data-testid="seat-buttons" style={{ minHeight: BUTTON_ROW }}>{buttons}</div> : buttons}
         {canvas && <div style={{ position: 'relative', ...canvasBox }}>{canvas}</div>}
         {fitted && <div data-testid="card-detail" style={{ minHeight: 20 }}>{detail}</div>}
       </div>

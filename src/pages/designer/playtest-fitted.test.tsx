@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import COLOR_MATCH from '@/games/color-match.rules?raw';
+import RENT_DAY from '@/games/rent-day.rules?raw';
 import STARTUP_SIMULATOR from '@/games/startup-simulator.rules?raw';
 import { createEngine, initialState } from '@/engine/core/lang/build';
 import { parseTextFaceKey } from '@/engine/core/lang/cards';
@@ -10,10 +11,20 @@ import { fitsTable, fittedLayout } from '@/engine/core/lang/fit-layout';
 import { createDefaultLibrary } from '@/engine/core/lang/library';
 import { relocate } from '@/engine/core/lang/zones';
 import type { CardTableProps } from '@/engine/react';
+import { BUTTON_ROW } from './board-controls';
 import { cardDetail } from './card-detail';
 import { Playtest } from './playtest';
 
-vi.mock('@/components/PixiCanvas', () => ({ Wrapper: ({ children }: { children: ReactNode }) => <div>{children}</div> }));
+// The canvas a seat is drawn on: keep what its app was last made with.
+let canvasMadeWith: unknown = null;
+vi.mock('@/components/PixiCanvas', () => ({
+  Wrapper: ({ children, initFunction }: { children: ReactNode; initFunction: unknown }) => {
+    canvasMadeWith = initFunction;
+    return <div>{children}</div>;
+  },
+}));
+// An app is made by a function makeInitApp returns; here that function is just what it was asked for.
+vi.mock('@/utils/init-app', () => ({ makeInitApp: (_faces: unknown, opts: unknown) => ({ opts }) }));
 // The fitted page draws one table: keep the props it was last drawn with.
 let table: CardTableProps | null = null;
 vi.mock('@/engine/react', () => ({ CardTable: (p: CardTableProps) => { table = p; return null; } }));
@@ -34,7 +45,10 @@ const press = (name: string) => fireEvent.click(screen.getByRole('button', { nam
 const drop = (cardId: string, from: string, to: string) =>
   act(() => table!.onDrop!({ cardId, fromZoneId: from, toZoneId: to, slot: 0, worldPoint: { x: 0, y: 0 } }));
 
-beforeEach(() => { table = null; });
+beforeEach(() => {
+  table = null;
+  canvasMadeWith = null;
+});
 
 describe('Playtest of a game too big for one table', () => {
   const S = startOf(3);
@@ -177,7 +191,7 @@ describe('the whole card on hover', () => {
     expect(detail()).toBe('');
   });
 
-  it('shows nothing for a card that has since left the table', () => {
+  it('shows nothing for a card that is not on the table', () => {
     mount();
     hover('no such card');
     expect(detail()).toBe('');
@@ -229,6 +243,7 @@ describe('a round played through the page', () => {
     expect(cardsIn(`research-${N}`)).toHaveLength(0);
     expect(lineOf(N)).toContain('research 3');
     fireEvent.click(tab(`${N} — to act`));
+    selected(`${N} — to act`);
 
     drop(drawn[0].id, `research-${N}`, `backlog-${N}`);
     selected(`${T} — to act`);
@@ -261,5 +276,37 @@ describe('a round played through the page', () => {
     expect(status()).toBe(`seat: ${T} — Game over — p0, p1 and p2 win (p0 -1, p1 -1, p2 -1)`);
     expect(screen.getAllByRole('tab').filter((t) => t.textContent!.endsWith('— to act'))).toEqual([]);
     selected(T);
+  });
+});
+
+describe('the canvas', () => {
+  it('is 1200 × 900 for a game too big for one table, so the world is drawn at three quarters', () => {
+    mount();
+    expect(canvasMadeWith).toEqual({ opts: { showEmptyZones: true, size: { width: 1200, height: 900 } } });
+  });
+
+  it('is the size Pixi starts with for a game that fits, as before', () => {
+    mount({ game: compileGame(COLOR_MATCH, lib).game! });
+    expect(canvasMadeWith).toEqual({ opts: { showEmptyZones: true } });
+  });
+});
+
+describe("the buttons' room", () => {
+  const room = () => screen.getByTestId('seat-buttons');
+
+  it('is kept when a phase has no buttons, so the table does not jump', () => {
+    mount();
+    expect(room().style.minHeight).toBe(`${BUTTON_ROW}px`);
+    expect(within(room()).getAllByRole('button').length).toBeGreaterThan(0);
+    for (let i = 0; i < 3; i++) press('Recruit a junior software dev');
+    expect(status()).toBe(`seat: ${startOf(3)} — Your turn — ${hint('bench cleanup')}`);
+    expect(within(room()).queryAllByRole('button')).toEqual([]);
+    expect(room().style.minHeight).toBe(`${BUTTON_ROW}px`);
+  });
+
+  it('is not kept on a game that fits, as before', () => {
+    mount({ game: compileGame(RENT_DAY, lib).game! });
+    expect(screen.getAllByRole('button', { name: 'Roll the dice' }).length).toBeGreaterThan(0);
+    expect(screen.queryAllByTestId('seat-buttons')).toEqual([]);
   });
 });
