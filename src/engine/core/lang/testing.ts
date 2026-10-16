@@ -314,7 +314,9 @@ export const COUNTER_GAME = [
 
 /**
  * A card game whose buttons pick cards. Buying one from the shop costs a move and its cost in coins; selling one from your stash
- * is free and gives a coin. Each player has 2 moves each turn, and the turn passes once they have none.
+ * is free and gives a coin. Showing one moves it from your stash to your case, onto a card there that is no Ruby, for a move; trading
+ * moves at most 2 cards from your stash to the shop, for a move. Each player has 2 moves each turn, and the turn passes once they
+ * have none.
  */
 export const CARD_PICK_GAME = [
   'Game: Gem Picks', 'Players: 2 to 3', '  Each player has 7 coins that everyone can see.', '  Each player has 2 moves each turn.',
@@ -327,6 +329,9 @@ export const CARD_PICK_GAME = [
   '  A player may buy a card from the shop to their stash.', '    It costs 1 move.', "    Only if they have at least the card's cost in coins.",
   '    Then:', "      They pay the card's cost.",
   '  A player may sell a card in their stash.', '    Then:', '      Move it to the pile.', '      They get 1 coin.',
+  '  A player may show a card from their stash to a card in their case.', '    It costs 1 move.', '    Only if the target card is not a Ruby.',
+  '    Then:', '      Move it to their case.',
+  '  A player may trade some cards from their stash to the shop.', '    It costs 1 move.', '    Only if they picked at most 2 cards.',
   '  A player may stop.', '    Then:', '      Their moves go back to 0.',
   '  When they have less than 1 move:', '    The turn passes to the left.', '',
   'End:', '  The game ends when the pile is empty.', '  The highest score wins.',

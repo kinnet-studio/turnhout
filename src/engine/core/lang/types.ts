@@ -143,9 +143,13 @@ export type Vocab = {
 /**
  * Who, which space and which card a phrase is about, when a rule is about a player's piece, a space or a card. `amount` is the
  * whole number a button that carries one was pressed with; no other rule has it. `picked` is the player a button that picks one
- * was pressed with; no other rule has it.
+ * was pressed with; no other rule has it. `onto` is the id of the card a button that picks one for its cards to go to was pressed
+ * with, and `cards` the ids of the set a button that picks some cards was pressed with, in the order the press gave them; no other
+ * rule has either.
  */
-export type Subject = { player: PlayerId | null; space: number | null; card: string | null; amount?: number; picked?: PlayerId };
+export type Subject = {
+  player: PlayerId | null; space: number | null; card: string | null; amount?: number; picked?: PlayerId; onto?: string; cards?: string[];
+};
 /** A piece passing over or landing on a space. */
 export type Moment = { kind: 'pass' | 'land'; seat: PlayerId; space: number };
 export interface MoveInfo { verb: string; by: PlayerId; cardId: string; from: string; to: string }

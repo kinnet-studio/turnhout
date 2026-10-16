@@ -1547,23 +1547,27 @@ describe('buttons that pick a card', () => {
       expect(text).not.toBe(CARD_PICK_GAME);
       return { errors: messages(text), line: at(text, line), buttons: phaseAlone(text).actions.map((a) => a.words) };
     };
+    /** The phase's buttons but sell, which a sell line with a problem leaves as they are. */
+    const NOT_SELL = [
+      'buy a card from the shop to their stash', 'show a card from their stash to a card in their case', 'trade some cards from their stash to the shop', 'stop',
+    ];
     it('names a zone it cannot read as a card move does', () => {
       const moved = CARD_PICK_GAME.replace(BUY_COST, '  A player may buy a card from the shop to their stsh.\n');
       const asMove = messages(moved);
       expect(asMove).toEqual([[at(moved, '  A player may buy a card from the shop to their stsh.'), expect.any(String)]]);
       const { errors, line, buttons } = sellAs('  A player may sell a card in their stsh.');
       expect(errors).toEqual([[line, asMove[0][1]]]);
-      expect(buttons).toEqual(['buy a card from the shop to their stash', 'stop']);
+      expect(buttons).toEqual(NOT_SELL);
     });
     it('picks from one zone only', () => {
       const { errors, line, buttons } = sellAs('  A player may sell a card in each stash.');
       expect(errors).toEqual([[line, ONE_ZONE]]);
-      expect(buttons).toEqual(['buy a card from the shop to their stash', 'stop']);
+      expect(buttons).toEqual(NOT_SELL);
     });
     it('says how to write a card line that is neither a card move nor a pick', () => {
       const { errors, line, buttons } = sellAs('  A player may sell a card from their stash.');
       expect(errors).toEqual([[line, MALFORMED_MOVE]]);
-      expect(buttons).toEqual(['buy a card from the shop to their stash', 'stop']);
+      expect(buttons).toEqual(NOT_SELL);
     });
   });
 
@@ -1579,5 +1583,80 @@ describe('buttons that pick a card', () => {
     expect(asButton.errors).toEqual([[asButton.line, '“buy” is a button in another phase, so it can\'t also be a card move. Start one with another word.']]);
     const asMove = later(CARD_PICK_GAME.replace(BUY_COST, `${BUY_LINE}\n`), [BUY_LINE, '    It costs 1 move.']);
     expect(asMove.errors).toEqual([[asMove.line, '“buy” is a card move in another phase, so it can\'t also be a button. Start one with another word.']]);
+  });
+
+  describe('a card and the card it goes to, and sets of cards', () => {
+    const SHOW_LINE = '  A player may show a card from their stash to a card in their case.';
+    const TRADE_LIMIT = '    Only if they picked at most 2 cards.';
+    const STOP_LINE = '  A player may stop.';
+    const buttonOf = (text: string, base: string) => phaseOf(text).actions.find((a) => a.base === base)!;
+    /** CARD_PICK_GAME with `lines` put in before the stop button. */
+    const beforeStop = (lines: string[]) => {
+      const added = CARD_PICK_GAME.replace(`${STOP_LINE}\n`, `${lines.join('\n')}\n${STOP_LINE}\n`);
+      expect(added).not.toBe(CARD_PICK_GAME);
+      return added;
+    };
+
+    it('reads a card that goes to a card, and a set that goes to a zone', () => {
+      expect(compileGame(CARD_PICK_GAME, lib).diagnostics).toEqual([]);
+      const show = buttonOf(CARD_PICK_GAME, 'show');
+      expect(show).toMatchObject({ words: 'show a card from their stash to a card in their case', label: 'Show a card from your stash to a card in your case' });
+      expect(show.line).toBe(at(CARD_PICK_GAME, SHOW_LINE));
+      expect(show.pick).toEqual({
+        some: false, from: { of: { who: 'actor' }, zone: 'stash' }, fromText: 'their stash', to: null, onto: { of: { who: 'actor' }, zone: 'case' },
+        ontoText: 'their case',
+      });
+      expect(show.cost).toMatchObject({ amount: 1, counter: 'moves' });
+      const trade = buttonOf(CARD_PICK_GAME, 'trade');
+      expect(trade.pick).toEqual({
+        some: true, from: { of: { who: 'actor' }, zone: 'stash' }, fromText: 'their stash', to: { shared: 'shop' }, onto: null, ontoText: null,
+      });
+      expect(trade.conditions.map((group) => group.text)).toEqual(['they picked at most 2 cards']);
+    });
+
+    it('reads a set that goes nowhere by itself, and a set that goes to a card', () => {
+      const toss = beforeStop(['  A player may toss some cards from their stash.', '    Then:', '      Move the picked cards to the pile.']);
+      expect(compileGame(toss, lib).diagnostics).toEqual([]);
+      expect(buttonOf(toss, 'toss').pick).toMatchObject({ some: true, from: { of: { who: 'actor' }, zone: 'stash' }, to: null, onto: null });
+      const stack = beforeStop([
+        '  A player may stack some cards from their stash to a card in their case.', '    Only if the target card is not a Ruby.', '    Then:',
+        '      Move the picked cards to their case.',
+      ]);
+      expect(compileGame(stack, lib).diagnostics).toEqual([]);
+      expect(buttonOf(stack, 'stack').pick).toMatchObject({ some: true, to: null, onto: { of: { who: 'actor' }, zone: 'case' }, ontoText: 'their case' });
+    });
+
+    it('reads the zone of the card it goes to as a move\'s zone is read', () => {
+      const text = CARD_PICK_GAME.replace(SHOW_LINE, '  A player may show a card from their stash to a card in each case.');
+      expect(text).not.toBe(CARD_PICK_GAME);
+      expect(messages(text)).toEqual([[at(text, '  A player may show a card from their stash to a card in each case.'), ONE_ZONE]]);
+    });
+
+    describe('what a line needs', () => {
+      const NEEDS_ONTO = (clean: string) =>
+        `“${clean}” only makes sense in a button that picks a card and the card it goes to, like “A player may stack a card from their hand to a card in the row.”`;
+      const NEEDS_CARDS = (clean: string) =>
+        `“${clean}” only makes sense in a button that picks some cards, like “A player may discard some cards from their hand.”`;
+
+      it('the target card, only in a button that picks one', () => {
+        const text = adding(CARD_PICK_GAME, SELL_LINE, '    Only if the target card is a Ruby.');
+        expect(messages(text)).toEqual([[at(text, '    Only if the target card is a Ruby.'), NEEDS_ONTO('the target card is a Ruby')]]);
+      });
+      it('the picked cards, only in a button that picks some', () => {
+        const text = adding(CARD_PICK_GAME, '      Move it to the pile.', '      Move the picked cards to the pile.');
+        expect(messages(text)).toEqual([[at(text, '      Move the picked cards to the pile.'), NEEDS_CARDS('Move the picked cards to the pile')]]);
+      });
+      it('no card, and no move, in a button that picks some cards', () => {
+        const moved = adding(CARD_PICK_GAME, TRADE_LIMIT, '    Then:\n      Move it to the pile.');
+        // Sell has the same line; the one under trade is the last.
+        const line = moved.split('\n').lastIndexOf('      Move it to the pile.') + 1;
+        expect(line).toBe(at(moved, TRADE_LIMIT) + 2);
+        expect(messages(moved)).toEqual([[line, '“Move it to the pile” only makes sense in a rule about a card, such as “When a card …”.']]);
+        const judged = adding(CARD_PICK_GAME, TRADE_LIMIT, '    Only if the card is a Ruby.');
+        expect(messages(judged)).toEqual([
+          [at(judged, '    Only if the card is a Ruby.'), "“the card is a Ruby” only makes sense in a rule about a player's move."],
+        ]);
+      });
+    });
   });
 });

@@ -78,4 +78,56 @@ describe('examples that press a button that picks a card', () => {
       expect(result.message).toMatch(/No button lets p0 sell a card to p0's case\.$/);
     });
   });
+
+  describe('a card and the card it goes to, and sets of cards', () => {
+    const SHOWING = [
+      'Example: showing a card on a card',
+      "  Given p0's stash has an Opal",
+      "  And p0's case has a Ruby and an Opal",
+      '  When p0 shows the Opal to the Ruby',
+      '  Then it is rejected because "the target card is not a Ruby"',
+      '  When p0 shows the Opal to the Opal',
+      '  Then it is accepted',
+      "  And p0's case has a Ruby, an Opal and an Opal",
+      '  And p0 has 1 move',
+    ].join('\n');
+    const TRADING = [
+      'Example: trading at most two cards',
+      "  Given p0's stash has a Ruby, an Opal and an Opal",
+      '  And the shop is empty',
+      '  When p0 trades the Ruby, the Opal and the Opal',
+      '  Then it is rejected because "they picked at most 2 cards"',
+      '  When p0 trades the Ruby and the Opal',
+      '  Then it is accepted',
+      '  And the shop has a Ruby and an Opal, in that order',
+      "  And p0's stash has an Opal",
+    ].join('\n');
+
+    it('read the card it goes to after “to”', () => {
+      const vocab = vocabFor(compileGame(CARD_PICK_GAME, lib).game!);
+      expect(lib.match('action', 'p0 shows the Opal to the Ruby', vocab)).toEqual({
+        status: 'ok', pattern: '{player} {cardaction} {cardlist} to {card}', args: ['p0', 'show', [{ name: 'Opal' }], { name: 'Ruby' }],
+      });
+    });
+    it('press a button that picks a card and the card it goes to', () => {
+      expect(run(CARD_PICK_GAME, SHOWING)).toEqual([expect.objectContaining({ status: 'pass', message: null })]);
+    });
+    it('press a button that picks a set with every card named', () => {
+      expect(run(CARD_PICK_GAME, TRADING)).toEqual([expect.objectContaining({ status: 'pass', message: null })]);
+    });
+    it('say no button lets a card go to another card', () => {
+      const [result] = run(CARD_PICK_GAME, ['Example: selling onto a card', "  Given p0's stash has an Opal", '  When p0 sells the Opal to the Ruby'].join('\n'));
+      expect(result.status).toBe('fail');
+      expect(result.message).toMatch(/No button lets p0 sell a card to another card\.$/);
+    });
+    it('press either kind of button with one card, and say so when both could take it', () => {
+      const ONE_OR_MORE = CARD_PICK_GAME.replace('  A player may stop.\n', '  A player may trade a card in their stash.\n  A player may stop.\n');
+      expect(ONE_OR_MORE).not.toBe(CARD_PICK_GAME);
+      const one = ['Example: trading one', "  Given p0's stash has an Opal", '  And the shop is empty', '  When p0 trades the Opal'].join('\n');
+      expect(run(CARD_PICK_GAME, `${one}\n  Then it is accepted\n  And the shop has an Opal`)).toEqual([expect.objectContaining({ status: 'pass' })]);
+      const [both] = run(ONE_OR_MORE, `${one}\n  Then it is accepted`);
+      expect(both.status).toBe('fail');
+      expect(both.message).toMatch(/with more than one button: “trade some cards from their stash to the shop” or “trade a card in their stash”\. Say where it goes\.$/);
+    });
+  });
 });

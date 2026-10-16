@@ -129,13 +129,14 @@ export class LangRuntime {
   }
 
   /**
-   * Whether a line of the group reads the card a press is about: the card a move makes, or “it”. Only such phrases may, so a group
-   * without one says the same of every card. Looked up as `readsAmount` does; a ref nobody wrote a phrase for reads nothing.
+   * Whether a line of the group reads a card a press is about: the card a move makes, or “it”, the picked cards of a set, or the
+   * target card. Only such phrases may, so a group without one says the same of every card. Looked up as `readsAmount` does; a ref
+   * nobody wrote a phrase for reads nothing.
    */
   readsCard(group: CondGroup): boolean {
     return group.refs.some((ref) => {
       const entry = ref.kind === 'lang' ? undefined : this.library.get(ref.kind, ref.phrase);
-      return entry?.needsMove === true || entry?.needsCard === true;
+      return entry?.needsMove === true || entry?.needsCard === true || entry?.needsCards === true || entry?.needsOnto === true;
     });
   }
 

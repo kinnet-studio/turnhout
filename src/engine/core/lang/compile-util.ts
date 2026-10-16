@@ -10,11 +10,13 @@ import type { ParamType, PhraseKind, PhraseRef, Vocab } from './types';
  * `player`, `space` and `card` say what the rule around a line is about: a card move, a player ("they"), a space or a
  * card ("it"). `drawn` is true only for the sentences of a card's says column: they are run for a card that was just drawn.
  * `amount` is true only for the lines of a button whose wording ends in “an amount”: its press carries a number. `picked` is true
- * only for the lines of a button whose wording ends in “another player”: its press picks a player.
+ * only for the lines of a button whose wording ends in “another player”: its press picks a player. `cards` is true only for the lines
+ * of a button that picks some cards (“the picked cards”), and `onto` only for those of a button that picks a card for its cards to go
+ * to (“the target card”); absent means false.
  */
 export type LineCtx = {
   library: PhraseLibrary; vocab: Vocab; gameName: string; inMove: boolean; player: boolean; space: boolean; card: boolean; drawn: boolean;
-  amount: boolean; picked: boolean; diagnostics: Diagnostic[];
+  amount: boolean; picked: boolean; cards?: boolean; onto?: boolean; diagnostics: Diagnostic[];
 };
 
 const MAX_SUGGESTIONS = 3;
@@ -32,6 +34,9 @@ const NEEDS_AMOUNT = (clean: string) =>
   `“${clean}” only makes sense in a button whose wording ends in “an amount”, like “A player may give an amount.”`;
 const NEEDS_PICK = (clean: string) =>
   `“${clean}” only makes sense in a button whose wording ends in “another player”, like “A player may challenge another player.”`;
+const NEEDS_CARDS = (clean: string) => `“${clean}” only makes sense in a button that picks some cards, like “A player may discard some cards from their hand.”`;
+const NEEDS_ONTO = (clean: string) =>
+  `“${clean}” only makes sense in a button that picks a card and the card it goes to, like “A player may stack a card from their hand to a card in the row.”`;
 const IF_FRAME = /^if\s+(.+)$/i;
 const FOR_FRAME = /^for\s+(.+)$/i;
 const NO_HOLDER_NAMED = (head: string) => `“${head}” doesn't name a player. Write “For the player who is …,” with something players can be.`;
@@ -149,6 +154,8 @@ function unmetNeed(entry: Required<PhraseOpts> | undefined, args: Json[], clean:
   if (!ctx.drawn && entry?.needsDrawnCard) return `“${clean}” only makes sense in a card's says column.`;
   if (!ctx.amount && entry?.needsAmount) return NEEDS_AMOUNT(clean);
   if (!ctx.picked && entry?.needsPick) return NEEDS_PICK(clean);
+  if (!ctx.cards && entry?.needsCards) return NEEDS_CARDS(clean);
+  if (!ctx.onto && entry?.needsOnto) return NEEDS_ONTO(clean);
   if (entry?.needsPayment && ctx.vocab.payWith === null) return NEEDS_PAYMENT;
   return null;
 }

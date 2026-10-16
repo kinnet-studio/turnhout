@@ -1,11 +1,11 @@
 import { cardById, zoneCards, type GameState } from '../game-state';
 import type { Move, MoveHandler } from '../moves';
-import type { PlayerId } from '../scene';
+import type { CardState, PlayerId } from '../scene';
 import { addToCounter, clearTurnLog, counterOf, endsTurn, isOut, playersIn, recordAction } from './board-state';
 import { isPile, isTakeable, moveZoneId, yours } from './declared-moves';
 import { counted, secondPersonWords } from './refs';
 import type { LangRuntime } from './runtime';
-import type { CardPick, CompiledPhase, DeclaredAction, MoveInfo, Subject } from './types';
+import type { CardPick, CompiledPhase, DeclaredAction, MoveInfo, Subject, ZoneRef } from './types';
 import { relocate } from './zones';
 
 const OUT = "You're out of the game.";
@@ -60,46 +60,113 @@ function pickOf(action: DeclaredAction): CardPick {
   return action.pick;
 }
 
-/** What a button that picks a card asks of the player who has not picked one it takes: “Pick a card from the shop to buy.” */
+/**
+ * What a button that picks cards asks of the player who has not picked what it takes: “Pick a card from the shop to buy.”, and for a
+ * set “Pick one or more cards from your stash to trade.”
+ */
 export function cardPrompt(action: DeclaredAction): string {
-  const { to, onto, fromText } = pickOf(action);
+  const { some, to, onto, fromText } = pickOf(action);
+  const doing = secondPersonWords(action.base);
+  if (some) return `Pick one or more cards from ${yours(fromText)} to ${doing}.`;
   // “a card in” is how the designer wrote a pick whose card goes nowhere by itself.
   const where = to === null && onto === null ? 'in' : 'from';
-  return `Pick a card ${where} ${yours(fromText)} to ${secondPersonWords(action.base)}.`;
+  return `Pick a card ${where} ${yours(fromText)} to ${doing}.`;
+}
+
+/** The zone a button picks the card its cards go to in, as written too; a caller that asks it of a button that picks none has a bug. */
+function ontoOf(action: DeclaredAction): { onto: ZoneRef; ontoText: string } {
+  const { onto, ontoText } = pickOf(action);
+  if (onto === null || ontoText === null) throw new Error(`The “${action.words}” button picks no card for its cards to go to.`);
+  return { onto, ontoText };
+}
+
+/** What a button that picks a card for its cards to go to asks of the player who has not picked one it takes. */
+export function ontoPrompt(action: DeclaredAction): string {
+  return `Pick where ${pickOf(action).some ? 'they go' : 'it goes'}: a card in ${yours(ontoOf(action).ontoText)}.`;
 }
 
 /** Why a button that picks a card in a zone can't be pressed while the zone holds none. */
 export const noCardIn = (zoneText: string): string => `There is no card in ${yours(zoneText)}.`;
 
-/**
- * The cards a button that picks a card offers `seat`: the ids in the zone it picks from, in slot order, or only the top card of a
- * pile. None when that zone is no seat's at this table (“the other player's stash” at a table of three).
- */
-export function cardCandidates(runtime: LangRuntime, action: DeclaredAction, state: GameState, seat: PlayerId): string[] {
-  const zoneId = moveZoneId(pickOf(action).from, runtime.seats, seat);
+/** The ids in the zone `zone` names for `seat` that a move may take, in slot order: only the top card of a pile. None for no seat's zone. */
+function takeableIds(runtime: LangRuntime, zone: ZoneRef, state: GameState, seat: PlayerId): string[] {
+  const zoneId = moveZoneId(zone, runtime.seats, seat);
   if (zoneId === null) return [];
   const ids = zoneCards(state, zoneId).map((card) => card.id);
   return isPile(runtime.game, zoneId) ? ids.slice(-1) : ids;
 }
 
-/** Who a press is about, and for a button that picks a card the move its lines read, as a card move's lines read theirs. */
-type Press = { subject: Subject; info?: MoveInfo };
+/**
+ * The cards a button that picks cards offers `seat`: the ids in the zone it picks from, in slot order, or only the top card of a
+ * pile. None when that zone is no seat's at this table (“the other player's stash” at a table of three).
+ */
+export function cardCandidates(runtime: LangRuntime, action: DeclaredAction, state: GameState, seat: PlayerId): string[] {
+  return takeableIds(runtime, pickOf(action).from, state, seat);
+}
+
+/** The cards a button that picks a card for its cards to go to offers `seat` as that card, as `cardCandidates` offers the cards. */
+export function ontoCandidates(runtime: LangRuntime, action: DeclaredAction, state: GameState, seat: PlayerId): string[] {
+  return takeableIds(runtime, ontoOf(action).onto, state, seat);
+}
 
 /**
- * The press of a button that picks a card, about the card it names: refused with the button's prompt unless `cardId` is a card on the
- * table, in the zone the button picks from for `by`, and the top card when that zone is a pile. Its lines see the card as the card a
+ * Who a press is about; for a button that picks one card, the move its lines read, as a card move's lines read theirs; and for a
+ * button whose cards go to a zone, which cards go where, in the order they go.
+ */
+type Press = { subject: Subject; info?: MoveInfo; relocation?: { ids: string[]; to: string } };
+
+/** The card `id` names, when it is on the table in the zone `zone` names for `by`. */
+function cardIn(runtime: LangRuntime, state: GameState, zone: ZoneRef, by: PlayerId, id: unknown): CardState | undefined {
+  const card = typeof id === 'string' ? cardById(state, id) : undefined;
+  const zoneId = moveZoneId(zone, runtime.seats, by);
+  return card && zoneId !== null && card.zoneId === zoneId ? card : undefined;
+}
+
+/** Why the button can't put cards in its zone: the zone is no seat's at this table, which no card the player could pick would change. */
+const nowhere = (action: DeclaredAction, pick: CardPick) => `You can't ${secondPersonWords(action.base)} ${pick.some ? 'cards' : 'a card'} there.`;
+
+/**
+ * The press of a button that picks one card, about the card it names: refused with the button's prompt unless `cardId` is a card on
+ * the table, in the zone the button picks from for `by`, and the top card when that zone is a pile. Its lines see the card as the card a
  * move makes, from where it is to where the button puts it (the zone it is in, for a button that puts it nowhere), and “it” is the card.
  */
-function aboutCards(action: DeclaredAction, pick: CardPick, runtime: LangRuntime, state: GameState, m: Move, by: PlayerId): Press | string {
-  const { cardId } = m;
-  const card = typeof cardId === 'string' ? cardById(state, cardId) : undefined;
-  const from = moveZoneId(pick.from, runtime.seats, by);
-  if (!card || from === null || card.zoneId !== from) return cardPrompt(action);
+function aboutCard(action: DeclaredAction, pick: CardPick, runtime: LangRuntime, state: GameState, m: Move, by: PlayerId): Press | string {
+  const card = cardIn(runtime, state, pick.from, by, m.cardId);
+  if (!card) return cardPrompt(action);
   if (!isTakeable(runtime.game, state, card)) return `You can only take the top card of ${yours(pick.fromText)}.`;
   const to = pick.to === null ? card.zoneId : moveZoneId(pick.to, runtime.seats, by);
-  // Like a card move whose zone is no seat's at this table: no card the player could pick would change that.
-  if (to === null) return `You can't ${secondPersonWords(action.base)} a card there.`;
-  return { subject: { player: by, space: null, card: card.id }, info: { verb: action.verb, by, cardId: card.id, from: card.zoneId, to } };
+  if (to === null) return nowhere(action, pick);
+  const info: MoveInfo = { verb: action.verb, by, cardId: card.id, from: card.zoneId, to };
+  return { subject: { player: by, space: null, card: card.id }, info, ...(pick.to === null ? {} : { relocation: { ids: [card.id], to } }) };
+}
+
+/**
+ * The press of a button that picks a set, about the cards it names: refused with the button's prompt unless `cardIds` names one or
+ * more cards, none twice, each a card the button could pick alone. Its lines have no one card, only the picked cards, in the press's order.
+ */
+function aboutSet(action: DeclaredAction, pick: CardPick, runtime: LangRuntime, state: GameState, m: Move, by: PlayerId): Press | string {
+  const { cardIds } = m;
+  const named = Array.isArray(cardIds) && cardIds.length > 0 && new Set(cardIds).size === cardIds.length;
+  const cards = named ? cardIds.map((id) => cardIn(runtime, state, pick.from, by, id)) : [];
+  if (cards.length === 0 || !cards.every((card) => card !== undefined && isTakeable(runtime.game, state, card))) return cardPrompt(action);
+  const ids = (cards as CardState[]).map((card) => card.id);
+  const to = pick.to === null ? null : moveZoneId(pick.to, runtime.seats, by);
+  if (pick.to !== null && to === null) return nowhere(action, pick);
+  return { subject: { player: by, space: null, card: null, cards: ids }, ...(to === null ? {} : { relocation: { ids, to } }) };
+}
+
+/**
+ * The press of a button that picks cards: one card or a set, then, for a button that picks a card for them to go to, that card,
+ * refused with its own prompt unless `onto` is a card on the table in the zone the button picks it in for `by` (the top card of a pile),
+ * other than the cards picked. Its lines read it as “the target card”.
+ */
+function aboutCards(action: DeclaredAction, pick: CardPick, runtime: LangRuntime, state: GameState, m: Move, by: PlayerId): Press | string {
+  const press = (pick.some ? aboutSet : aboutCard)(action, pick, runtime, state, m, by);
+  if (typeof press === 'string' || pick.onto === null) return press;
+  const target = cardIn(runtime, state, pick.onto, by, m.onto);
+  const picked = press.subject.cards ?? [press.subject.card];
+  if (!target || !isTakeable(runtime.game, state, target) || picked.includes(target.id)) return ontoPrompt(action);
+  return { ...press, subject: { ...press.subject, onto: target.id } };
 }
 
 /**
@@ -176,8 +243,10 @@ function choose(
  * after its pick and before any `Only if` line, when the player has less than it costs, and spends it before its Then lines. A button
  * that picks a card (“A player may buy a card from the shop to their stash.”) takes it from the move's `cardId`, and is refused the
  * same way when that is no card it takes; once paid for, the card moves to the button's zone, when it names one, before the Then
- * lines, which read it as a card move's lines read its card. Nobody is marked as having moved it: only trick games read that, and
- * they use card moves.
+ * lines, which read it as a card move's lines read its card. A button that picks some cards (“A player may trade some cards from their
+ * stash to the shop.”) takes them from the move's `cardIds` and moves them in that order, its lines reading them as the picked cards;
+ * one that picks a card for its cards to go to (“… to a card in their case.”) takes that card from the move's `onto`. Nobody is marked
+ * as having moved a card: only trick games read that, and they use card moves.
  */
 export function declaredActionHandler(move: string, runtime: LangRuntime): MoveHandler {
   return {
@@ -188,12 +257,12 @@ export function declaredActionHandler(move: string, runtime: LangRuntime): MoveH
     apply(state, m) {
       const choice = choose(move, runtime, state, m);
       if (typeof choice === 'string') throw new Error(`The “${move}” button was applied though it is not allowed: ${choice}`);
-      const { phase, action, by, subject, info } = choice;
+      const { phase, action, by, subject, info, relocation } = choice;
       // A press anyone may make is no part of anyone's turn, so it is not noted among what the player did in it.
       const recorded = action.anyone ? state : recordAction(state, by, move);
       // Spent first, so that the Then lines see what is left.
       const paid = payCost(action, recorded, by);
-      const moved = action.pick?.to && info ? relocate(paid, [info.cardId], info.to, runtime.game) : paid;
+      const moved = relocation ? relocate(paid, relocation.ids, relocation.to, runtime.game) : paid;
       const done = action.effects.reduce((s, ref) => runtime.run(ref, s, info, undefined, subject), moved);
       // Only a turn of this phase passes: lines that went back to an interrupted turn leave that turn's log as it was.
       return endsTurn(phase, move) && done.turn?.phase === phase.id ? clearTurnLog(done) : done;
@@ -219,14 +288,18 @@ export function playerCandidates(runtime: LangRuntime, state: GameState, seat: P
 }
 
 /**
- * Whether `seat` could press the button that picks a card with `cardId`, a card it can't see, judged by nothing that tells one such
- * card from another: whether it is one the button takes from where it lies, the cost, and every `Only if` line that does not read the
- * card, about the seat alone. A seat that is out can press nothing. Like `amountReady`, it asks nothing of the turn or the flow, and
- * the press itself still judges the card.
+ * Whether `seat` could press the button that picks cards with `cardId` (alone, for a set) and, for a button that picks a card for it to
+ * go to, `onto`, where it can't see one of them, judged by nothing that tells one such card from another: whether each is one the
+ * button takes from where it lies, the cost, and every `Only if` line that reads no card of the press, about the seat alone. A seat
+ * that is out can press nothing. Like `amountReady`, it asks nothing of the turn or the flow, and the press itself still judges the cards.
  */
-export function faceDownReady(runtime: LangRuntime, action: DeclaredAction, state: GameState, seat: PlayerId, cardId: string): true | string {
+export function faceDownReady(
+  runtime: LangRuntime, action: DeclaredAction, state: GameState, seat: PlayerId, cardId: string, onto?: string,
+): true | string {
   if (isOut(state, seat)) return OUT;
-  const press = aboutCards(action, pickOf(action), runtime, state, { type: action.words, by: seat, cardId }, seat);
+  const pick = pickOf(action);
+  const move: Move = { type: action.words, by: seat, ...(pick.some ? { cardIds: [cardId] } : { cardId }), ...(onto === undefined ? {} : { onto }) };
+  const press = aboutCards(action, pick, runtime, state, move, seat);
   if (typeof press === 'string') return press;
   const blind = action.conditions.filter((group) => !runtime.readsCard(group));
   return costRefusal(action, state, seat) ?? runtime.failedGroup(blind, state, undefined, { player: seat, space: null, card: null }) ?? true;

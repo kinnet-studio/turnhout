@@ -13,6 +13,7 @@ import { compileGame } from './compile';
 import {
   amountPrompt, amountReady, cardCandidates, cardPrompt, costRefusal, declaredActionHandler, faceDownReady, hasCost, noCardIn, payCost, pickPlayerPrompt,
   playerCandidates, targetCandidates,
+  ontoCandidates, ontoPrompt,
 } from './declared-actions';
 import { friendlyError } from './friendly';
 import { runExamples } from './examples';
@@ -965,5 +966,152 @@ describe('buttons that pick a card', () => {
     expect(fresh.getState()).toEqual(after);
     engine.undo();
     expect(engine.getState()).toEqual(before);
+  });
+
+  describe('a card and the card it goes to, and sets of cards', () => {
+    const SHOW = 'show a card from their stash to a card in their case';
+    const TRADE = 'trade some cards from their stash to the shop';
+    const [, , r3] = named('Ruby');
+    const [, , o3, o4] = named('Opal');
+    /** The arranged table with `ids` put in `zone` too. */
+    const plus = (zone: string, ...ids: string[]) => (s: GameState) => relocate(s, ids, zone, g);
+    const zoneIds = (s: GameState, zone: string) => zoneCards(s, zone).map((c) => c.id);
+    /** Each move is refused with `reason`, and leaves the state as it was. */
+    const refusesAll = (engine: ReturnType<typeof picks>['engine'], moves: Move[], reason: string) => {
+      for (const move of moves) {
+        const before = engine.getState();
+        expect(engine.dispatch(move), JSON.stringify(move)).toMatchObject({ ok: false, reason });
+        expect(engine.getState()).toEqual(before);
+      }
+    };
+
+    it('shows a card onto a card in the case: the card goes to the case and the move is spent', () => {
+      const { engine } = picks(plus('case-p0', o3));
+      expect(engine.dispatch({ type: SHOW, by: 'p0', cardId: o2, onto: o3 })).toMatchObject({ ok: true });
+      const s = engine.getState();
+      expect(zoneIds(s, 'case-p0')).toEqual([o3, o2]);
+      expect(coinsAndMoves(s)).toEqual([7, 1]);
+    });
+
+    it('reads “the target card” as the card it goes to', () => {
+      const { engine } = picks(plus('case-p0', r3));
+      expect(engine.dispatch({ type: SHOW, by: 'p0', cardId: o2, onto: r3 })).toMatchObject({ ok: false, reason: 'the target card is not a Ruby' });
+    });
+
+    it('says how to pick where it goes, and offers each card of that zone', () => {
+      const { engine, runtime } = picks(plus('case-p0', o3, r3));
+      expect(ontoPrompt(actionNamed(SHOW))).toBe('Pick where it goes: a card in your case.');
+      expect(cardPrompt(actionNamed(SHOW))).toBe('Pick a card from your stash to show.');
+      expect(ontoCandidates(runtime, actionNamed(SHOW), engine.getState(), 'p0')).toEqual([o3, r3]);
+      expect(ontoCandidates(runtime, actionNamed(SHOW), engine.getState(), 'p1')).toEqual([]);
+    });
+
+    it('Review Focus: refuses a target it can not take with its prompt, after the card, and changes nothing', () => {
+      const { engine } = picks(plus('case-p0', o3));
+      const show = (press: { [k: string]: Json }): Move => ({ type: SHOW, by: 'p0', cardId: o2, ...press });
+      refusesAll(engine, [show({}), show({ onto: r1 }), show({ onto: o2 }), show({ onto: 5 }), show({ onto: 'c999' })], 'Pick where it goes: a card in your case.');
+      refusesAll(engine, [{ type: SHOW, by: 'p0', cardId: r1, onto: 5 }], 'Pick a card from your stash to show.');
+    });
+
+    it('picks a set and the card it goes to', () => {
+      const STACK = 'stack some cards from their stash to a card in their case';
+      const text = CARD_PICK_GAME.replace('  A player may stop.\n', [
+        `  A player may ${STACK}.`, '    Only if the target card is not a Ruby.', '    Then:', '      Move the picked cards to their case.', '  A player may stop.', '',
+      ].join('\n'));
+      expect(compileGame(text, lib).diagnostics).toEqual([]);
+      const { engine, runtime } = picks(plus('case-p0', r3, o3), text);
+      expect(ontoPrompt(actionNamed(STACK, runtime.game))).toBe('Pick where they go: a card in your case.');
+      expect(engine.canDispatch({ type: STACK, by: 'p0', cardIds: [o2, r2] })).toBe('Pick where they go: a card in your case.');
+      expect(engine.canDispatch({ type: STACK, by: 'p0', cardIds: [o2, r2], onto: r3 })).toBe('the target card is not a Ruby');
+      expect(engine.dispatch({ type: STACK, by: 'p0', cardIds: [o2, r2], onto: o3 })).toMatchObject({ ok: true });
+      expect(zoneIds(engine.getState(), 'case-p0')).toEqual([r3, o3, o2, r2]);
+    });
+
+    it('Review Focus: refuses a picked card as the card it goes to, in a zone that holds both', () => {
+      const SWAP = 'swap a card from their case to a card in their case';
+      const SHUFFLE = 'shuffle some cards from their case to a card in their case';
+      const text = CARD_PICK_GAME.replace('  A player may stop.\n', `  A player may ${SWAP}.\n  A player may ${SHUFFLE}.\n  A player may stop.\n`);
+      expect(compileGame(text, lib).diagnostics).toEqual([]);
+      const { engine } = picks(plus('case-p0', r3, o3), text);
+      refusesAll(engine, [{ type: SWAP, by: 'p0', cardId: o3, onto: o3 }], 'Pick where it goes: a card in your case.');
+      refusesAll(engine, [{ type: SHUFFLE, by: 'p0', cardIds: [o3, r3], onto: r3 }], 'Pick where they go: a card in your case.');
+      expect(engine.canDispatch({ type: SWAP, by: 'p0', cardId: o3, onto: r3 })).toBe(true);
+      expect(engine.canDispatch({ type: SHUFFLE, by: 'p0', cardIds: [o3], onto: r3 })).toBe(true);
+    });
+
+    it('offers and takes only the top card of a pile as the card it goes to', () => {
+      const text = CARD_PICK_GAME.replace('  A player may stop.\n', '  A player may bury a card from their stash to a card in the pile.\n  A player may stop.\n');
+      expect(compileGame(text, lib).diagnostics).toEqual([]);
+      const { engine, runtime } = picks(undefined, text);
+      const [under, top] = zoneIds(engine.getState(), 'pile').slice(-2);
+      expect(ontoCandidates(runtime, actionNamed('bury a card from their stash to a card in the pile', runtime.game), engine.getState(), 'p0')).toEqual([top]);
+      const bury = (onto: string): Move => ({ type: 'bury a card from their stash to a card in the pile', by: 'p0', cardId: o2, onto });
+      expect(engine.canDispatch(bury(under))).toBe('Pick where it goes: a card in the pile.');
+      expect(engine.canDispatch(bury(top))).toBe(true);
+    });
+
+    it('trades a set: the cards go to the shop in the order picked, and the move is spent', () => {
+      const { engine } = picks();
+      expect(engine.dispatch({ type: TRADE, by: 'p0', cardIds: [o2, r2] })).toMatchObject({ ok: true });
+      const s = engine.getState();
+      expect(zoneIds(s, 'shop')).toEqual([r1, o1, o2, r2]);
+      expect(zoneIds(s, 'stash-p0')).toEqual([]);
+      expect(coinsAndMoves(s)).toEqual([7, 1]);
+    });
+
+    it('R1: judges a set as a whole when pressed, and each card alone may be pressed', () => {
+      const { engine } = picks(plus('stash-p0', o4));
+      expect(engine.canDispatch({ type: TRADE, by: 'p0', cardIds: [r2, o2, o4] })).toBe('they picked at most 2 cards');
+      for (const id of [r2, o2, o4]) expect(engine.canDispatch({ type: TRADE, by: 'p0', cardIds: [id] }), id).toBe(true);
+    });
+
+    it('Review Focus: refuses a set it can not take with its prompt, before the cost, and changes nothing', () => {
+      const prompt = 'Pick one or more cards from your stash to trade.';
+      expect(cardPrompt(actionNamed(TRADE))).toBe(prompt);
+      const { engine } = picks();
+      const trade = (press: { [k: string]: Json }): Move => ({ type: TRADE, by: 'p0', ...press });
+      const sets = [trade({ cardIds: [] }), trade({ cardIds: [r2, r2] }), trade({ cardIds: [r2, r1] }), trade({ cardIds: 'r2' }), trade({}), trade({ cardIds: [r2, 7] })];
+      refusesAll(engine, sets, prompt);
+    });
+
+    it('keeps the press\'s order: the last card picked ends on top', () => {
+      const TOSS = CARD_PICK_GAME.replace('  A player may stop.\n', [
+        '  A player may toss some cards from their stash.', '    Then:', '      Move the picked cards to the pile.', '  A player may stop.', '',
+      ].join('\n'));
+      expect(compileGame(TOSS, lib).diagnostics).toEqual([]);
+      const { engine } = picks(undefined, TOSS);
+      expect(engine.dispatch({ type: 'toss some cards from their stash', by: 'p0', cardIds: [o2, r2] })).toMatchObject({ ok: true });
+      expect(zoneIds(engine.getState(), 'pile').slice(-2)).toEqual([o2, r2]);
+    });
+
+    it('judges a card the player can not see by nothing about the cards: a set by none of its lines about the picked cards', () => {
+      const { engine, runtime } = picks(plus('stash-p0', o4));
+      const s = engine.getState();
+      const trade = actionNamed(TRADE);
+      const tight = CARD_PICK_GAME.replace('    Only if they picked at most 2 cards.', '    Only if they picked at most 0 cards.');
+      expect(tight).not.toBe(CARD_PICK_GAME);
+      const strict = picks(undefined, tight);
+      expect(strict.engine.canDispatch({ type: TRADE, by: 'p0', cardIds: [r2] })).toBe('they picked at most 0 cards');
+      expect(faceDownReady(strict.runtime, actionNamed(TRADE, strict.runtime.game), strict.engine.getState(), 'p0', r2)).toBe(true);
+      expect(faceDownReady(runtime, trade, s, 'p0', r1)).toBe('Pick one or more cards from your stash to trade.');
+      // A target is judged the same way: the line about it is left to the press.
+      const shown = picks(plus('case-p0', r3));
+      const show = actionNamed(SHOW, shown.runtime.game);
+      expect(shown.engine.canDispatch({ type: SHOW, by: 'p0', cardId: o2, onto: r3 })).toBe('the target card is not a Ruby');
+      expect(faceDownReady(shown.runtime, show, shown.engine.getState(), 'p0', o2, r3)).toBe(true);
+      expect(faceDownReady(shown.runtime, show, shown.engine.getState(), 'p0', o2, r1)).toBe('Pick where it goes: a card in your case.');
+    });
+
+    it('undoes a trade, and replays it from the log', () => {
+      const { engine } = picks();
+      const before = engine.getState();
+      expect(engine.dispatch({ type: TRADE, by: 'p0', cardIds: [o2, r2] }).ok).toBe(true);
+      const after = engine.getState();
+      const fresh = picks().engine;
+      fresh.loadLog([...engine.getLog()]);
+      expect(fresh.getState()).toEqual(after);
+      engine.undo();
+      expect(engine.getState()).toEqual(before);
+    });
   });
 });

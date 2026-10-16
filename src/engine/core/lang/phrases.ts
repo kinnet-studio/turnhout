@@ -217,12 +217,16 @@ export type MatchResult =
  * pay with, a board (a Board: loop of spaces), dice or, for a double, exactly two of them. A phrase that sets `needsTwoDice`
  * sets `needsDice` too, so a game with no dice hears about that first. `needsAmount` is for a phrase that reads the amount a
  * button's press carries, which only a button whose wording ends in “an amount” has. `needsPick` is for a phrase that reads the
- * player a button's press picked, which only a button whose wording ends in “another player” has. `entersPhase` is no need: it says
- * the phrase's first argument is a phase the line enters, so that the compiler counts the line as leading there.
+ * player a button's press picked, which only a button whose wording ends in “another player” has. `needsCards` is for a phrase that
+ * reads the set of cards a button's press picked (“the picked cards”), which only a button that picks some cards has, and `needsOnto`
+ * for one that reads the card a press picked for its cards to go to (“the target card”), which only a button that picks one has.
+ * `entersPhase` is no need: it says the phrase's first argument is a phase the line enters, so that the compiler counts the line as
+ * leading there.
  */
 export type PhraseOpts = {
   needsMove?: boolean; needsPlayer?: boolean; needsSpace?: boolean; needsCard?: boolean; needsDrawnCard?: boolean; needsPayment?: boolean;
-  needsBoard?: boolean; needsDice?: boolean; needsTwoDice?: boolean; needsAmount?: boolean; needsPick?: boolean; entersPhase?: boolean;
+  needsBoard?: boolean; needsDice?: boolean; needsTwoDice?: boolean; needsAmount?: boolean; needsPick?: boolean; needsCards?: boolean;
+  needsOnto?: boolean; entersPhase?: boolean;
 };
 
 type Part = { literal: string } | { type: ParamType };
@@ -368,7 +372,8 @@ export class PhraseLibrary {
     return entry && {
       fn: entry.fn, needsMove: entry.needsMove, needsPlayer: entry.needsPlayer, needsSpace: entry.needsSpace, needsCard: entry.needsCard,
       needsDrawnCard: entry.needsDrawnCard, needsPayment: entry.needsPayment, needsBoard: entry.needsBoard, needsDice: entry.needsDice,
-      needsTwoDice: entry.needsTwoDice, needsAmount: entry.needsAmount, needsPick: entry.needsPick, entersPhase: entry.entersPhase,
+      needsTwoDice: entry.needsTwoDice, needsAmount: entry.needsAmount, needsPick: entry.needsPick, needsCards: entry.needsCards,
+      needsOnto: entry.needsOnto, entersPhase: entry.entersPhase,
     };
   }
 
@@ -462,7 +467,8 @@ export class PhraseLibrary {
       needsMove: opts.needsMove ?? false, needsPlayer: opts.needsPlayer ?? false, needsSpace: opts.needsSpace ?? false,
       needsCard: opts.needsCard ?? false, needsDrawnCard: opts.needsDrawnCard ?? false, needsPayment: opts.needsPayment ?? false,
       needsBoard: opts.needsBoard ?? false, needsDice: opts.needsDice ?? false, needsTwoDice: opts.needsTwoDice ?? false,
-      needsAmount: opts.needsAmount ?? false, needsPick: opts.needsPick ?? false, entersPhase: opts.entersPhase ?? false,
+      needsAmount: opts.needsAmount ?? false, needsPick: opts.needsPick ?? false, needsCards: opts.needsCards ?? false,
+      needsOnto: opts.needsOnto ?? false, entersPhase: opts.entersPhase ?? false,
     });
     return this;
   }

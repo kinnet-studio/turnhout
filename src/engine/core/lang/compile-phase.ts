@@ -271,35 +271,44 @@ type CardLine = { kind: 'move'; verb: string } | { kind: 'pick'; words: PickWord
 /** Whether a line has an `It costs …` line under it, which makes a card line a button. */
 const hasCostLine = (node: OutlineNode): boolean => node.children.some((child) => COST_LINE.test(normalizeLine(child.text)));
 
-/** The words of a button that picks one card, from its line and the parts of it a pick line found. */
-function onePick(clean: string, base: string, fromText: string, toText: string | null): PickWords {
+/** “some cards” picks a set; “a card” picks one. */
+const SOME_CARDS = /^some cards$/i;
+
+/**
+ * A button that picks cards, from its line and the parts of it a pick line found: the base, “a card” or “some cards”, the zone they are
+ * picked in, and the zone they go to or the zone of the card they go to, null where the line names none.
+ */
+function pickCardLine(clean: string, base: string, howMany: string, fromText: string, toText: string | null, ontoText: string | null): CardLine {
   const written = clean.replace(/^(?:a|any) player may /i, '');
-  return {
+  const words: PickWords = {
     verb: base.split(' ')[0].toLowerCase(), words: written.toLowerCase(), written, base: base.toLowerCase(), anyone: ANYONE_LINE.test(clean),
-    some: false, fromText, toText, ontoText: null,
+    some: SOME_CARDS.test(howMany), fromText, toText, ontoText,
   };
+  return { kind: 'pick', words };
 }
 
 /**
  * What an `A player may …` line that mentions a card is, by its words and by whether a cost line sits under it (R1), trying in order:
- * a card and the card it goes to; a card move, when there is no cost line; a card from a zone to a zone, with a cost line; some cards
- * from a zone; a card in a zone. Anything else is a card line the phase can't read, even when the rest of it is mistyped: it is
- * reported as one, never made into a plain button. Null for a line that is no `A player may …` line about a card.
- * For now only one card is picked, from a zone to a zone or in a zone: a target card and a set are card lines the phase can't read.
+ * a card or some cards and the card they go to; a card move, when there is no cost line; a card from a zone to a zone, with a cost
+ * line, or some cards from a zone to a zone; some cards from a zone; a card in a zone. Anything else is a card line the phase can't
+ * read, even when the rest of it is mistyped: it is reported as one, never made into a plain button. Null for a line that is no
+ * `A player may …` line about a card.
  */
 function cardLineOf(node: OutlineNode): CardLine | null {
   const clean = normalizeLine(node.text);
   const found = ACTION_LINE.exec(clean);
   if (!found || !MENTIONS_CARD.test(clean)) return null;
-  const unread: CardLine = { kind: 'unread', verb: found[1].toLowerCase() };
-  if (PICK_ONTO.test(clean)) return unread;
+  const onto = PICK_ONTO.exec(clean);
+  if (onto) return pickCardLine(clean, onto[1], onto[2], onto[3], null, onto[4]);
   const costed = hasCostLine(node);
   if (!costed && LOOSE_MOVE_LINE.test(clean)) return { kind: 'move', verb: found[1].toLowerCase() };
+  // Only one card from a zone to a zone with no cost line is a card move, so a set is a button whether or not it costs anything.
   const to = PICK_TO.exec(clean);
-  if (to && costed && to[2].toLowerCase() === 'a card') return { kind: 'pick', words: onePick(clean, to[1], to[3], to[4]) };
-  if (PICK_SOME.test(clean)) return unread;
+  if (to && (costed || SOME_CARDS.test(to[2]))) return pickCardLine(clean, to[1], to[2], to[3], to[4], null);
+  const some = PICK_SOME.exec(clean);
+  if (some) return pickCardLine(clean, some[1], 'some cards', some[2], null, null);
   const inZone = PICK_IN.exec(clean);
-  return inZone ? { kind: 'pick', words: onePick(clean, inZone[1], inZone[2], null) } : unread;
+  return inZone ? pickCardLine(clean, inZone[1], 'a card', inZone[2], null, null) : { kind: 'unread', verb: found[1].toLowerCase() };
 }
 
 /** The words of a button that picks a card, or null for any other line. */
@@ -459,18 +468,26 @@ function compileAction(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx):
 }
 
 /**
- * A button that picks a card, with its `Only if` conditions, `Then:` effects and cost; null when its verb is reserved, a zone it names
+ * A button that picks cards, with its `Only if` conditions, `Then:` effects and cost; null when its verb is reserved, a zone it names
  * can't be read or is more than one zone, or its cost line has a problem. Its zones are read as a card move's are, so a misnamed one is
- * told the same way. Its lines are about the player who presses it and, as a card move's are, the card picked: “it” and “the card”.
+ * told the same way. Its lines are about the player who presses it and, as a card move's are, the one card picked: “it” and “the card”.
+ * A set has no one card: its lines read “the picked cards” instead. A button that picks a card for its cards to go to reads it as
+ * “the target card”.
  */
 function compileCardPick(node: OutlineNode, words: PickWords, ctx: LineCtx): DeclaredAction | null {
-  const { verb, written, base, anyone, fromText, toText } = words;
+  const { verb, written, base, anyone, some, fromText, toText, ontoText } = words;
   const reserved = verb === RESERVED_VERB;
   if (reserved) addProblem(ctx.diagnostics, node.line, `“${RESERVED_VERB}” is reserved; pick another word.`, { text: written.split(' ')[0] });
-  const zones = oneZones(node, toText === null ? [fromText] : [fromText, toText], ctx);
-  const { conditions, effects, cost, badCost } = readRuleBody(node, { ...ctx, inMove: true, player: true, card: true });
+  // A line names either the zone the cards go to or the zone of the card they go to, never both.
+  const second = toText ?? ontoText;
+  const zones = oneZones(node, second === null ? [fromText] : [fromText, second], ctx);
+  const onto = ontoText !== null;
+  const about: LineCtx = some ? { ...ctx, player: true, cards: true, onto } : { ...ctx, inMove: true, player: true, card: true, onto };
+  const { conditions, effects, cost, badCost } = readRuleBody(node, about);
   if (reserved || !zones || badCost) return null;
-  const pick: CardPick = { some: false, from: zones[0], fromText, to: zones[1] ?? null, onto: null, ontoText: null };
+  const pick: CardPick = {
+    some, from: zones[0], fromText, to: toText === null ? null : zones[1], onto: onto ? zones[1] : null, ontoText,
+  };
   return {
     verb, words: words.words, base, label: actionLabel(written), target: null, anyone, amount: false, picksPlayer: false, conditions, effects,
     line: node.line, pick, ...(cost ? { cost } : {}),

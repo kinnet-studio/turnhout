@@ -992,4 +992,95 @@ describe('buttons that pick a card', () => {
     expect(readSeatExtras(withCards({ ...buy.cards!, cards: [{ id: r1, name: 'Ruby', allowed: 3 }] }))).toBeNull();
     expect(readSeatExtras(withCards({ prompt: 'x' }))).toBeNull();
   });
+
+  describe('a card and the card it goes to, and sets of cards', () => {
+    const SHOW = 'show a card from their stash to a card in their case';
+    const TRADE = 'trade some cards from their stash to the shop';
+    const [, , o3, o4] = named('Opal');
+    /** The arranged table with `ids` put in `zone` too. */
+    const plus = (zone: string, ...ids: string[]) => (s: GameState) => relocate(s, ids, zone, g);
+    /** A two-player game whose “their” zones in the show and trade lines are the other player's stash, which only they can see. */
+    const peeking = (lines: string[]) => {
+      const text = CARD_PICK_GAME.replace('Players: 2 to 3', 'Players: 2').replace('  A player may stop.\n', `${lines.join('\n')}\n  A player may stop.\n`);
+      expect(compileGame(text, lib).diagnostics).toEqual([]);
+      return text;
+    };
+
+    it('lists the cards p0 could show, and for each the cards it could go to', () => {
+      const show = view('p0', picks(plus('case-p0', o3)), SHOW);
+      expect(show.allowed).toBe(true);
+      expect(show.cards).toEqual({
+        some: false, prompt: 'Pick a card from your stash to show',
+        cards: [{ id: r2, name: 'Ruby', allowed: true }, { id: o2, name: 'Opal', allowed: true }],
+        onto: { prompt: 'Pick where it goes: a card in your case', targets: { [r2]: [{ id: o3, name: 'Opal', allowed: true }], [o2]: [{ id: o3, name: 'Opal', allowed: true }] } },
+      });
+    });
+    it('greys each card, and the button, with the verdict of its only target', () => {
+      const show = view('p0', picks(plus('case-p0', r3)), SHOW);
+      const reason = 'the target card is not a Ruby';
+      expect(show.cards!.onto!.targets).toEqual({ [r2]: [{ id: r3, name: 'Ruby', allowed: reason }], [o2]: [{ id: r3, name: 'Ruby', allowed: reason }] });
+      expect([show.allowed, ...show.cards!.cards.map((c) => c.allowed)]).toEqual([reason, reason, reason]);
+    });
+    it('lets a card go when any of its targets takes it', () => {
+      const show = view('p0', picks(plus('case-p0', r3, o3)), SHOW);
+      expect(show.cards!.onto!.targets[o2].map((t) => t.allowed)).toEqual(['the target card is not a Ruby', true]);
+      expect([show.allowed, ...show.cards!.cards.map((c) => c.allowed)]).toEqual([true, true, true]);
+    });
+    it('says there is no card to go to while the case is empty', () => {
+      const show = view('p0', picks(), SHOW);
+      const none = 'There is no card in your case.';
+      expect(show.cards!.onto).toEqual({ prompt: 'Pick where it goes: a card in your case', targets: { [r2]: [], [o2]: [] } });
+      expect([show.allowed, ...show.cards!.cards.map((c) => c.allowed)]).toEqual([none, none, none]);
+    });
+    it('lists the cards p0 could trade, each judged alone', () => {
+      const trade = view('p0', picks(plus('stash-p0', o4)), TRADE);
+      expect(trade.allowed).toBe(true);
+      expect(trade.cards).toEqual({
+        some: true, prompt: 'Pick one or more cards from your stash to trade',
+        cards: [{ id: r2, name: 'Ruby', allowed: true }, { id: o2, name: 'Opal', allowed: true }, { id: o4, name: 'Opal', allowed: true }], onto: null,
+      });
+    });
+    it('lists the cards of a set that goes to a card, each with the cards it could go to, judged alone', () => {
+      const STACK = 'stack some cards from their stash to a card in their case';
+      const text = CARD_PICK_GAME.replace('  A player may stop.\n', `  A player may ${STACK}.\n    Only if the target card is not a Ruby.\n  A player may stop.\n`);
+      expect(compileGame(text, lib).diagnostics).toEqual([]);
+      const targets = [{ id: r3, name: 'Ruby', allowed: 'the target card is not a Ruby' }, { id: o3, name: 'Opal', allowed: true }];
+      expect(view('p0', picks(plus('case-p0', r3, o3), text), STACK).cards).toEqual({
+        some: true, prompt: 'Pick one or more cards from your stash to stack',
+        cards: [{ id: r2, name: 'Ruby', allowed: true }, { id: o2, name: 'Opal', allowed: true }],
+        onto: { prompt: 'Pick where they go: a card in your case', targets: { [r2]: targets, [o2]: targets } },
+      });
+    });
+    it('Review Focus: judges a hidden target without the lines about the target card', () => {
+      const SPY = "spy a card from their stash to a card in the other player's stash";
+      const text = peeking([`  A player may ${SPY}.`, '    Only if the target card is not a Ruby.']);
+      const built = picks(plus('stash-p1', r3, o3), text);
+      const hidden = [{ id: r3, name: 'a face-down card', allowed: true }, { id: o3, name: 'a face-down card', allowed: true }];
+      expect(view('p0', built, SPY).cards!.onto!.targets).toEqual({ [r2]: hidden, [o2]: hidden });
+      // The press still judges the target itself.
+      expect(built.engine.canDispatch({ type: SPY, by: 'p0', cardId: o2, onto: r3 })).toBe('the target card is not a Ruby');
+      expect(built.engine.canDispatch({ type: SPY, by: 'p0', cardId: o2, onto: o3 })).toBe(true);
+    });
+    it('Review Focus: judges a hidden card of a set without the lines about the picked cards', () => {
+      const SNOOP = "snoop some cards from the other player's stash";
+      const text = peeking([`  A player may ${SNOOP}.`, '    Only if they picked at most 0 cards.']);
+      const built = picks(plus('stash-p1', r3, o3), text);
+      expect(view('p0', built, SNOOP).cards!.cards).toEqual([
+        { id: r3, name: 'a face-down card', allowed: true }, { id: o3, name: 'a face-down card', allowed: true },
+      ]);
+      expect(built.engine.canDispatch({ type: SNOOP, by: 'p0', cardIds: [r3] })).toBe('they picked at most 0 cards');
+      // Shown to p0, the same cards are judged by the line.
+      const shownTo = (s: GameState): GameState => ({ ...s, cards: s.cards.map((c) => (c.id === r3 ? { ...c, revealTo: ['p0'] } : c)) });
+      const shown = picks((s) => shownTo(plus('stash-p1', r3, o3)(s)), text);
+      expect(view('p0', shown, SNOOP).cards!.cards.map((c) => c.allowed)).toEqual(['they picked at most 0 cards', true]);
+    });
+    it('is plain data, and readSeatExtras reads targets back', () => {
+      const built = picks(plus('case-p0', o3));
+      const extras = seatExtras(built.engine, built.runtime, built.engine.getState(), 'p0');
+      expect(readSeatExtras(JSON.parse(JSON.stringify(extras)))).toEqual(extras);
+      const show = extras.actions.find((a) => a.move === SHOW)!;
+      const withOnto = (onto: Json) => ({ board: null, actions: [{ ...show, cards: { ...show.cards!, onto } }] });
+      expect(readSeatExtras(withOnto({ prompt: 'x', targets: { [r2]: [{ id: o3, name: 'Opal', allowed: 3 }] } }))).toBeNull();
+    });
+  });
 });

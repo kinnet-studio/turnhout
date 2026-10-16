@@ -109,7 +109,7 @@ describe('PhraseLibrary.match', () => {
     const l = lib().condition('it is their move', fn, { needsMove: true }).condition('hearts are broken', () => true);
     expect(l.get('condition', 'it is their move')).toEqual({
       fn, needsMove: true, needsPlayer: false, needsSpace: false, needsCard: false, needsDrawnCard: false, needsPayment: false, needsBoard: false,
-      needsDice: false, needsTwoDice: false, needsAmount: false, needsPick: false, entersPhase: false,
+      needsDice: false, needsTwoDice: false, needsAmount: false, needsPick: false, needsCards: false, needsOnto: false, entersPhase: false,
     });
     expect(l.get('condition', 'hearts are broken')?.needsMove).toBe(false);
     expect(l.get('effect', 'it is their move')).toBeUndefined();

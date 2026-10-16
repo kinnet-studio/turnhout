@@ -65,6 +65,27 @@ export function cardOf(env: PhraseEnv): string {
   return card;
 }
 
+/**
+ * The card a `needsOnto` phrase reads, the one the button's press picked for its cards to go to. The compiler only lets such phrases
+ * into a button that picks one, so a missing one is a bug.
+ */
+export function theTargetCard(env: PhraseEnv): CardState {
+  const onto = env.subject?.onto;
+  const card = onto === undefined ? undefined : cardById(env.state, onto);
+  if (!card) throw new Error('This phrase needs a target card, but the button carries none.');
+  return card;
+}
+
+/**
+ * The ids of the cards a `needsCards` phrase reads, the set the button's press picked, in the order it gave them. The compiler only
+ * lets such phrases into a button that picks some cards, so a missing set is a bug.
+ */
+export function thePickedCards(env: PhraseEnv): string[] {
+  const cards = env.subject?.cards;
+  if (cards === undefined) throw new Error('This phrase needs the picked cards, but the button carries none.');
+  return cards;
+}
+
 /** The seat an example line names; it has to be sitting at the table. */
 export const seatOf = (env: PhraseEnv, seat: Json): PlayerId => resolveSeat({ seat: seat as string }, env);
 
