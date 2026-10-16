@@ -30,7 +30,7 @@ export function fixtureGame(over: Partial<CompiledGame> = {}): CompiledGame {
     players: { min: 2, max: 4 },
     zones: FIXTURE_ZONES.map((z) => ({ ...z })),
     cards: [{ kind: 'standard', identities: standardDeckIdentities(), start: 'deck', acesHigh: true }],
-    setup: [], phases: [], end: null, examples: [], board: null, facts: [], columns: {},
+    setup: [], phases: [], end: null, examples: [], board: null, facts: [], columns: {}, says: {},
     ...over,
   };
 }
@@ -153,6 +153,148 @@ export const TINY_BOARD = [
   '  That player wins.',
 ].join('\n');
 
+/**
+ * TINY_BOARD_HEAD with two buttons any player may press: waving gets 5 money, and planting a flag on a street they own pays 10
+ * while they have at least 10. Nothing puts a player out, so a player below 0 stays in. Rose Lane is space 3 and charges 14.
+ * The anyone buttons are on lines 25 and 28, and the After line is line 34.
+ */
+export const ANY_PLAYER_BOARD = [
+  TINY_BOARD_HEAD,
+  '  A player may roll the dice.', '    Only if they have not rolled this turn.', '    Then:', '      Roll the dice.',
+  '      Their piece moves forward by the roll.',
+  '  A player may end their turn.', '    Only if they have rolled this turn.',
+  '  Any player may wave.', '    Then:', '      They get 5 money.',
+  '  Any player may plant a flag on a street they own.', '    Only if they have at least 10 money.', '    Then:', '      They pay 10.',
+  '  When a player lands on a street someone else owns:', '    They pay its rent to its owner.',
+  '  After a player ends their turn, the turn passes to the left.',
+  '', 'End:', '  The game ends when one player is left.', '  That player wins.',
+].join('\n');
+
+/**
+ * TINY_BOARD_HEAD with a pot the game keeps and a button that carries an amount: after rolling, a player may raise the pot to more
+ * than it is, as long as they have that much, and ending the turn pays the pot to the bank and empties it. Line 15 declares the
+ * pot; `A player may raise an amount.` is line 24 and `A player may end their turn.` line 30.
+ */
+export const AMOUNT_BOARD = [
+  TINY_BOARD_HEAD.replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  The game has a pot of 0.'),
+  '  A player may roll the dice.', '    Only if they have not rolled this turn.', '    Then:', '      Roll the dice.',
+  '      Their piece moves forward by the roll.',
+  '  A player may raise an amount.', '    Only if they have rolled this turn.', '    Only if the amount is more than the pot.',
+  '    Only if they have at least the amount in money.', '    Then:', '      The pot is the amount.',
+  '  A player may end their turn.', '    Only if they have rolled this turn.', '    Then:', '      They pay the pot.', '      The pot is 0.',
+  '  After a player ends their turn, the turn passes to the left.',
+  '', 'End:', '  The game ends when one player is left.', '  That player wins.',
+].join('\n');
+
+/**
+ * TINY_BOARD_HEAD with a button that picks another player: after rolling, a player may challenge another player, who becomes
+ * the rival. Line 15 declares the rival, `A player may challenge another player.` is line 24 and `A player may end their turn.`
+ * line 28.
+ */
+export const PICK_BOARD = [
+  TINY_BOARD_HEAD.replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  Players can be the rival.'),
+  '  A player may roll the dice.', '    Only if they have not rolled this turn.', '    Then:', '      Roll the dice.',
+  '      Their piece moves forward by the roll.',
+  '  A player may challenge another player.', '    Only if they have rolled this turn.', '    Then:', '      That player is the rival.',
+  '  A player may end their turn.', '    Only if they have rolled this turn.',
+  '  After a player ends their turn, the turn passes to the left.',
+  '', 'End:', '  The game ends when one player is left.', '  That player wins.',
+].join('\n');
+
+/**
+ * TINY_BOARD_HEAD with a vote that interrupts the turn. After rolling, a player may call one: the vote phase starts with the player
+ * on their left, and its start line makes every player voting. Voters abstain in turn, the turn skipping players who are not
+ * voting; once no player is, play goes back to the caller's turn. Closing the vote goes back at once, and the After line names it.
+ * `Phase: vote` is line 32.
+ */
+export const INTERRUPT_BOARD = [
+  TINY_BOARD_HEAD.replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  Players can be voting.'),
+  '  A player may roll the dice.', '    Only if they have not rolled this turn.', '    Then:', '      Roll the dice.',
+  '      Their piece moves forward by the roll.',
+  '  A player may call a vote.', '    Only if they have rolled this turn.', '    Then:', '      The vote phase starts with the player on their left.',
+  '  A player may end their turn.', '    Only if they have rolled this turn.',
+  '  After a player ends their turn, the turn passes to the left.',
+  '', 'Phase: vote', '  Hint: Abstain, or close the vote.', '  When this phase starts:', '    Every player is voting.',
+  '  A player may abstain.', '    Only if they are voting.', '    Then:', '      They are not voting.',
+  '  A player may close the vote.', '    Then:', '      No player is voting.', '      Go back to the interrupted turn.',
+  '  When no player is voting:', '    Go back to the interrupted turn.',
+  '  After a player abstains or closes the vote, the turn passes to the next player on the left who is voting.',
+  '', 'End:', '  The game ends when one player is left.', '  That player wins.',
+].join('\n');
+
+/**
+ * TINY_BOARD_HEAD with a flag a button sets on a space it picks without “on”: a player may mark a space they own that is not
+ * marked yet. Line 15 declares the flag, `A player may mark a space they own.` is line 19 and `A player may end their turn.`
+ * line 23.
+ */
+export const MARK_BOARD = [
+  TINY_BOARD_HEAD.replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  Spaces can be marked.'),
+  '  A player may mark a space they own.', '    Only if it is not marked.', '    Then:', '      It is marked.',
+  '  A player may end their turn.',
+  '  After a player ends their turn, the turn passes to the left.',
+  '', 'End:', '  The game ends when one player is left.', '  That player wins.',
+].join('\n');
+
+/**
+ * A board game whose two decks say what their cards do. `lucky` and `fate` are the tables under each deck line, header row
+ * first; `rules` are lines under `Phase: playing`, indented as written there. Lines: the lucky table starts on line 6 (its
+ * first card on line 7); the fate deck line is line 6 + lucky.length and its first card line 8 + lucky.length. The loop is
+ * Go 0, Mill Lane 1, Lucky 2, North Station 3, Rose Lane 4, Lucky 5, Fate 6, Power Works 7.
+ */
+export function deckGameText(lucky: string[], fate: string[], rules: string[] = []): string {
+  return [
+    'Game: Deck Board', 'Players: 2 to 4', '', 'Cards:',
+    '  A deck called lucky cards, starting in the lucky pile:', ...lucky.map((row) => `    ${row}`),
+    '  A deck called fate cards, starting in the fate pile:', ...fate.map((row) => `    ${row}`),
+    '', 'Table:',
+    '  The lucky pile is a pile in the center that no one can see.',
+    '  The fate pile is a pile in the center that no one can see.',
+    '  Each player has a kept cards row that everyone can see.',
+    '', 'Board:',
+    '  The board is a loop of spaces, starting at Go:',
+    '    | space         | kind    | color  | price | rent |',
+    '    | Go            | go      |        |       |      |',
+    '    | Mill Lane     | street  | brown  | 60    | 2    |',
+    '    | Lucky         | lucky   |        |       |      |',
+    '    | North Station | station |        | 200   | 25   |',
+    '    | Rose Lane     | street  | orange | 180   | 14   |',
+    '    | Lucky         | lucky   |        |       |      |',
+    '    | Fate          | fate    |        |       |      |',
+    '    | Power Works   | utility |        | 150   | 10   |',
+    '  Each player has a piece that starts on Go.',
+    '  Each player has 1500 money that everyone can see.',
+    '  Players pay with money.',
+    '  There are two six-sided dice.',
+    '  Spaces can have houses and a hotel.',
+    '  The bank has 32 houses and 12 hotels.',
+    '', 'Phase: playing', '  Players take turns.',
+    '  A player may roll the dice.', '    Only if they have not rolled this turn.', '    Then:', '      Roll the dice.',
+    '      Their piece moves forward by the roll.',
+    '  A player may end their turn.', '    Only if they have rolled this turn.',
+    '  When a piece passes Go:', '    Its player gets 200 money.',
+    '  When a player lands on a space someone else owns:', '    They pay its rent to its owner.',
+    '  When a player has less than 0 money:', '    They are out.', '    Their spaces go back to the bank.',
+    '  When a player lands on a lucky space:', '    They draw from the lucky pile and do what it says.',
+    '  When a player lands on a fate space:', '    They draw from the fate pile and do what it says.',
+    ...rules,
+    '  After a player ends their turn, the turn passes to the left.',
+    '', 'End:', '  The game ends when one player is left.', '  That player wins.',
+  ].join('\n');
+}
+
+/**
+ * deckGameText with a lucky card players keep (Pass), a flag cards can have (lent), and two flags players can have (leading, the
+ * rival). Its one new button runs two lines about the players who hold them: lending flags every card the leader keeps, and the
+ * rival gets 5 money.
+ */
+export const HOLDING_BOARD = deckGameText(
+  ['| name | says |', '| Pass | They keep this card in their kept cards. |'], ['| name | says |', '| Calm | They get 0 money. |'],
+  [
+    '  A player may lend.', '    Then:',
+    '      For the player who is leading, every card in their kept cards is lent.', '      For the rival, they get 5 money.',
+  ],
+).replace('  The bank has 32 houses and 12 hotels.', '  The bank has 32 houses and 12 hotels.\n  Cards can be lent.\n  Players can be leading.\n  Players can be the rival.');
+
 /** The loop of the board fixtures: a start, two streets, a tax, a station, a utility and two chance spaces. */
 export const FIXTURE_SPACES: SpaceSpec[] = [
   { name: 'Go', attrs: { kind: 'go' } },
@@ -192,7 +334,7 @@ export function fixtureEnv(
   state: GameState,
   opts: {
     game?: CompiledGame; seats?: PlayerId[]; move?: MoveInfo; check?: PhraseEnv['check']; subject?: Subject; announce?: PhraseEnv['announce'];
-    columnValue?: PhraseEnv['columnValue'];
+    columnValue?: PhraseEnv['columnValue']; runLine?: PhraseEnv['runLine'];
   } = {},
 ): PhraseEnv {
   return {
@@ -204,6 +346,7 @@ export function fixtureEnv(
     subject: opts.subject,
     announce: opts.announce,
     columnValue: opts.columnValue,
+    runLine: opts.runLine,
   };
 }
 
@@ -237,7 +380,9 @@ export function vocabFor(game: CompiledGame, players: number = game.players.max)
     phases: game.phases.map((p) => p.id),
     verbs: [...new Set(game.phases.flatMap((p) => p.moves.map((m) => m.verb)))],
     board: game.board,
-    actions: game.phases.flatMap((p) => p.actions.map((a) => ({ verb: a.verb, words: a.words, base: a.base, targeted: a.target !== null }))),
+    actions: game.phases.flatMap((p) => p.actions.map((a) => ({
+      verb: a.verb, words: a.words, base: a.base, targeted: a.target !== null, anyone: a.anyone, amount: a.amount, picksPlayer: a.picksPlayer,
+    }))),
     facts: game.facts,
   });
 }

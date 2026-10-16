@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { zoneCards, type GameState } from '../../game-state';
-import { bankOf, ownerOf, placePiece, setBank, setOwner, setSpaceFact, spaceFact } from '../board-state';
+import { bankItemOf } from '../board';
+import { bankOf, counterOf, ownerOf, placePiece, setBank, setOwner, setPlayerFact, setSpaceFact, spaceFact } from '../board-state';
 import { cardFact, changeCard } from '../card-facts';
 import { textFaceKey } from '../cards';
 import { compileGame } from '../compile';
 import { runExamples } from '../examples';
 import { RuleError } from '../diagnostics';
 import {
-  FIXTURE_SPACES, TINY_BOARD_HEAD, fixtureBoardGame, fixtureBoardState, fixtureCard, fixtureEnv, fixtureGame, fixtureState, runPhrase,
+  FIXTURE_SPACES, PICK_BOARD, TINY_BOARD_HEAD, fixtureBoardGame, fixtureBoardState, fixtureCard, fixtureEnv, fixtureGame, fixtureState, runPhrase,
 } from '../testing';
 import type { CompiledGame, FactSpec, Moment, MoveInfo, SpaceSpec, Subject } from '../types';
 import { createDefaultLibrary } from './index';
@@ -22,6 +23,9 @@ const game = fixtureBoardGame({
   facts: FACTS,
   board: boardOf({ spaces: [...FIXTURE_SPACES, LILY_LANE], bank: [{ name: 'houses', start: 32 }, { name: 'hotels', start: 12 }] }),
 });
+
+/** The same game, with a yes-or-no that no bank item goes with. */
+const FLAGGED = fixtureBoardGame({ facts: [...FACTS, { name: 'mortgaged', on: 'space', kind: 'flag' }], board: game.board! });
 
 const ROSE = 5;
 const LILY = 8;
@@ -145,6 +149,20 @@ describe('giving back to the bank', () => {
   });
 });
 
+describe('paying for each building', () => {
+  it('Review Focus: charges for the houses and hotels on their own spaces only, a hotel once', () => {
+    // p0: Mill Lane (1) with 2 houses, Rose Lane with a hotel; p1: Lily Lane with 3 houses.
+    const owned = withHotel(withHouses(withHouses(setOwner(setOwner(setOwner(fresh(), 1, 'p0'), ROSE, 'p0'), LILY, 'p1'), 1, 2), LILY, 3), ROSE);
+    const housed = effect('they pay 25 for each of their houses', owned, null);
+    expect([counterOf(housed, 'money', 'p0'), counterOf(housed, 'money', 'p1')]).toEqual([1450, 1500]);
+    expect(counterOf(effect('they pay 100 for each of their hotels', owned, null), 'money', 'p0')).toBe(1400);
+    expect(counterOf(effect('they pay 25 for each of their houses', fresh(), null), 'money', 'p0')).toBe(1500);
+  });
+  it('needs a player, a board and something to pay with', () => {
+    expect(lib.get('effect', 'they pay {int} for each of their {banked}')).toMatchObject({ needsPlayer: true, needsBoard: true, needsPayment: true });
+  });
+});
+
 describe('judging what a space has', () => {
   it('judges a flag, which a space never given one does not have', () => {
     expect(condition('it has a hotel', fresh())).toBe(false);
@@ -174,6 +192,159 @@ describe('judging what a space has', () => {
     expect(condition('the bank has a house', setBank(fresh(), 'houses', 1))).toBe(true);
     expect(condition('the bank has a house', setBank(fresh(), 'houses', 0))).toBe(false);
     expect(condition('the bank has a hotel', setBank(fresh(), 'hotels', 0))).toBe(false);
+  });
+});
+
+describe('the bank having enough, and a space having a building', () => {
+  it('judges whether the bank has at least that many', () => {
+    expect(condition('the bank has at least 4 houses', setBank(fresh(), 'houses', 4))).toBe(true);
+    expect(condition('the bank has at least 4 houses', setBank(fresh(), 'houses', 3))).toBe(false);
+    expect(condition('the bank has at least 1 hotel', fresh())).toBe(true);
+    expect(condition('the bank has at least 1 hotel', setBank(fresh(), 'hotels', 0))).toBe(false);
+  });
+  it('judges whether a space has one at least, a flag counting for one', () => {
+    expect(condition('it has a house', withHouses(fresh(), ROSE, 1))).toBe(true);
+    expect(condition('it has a house', withHouses(fresh(), ROSE, 3))).toBe(true);
+    expect(condition('it has a house', fresh())).toBe(false);
+    expect(condition('it has a house', withHotel(fresh(), ROSE))).toBe(false);
+    expect(condition('it has a house', withHouses(fresh(), LILY, 2))).toBe(false);
+  });
+  it('says "an" before a count that starts with a vowel', () => {
+    const eggs = fixtureBoardGame({ facts: [{ name: 'eggs', on: 'space', kind: 'number' }], board: boardOf({}) });
+    expect(condition('it has an egg', setSpaceFact(fresh(eggs), ROSE, 'eggs', 2), ROSE, eggs)).toBe(true);
+    expect(condition('it has an egg', fresh(eggs), ROSE, eggs)).toBe(false);
+  });
+  it('needs a space', () => {
+    expect(lib.get('condition', 'it has a {spacenumber}')).toMatchObject({ needsSpace: true });
+    expect(lib.get('condition', 'it has an {spacenumber}')).toMatchObject({ needsSpace: true });
+  });
+});
+
+describe('taking several from the bank', () => {
+  it('moves them from the bank to the count the space has', () => {
+    const s = effect('it gets 4 houses from the bank', fresh());
+    expect([spaceFact(s, ROSE, 'houses'), bankOf(s, 'houses')]).toEqual([4, 28]);
+    const more = effect('it gets 2 houses from the bank', s);
+    expect([spaceFact(more, ROSE, 'houses'), bankOf(more, 'houses')]).toEqual([6, 26]);
+  });
+  it('may take the last of them, and says so when the bank has fewer, or none, as taking one does', () => {
+    expect(bankOf(effect('it gets 3 houses from the bank', setBank(fresh(), 'houses', 3)), 'houses')).toBe(0);
+    expect(() => effect('it gets 4 houses from the bank', setBank(fresh(), 'houses', 3))).toThrow(new RuleError('The bank has only 3 houses left.'));
+    expect(() => effect('it gets 4 houses from the bank', setBank(fresh(), 'houses', 1))).toThrow(new RuleError('The bank has only 1 house left.'));
+    expect(() => effect('it gets 2 houses from the bank', setBank(fresh(), 'houses', 0))).toThrow(new RuleError('The bank has no houses left.'));
+  });
+  it('needs at least 1', () => {
+    expect(() => effect('it gets 0 houses from the bank', fresh())).toThrow(new RuleError('Say how many, 1 or more.'));
+  });
+  it('gives a flag once: 1 does what taking a hotel does, and more cannot be had', () => {
+    expect(() => effect('it gets 2 hotels from the bank', fresh())).toThrow(new RuleError('Rose Lane can have only one hotel.'));
+    const s = effect('it gets 1 hotel from the bank', fresh());
+    expect([spaceFact(s, ROSE, 'hotel'), bankOf(s, 'hotels'), bankOf(s, 'houses')]).toEqual([true, 11, 32]);
+    expect(() => effect('it gets 1 hotel from the bank', s)).toThrow('Rose Lane already has a hotel.');
+    expect(() => effect('it gets 1 hotel from the bank', setBank(fresh(), 'hotels', 0))).toThrow('The bank has no hotels left.');
+  });
+  it('is about the space the rule names, else the one their piece is on', () => {
+    expect(spaceFact(effect('it gets 2 houses from the bank', fresh(), LILY), LILY, 'houses')).toBe(2);
+    expect(spaceFact(effect('it gets 2 houses from the bank', placePiece(fresh(), 'p0', 1), null), 1, 'houses')).toBe(2);
+  });
+  it('says so when no fact goes with the bank item', () => {
+    const lonely = fixtureBoardGame({ facts: [], board: boardOf({ bank: [{ name: 'tokens', start: 5 }] }) });
+    expect(() => effect('it gets 2 tokens from the bank', fresh(lonely), ROSE, lonely)).toThrow(new RuleError("No fact goes with the bank's tokens."));
+  });
+  it('needs a space', () => {
+    expect(lib.get('effect', 'it gets {int} {banked} from the bank')).toMatchObject({ needsSpace: true });
+  });
+});
+
+describe('giving one back to the bank', () => {
+  it('moves one from the count the space has to the bank', () => {
+    const s = effect('one of its houses goes back to the bank', withHouses(fresh(), ROSE, 3));
+    expect([spaceFact(s, ROSE, 'houses'), bankOf(s, 'houses')]).toEqual([2, 33]);
+    const last = effect('one of its houses goes back to the bank', effect('one of its houses goes back to the bank', s));
+    expect([spaceFact(last, ROSE, 'houses'), bankOf(last, 'houses')]).toEqual([0, 35]);
+  });
+  it('says so when the space holds none', () => {
+    expect(() => effect('one of its houses goes back to the bank', fresh())).toThrow(new RuleError('Rose Lane has no houses.'));
+    expect(() => effect('one of its houses goes back to the bank', withHouses(fresh(), LILY, 2))).toThrow('Rose Lane has no houses.');
+    expect(() => effect('one of its houses goes back to the bank', withHouses(fresh(), ROSE, 0))).toThrow('Rose Lane has no houses.');
+  });
+  it('says so when the bank keeps nothing of that name', () => {
+    const lonely = fixtureBoardGame({ facts: [{ name: 'tokens', on: 'space', kind: 'number' }], board: boardOf({ bank: [] }) });
+    expect(() => effect('one of its tokens goes back to the bank', setSpaceFact(fresh(lonely), ROSE, 'tokens', 2), ROSE, lonely))
+      .toThrow(new RuleError('No bank item goes with the fact tokens.'));
+  });
+  it('says the game has no bank item for it before saying the space holds none, as giving a flag back does', () => {
+    // The mistake is in the game, not in this space: no space could ever give one back.
+    const lonely = fixtureBoardGame({ facts: [{ name: 'tokens', on: 'space', kind: 'number' }], board: boardOf({ bank: [] }) });
+    expect(() => effect('one of its tokens goes back to the bank', fresh(lonely), ROSE, lonely)).toThrow(new RuleError('No bank item goes with the fact tokens.'));
+    expect(() => effect('its mortgaged goes back to the bank', fresh(FLAGGED), ROSE, FLAGGED)).toThrow(new RuleError('No bank item goes with the fact mortgaged.'));
+  });
+  it('leaves the other spaces alone and is about the space the rule names, else the one their piece is on', () => {
+    const start = withHouses(withHouses(fresh(), ROSE, 2), LILY, 3);
+    const s = effect('one of its houses goes back to the bank', start, LILY);
+    expect([ROSE, LILY].map((at) => spaceFact(s, at, 'houses'))).toEqual([2, 2]);
+    expect(spaceFact(effect('one of its houses goes back to the bank', placePiece(withHouses(fresh(), 1, 1), 'p0', 1), null), 1, 'houses')).toBe(0);
+  });
+  it('needs a space', () => {
+    expect(lib.get('effect', 'one of its {spacenumber} goes back to the bank')).toMatchObject({ needsSpace: true });
+  });
+});
+
+describe('giving a flag back to the bank', () => {
+  it('clears the flag and adds one to the bank item the flag goes with', () => {
+    const s = effect('its hotel goes back to the bank', withHotel(fresh(), ROSE));
+    expect([spaceFact(s, ROSE, 'hotel'), bankOf(s, 'hotels'), bankOf(s, 'houses')]).toEqual([false, 13, 32]);
+  });
+  it('says so when the space does not have it', () => {
+    expect(() => effect('its hotel goes back to the bank', fresh())).toThrow(new RuleError('Rose Lane has no hotel.'));
+    expect(() => effect('its hotel goes back to the bank', setSpaceFact(withHotel(fresh(), ROSE), ROSE, 'hotel', false))).toThrow('Rose Lane has no hotel.');
+    expect(() => effect('its hotel goes back to the bank', withHotel(fresh(), LILY))).toThrow('Rose Lane has no hotel.');
+  });
+  it('says so when no bank item goes with the flag', () => {
+    const flagged = setSpaceFact(fresh(FLAGGED), ROSE, 'mortgaged', true);
+    expect(() => effect('its mortgaged goes back to the bank', flagged, ROSE, FLAGGED)).toThrow(new RuleError('No bank item goes with the fact mortgaged.'));
+  });
+  it('needs a space', () => {
+    expect(lib.get('effect', 'its {spaceflag} goes back to the bank')).toMatchObject({ needsSpace: true });
+  });
+});
+
+describe('which bank item goes with a fact on spaces', () => {
+  const bank = game.board!.bank;
+  it('is the item of the same name for a count, and the item named the plural for a flag', () => {
+    expect(bankItemOf({ name: 'houses', kind: 'number' }, bank)).toBe('houses');
+    expect(bankItemOf({ name: 'hotel', kind: 'flag' }, bank)).toBe('hotels');
+  });
+  it('is none when nothing in the bank goes with it', () => {
+    expect(bankItemOf({ name: 'mortgaged', kind: 'flag' }, bank)).toBeNull();
+    expect(bankItemOf({ name: 'tokens', kind: 'number' }, bank)).toBeNull();
+    expect(bankItemOf({ name: 'hotel', kind: 'flag' }, [])).toBeNull();
+  });
+  it('does not take a flag for a count: a count needs the same name, and a flag the plural of its name', () => {
+    expect(bankItemOf({ name: 'houses', kind: 'flag' }, bank)).toBeNull();
+    expect(bankItemOf({ name: 'hotel', kind: 'number' }, bank)).toBeNull();
+  });
+});
+
+describe('no space of a set having a flag', () => {
+  const NONE = 'no street of its color is mortgaged';
+  const flagged = (...spaces: number[]) => spaces.reduce((s, at) => setSpaceFact(s, at, 'mortgaged', true), fresh(FLAGGED));
+  const holds = (state: GameState, space: number) => condition(NONE, state, space, FLAGGED);
+
+  it('is false while a space of its set has the flag, whichever of them it is about', () => {
+    expect([ROSE, LILY].map((at) => holds(flagged(LILY), at))).toEqual([false, false]);
+    expect([ROSE, LILY].map((at) => holds(flagged(ROSE), at))).toEqual([false, false]);
+  });
+  it('is true when the flag is on a space of another color, when no space has it, and when it was cleared', () => {
+    expect(holds(flagged(1), ROSE)).toBe(true);
+    expect(holds(fresh(FLAGGED), ROSE)).toBe(true);
+    expect(holds(setSpaceFact(flagged(LILY), LILY, 'mortgaged', false), ROSE)).toBe(true);
+  });
+  it('is true for a space with no color, which is in no set', () => {
+    expect(holds(flagged(LILY, ROSE, 1), 3)).toBe(true);
+  });
+  it('needs a space', () => {
+    expect(lib.get('condition', 'no {spacekind} of its {spaceattr} is {spaceflag}')).toMatchObject({ needsSpace: true });
   });
 });
 
@@ -283,6 +454,42 @@ describe('the spaces a button may point at', () => {
   });
 });
 
+describe('a space the player who holds a flag owns', () => {
+  const picking = compileGame(PICK_BOARD, lib).game!;
+  const seats = ['p0', 'p1', 'p2'];
+  const MILL_LANE = 1;
+  const ROSE_LANE = 3;
+  const owned = setOwner(setOwner(fixtureBoardState(picking, seats), MILL_LANE, 'p0'), ROSE_LANE, 'p1');
+  /** Whether the target allows p0 to pick `space`. */
+  const allows = (text: string, state: GameState, space: number) =>
+    runPhrase<boolean>(lib, 'target', text, fixtureEnv(state, { game: picking, seats, subject: { player: 'p0', space: null, card: null } }), space);
+
+  it('allows a space that player owns and no other, named either way', () => {
+    const rivalry = setPlayerFact(owned, 'p1', 'the rival', true);
+    for (const text of ['a space the rival owns', 'a space the player who is the rival owns']) {
+      expect([allows(text, rivalry, ROSE_LANE), allows(text, rivalry, MILL_LANE)], text).toEqual([true, false]);
+    }
+  });
+  it('is an error when no player holds the flag', () => {
+    expect(() => allows('a space the rival owns', owned, ROSE_LANE)).toThrow('No player is the rival.');
+  });
+  it('is picked by a button without “on”, refused in the player\'s words for a space that player does not own', () => {
+    const text = [
+      PICK_BOARD.replace('  A player may end their turn.', '  A player may seize a space the rival owns.\n    Then:\n      They own it.\n  A player may end their turn.'),
+      '',
+      'Example: seizing a space of the rival', '  Given p1 is the rival', '  And p1 owns Rose Lane', '  And p0 owns Mill Lane',
+      '  When p0 seizes Mill Lane', '  Then it is rejected because "That isn\'t a space the rival owns."', '  When p0 seizes Rose Lane',
+      '  Then it is accepted', '  And p0 owns Rose Lane',
+    ].join('\n');
+    const { game: built, diagnostics } = compileGame(text, lib);
+    expect(diagnostics).toEqual([]);
+    expect(runExamples(built!, lib).map((r) => [r.status, r.message])).toEqual([['pass', null]]);
+  });
+  it('needs a board, and no player of its own: the player is the one who holds the flag', () => {
+    expect(lib.get('target', 'a space {holder} owns')).toMatchObject({ needsBoard: true, needsPlayer: false });
+  });
+});
+
 describe('example phrases', () => {
   describe('given', () => {
     it('sets what a space has, without touching the bank', () => {
@@ -333,6 +540,104 @@ describe('example phrases', () => {
     it('says "an" before a flag that starts with a vowel', () => {
       const inns = fixtureBoardGame({ facts: [{ name: 'inn', on: 'space', kind: 'flag' }], board: boardOf({}) });
       expect(runPhrase(lib, 'expect', 'Rose Lane has a inn', bare(fresh(inns), inns))).toBe('Expected Rose Lane to have an inn, but it has none.');
+    });
+  });
+});
+
+describe('a yes-or-no that rules set and clear on a space', () => {
+  const flaggedExample = (kind: 'given' | 'expect', text: string, state: GameState = fresh(FLAGGED)) => runPhrase(lib, kind, text, bare(state, FLAGGED));
+
+  it('sets and clears the flag on the space the rule is about, and judges it', () => {
+    const on = effect('it is mortgaged', fresh(FLAGGED), ROSE, FLAGGED);
+    expect(spaceFact(on, ROSE, 'mortgaged')).toBe(true);
+    expect([condition('it is mortgaged', on, ROSE, FLAGGED), condition('it is not mortgaged', on, ROSE, FLAGGED)]).toEqual([true, false]);
+    expect(condition('it is not mortgaged', fresh(FLAGGED), ROSE, FLAGGED)).toBe(true);
+    expect(spaceFact(effect('it is not mortgaged', on, ROSE, FLAGGED), ROSE, 'mortgaged')).toBe(false);
+  });
+  it('is not set until a rule sets it, and is about the space the rule names, else the one their piece is on', () => {
+    expect([condition('it is mortgaged', fresh(FLAGGED), ROSE, FLAGGED), spaceFact(fresh(FLAGGED), ROSE, 'mortgaged')]).toEqual([false, null]);
+    const onLily = effect('it is mortgaged', fresh(FLAGGED), LILY, FLAGGED);
+    expect([ROSE, LILY].map((at) => spaceFact(onLily, at, 'mortgaged'))).toEqual([null, true]);
+    const underPiece = effect('it is mortgaged', placePiece(fresh(FLAGGED), 'p0', 1), null, FLAGGED);
+    expect(spaceFact(underPiece, 1, 'mortgaged')).toBe(true);
+  });
+  it('clears it on every space they own, and only theirs', () => {
+    const flagged = [ROSE, 1, LILY].reduce((s, at) => setSpaceFact(s, at, 'mortgaged', true), setOwner(setOwner(setOwner(fresh(FLAGGED), ROSE, 'p0'), 1, 'p0'), LILY, 'p1'));
+    const s = effect('their spaces are no longer mortgaged', flagged, null, FLAGGED);
+    expect([ROSE, 1, LILY].map((at) => spaceFact(s, at, 'mortgaged'))).toEqual([false, false, true]);
+  });
+  it('needs a space, and for clearing a player and a board', () => {
+    expect(lib.get('condition', 'it is {spaceflag}')).toMatchObject({ needsSpace: true });
+    expect(lib.get('condition', 'it is not {spaceflag}')).toMatchObject({ needsSpace: true });
+    expect(lib.get('effect', 'it is {spaceflag}')).toMatchObject({ needsSpace: true });
+    expect(lib.get('effect', 'it is not {spaceflag}')).toMatchObject({ needsSpace: true });
+    expect(lib.get('effect', 'their spaces are no longer {spaceflag}')).toMatchObject({ needsPlayer: true, needsBoard: true });
+  });
+
+  describe('declared with “Spaces can be …”', () => {
+    const HEAD = TINY_BOARD_HEAD.replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  Spaces can be mortgaged.');
+
+    it('is read with no problem, as a flag on spaces', () => {
+      const { game: compiled, diagnostics } = compileGame(HEAD, lib);
+      expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+      expect(compiled!.facts).toEqual([{ name: 'mortgaged', on: 'space', kind: 'flag' }]);
+    });
+    it('is set, judged and cleared by lines of a game, along with a share of the price, and played by its examples', () => {
+      const text = [
+        HEAD,
+        '  A player may mortgage the space they are on.', '    Only if they own it.', '    Only if it is not mortgaged.', '    Then:',
+        '      It is mortgaged.', '      They get 50% of its price.',
+        '  A player may redeem the space they are on.', '    Only if it is mortgaged.', '    Only if they have at least 55% of its price in money.',
+        '    Then:', '      They pay 55% of its price.', '      It is not mortgaged.',
+        '  A player may sweep.', '    Then:', '      Their spaces are no longer mortgaged.',
+        '',
+        'Example: mortgaging pays half the price', '  Given p0 is on Rose Lane', '  And p0 owns Rose Lane', '  When p0 mortgages the space they are on',
+        '  Then Rose Lane is mortgaged', '  And p0 has 1590 money', '  And Mill Lane is not mortgaged',
+        '',
+        'Example: redeeming costs 55% of the price', '  Given p0 is on Rose Lane', '  And p0 owns Rose Lane', '  And Rose Lane is mortgaged',
+        '  When p0 redeems the space they are on', '  Then Rose Lane is not mortgaged', '  And p0 has 1401 money',
+      ].join('\n');
+      const { game: compiled, diagnostics } = compileGame(text, lib);
+      expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+      expect(runExamples(compiled!, lib).map((r) => [r.status, r.message])).toEqual([['pass', null], ['pass', null]]);
+    });
+    describe('a misspelt line', () => {
+      const problems = (...lines: string[]) => compileGame([
+        HEAD, '  A player may mortgage the space they are on.', '    Only if it is not mortgaged.', '    Then:', '      It is mortgaged.', '',
+        'Example: a slip', '  Given p0 is on Rose Lane', '  When p0 mortgages the space they are on', ...lines,
+      ].join('\n'), lib).diagnostics.filter((d) => d.severity === 'error');
+
+      it('is a phrase the library does not have when the slip is in its own words, with the phrase it was meant to be', () => {
+        expect(problems('  Then it is acepted')).toEqual([expect.objectContaining({
+          kind: 'unknown-phrase', message: '“it is acepted” isn\'t in the phrase library yet.', suggestions: expect.arrayContaining(['it is accepted']),
+        })]);
+        expect(problems('  Then it is accepted', '  And it is p1s turn')).toEqual([expect.objectContaining({
+          kind: 'unknown-phrase', message: '“it is p1s turn” isn\'t in the phrase library yet.', suggestions: expect.arrayContaining(["it is [player]'s turn"]),
+        })]);
+      });
+      it('names the space fact when the slip is in the name of the fact', () => {
+        expect(problems('  Then it is accepted', '  And Rose Lane is mortgagd'))
+          .toEqual([expect.objectContaining({ message: 'There is no space fact called “mortgagd”.', suggestions: ['mortgaged'] })]);
+        expect(problems('  Then it is mortgagd'))
+          .toEqual([expect.objectContaining({ message: 'There is no space fact called “mortgagd”.', suggestions: ['mortgaged'] })]);
+      });
+    });
+  });
+
+  describe('example phrases', () => {
+    it('sets it in a Given line, and clears it', () => {
+      const on = flaggedExample('given', 'Rose Lane is mortgaged') as GameState;
+      expect(spaceFact(on, ROSE, 'mortgaged')).toBe(true);
+      expect(spaceFact(flaggedExample('given', 'Rose Lane is not mortgaged', on) as GameState, ROSE, 'mortgaged')).toBe(false);
+    });
+    it('checks it in a Then line', () => {
+      const on = setSpaceFact(fresh(FLAGGED), ROSE, 'mortgaged', true);
+      expect([flaggedExample('expect', 'Rose Lane is mortgaged', on), flaggedExample('expect', 'Rose Lane is not mortgaged')]).toEqual([true, true]);
+    });
+    it('says what a space is instead', () => {
+      expect(flaggedExample('expect', 'Rose Lane is mortgaged')).toBe("Expected Rose Lane to be mortgaged, but it isn't.");
+      expect(flaggedExample('expect', 'Rose Lane is not mortgaged', setSpaceFact(fresh(FLAGGED), ROSE, 'mortgaged', true)))
+        .toBe('Expected Rose Lane not to be mortgaged, but it is.');
     });
   });
 });
@@ -583,6 +888,32 @@ describe('facts on cards', () => {
     });
   });
 
+  describe('every card with a flag, no card with it, and some card with it', () => {
+    it('moves every flagged card to the zone in the order the table holds them, and the flag goes with it', () => {
+      const s = effectAs('every card that is poisoned goes to their camp', byPlayer('p0'));
+      expect(zoneCards(s, 'camp-p0').map((c) => c.id)).toEqual(['c0', 'c6', 'c1', 'c3', 'c4']);
+      expect(zoneCards(s, 'camp-p1').map((c) => c.id)).toEqual(['c2', 'c5']);
+      expect(['c1', 'c3', 'c4'].map((id) => cardFact(cardOf(s, id), 'poisoned'))).toEqual([true, true, true]);
+    });
+    it('takes the flag off every card, so each face is as it was', () => {
+      const s = runPhrase<GameState>(lib, 'effect', 'no card is poisoned', bare(table()));
+      expect(s.cards.filter((c) => Object.hasOwn(c.data ?? {}, 'poisoned'))).toEqual([]);
+      expect(cardOf(s, 'c1').faceKey).toBe(faceOf('Archer', 2));
+      expect(effectAs('every card that is poisoned goes to their camp', byPlayer('p0'), s)).toEqual(s);
+    });
+    it('takes the flag off a card that had it set to no as well', () => {
+      const s = runPhrase<GameState>(lib, 'effect', 'no card is poisoned', bare(changeCard(table(), 'c0', { poisoned: false }, creatures)));
+      expect(Object.hasOwn(cardOf(s, 'c0').data ?? {}, 'poisoned')).toBe(false);
+    });
+    it('judges whether some card has the flag set', () => {
+      expect(runPhrase<boolean>(lib, 'condition', 'some card is poisoned', bare(table()))).toBe(true);
+      const none = runPhrase<GameState>(lib, 'effect', 'no card is poisoned', bare(table()));
+      expect(runPhrase<boolean>(lib, 'condition', 'some card is poisoned', bare(none))).toBe(false);
+      // A flag set to no is not a flag set.
+      expect(runPhrase<boolean>(lib, 'condition', 'some card is poisoned', bare(changeCard(none, 'c0', { poisoned: false }, creatures)))).toBe(false);
+    });
+  });
+
   describe('judging a card', () => {
     it('“it is poisoned” is about the card the rule is about', () => {
       expect(holdsFor('it is poisoned', aboutCard('c3'))).toBe(true);
@@ -718,8 +1049,80 @@ describe('facts on cards', () => {
     it('expects a count, which a card never given any has 0 of', () => {
       const expectOf = (text: string, state: GameState) => runPhrase<true | string>(lib, 'expect', text, envOf(state));
       expect(expectOf("the Knight in p1's camp has 0 charges", table())).toBe(true);
-      expect(expectOf("the Knight in p1's camp has 1 charges", table())).toBe("Expected the Knight in p1's camp to have 1 charges, but it has 0.");
+      expect(expectOf("the Knight in p1's camp has 1 charges", table())).toBe("Expected the Knight in p1's camp to have 1 charge, but it has 0.");
       expect(expectOf("the Knight in p0's camp has 2 charges", withCharges())).toBe(true);
+    });
+  });
+
+  describe('raising a number a card has', () => {
+    const charged: CompiledGame = { ...creatures, facts: [...creatures.facts, { name: 'charges', on: 'card', kind: 'number' }] };
+    const envOf = (state: GameState, subject?: Subject) => fixtureEnv(state, { game: charged, seats: SEATS, subject });
+    const effectOf = (text: string, subject: Subject, state = table()) => runPhrase<GameState>(lib, 'effect', text, envOf(state, subject));
+    const givenOf = (text: string, state = table()) => runPhrase<GameState>(lib, 'given', text, envOf(state));
+    const expectOf = (text: string, state = table()) => runPhrase<true | string>(lib, 'expect', text, envOf(state));
+    const chargesOf = (state: GameState, ...ids: string[]) => ids.map((id) => cardFact(cardOf(state, id), 'charges'));
+
+    it('has the card a rule is about gain from 0 for a count it was never given, in the singular for one', () => {
+      const once = effectOf('it gains 1 charge', aboutCard('c0'));
+      expect(chargesOf(once, 'c0')).toEqual([1]);
+      expect(cardOf(once, 'c0').faceKey).toBe(textFaceKey({ name: 'Knight', health: 3, charges: 1 }));
+      const twice = effectOf('it gains 2 charges', aboutCard('c0'), once);
+      expect(chargesOf(twice, 'c0')).toEqual([3]);
+      expect(cardOf(twice, 'c0').faceKey).toBe(textFaceKey({ name: 'Knight', health: 3, charges: 3 }));
+    });
+    it('changes only the card the rule is about', () => {
+      const before = table();
+      const s = effectOf('it gains 1 charge', aboutCard('c0'), before);
+      expect(s.cards.filter((c, i) => c !== before.cards[i]).map((c) => c.id)).toEqual(['c0']);
+    });
+    it('raises a number of the card\'s own table, and its face shows it', () => {
+      const s = effectOf('it gains 2 health', aboutCard('c1'));
+      expect(healthOf(s, 'c1')).toEqual([4]);
+      expect(cardOf(s, 'c1').faceKey).toBe(faceOf('Archer', 4, true));
+    });
+    it('says so when the rule is about no card', () => {
+      expect(() => effectOf('it gains 1 charge', byPlayer('p0'))).toThrow('This phrase needs a card, but none is being judged.');
+      expect(lib.get('effect', 'it gains {int} {attribute}')).toMatchObject({ needsCard: true });
+    });
+    it('leaves a card whose value is no number as it is', () => {
+      const state = fixtureState([fixtureCard('c0', 'camp-p0', { name: 'Ghost' }, { faceKey: textFaceKey({ name: 'Ghost' }), slot: 0 })]);
+      expect(effectOf('it gains 1 health', aboutCard('c0'), state)).toEqual(state);
+    });
+
+    it('has each flagged card of the zone gain, and no other card', () => {
+      const s = effectOf('each poisoned card in their camp gains 1 health', byPlayer('p0'));
+      expect(healthOf(s, 'c0', 'c1', 'c6', 'c2')).toEqual([3, 3, 0, 3]);
+      expect(cardOf(s, 'c1').faceKey).toBe(faceOf('Archer', 3, true));
+      expect(cardOf(s, 'c0').faceKey).toBe(faceOf('Knight', 3));
+      // The other camp, a hand and the discard pile are not touched.
+      expect(healthOf(s, 'c2', 'c3', 'c4', 'c5', 'c7', 'c8')).toEqual([3, 1, 3, 0, 0, 0]);
+    });
+    it('has each flagged card gain a declared count from 0, and leaves a card that is not flagged at it', () => {
+      const s = effectOf('each poisoned card in their camp gains 2 charges', byPlayer('p1'));
+      expect(chargesOf(s, 'c3', 'c4', 'c2')).toEqual([2, 2, null]);
+      expect(cardOf(s, 'c3').faceKey).toBe(textFaceKey({ name: 'Viper', health: 1, poisoned: 'yes', charges: 2 }));
+    });
+    it('still loses a count in the singular, and leaves it at 0 for a card that had none', () => {
+      const s = effectOf('each poisoned card in their camp loses 1 charge', byPlayer('p0'));
+      expect(chargesOf(s, 'c1')).toEqual([0]);
+      expect(cardOf(s, 'c1').faceKey).toBe(faceOf('Archer', 2, true));
+    });
+
+    it('is given as a number a card has, the first such card of the zone', () => {
+      const s = givenOf("the Knight in p1's camp has 2 charges");
+      expect(chargesOf(s, 'c2', 'c4')).toEqual([2, null]);
+      expect(cardOf(s, 'c2').faceKey).toBe(textFaceKey({ name: 'Knight', health: 3, charges: 2 }));
+      expect(healthOf(givenOf("a Knight in p1's camp has 1 health"), 'c2')).toEqual([1]);
+    });
+    it('says so when the zone has no such card to give a number to', () => {
+      expect(() => givenOf("the Archer in p1's camp has 2 charges")).toThrow(new RuleError("There is no Archer in p1's camp."));
+    });
+    it('says the count of an expected number as it is said, in the singular for one', () => {
+      const given = givenOf("the Knight in p1's camp has 2 charges");
+      expect(expectOf("the Knight in p1's camp has 1 charge", given)).toBe("Expected the Knight in p1's camp to have 1 charge, but it has 2.");
+      expect(expectOf("the Knight in p1's camp has 2 charges", given)).toBe(true);
+      expect(expectOf("the Knight in p1's camp has 3 charge", given)).toBe("Expected the Knight in p1's camp to have 3 charges, but it has 2.");
+      expect(expectOf("the Knight in p1's camp has 1 health", table())).toBe("Expected the Knight in p1's camp to have 1 health, but it has 3.");
     });
   });
 });
@@ -769,6 +1172,21 @@ describe('a small card game with facts, played from a designer\'s words', () => 
       ['pass', null], ['pass', null], ['fail', "Expected the Knight in p1's camp to have 2 health, but it has 3."], ['pass', null],
     ]);
   });
+  it('says a slip in a phrase\'s own words is not in the library, and names the card fact when the slip is in the fact', () => {
+    const problems = (from: string, to: string) =>
+      compileGame(`${VENOM}${EXAMPLES}`.replace(from, to), lib).diagnostics.filter((d) => d.severity === 'error');
+    const REJECTED = '  Then it is rejected because "the card is poisoned"';
+    expect(problems(REJECTED, '  Then it is acepted')).toEqual([expect.objectContaining({
+      kind: 'unknown-phrase', message: '“it is acepted” isn\'t in the phrase library yet.', suggestions: expect.arrayContaining(['it is accepted']),
+    })]);
+    expect(problems(REJECTED, '  Then it is p1s turn')).toEqual([expect.objectContaining({
+      kind: 'unknown-phrase', message: '“it is p1s turn” isn\'t in the phrase library yet.', suggestions: expect.arrayContaining(["it is [player]'s turn"]),
+    })]);
+    expect(problems('    Only if it is poisoned.', '    Only if it is poisonned.'))
+      .toEqual([expect.objectContaining({ message: 'There is no card fact called “poisonned”.', suggestions: ['poisoned'] })]);
+    expect(problems(REJECTED, "  Then the Knight in p1's camp is poisonned"))
+      .toEqual([expect.objectContaining({ message: 'There is no card fact called “poisonned”.', suggestions: ['poisoned'] })]);
+  });
 
   describe('with a count declared on cards', () => {
     // Charges are declared, not a column: every card starts with 0 of them, so a poisoned card has none to spare.
@@ -799,5 +1217,70 @@ describe('a small card game with facts, played from a designer\'s words', () => 
         ['pass', null], ['pass', null], ['fail', "Expected the Knight in p1's camp to have 2 charges, but it has 0."],
       ]);
     });
+
+    describe('raised, and said in the singular for one', () => {
+      const GAINS = CHARGES.replace('loses 1 charges', 'gains 1 charge');
+      const GAIN_EXAMPLES = [
+        '', 'Example: a poisoned card gains a charge when its owner plays', "  Given it is p1's turn", '  And p1 holds an Archer', "  And p1's camp has a Viper",
+        "  And the Viper in p1's camp is poisoned", "  And the Viper in p1's camp has 1 charge", '  When p1 plays an Archer',
+        "  Then the Viper in p1's camp has 2 charges", '',
+        'Example: a wrong count says it in the singular', "  Given it is p1's turn", '  And p1 holds an Archer', "  And p1's camp has a Viper",
+        "  And the Viper in p1's camp is poisoned", "  And the Viper in p1's camp has 1 charge", '  When p1 plays an Archer',
+        "  Then the Viper in p1's camp has 1 charge",
+      ].join('\n');
+
+      it('reads every line that gains or names one charge, with no problem', () => {
+        expect(GAINS).not.toBe(CHARGES);
+        const { game, diagnostics } = compileGame(`${GAINS}${GAIN_EXAMPLES}`, lib);
+        expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+        expect(game!.phases[0].moves[0].effects[0]).toMatchObject({ phrase: 'each {cardflag} card in {zone} gains {int} {attribute}', args: ['poisoned', expect.anything(), 1, 'charges'] });
+      });
+      it('plays its examples', () => {
+        const { game } = compileGame(`${GAINS}${GAIN_EXAMPLES}`, lib);
+        expect(runExamples(game!, lib).map((r) => [r.status, r.message])).toEqual([
+          ['pass', null], ['fail', "Expected the Viper in p1's camp to have 1 charge, but it has 2."],
+        ]);
+      });
+    });
+  });
+});
+
+describe('the one space with a flag', () => {
+  it('gives the one flagged space an owner, and clears a flag on it', () => {
+    const owned = effect('they own the space that is mortgaged', setSpaceFact(fresh(FLAGGED), ROSE, 'mortgaged', true), null, FLAGGED);
+    expect(ownerOf(owned, ROSE)).toBe('p0');
+    const cleared = effect('the space that is mortgaged is not mortgaged', owned, null, FLAGGED);
+    expect([spaceFact(cleared, ROSE, 'mortgaged'), ownerOf(cleared, ROSE)]).toEqual([false, 'p0']);
+  });
+  it('is an error when no space, or more than one, has the flag', () => {
+    expect(() => effect('they own the space that is mortgaged', fresh(FLAGGED), null, FLAGGED)).toThrow('No space is mortgaged.');
+    const two = setSpaceFact(setSpaceFact(fresh(FLAGGED), ROSE, 'mortgaged', true), 1, 'mortgaged', true);
+    expect(() => effect('they own the space that is mortgaged', two, null, FLAGGED)).toThrow('More than one space is mortgaged: Mill Lane and Rose Lane.');
+    expect(() => effect('the space that is mortgaged is not mortgaged', two, null, FLAGGED)).toThrow('More than one space is mortgaged: Mill Lane and Rose Lane.');
+  });
+  it('clears it on every space', () => {
+    const flagged = [1, ROSE, LILY].reduce((s, at) => setSpaceFact(s, at, 'mortgaged', true), fresh(FLAGGED));
+    const s = effect('no space is mortgaged', flagged, null, FLAGGED);
+    expect([1, ROSE, LILY].map((at) => spaceFact(s, at, 'mortgaged'))).toEqual([false, false, false]);
+  });
+});
+
+describe('every space with a flag, and whether some space has it', () => {
+  const flagged = (...spaces: number[]) => spaces.reduce((s, at) => setSpaceFact(s, at, 'mortgaged', true), fresh(FLAGGED));
+
+  it('gives them every space with the flag set, flag and all, and no other', () => {
+    const s = effect('they own every space that is mortgaged', setOwner(flagged(1, LILY), LILY, 'p1'), null, FLAGGED);
+    expect([1, ROSE, LILY].map((at) => ownerOf(s, at))).toEqual(['p0', null, 'p0']);
+    expect([1, LILY].map((at) => spaceFact(s, at, 'mortgaged'))).toEqual([true, true]);
+  });
+  it('judges whether some space has the flag set', () => {
+    const some = (state: GameState) => runPhrase<boolean>(lib, 'condition', 'some space is mortgaged', bare(state, FLAGGED));
+    expect(some(fresh(FLAGGED))).toBe(false);
+    expect(some(flagged(ROSE))).toBe(true);
+    expect(some(setSpaceFact(flagged(ROSE), ROSE, 'mortgaged', false))).toBe(false);
+  });
+  it('needs a player and a board to give spaces, and a board to judge them', () => {
+    expect(lib.get('effect', 'they own every space that is {spaceflag}')).toMatchObject({ needsPlayer: true, needsBoard: true });
+    expect(lib.get('condition', 'some space is {spaceflag}')).toMatchObject({ needsBoard: true });
   });
 });

@@ -4,7 +4,7 @@ import { compileGame } from './compile';
 import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import type { PhraseLibrary } from './phrases';
-import { TEST_DUEL, TINY_BOARD } from './testing';
+import { TEST_DUEL, TINY_BOARD, deckGameText } from './testing';
 import type { CompiledGame } from './types';
 
 const lib = createDefaultLibrary();
@@ -410,5 +410,19 @@ describe('board examples', () => {
   it('refuses a player who is not at the table, on its own line', () => {
     const { game } = onBoard(['Example: a stranger', '  Given p3 is on Mill Lane', '  Then p0 has 1500 money'].join('\n'));
     expect(runExamples(game!, lib)[0]).toMatchObject({ status: 'fail', message: expect.stringContaining('There is no player p3 at this table.') });
+  });
+});
+
+describe('cards that say what they do, in examples', () => {
+  const FATE = ['| name | says |', '| Calm | They get 0 money. |'];
+
+  it('names the cards of a pile by their name, leaving what they say out', () => {
+    const example = ['', 'Example: the pile', '  Given the lucky pile has a Dividend', '  Then the lucky pile has a Fine'].join('\n');
+    const text = `${deckGameText(['| name | says |', '| Dividend | They get 50 money. |', '| Fine | They pay 15. |'], FATE)}\n${example}`;
+    const { game, diagnostics } = compileGame(text, lib);
+    expect(diagnostics).toEqual([]);
+    const results = runExamples(game!, lib);
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ status: 'fail', message: 'Expected the lucky pile to have a Fine, but it has a Dividend.' });
   });
 });

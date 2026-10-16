@@ -35,12 +35,14 @@ const text = (stationLine = STATION_LINE) => [
   '  There are two six-sided dice.',
   '  Spaces can have houses and a hotel.',
   '  The bank has 32 houses and 12 hotels.',
+  '  Spaces can be mortgaged.',
   '',
   'Rent:',
   "  A street's rent depends on its houses and hotel.",
   '  A street in a full set with no buildings has double rent.',
   `  ${stationLine}`,
   `  ${UTILITY_LINE}`,
+  "  A mortgaged space's rent is 0.",
   '',
   'Phase: playing',
   '  Players take turns.',
@@ -76,7 +78,7 @@ const about = (state: GameState, space: number, player: string | null = 'p1') =>
 
 describe('the Rent: section of Rent Day', () => {
   it('is read with no problems', () => {
-    expect(game.columns.rent.map((ref) => ref.kind)).toEqual(['column', 'column', 'column', 'column']);
+    expect(game.columns.rent.map((ref) => ref.kind)).toEqual(['column', 'column', 'column', 'column', 'column']);
   });
 });
 
@@ -244,6 +246,35 @@ describe('no street of its color has fewer buildings', () => {
     expect(errorsOf(setup)).toEqual([
       [lineOf(setup, 'If no street'), `“${COLOR}” only makes sense in a rule about a space, such as an action or a “lands on” rule.`],
     ]);
+  });
+});
+
+describe("a mortgaged space's rent", () => {
+  const mortgaged = (state: GameState, ...spaces: number[]) => spaces.reduce((s, at) => setSpaceFact(s, at, 'mortgaged', true), state);
+  const full = owning([ROSE, 'p0'], [LILY, 'p0'], [IRIS, 'p0'], [NORTH, 'p0'], [POWER, 'p0']);
+  it('is 0 whatever the lines before it made of it, and other spaces keep theirs', () => {
+    const s = setRoll(mortgaged(full, ROSE, NORTH, POWER), [3, 4]);
+    expect([ROSE, NORTH, POWER, LILY].map((at) => rentOf(s, at))).toEqual([0, 0, 0, 28]);
+  });
+  it('Review Focus: charges nothing when a rule other than landing makes them pay its rent', () => {
+    const s = runPhrase<GameState>(lib, 'effect', 'they pay its rent to its owner', about(mortgaged(full, NORTH), NORTH, 'p1'));
+    expect([counterOf(s, 'money', 'p0'), counterOf(s, 'money', 'p1')]).toEqual([1500, 1500]);
+  });
+});
+
+describe('selling evenly, and a color with a building', () => {
+  const cond = (text: string, state: GameState, space: number) => runPhrase<boolean>(lib, 'condition', text, about(state, space));
+  it('no street of its color has more buildings, a hotel counting as five', () => {
+    const s = withHouses(withHouses(withHouses(fresh(), ROSE, 2), LILY, 1), IRIS, 2);
+    expect([ROSE, LILY, IRIS].map((at) => cond('no street of its color has more buildings', s, at))).toEqual([true, false, true]);
+    const hotel = withHouses(withHouses(withHotel(fresh(), ROSE), LILY, 4), IRIS, 4);
+    expect([ROSE, LILY].map((at) => cond('no street of its color has more buildings', hotel, at))).toEqual([true, false]);
+  });
+  it('no street of its color has a building, which holds for a space with no color', () => {
+    expect(cond('no street of its color has a building', withHouses(fresh(), LILY, 1), ROSE)).toBe(false);
+    expect(cond('no street of its color has a building', withHotel(fresh(), IRIS), ROSE)).toBe(false);
+    expect(cond('no street of its color has a building', withHouses(fresh(), MILL, 1), ROSE)).toBe(true);
+    expect(cond('no street of its color has a building', withHouses(fresh(), LILY, 1), NORTH)).toBe(true);
   });
 });
 

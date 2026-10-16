@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BOX_ZONE, WINNER_KEY, chooseNext, handZoneOf, leftOf, matchesCard, relocate, resolveSeat, resolveZoneIds, slug, topCard,
-  zoneIdFor, zoneInfo,
+  BOX_ZONE, WINNER_KEY, chooseNext, handZoneOf, leftOf, matchesCard, relocate, resolveSeat, resolveZoneIds, slug, toBottom,
+  topCard, zoneIdFor, zoneInfo,
 } from './zones';
 import { RuleError } from './diagnostics';
 import { makeRng } from '../rng';
 import type { CardState } from '../scene';
 import { zoneCards, type GameState } from '../game-state';
-import { fixtureEnv } from './testing';
+import { fixtureColorGame, fixtureEnv } from './testing';
 import type { CompiledGame, PhraseEnv, ZoneSpec } from './types';
 
 const TRICK: ZoneSpec = { name: 'trick', perPlayer: false, layout: 'row', visibility: 'public' };
@@ -17,7 +17,7 @@ const WON_PILE: ZoneSpec = { name: 'won pile', perPlayer: true, layout: 'pile', 
 
 const GAME: CompiledGame = {
   name: 'Fixture', players: { min: 2, max: 3 }, zones: [TRICK, DECK, HAND, WON_PILE],
-  cards: [], setup: [], phases: [], end: null, examples: [], board: null, facts: [], columns: {},
+  cards: [], setup: [], phases: [], end: null, examples: [], board: null, facts: [], columns: {}, says: {},
 };
 
 const card = (id: string, zoneId: string, slot?: number, over: Partial<CardState> = {}): CardState =>
@@ -221,6 +221,29 @@ describe('relocate', () => {
     const unslotted = stateWith([card('c1', 'trick'), card('c2', 'trick'), card('c3', 'deck', 0)]);
     expect(relocate(unslotted, ['c3'], 'trick', GAME).cards[2].slot).toBe(2);
   });
+  it('lands last in a zone of unslotted cards, such as a start pile that was never shuffled', () => {
+    // Unslotted cards sort by their place in state.cards, so a moved card must not tie with the last of them and lose.
+    const pile = stateWith([card('a', 'deck'), card('b', 'deck'), card('c', 'deck')]);
+    const within = relocate(pile, ['a'], 'deck', GAME);
+    expect(zoneCards(within, 'deck').map((c) => c.id)).toEqual(['b', 'c', 'a']);
+    expect(topCard(within, 'deck')?.id).toBe('a');
+    const toBack = relocate(stateWith([card('x', 'trick', 0), card('a', 'deck'), card('b', 'deck')]), ['x'], 'deck', GAME);
+    expect(zoneCards(toBack, 'deck').map((c) => c.id)).toEqual(['a', 'b', 'x']);
+    // Several cards at once keep the order given, after every card that was already there.
+    const several = relocate(stateWith([card('x', 'trick', 0), card('y', 'trick', 1), card('a', 'deck'), card('b', 'deck')]), ['y', 'x'], 'deck', GAME);
+    expect(zoneCards(several, 'deck').map((c) => c.id)).toEqual(['a', 'b', 'y', 'x']);
+  });
+  it('numbers the cards already in a zone of unslotted cards 0 to n-1 before it adds the moved ones', () => {
+    const out = relocate(stateWith([card('x', 'trick', 0), card('a', 'deck'), card('b', 'deck')]), ['x'], 'deck', GAME);
+    expect(zoneCards(out, 'deck').map((c) => [c.id, c.slot])).toEqual([['a', 0], ['b', 1], ['x', 2]]);
+  });
+  it('leaves the slots of a zone that is fully slotted as they were', () => {
+    const state = stateWith([card('x', 'trick', 0), card('a', 'deck', 3), card('b', 'deck', 7), card('c', 'deck', 4)]);
+    const out = relocate(state, ['x'], 'deck', GAME);
+    expect(out.cards.slice(1)).toEqual(state.cards.slice(1));
+    expect(out.cards.slice(1).every((c, i) => c === state.cards[i + 1])).toBe(true);
+    expect(zoneCards(out, 'deck').map((c) => [c.id, c.slot])).toEqual([['a', 3], ['c', 4], ['b', 7], ['x', 8]]);
+  });
   it('moves a card that is already there to the end', () => {
     const state = stateWith([card('c1', 'trick', 0), card('c2', 'trick', 1), card('c3', 'trick', 2)]);
     const out = relocate(state, ['c1'], 'trick', GAME);
@@ -234,5 +257,33 @@ describe('relocate', () => {
   });
   it('rejects a card that is not in the game', () => {
     expect(() => relocate(stateWith([]), ['c9'], 'trick', GAME)).toThrow('c9');
+  });
+});
+
+describe('toBottom', () => {
+  const game = fixtureColorGame();
+  const slots = (state: GameState, zoneId: string) => zoneCards(state, zoneId).map((c) => [c.id, c.slot, c.faceUp]);
+  it('puts the card under every other card of a secret pile, face down, with the slots 0 to n-1', () => {
+    const pile = stateWith([card('a', 'draw-pile', 0), card('b', 'draw-pile', 1), card('c', 'draw-pile', 2, { faceUp: true })]);
+    expect(slots(toBottom(pile, 'c', 'draw-pile', game), 'draw-pile')).toEqual([['c', 0, false], ['a', 1, false], ['b', 2, false]]);
+  });
+  it('turns the card face up only in a public pile', () => {
+    expect(slots(toBottom(stateWith([card('b', 'discard-pile', 7)]), 'b', 'discard-pile', game), 'discard-pile')).toEqual([['b', 0, true]]);
+  });
+  it('brings a card from another zone to the bottom, and renumbers a pile whose slots had gaps', () => {
+    const state = stateWith([card('a', 'draw-pile', 3), card('b', 'draw-pile', 9), card('x', 'discard-pile', 0)]);
+    const out = toBottom(state, 'x', 'draw-pile', game);
+    expect(slots(out, 'draw-pile')).toEqual([['x', 0, false], ['a', 1, false], ['b', 2, false]]);
+    expect(zoneCards(out, 'discard-pile')).toEqual([]);
+  });
+  it('leaves other cards and zones alone, and does not change the state it was given', () => {
+    const other = card('o', 'discard-pile', 4);
+    const state = stateWith([card('a', 'draw-pile', 0), card('b', 'draw-pile', 1), other]);
+    const out = toBottom(state, 'b', 'draw-pile', game);
+    expect(out.cards.find((c) => c.id === 'o')).toBe(other);
+    expect(state.cards[1]).toEqual(card('b', 'draw-pile', 1));
+  });
+  it('rejects a card that is not in the game', () => {
+    expect(() => toBottom(stateWith([]), 'c9', 'draw-pile', game)).toThrow('c9');
   });
 });

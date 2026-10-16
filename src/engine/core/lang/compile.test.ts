@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import COLOR_MATCH_TEXT from '@/games/color-match.rules?raw';
+import VENOM_TEXT from '@/games/venom.rules?raw';
 import { canPlay, compileGame } from './compile';
+import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
-import { TINY_BOARD_HEAD } from './testing';
+import { HOLDING_BOARD, INTERRUPT_BOARD, PICK_BOARD, TINY_BOARD_HEAD, deckGameText } from './testing';
 import type { ParamType } from './types';
 
 const lib = createDefaultLibrary();
@@ -328,7 +330,7 @@ describe('compileGame phases', () => {
 
   it('leaves lines it cannot read in a phase for the designer to fix', () => {
     expect(messages(BASE.replace('Hint: Do things.', 'Hint: Do things.\n  Dance.'))).toEqual([
-      [17, 'I don\'t understand this line in a phase. Phase lines start with Hint:, A player may…, When…, After a player…, Players take turns or Everyone acts at once.'],
+      [17, 'I don\'t understand this line in a phase. Phase lines start with Hint:, A player may…, Any player may…, When…, After a player…, Players take turns or Everyone acts at once.'],
     ]);
   });
 
@@ -348,6 +350,84 @@ describe('compileGame phases', () => {
       + '\nPhase: Second Phase';
     // The lines that use the phase and the verb were read; only the second phase, which nothing leads to, is reported.
     expect(messages(text, phrases)).toEqual([[24, 'Nothing leads to the phase “second phase”.']]);
+  });
+});
+
+describe('phases a line starts', () => {
+  const START = '      The vote phase starts with the player on their left.';
+  const unstarted = INTERRUPT_BOARD.replace(START, '      They get 5 money.');
+  it('reaches a phase a line of another phase starts', () => expect(compileGame(INTERRUPT_BOARD, lib).diagnostics).toEqual([]));
+  it('warns about a phase nothing starts', () => {
+    expect(messages(unstarted)).toEqual([[32, 'Nothing leads to the phase “vote”.']]);
+  });
+  it('does not count a line of the phase itself', () => {
+    const own = unstarted.replace('      Go back to the interrupted turn.\n  When', `      Go back to the interrupted turn.\n${START}\n  When`);
+    expect(own).not.toBe(unstarted);
+    expect(messages(own)).toEqual([[32, 'Nothing leads to the phase “vote”.']]);
+  });
+  it('counts a line that starts it only if something holds', () => {
+    const iffy = INTERRUPT_BOARD.replace(START, '      If they have rolled this turn, the vote phase starts with the player on their left.');
+    expect(iffy).not.toBe(INTERRUPT_BOARD);
+    expect(compileGame(iffy, lib).diagnostics).toEqual([]);
+  });
+  it('counts a card that says to start it', () => {
+    const lucky = ['| name | says |', '| Recess | The vote phase starts with the player on their left. |'];
+    const text = `${deckGameText(lucky, ['| name | says |', '| Calm | They get 0 money. |'])}\n\nPhase: vote\n  Hint: Vote.`;
+    expect(compileGame(text, lib).diagnostics).toEqual([]);
+  });
+  it('counts a line that starts it with the player who pressed, alone, under an If or in a For line', () => {
+    for (const line of [
+      '      The vote phase starts with them.', '      If they have rolled this turn, the vote phase starts with them.',
+      '      For the player who is voting, the vote phase starts with them.',
+    ]) {
+      const text = INTERRUPT_BOARD.replace(START, line);
+      expect(text).not.toBe(INTERRUPT_BOARD);
+      expect(compileGame(text, lib).diagnostics, line).toEqual([]);
+    }
+  });
+  it('does not count a For line of the phase itself', () => {
+    const own = unstarted.replace(
+      '      Go back to the interrupted turn.\n  When', '      Go back to the interrupted turn.\n      For the player who is voting, the vote phase starts with them.\n  When',
+    );
+    expect(own).not.toBe(unstarted);
+    expect(messages(own)).toEqual([[32, 'Nothing leads to the phase “vote”.']]);
+  });
+});
+
+describe('lines about the player who holds a flag', () => {
+  /** The 1-based number of `line` in `text`. */
+  const at = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+
+  it('says when a For line names no player, and how to name one', () => {
+    const text = HOLDING_BOARD.replace('For the rival,', 'For everyone,');
+    expect(messages(text)).toContainEqual([
+      at(text, '      For everyone, they get 5 money.'), '“everyone” doesn\'t name a player. Write “For the player who is …,” with something players can be.',
+    ]);
+  });
+  it('names a misspelt holder in a For line, with the flag closest to it, for the designer to fix', () => {
+    for (const [from, to, message, suggestions] of [
+      ['For the rival,', 'For the rivel,', 'There is no player fact called “the rivel”.', ['the rival']],
+      ['For the player who is leading,', 'For the player who is leadng,', 'There is no player fact called “leadng”.', ['leading']],
+    ] as const) {
+      const text = HOLDING_BOARD.replace(from, to);
+      const line = at(text, text.split('\n').find((l) => l.includes(to))!);
+      const { game, diagnostics } = compileGame(text, lib);
+      expect(diagnostics, to).toEqual([expect.objectContaining({ line, kind: 'invalid', message, suggestions })]);
+      expect(game, to).toBeUndefined();
+    }
+  });
+  it('names a misspelt holder that is paid, rather than asking a developer for the line', () => {
+    const text = PICK_BOARD.replace('  Players can be the rival.', '  Players can be the rival.\n  The game has a pot of 5.')
+      .replace('      That player is the rival.', '      They pay the pot to the rivel.');
+    const { game, diagnostics } = compileGame(text, lib);
+    expect(diagnostics).toEqual([expect.objectContaining({
+      line: at(text, '      They pay the pot to the rivel.'), kind: 'invalid', message: 'There is no player fact called “the rivel”.', suggestions: ['the rival'],
+    })]);
+    expect(canPlay({ game, diagnostics })).toEqual({ ok: false, reason: 'Fix 1 problem in the rules first.' });
+  });
+  it('reads the rest of a For line as an effect, and says when no phrase reads it', () => {
+    const text = HOLDING_BOARD.replace('they get 5 money', 'they dance');
+    expect(messages(text)).toContainEqual([at(text, '      For the rival, they dance.'), '“they dance” isn\'t in the phrase library yet.']);
   });
 });
 
@@ -640,6 +720,63 @@ describe('declaring facts and the bank', () => {
     expect(compileGame(text, createDefaultLibrary()).game!.facts).toEqual([{ name: 'poisoned', on: 'card', kind: 'flag' }]);
   });
 
+  it('refuses a fact about players in a game with no board, on its own line', () => {
+    const text = VENOM_TEXT.replace('  Cards can be poisoned.', '  Cards can be poisoned.\n  Players can be stung.');
+    const line = text.split('\n').findIndex((l) => l.includes('Players can be stung.')) + 1;
+    expect(errors(text)).toEqual([[line, 'Facts about players need a Board: section for now.']]);
+    // The card fact beside it is still fine, and so is a board game's fact about players.
+    expect(compiled(text).diagnostics.filter((d) => d.line !== line)).toEqual([]);
+    expect(errors(withFacts('  Players can be stung.'))).toEqual([]);
+  });
+  it('refuses a number of the game in a game with no board, on its own line, as it does a fact about players', () => {
+    const text = VENOM_TEXT.replace('  Cards can be poisoned.', '  Cards can be poisoned.\n  The game has a pot of 3.');
+    const line = text.split('\n').findIndex((l) => l.includes('The game has a pot of 3.')) + 1;
+    expect(errors(text)).toEqual([[line, 'Numbers that belong to the game need a Board: section for now.']]);
+    expect(compiled(text).diagnostics.filter((d) => d.line !== line)).toEqual([]);
+    expect(errors(withFacts('  The game has a pot of 3.'))).toEqual([]);
+  });
+  it('refuses a number of the game that a counter already names, in words of its own', () => {
+    expect(errors(withFacts('  The game has a money of 0.'))).toEqual([[15, '“money” is already a number each player has; give the game\'s number another name.']]);
+    // A number of the game that names no counter is fine beside one that does.
+    expect(errors(withFacts('  The game has a money of 0.', '  The game has a pot of 0.'))).toEqual([[15, '“money” is already a number each player has; give the game\'s number another name.']]);
+  });
+  it('refuses a number of the game called “amount”, which the lines of a button that carries a number already read as its own', () => {
+    const AMOUNT = '“amount” already means the number a button\'s press carries; give the game\'s number another name.';
+    expect(errors(withFacts('  The game has an amount of 0.'))).toEqual([[15, AMOUNT]]);
+    expect(errors(withFacts('  The game has an Amount of 0.'))).toEqual([[15, AMOUNT]]);
+    // Without it, a line that reads the amount a press carries would read the game's number too, and only a developer could tell them apart.
+    const raising = (...extra: string[]) => errors(withFacts(...extra).replace(
+      '  Players take turns.', '  Players take turns.\n  A player may raise an amount.\n    Only if they have at least the amount in money.',
+    ));
+    expect(raising('  The game has an amount of 0.')).toEqual([[15, AMOUNT]]);
+    expect(raising('  The game has an amount of 0.', '  The game has a pot of 0.')).toEqual([[15, AMOUNT]]);
+  });
+
+  it('declares facts about players, with names of several words', () => {
+    const { game, diagnostics } = compiled(withFacts('  Players can be in jail.', '  Players can have jail turns and a crown.'));
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(game!.facts).toEqual([
+      { name: 'in jail', on: 'player', kind: 'flag' }, { name: 'jail turns', on: 'player', kind: 'number' }, { name: 'crown', on: 'player', kind: 'flag' },
+    ]);
+  });
+  it('refuses a fact about players that a counter or “out” already names', () => {
+    expect(errors(withFacts('  Players can have money.'))).toEqual([[15, '“money” is already a number each player has.']]);
+    expect(errors(withFacts('  Players can be out.'))).toEqual([[15, '“out” is already how a player leaves the game.']]);
+    expect(errors(withFacts('  Players can have OUT.'))).toEqual([[15, '“out” is already how a player leaves the game.']]);
+    // Only a fact about players is refused those names: a space may still have money and an “out”.
+    expect(errors(withFacts('  Spaces can have money and an out.'))).toEqual([]);
+    expect(errors(withFacts('  Spaces can have tokens.', '  Players can have tokens.'))).toEqual([[16, 'There are two facts called “tokens”.']]);
+  });
+  it('reads player facts in any capitals, and a count of one in the singular', () => {
+    const text = `${withFacts('  Players can be In Jail.', '  Players can have Jail Turns.')}\n${[
+      '  A player may wait.', '    Only if They Are In Jail.', '    Then:', '      They gain 1 Jail Turn.',
+      '', 'Example: waiting in jail', '  Given p0 is in jail', '  When p0 waits', '  Then p0 has 1 jail turn', '  And p0 is in jail',
+    ].join('\n')}`;
+    const { game, diagnostics } = compiled(text);
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(runExamples(game!, createDefaultLibrary())).toEqual([expect.objectContaining({ status: 'pass' })]);
+  });
+
   it('has no facts and no bank unless the game declares them', () => {
     const { game } = compiled(TINY_BOARD_HEAD);
     expect(game!.facts).toEqual([]);
@@ -825,5 +962,112 @@ describe('a section named after a table column', () => {
     const header = text.split('\n').indexOf('Rent:') + 1;
     expect(errors(text)).toContainEqual([5, 'Add a table of spaces under this line.']);
     expect(compiled(text).diagnostics.filter((d) => d.line >= header)).toEqual([]);
+  });
+});
+
+describe('cards that say what they do', () => {
+  const FATE = ['| name | says |', '| Calm | They get 0 money. |'];
+
+  it('reads each says cell, sentence by sentence, as lines about the player who drew the card', () => {
+    const lucky = ['| name | says |', '| Dividend | They get 50 money. |', '| Toll | They pay 15. If someone else owns it, they pay its rent to its owner. |'];
+    const { game, diagnostics } = compileGame(deckGameText(lucky, FATE), lib);
+    expect(diagnostics).toEqual([]);
+    expect(Object.keys(game!.says)).toEqual(['They get 50 money.', 'They pay 15. If someone else owns it, they pay its rent to its owner.', 'They get 0 money.']);
+    expect(game!.says['They get 50 money.']).toEqual([{ kind: 'effect', phrase: 'they get {int} {counter}', args: [50, 'money'], line: 7, text: 'They get 50 money' }]);
+    expect(game!.says['They pay 15. If someone else owns it, they pay its rent to its owner.'].map((ref) => [ref.kind, ref.phrase, ref.line]))
+      .toEqual([['effect', 'they pay {int}', 8], ['lang', 'if', 8]]);
+    expect(JSON.parse(JSON.stringify(game!.says))).toEqual(game!.says);
+  });
+  it("reports a sentence the library doesn't know on its row, with a stub, and still reads the others", () => {
+    const { game, diagnostics } = compileGame(deckGameText(['| name | says |', '| Jig | They dance a jig. They get 5 money. |'], FATE), lib);
+    expect(diagnostics.map((d) => [d.line, d.kind, d.message])).toEqual([[7, 'unknown-phrase', "“They dance a jig” isn't in the phrase library yet."]]);
+    expect(diagnostics[0].stub).toBeDefined();
+    expect(game!.says['They dance a jig. They get 5 money.'].map((ref) => ref.phrase)).toEqual(['missing', 'they get {int} {counter}']);
+  });
+  it("Review Focus: never holds back the rest of the rules for a says sentence the library doesn't know", () => {
+    const text = deckGameText(['| name | says |', '| Jig | They dance a jig. |'], FATE, ['  When a player has less than 1 money:', '    They sing.']);
+    const sing = text.split('\n').indexOf('    They sing.') + 1;
+    expect(compileGame(text, lib).diagnostics.map((d) => [d.line, d.severity, d.kind])).toEqual([[7, 'error', 'unknown-phrase'], [sing, 'error', 'unknown-phrase']]);
+  });
+  it('reads a row on each deck even when two rows say the same, and keeps one entry for the text', () => {
+    const jig = ['| name | says |', '| Jig | They dance a jig. |'];
+    const { game, diagnostics } = compileGame(deckGameText(jig, jig), lib);
+    expect(diagnostics.map((d) => [d.line, d.kind])).toEqual([[7, 'unknown-phrase'], [10, 'unknown-phrase']]);
+    expect(Object.keys(game!.says)).toEqual(['They dance a jig.']);
+  });
+  it('asks for a sentence in an empty cell, on its row', () => {
+    const { diagnostics } = compileGame(deckGameText(['| name | says |', '| Blank | |'], FATE), lib);
+    expect(diagnostics.map((d) => [d.line, d.message])).toEqual([[7, 'Say what this card does, like “They get 50 money.”']]);
+  });
+  it('knows the column by its name in any capitals', () => {
+    const lucky = ['| name | Says |', '| Dividend | They get 50 money. |'];
+    const { game, diagnostics } = compileGame(deckGameText(lucky, FATE), lib);
+    expect(diagnostics).toEqual([]);
+    expect(game!.says['They get 50 money.'].map((ref) => ref.phrase)).toEqual(['they get {int} {counter}']);
+  });
+  it('is empty for a game whose decks have no says column', () => {
+    expect(compileGame(COLOR_MATCH_TEXT, lib).game!.says).toEqual({});
+  });
+  it('gives a game to play only while every says problem is a sentence the library does not know', () => {
+    // An unknown sentence is a phrase a developer still has to write; an empty cell is a mistake in the rules.
+    expect(compileGame(deckGameText(['| name | says |', '| Jig | They dance a jig. |'], FATE), lib).game).toBeDefined();
+    expect(compileGame(deckGameText(['| name | says |', '| Blank | |'], FATE), lib).game).toBeUndefined();
+  });
+
+  describe('when an earlier section is broken', () => {
+    const SING = ['  When a player has less than 1 money:', '    They sing.'];
+    const PROBLEMS = ['| name | says |', '| Jig | They dance a jig. |', '| Blank | |'];
+    const lineOf = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+    const summary = (text: string) => compileGame(text, lib).diagnostics.map((d) => [d.line, d.severity, d.message]);
+
+    it('shows the problem on the Board: line, not the same problem again on every says row', () => {
+      const text = deckGameText(['| name | says |', '| Dividend | They get 50 money. |'], FATE, SING)
+        .split('\n').filter((line) => !line.startsWith('    | space ')).join('\n');
+      // Without the header row the board has no counters, so each says row would also name one the game seems not to have.
+      // One warning on the first of those rows says they are waiting.
+      expect(summary(text)).toEqual([
+        [7, 'warning', 'Some card lines can\'t be checked until line 18 is fixed.'],
+        [18, 'error', 'Add a “space” column naming each space.'],
+        [27, 'error', 'There is no space called “Go”.'],
+        [39, 'warning', 'Some lines below can\'t be checked until line 18 is fixed.'],
+      ]);
+    });
+    it('says that card lines are waiting when their problems are held back, so a game that cannot be played has a reason', () => {
+      // An unknown Board: line is a phrase for a developer, but the empty cell is a mistake: the game is not to be played, and the
+      // cell's own problem is not shown while the Board: line is, so one warning on its row says what is waiting for what.
+      const text = deckGameText(['| name | says |', '| Blank | |'], FATE).replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  There is a gong.');
+      const result = compileGame(text, lib);
+      const gong = lineOf(text, '  There is a gong.');
+      expect(result.game).toBeUndefined();
+      expect(result.diagnostics.map((d) => [d.line, d.severity, d.kind, d.message])).toEqual([
+        [7, 'warning', 'structure', `Some card lines can't be checked until line ${gong} is fixed.`],
+        [gong, 'error', 'unknown-phrase', '“There is a gong” isn\'t in the phrase library yet.'],
+      ]);
+      expect(canPlay(result)).toEqual({ ok: false, reason: 'Fix 1 problem in the rules first.' });
+    });
+    it('puts that warning on the first row that had a problem, once, however many were held back', () => {
+      const text = deckGameText(PROBLEMS, ['| name | says |', '| Blank | |'])
+        .replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  There is a gong.');
+      const gong = lineOf(text, '  There is a gong.');
+      expect(compileGame(text, lib).diagnostics.map((d) => [d.line, d.severity, d.message])).toEqual([
+        [7, 'warning', `Some card lines can't be checked until line ${gong} is fixed.`],
+        [gong, 'error', '“There is a gong” isn\'t in the phrase library yet.'],
+      ]);
+    });
+    it('adds no such warning when no card line had a problem', () => {
+      const text = deckGameText(['| name | says |', '| Dividend | They get 50 money. |'], FATE).replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  There is a gong.');
+      expect(compileGame(text, lib).diagnostics.map((d) => [d.severity, d.message])).toEqual([['error', '“There is a gong” isn\'t in the phrase library yet.']]);
+    });
+    it('keeps the broken Cards: line first, holds back the rules, and leaves the says problems to be shown once it is fixed, with a warning that they wait', () => {
+      const fixed = deckGameText(PROBLEMS, FATE, SING);
+      const text = fixed.replace('starting in the fate pile', 'starting in the nowhere pile');
+      expect(summary(text)).toEqual([
+        [7, 'warning', 'Some card lines can\'t be checked until line 9 is fixed.'],
+        [9, 'error', 'There is no zone called “nowhere pile”.'],
+        [lineOf(text, '    They sing.'), 'warning', 'Some lines below can\'t be checked until line 9 is fixed.'],
+      ]);
+      // Once the zone is fixed, the says problems and the rule's own are all shown.
+      expect(summary(fixed).map(([line]) => line)).toEqual([7, 8, lineOf(fixed, '    They sing.')]);
+    });
   });
 });

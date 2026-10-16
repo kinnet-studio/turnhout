@@ -1,30 +1,55 @@
 // What one seat sees of a board game beyond the table: the board with its pieces and numbers, and the seat's buttons.
 // Everything here is plain `Json`, so the net layer can carry it in a view without knowing a board exists.
 import type { GameEngine } from '../game-engine';
-import type { GameState } from '../game-state';
-import type { PlayerId } from '../scene';
+import { zoneCards, type GameState } from '../game-state';
+import type { CardState, PlayerId } from '../scene';
 import type { Json } from '../table-def';
-import { bankOf, counterOf, isOut, latestRoll, ownerOf, pieceAt, spaceFact } from './board-state';
-import { targetCandidates } from './declared-actions';
+import { bankItemOf } from './board';
+import {
+  bankOf, counterOf, gameNumber, interruptedTurn, isOut, lastDrawn, latestRoll, owedTo, ownerOf, pieceAt, playerFact, spaceFact, type Creditor, type LastDrawn,
+} from './board-state';
+import { cardFact, cardName } from './card-facts';
+import { amountPrompt, amountReady, playerCandidates, targetCandidates } from './declared-actions';
 import { friendlyError, friendlyReason } from './friendly';
 import { secondPersonWords } from './refs';
 import type { LangRuntime } from './runtime';
 import type { DeclaredAction } from './types';
+import { zoneIdFor } from './zones';
 
 /**
  * `color` is the space's color when it is written as text; `details` is every other thing the table says about it. `facts` is
- * what has come to be true of it in play, only the ones that are set: a count other than 0, a flag that is on.
+ * what has come to be true of it in play, only the ones that are set: a count other than 0, a flag that is on. `stripes` names the
+ * flags among those (never a count) that no bank item goes with, in the order the game declares them, for the page to stripe the
+ * space with; they stay in `facts` too, so the space's title still names them.
  */
 export type SpaceView = {
-  name: string; color: string | null; details: { [k: string]: Json }; facts: { [fact: string]: number | boolean }; owner: PlayerId | null;
+  name: string; color: string | null; details: { [k: string]: Json }; facts: FactsView; stripes: string[]; owner: PlayerId | null;
 };
 /** One number per seat; null where the seat looking may not see it. */
 export type CounterView = { name: string; values: { [seat: string]: number | null } };
 /** What the bank has left of one thing; `name` is plural ('tokens'). */
 export type BankView = { name: string; count: number };
-/** `pieces` lists the seats that still have a piece, so a player who is out is absent; `bank` is in the order the game declares it. */
+/** What has come to be true of a thing, only the ones that are set. */
+type FactsView = { [fact: string]: number | boolean };
+/**
+ * `pieces` lists the seats that still have a piece, so a player who is out is absent; `bank` is in the order the game declares it.
+ * `playerFacts` has every seat of the game, `{}` for one with nothing set: what is true of a player is public, so every seat sees it.
+ * `lastDrawn` is the card drawn last, null until one is; every seat sees the same one, since a drawn card is shown to the table.
+ * `playerCards` has every seat of the game too, with the names of the cards the seat keeps in zones of its own that everyone can
+ * see, `[]` for none. `playerCardFlags` runs parallel to it: for each card shown, the flags set on it, in the order the game
+ * declares them. Nothing else about a card or a pile is in a view, least of all the order of a pile.
+ * `owes` has an entry for each seat still in that owes someone, whom it owes; `{}` while no one does, and for a board with no
+ * counter to pay with. Whom a player owes is public, so every seat sees the same.
+ * `gameNumbers` lists the numbers that belong to the game itself and are not 0, in the order the game declares them; they are
+ * public too, so every seat sees the same.
+ * `interrupted` is true while another phase holds a turn that will be gone back to, which the page says in a seat's status so a
+ * phase that is not the first is not mistaken for the game's ordinary turns.
+ */
 export type BoardView = {
   spaces: SpaceView[]; pieces: { [seat: string]: number }; roll: number[] | null; counters: CounterView[]; out: PlayerId[]; bank: BankView[];
+  playerFacts: { [seat: string]: FactsView }; lastDrawn: LastDrawn | null; playerCards: { [seat: string]: string[] };
+  playerCardFlags: { [seat: string]: string[][] }; owes: { [seat: string]: Creditor };
+  gameNumbers: { name: string; value: number }[]; interrupted: boolean;
 };
 /**
  * For a button that picks a space: what to ask the player, and every space its target phrase allows, by the space's place on
@@ -33,23 +58,77 @@ export type BoardView = {
 export type TargetView = { prompt: string; spaces: { [space: string]: true | string } };
 /**
  * `move` is the move type to send when the button is pressed. `allowed` is true when the button works now, otherwise the
- * sentence to show for why it does not; for a button that picks a space it is true when any space may be picked. `target` is
- * null for a button that picks no space.
+ * sentence to show for why it does not; for a button that picks a space it is true when any space may be picked, and for a button
+ * that carries an amount when only the amount is left to say, and for a button that picks another player when any player may be
+ * picked. `target` is null for a button that picks no space. `amount` is true for a button that carries an amount, which the player
+ * types before pressing it. `players` is null for every button but one that picks another player; for that one it has each player
+ * to pick, `true` when the move accepts that player and otherwise the sentence for why it does not.
  */
-export type ActionView = { move: string; label: string; allowed: true | string; target: TargetView | null };
+export type ActionView = {
+  move: string; label: string; allowed: true | string; target: TargetView | null; amount: boolean; players: { [seat: string]: true | string } | null;
+};
 export type SeatExtras = { board: BoardView | null; actions: ActionView[] };
 
 const OUT_OF_GAME = "You're out of the game.";
 
-/** The facts of a space that are set: a fact never given a value, a count of 0 and a flag that is off are all left out. */
-function factsOf(runtime: LangRuntime, state: GameState, space: number): SpaceView['facts'] {
-  const set: SpaceView['facts'] = {};
+/**
+ * The facts of one kind of thing that are set, in the order the game declares them, as `read` finds them: a fact never given a
+ * value, a count of 0 and a flag that is off are all left out.
+ */
+function setFacts(runtime: LangRuntime, on: 'space' | 'player', read: (fact: string) => number | boolean | null): FactsView {
+  const set: FactsView = {};
   for (const fact of runtime.game.facts) {
-    if (fact.on !== 'space') continue;
-    const value = spaceFact(state, space, fact.name);
+    if (fact.on !== on) continue;
+    const value = read(fact.name);
     if (value !== null && value !== 0 && value !== false) set[fact.name] = value;
   }
   return set;
+}
+
+/**
+ * The cards each seat keeps where everyone can see them: those in its per-player zones that are public, zone by zone in Table
+ * order and slot by slot. A zone only its owner can see, or nobody, is left out, and so is a zone shared by all.
+ */
+function cardsKept(runtime: LangRuntime, state: GameState): { [seat: string]: CardState[] } {
+  const shown = runtime.game.zones.filter((zone) => zone.perPlayer && zone.visibility === 'public');
+  return Object.fromEntries(runtime.seats.map((seat) => [seat, shown.flatMap((zone) => zoneCards(state, zoneIdFor(zone.name, seat)))]));
+}
+
+/** The flags set on a card (`true`, not merely given a value), in the order the game declares them. */
+function flagsOnCard(runtime: LangRuntime, card: CardState): string[] {
+  return runtime.game.facts.filter((fact) => fact.on === 'card' && fact.kind === 'flag' && cardFact(card, fact.name) === true).map((fact) => fact.name);
+}
+
+/**
+ * The flags set on a space that no bank item goes with, in the order the game declares them: the ones that are only ever set and
+ * cleared, which the page shows on the space itself instead of counting them out of the bank. A count is never one of them, whether
+ * or not the bank keeps something for it; it stays in `facts` for the page to count.
+ */
+function stripesOf(runtime: LangRuntime, facts: FactsView): string[] {
+  const bank = runtime.game.board?.bank ?? [];
+  return runtime.game.facts
+    .filter((fact) => fact.on === 'space' && fact.kind === 'flag' && Object.hasOwn(facts, fact.name) && bankItemOf(fact, bank) === null)
+    .map((fact) => fact.name);
+}
+
+/** Whom each seat still in owes, for the seats that owe anyone: the board's counter to pay with is the one a debt is kept against. */
+function debtsIn(runtime: LangRuntime, state: GameState): { [seat: string]: Creditor } {
+  const counter = runtime.game.board?.payWith ?? null;
+  const owes: { [seat: string]: Creditor } = {};
+  if (counter === null) return owes;
+  for (const seat of runtime.seats) {
+    const to = isOut(state, seat) ? null : owedTo(state, seat, counter);
+    if (to !== null) owes[seat] = to;
+  }
+  return owes;
+}
+
+/** The numbers of the game that are not 0, in the order the game declares them: one at 0 is as good as none for the page to show. */
+function gameNumbersIn(runtime: LangRuntime, state: GameState): { name: string; value: number }[] {
+  return runtime.game.facts
+    .filter((fact) => fact.on === 'game')
+    .map(({ name }) => ({ name, value: gameNumber(state, runtime.game, name) }))
+    .filter(({ value }) => value !== 0);
 }
 
 function boardView(runtime: LangRuntime, state: GameState, seat: PlayerId): BoardView | null {
@@ -60,7 +139,8 @@ function boardView(runtime: LangRuntime, state: GameState, seat: PlayerId): Boar
     // A color that is not text (a number, say) is not one to paint with, but it is still something the table says.
     const painted = typeof color === 'string';
     const details = painted || color === undefined ? rest : { ...rest, color };
-    return { name: space.name, color: painted ? color : null, details, facts: factsOf(runtime, state, index), owner: ownerOf(state, index) };
+    const facts = setFacts(runtime, 'space', (fact) => spaceFact(state, index, fact));
+    return { name: space.name, color: painted ? color : null, details, facts, stripes: stripesOf(runtime, facts), owner: ownerOf(state, index) };
   });
   const pieces: { [seat: string]: number } = {};
   for (const s of runtime.seats) {
@@ -72,7 +152,15 @@ function boardView(runtime: LangRuntime, state: GameState, seat: PlayerId): Boar
     values: Object.fromEntries(runtime.seats.map((s) => [s, counter.visibility === 'public' || s === seat ? counterOf(state, counter.name, s) : null])),
   }));
   const bank = board.bank.map(({ name }): BankView => ({ name, count: bankOf(state, name) }));
-  return { spaces, pieces, roll: latestRoll(state), counters, out: runtime.seats.filter((s) => isOut(state, s)), bank };
+  const playerFacts = Object.fromEntries(runtime.seats.map((s) => [s, setFacts(runtime, 'player', (fact) => playerFact(state, s, fact))]));
+  const kept = Object.entries(cardsKept(runtime, state));
+  return {
+    spaces, pieces, roll: latestRoll(state), counters, out: runtime.seats.filter((s) => isOut(state, s)), bank, playerFacts,
+    lastDrawn: lastDrawn(state), owes: debtsIn(runtime, state),
+    playerCards: Object.fromEntries(kept.map(([s, cards]) => [s, cards.map((card) => cardName(card, runtime.game))])),
+    playerCardFlags: Object.fromEntries(kept.map(([s, cards]) => [s, cards.map((card) => flagsOnCard(runtime, card))])),
+    gameNumbers: gameNumbersIn(runtime, state), interrupted: interruptedTurn(state) !== null,
+  };
 }
 
 /** What a rule says about the space a button picks, said to the player: 'a field they own' is 'a field you own'. */
@@ -82,12 +170,15 @@ const noneWords = (target: NonNullable<DeclaredAction['target']>): string => tar
 const pickPrompt = (target: NonNullable<DeclaredAction['target']>): string => `Pick ${targetWords(target)}`;
 
 /**
- * Whether `seat` may press the button now, with the space it picks when it picks one; a rule that cannot be answered
+ * Whether `seat` may press the button now, with the space or the player it picks when it picks one; a rule that cannot be answered
  * (“Go has no price.”) greys it with that sentence.
  */
-function allowedNow(engine: GameEngine, state: GameState, seat: PlayerId, move: string, target?: number): true | string {
+function allowedNow(
+  engine: GameEngine, state: GameState, seat: PlayerId, move: string, pick: { target?: number; player?: PlayerId } = {},
+): true | string {
   try {
-    const verdict = engine.canDispatch({ type: move, by: seat, ...(target === undefined ? {} : { target }) });
+    const { target, player } = pick;
+    const verdict = engine.canDispatch({ type: move, by: seat, ...(target === undefined ? {} : { target }), ...(player === undefined ? {} : { player }) });
     return verdict === true ? true : friendlyReason(verdict, state.turn?.current);
   } catch (e) {
     return friendlyError(e);
@@ -113,10 +204,41 @@ function pickingView(
     // A target that cannot be answered greys the button with that sentence, as a rule that cannot be answered does.
     return { target: view, allowed: over ?? friendlyError(e) };
   }
-  for (const space of candidates) view.spaces[space] = allowedNow(engine, state, seat, action.words, space);
+  for (const space of candidates) view.spaces[space] = allowedNow(engine, state, seat, action.words, { target: space });
   const verdicts = Object.values(view.spaces);
   if (verdicts.length === 0) return { target: view, allowed: over ?? `There is no ${noneWords(target)}.` };
   return { target: view, allowed: verdicts.includes(true) ? true : verdicts[0] };
+}
+
+/**
+ * Whether `seat` may press a button that carries an amount, before any amount is typed: the move is asked with none, and when its
+ * only objection is that there is none, the lines that do not read the amount say whether the button would work.
+ */
+function amountView(engine: GameEngine, runtime: LangRuntime, state: GameState, seat: PlayerId, action: DeclaredAction): true | string {
+  const verdict = allowedNow(engine, state, seat, action.words);
+  if (verdict !== amountPrompt(action)) return verdict;
+  try {
+    return amountReady(runtime, action, state, seat);
+  } catch (e) {
+    return friendlyError(e);
+  }
+}
+
+/**
+ * Which players a button that picks another player may be pointed at, and the button's own verdict from them. Each player still
+ * in but `seat` is asked of the engine, as the move would be sent; the button works when any of them does, and otherwise says why
+ * the first does not. With no one to pick it says what the move says without a pick.
+ */
+function playersView(
+  engine: GameEngine, runtime: LangRuntime, state: GameState, seat: PlayerId, action: DeclaredAction,
+): { players: { [seat: string]: true | string }; allowed: true | string } {
+  const players: { [seat: string]: true | string } = {};
+  for (const other of playerCandidates(runtime, state, seat)) players[other] = allowedNow(engine, state, seat, action.words, { player: other });
+  const verdicts = Object.values(players);
+  // Once the game is over every button says so, as the ones that pick nothing do, whoever is left to pick.
+  const over = state.result === undefined ? null : friendlyReason('game is over');
+  if (verdicts.length === 0) return { players, allowed: over ?? allowedNow(engine, state, seat, action.words) };
+  return { players, allowed: over ?? (verdicts.includes(true) ? true : verdicts[0]) };
 }
 
 /** The current phase's buttons in written order, each saying whether this seat may press it right now and if not why. */
@@ -127,10 +249,18 @@ function actionViews(engine: GameEngine, runtime: LangRuntime, state: GameState,
   const out = isOut(state, seat) && state.result === undefined;
   return phase.actions.map((action): ActionView => {
     const { words: move, label, target } = action;
-    if (target === null) return { move, label, allowed: out ? OUT_OF_GAME : allowedNow(engine, state, seat, move), target: null };
-    if (out) return { move, label, allowed: OUT_OF_GAME, target: { prompt: pickPrompt(target), spaces: {} } };
+    if (action.amount) {
+      return { move, label, allowed: out ? OUT_OF_GAME : amountView(engine, runtime, state, seat, action), target: null, amount: true, players: null };
+    }
+    if (action.picksPlayer) {
+      if (out) return { move, label, allowed: OUT_OF_GAME, target: null, amount: false, players: {} };
+      const picking = playersView(engine, runtime, state, seat, action);
+      return { move, label, allowed: picking.allowed, target: null, amount: false, players: picking.players };
+    }
+    if (target === null) return { move, label, allowed: out ? OUT_OF_GAME : allowedNow(engine, state, seat, move), target: null, amount: false, players: null };
+    if (out) return { move, label, allowed: OUT_OF_GAME, target: { prompt: pickPrompt(target), spaces: {} }, amount: false, players: null };
     const picking = pickingView(engine, runtime, state, seat, action, target);
-    return { move, label, allowed: picking.allowed, target: picking.target };
+    return { move, label, allowed: picking.allowed, target: picking.target, amount: false, players: null };
   });
 }
 
@@ -148,17 +278,23 @@ const isMap = (v: unknown, each: (item: unknown) => boolean): boolean => isRecor
 const isFact = (v: unknown): boolean => isNumber(v) || typeof v === 'boolean';
 const isSpace = (v: unknown): boolean =>
   isRecord(v) && isText(v.name) && (v.color === null || isText(v.color)) && isRecord(v.details) && isMap(v.facts, isFact)
-  && (v.owner === null || isText(v.owner));
+  && isList(v.stripes, isText) && (v.owner === null || isText(v.owner));
+const isDrawn = (v: unknown): boolean => isRecord(v) && isText(v.seat) && isText(v.zone) && isText(v.name) && isText(v.says);
+const isGameNumber = (v: unknown): boolean => isRecord(v) && isText(v.name) && isNumber(v.value);
 const isBankLine = (v: unknown): boolean => isRecord(v) && isText(v.name) && isNumber(v.count);
 const isCounter = (v: unknown): boolean =>
   isRecord(v) && isText(v.name) && isMap(v.values, (n) => n === null || isNumber(n));
 const isBoard = (v: unknown): boolean =>
   isRecord(v) && isList(v.spaces, isSpace) && isMap(v.pieces, isNumber) && (v.roll === null || isList(v.roll, isNumber))
-  && isList(v.counters, isCounter) && isList(v.out, isText) && isList(v.bank, isBankLine);
+  && isList(v.counters, isCounter) && isList(v.out, isText) && isList(v.bank, isBankLine) && isMap(v.playerFacts, (facts) => isMap(facts, isFact))
+  && (v.lastDrawn === null || isDrawn(v.lastDrawn)) && isMap(v.playerCards, (names) => isList(names, isText))
+  && isMap(v.playerCardFlags, (cards) => isList(cards, (flags) => isList(flags, isText)))
+  && isMap(v.owes, isText) && isList(v.gameNumbers, isGameNumber) && typeof v.interrupted === 'boolean';
 const isVerdict = (v: unknown): boolean => v === true || isText(v);
 const isTarget = (v: unknown): boolean => isRecord(v) && isText(v.prompt) && isMap(v.spaces, isVerdict);
 const isAction = (v: unknown): boolean =>
-  isRecord(v) && isText(v.move) && isText(v.label) && isVerdict(v.allowed) && (v.target === null || isTarget(v.target));
+  isRecord(v) && isText(v.move) && isText(v.label) && isVerdict(v.allowed) && (v.target === null || isTarget(v.target))
+  && typeof v.amount === 'boolean' && (v.players === null || isMap(v.players, isVerdict));
 
 /** For the page: the extras of a view when they have the shape `seatExtras` makes, null for anything else. */
 export function readSeatExtras(extras: Json | undefined): SeatExtras | null {

@@ -54,12 +54,14 @@ export function flowDefFor(game: CompiledGame, seats: PlayerId[]): FlowDef {
   const phases = game.phases.map((phase): PhaseDef => {
     const moveTypes = [...new Set([...phase.moves.map((m) => m.verb), ...phase.actions.map((a) => a.words)])];
     const rearranging = phase.rearrange.length > 0;
+    // Buttons any player may press skip the turn gate, as a rearrange does; the key is left out when there are none.
+    const anyActor = [...phase.actions.filter((a) => a.anyone).map((a) => a.words), ...(rearranging ? ['reorder'] : [])];
     const { goTo, after } = phase;
     return {
       id: phase.id,
       allow: rearranging ? [...moveTypes, 'reorder'] : moveTypes,
       actor: phase.actor,
-      ...(rearranging ? { anyActor: ['reorder'] } : {}),
+      ...(anyActor.length > 0 ? { anyActor } : {}),
       onEnter: phase.onEnter.map(effect),
       ...(goTo ? { advance: { when: cond(goTo.when), to: goTo.to } } : {}),
       ...(after ? { endTurn: { when: 'lang:always', after: after.moves, next: { name: 'lang:turn', params: after.next } } } : {}),

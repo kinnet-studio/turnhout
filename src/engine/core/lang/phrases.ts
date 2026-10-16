@@ -1,4 +1,5 @@
 import type { Json } from '../table-def';
+import { isSaysColumn } from './cards';
 import type {
   ActionFn, BoardFn, BoardSpec, CardSetSpec, CardsFn, ColumnFn, ConditionFn, DeclareFn, EffectFn, ExpectFn, FactItem, FactSpec, MomentFn,
   NameProblem, ParamType, PhraseKind, ScoreFn, TargetFn, TurnFn, Vocab, WhichFn, WhoFn, WinnerFn, ZoneFn, ZoneSpec,
@@ -46,35 +47,50 @@ export function splitList<T>(text: string, parseItem: (item: string) => T | null
 }
 
 /**
+ * Splits 'a, b and c' into items at its separators before reading any item, for items that can never hold a separator: a
+ * text that does read as one list reads as it, with no position to try. Null when some item is none.
+ */
+export function splitAtSeparators<T>(text: string, parseItem: (item: string) => T | null, separators = SEPARATORS): T[] | null {
+  const items = text.split(new RegExp(separatorSource(separators), 'i')).map(parseItem);
+  return items.every((item): item is T => item !== null) ? items : null;
+}
+
+/**
  * A type whose text is a list of items; `parse` reads one item, null for text that is none. The source and the reading
- * share `item` so that a list matches exactly when every item reads.
+ * share `item` so that a list matches exactly when every item reads. `split` says where one item ends: `splitList` for items
+ * that may hold a separator, `splitAtSeparators` for those that may not.
  */
 function listType<T extends Json>(
-  name: string, label: string, item: string, parse: (item: string) => T | null, separators = SEPARATORS,
+  name: string, label: string, item: string, parse: (item: string) => T | null, separators = SEPARATORS, split = splitList,
 ): ParamType {
   return {
     name, label,
     source: () => listSource(item, separators),
     resolve: (text) => {
-      const items = splitList(text, parse, separators);
+      const items = split(text, parse, separators);
       return items === null ? { error: `I don't understand “${text}” here.` } : { value: items };
     },
   };
 }
 
-/** One word naming a fact or a bank item: not a number, and not "a" or "an" on its own. */
+/** One word naming a bank item: not a number, and not "a" or "an" on its own. */
 const NOUN = '(?!\\d)(?!an?(?:\\s|,|$))[^\\s,]+';
-const FACT_ITEM = `(?:(?:a|an) ${NOUN}|${NOUN})`;
 const BANK_ITEM = `\\d+ ${NOUN}`;
-const A_NOUN = new RegExp(`^(?:a|an) (${NOUN})$`, 'i');
-const BARE_NOUN = new RegExp(`^${NOUN}$`, 'i');
 const COUNTED_NOUN = new RegExp(`^(\\d+) (${NOUN})$`, 'i');
 
-/** A plural noun is a number a thing has, and "a" or "an" and a noun is something it has or has not. */
+/** A word of a fact's name: no comma, and not "and", which is what separates one fact from the next. */
+const NAME_WORD = '(?!and(?![^\\s,]))[^\\s,]+';
+/** One or more words, the first of them not a number and not "a" or "an", which say what kind of fact a name is. */
+const FACT_NAME = `(?!\\d)(?!an?(?![^\\s,]))${NAME_WORD}(?: ${NAME_WORD})*`;
+const FACT_ITEM = `(?:(?:a|an) ${FACT_NAME}|${FACT_NAME})`;
+const A_FACT = new RegExp(`^(?:a|an) (${FACT_NAME})$`, 'i');
+const BARE_FACT = new RegExp(`^${FACT_NAME}$`, 'i');
+
+/** A name on its own is a number a thing has, and "a" or "an" and a name is something it has or has not. */
 function factItem(text: string): FactItem | null {
-  const flag = A_NOUN.exec(text)?.[1];
+  const flag = A_FACT.exec(text)?.[1];
   if (flag !== undefined) return { name: flag.toLowerCase(), kind: 'flag' };
-  return BARE_NOUN.test(text) ? { name: text.toLowerCase(), kind: 'number' } : null;
+  return BARE_FACT.test(text) ? { name: text.toLowerCase(), kind: 'number' } : null;
 }
 
 /** One thing the bank has, as "32 tokens" says it. */
@@ -110,7 +126,7 @@ export const STATIC_TYPES: ParamType[] = [
     resolve: (t) => ({ value: VISIBILITY[t.toLowerCase()] }),
   },
   // Lists never get a stubOrder: a stub keeps "tokens and a coin" as words, and a developer decides what they are.
-  listType('factlist', '[facts]', FACT_ITEM, factItem),
+  listType('factlist', '[facts]', FACT_ITEM, factItem, SEPARATORS, splitAtSeparators),
   listType('banklist', '[amounts]', BANK_ITEM, bankItem),
   listType('ints', '[numbers]', INT_ITEM, (text) => (WHOLE_NUMBER.test(text) ? Number(text) : null), OR_SEPARATORS),
 ];
@@ -118,7 +134,7 @@ export const STATIC_TYPES: ParamType[] = [
 export function emptyVocab(): Vocab {
   return {
     sharedZones: [], playerZones: [], maxPlayers: 0, phases: [], verbs: [], attributes: [], cardValues: [], standardDeck: false,
-    spaces: [], spaceAttributes: [], spaceValues: [], counters: [], payWith: null, actions: [], dice: false,
+    spaces: [], spaceAttributes: [], spaceValues: [], counters: [], payWith: null, actions: [], dice: false, diceCount: 0,
     facts: [], bank: [],
   };
 }
@@ -139,6 +155,8 @@ export function vocabFrom(game: {
   for (const set of cards) {
     for (const { attrs } of set.identities) {
       for (const [attribute, value] of Object.entries(attrs)) {
+        // What a card says is a rule for its player, not a word a rule can use about the card.
+        if (isSaysColumn(attribute)) continue;
         attributes.add(attribute);
         if (set.kind === 'table' && !cardValues.some((v) => v.attribute === attribute && v.value === value)) {
           cardValues.push({ attribute, value });
@@ -175,6 +193,7 @@ export function vocabFrom(game: {
     payWith: board?.payWith ?? null,
     actions: game.actions ?? [],
     dice: (board?.dice ?? null) !== null,
+    diceCount: board?.dice?.count ?? 0,
     facts,
     bank: (board?.bank ?? []).map((b) => b.name),
   };
@@ -193,11 +212,16 @@ export type MatchResult =
 
 /**
  * What a phrase needs, checked when a game is compiled: from the rule around it, a move being made, a player, a space or
- * a card the rule is about; from the game, something to pay with, a board (a Board: loop of spaces) or dice.
+ * a card the rule is about, or a card that has just been drawn (only a card's says column has one); from the game, something to
+ * pay with, a board (a Board: loop of spaces), dice or, for a double, exactly two of them. A phrase that sets `needsTwoDice`
+ * sets `needsDice` too, so a game with no dice hears about that first. `needsAmount` is for a phrase that reads the amount a
+ * button's press carries, which only a button whose wording ends in “an amount” has. `needsPick` is for a phrase that reads the
+ * player a button's press picked, which only a button whose wording ends in “another player” has. `entersPhase` is no need: it says
+ * the phrase's first argument is a phase the line enters, so that the compiler counts the line as leading there.
  */
 export type PhraseOpts = {
-  needsMove?: boolean; needsPlayer?: boolean; needsSpace?: boolean; needsCard?: boolean; needsPayment?: boolean; needsBoard?: boolean;
-  needsDice?: boolean;
+  needsMove?: boolean; needsPlayer?: boolean; needsSpace?: boolean; needsCard?: boolean; needsDrawnCard?: boolean; needsPayment?: boolean;
+  needsBoard?: boolean; needsDice?: boolean; needsTwoDice?: boolean; needsAmount?: boolean; needsPick?: boolean; entersPhase?: boolean;
 };
 
 type Part = { literal: string } | { type: ParamType };
@@ -226,6 +250,11 @@ const MAX_SUGGESTIONS = 3;
  * meant: less than one letter of the phrase's own words, so it only settles a tie.
  */
 const NARROW_BONUS = 0.5;
+/**
+ * How alike a line must be to a phrase's own words for a name in it that is like no real name to be read as a slip in
+ * those words instead. Kept high: a long line with a misspelt name shares many letter pairs with unrelated phrases.
+ */
+const SLIP_IN_WORDS = 0.7;
 
 /**
  * How alike a misnamed text is to the name closest to it among the suggestions, 0 when none is alike enough to have been
@@ -328,7 +357,7 @@ export class PhraseLibrary {
   score(p: string, fn: ScoreFn): this { return this.add('score', p, fn); }
   winner(p: string, fn: WinnerFn): this { return this.add('winner', p, fn); }
   moment(p: string, fn: MomentFn): this { return this.add('moment', p, fn); }
-  given(p: string, fn: EffectFn): this { return this.add('given', p, fn); }
+  given(p: string, fn: EffectFn, opts?: PhraseOpts): this { return this.add('given', p, fn, opts); }
   action(p: string, fn: ActionFn): this { return this.add('action', p, fn); }
   target(p: string, fn: TargetFn, opts?: PhraseOpts): this { return this.add('target', p, fn, opts); }
   expect(p: string, fn: ExpectFn): this { return this.add('expect', p, fn); }
@@ -337,7 +366,8 @@ export class PhraseLibrary {
     const entry = this.entries.get(kind)?.get(pattern.toLowerCase());
     return entry && {
       fn: entry.fn, needsMove: entry.needsMove, needsPlayer: entry.needsPlayer, needsSpace: entry.needsSpace, needsCard: entry.needsCard,
-      needsPayment: entry.needsPayment, needsBoard: entry.needsBoard, needsDice: entry.needsDice,
+      needsDrawnCard: entry.needsDrawnCard, needsPayment: entry.needsPayment, needsBoard: entry.needsBoard, needsDice: entry.needsDice,
+      needsTwoDice: entry.needsTwoDice, needsAmount: entry.needsAmount, needsPick: entry.needsPick, entersPhase: entry.entersPhase,
     };
   }
 
@@ -376,11 +406,14 @@ export class PhraseLibrary {
    * are let loose, with a name the game never defined (“Shuffle the dek” is “shuffle {zone}” and there is no zone
    * “dek”). The phrase with the most words of its own wins; of phrases with as many, the one whose names the misnamed text
    * is nearest to, else the one registered first. Null when no phrase has the line's shape that way: then it is a phrase
-   * nobody has written yet. Only says what is wrong; it never makes a line match.
+   * nobody has written yet. Null too when the misnamed text is like no real name and the line is very like the words of
+   * another phrase, more than those of the one that read it: “it is acepted” is “it is accepted” misspelt, not a space fact
+   * called “acepted”, and the unknown-phrase diagnostic suggests the phrase it meant. Only says what is wrong; it never
+   * makes a line match.
    */
   misnamed(kinds: PhraseKind[], text: string, vocab: Vocab): Misnamed | null {
     const line = normalizeLine(text);
-    let best: (Misnamed & { rank: number; near: number }) | null = null;
+    let best: (Misnamed & { rank: number; near: number; literal: string }) | null = null;
     for (const kind of kinds) {
       for (const entry of this.entries.get(kind)?.values() ?? []) {
         // A phrase that could only tie is still read: it may name something nearer.
@@ -389,10 +422,13 @@ export class PhraseLibrary {
         const named = found ? this.firstMisnamed(entry, found, vocab) : null;
         if (!named) continue;
         const rank = entry.specificity + (named.narrow ? NARROW_BONUS : 0);
-        if (!best || rank > best.rank || (rank === best.rank && named.near > best.near)) best = { kind, problem: named.problem, rank, near: named.near };
+        if (!best || rank > best.rank || (rank === best.rank && named.near > best.near)) {
+          best = { kind, problem: named.problem, rank, near: named.near, literal: entry.literal };
+        }
       }
     }
-    return best && { kind: best.kind, problem: best.problem };
+    if (!best || (best.near === 0 && this.isNearerToOther(kinds, line, best.literal))) return null;
+    return { kind: best.kind, problem: best.problem };
   }
 
   private add(kind: PhraseKind, p: string, fn: unknown, opts: PhraseOpts = {}): this {
@@ -423,8 +459,9 @@ export class PhraseLibrary {
     ofKind.set(pattern, {
       pattern, parts, display, literal: literal.replace(/\s+/g, ' ').trim(), specificity, fn,
       needsMove: opts.needsMove ?? false, needsPlayer: opts.needsPlayer ?? false, needsSpace: opts.needsSpace ?? false,
-      needsCard: opts.needsCard ?? false, needsPayment: opts.needsPayment ?? false, needsBoard: opts.needsBoard ?? false,
-      needsDice: opts.needsDice ?? false,
+      needsCard: opts.needsCard ?? false, needsDrawnCard: opts.needsDrawnCard ?? false, needsPayment: opts.needsPayment ?? false,
+      needsBoard: opts.needsBoard ?? false, needsDice: opts.needsDice ?? false, needsTwoDice: opts.needsTwoDice ?? false,
+      needsAmount: opts.needsAmount ?? false, needsPick: opts.needsPick ?? false, entersPhase: opts.entersPhase ?? false,
     });
     return this;
   }
@@ -482,6 +519,21 @@ export class PhraseLibrary {
       first ??= { problem: named, narrow: part.type.loose.narrow ?? false, near: nearness(text, named.suggestions) };
     }
     return first;
+  }
+
+  /**
+   * True when `line` is very like the words of some phrase of `kinds`, and more like them than the words `literal` of the
+   * phrase that read a name in it. Text in straight quotes is left out of the line: it is a designer's own words (a reason, a
+   * label), never part of a phrase's, and a long one would pull the score of the very phrase the line was meant to be under
+   * the floor.
+   */
+  private isNearerToOther(kinds: PhraseKind[], line: string, literal: string): boolean {
+    const lower = line.toLowerCase().replace(/"[^"]*"/g, '').replace(/\s+/g, ' ').trim();
+    const blamed = dice(lower, literal);
+    return kinds.some((kind) => [...(this.entries.get(kind)?.values() ?? [])].some((entry) => {
+      const score = dice(lower, entry.literal);
+      return score >= SLIP_IN_WORDS && score > blamed;
+    }));
   }
 
   private suggest(entries: Entry[], line: string): string[] {

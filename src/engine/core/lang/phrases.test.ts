@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { standardDeckIdentities } from './cards';
+import VENOM_TEXT from '@/games/venom.rules?raw';
+import { expandCardTable, standardDeckIdentities } from './cards';
+import { compileGame } from './compile';
+import { createDefaultLibrary } from './library';
 import { PhraseLibrary, STATIC_TYPES, emptyVocab, stubFor, suggestNames, vocabFrom } from './phrases';
 import { VOCAB_TYPES } from './refs';
-import { FIXTURE_SPACES, fixtureBoardGame } from './testing';
+import { FIXTURE_SPACES, TINY_BOARD_HEAD, fixtureBoardGame } from './testing';
 import type { EffectFn, ParamType } from './types';
 
 const V = emptyVocab();
@@ -105,10 +108,16 @@ describe('PhraseLibrary.match', () => {
     const fn = () => true;
     const l = lib().condition('it is their move', fn, { needsMove: true }).condition('hearts are broken', () => true);
     expect(l.get('condition', 'it is their move')).toEqual({
-      fn, needsMove: true, needsPlayer: false, needsSpace: false, needsCard: false, needsPayment: false, needsBoard: false, needsDice: false,
+      fn, needsMove: true, needsPlayer: false, needsSpace: false, needsCard: false, needsDrawnCard: false, needsPayment: false, needsBoard: false,
+      needsDice: false, needsTwoDice: false, needsAmount: false, needsPick: false, entersPhase: false,
     });
     expect(l.get('condition', 'hearts are broken')?.needsMove).toBe(false);
     expect(l.get('effect', 'it is their move')).toBeUndefined();
+  });
+
+  it('registers a phrase that needs a card that was just drawn, which no other phrase does', () => {
+    const l = lib().effect('keep it', (e) => e.state, { needsDrawnCard: true }).effect('toss it', (e) => e.state);
+    expect([l.get('effect', 'keep it')?.needsDrawnCard, l.get('effect', 'toss it')?.needsDrawnCard]).toEqual([true, false]);
   });
 
   it('registers the phrases that pick out the cards a rule is about, which may need a card too', () => {
@@ -189,6 +198,47 @@ describe('PhraseLibrary.misnamed between phrases with the same words', () => {
   it('keeps the one registered first when the text is near no name of either', () => {
     expect(detailFirst.misnamed(['condition'], 'it has a zzz', board)?.problem.message).toBe('There is no space detail called “zzz”.');
     expect(factFirst.misnamed(['condition'], 'it has a zzz', board)?.problem.message).toBe('There is no space fact called “zzz”.');
+  });
+});
+
+describe('PhraseLibrary.misnamed beside a phrase with words of its own where the name would be', () => {
+  const board = vocabFrom({ maxPlayers: 2, board: fixtureBoardGame().board, facts: [{ name: 'mortgaged', on: 'space', kind: 'flag' }] });
+  const l = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
+    .expect('it is accepted', () => true).expect("it is {player}'s turn", () => true).condition('it is {spaceflag}', () => true);
+
+  it('blames no name like no real one when the line is more like the words of another phrase', () => {
+    expect(l.misnamed(['expect', 'condition'], 'it is acepted', board)).toBeNull();
+    expect(l.misnamed(['expect', 'condition'], 'it is p1s turn', board)).toBeNull();
+  });
+  it('still blames a name near a real one, and a name like no real one when no phrase is nearer', () => {
+    expect(l.misnamed(['expect', 'condition'], 'it is mortgagd', board)?.problem)
+      .toEqual({ message: 'There is no space fact called “mortgagd”.', suggestions: ['mortgaged'] });
+    expect(l.misnamed(['expect', 'condition'], 'it is xyz', board)?.problem.message).toBe('There is no space fact called “xyz”.');
+  });
+});
+
+describe('a misspelt example line with a quoted reason, in a game that declares a fact', () => {
+  const full = createDefaultLibrary();
+  // The quoted reason is not the line's own words: it must not pull the line away from the phrase it was meant to be.
+  const LINE = 'it is rejeted because "no player has less than 0 money"';
+  const SLIP = `  Then ${LINE}`;
+  const problems = (text: string) => compileGame(text, full).diagnostics.filter((d) => d.severity === 'error');
+  const notInTheLibrary = expect.objectContaining({
+    kind: 'unknown-phrase', message: `“${LINE}” isn't in the phrase library yet.`,
+    suggestions: expect.arrayContaining(['it is rejected because [text]']),
+  });
+
+  it('is not blamed on a space fact', () => {
+    const text = [
+      TINY_BOARD_HEAD.replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  Spaces can be mortgaged.'),
+      '  A player may mortgage the space they are on.', '    Only if it is not mortgaged.', '    Then:', '      It is mortgaged.', '',
+      'Example: a slip', '  Given p0 is on Rose Lane', '  When p0 mortgages the space they are on', SLIP,
+    ].join('\n');
+    expect(problems(text)).toEqual([notInTheLibrary]);
+  });
+  it('is not blamed on a card fact', () => {
+    const text = [VENOM_TEXT, '', 'Example: a slip', "  Given p0's camp has a Knight", '  When p0 plays a Knight', SLIP].join('\n');
+    expect(problems(text)).toEqual([notInTheLibrary]);
   });
 });
 
@@ -279,6 +329,16 @@ describe('vocabFrom', () => {
     });
   });
 
+  it('leaves the says column out of the words about cards, in any capitals', () => {
+    const identities = expandCardTable({
+      columns: ['name', 'Says'],
+      rows: [{ cells: ['Dividend', 'They get 50 money.'], line: 1 }, { cells: ['Fine', 'They pay 15.'], line: 2 }],
+    });
+    const vocab = vocabFrom({ maxPlayers: 2, cards: [{ kind: 'table', identities, start: 'deck', acesHigh: false }] });
+    expect(vocab.attributes).toEqual(['name']);
+    expect(vocab.cardValues).toEqual([{ attribute: 'name', value: 'Dividend' }, { attribute: 'name', value: 'Fine' }]);
+  });
+
   it('lists the facts a game declares and the names of its bank', () => {
     const facts = [{ name: 'houses', on: 'space', kind: 'number' }, { name: 'poisoned', on: 'card', kind: 'flag' }] as const;
     const board = { ...fixtureBoardGame().board!, bank: [{ name: 'houses', start: 32 }, { name: 'hotels', start: 12 }] };
@@ -322,8 +382,8 @@ describe('board vocabulary and phrase flags', () => {
     const v = vocabFrom({
       maxPlayers: 2, board: fixtureBoardGame().board,
       actions: [
-        { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false },
-        { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true },
+        { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false, anyone: false, amount: false, picksPlayer: false },
+        { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true, anyone: false, amount: false, picksPlayer: false },
       ],
     });
     expect(v.spaces).toHaveLength(8);
@@ -333,23 +393,29 @@ describe('board vocabulary and phrase flags', () => {
     expect(v.counters).toEqual(['money']);
     expect(v.payWith).toBe('money');
     expect(v.actions).toEqual([
-      { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false },
-      { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true },
+      { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false, anyone: false, amount: false, picksPlayer: false },
+      { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true, anyone: false, amount: false, picksPlayer: false },
     ]);
     expect(v.dice).toBe(true);
+    expect(v.diceCount).toBe(2);
   });
-  it('knows whether the board has dice', () => {
+  it('knows whether the board has dice, and how many', () => {
     expect(vocabFrom({ maxPlayers: 2, board: { ...fixtureBoardGame().board!, dice: null } }).dice).toBe(false);
     expect(vocabFrom({ maxPlayers: 2 }).dice).toBe(false);
+    expect(vocabFrom({ maxPlayers: 2, board: { ...fixtureBoardGame().board!, dice: { count: 1, sides: 6 } } }).diceCount).toBe(1);
+    expect([vocabFrom({ maxPlayers: 2 }).diceCount, emptyVocab().diceCount]).toEqual([0, 0]);
   });
   it('reports every flag a phrase was registered with', () => {
     const l = new PhraseLibrary(STATIC_TYPES)
       .effect('they rest', (env) => env.state, { needsPlayer: true })
-      .effect('they roll', (env) => env.state, { needsBoard: true, needsDice: true });
+      .effect('they roll', (env) => env.state, { needsBoard: true, needsDice: true })
+      .given('they rolled a double', (env) => env.state, { needsDice: true, needsTwoDice: true });
     expect(l.get('effect', 'they rest')).toMatchObject({
       needsMove: false, needsPlayer: true, needsSpace: false, needsPayment: false, needsBoard: false, needsDice: false,
     });
-    expect(l.get('effect', 'they roll')).toMatchObject({ needsPlayer: false, needsBoard: true, needsDice: true });
+    expect(l.get('effect', 'they roll')).toMatchObject({ needsPlayer: false, needsBoard: true, needsDice: true, needsTwoDice: false });
+    // A Given line takes the same flags as any other phrase.
+    expect(l.get('given', 'they rolled a double')).toMatchObject({ needsDice: true, needsTwoDice: true, needsPlayer: false });
   });
 });
 
@@ -386,9 +452,20 @@ describe('the declare phrases', () => {
       expect(read(`Spaces can have ${list}`)).toMatchObject({ status: 'ok', args: [three] });
     }
   });
-  it('wants one word for each fact, and no count', () => {
-    for (const list of ['3 houses', 'a', 'a hotel inn', 'houses and', 'houses,, a hotel', 'a a', 'hit points', 'a big hotel']) {
-      expect(read(`Spaces can have ${list}`).status).toBe('unknown');
+  it('takes names of several words, splitting at commas and “and” first', () => {
+    expect(read('Spaces can have jail turns')).toMatchObject({ args: [[{ name: 'jail turns', kind: 'number' }]] });
+    expect(read('Spaces can have hit points, a big hotel and an Old Inn')).toMatchObject({ args: [[
+      { name: 'hit points', kind: 'number' }, { name: 'big hotel', kind: 'flag' }, { name: 'old inn', kind: 'flag' },
+    ]] });
+  });
+  it('keeps “and” inside a longer word, and a lone “a” inside a name', () => {
+    expect(read('Spaces can have android parts and a band, a hit a day')).toMatchObject({ args: [[
+      { name: 'android parts', kind: 'number' }, { name: 'band', kind: 'flag' }, { name: 'hit a day', kind: 'flag' },
+    ]] });
+  });
+  it('wants no count, no lone article and no empty name', () => {
+    for (const list of ['3 houses', 'a', 'houses and', 'houses,, a hotel', 'a a', 'and', 'an and']) {
+      expect(read(`Spaces can have ${list}`).status, list).toBe('unknown');
     }
   });
 });

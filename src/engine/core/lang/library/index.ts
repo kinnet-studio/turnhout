@@ -1,11 +1,17 @@
 import { PhraseLibrary, STATIC_TYPES } from '../phrases';
 import { VOCAB_TYPES } from '../refs';
+import { registerAmountPhrases } from './amount-phrases';
 import { registerBoardPhrases } from './board-phrases';
+import { registerDebtPhrases } from './debt-phrases';
+import { registerDrawPhrases } from './draw-phrases';
 import { registerExamplePhrases } from './example-phrases';
 import { registerFactPhrases } from './fact-phrases';
 import { registerFlowPhrases } from './flow-phrases';
+import { registerGameNumberPhrases } from './game-numbers';
 import { registerHeartsPhrases } from './hearts';
 import { registerMovePhrases } from './move-phrases';
+import { registerPickPhrases } from './pick-phrases';
+import { registerPlayerFactPhrases } from './player-facts';
 import { registerRentDayPhrases } from './rent-day';
 import { registerSetupPhrases } from './setup-phrases';
 import { registerStandardDeckPhrases } from './standard-deck';
@@ -15,6 +21,12 @@ const REGISTRARS: ((lib: PhraseLibrary) => PhraseLibrary)[] = [
   registerFlowPhrases,
   registerBoardPhrases,
   registerFactPhrases,
+  registerPlayerFactPhrases,
+  registerDrawPhrases,
+  registerDebtPhrases,
+  registerGameNumberPhrases,
+  registerAmountPhrases,
+  registerPickPhrases,
   registerMovePhrases,
   registerStandardDeckPhrases,
   registerHeartsPhrases,

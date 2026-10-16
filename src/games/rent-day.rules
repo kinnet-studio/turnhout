@@ -1,6 +1,48 @@
 Game: Rent Day
 Players: 2 to 8
 
+Cards:
+  A deck called chance cards, starting in the chance pile:
+    | name                           | says                                                                                                       | copies |
+    | Advance To Go                  | Their piece moves forward to Go.                                                                           | 1      |
+    | Advance To Bell Square         | Their piece moves forward to Bell Square.                                                                  | 1      |
+    | Advance To Dock Road           | Their piece moves forward to Dock Road.                                                                    | 1      |
+    | Advance To The Nearest Utility | Their piece moves forward to the nearest utility.                                                          | 1      |
+    | Advance To The Nearest Station | Their piece moves forward to the nearest station. If someone else owns it, they pay its rent to its owner. | 2      |
+    | Bank Pays A Dividend           | They get 50 money.                                                                                         | 1      |
+    | Get Out Of Jail Free           | They keep this card in their kept cards.                                                                   | 1      |
+    | Go Back Three Spaces           | Their piece moves back 3 spaces.                                                                           | 1      |
+    | Go To Jail                     | Their piece goes straight to Jail. They are in jail.                                                       | 1      |
+    | General Repairs                | They pay 25 for each of their houses. They pay 100 for each of their hotels.                               | 1      |
+    | Speeding Fine                  | They pay 15.                                                                                               | 1      |
+    | A Trip To North Station        | Their piece moves forward to North Station.                                                                | 1      |
+    | A Walk On The Promenade        | Their piece moves forward to The Promenade.                                                                | 1      |
+    | Chair Of The Board             | They pay 50 money to each other player.                                                                    | 1      |
+    | Building Loan Matures          | They get 150 money.                                                                                        | 1      |
+  A deck called treasury cards, starting in the treasury pile:
+    | name                      | says                                                                         | copies |
+    | Advance To Go             | Their piece moves forward to Go.                                             | 1      |
+    | Bank Error In Your Favour | They get 200 money.                                                          | 1      |
+    | Doctor's Fee              | They pay 50.                                                                 | 1      |
+    | Sale Of Stock             | They get 50 money.                                                           | 1      |
+    | Get Out Of Jail Free      | They keep this card in their kept cards.                                     | 1      |
+    | Go To Jail                | Their piece goes straight to Jail. They are in jail.                         | 1      |
+    | Opera Night               | They get 50 money from each other player.                                    | 1      |
+    | Holiday Fund Matures      | They get 100 money.                                                          | 1      |
+    | Tax Refund                | They get 20 money.                                                           | 1      |
+    | Life Insurance Matures    | They get 100 money.                                                          | 1      |
+    | Hospital Fees             | They pay 100.                                                                | 1      |
+    | School Fees               | They pay 50.                                                                 | 1      |
+    | Consultancy Fee           | They get 25 money.                                                           | 1      |
+    | Street Repairs            | They pay 40 for each of their houses. They pay 115 for each of their hotels. | 1      |
+    | Beauty Contest Prize      | They get 10 money.                                                           | 1      |
+    | Inheritance               | They get 100 money.                                                          | 1      |
+
+Table:
+  The chance pile is a pile in the center that no one can see.
+  The treasury pile is a pile in the center that no one can see.
+  Each player has a kept cards row that everyone can see.
+
 Board:
   The board is a loop of spaces, starting at Go:
     | space           | kind       | color      | price | house price | rent | 1 house | 2 houses | 3 houses | 4 houses | with hotel | tax |
@@ -49,34 +91,108 @@ Board:
   Players pay with money.
   There are two six-sided dice.
   Spaces can have houses and a hotel.
+  Spaces can be mortgaged.
   The bank has 32 houses and 12 hotels.
+  Players can be in jail.
+  Players can have jail turns.
+  Spaces can be up for auction.
+  Players can be bidding.
+  Players can be the high bidder.
+  The game has a high bid of 0.
+  Spaces can be offered.
+  Spaces can be asked for.
+  Cards can be handed over.
+  Cards can be claimed.
+  Players can be proposing.
+  Players can be the trade partner.
+  The game has a cash offer of 0.
+  The game has a cash request of 0.
+
+Setup:
+  Shuffle the chance pile.
+  Shuffle the treasury pile.
 
 Rent:
   A street's rent depends on its houses and hotel.
   A street in a full set with no buildings has double rent.
   A station's rent is 25, 50, 100 or 200 when its owner has 1, 2, 3 or 4 stations.
   A utility's rent is 4 times the roll, or 10 times when its owner has both.
+  A mortgaged space's rent is 0.
 
 Phase: playing
-  Hint: Roll the dice, then buy, build, or end your turn.
+  Hint: Roll the dice, then buy, build, or end your turn. A double rolls again.
   Players take turns.
   A player may roll the dice.
+    Only if no player has less than 0 money.
+    Only if they are not in jail.
+    Only if they have not rolled for a double this turn.
+    Only if one of:
+      they have not rolled this turn
+      they rolled a double
+    Only if one of:
+      they have not rolled this turn
+      it has no price
+      someone owns it
+      it is up for auction
+    Then:
+      No space is up for auction.
+      Roll the dice.
+      If they have rolled fewer than 3 doubles this turn, their piece moves forward by the roll.
+  A player may pay to leave jail.
+    Only if no player has less than 0 money.
+    Only if they are in jail.
+    Only if they have not rolled this turn.
+    Only if they have at least 50 money.
+    Then:
+      They pay 50.
+      They are not in jail.
+      Their jail turns go back to 0.
+  A player may roll for a double.
+    Only if no player has less than 0 money.
+    Only if they are in jail.
     Only if they have not rolled this turn.
     Then:
       Roll the dice.
-      Their piece moves forward by the roll.
+      If they rolled a double, they are not in jail.
+      If they are in jail, they gain 1 jail turn.
+      If they are not in jail, their jail turns go back to 0.
+      If they are not in jail, their piece moves forward by the roll.
+  A player may use a Get Out Of Jail Free.
+    Only if no player has less than 0 money.
+    Only if they are in jail.
+    Only if they have not rolled this turn.
+    Only if their kept cards has a Get Out Of Jail Free.
+    Then:
+      They are not in jail.
+      Their jail turns go back to 0.
+      A Get Out Of Jail Free from their kept cards goes to the bottom of the pile it came from.
   A player may buy the space they are on.
+    Only if no player has less than 0 money.
     Only if they have rolled this turn.
     Only if it has a price.
     Only if no one owns it.
+    Only if it is not up for auction.
     Only if they have at least its price in money.
     Then:
       They pay its price.
       They own it.
+  A player may auction the space they are on.
+    Only if no player has less than 0 money.
+    Only if they have rolled this turn.
+    Only if it has a price.
+    Only if no one owns it.
+    Only if it is not up for auction.
+    Then:
+      It is up for auction.
+      Every player is bidding.
+      The high bid is 0.
+      The auction phase starts with the player on their left.
   A player may build a house on a street they own.
+    Only if no player has less than 0 money.
     Only if they own every street of its color.
     Only if it has no hotel.
     Only if no street of its color has fewer buildings.
+    Only if no street of its color is mortgaged.
     Only if they have at least its house price in money.
     Only if one of:
       it has fewer than 4 houses
@@ -89,20 +205,198 @@ Phase: playing
       If it has 4 houses, it gets a hotel from the bank.
       If it has a hotel, its houses go back to the bank.
       If it has no hotel, it gets a house from the bank.
+  A player may trade with another player.
+    Only if no player has less than 0 money.
+    Then:
+      They are proposing.
+      That player is the trade partner.
+      The cash offer is 0.
+      The cash request is 0.
+      The trade phase starts with them.
   A player may end their turn.
+    Only if no player has less than 0 money.
     Only if they have rolled this turn.
+    Only if one of:
+      they did not roll a double
+      they are in jail
+      they have rolled for a double this turn
+    Only if one of:
+      it has no price
+      someone owns it
+      it is up for auction
+    Then:
+      No space is up for auction.
+  Any player may take a mortgage on a space they own.
+    Only if it is not mortgaged.
+    Only if no street of its color has a building.
+    Then:
+      They get 50% of its price.
+      It is mortgaged.
+  Any player may pay off a mortgage on a space they own.
+    Only if it is mortgaged.
+    Only if they have at least 55% of its price in money.
+    Then:
+      They pay 55% of its price.
+      It is not mortgaged.
+  Any player may sell a house on a street they own.
+    Only if one of:
+      it has a house
+      it has a hotel
+    Only if no street of its color has more buildings.
+    Only if one of:
+      it has no hotel
+      the bank has at least 4 houses
+    Then:
+      They get 50% of its house price.
+      If it has no hotel, one of its houses goes back to the bank.
+      If it has a hotel, it gets 4 houses from the bank.
+      If it has a hotel, its hotel goes back to the bank.
+  Any player may give up.
+    Only if they have less than 0 money.
+    Then:
+      Their houses go back to the bank.
+      Their hotels go back to the bank.
+      If they owe the bank, their spaces are no longer mortgaged.
+      Everything they own goes to the player they owe.
+      They are out.
+  When a player has rolled 3 doubles this turn:
+    Only if they are not in jail.
+    Their piece goes straight to Jail.
+    They are in jail.
+  When a player lands on a go to jail space:
+    Their piece goes straight to Jail.
+    They are in jail.
+  When a player has 3 jail turns:
+    They pay 50.
+    They are not in jail.
+    Their jail turns go back to 0.
+    Their piece moves forward by the roll.
   When a piece passes Go:
     Its player gets 200 money.
   When a player lands on a space someone else owns:
     They pay its rent to its owner.
   When a player lands on a tax space:
     They pay its tax.
-  When a player has less than 0 money:
-    They are out.
-    Their houses go back to the bank.
-    Their hotels go back to the bank.
-    Their spaces go back to the bank.
+  When a player lands on a chance space:
+    They draw from the chance pile and do what it says.
+  When a player lands on a treasury space:
+    They draw from the treasury pile and do what it says.
   After a player ends their turn, the turn passes to the left.
+
+Phase: auction
+  Hint: Bid more than the high bid, or drop out.
+  A player may bid an amount.
+    Only if they are bidding.
+    Only if the amount is more than the high bid.
+    Only if they have at least the amount in money.
+    Then:
+      The high bid is the amount.
+      No player is the high bidder.
+      They are the high bidder.
+  A player may drop out.
+    Only if they are bidding.
+    Only if they are not the high bidder.
+    Then:
+      They are not bidding.
+  When a player is the high bidder:
+    Only if no other player is bidding.
+    They pay the high bid.
+    They own the space that is up for auction.
+    They are not the high bidder.
+    They are not bidding.
+    The space that is up for auction is not up for auction.
+    The high bid is 0.
+    Go back to the interrupted turn.
+  When no player is bidding:
+    The high bid is 0.
+    Go back to the interrupted turn.
+  After a player bids or drops out, the turn passes to the next player on the left who is bidding.
+
+Phase: trade
+  Hint: Offer and ask for spaces, cash and kept cards, then propose. The other player accepts or declines.
+  A player may offer a space they own.
+    Only if they are proposing.
+    Only if it is not offered.
+    Only if no street of its color has a building.
+    Then:
+      It is offered.
+  A player may ask for a space the trade partner owns.
+    Only if they are proposing.
+    Only if it is not asked for.
+    Only if no street of its color has a building.
+    Then:
+      It is asked for.
+  A player may offer to pay an amount.
+    Only if they are proposing.
+    Only if they have at least the amount in money.
+    Then:
+      The cash offer is the amount.
+  A player may ask to be paid an amount.
+    Only if they are proposing.
+    Then:
+      The cash request is the amount.
+  A player may offer everything they keep.
+    Only if they are proposing.
+    Only if their kept cards are not empty.
+    Then:
+      Every card in their kept cards is handed over.
+  A player may ask for everything the trade partner keeps.
+    Only if they are proposing.
+    Then:
+      For the trade partner, every card in their kept cards is claimed.
+  A player may propose the trade.
+    Only if they are proposing.
+    Only if one of:
+      some space is offered
+      some space is asked for
+      some card is handed over
+      some card is claimed
+      the cash offer is more than 0
+      the cash request is more than 0
+  A player may cancel the trade.
+    Only if they are proposing.
+    Then:
+      No space is offered.
+      No space is asked for.
+      No card is handed over.
+      No card is claimed.
+      No player is proposing.
+      No player is the trade partner.
+      The cash offer is 0.
+      The cash request is 0.
+      Go back to the interrupted turn.
+  A player may accept the trade.
+    Only if they are the trade partner.
+    Only if they have at least the cash request in money.
+    Then:
+      They own every space that is offered.
+      Every card that is handed over goes to their kept cards.
+      They pay the cash request to the player who is proposing.
+      For the player who is proposing, they own every space that is asked for.
+      For the player who is proposing, every card that is claimed goes to their kept cards.
+      For the player who is proposing, they pay the cash offer to the trade partner.
+      No space is offered.
+      No space is asked for.
+      No card is handed over.
+      No card is claimed.
+      No player is proposing.
+      No player is the trade partner.
+      The cash offer is 0.
+      The cash request is 0.
+      Go back to the interrupted turn.
+  A player may decline the trade.
+    Only if they are the trade partner.
+    Then:
+      No space is offered.
+      No space is asked for.
+      No card is handed over.
+      No card is claimed.
+      No player is proposing.
+      No player is the trade partner.
+      The cash offer is 0.
+      The cash request is 0.
+      Go back to the interrupted turn.
+  After a player proposes the trade, the turn passes to the next player on the left who is the trade partner.
 
 End:
   The game ends when one player is left.
@@ -132,7 +426,8 @@ Example: you cannot buy before rolling
   Then it is rejected because "they have rolled this turn"
 
 Example: you cannot buy a space that has no price
-  Given p0 is on Go
+  Given the chance pile has a Building Loan Matures
+  And p0 is on Go
   And the next roll is 3 and 4
   When p0 rolls the dice
   And p0 buys the space they are on
@@ -159,7 +454,7 @@ Example: you cannot roll twice in one turn
   And the next roll is 1 and 2
   When p0 rolls the dice
   And p0 rolls the dice
-  Then it is rejected because "they have not rolled this turn"
+  Then it is rejected because "they have not rolled this turn or they rolled a double"
 
 Example: you cannot end your turn before rolling
   When p0 ends their turn
@@ -202,7 +497,7 @@ Example: a utility charges 4 times the roll
   Then p0 has 1488 money
   And p1 has 1512 money
 
-Example: going below 0 puts you out
+Example: giving up puts you out
   Given 3 players
   And p0 owns Rose Lane
   And p1 owns The Promenade
@@ -210,8 +505,9 @@ Example: going below 0 puts you out
   And p0 is on Harbour Heights
   And the next roll is 1 and 1
   When p0 rolls the dice
+  And p0 gives up
   Then p0 is out
-  And no one owns Rose Lane
+  And p1 owns Rose Lane
   And p1 has 1550 money
   And it is p1's turn
 
@@ -219,7 +515,7 @@ Example: the turn passes to the left, skipping players who are out
   Given 3 players
   And p1 is out
   And p0 is on Go
-  And the next roll is 1 and 2
+  And the next roll is 1 and 3
   When p0 rolls the dice
   And p0 ends their turn
   Then it is p2's turn
@@ -230,6 +526,7 @@ Example: the last player left wins
   And p0 is on Harbour Heights
   And the next roll is 1 and 1
   When p0 rolls the dice
+  And p0 gives up
   Then p1 wins
 
 Example: a full set doubles the base rent
@@ -372,10 +669,11 @@ Example: going out returns your buildings to the bank
   And p0 is on Harbour Heights
   And the next roll is 1 and 1
   When p0 rolls the dice
+  And p0 gives up
   Then p0 is out
   And the bank has 32 houses
   And Rose Lane has 0 houses
-  And no one owns Rose Lane
+  And p1 owns Rose Lane
 
 Example: three houses raise the rent
   Given p1 owns Rose Lane
@@ -400,3 +698,897 @@ Example: four stations charge 200
   When p0 rolls the dice
   Then p0 has 1300 money
   And p1 has 1700 money
+
+Example: a double rolls again
+  Given p0 is on Go
+  And p1 owns Ash Street
+  And the next roll is 3 and 3
+  And the roll after that is 1 and 2
+  When p0 rolls the dice
+  Then p0 is on Ash Street
+  When p0 rolls the dice
+  Then it is accepted
+  And p0 is on Cedar Avenue
+
+Example: you cannot end your turn on a double
+  Given p0 is on Go
+  And the next roll is 3 and 3
+  When p0 rolls the dice
+  And p0 ends their turn
+  Then it is rejected because "they did not roll a double or they are in jail or they have rolled for a double this turn"
+
+Example: a third double sends you to jail
+  Given p0 is on Oak Gardens
+  And p1 owns Oak Gardens
+  And p0 has rolled 2 doubles this turn
+  And the next roll is 6 and 6
+  When p0 rolls the dice
+  Then p0 is on Jail
+  And p0 is in jail
+  And p0 has 1500 money
+
+Example: Go To Jail sends you to jail without passing Go
+  Given p0 is on Bell Square
+  And the next roll is 2 and 4
+  When p0 rolls the dice
+  Then p0 is on Jail
+  And p0 is in jail
+  And p0 has 1500 money
+
+Example: in jail you cannot roll the dice
+  Given p0 is on Jail
+  And p0 is in jail
+  When p0 rolls the dice
+  Then it is rejected because "they are not in jail"
+
+Example: paying to leave jail
+  Given p0 is on Jail
+  And p0 is in jail
+  When p0 pays to leave jail
+  Then it is accepted
+  And p0 is not in jail
+  And p0 has 1450 money
+
+Example: a double gets you out of jail
+  Given p0 is on Jail
+  And p0 is in jail
+  And the next roll is 2 and 2
+  When p0 rolls for a double
+  Then it is accepted
+  And p0 is not in jail
+  And p0 is on Harbour Way
+
+Example: leaving jail by a double does not roll again
+  Given p0 is on Jail
+  And p0 is in jail
+  And the next roll is 2 and 2
+  When p0 rolls for a double
+  And p0 rolls the dice
+  Then it is rejected because "they have not rolled for a double this turn"
+
+Example: a failed roll keeps you in jail
+  Given p0 is on Jail
+  And p0 is in jail
+  And the next roll is 1 and 2
+  When p0 rolls for a double
+  Then p0 is in jail
+  And p0 has 1 jail turn
+  And p0 is on Jail
+
+Example: the third failed roll pays and moves
+  Given p0 is on Jail
+  And p0 is in jail
+  And p0 has 2 jail turns
+  And the next roll is 1 and 2
+  When p0 rolls for a double
+  Then p0 is not in jail
+  And p0 has 1450 money
+  And p0 is on Quay Street
+  And p0 has 0 jail turns
+
+Example: landing on Jail is just visiting
+  Given p0 is on Ash Street
+  And the next roll is 1 and 3
+  When p0 rolls the dice
+  Then p0 is on Jail
+  And p0 is not in jail
+
+Example: a double that lands on Go To Jail still ends the turn
+  Given p0 is on Bell Square
+  And the next roll is 3 and 3
+  When p0 rolls the dice
+  And p0 ends their turn
+  Then it is accepted
+  And it is p1's turn
+
+Example: one house raises the rent
+  Given p1 owns Rose Lane
+  And p1 owns Lily Lane
+  And p1 owns Iris Road
+  And Rose Lane has 1 house
+  And Lily Lane has 1 house
+  And Iris Road has 1 house
+  And p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 has 1430 money
+  And p1 has 1570 money
+
+Example: four houses raise the rent
+  Given p1 owns Rose Lane
+  And p1 owns Lily Lane
+  And p1 owns Iris Road
+  And Rose Lane has 4 houses
+  And Lily Lane has 4 houses
+  And Iris Road has 4 houses
+  And p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 has 750 money
+  And p1 has 2250 money
+
+Example: Advance To Go collects 200
+  Given the chance pile has an Advance To Go
+  And p0 is on Go
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 is on Go
+  And p0 has 1700 money
+
+Example: a card that moves past Go pays the salary
+  Given the chance pile has an Advance To Bell Square
+  And p0 is on Crown Row
+  And the next roll is 2 and 3
+  When p0 rolls the dice
+  Then p0 is on Bell Square
+  And p0 has 1700 money
+
+Example: the nearest station charges double rent
+  Given p1 owns East Station
+  And the chance pile has an Advance To The Nearest Station
+  And p0 is on Go
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 is on East Station
+  And p0 has 1450 money
+  And p1 has 1550 money
+
+Example: Go Back Three Spaces lands without passing
+  Given the chance pile has a Go Back Three Spaces
+  And p0 is on Go
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 is on Income Tax
+  And p0 has 1300 money
+
+Example: a Go To Jail card sends you to jail
+  Given the chance pile has a Go To Jail
+  And p0 is on Go
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 is on Jail
+  And p0 is in jail
+  And p0 has 1500 money
+
+Example: paying each other player
+  Given 3 players
+  And the chance pile has a Chair Of The Board
+  And p0 is on Go
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 has 1400 money
+  And p1 has 1550 money
+  And p2 has 1550 money
+
+Example: collecting from each other player
+  Given 3 players
+  And the treasury pile has an Opera Night
+  And p0 is on Go
+  And the next roll is 1 and 1
+  When p0 rolls the dice
+  Then p0 has 1600 money
+  And p1 has 1450 money
+  And p2 has 1450 money
+
+Example: general repairs charge for each house
+  Given p0 owns Mill Lane
+  And p0 owns Ferry Row
+  And Mill Lane has 2 houses
+  And Ferry Row has 2 houses
+  And the chance pile has a General Repairs
+  And p0 is on Go
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 has 1400 money
+
+Example: keeping a Get Out Of Jail Free
+  Given the chance pile has a Speeding Fine and a Get Out Of Jail Free
+  And p0 is on Go
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0's kept cards has a Get Out Of Jail Free
+  And the chance pile has a Speeding Fine
+  And p0 has 1500 money
+
+Example: using a Get Out Of Jail Free
+  Given p0 is on Jail
+  And p0 is in jail
+  And p0's kept cards has a Get Out Of Jail Free
+  When p0 uses a Get Out Of Jail Free
+  Then it is accepted
+  And p0 is not in jail
+  And p0's kept cards are empty
+
+Example: a drawn card goes to the bottom of its pile
+  Given the chance pile has a Speeding Fine and a Bank Pays A Dividend
+  And p0 is on Go
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 has 1550 money
+  And the top card of the chance pile is a Speeding Fine
+
+Example: mortgaging gives half the price
+  Given p0 owns Rose Lane
+  When p0 takes a mortgage on Rose Lane
+  Then it is accepted
+  And p0 has 1590 money
+  And Rose Lane is mortgaged
+
+Example: a mortgaged space charges no rent
+  Given p1 owns Rose Lane
+  And Rose Lane is mortgaged
+  And p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 is on Rose Lane
+  And p0 has 1500 money
+  And p1 has 1500 money
+
+Example: paying off a mortgage costs 55% of the price
+  Given p0 owns Rose Lane
+  And Rose Lane is mortgaged
+  When p0 pays off a mortgage on Rose Lane
+  Then it is accepted
+  And p0 has 1401 money
+  And Rose Lane is not mortgaged
+
+Example: you cannot mortgage a street while its color has buildings
+  Given p0 owns Rose Lane
+  And p0 owns Lily Lane
+  And p0 owns Iris Road
+  And Lily Lane has 1 house
+  When p0 takes a mortgage on Rose Lane
+  Then it is rejected because "no street of its color has a building"
+
+Example: you cannot build on a color with a mortgaged street
+  Given p1 owns Rose Lane
+  And p1 owns Lily Lane
+  And p1 owns Iris Road
+  And Iris Road is mortgaged
+  And it is p1's turn
+  When p1 builds a house on Rose Lane
+  Then it is rejected because "no street of its color is mortgaged"
+
+Example: selling a house gives half the house price, evenly
+  Given p0 owns Rose Lane
+  And p0 owns Lily Lane
+  And p0 owns Iris Road
+  And Rose Lane has 2 houses
+  And Lily Lane has 1 house
+  And Iris Road has 1 house
+  And the bank has 28 houses
+  When p0 sells a house on Lily Lane
+  Then it is rejected because "no street of its color has more buildings"
+  When p0 sells a house on Rose Lane
+  Then it is accepted
+  And p0 has 1550 money
+  And Rose Lane has 1 house
+  And the bank has 29 houses
+
+Example: selling a hotel puts four houses back on the street
+  Given p0 owns Rose Lane
+  And p0 owns Lily Lane
+  And p0 owns Iris Road
+  And Rose Lane has a hotel
+  And Lily Lane has 4 houses
+  And Iris Road has 4 houses
+  And the bank has 24 houses
+  And the bank has 11 hotels
+  When p0 sells a house on Rose Lane
+  Then it is accepted
+  And Rose Lane has no hotel
+  And Rose Lane has 4 houses
+  And the bank has 20 houses
+  And the bank has 12 hotels
+  And p0 has 1550 money
+
+Example: a hotel can't be sold while the bank has fewer than 4 houses
+  Given p0 owns Rose Lane
+  And p0 owns Lily Lane
+  And p0 owns Iris Road
+  And Rose Lane has a hotel
+  And Lily Lane has 4 houses
+  And Iris Road has 4 houses
+  And the bank has 3 houses
+  When p0 sells a house on Rose Lane
+  Then it is rejected because "it has no hotel or the bank has at least 4 houses"
+
+Example: any player may take a mortgage when it is not their turn
+  Given p1 owns Rose Lane
+  When p1 takes a mortgage on Rose Lane
+  Then it is accepted
+  And p1 has 1590 money
+  And Rose Lane is mortgaged
+  And it is p0's turn
+
+Example: a debt must be paid before the turn can end
+  Given p1 owns Rose Lane
+  And p0 owns Mill Lane
+  And p0 has 10 money
+  And p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Then p0 has -4 money
+  And p0 owes p1
+  When p0 ends their turn
+  Then it is rejected because "no player has less than 0 money"
+  When p0 takes a mortgage on Mill Lane
+  Then p0 has 26 money
+  When p0 ends their turn
+  Then it is accepted
+  And it is p1's turn
+
+Example: giving up hands everything to the player you owe
+  Given 3 players
+  And p0 owns Mill Lane
+  And p0 owns Ferry Row
+  And Mill Lane has 1 house
+  And Ferry Row has 1 house
+  And the bank has 30 houses
+  And p0 owns Ash Street
+  And Ash Street is mortgaged
+  And p0's kept cards has a Get Out Of Jail Free
+  And p1 owns Rose Lane
+  And p0 has 10 money
+  And p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 gives up
+  Then it is accepted
+  And p0 is out
+  And p1 owns Mill Lane
+  And p1 owns Ash Street
+  And Ash Street is mortgaged
+  And Mill Lane has 0 houses
+  And the bank has 32 houses
+  And p1's kept cards has a Get Out Of Jail Free
+  And p1 has 1514 money
+  And it is p1's turn
+
+Example: giving up to the bank returns everything to the bank
+  Given 3 players
+  And p0 owns Mill Lane
+  And Mill Lane is mortgaged
+  And p0's kept cards has a Get Out Of Jail Free
+  And p0 has 100 money
+  And p0 is on Go
+  And the next roll is 1 and 3
+  When p0 rolls the dice
+  And p0 gives up
+  Then it is accepted
+  And p0 is out
+  And no one owns Mill Lane
+  And Mill Lane is not mortgaged
+  And p0's kept cards are empty
+  And the bottom card of the chance pile is a Get Out Of Jail Free
+
+Example: you cannot roll the dice while someone owes
+  Given the treasury pile has an Opera Night
+  And p1 has 10 money
+  And p0 is on Go
+  And the next roll is 1 and 1
+  When p0 rolls the dice
+  Then p1 has -40 money
+  And p1 owes p0
+  When p0 rolls the dice
+  Then it is rejected because "no player has less than 0 money"
+
+Example: you cannot build while someone owes
+  Given p0 owns Rose Lane
+  And p0 owns Lily Lane
+  And p0 owns Iris Road
+  And p1 owns Ash Street
+  And the treasury pile has an Opera Night
+  And p1 has 10 money
+  And p0 is on East Station
+  And the next roll is 1 and 1
+  When p0 rolls the dice
+  Then p0 has 1550 money
+  And p1 has -40 money
+  And p1 owes p0
+  When p0 builds a house on Rose Lane
+  Then it is rejected because "no player has less than 0 money"
+  When p1 takes a mortgage on Ash Street
+  Then p1 has 10 money
+  When p0 builds a house on Rose Lane
+  Then it is accepted
+  And Rose Lane has 1 house
+  And p0 has 1450 money
+  And the bank has 31 houses
+
+Example: declining to buy starts an auction
+  Given p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  Then it is accepted
+  And the phase is auction
+  And it is p1's turn
+  And Rose Lane is up for auction
+  And p0 is bidding
+  And p1 is bidding
+
+Example: you cannot end your turn with the space unbought
+  Given p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 ends their turn
+  Then it is rejected because "it has no price or someone owns it or it is up for auction"
+
+Example: a bid must beat the high bid
+  Given p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  And p1 bids 0
+  Then it is rejected because "the amount is more than the high bid"
+  When p1 bids 50
+  Then it is accepted
+  And the high bid is 50
+  And p1 is the high bidder
+  And it is p0's turn
+
+Example: you cannot bid more than you have
+  Given p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  And p1 bids 1600
+  Then it is rejected because "they have at least the amount in money"
+
+Example: the last bidder wins and pays
+  Given p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  And p1 bids 50
+  And p0 drops out
+  Then it is accepted
+  And p1 owns Rose Lane
+  And p1 has 1450 money
+  And p0 has 1500 money
+  And the phase is playing
+  And it is p0's turn
+  And the high bid is 0
+  And p1 is not the high bidder
+  And Rose Lane is not up for auction
+  When p0 ends their turn
+  Then it is accepted
+  And it is p1's turn
+
+Example: nobody bids
+  Given p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  And p1 drops out
+  And p0 drops out
+  Then it is accepted
+  And no one owns Rose Lane
+  And the phase is playing
+  And it is p0's turn
+  And Rose Lane is up for auction
+  When p0 ends their turn
+  Then it is accepted
+  And it is p1's turn
+  And Rose Lane is not up for auction
+
+Example: you cannot auction a space twice
+  Given p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  And p1 drops out
+  And p0 drops out
+  And p0 auctions the space they are on
+  Then it is rejected because "it is not up for auction"
+
+Example: a double cannot roll past an unbought space
+  Given p0 is on Go
+  And the next roll is 3 and 3
+  And the roll after that is 1 and 2
+  When p0 rolls the dice
+  And p0 rolls the dice
+  Then it is rejected because "they have not rolled this turn or it has no price or someone owns it or it is up for auction"
+  When p0 buys the space they are on
+  And p0 rolls the dice
+  Then it is accepted
+  And p0 owns Ash Street
+  And p0 is on Cedar Avenue
+
+Example: the lander's turn resumes as it was
+  Given p0 is on Go
+  And the next roll is 3 and 3
+  And the roll after that is 1 and 2
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  And p1 bids 50
+  And p0 drops out
+  Then p1 owns Ash Street
+  And it is p0's turn
+  When p0 rolls the dice
+  Then it is accepted
+  And p0 is on Cedar Avenue
+
+Example: the high bidder cannot drop out
+  Given the phase is auction
+  And p0 is bidding
+  And p1 is bidding
+  And p1 is the high bidder
+  And it is p1's turn
+  When p1 drops out
+  Then it is rejected because "they are not the high bidder"
+
+Example: the turn in an auction skips a player who dropped out
+  Given 3 players
+  And p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  And p1 drops out
+  And p2 bids 50
+  And p0 bids 60
+  Then it is accepted
+  And it is p2's turn
+  And the high bid is 60
+  And p1 is not bidding
+
+Example: the last one bidding wins with their own bid
+  Given 3 players
+  And p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  And p1 drops out
+  And p2 drops out
+  And p0 bids 10
+  Then it is accepted
+  And p0 owns Rose Lane
+  And p0 has 1490 money
+  And the phase is playing
+  And it is p0's turn
+
+Example: you cannot auction before rolling
+  Given p0 is on Rose Lane
+  When p0 auctions the space they are on
+  Then it is rejected because "they have rolled this turn"
+
+Example: you cannot auction a space that has no price
+  Given p0 is on Go
+  And the next roll is 1 and 3
+  When p0 rolls the dice
+  Then p0 is on Income Tax
+  When p0 auctions the space they are on
+  Then it is rejected because "it has a price"
+
+Example: you cannot auction a space someone owns
+  Given p1 owns Rose Lane
+  And p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  Then it is rejected because "no one owns it"
+
+Example: you cannot auction while someone owes
+  Given p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Given p1 has -5 money
+  When p0 auctions the space they are on
+  Then it is rejected because "no player has less than 0 money"
+  Given p1 has 5 money
+  When p0 auctions the space they are on
+  Then it is accepted
+  And Rose Lane is up for auction
+
+Example: a player who is not bidding can neither bid nor drop out
+  Given the phase is auction
+  And p0 is bidding
+  And it is p1's turn
+  When p1 bids 10
+  Then it is rejected because "they are bidding"
+  When p1 drops out
+  Then it is rejected because "they are bidding"
+
+Example: a double's roll clears a space nobody bid on, and the next one can be auctioned
+  Given p0 is on Go
+  And the next roll is 3 and 3
+  And the roll after that is 1 and 2
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  And p1 drops out
+  And p0 drops out
+  Then no one owns Ash Street
+  And Ash Street is up for auction
+  When p0 rolls the dice
+  Then it is accepted
+  And Ash Street is not up for auction
+  And p0 is on Cedar Avenue
+  When p0 auctions the space they are on
+  Then it is accepted
+  And the phase is auction
+  And Cedar Avenue is up for auction
+  And Ash Street is not up for auction
+
+Example: you cannot buy a space nobody bid on at auction
+  Given p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  And p1 drops out
+  And p0 drops out
+  And p0 buys the space they are on
+  Then it is rejected because "it is not up for auction"
+  And no one owns Rose Lane
+  And p0 has 1500 money
+
+Example: starting a trade
+  When p0 trades with p1
+  Then it is accepted
+  And the phase is trade
+  And it is p0's turn
+  And p0 is proposing
+  And p1 is the trade partner
+  And the cash offer is 0
+
+Example: you cannot trade with yourself or with nobody
+  When p0 trades with p0
+  Then it is rejected because "Pick another player to trade with."
+  When p0 trades with another player
+  Then it is rejected because "Pick another player to trade with."
+
+Example: you cannot trade while someone owes
+  Given p1 has -10 money
+  When p0 trades with p1
+  Then it is rejected because "no player has less than 0 money"
+
+Example: building an offer
+  Given p0 owns Mill Lane
+  And p1 owns Rose Lane
+  When p0 trades with p1
+  And p0 offers Mill Lane
+  And p0 asks for Rose Lane
+  And p0 offers to pay 100
+  Then it is accepted
+  And Mill Lane is offered
+  And Rose Lane is asked for
+  And the cash offer is 100
+  When p0 offers Mill Lane
+  Then it is rejected because "it is not offered"
+  When p0 offers to pay 1600
+  Then it is rejected because "they have at least the amount in money"
+
+Example: you can only offer your own spaces and ask for the other player's
+  Given p0 owns Mill Lane
+  And p1 owns Rose Lane
+  When p0 trades with p1
+  And p0 offers Rose Lane
+  Then it is rejected because "That isn't a space you own."
+  When p0 asks for Mill Lane
+  Then it is rejected because "That isn't a space the trade partner owns."
+
+Example: a street whose color has a building cannot be offered
+  Given p0 owns Mill Lane
+  And p0 owns Ferry Row
+  And Ferry Row has 1 house
+  When p0 trades with p1
+  And p0 offers Mill Lane
+  Then it is rejected because "no street of its color has a building"
+
+Example: asking for a street whose color has a building is refused
+  Given p1 owns Rose Lane
+  And p1 owns Lily Lane
+  And p1 owns Iris Road
+  And Lily Lane has 1 house
+  When p0 trades with p1
+  And p0 asks for Rose Lane
+  Then it is rejected because "no street of its color has a building"
+  And Rose Lane is not asked for
+
+Example: an empty trade cannot be proposed
+  When p0 trades with p1
+  And p0 proposes the trade
+  Then it is rejected because "some space is offered or some space is asked for or some card is handed over or some card is claimed or the cash offer is more than 0 or the cash request is more than 0"
+
+Example: proposing hands the turn to the other player
+  Given p1 owns Rose Lane
+  When p0 trades with p1
+  And p0 asks for Rose Lane
+  And p0 proposes the trade
+  Then it is accepted
+  And the phase is trade
+  And it is p1's turn
+
+Example: the other player answers only after the proposal
+  Given p1 owns Rose Lane
+  When p0 trades with p1
+  And p0 asks for Rose Lane
+  And p1 accepts the trade
+  Then it is rejected because "It's p0's turn."
+
+Example: accepting swaps everything in the offer
+  Given p0 owns Mill Lane
+  And p1 owns Rose Lane
+  When p0 trades with p1
+  And p0 offers Mill Lane
+  And p0 asks for Rose Lane
+  And p0 offers to pay 100
+  And p0 proposes the trade
+  And p1 accepts the trade
+  Then it is accepted
+  And p1 owns Mill Lane
+  And p0 owns Rose Lane
+  And p0 has 1400 money
+  And p1 has 1600 money
+  And Mill Lane is not offered
+  And Rose Lane is not asked for
+  And p0 is not proposing
+  And p1 is not the trade partner
+  And the cash offer is 0
+  And the phase is playing
+  And it is p0's turn
+
+Example: accepting pays the cash the proposer asked for
+  Given p0 owns Mill Lane
+  When p0 trades with p1
+  And p0 offers Mill Lane
+  And p0 asks to be paid 50
+  And p0 proposes the trade
+  And p1 accepts the trade
+  Then it is accepted
+  And p1 owns Mill Lane
+  And p0 has 1550 money
+  And p1 has 1450 money
+  And Mill Lane is not offered
+  And the cash request is 0
+  And the phase is playing
+  And it is p0's turn
+
+Example: declining changes nothing
+  Given p0 owns Mill Lane
+  And p1 owns Rose Lane
+  And p0's kept cards has a Get Out Of Jail Free
+  And p1's kept cards has a Get Out Of Jail Free
+  When p0 trades with p1
+  And p0 offers Mill Lane
+  And p0 asks for Rose Lane
+  And p0 offers everything they keep
+  And p0 asks for everything the trade partner keeps
+  And p0 offers to pay 100
+  And p0 asks to be paid 50
+  And p0 proposes the trade
+  And p1 declines the trade
+  Then it is accepted
+  And p0 owns Mill Lane
+  And p1 owns Rose Lane
+  And p0 has 1500 money
+  And p1 has 1500 money
+  And Mill Lane is not offered
+  And Rose Lane is not asked for
+  And a Get Out Of Jail Free in p0's kept cards is not handed over
+  And a Get Out Of Jail Free in p1's kept cards is not claimed
+  And p0 is not proposing
+  And p1 is not the trade partner
+  And the cash offer is 0
+  And the cash request is 0
+  And the phase is playing
+  And it is p0's turn
+
+Example: cancelling a trade changes nothing
+  Given p0 owns Mill Lane
+  And p1 owns Rose Lane
+  And p0's kept cards has a Get Out Of Jail Free
+  And p1's kept cards has a Get Out Of Jail Free
+  When p0 trades with p1
+  And p0 offers Mill Lane
+  And p0 asks for Rose Lane
+  And p0 offers everything they keep
+  And p0 asks for everything the trade partner keeps
+  And p0 offers to pay 100
+  And p0 asks to be paid 50
+  And p0 cancels the trade
+  Then it is accepted
+  And p0 owns Mill Lane
+  And p1 owns Rose Lane
+  And p0 has 1500 money
+  And p1 has 1500 money
+  And Mill Lane is not offered
+  And Rose Lane is not asked for
+  And a Get Out Of Jail Free in p0's kept cards is not handed over
+  And a Get Out Of Jail Free in p1's kept cards is not claimed
+  And p0 is not proposing
+  And p1 is not the trade partner
+  And the cash offer is 0
+  And the cash request is 0
+  And the phase is playing
+  And it is p0's turn
+
+Example: kept cards change hands
+  Given p1's kept cards has a Get Out Of Jail Free
+  When p0 trades with p1
+  And p0 asks for everything the trade partner keeps
+  And p0 proposes the trade
+  And p1 accepts the trade
+  Then it is accepted
+  And p0's kept cards has a Get Out Of Jail Free
+  And p1's kept cards are empty
+  And a Get Out Of Jail Free in p0's kept cards is not claimed
+
+Example: kept cards change hands both ways
+  Given p0 is on Jail
+  And p0 is in jail
+  And p0's kept cards has a Get Out Of Jail Free
+  And p1's kept cards has a Get Out Of Jail Free
+  When p0 trades with p1
+  And p0 offers everything they keep
+  And p0 asks for everything the trade partner keeps
+  And p0 proposes the trade
+  And p1 accepts the trade
+  Then p0's kept cards has a Get Out Of Jail Free
+  And p1's kept cards has a Get Out Of Jail Free
+  And a Get Out Of Jail Free in p1's kept cards is not handed over
+  And a Get Out Of Jail Free in p0's kept cards is not claimed
+  When p0 uses a Get Out Of Jail Free
+  Then it is accepted
+  And the bottom card of the treasury pile is a Get Out Of Jail Free
+
+Example: the other player must be able to pay
+  Given p0 owns Mill Lane
+  And p1 has 50 money
+  When p0 trades with p1
+  And p0 offers Mill Lane
+  And p0 asks to be paid 100
+  And p0 proposes the trade
+  And p1 accepts the trade
+  Then it is rejected because "they have at least the cash request in money"
+
+Example: a mortgaged space trades as it is
+  Given p0 owns Mill Lane
+  And Mill Lane is mortgaged
+  When p0 trades with p1
+  And p0 offers Mill Lane
+  And p0 proposes the trade
+  And p1 accepts the trade
+  Then it is accepted
+  And p1 owns Mill Lane
+  And Mill Lane is mortgaged
+  And Mill Lane is not offered
+
+Example: the turn resumes where it was
+  Given p0 is on Go
+  And p1 owns Rose Lane
+  And the next roll is 1 and 3
+  When p0 rolls the dice
+  And p0 trades with p1
+  And p0 asks for Rose Lane
+  And p0 offers to pay 300
+  And p0 proposes the trade
+  And p1 accepts the trade
+  Then p0 owns Rose Lane
+  And p0 has 1000 money
+  And p1 has 1800 money
+  When p0 rolls the dice
+  Then it is rejected because "they have not rolled this turn or they rolled a double"
+  When p0 ends their turn
+  Then it is accepted
+  And it is p1's turn

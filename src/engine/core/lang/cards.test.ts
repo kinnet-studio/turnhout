@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildCards, expandCardTable, parseTextFaceKey, standardDeckIdentities, textFaceKey } from './cards';
-import { makeRng } from '../rng';
+import { buildCards, deckOf, expandCardTable, parseTextFaceKey, standardDeckIdentities, textFaceKey } from './cards';
+import { makeRng, shuffleWithRng } from '../rng';
 
 const COLOR_TABLE = { columns: ['color', 'number', 'copies'], rows: ['red', 'yellow', 'green', 'blue'].map((c, i) => ({ cells: [c, '1 to 9', '2'], line: 10 + i })) };
 
@@ -75,6 +75,10 @@ describe('card tables', () => {
 
 describe('buildCards', () => {
   const sets = [{ kind: 'standard' as const, identities: standardDeckIdentities(), start: 'deck', acesHigh: true }];
+  const two = [
+    { kind: 'standard' as const, identities: standardDeckIdentities().slice(0, 2), start: 'draw pile', acesHigh: false },
+    { kind: 'table' as const, identities: expandCardTable(COLOR_TABLE).slice(0, 3), start: 'deck', acesHigh: false },
+  ];
   const mapping = (seed: number) => buildCards(sets, makeRng(seed)).cards.map((c) => `${c.id}:${c.faceKey}`);
   it('assigns opaque ids after shuffling identities', () => {
     const { cards } = buildCards(sets, makeRng(7));
@@ -91,13 +95,40 @@ describe('buildCards', () => {
     expect(rng.count).toBeGreaterThan(0);
   });
   it('mixes several sets, each into its own start zone', () => {
-    const two = [
-      { kind: 'standard' as const, identities: standardDeckIdentities().slice(0, 2), start: 'draw pile', acesHigh: false },
-      { kind: 'table' as const, identities: expandCardTable(COLOR_TABLE).slice(0, 3), start: 'deck', acesHigh: false },
-    ];
     const { cards } = buildCards(two, makeRng(3));
     expect(cards).toHaveLength(5);
     expect(cards.filter((c) => c.zoneId === 'draw-pile').map((c) => c.faceKey).sort()).toEqual(['1S', '2S']);
     expect(cards.filter((c) => c.zoneId === 'deck')).toHaveLength(3);
+  });
+  it('hands each set the next run of ids, so an id says which set a card came from and never which card of it', () => {
+    const { cards } = buildCards(two, makeRng(3));
+    expect(cards.map((c) => c.id)).toEqual(['c0', 'c1', 'c2', 'c3', 'c4']);
+    expect(cards.map((c) => c.zoneId)).toEqual(['draw-pile', 'draw-pile', 'deck', 'deck', 'deck']);
+    expect([deckOf(two, 'c1'), deckOf(two, 'c2'), deckOf(two, 'c5'), deckOf(two, 'x2')]).toEqual([two[0], two[1], null, null]);
+  });
+  it('shuffles each set on its own, threading the rng from one to the next', () => {
+    const first = shuffleWithRng(two[0].identities, makeRng(3));
+    const second = shuffleWithRng(two[1].identities, first.rng);
+    const { cards, rng } = buildCards(two, makeRng(3));
+    expect(cards.map((c) => c.faceKey)).toEqual([...first.items, ...second.items].map((i) => i.faceKey));
+    expect(rng).toEqual(second.rng);
+  });
+  it('gives one set exactly the shuffle it always got', () => {
+    const shuffled = shuffleWithRng(sets[0].identities, makeRng(7));
+    const { cards, rng } = buildCards(sets, makeRng(7));
+    expect(cards.map((c) => c.faceKey)).toEqual(shuffled.items.map((i) => i.faceKey));
+    expect(rng).toEqual(shuffled.rng);
+  });
+});
+
+describe('deckOf', () => {
+  const sets = [
+    { kind: 'standard' as const, identities: standardDeckIdentities().slice(0, 2), start: 'draw pile', acesHigh: false },
+    { kind: 'table' as const, identities: [], start: 'empty', acesHigh: false },
+    { kind: 'table' as const, identities: expandCardTable(COLOR_TABLE).slice(0, 3), start: 'deck', acesHigh: false },
+  ];
+  it('skips a set with no cards and reads only ids as buildCards writes them', () => {
+    expect(['c0', 'c1', 'c2', 'c4'].map((id) => deckOf(sets, id)?.start)).toEqual(['draw pile', 'draw pile', 'deck', 'deck']);
+    expect(['c5', 'c', 'c-1', 'c01', 'c1.5', 'c1x', ' c1', 'C1', '1'].map((id) => deckOf(sets, id))).toEqual(Array(9).fill(null));
   });
 });

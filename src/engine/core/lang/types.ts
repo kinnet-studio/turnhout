@@ -6,7 +6,7 @@ import type { Json } from '../table-def';
 export type PhraseKind =
   | 'cards' | 'zone' | 'board' | 'declare' | 'column' | 'condition' | 'effect' | 'turn' | 'who' | 'which' | 'score' | 'winner' | 'moment' | 'given'
   | 'action' | 'target' | 'expect';
-/** kind 'lang' = compiler built-ins: all | any | phase | always | if | missing */
+/** kind 'lang' = compiler built-ins: all | any | phase | always | if | for | missing */
 export type PhraseRef = { kind: PhraseKind | 'lang'; phrase: string; args: Json[]; line: number; text: string };
 /** `other` is the one player who is not the actor, in a game for two. */
 export type SeatRef = { seat: string } | { who: 'actor' | 'winner' | 'other' };
@@ -28,7 +28,10 @@ export type BoardSpec = {
   payWith: string | null; bank: BankSpec[];
 };
 /** A fact the game keeps about every space, card or player: a count, or something that is either so or not. */
-export type FactSpec = { name: string; on: 'space' | 'card' | 'player'; kind: 'number' | 'flag' };
+export type ThingFact = { name: string; on: 'space' | 'card' | 'player'; kind: 'number' | 'flag' };
+/** A number that belongs to the game itself, to no player and no space, and the value it starts at. */
+export type GameNumber = { name: string; on: 'game'; kind: 'number'; start: number };
+export type FactSpec = ThingFact | GameNumber;
 /** One fact as a line that declares facts lists it, before it is told what it is on. */
 export type FactItem = Pick<FactSpec, 'name' | 'kind'>;
 /** What one line of a Board: section says; the compiler folds the parts into a BoardSpec. */
@@ -45,11 +48,20 @@ export type SpaceClass = { attribute: string; values: Json[] };
  * `words` is the lowercase text after "a player may" ('roll the dice'); `label` is the button text in the second person,
  * with the designer's capitals ('Roll the dice', 'Go to Rose Lane'). `words` is also the button's move type, so that
  * “pay the fine” and “pay the toll” are two buttons although they start with the same `verb`.
- * A button whose line ends in “on a …” picks a space on the board: `base` is the lowercase wording before “on” ('plant a
- * flag') and `target` the phrase that says which spaces it may pick. Any other button has `base` equal to `words`, no target.
+ * A button picks a space on the board when its line ends in “on a …”, or in a target phrase after its verb ('mark a space they
+ * own'): `base` is the lowercase wording before “on” or the phrase ('plant a flag', 'mark') and `target` the phrase that says
+ * which spaces it may pick. Any other button has `base` equal to `words`, no target.
+ * `anyone` is true for a line that starts “Any player may”: any seat still in may press it, whoever's turn it is.
+ * `amount` is true for a button that picks no space and whose wording ends in “ an amount” (“A player may raise an amount.”): its
+ * press carries a whole number, `base` and `label` leave “ an amount” out ('raise', 'Raise'), and `words` keeps it, as the move type.
+ * `picksPlayer` is true for a button that picks no space, carries no amount and whose wording ends in “ another player” (“A player
+ * may challenge another player.”): its press picks a player. `base` leaves “ another player” out ('challenge'), `words` keeps it,
+ * as the move type, and `label` is the whole wording in the second person, since the page shows the players to pick only after
+ * the press.
  */
 export type DeclaredAction = {
-  verb: string; words: string; base: string; label: string; target: PhraseRef | null; conditions: CondGroup[]; effects: PhraseRef[]; line: number;
+  verb: string; words: string; base: string; label: string; target: PhraseRef | null; anyone: boolean; amount: boolean; picksPlayer: boolean;
+  conditions: CondGroup[]; effects: PhraseRef[]; line: number;
 };
 export type CompiledMoment = { line: number; text: string; when: PhraseRef; conditions: CondGroup[]; effects: PhraseRef[] };
 export type CompiledTrigger = { line: number; text: string; when: PhraseRef; conditions: CondGroup[]; effects: PhraseRef[] };
@@ -73,6 +85,11 @@ export type CompiledGame = {
    * means for a space once they have each had their say.
    */
   columns: { [column: string]: PhraseRef[] };
+  /**
+   * What each cell of a deck's `says` column tells its cards to do, keyed by the cell's text as the cards' data holds it
+   * (trimmed): one effect ref per sentence, in order, each about the player who draws the card. Empty when no deck has the column.
+   */
+  says: { [cell: string]: PhraseRef[] };
 };
 export type Vocab = {
   sharedZones: string[]; playerZones: string[]; maxPlayers: number; phases: string[]; verbs: string[];
@@ -82,15 +99,25 @@ export type Vocab = {
   /** The text cells of the board's table, not the numbers. */
   spaceValues: { attribute: string; value: string }[];
   counters: string[]; payWith: string | null;
-  /** Every button the phases declare, one for each wording; `targeted` ones pick a space, so an example names it after their `base`. */
-  actions: { verb: string; words: string; base: string; targeted: boolean }[];
+  /**
+   * Every button the phases declare, one for each wording; `targeted` ones pick a space, so an example names it after their `base`,
+   * and `anyone` ones may be pressed by any seat at any time, so they are never part of a turn. An `amount` one carries a number
+   * with its press, so an example gives it after the base; so does a `picksPlayer` one, with the player it picks.
+   */
+  actions: { verb: string; words: string; base: string; targeted: boolean; anyone: boolean; amount: boolean; picksPlayer: boolean }[];
   /** True when the board has dice: a line like “There are two six-sided dice.” under Board:. */
   dice: boolean;
+  /** How many dice the board rolls: 0 without dice. */
+  diceCount: number;
   /** The facts the game keeps, and the names of the bank's numbers. */
   facts: FactSpec[]; bank: string[];
 };
-/** Who, which space and which card a phrase is about, when a rule is about a player's piece, a space or a card. */
-export type Subject = { player: PlayerId | null; space: number | null; card: string | null };
+/**
+ * Who, which space and which card a phrase is about, when a rule is about a player's piece, a space or a card. `amount` is the
+ * whole number a button that carries one was pressed with; no other rule has it. `picked` is the player a button that picks one
+ * was pressed with; no other rule has it.
+ */
+export type Subject = { player: PlayerId | null; space: number | null; card: string | null; amount?: number; picked?: PlayerId };
 /** A piece passing over or landing on a space. */
 export type Moment = { kind: 'pass' | 'land'; seat: PlayerId; space: number };
 export interface MoveInfo { verb: string; by: PlayerId; cardId: string; from: string; to: string }
@@ -106,6 +133,8 @@ export interface PhraseEnv {
   subject?: Subject;
   /** Runs the lands-on and passes rules for a moment; the runtime supplies it. */
   announce?: (state: GameState, moment: Moment) => GameState;
+  /** Runs one compiled line about a subject, as a rule's line runs, for a phrase that does what a card says; the runtime supplies it. */
+  runLine?: (state: GameState, ref: PhraseRef, subject: Subject) => GameState;
   /**
    * What a column of the board's table says for a space once the lines of its section have had their say; the runtime
    * supplies it. Null for a blank cell no line fills. Without it a phrase reads the table's cell as it stands.

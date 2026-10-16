@@ -1,13 +1,13 @@
-import { MAX_CARDS, TOO_MANY_CARDS } from './cards';
+import { MAX_CARDS, TOO_MANY_CARDS, isSaysColumn } from './cards';
 import { compileExample } from './compile-example';
-import { actionLine, actionOf, cardMoveVerb, compilePhase, type VerbUses } from './compile-phase';
-import { addProblem, attempt, matchEffectLine, matchLine, phaseId, phraseFn, rejectChildren, type LineCtx } from './compile-util';
+import { actionLine, actionOf, cardMoveVerb, compilePhase, targetWords, type VerbUses } from './compile-phase';
+import { addProblem, attempt, innerEffect, matchEffectLine, matchLine, phaseId, phraseFn, rejectChildren, type LineCtx } from './compile-util';
 import type { Diagnostic } from './diagnostics';
 import { parseOutline, type OutlineNode } from './outline';
 import { normalizeLine, suggestNames, vocabFrom, type PhraseLibrary } from './phrases';
 import { canon } from './refs';
 import type {
-  BankSpec, BoardFn, BoardSpec, CardSetSpec, CardsFn, CompiledEnd, CompiledGame, CompiledPhase, DeclareFn, FactSpec, PhraseRef, SpaceSpec, Vocab,
+  BankSpec, BoardFn, BoardSpec, CardSetSpec, CardsFn, CardTable, CompiledEnd, CompiledGame, CompiledPhase, DeclareFn, FactSpec, PhraseRef, SpaceSpec, Vocab,
   ZoneFn, ZoneSpec,
 } from './types';
 
@@ -22,15 +22,33 @@ const GAME_ENDS = /^the game ends when\s+(.+)$/i;
 const SAYS_WINS = /\bwins\b/i;
 const LOOP_LINE = /^the\s+board\s+is\s+a\s+loop\b/i;
 const BLOCK_SECTIONS = new Set(['cards', 'table', 'board', 'setup', 'end']);
+/** Where one sentence of a says cell ends and the next begins: a full stop followed by whitespace. */
+const SENTENCE_END = /\.\s+/;
 
 const MAX_PLAYERS = 12;
+/** “They are out” already says a player has left the game, so a fact about players may not be called that. */
+const LEAVES_THE_GAME = 'out';
 
 const MISSING_GAME = 'Start with a line like “Game: My Game”.';
+/** A button's wording is its move type: written “Any player may” in one phase and “A player may” in another, it would be two things. */
+const openedDifferently = (words: string, firstIsAnyone: boolean) => firstIsAnyone
+  ? `“${words}” is a button any player may press in another phase; use the same opening in both.`
+  : `“${words}” is written “A player may …” in another phase; use the same opening in both.`;
 const BAD_PLAYERS = 'Say how many players, like “Players: 4” or “Players: 2 to 5”.';
 const TOO_MANY_PLAYERS = `This game can have at most ${MAX_PLAYERS} players.`;
 const UNKNOWN_SECTION = `I don't understand this section. Sections are ${SECTION_NAMES.slice(0, -1).join(', ')} and ${SECTION_NAMES.at(-1)}, or a column of the board's table.`;
 const NO_LOOP = 'Add a line like “The board is a loop of spaces, starting at Go:” under Board:.';
+const NO_BOARD_FOR_PLAYER_FACTS = 'Facts about players need a Board: section for now.';
+const NO_BOARD_FOR_GAME_NUMBERS = 'Numbers that belong to the game need a Board: section for now.';
+const GAME_NUMBER_IS_A_COUNTER = (name: string) => `“${name}” is already a number each player has; give the game's number another name.`;
+/** What the lines of a button that carries a number call that number, so a number of the game may not be called it too. */
+const THE_AMOUNT = 'amount';
+const GAME_NUMBER_IS_THE_AMOUNT = `“${THE_AMOUNT}” already means the number a button's press carries; give the game's number another name.`;
 const HOLD_BACK = (line: number) => `Some lines below can't be checked until line ${line} is fixed.`;
+const HOLD_BACK_SAYS = (line: number) => `Some card lines can't be checked until line ${line} is fixed.`;
+// The example uses one of the game's own counters, so the compiler needs no word of its own for a thing players have.
+const SAYS_NOTHING = (counter: string) => `Say what this card does, like “They get 50 ${counter}.”`;
+const SAYS_EXAMPLE_COUNTER = 'coins';
 
 type Section = { keyword: string; rest: string; node: OutlineNode };
 
@@ -96,33 +114,43 @@ function linesIn(node: OutlineNode): number[] {
  * the zones and the cards. While one of their lines has an error, what the rule lines below it say about those words
  * is held back, and one warning stands in for it; the problems on their own lines are always shown. The line to fix is
  * the first error in the order those words are read (cards name the zones they start in), so that fixing it cannot be
- * blocked by another.
+ * blocked by another. Gives that line, or null when none has an error, whether or not any line was held back for it.
  */
-function holdBack(diagnostics: Diagnostic[], stages: Section[][]): void {
+function holdBack(diagnostics: Diagnostic[], stages: Section[][]): number | null {
   const lineSet = (sections: Section[]) => new Set(sections.flatMap((s) => linesIn(s.node)));
   const errorLines = (lines: Set<number>) => diagnostics.filter((d) => d.severity === 'error' && lines.has(d.line)).map((d) => d.line);
   const failing = stages.map((stage) => errorLines(lineSet(stage))).find((lines) => lines.length > 0);
-  if (!failing) return;
+  if (!failing) return null;
   const root = Math.min(...failing);
   const ownLines = lineSet(stages.flat());
   const held = (d: Diagnostic) => (d.kind === 'unknown-phrase' || d.kind === 'invalid') && d.line > root && !ownLines.has(d.line);
   const heldLines = diagnostics.filter(held).map((d) => d.line);
-  if (heldLines.length === 0) return;
+  if (heldLines.length === 0) return root;
   const kept = diagnostics.filter((d) => !held(d));
   diagnostics.splice(0, diagnostics.length, ...kept);
   addProblem(diagnostics, Math.min(...heldLines), HOLD_BACK(root), { severity: 'warning' });
+  return root;
 }
 
-/** The buttons the phase lines declare, one for each wording; a line that mentions a card moves one, even mistyped, and is no button. */
-function readActions(lines: string[]): Vocab['actions'] {
-  const byWords = new Map<string, Vocab['actions'][number]>();
-  for (const line of lines) {
-    const found = actionLine(line);
-    if (!found) continue;
-    const { verb, words, base, target } = actionOf(found);
-    if (!byWords.has(words)) byWords.set(words, { verb, words, base, targeted: target !== null });
+/**
+ * The buttons the phases declare, one for each wording, the first written winning; a line that mentions a card moves one, even
+ * mistyped, and is no button. One wording is one move type, so it can't be a button any player may press in one phase and not in
+ * another: the later line is reported. (Twice in one phase is reported by the phase.)
+ */
+function readActions(phases: OutlineNode[], ctx: LineCtx): Vocab['actions'] {
+  const target = targetWords(ctx);
+  const byWords = new Map<string, { action: Vocab['actions'][number]; phase: OutlineNode }>();
+  for (const phase of phases) {
+    for (const child of phase.children) {
+      const found = actionLine(normalizeLine(child.text));
+      if (!found) continue;
+      const { verb, words, base, target: picked, anyone, amount, picksPlayer } = actionOf(found, target);
+      const first = byWords.get(words);
+      if (!first) byWords.set(words, { action: { verb, words, base, targeted: picked !== null, anyone, amount, picksPlayer }, phase });
+      else if (first.phase !== phase && first.action.anyone !== anyone) addProblem(ctx.diagnostics, child.line, openedDifferently(words, first.action.anyone));
+    }
   }
-  return [...byWords.values()];
+  return [...byWords.values()].map((first) => first.action);
 }
 
 /** The lines inside every section of one kind, in the order written. */
@@ -186,27 +214,55 @@ function declareFacts(ref: PhraseRef, ctx: LineCtx, declared: Declared[]): void 
 
 /**
  * The facts the game declares, in the order written. A fact's name is its own in the whole game, and is not a column of the
- * board's table or of a set of cards: a space's details and a card's face already say something under that name. A
- * declaration with either problem is reported on its own line and left out.
+ * board's table or of a set of cards: a space's details and a card's face already say something under that name. A fact
+ * about players is neither a counter of the board nor “out”, for players already have something under those names, and
+ * only a board shows them to the seats, so a game with no Board: section may not declare one. The same goes for a number of
+ * the game: only a board shows it, and named like a counter it would be read in place of each player's own number of that
+ * name. Nor may it be called “amount”: the lines of a button that carries a number read that number by the name, and the two
+ * readings could only be told apart by a developer. A declaration with any of these problems is reported on its own line and
+ * left out.
  */
-function acceptFacts(declared: Declared[], board: BoardSpec | null, cards: CardSetSpec[], diagnostics: Diagnostic[]): FactSpec[] {
+function acceptFacts(declared: Declared[], board: BoardSpec | null, hasBoardSection: boolean, cards: CardSetSpec[], diagnostics: Diagnostic[]): FactSpec[] {
   const columns = new Set(
     [
       ...(board ? ['space', ...columnsOf(board)] : []),
       ...cards.flatMap((set) => set.identities.flatMap((identity) => Object.keys(identity.attrs))),
     ].map((column) => column.toLowerCase()),
   );
+  const counters = new Set((board?.counters ?? []).map((counter) => counter.name));
   const facts: FactSpec[] = [];
   for (const { line, ...fact } of [...declared].sort((a, b) => a.line - b.line)) {
-    if (columns.has(fact.name)) addProblem(diagnostics, line, `“${fact.name}” is already a column of the table; give the fact another name.`);
+    // A Board: section that failed has said what is wrong already; this is for a game that never had one.
+    if (fact.on === 'player' && !hasBoardSection) addProblem(diagnostics, line, NO_BOARD_FOR_PLAYER_FACTS);
+    else if (fact.on === 'game' && !hasBoardSection) addProblem(diagnostics, line, NO_BOARD_FOR_GAME_NUMBERS);
+    else if (fact.on === 'player' && counters.has(fact.name)) addProblem(diagnostics, line, `“${fact.name}” is already a number each player has.`);
+    else if (fact.on === 'game' && counters.has(fact.name)) addProblem(diagnostics, line, GAME_NUMBER_IS_A_COUNTER(fact.name));
+    else if (fact.on === 'game' && fact.name === THE_AMOUNT) addProblem(diagnostics, line, GAME_NUMBER_IS_THE_AMOUNT);
+    else if (fact.on === 'player' && fact.name === LEAVES_THE_GAME) addProblem(diagnostics, line, `“${fact.name}” is already how a player leaves the game.`);
+    else if (columns.has(fact.name)) addProblem(diagnostics, line, `“${fact.name}” is already a column of the table; give the fact another name.`);
     else if (facts.some((other) => other.name === fact.name)) addProblem(diagnostics, line, `There are two facts called “${fact.name}”.`);
     else facts.push(fact);
   }
   return facts;
 }
 
-function compileCards(lines: OutlineNode[], ctx: LineCtx, declared: Declared[]): CardSetSpec[] {
+/** One cell of a deck's says column, trimmed, and the line of its row. */
+type SaysCell = { text: string; line: number };
+
+/** A cell for every row of a table that has a says column; none when it has not. */
+function saysCellsOf(table: CardTable | null): SaysCell[] {
+  const column = table?.columns.findIndex(isSaysColumn) ?? -1;
+  if (!table || column < 0) return [];
+  return table.rows.map((row) => ({ text: (row.cells[column] ?? '').trim(), line: row.line }));
+}
+
+/**
+ * The sets of cards the Cards: lines make, and the says cells of those that came from a table with a says column. A set that
+ * has a problem is left out and so are its cells, which would only repeat that problem.
+ */
+function compileCards(lines: OutlineNode[], ctx: LineCtx, declared: Declared[]): { sets: CardSetSpec[]; says: SaysCell[] } {
   const sets: CardSetSpec[] = [];
+  const says: SaysCell[] = [];
   let total = 0;
   for (const node of lines) {
     rejectChildren(node, ctx.diagnostics);
@@ -224,8 +280,29 @@ function compileCards(lines: OutlineNode[], ctx: LineCtx, declared: Declared[]):
     }
     total += set.identities.length;
     sets.push(set);
+    if (set.kind === 'table') says.push(...saysCellsOf(node.table));
   }
-  return sets;
+  return { sets, says };
+}
+
+/**
+ * What each says cell tells its cards to do: every sentence is an effect line about the player who draws the card, and "it"
+ * in one is the space they stand on. Every row is read, so a problem is reported on each row that has it, but rows with the
+ * same text share one entry (the first one's refs stand). The problems come back apart from the rest, for the caller to show
+ * without holding anything back: a card's sentence is not among the words the other lines are made of.
+ */
+function compileSays(cells: SaysCell[], ctx: LineCtx): { says: CompiledGame['says']; diagnostics: Diagnostic[] } {
+  const diagnostics: Diagnostic[] = [];
+  const about: LineCtx = { ...ctx, player: true, space: true, drawn: true, diagnostics };
+  // A map, for a cell may read like any property name.
+  const says = new Map<string, PhraseRef[]>();
+  for (const { text, line } of cells) {
+    const sentences = text.split(SENTENCE_END).filter((sentence) => normalizeLine(sentence) !== '');
+    if (sentences.length === 0) addProblem(diagnostics, line, SAYS_NOTHING(ctx.vocab.counters[0] ?? SAYS_EXAMPLE_COUNTER), { kind: 'invalid' });
+    const refs = sentences.map((sentence) => matchEffectLine(sentence, line, about));
+    if (!says.has(text)) says.set(text, refs);
+  }
+  return { says: Object.fromEntries(says), diagnostics };
 }
 
 /** What the Board: lines above a line have said, as a board the lines below can name spaces and counters of. */
@@ -310,12 +387,36 @@ function compileColumns(sections: Section[], ctx: LineCtx): CompiledGame['column
   return Object.fromEntries(lines);
 }
 
-/** A phase that is not the first needs a `go to` from some other phase, or the game can never reach it. */
-function warnUnreachable(phases: CompiledPhase[], diagnostics: Diagnostic[]): void {
+/**
+ * The phase a line starts when its phrase enters the phase it names, read through what an `If …, …` or `For …, …` line does. Null
+ * for any other line.
+ */
+function phaseStartedBy(ref: PhraseRef, library: PhraseLibrary): string | null {
+  const effect = innerEffect(ref);
+  if (effect.kind === 'lang') return null;
+  return library.get(effect.kind, effect.phrase)?.entersPhase ? (effect.args[0] as string) : null;
+}
+
+/** Every line of a phase that does something: its buttons, card moves, rules and start lines. */
+const effectsOf = (phase: CompiledPhase): PhraseRef[] => [
+  ...phase.onEnter, ...phase.actions.flatMap((a) => a.effects), ...phase.moves.flatMap((m) => m.effects),
+  ...phase.triggers.flatMap((t) => t.effects), ...phase.moments.flatMap((m) => m.effects),
+];
+
+/**
+ * A phase that is not the first needs something to lead to it, or the game can never reach it: a `go to` in another phase, or a
+ * line that starts it, in another phase or `elsewhere` (Setup, or what a card says). A phase's own lines run only once it is
+ * reached, so they never lead to it.
+ */
+function warnUnreachable(phases: CompiledPhase[], elsewhere: PhraseRef[], library: PhraseLibrary, diagnostics: Diagnostic[]): void {
+  const starts = (refs: PhraseRef[]) => new Set(refs.flatMap((ref) => phaseStartedBy(ref, library) ?? []));
+  const startedElsewhere = starts(elsewhere);
+  const startedBy = phases.map((phase) => starts(effectsOf(phase)));
   phases.forEach((phase, index) => {
     // A phase named twice is already reported; its repeat would only echo that.
     if (index === 0 || phases.findIndex((p) => p.id === phase.id) !== index) return;
-    if (phases.some((p) => p.id !== phase.id && p.goTo?.to === phase.id)) return;
+    if (startedElsewhere.has(phase.id)) return;
+    if (phases.some((p, i) => p.id !== phase.id && (p.goTo?.to === phase.id || startedBy[i].has(phase.id)))) return;
     addProblem(diagnostics, phase.line, `Nothing leads to the phase “${phase.id}”.`, { severity: 'warning' });
   });
 }
@@ -365,7 +466,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   const name = readGameName(of('game'), diagnostics);
   const players = readPlayers(of('players'), diagnostics);
   const maxPlayers = players?.max ?? 0;
-  const stage = (vocab: Vocab): LineCtx => ({ library, vocab, gameName: name ?? 'Untitled', inMove: false, player: false, space: false, card: false, diagnostics });
+  const stage = (vocab: Vocab): LineCtx => ({ library, vocab, gameName: name ?? 'Untitled', inMove: false, player: false, space: false, card: false, drawn: false, amount: false, picked: false, diagnostics });
 
   // A board game may have no cards and no zones at all.
   if (of('board').length === 0) {
@@ -384,12 +485,15 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   const phaseLines = named.flatMap((node) => node.children).map((c) => normalizeLine(c.text));
   // A card move that has a mistake still names its verb, so the examples that make it are not blamed for that mistake.
   const verbs = [...new Set(phaseLines.flatMap((line) => cardMoveVerb(line) ?? []))];
-  // Buttons are read ahead too: “they have not rolled this turn” may come before the action that rolls.
-  const actions = readActions(phaseLines);
 
-  const cards = compileCards(linesOf(of('cards')), stage(vocabFrom({ maxPlayers, zones, phases: phaseIds, verbs, actions })), declared);
+  const { sets: cards, says: saysCells } = compileCards(
+    linesOf(of('cards')), stage(vocabFrom({ maxPlayers, zones, phases: phaseIds, verbs })), declared,
+  );
   // Facts are checked once both tables are read, since a fact may be named like a column of either.
-  const facts = acceptFacts(declared, board, cards, diagnostics);
+  const facts = acceptFacts(declared, board, of('board').length > 0, cards, diagnostics);
+  // Buttons are read ahead too: “they have not rolled this turn” may come before the action that rolls. They wait for the facts,
+  // since the words a button picks a space with may name one, and no card or declare line reads a button.
+  const actions = readActions(named, stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board, facts })));
 
   const ctx = stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board, actions, facts }));
   const setup = linesOf(of('setup')).map((node) => {
@@ -399,6 +503,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   // Which headers name a column is only known now that the board is, wherever in the text they stand.
   const boardFailed = board === null && of('board').length > 0;
   const columns = compileColumns(readColumnSections(others, board, boardFailed, diagnostics), ctx);
+  const { says, diagnostics: saysDiagnostics } = compileSays(saysCells, ctx);
 
   const phases: CompiledPhase[] = [];
   const seen = new Set<string>();
@@ -410,16 +515,25 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
     phases.push(phase);
   }
   if (phaseNodes.length === 0) addProblem(diagnostics, 1, 'Add at least one Phase: section.');
-  warnUnreachable(phases, diagnostics);
+  warnUnreachable(phases, [...setup, ...Object.values(says).flat()], library, diagnostics);
 
   const end = compileEnd(of('end'), ctx);
   const examples = of('example').map((s) => compileExample(s.node, ctx, players));
 
-  // Decided before anything is held back: a game whose held-back lines have problems is not one to play.
-  const onlyUnknownPhrases = diagnostics.every((d) => d.severity !== 'error' || d.kind === 'unknown-phrase');
-  holdBack(diagnostics, [of('players'), of('board'), of('table'), of('cards')]);
+  // Decided before anything is held back: a game whose held-back lines have problems is not one to play, and neither is one
+  // whose says cells have.
+  const onlyUnknownPhrases = [...diagnostics, ...saysDiagnostics].every((d) => d.severity !== 'error' || d.kind === 'unknown-phrase');
+  const brokenAt = holdBack(diagnostics, [of('players'), of('board'), of('table'), of('cards')]);
+  // The says problems sit on lines of the Cards: section, so holding back is not run on them: they would hold back the
+  // lines below them. They wait, like those lines, while a section the words come from is broken: they are probably
+  // only that, and are shown once it is fixed. One warning on the first of their rows says they are waiting, for a
+  // game with a problem there cannot be played and the designer would see no reason for it.
+  if (brokenAt === null) diagnostics.push(...saysDiagnostics);
+  else if (saysDiagnostics.length > 0) {
+    addProblem(diagnostics, Math.min(...saysDiagnostics.map((d) => d.line)), HOLD_BACK_SAYS(brokenAt), { severity: 'warning' });
+  }
   if (name === null || players === null || phases.length === 0 || !onlyUnknownPhrases) return undefined;
-  return { name, players, zones, cards, setup, phases, end, examples, board, facts, columns };
+  return { name, players, zones, cards, setup, phases, end, examples, board, facts, columns, says };
 }
 
 /**

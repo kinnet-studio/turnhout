@@ -110,7 +110,11 @@ export function topCard(state: GameState, zoneId: string): CardState | undefined
 export function relocate(state: GameState, cardIds: string[], toZoneId: string, game: CompiledGame): GameState {
   const moving = new Set(cardIds);
   const existing = zoneCards(state, toZoneId).filter((c) => !moving.has(c.id));
-  const start = Math.max(existing.length, ...existing.map((c) => (c.slot ?? -1) + 1));
+  // A card with no slot sorts by its place in state.cards, so a moved card numbered after it could tie with it and
+  // land second from the end. Number such a zone's cards 0 to n-1 in their current order first, as toBottom does.
+  const unslotted = existing.some((c) => c.slot === undefined);
+  const renumbered = new Map(existing.map((c, i) => [c.id, i] as const));
+  const start = unslotted ? existing.length : Math.max(existing.length, ...existing.map((c) => (c.slot ?? -1) + 1));
   const faceUp = zoneInfo(game, toZoneId)?.spec.visibility === 'public';
   const byId = new Map(state.cards.map((c) => [c.id, c] as const));
   const moved = new Map<string, CardState>();
@@ -119,7 +123,31 @@ export function relocate(state: GameState, cardIds: string[], toZoneId: string, 
     if (!card) throw new Error(`No card ${id} to move.`);
     moved.set(id, { ...card, zoneId: toZoneId, slot: start + i, faceUp });
   });
-  return { ...state, cards: state.cards.map((c) => moved.get(c.id) ?? c) };
+  return {
+    ...state,
+    cards: state.cards.map((c) => {
+      const slot = unslotted ? renumbered.get(c.id) : undefined;
+      return moved.get(c.id) ?? (slot === undefined ? c : { ...c, slot });
+    }),
+  };
+}
+
+/**
+ * Puts a card under every other card of a zone and numbers the zone's slots 0 to n-1 with it first, so a pile that is drawn
+ * from the top comes round to the card again only after all the others. Like `relocate`, it ends up face up only in a public zone.
+ */
+export function toBottom(state: GameState, cardId: string, zoneId: string, game: CompiledGame): GameState {
+  if (!state.cards.some((c) => c.id === cardId)) throw new Error(`No card ${cardId} to move.`);
+  const faceUp = zoneInfo(game, zoneId)?.spec.visibility === 'public';
+  const slots = new Map([cardId, ...zoneCards(state, zoneId).filter((c) => c.id !== cardId).map((c) => c.id)].map((id, slot) => [id, slot] as const));
+  return {
+    ...state,
+    cards: state.cards.map((c) => {
+      if (c.id === cardId) return { ...c, zoneId, slot: 0, faceUp };
+      const slot = slots.get(c.id);
+      return slot === undefined ? c : { ...c, slot };
+    }),
+  };
 }
 
 /**

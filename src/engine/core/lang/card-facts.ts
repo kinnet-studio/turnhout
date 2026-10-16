@@ -1,7 +1,7 @@
 import type { GameState } from '../game-state';
 import type { CardState } from '../scene';
 import type { Json } from '../table-def';
-import { parseTextFaceKey, textFaceKey } from './cards';
+import { isSaysColumn, parseTextFaceKey, textFaceKey } from './cards';
 import type { CompiledGame } from './types';
 
 // A fact on a card lives in the card's own `data`, next to the columns of its table. A text card's face is built from
@@ -26,6 +26,24 @@ export function cardAttribute(card: CardState, name: string, game: CompiledGame)
 function tableColumns(game: CompiledGame): string[] {
   const columns = game.cards.filter((set) => set.kind === 'table').flatMap((set) => set.identities.flatMap((i) => Object.keys(i.attrs)));
   return [...new Set(columns)];
+}
+
+/** What the card's says column holds, as text; null for a card that has no such column. */
+export function saysOf(card: CardState): string | null {
+  const column = Object.keys(card.data ?? {}).find(isSaysColumn);
+  return column === undefined ? null : String(card.data?.[column]);
+}
+
+/**
+ * The card as the page names it: the values of the table's columns that it has, in table order, without what it says. A
+ * card of a standard deck has no table, so its face key names it.
+ */
+export function cardName(card: CardState, game: CompiledGame): string {
+  const parts = tableColumns(game).filter((column) => !isSaysColumn(column)).flatMap((column) => {
+    const value = card.data?.[column] as Json | undefined;
+    return value === undefined ? [] : [String(value)];
+  });
+  return parts.length === 0 ? card.faceKey : parts.join(' ');
 }
 
 /**

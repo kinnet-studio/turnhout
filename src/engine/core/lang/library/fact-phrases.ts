@@ -1,23 +1,25 @@
 import { cardById, zoneCards, type GameState } from '../../game-state';
 import type { CardState, PlayerId } from '../../scene';
-import { bankOf, ownerOf, setBank, setSpaceFact, spaceFact } from '../board-state';
+import { bankItemOf } from '../board';
+import { bankOf, holderOf, ownerOf, setBank, setOwner, setSpaceFact, spaceFact } from '../board-state';
 import { cardAttribute, cardFact, changeCard } from '../card-facts';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
-import { counted, singularForms } from '../refs';
+import { counted, joinAnd, singularForms } from '../refs';
 import type {
-  BoardSpec, CardMatch, ConditionFn, DeclareFn, EffectFn, ExpectFn, FactItem, FactSpec, MomentFn, PhraseEnv, SpaceClass, SpaceSpec, TargetFn,
+  BoardSpec, CardMatch, ConditionFn, DeclareFn, EffectFn, ExpectFn, FactItem, MomentFn, PhraseEnv, SpaceClass, SpaceSpec, TargetFn, ThingFact,
   WhichFn, WinnerFn, ZoneRef,
 } from '../types';
 import { matchesCard, relocate, resolveZoneIds, zoneIdFor } from '../zones';
+import { transfer } from './board-phrases';
 import { describeCard } from './example-phrases';
 import { cardOf, describeZone, itOf, movedCard, soleZone, theyOf } from './support';
 
 /** Every fact in the list, told what it is on. */
-const declares = (on: FactSpec['on']): DeclareFn => ([facts]) => (facts as FactItem[]).map((fact) => ({ ...fact, on }));
+const declares = (on: ThingFact['on']): DeclareFn => ([facts]) => (facts as FactItem[]).map((fact) => ({ ...fact, on }));
 
-/** A card that "can be poisoned" has something it is or is not, with no count. */
-const cardIs: DeclareFn = ([name]) => [{ name: name as string, on: 'card', kind: 'flag' }];
+/** A card or a space that "can be" something has a yes/no, which starts at no, with no count. */
+const isFlagOn = (on: ThingFact['on']): DeclareFn => ([name]) => [{ name: name as string, on, kind: 'flag' }];
 
 /**
  * The board a phrase plays on. Each phrase that calls this says `needsBoard`, so the compiler only lets it into a game with
@@ -49,9 +51,29 @@ function giveBack(state: GameState, space: number, fact: FactItem, bank: string)
   return setSpaceFact(returned, space, fact.name, fact.kind === 'flag' ? false : 0);
 }
 
+/** The bank item that goes with a fact on spaces; one the bank keeps nothing for is a mistake in the rule, said as one. */
+function bankItemFor(env: PhraseEnv, fact: FactItem): string {
+  const item = bankItemOf(fact, boardOf(env).bank);
+  if (item === null) throw new RuleError(`No bank item goes with the fact ${fact.name}.`);
+  return item;
+}
+
 const withArticle = (noun: string): string => `${/^[aeiou]/i.test(noun) ? 'an' : 'a'} ${noun}`;
 
 const nameOfSpace = (env: PhraseEnv, space: number): string => boardOf(env).spaces[space].name;
+
+/** Every space that has the flag set, in board order. */
+const flaggedSpaces = (env: PhraseEnv, flag: string): number[] =>
+  boardOf(env).spaces.flatMap((_space, at) => (spaceFact(env.state, at, flag) === true ? [at] : []));
+
+/** The one space that has the flag set. None, or several, is a mistake in the rule, said as one with the spaces in board order. */
+function theSpaceThatIs(env: PhraseEnv, flag: string): number {
+  const { spaces } = boardOf(env);
+  const flagged = flaggedSpaces(env, flag);
+  if (flagged.length === 0) throw new RuleError(`No space is ${flag}.`);
+  if (flagged.length > 1) throw new RuleError(`More than one space is ${flag}: ${joinAnd(flagged.map((at) => spaces[at].name))}.`);
+  return flagged[0];
+}
 
 // ---- conditions ------------------------------------------------------------------------------
 
@@ -59,11 +81,19 @@ const hasFlag: ConditionFn = (env, [fact]) => spaceFact(env.state, itOf(env), fa
 
 const hasNoFlag: ConditionFn = (env, args) => !hasFlag(env, args);
 
+/** At least one space has the flag set; a flag set to no, or never set, is not. */
+const someSpaceIs: ConditionFn = (env, [flag]) => flaggedSpaces(env, flag as string).length > 0;
+
 const hasCount: ConditionFn = (env, [n, fact]) => heldBy(env.state, itOf(env), fact as string) === n;
 
 const hasFewer: ConditionFn = (env, [n, fact]) => heldBy(env.state, itOf(env), fact as string) < (n as number);
 
 const bankHasOne: ConditionFn = (env, [name]) => bankOf(env.state, name as string) > 0;
+
+const bankHasAtLeast: ConditionFn = (env, [n, name]) => bankOf(env.state, name as string) >= (n as number);
+
+/** At least one of a count: it is above 0. */
+const hasSome: ConditionFn = (env, [fact]) => heldBy(env.state, itOf(env), fact as string) > 0;
 
 /** The card a rule about a card is about. */
 function itCard(env: PhraseEnv): CardState {
@@ -79,6 +109,9 @@ const isFlagged = (card: CardState, fact: string): boolean => cardFact(card, fac
 const itIsFlagged: ConditionFn = (env, [fact]) => isFlagged(itCard(env), fact as string);
 
 const theCardIsFlagged: ConditionFn = (env, [fact]) => isFlagged(movedCard(env), fact as string);
+
+/** At least one card, wherever it is, has the flag set. */
+const someCardIs: ConditionFn = (env, [fact]) => env.state.cards.some((card) => isFlagged(card, fact as string));
 
 // ---- which: the cards a rule is about ---------------------------------------------------------
 
@@ -113,6 +146,10 @@ export function ownsSet(state: GameState, spaces: SpaceSpec[], at: number, kind:
 const ownsEverySpaceOfSet: ConditionFn = (env, [kind, attr]) =>
   ownsSet(env.state, boardOf(env).spaces, itOf(env), kind as SpaceClass, attr as string, theyOf(env));
 
+/** No space of the set of the space the rule is about, itself included, has the flag set. A space in no set holds this too. */
+const noSpaceOfSetIsFlagged: ConditionFn = (env, [kind, attr, fact]) =>
+  setOf(boardOf(env).spaces, itOf(env), kind as SpaceClass, attr as string).every((other) => spaceFact(env.state, other, fact as string) !== true);
+
 // ---- targets: the spaces a button may pick --------------------------------------------------
 
 const ofKind: TargetFn = (env, [kind], space) => isOfKind(boardOf(env).spaces[space], kind as SpaceClass);
@@ -120,6 +157,9 @@ const ofKind: TargetFn = (env, [kind], space) => isOfKind(boardOf(env).spaces[sp
 const theyOwn: TargetFn = (env, _args, space) => ownerOf(env.state, space) === theyOf(env);
 
 const ofKindTheyOwn: TargetFn = (env, args, space) => ofKind(env, args, space) && theyOwn(env, args, space);
+
+/** Any space the player who holds the flag owns, whoever presses the button: “a space the rival owns”. */
+const holderOwns: TargetFn = (env, [flag], space) => ownerOf(env.state, space) === holderOf(env.state, env.seats, flag as string);
 
 // ---- moments ---------------------------------------------------------------------------------
 
@@ -131,6 +171,33 @@ const landsOnSpaceOwnedByOther: MomentFn = (env, _args, moment) => {
 };
 
 // ---- effects ---------------------------------------------------------------------------------
+
+/** Sets the flag on the space the rule is about, or clears it. */
+const itBecomes = (value: boolean): EffectFn => (env, [fact]) => setSpaceFact(env.state, itOf(env), fact as string, value);
+
+const theyOwnTheSpaceThatIs: EffectFn = (env, [flag]) => setOwner(env.state, theSpaceThatIs(env, flag as string), theyOf(env));
+
+/** Every space with the flag set goes to them. The flag stays on those spaces. */
+const theyOwnEverySpaceThatIs: EffectFn = (env, [flag]) =>
+  flaggedSpaces(env, flag as string).reduce((state, at) => setOwner(state, at, theyOf(env)), env.state);
+
+/** Clears a flag on the space the first one picks, which that flag itself may be. */
+const theSpaceThatIsIsNot: EffectFn = (env, [flag, cleared]) =>
+  setSpaceFact(env.state, theSpaceThatIs(env, flag as string), cleared as string, false);
+
+/** Clears the flag on every space that has it set; a space that never had it is left as it was. */
+const noSpaceIs: EffectFn = (env, [flag]) =>
+  boardOf(env).spaces.reduce(
+    (state, _space, at) => (spaceFact(state, at, flag as string) === true ? setSpaceFact(state, at, flag as string, false) : state), env.state,
+  );
+
+/** Clears the flag on every space they own, and on no one else's. */
+const theirAreNoLonger: EffectFn = (env, [fact]) => {
+  const they = theyOf(env);
+  return boardOf(env).spaces.reduce(
+    (state, _space, at) => (ownerOf(state, at) === they ? setSpaceFact(state, at, fact as string, false) : state), env.state,
+  );
+};
 
 const getsFromBank: EffectFn = (env, [name]) => {
   const bank = name as string;
@@ -146,11 +213,59 @@ const getsFromBank: EffectFn = (env, [name]) => {
   return setSpaceFact(taken, space, fact.name, fact.kind === 'flag' ? true : heldBy(taken, space, fact.name) + 1);
 };
 
+/**
+ * Takes several of a bank item at once, all or none. A flag is given once, so 1 is what “a” gives and more is a mistake
+ * in the rule.
+ */
+const getsSeveralFromBank: EffectFn = (env, [n, name]) => {
+  const wanted = n as number;
+  const bank = name as string;
+  if (wanted < 1) throw new RuleError('Say how many, 1 or more.');
+  const fact = factForBank(env, bank);
+  const space = itOf(env);
+  if (fact.kind === 'flag') {
+    if (wanted > 1) throw new RuleError(`${nameOfSpace(env, space)} can have only one ${fact.name}.`);
+    return getsFromBank(env, [name]);
+  }
+  const left = bankOf(env.state, bank);
+  // A bank with none left says so as taking one does, not as having “only 0”.
+  if (left === 0) throw new RuleError(`The bank has no ${bank} left.`);
+  if (left < wanted) throw new RuleError(`The bank has only ${counted(left, bank)} left.`);
+  const taken = setBank(env.state, bank, left - wanted);
+  return setSpaceFact(taken, space, fact.name, heldBy(taken, space, fact.name) + wanted);
+};
+
 /** A count goes back to the bank's item of the same name; a bank that keeps nothing by that name has nowhere to put it. */
 const countGoesBack: EffectFn = (env, [name]) => {
   const fact: FactItem = { name: name as string, kind: 'number' };
-  if (!env.game.board?.bank.some((item) => item.name === fact.name)) throw new RuleError(`No bank item goes with the fact ${fact.name}.`);
-  return giveBack(env.state, itOf(env), fact, fact.name);
+  return giveBack(env.state, itOf(env), fact, bankItemFor(env, fact));
+};
+
+/** Says so when the space holds none of the fact, which a space must for something of it to go back. */
+function mustHold(env: PhraseEnv, space: number, fact: string): void {
+  if (heldBy(env.state, space, fact) < 1) throw new RuleError(`${nameOfSpace(env, space)} has no ${fact}.`);
+}
+
+/**
+ * One of a count goes back to the bank's item of the same name, and the space keeps the rest. A game with no such item is
+ * told so first, as `flagGoesBack` does: it is the game's mistake, whatever this space holds.
+ */
+const oneGoesBack: EffectFn = (env, [name]) => {
+  const fact: FactItem = { name: name as string, kind: 'number' };
+  const item = bankItemFor(env, fact);
+  const space = itOf(env);
+  mustHold(env, space, fact.name);
+  const returned = setBank(env.state, item, bankOf(env.state, item) + 1);
+  return setSpaceFact(returned, space, fact.name, heldBy(returned, space, fact.name) - 1);
+};
+
+/** A flag that is set goes back to the bank item named its plural and is cleared. */
+const flagGoesBack: EffectFn = (env, [name]) => {
+  const fact: FactItem = { name: name as string, kind: 'flag' };
+  const item = bankItemFor(env, fact);
+  const space = itOf(env);
+  mustHold(env, space, fact.name);
+  return giveBack(env.state, space, fact, item);
 };
 
 /** Every space they own gives back what it holds, a flag that is set counting for 1. */
@@ -162,11 +277,38 @@ const theirGoBack: EffectFn = (env, [name]) => {
   );
 };
 
+/** Pays the bank an amount for every one of a bank item that sits on the spaces they own: a count as many, a flag set as one. */
+const paysForEach: EffectFn = (env, [n, name]) => {
+  const they = theyOf(env);
+  const fact = factForBank(env, name as string);
+  const held = boardOf(env).spaces.reduce((sum, _space, at) => (ownerOf(env.state, at) === they ? sum + heldBy(env.state, at, fact.name) : sum), 0);
+  return transfer(env, they, null, (n as number) * held);
+};
+
 /** Every card in the zones a reference names, zone by zone and slot by slot. */
 const cardsInZones = (env: PhraseEnv, ref: ZoneRef): CardState[] => resolveZoneIds(ref, env).flatMap((id) => zoneCards(env.state, id));
 
 /** Its facts go with it: a move only changes where the card is. */
 const moveItTo: EffectFn = (env, [zone]) => relocate(env.state, [cardOf(env)], soleZone(zone as ZoneRef, env), env.game);
+
+/**
+ * Every card with the flag set, wherever it is, goes to the zone in the order the table holds them; the flag goes with it. The
+ * zone is worked out first, so that a rule naming no single zone is a mistake whether or not a card has the flag.
+ */
+const everyFlaggedCardGoesTo: EffectFn = (env, [fact, zone]) => {
+  const to = soleZone(zone as ZoneRef, env);
+  const ids = env.state.cards.filter((card) => isFlagged(card, fact as string)).map((card) => card.id);
+  return ids.length === 0 ? env.state : relocate(env.state, ids, to, env.game);
+};
+
+/**
+ * Takes the flag off every card that has it, whether it was set or set to no, so that each card is as one that never had it. A
+ * card's face goes back to how it was.
+ */
+const noCardIs: EffectFn = (env, [fact]) =>
+  env.state.cards
+    .filter((card) => Object.hasOwn(card.data ?? {}, fact as string))
+    .reduce((state, card) => changeCard(state, card.id, { [fact as string]: null }, env.game), env.state);
 
 const everyCardIsFlagged: EffectFn = (env, [zone, fact]) =>
   cardsInZones(env, zone as ZoneRef)
@@ -174,16 +316,27 @@ const everyCardIsFlagged: EffectFn = (env, [zone, fact]) =>
     .reduce((state, card) => changeCard(state, card.id, { [fact as string]: true }, env.game), env.state);
 
 /**
- * Each card with the flag loses that much of a number it has, down to 0 and no lower, so that a rule about cards at 0 still
- * finds it. A card that has no such number has nothing to lose; a declared count it was never given is 0, and stays there.
+ * Changes a number a card has, from what it has now, and refreshes the face with it. A card that has no such number, or whose
+ * value is no number, is left as it is; a declared count it was never given is 0 to change from.
  */
-const eachFlaggedLoses: EffectFn = (env, [fact, zone, n, attribute]) =>
+function changeNumber(env: PhraseEnv, state: GameState, card: CardState, attribute: string, next: (have: number) => number): GameState {
+  const have = cardAttribute(card, attribute, env.game);
+  return typeof have === 'number' ? changeCard(state, card.id, { [attribute]: next(have) }, env.game) : state;
+}
+
+/** The card the rule is about gains that much of a number it has. */
+const itGains: EffectFn = (env, [n, attribute]) => changeNumber(env, env.state, itCard(env), attribute as string, (have) => have + (n as number));
+
+/** Each card with the flag has a number it has changed, whichever way `change` says. */
+const eachFlaggedChanges = (change: (have: number, n: number) => number): EffectFn => (env, [fact, zone, n, attribute]) =>
   cardsInZones(env, zone as ZoneRef)
     .filter((card) => isFlagged(card, fact as string))
-    .reduce((state, card) => {
-      const have = cardAttribute(card, attribute as string, env.game);
-      return typeof have === 'number' ? changeCard(state, card.id, { [attribute as string]: Math.max(0, have - (n as number)) }, env.game) : state;
-    }, env.state);
+    .reduce((state, card) => changeNumber(env, state, card, attribute as string, (have) => change(have, n as number)), env.state);
+
+const eachFlaggedGains = eachFlaggedChanges((have, n) => have + n);
+
+/** Down to 0 and no lower, so that a rule about cards at 0 still finds it. */
+const eachFlaggedLoses = eachFlaggedChanges((have, n) => Math.max(0, have - n));
 
 // ---- winners -----------------------------------------------------------------------------------
 
@@ -199,6 +352,8 @@ const mostCardsWins: WinnerFn = (env, [zone]) => {
 const spaceHasGiven: EffectFn = (env, [space, n, fact]) => setSpaceFact(env.state, space as number, fact as string, n as number);
 
 const spaceHasFlagGiven: EffectFn = (env, [space, fact]) => setSpaceFact(env.state, space as number, fact as string, true);
+
+const spaceIsGiven = (value: boolean): EffectFn => (env, [space, fact]) => setSpaceFact(env.state, space as number, fact as string, value);
 
 const bankHasGiven: EffectFn = (env, [n, name]) => setBank(env.state, name as string, n as number);
 
@@ -218,6 +373,13 @@ const cardInZoneIsGiven: EffectFn = (env, [match, zone, fact]) => {
   return changeCard(env.state, card.id, { [fact as string]: true }, env.game);
 };
 
+/** Sets the number the first card of the zone that is the named one has, whatever it had. */
+const cardInZoneHasGiven: EffectFn = (env, [match, zone, n, attribute]) => {
+  const card = namedCardIn(env, match as CardMatch, zone as ZoneRef);
+  if (!card) throw new RuleError(`There is ${noCardIn(match as CardMatch, zone as ZoneRef)}.`);
+  return changeCard(env.state, card.id, { [attribute as string]: n as number }, env.game);
+};
+
 // ---- examples: expect --------------------------------------------------------------------------
 
 /** Whether the named card of the zone has the flag, as wanted; otherwise what an example should say about it. */
@@ -232,7 +394,7 @@ const cardInZoneIsExpected = (wanted: boolean): ExpectFn => (env, [match, zone, 
 const cardInZoneHasExpected: ExpectFn = (env, [match, zone, n, attribute]) => {
   const [named, where] = [match as CardMatch, zone as ZoneRef];
   const card = namedCardIn(env, named, where);
-  const expected = `Expected ${theCard(named)} in ${describeZone(where)} to have ${n} ${attribute}`;
+  const expected = `Expected ${theCard(named)} in ${describeZone(where)} to have ${counted(n as number, attribute as string)}`;
   if (!card) return `${expected}, but there is ${noCardIn(named, where)}.`;
   const have = cardAttribute(card, attribute as string, env.game);
   if (have === n) return true;
@@ -254,6 +416,13 @@ const spaceHasNoFlagExpected: ExpectFn = (env, [space, fact]) =>
     ? true
     : `Expected ${nameOfSpace(env, space as number)} to have no ${fact}, but it has one.`;
 
+/** Whether the space's flag is as wanted; a flag nobody set is not set. Otherwise what an example should say about it. */
+const spaceIsExpected = (wanted: boolean): ExpectFn => (env, [space, fact]) => {
+  if ((spaceFact(env.state, space as number, fact as string) === true) === wanted) return true;
+  const name = nameOfSpace(env, space as number);
+  return wanted ? `Expected ${name} to be ${fact}, but it isn't.` : `Expected ${name} not to be ${fact}, but it is.`;
+};
+
 const bankHasExpected: ExpectFn = (env, [n, name]) => {
   const have = bankOf(env.state, name as string);
   return have === n ? true : `Expected the bank to have ${counted(n as number, name as string)}, but it has ${have}.`;
@@ -262,49 +431,81 @@ const bankHasExpected: ExpectFn = (env, [n, name]) => {
 /**
  * The sentences that say what a game keeps facts about: what a space or a card can have, or be, while the game is played.
  * A plural noun is a count (starting at 0) and “a” or “an” and a noun, or an adjective, is a yes/no (starting at no). Then the
- * sentences that read and change what a space has, and what the bank holds, that ask whether a player owns a whole set, and
- * that say which spaces a button may pick. And those about cards: which cards a rule is about, whether one has a flag,
- * changing every card of a zone, moving the card a rule is about, and the player with the most cards.
+ * sentences that read and change what a space has or is, and what the bank holds, that ask whether a player owns a whole set, that
+ * say which spaces a button may pick (theirs, or those of the player who holds a flag), and that act on the one space with a flag
+ * set, or on every space with it, or ask whether some space has it. And those about cards: which cards a rule is about, whether one
+ * has a flag, or some card does, changing every card of a zone, moving every card with a flag to a zone, taking a flag off every
+ * card, raising or lowering a number a card has, moving the card a rule is about, and the player with the most cards.
  */
 export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
     .declare('spaces can have {factlist}', declares('space'))
     .declare('cards can have {factlist}', declares('card'))
-    .declare('cards can be {name}', cardIs)
+    .declare('cards can be {name}', isFlagOn('card'))
+    .declare('spaces can be {name}', isFlagOn('space'))
     .condition('it has a {spaceflag}', hasFlag, { needsSpace: true })
     .condition('it has an {spaceflag}', hasFlag, { needsSpace: true })
     .condition('it has no {spaceflag}', hasNoFlag, { needsSpace: true })
+    .condition('it has a {spacenumber}', hasSome, { needsSpace: true })
+    .condition('it has an {spacenumber}', hasSome, { needsSpace: true })
     .condition('it has {int} {spacenumber}', hasCount, { needsSpace: true })
     .condition('it has fewer than {int} {spacenumber}', hasFewer, { needsSpace: true })
+    .condition('it is {spaceflag}', hasFlag, { needsSpace: true })
+    .condition('it is not {spaceflag}', hasNoFlag, { needsSpace: true })
     .condition('it is {cardflag}', itIsFlagged, { needsCard: true })
     .condition('the card is {cardflag}', theCardIsFlagged, { needsMove: true })
+    .condition('some space is {spaceflag}', someSpaceIs, { needsBoard: true })
+    .condition('some card is {cardflag}', someCardIs)
     .condition('the bank has a {banked}', bankHasOne)
     .condition('the bank has an {banked}', bankHasOne)
+    .condition('the bank has at least {int} {banked}', bankHasAtLeast)
     .condition('they own every {spacekind} of its {spaceattr}', ownsEverySpaceOfSet, { needsPlayer: true, needsSpace: true, needsBoard: true })
+    .condition('no {spacekind} of its {spaceattr} is {spaceflag}', noSpaceOfSetIsFlagged, { needsSpace: true })
     .target('a {spacekind} they own', ofKindTheyOwn, { needsPlayer: true, needsBoard: true })
     .target('an {spacekind} they own', ofKindTheyOwn, { needsPlayer: true, needsBoard: true })
     .target('a {spacekind}', ofKind, { needsBoard: true })
     .target('an {spacekind}', ofKind, { needsBoard: true })
     .target('a space they own', theyOwn, { needsPlayer: true, needsBoard: true })
+    .target('a space {holder} owns', holderOwns, { needsBoard: true })
     .moment('a player lands on a space someone else owns', landsOnSpaceOwnedByOther)
     .which('a card in a {perzone} has {int} {attribute}', cardsWithNumber)
     .effect('it gets a {banked} from the bank', getsFromBank, { needsSpace: true })
     .effect('it gets an {banked} from the bank', getsFromBank, { needsSpace: true })
+    .effect('it gets {int} {banked} from the bank', getsSeveralFromBank, { needsSpace: true })
+    .effect('it is {spaceflag}', itBecomes(true), { needsSpace: true })
+    .effect('it is not {spaceflag}', itBecomes(false), { needsSpace: true })
+    .effect('their spaces are no longer {spaceflag}', theirAreNoLonger, { needsPlayer: true, needsBoard: true })
+    .effect('they own the space that is {spaceflag}', theyOwnTheSpaceThatIs, { needsPlayer: true, needsBoard: true })
+    .effect('they own every space that is {spaceflag}', theyOwnEverySpaceThatIs, { needsPlayer: true, needsBoard: true })
+    .effect('the space that is {spaceflag} is not {spaceflag}', theSpaceThatIsIsNot, { needsBoard: true })
+    .effect('no space is {spaceflag}', noSpaceIs, { needsBoard: true })
     .effect('its {spacenumber} go back to the bank', countGoesBack, { needsSpace: true })
+    .effect('one of its {spacenumber} goes back to the bank', oneGoesBack, { needsSpace: true })
+    .effect('its {spaceflag} goes back to the bank', flagGoesBack, { needsSpace: true })
     .effect('their {banked} go back to the bank', theirGoBack, { needsPlayer: true, needsBoard: true })
+    .effect('they pay {int} for each of their {banked}', paysForEach, { needsPlayer: true, needsBoard: true, needsPayment: true })
     .effect('move it to {zone}', moveItTo, { needsCard: true })
     .effect('every card in {zone} is {cardflag}', everyCardIsFlagged)
+    .effect('every card that is {cardflag} goes to {zone}', everyFlaggedCardGoesTo)
+    .effect('no card is {cardflag}', noCardIs)
+    .effect('it gains {int} {attribute}', itGains, { needsCard: true })
+    .effect('each {cardflag} card in {zone} gains {int} {attribute}', eachFlaggedGains)
     .effect('each {cardflag} card in {zone} loses {int} {attribute}', eachFlaggedLoses)
     .winner('the player with the most cards in their {perzone} wins', mostCardsWins)
     .given('{space} has {int} {spacenumber}', spaceHasGiven)
     .given('{space} has a {spaceflag}', spaceHasFlagGiven)
     .given('{space} has an {spaceflag}', spaceHasFlagGiven)
+    .given('{space} is {spaceflag}', spaceIsGiven(true))
+    .given('{space} is not {spaceflag}', spaceIsGiven(false))
     .given('the bank has {int} {banked}', bankHasGiven)
     .given('{card} in {zone} is {cardflag}', cardInZoneIsGiven)
+    .given('{card} in {zone} has {int} {attribute}', cardInZoneHasGiven)
     .expect('{space} has {int} {spacenumber}', spaceHasExpected)
     .expect('{space} has a {spaceflag}', spaceHasFlagExpected)
     .expect('{space} has an {spaceflag}', spaceHasFlagExpected)
     .expect('{space} has no {spaceflag}', spaceHasNoFlagExpected)
+    .expect('{space} is {spaceflag}', spaceIsExpected(true))
+    .expect('{space} is not {spaceflag}', spaceIsExpected(false))
     .expect('the bank has {int} {banked}', bankHasExpected)
     .expect('{card} in {zone} is {cardflag}', cardInZoneIsExpected(true))
     .expect('{card} in {zone} is not {cardflag}', cardInZoneIsExpected(false))

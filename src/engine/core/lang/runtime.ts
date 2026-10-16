@@ -3,6 +3,7 @@ import type { GameState } from '../game-state';
 import type { Move } from '../moves';
 import type { PlayerId } from '../scene';
 import { numberIn } from './board';
+import { holderOf } from './board-state';
 import { isMissing } from './compile-util';
 import { MissingPhraseError, RuleError } from './diagnostics';
 import type { PhraseLibrary } from './phrases';
@@ -15,11 +16,13 @@ type Checker = (state: GameState, move: Move) => true | string;
 
 const DEPEND_ON_EACH_OTHER = 'Two moves depend on each other through “they have no card they could play”.';
 const KEEPS_MOVING = 'It keeps moving pieces without stopping.';
+const KEEPS_DRAWING = 'Cards keep drawing cards without stopping.';
 
 /**
  * How many moment rules may run inside one another. A lands-on rule that moves the piece again announces another
  * landing, so a rule like that never stops on its own: past this depth it is refused instead of overflowing the stack.
- * It is the cap the flow puts on rules that keep firing, so moment rules get as far as any other rule.
+ * It is the cap the flow puts on rules that keep firing, so moment rules get as far as any other rule. Cards that draw
+ * cards run inside one another the same way, and get as far.
  */
 export const MAX_MOMENT_DEPTH = MAX_FLOW_ITERATIONS;
 
@@ -33,7 +36,7 @@ function located(error: unknown, ref: PhraseRef): RuleError {
 
 /**
  * Runs a compiled game's phrases against game states: the code behind each `PhraseRef`, plus the compiler's own
- * `lang` refs (all, any, phase, always, if, missing). A ref nobody has written a phrase for throws a
+ * `lang` refs (all, any, phase, always, if, for, missing). A ref nobody has written a phrase for throws a
  * MissingPhraseError when it is reached; whatever else a phrase throws comes out as a RuleError with its line.
  */
 export class LangRuntime {
@@ -41,6 +44,8 @@ export class LangRuntime {
   private checking = false;
   /** The moment rules whose lines are running right now, each inside the one before it. */
   private readonly runningMoments: CompiledMoment[] = [];
+  /** How many card lines are running inside one another: a card that draws a card runs that card's lines in its own. */
+  private cardDepth = 0;
 
   constructor(
     readonly game: CompiledGame,
@@ -56,7 +61,10 @@ export class LangRuntime {
   /** What a phrase sees. A card move is about the player making it; `subject` names someone (or a space) else. */
   env(state: GameState, move?: MoveInfo, example?: ExampleEnv, subject?: Subject): PhraseEnv {
     const about = subject ?? (move ? { player: move.by, space: null, card: null } : undefined);
-    return { state, game: this.game, seats: this.seats, move, check: this.check, example, subject: about, announce: this.announce, columnValue: this.columnValue };
+    return {
+      state, game: this.game, seats: this.seats, move, check: this.check, example, subject: about, announce: this.announce, runLine: this.runLine,
+      columnValue: this.columnValue,
+    };
   }
 
   /** A condition, or the compiler's all / any / phase / always. */
@@ -73,19 +81,44 @@ export class LangRuntime {
     return this.call<ConditionFn, boolean>(ref, ['condition'], (fn) => fn(this.env(state, move, example, subject), ref.args));
   }
 
-  /** An effect or a Given step, or the compiler's “If …, …”. */
+  /**
+   * An effect or a Given step, or the compiler's “If …, …” or “For …, …”. A For line runs its effect as the player who holds
+   * the flag, with no card move, so “their” is theirs too; the space, amount and pick of a press stay as they were.
+   */
   run(ref: PhraseRef, state: GameState, move?: MoveInfo, example?: ExampleEnv, subject?: Subject): GameState {
     if (ref.kind === 'lang' && ref.phrase === 'if') {
       const [condition, effect] = ref.args as PhraseRef[];
       return this.test(condition, state, move, example, subject) ? this.run(effect, state, move, example, subject) : state;
     }
+    if (ref.kind === 'lang' && ref.phrase === 'for') {
+      const [flag, effect] = ref.args as [string, PhraseRef];
+      const holder = this.holderFor(ref, state, flag);
+      return this.run(effect, state, undefined, example, { ...(subject ?? { player: null, space: null, card: null }), player: holder });
+    }
     return this.call<EffectFn, GameState>(ref, ['effect', 'given'], (fn) => fn(this.env(state, move, example, subject), ref.args));
+  }
+
+  /** The player a For line runs as; nobody holding the flag, or several, is a mistake on that line. */
+  private holderFor(ref: PhraseRef, state: GameState, flag: string): PlayerId {
+    try {
+      return holderOf(state, this.seats, flag);
+    } catch (error) {
+      throw located(error, ref);
+    }
   }
 
   /** The words of the first `Only if` group that does not hold, or null when they all do. Later groups are not asked. */
   failedGroup(groups: CondGroup[], state: GameState, move?: MoveInfo, subject?: Subject): string | null {
     const holds = (ref: PhraseRef) => this.test(ref, state, move, undefined, subject);
     return groups.find((g) => !(g.mode === 'all' ? g.refs.every(holds) : g.refs.some(holds)))?.text ?? null;
+  }
+
+  /**
+   * Whether a line of the group reads the amount a button's press carries, so that it can only be judged once there is one. The
+   * phrase is looked up as the compiler found it; a ref nobody wrote a phrase for reads nothing.
+   */
+  readsAmount(group: CondGroup): boolean {
+    return group.refs.some((ref) => ref.kind !== 'lang' && this.library.get(ref.kind, ref.phrase)?.needsAmount === true);
   }
 
   /** Whether a button's target phrase allows the player in `subject` to pick `space`. */
@@ -160,6 +193,23 @@ export class LangRuntime {
       }
     }
     return s;
+  };
+
+  /**
+   * `env.runLine`: one line of a card, run about the player who drew it. A card whose line draws another card runs that card's
+   * lines inside its own, so past the cap on that it is refused rather than overflowing the stack, like moment rules are.
+   */
+  readonly runLine = (state: GameState, ref: PhraseRef, subject: Subject): GameState => {
+    // The line to blame is the card's own, as with moment rules; unlocated, it would be taken for the line of whichever
+    // sentence drew this one.
+    if (this.cardDepth >= MAX_MOMENT_DEPTH) throw new RuleError(KEEPS_DRAWING, ref.line, ref.text);
+    this.cardDepth++;
+    try {
+      return this.run(ref, state, undefined, undefined, subject);
+    } finally {
+      // A line that throws must not leave the runtime thinking it is still that deep.
+      this.cardDepth--;
+    }
   };
 
   /**

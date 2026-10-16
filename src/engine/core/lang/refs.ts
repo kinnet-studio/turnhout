@@ -39,9 +39,12 @@ export function singularForms(noun: string): string[] {
   return forms;
 }
 
-/** "1 token" or "3 tokens": a name the game declares is plural, and of the singulars it may come from, the last has the most taken off. */
+/**
+ * "1 token" or "3 tokens": a name the game declares is plural, and of the singulars it may come from, the last has the most
+ * taken off. A name ending in “us” (bonus, status) is a singular already, and shortened it would read “1 bonu”, so it stays.
+ */
 export function counted(n: number, name: string): string {
-  const singulars = singularForms(name);
+  const singulars = /us$/i.test(name) ? [] : singularForms(name);
   return `${n} ${n === 1 && singulars.length > 0 ? singulars[singulars.length - 1] : name}`;
 }
 
@@ -101,7 +104,7 @@ const bounded = (source: string) => `(?<!\\w)(?:${source})(?!\\w)`;
 const joinWith = (conjunction: string) => (words: string[]) =>
   (words.length < 2 ? words.join('') : `${words.slice(0, -1).join(', ')} ${conjunction} ${words.at(-1)}`);
 export const joinOr = joinWith('or');
-const joinAnd = joinWith('and');
+export const joinAnd = joinWith('and');
 
 const unknownText = (text: string): { error: string } => ({ error: `I don't understand “${text}” here.` });
 
@@ -300,10 +303,10 @@ const MOVE = wordType(
   'move', '[action]', (v) => v.verbs.map((verb) => [thirdPerson(verb), verb]),
   looseAs(ONE_WORD, misnamedWord('move', (v) => v.verbs.map(thirdPerson))),
 );
-const ATTRIBUTE = wordType(
-  'attribute', '[attribute]', (v) => v.attributes.map((a) => [a, a]),
-  looseAs(ANY_TEXT, misnamedWord('card attribute', (v) => v.attributes)),
-);
+// A number a card has is said in the singular beside a count of one ("1 charge"), whether the game declares it or its table has it.
+// Any text may be a misspelt attribute even in a game that has none, as it always has been; the other declared names wait
+// until a game declares one.
+const ATTRIBUTE = declaredWord('attribute', '[attribute]', 'card attribute', (v) => v.attributes, true, true);
 
 const PLAYER: ParamType = {
   name: 'player', label: '[player]', stubOrder: 4,
@@ -513,7 +516,7 @@ const spaceNames = (vocab: Vocab): string[] => [...spaceTable(vocab).values()].m
 function resolveSpace(text: string, vocab: Vocab): Parsed {
   const found = spaceTable(vocab).get(canon(text));
   if (!found) return unknownText(text);
-  // A rule about "Chance" would silently be about only one of them.
+  // A rule about a name several spaces share would silently be about only one of them.
   if (found.at.length > 1) return { error: `There are ${found.at.length} spaces called “${found.name}”, so this can't tell which one.` };
   return { value: found.at[0] };
 }
@@ -616,14 +619,17 @@ const COUNTER = wordType(
 
 /**
  * A type whose text is a name the game declares. With `singulars` the text may also be the singular of a plural name
- * ("token" for "tokens"), as a count of one is said; either way it resolves to the declared name.
+ * ("token" for "tokens"), as a count of one is said; either way it resolves to the declared name. A line is read as a
+ * misspelt name only in a game that declares some, unless `anyText` says any line may be one.
  */
-function declaredWord(name: string, label: string, what: string, names: (vocab: Vocab) => string[], singulars: boolean): ParamType {
+function declaredWord(
+  name: string, label: string, what: string, names: (vocab: Vocab) => string[], singulars: boolean, anyText = false,
+): ParamType {
   const forms = (vocab: Vocab): [text: string, value: string][] =>
     names(vocab).flatMap((declared) => [declared, ...(singulars ? singularForms(declared) : [])].map((form): [string, string] => [form, declared]));
   return wordType(name, label, forms, {
-    // Any text may be a misspelt name, but only in a game that declares some: elsewhere the line is some other phrase.
-    source: (vocab) => (names(vocab).length === 0 ? NEVER : ANY_TEXT),
+    // With no names declared (and no `anyText`) the line is some other phrase.
+    source: (vocab) => (!anyText && names(vocab).length === 0 ? NEVER : ANY_TEXT),
     explain: (text, vocab) => (holdsName(text, forms(vocab).map(([form]) => form)) ? null : missing(what, text, closestOrFirst(text, names(vocab)))),
   });
 }
@@ -635,11 +641,54 @@ const factNames = (on: FactSpec['on'], kind: FactSpec['kind']) => (vocab: Vocab)
 const SPACEFLAG = declaredWord('spaceflag', '[space fact]', 'space fact', factNames('space', 'flag'), false);
 const SPACENUMBER = declaredWord('spacenumber', '[space fact]', 'space fact', factNames('space', 'number'), true);
 const CARDFLAG = declaredWord('cardflag', '[card fact]', 'card fact', factNames('card', 'flag'), false);
+const PLAYERFLAG = declaredWord('playerflag', '[player fact]', 'player fact', factNames('player', 'flag'), false);
+const PLAYERNUMBER = declaredWord('playernumber', '[player fact]', 'player fact', factNames('player', 'number'), true);
+const GAMENUMBER = declaredWord('gamenumber', '[game number]', 'game number', factNames('game', 'number'), false);
 const BANKED = declaredWord('banked', '[bank item]', 'bank item', (vocab) => vocab.bank, true);
 
+/**
+ * The player who holds a flag players can have, standing for the flag: “the player who is leading”. A flag whose name starts with
+ * “the” already reads as someone, so it may also be said alone (“the rival”); “leading” alone names no one. The runtime finds who
+ * holds it.
+ */
+const holderNames = (vocab: Vocab): [text: string, flag: string][] =>
+  factNames('player', 'flag')(vocab).flatMap((flag): [string, string][] => {
+    const named: [string, string] = [`the player who is ${flag}`, flag];
+    return canon(flag).startsWith('the ') ? [named, [flag, flag]] : [named];
+  });
+
+/** group 1 = the flag “the player who is …” names */
+const WHO_IS = /^the player who is (.+)$/i;
+const STARTS_WITH_THE = /^the /i;
+const withoutThe = (name: string) => name.replace(STARTS_WITH_THE, '');
+
+/**
+ * “the player who is leadng” names a flag players can't have, and “the rivel” is a slip in one said alone (“the rival”). Text that
+ * holds a real holder among other words is some other phrase, and so is a “the …” like no flag said alone (“the bank”).
+ */
+function misnamedHolder(text: string, vocab: Vocab): NameProblem | null {
+  if (holdsName(text, holderNames(vocab).map(([form]) => form))) return null;
+  const flags = factNames('player', 'flag')(vocab);
+  const named = WHO_IS.exec(text)?.[1];
+  if (named !== undefined) return missing('player fact', named, closestOrFirst(named, flags));
+  if (!STARTS_WITH_THE.test(text)) return null;
+  // Compared without the “the” they all share, which alone would make “the bank” look like “the rival”.
+  const alone = flags.filter((flag) => STARTS_WITH_THE.test(flag));
+  const close = suggestNames(withoutThe(text), alone.map(withoutThe)).flatMap((name) => alone.filter((flag) => withoutThe(flag) === name));
+  return close.length > 0 ? missing('player fact', text, close) : null;
+}
+
+const HOLDER = wordType('holder', '[the player who is …]', holderNames, {
+  // A game whose players can have no flag has no holder to misspell: the line is some other phrase.
+  source: (vocab) => (factNames('player', 'flag')(vocab).length === 0 ? NEVER : ANY_TEXT),
+  explain: misnamedHolder,
+});
+
 // Actions and what was done are whole phrases ("ends their turn", "rolled") with a fixed form, not names to misspell.
-// An action is its wording, which is the move a button sends. A button that picks a space is not one an example can press
-// by its wording: it names the space after the base (“plants a flag” on Rose Lane), so that is a type of its own.
+// An action is its wording, which is the move a button sends. A button that picks a space, whether its line ends in “on a …”
+// (“plant a flag on a … they own”) or its words after the verb are the pick (“mark a space they own”), is not one an example can
+// press by its wording: it names the space after the base (“plants a flag on Rose Lane”, “marks Rose Lane”), so that is a type of
+// its own.
 const ACTION = wordType('action', '[action]', (v) => v.actions.filter((a) => !a.targeted).map((a) => [thirdPersonWords(a.words), a.words]), undefined);
 
 /** The base of a button that picks a space, in the third person; two such buttons with one base could not be told apart by it. */
@@ -654,15 +703,61 @@ const TARGETACTION: ParamType = {
   },
 };
 
-/** What was done is one word, so it names a button only when no other button has the verb it comes from. */
+/**
+ * The base of a button that carries an amount, in the third person: an example gives the number after it (“p1 raises 50”). The
+ * wording `ACTION` lists for the same button (“p1 raises an amount”) presses it with no number.
+ */
+const AMOUNTACTION = wordType('amountaction', '[action]', (v) => v.actions.filter((a) => a.amount).map((a) => [thirdPersonWords(a.base), a.words]), undefined);
+
+/**
+ * The base of a button that picks another player, in the third person: an example gives the player after it (“p0 challenges p1”).
+ * The wording `ACTION` lists for the same button (“p0 challenges another player”) presses it with no pick.
+ */
+const PICKACTION = wordType('pickaction', '[action]', (v) => v.actions.filter((a) => a.picksPlayer).map((a) => [thirdPersonWords(a.base), a.words]), undefined);
+
+type VocabAction = Vocab['actions'][number];
+
+/** A button's wording with its verb, the first word, in the past: 'roll for a double' is 'rolled for a double'. */
+export function pastWording(words: string): string {
+  const verb = words.split(' ')[0];
+  return `${participle(verb)}${words.slice(verb.length)}`;
+}
+
+/** What a button is called once it has been pressed: 'roll for a double' is 'rolled for a double', and a one-word button is its bare participle. */
+const doneWording = (action: VocabAction): string => pastWording(action.words);
+
+/**
+ * What a button that picks a space is called once pressed, without the space: 'planted a flag' for 'plant a flag on a space
+ * they own'. Where the player planted it is no part of having planted it, so a rule may leave it out. A button that takes no
+ * target has no such name, since its whole wording is all there is to say.
+ */
+const doneBase = (action: VocabAction): string[] => (action.targeted ? [pastWording(action.base)] : []);
+
+/** The ways a done-text can name a button, nearest first: a text that is several of them reads as the first. */
+const DONE_NAMES: ((action: VocabAction) => string[])[] = [
+  (a) => [participle(a.verb)], (a) => [doneWording(a)], doneBase,
+];
+
+/**
+ * What was done names buttons by the move type each sends: a bare participle ('rolled') every button whose verb has it, a
+ * whole done-wording ('rolled for a double') that one button, and the done-wording of a targeted button's base ('planted a
+ * flag') every such button with that base. A one-word button's wording is also its bare participle, and a button's own
+ * wording is nearer than another's base, so the first way that fits is the one read. The moves come once each, in the
+ * order the buttons were declared. A button any player may press is recognised but never part of a turn, so it is left out of
+ * the moves, and a text that names only such buttons is an error.
+ */
 const DONE: ParamType = {
   name: 'done', label: '[action done]',
-  source: (vocab) => bounded(anyOf(vocab.actions.map((a) => participle(a.verb)))),
+  source: (vocab) => bounded(anyOf(vocab.actions.flatMap((a) => DONE_NAMES.flatMap((namesOf) => namesOf(a))))),
   resolve: (text, vocab) => {
-    const wordings = [...new Set(vocab.actions.filter((a) => canon(participle(a.verb)) === canon(text)).map((a) => a.words))];
-    if (wordings.length === 0) return unknownText(text);
-    if (wordings.length > 1) return { error: `“${text}” could mean ${joinOr(wordings.map((w) => `“${w}”`))}.` };
-    return { value: wordings[0] };
+    const named = (namesOf: (action: VocabAction) => string[]) =>
+      [...new Set(vocab.actions.filter((a) => namesOf(a).some((name) => canon(name) === canon(text))).map((a) => a.words))];
+    const found = DONE_NAMES.map(named).find((moves) => moves.length > 0) ?? [];
+    if (found.length === 0) return unknownText(text);
+    const anyone = new Set(vocab.actions.filter((a) => a.anyone).map((a) => a.words));
+    const moves = found.filter((move) => !anyone.has(move));
+    if (moves.length > 0) return { value: moves };
+    return { error: `“${text}” names a button any player may press at any time, which is never part of a turn.` };
   },
 };
 
@@ -671,14 +766,30 @@ const DONE: ParamType = {
 /** Parameter types whose text depends on the game being compiled. */
 export const VOCAB_TYPES: ParamType[] = [
   ZONE, ZONES, PERZONE, PLAYER, PHASE, MOVE, ATTRIBUTE, CARD, CARDLIST, CARDCLASS, SPACE, SPACECLASS, SPACEATTR, COUNTER, ACTION, TARGETACTION,
-  DONE, SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, BANKED,
+  AMOUNTACTION, PICKACTION, DONE, SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, PLAYERFLAG, PLAYERNUMBER, GAMENUMBER, BANKED, HOLDER,
 ];
 
 const TYPES_BY_NAME = new Map(VOCAB_TYPES.map((t) => [t.name, t] as const));
 
-/** Reads `text` as one instance of the named type; null when the type's pattern does not cover all of it. */
-export function parseParam(type: string, text: string, vocab: Vocab): Parsed | null {
+function typeNamed(type: string): ParamType {
   const found = TYPES_BY_NAME.get(type);
   if (!found) throw new Error(`unknown parameter type {${type}}`);
+  return found;
+}
+
+/** Reads `text` as one instance of the named type; null when the type's pattern does not cover all of it. */
+export function parseParam(type: string, text: string, vocab: Vocab): Parsed | null {
+  const found = typeNamed(type);
   return fullMatch(found, text, vocab) ? found.resolve(text, vocab) : null;
+}
+
+/**
+ * What is wrong with `text` as the named type when it is shaped like one but names something the game never defined; null when it
+ * is one, or is not meant as one at all.
+ */
+export function misnamedParam(type: string, text: string, vocab: Vocab): NameProblem | null {
+  const found = typeNamed(type);
+  if (!found.loose || fullMatch(found, text, vocab)) return null;
+  const shaped = memo(vocab, `loose:${type}`, () => new RegExp(`^(?:${found.loose!.source(vocab)})$`, 'i'));
+  return shaped.test(text) ? found.loose.explain(text, vocab) : null;
 }

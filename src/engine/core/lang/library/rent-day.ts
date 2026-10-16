@@ -1,10 +1,11 @@
 import type { GameState } from '../../game-state';
 import type { PlayerId } from '../../scene';
+import type { Json } from '../../table-def';
 import { numberIn } from '../board';
-import { ownerOf } from '../board-state';
+import { ownerOf, spaceFact } from '../board-state';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
-import type { ColumnFn, ConditionFn, SpaceClass, SpaceSpec } from '../types';
+import type { ColumnFn, ConditionFn, PhraseEnv, SpaceClass, SpaceSpec } from '../types';
 import { rollTotal } from './board-phrases';
 import { boardOf, heldBy, isOfKind, ownsSet, setOf } from './fact-phrases';
 import { itOf } from './support';
@@ -87,18 +88,33 @@ const utilityRentIsTimesRoll: ColumnFn = (env, [single, both], value) => {
   return (owned === all ? (both as number) : (single as number)) * rollTotal(env.state);
 };
 
+/** A mortgaged space charges nothing, whatever the lines before this one made of its rent; a rule other than landing may ask for it too. */
+const mortgagedRentIsNothing: ColumnFn = (env, _args, value) => (spaceFact(env.state, itOf(env), 'mortgaged') === true ? 0 : value);
+
 // ---- building --------------------------------------------------------------------------------
 
+/** What is built on each space of the set of the space the rule is about, itself included; nothing for a space in no set. */
+const buildingsOfSet = (env: PhraseEnv, [kind, attr]: Json[]): number[] =>
+  setOf(boardOf(env).spaces, itOf(env), kind as SpaceClass, attr as string).map((other) => buildingsOn(env.state, other));
+
 /** A street may be built on only while no street of its set has less built than it, so that a set is built up evenly. */
-const noFewerBuildings: ConditionFn = (env, [kind, attr]) => {
-  const at = itOf(env);
-  const have = buildingsOn(env.state, at);
-  return setOf(boardOf(env).spaces, at, kind as SpaceClass, attr as string).every((other) => buildingsOn(env.state, other) >= have);
+const noFewerBuildings: ConditionFn = (env, args) => {
+  const have = buildingsOn(env.state, itOf(env));
+  return buildingsOfSet(env, args).every((built) => built >= have);
 };
 
+/** A street may be sold from only while no street of its set has more built than it, so that a set comes down evenly. */
+const noMoreBuildings: ConditionFn = (env, args) => {
+  const have = buildingsOn(env.state, itOf(env));
+  return buildingsOfSet(env, args).every((built) => built <= have);
+};
+
+/** A street may be mortgaged only while none of its set has anything built on it. */
+const noBuildingInSet: ConditionFn = (env, args) => buildingsOfSet(env, args).every((built) => built === 0);
+
 /**
- * What Rent Day says about rent, and about building evenly: the lines of its Rent: section, and the one condition that its
- * rule for building a house reads.
+ * What Rent Day says about rent, and about building and selling evenly: the lines of its Rent: section, and the conditions that
+ * its rules for building, selling and mortgaging read.
  */
 export function registerRentDayPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
@@ -106,5 +122,8 @@ export function registerRentDayPhrases(lib: PhraseLibrary): PhraseLibrary {
     .column('a street in a full set with no buildings has double rent', fullSetDoublesRent)
     .column("a station's rent is {ints} when its owner has {ints} stations", stationRentGoesWithCount)
     .column("a utility's rent is {int} times the roll, or {int} times when its owner has both", utilityRentIsTimesRoll)
-    .condition('no {spacekind} of its {spaceattr} has fewer buildings', noFewerBuildings, { needsSpace: true });
+    .column("a mortgaged space's rent is 0", mortgagedRentIsNothing)
+    .condition('no {spacekind} of its {spaceattr} has fewer buildings', noFewerBuildings, { needsSpace: true })
+    .condition('no {spacekind} of its {spaceattr} has more buildings', noMoreBuildings, { needsSpace: true })
+    .condition('no {spacekind} of its {spaceattr} has a building', noBuildingInSet, { needsSpace: true });
 }

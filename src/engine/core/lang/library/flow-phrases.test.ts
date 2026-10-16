@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import type { GameEngine } from '../../game-engine';
 import { zoneCards, type GameState } from '../../game-state';
 import { shuffleWithRng } from '../../rng';
 import type { CardState } from '../../scene';
 import { RuleError } from '../diagnostics';
-import { markOut } from '../board-state';
-import { fixtureBoardGame, fixtureBoardState, fixtureCard, fixtureEnv, fixtureState, runPhrase } from '../testing';
-import type { PhraseKind, PhraseEnv } from '../types';
+import { TURN_KEY, TURN_ROLLS_KEY, interruptedTurn, markOut, playerFact, queueRoll, setPlayerFact, withBoardData } from '../board-state';
+import { createEngine, initialState, seatsFor } from '../build';
+import { compileGame } from '../compile';
+import { INTERRUPT_BOARD, fixtureBoardGame, fixtureBoardState, fixtureCard, fixtureEnv, fixtureGame, fixtureState, runPhrase } from '../testing';
+import type { CompiledGame, PhraseKind, PhraseEnv } from '../types';
 import { WINNER_KEY } from '../zones';
 import { createDefaultLibrary } from './index';
 
@@ -90,6 +93,13 @@ describe('empty conditions', () => {
     expect(run('condition', "a player's hand is empty", env)).toBe(true);
     const full = fixtureEnv(fixtureState([...cards, ...pile('hand-p1', 'b', 1)]), { seats: ['p0', 'p1'] });
     expect(run('condition', "a player's hand is empty", full)).toBe(false);
+  });
+  it('a zone named in the plural is not empty with its cards: their kept cards are not empty', () => {
+    const game = fixtureGame({ zones: [...fixtureGame().zones, { name: 'kept cards', perPlayer: true, layout: 'row', visibility: 'public' }] });
+    const state = fixtureState(pile('kept-cards-p1', 'k', 1));
+    const about = (by: string) => fixtureEnv(state, { game, seats: ['p0', 'p1'], subject: { player: by, space: null, card: null } });
+    expect(run('condition', 'their kept cards are not empty', about('p1'))).toBe(true);
+    expect(run('condition', 'their kept cards are not empty', about('p0'))).toBe(false);
   });
 });
 
@@ -288,6 +298,87 @@ describe('who goes next', () => {
   });
   it('cannot pass a turn nobody has', () => {
     expect(() => run('turn', 'the turn passes to the left', fixtureEnv(fixtureState([])))).toThrow(RuleError);
+  });
+});
+
+describe('a phase that interrupts the turn', () => {
+  const vote = compileGame(INTERRUPT_BOARD, lib).game!;
+  const WITH_THEM = compileGame(INTERRUPT_BOARD.replace('      The vote phase starts with the player on their left.', '      The vote phase starts with them.'), lib).game!;
+  /** An engine for `players` seats with the turn at p0 in playing, its board arranged by `arrange`, playing `game`. */
+  const voting = (players: number, arrange: (s: GameState) => GameState, game: CompiledGame = vote): GameEngine => {
+    const start = withBoardData(initialState(game, 1), game, seatsFor(players));
+    return createEngine(game, lib, players, arrange({ ...start, turn: { current: 'p0', phase: 'playing' } })).engine;
+  };
+  const press = (engine: GameEngine, type: string, by: string) => expect(engine.dispatch({ type, by }).reason).toBeUndefined();
+
+  it('starts with the player on the left, runs its start lines, and goes back to the turn exactly, its log and rolls and all', () => {
+    const engine = voting(3, (s) => queueRoll(s, [1, 2]));
+    press(engine, 'roll the dice', 'p0');
+    press(engine, 'call a vote', 'p0');
+    let s = engine.getState();
+    expect(s.turn).toEqual({ current: 'p1', phase: 'vote' });
+    expect(['p0', 'p1', 'p2'].map((seat) => playerFact(s, seat, 'voting'))).toEqual([true, true, true]);
+    expect([s.data[TURN_KEY], s.data[TURN_ROLLS_KEY]]).toEqual([{}, {}]);
+    for (const seat of ['p1', 'p2', 'p0']) press(engine, 'abstain', seat);
+    s = engine.getState();
+    expect(s.turn).toEqual({ current: 'p0', phase: 'playing' });
+    expect(s.data[TURN_KEY]).toEqual({ p0: ['roll the dice', 'call a vote'] });
+    expect(s.data[TURN_ROLLS_KEY]).toEqual({ p0: [[1, 2]] });
+    expect(engine.canDispatch({ type: 'end their turn', by: 'p0' })).toBe(true);
+  });
+  it('starts with the next player still in, and passes only to players still in', () => {
+    const engine = voting(4, (s) => markOut(queueRoll(s, [1, 2]), 'p1'));
+    press(engine, 'roll the dice', 'p0');
+    press(engine, 'call a vote', 'p0');
+    expect(engine.getState().turn!.current).toBe('p2');
+    press(engine, 'abstain', 'p2');
+    press(engine, 'abstain', 'p3');
+    expect(engine.getState().turn!.current).toBe('p0');
+  });
+  it('needs the player on whose left it starts, and enters the phase it names', () => {
+    expect(lib.get('effect', 'the {phase} phase starts with the player on their left')).toMatchObject({ needsPlayer: true, entersPhase: true });
+  });
+  it('starts with the player who pressed, runs its start lines, and goes back to their turn as it was', () => {
+    const engine = voting(3, (s) => queueRoll(s, [1, 2]), WITH_THEM);
+    press(engine, 'roll the dice', 'p0');
+    press(engine, 'call a vote', 'p0');
+    let s = engine.getState();
+    expect(s.turn).toEqual({ current: 'p0', phase: 'vote' });
+    expect(['p0', 'p1', 'p2'].map((seat) => playerFact(s, seat, 'voting'))).toEqual([true, true, true]);
+    expect(interruptedTurn(s)).toEqual({ phase: 'playing', current: 'p0', log: { p0: ['roll the dice', 'call a vote'] }, rolls: { p0: [[1, 2]] } });
+    for (const seat of ['p0', 'p1', 'p2']) press(engine, 'abstain', seat);
+    s = engine.getState();
+    expect(s.turn).toEqual({ current: 'p0', phase: 'playing' });
+    expect(s.data[TURN_KEY]).toEqual({ p0: ['roll the dice', 'call a vote'] });
+    expect(engine.canDispatch({ type: 'end their turn', by: 'p0' })).toBe(true);
+  });
+  it('needs the player it starts with, and enters the phase it names', () => {
+    expect(lib.get('effect', 'the {phase} phase starts with them')).toMatchObject({ needsPlayer: true, entersPhase: true });
+  });
+  it('cannot run start lines with nothing to run them', () => {
+    const state = fixtureBoardState(vote, ['p0', 'p1']);
+    const env = fixtureEnv(state, { game: vote, seats: ['p0', 'p1'], subject: { player: 'p0', space: null, card: null } });
+    expect(() => run('effect', 'the vote phase starts with the player on their left', env))
+      .toThrow('This phrase needs to run the start lines of a phase, but nothing is listening.');
+  });
+
+  describe('the next player on the left who has a flag', () => {
+    const seats = ['p0', 'p1', 'p2', 'p3'];
+    /** Whose turn it is next, from `current`, with `flagged` voting and `out` out of the game. */
+    const next = (current: string, flagged: string[], out: string[] = []) => {
+      let state: GameState = { ...fixtureBoardState(vote, seats), turn: { current, phase: 'vote' } };
+      for (const seat of flagged) state = setPlayerFact(state, seat, 'voting', true);
+      for (const seat of out) state = markOut(state, seat);
+      return run('turn', 'the turn passes to the next player on the left who is voting', fixtureEnv(state, { game: vote, seats }));
+    };
+    it('goes round to the first one still in who has it', () => {
+      expect(next('p0', ['p2', 'p3'])).toBe('p2');
+      expect(next('p3', ['p1', 'p2'], ['p1'])).toBe('p2');
+    });
+    it('stays where it is when nobody else has it', () => {
+      expect(next('p1', ['p1'])).toBe('p1');
+      expect(next('p1', [])).toBe('p1');
+    });
   });
 });
 

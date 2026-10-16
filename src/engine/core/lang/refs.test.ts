@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  STANDARD_RANKS, STANDARD_SUITS, VOCAB_TYPES, counted, parseParam, participle, plural, secondPersonWords, singularForms, thirdPerson, thirdPersonWords,
+  STANDARD_RANKS, STANDARD_SUITS, VOCAB_TYPES, counted, misnamedParam, parseParam, participle, pastWording, plural, secondPersonWords, singularForms, thirdPerson, thirdPersonWords,
 } from './refs';
 import { PhraseLibrary, STATIC_TYPES, emptyVocab, stubFor, vocabFrom } from './phrases';
 import { FIXTURE_SPACES, fixtureBoardGame } from './testing';
@@ -21,10 +21,10 @@ const BOARD = vocabFrom({
     spaces: [...FIXTURE_SPACES, { name: "Bishop's Row", attrs: { kind: 'street', color: 'green', price: 300, rent: 26 } }],
   },
   actions: [
-    { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false },
-    { verb: 'end', words: 'end their turn', base: 'end their turn', targeted: false },
-    { verb: 'buy', words: 'buy the space they are on', base: 'buy the space they are on', targeted: false },
-    { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true },
+    { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false, anyone: false, amount: false, picksPlayer: false },
+    { verb: 'end', words: 'end their turn', base: 'end their turn', targeted: false, anyone: false, amount: false, picksPlayer: false },
+    { verb: 'buy', words: 'buy the space they are on', base: 'buy the space they are on', targeted: false, anyone: false, amount: false, picksPlayer: false },
+    { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true, anyone: false, amount: false, picksPlayer: false },
   ],
 });
 
@@ -44,9 +44,10 @@ describe('vocabulary types', () => {
       ['zone', '[zone]'], ['zones', '[zones]'], ['perzone', '[zone]'], ['player', '[player]'], ['phase', '[phase]'],
       ['move', '[action]'], ['attribute', '[attribute]'], ['card', '[card]'], ['cardlist', '[cards]'], ['cardclass', '[kind of card]'],
       ['space', '[space]'], ['spaceclass', '[kind of space]'], ['spaceattr', '[space detail]'], ['counter', '[counter]'],
-      ['action', '[action]'], ['targetaction', '[action]'], ['done', '[action done]'],
+      ['action', '[action]'], ['targetaction', '[action]'], ['amountaction', '[action]'], ['pickaction', '[action]'], ['done', '[action done]'],
       ['spacekind', '[kind of space]'], ['spaceflag', '[space fact]'], ['spacenumber', '[space fact]'], ['cardflag', '[card fact]'],
-      ['banked', '[bank item]'],
+      ['playerflag', '[player fact]'], ['playernumber', '[player fact]'], ['gamenumber', '[game number]'], ['banked', '[bank item]'],
+      ['holder', '[the player who is …]'],
     ]);
     const order = Object.fromEntries(VOCAB_TYPES.filter((t) => t.stubOrder !== undefined).map((t) => [t.name, t.stubOrder]));
     // A stub never turns words into a space: a name like "Go To Jail" would swallow the words of an ordinary sentence.
@@ -204,6 +205,15 @@ describe('players, phases, moves and attributes', () => {
     expect(parseParam('attribute', 'number', V)).toEqual({ value: 'number' });
     expect(parseParam('attribute', 'suit', V)).toBeNull();
   });
+  it('reads a card attribute in the singular too, as a count of one says it', () => {
+    const charged = vocabFrom({ maxPlayers: 2, facts: [{ name: 'charges', on: 'card', kind: 'number' }] });
+    expect(parseParam('attribute', 'charge', charged)).toEqual({ value: 'charges' });
+    expect(parseParam('attribute', 'charges', charged)).toEqual({ value: 'charges' });
+    expect(parseParam('attribute', 'Charge', charged)).toEqual({ value: 'charges' });
+    expect(parseParam('attribute', 'chargess', charged)).toBeNull();
+    // A name with no singular is read as it is, and a singular is no name of its own.
+    expect(parseParam('attribute', 'number', V)).toEqual({ value: 'number' });
+  });
   it('accepts any apostrophe in phase names', () => {
     const vocab: Vocab = { ...emptyVocab(), phases: ["dealer's turn"] };
     for (const apostrophe of ["'", '‘', '’']) {
@@ -338,26 +348,61 @@ describe('board references', () => {
     expect(parseParam('action', 'ends their turn', v)).toEqual({ value: 'end their turn' });
     expect(parseParam('action', 'rolls the dice', v)).toEqual({ value: 'roll the dice' });
     expect(parseParam('action', 'Buys the space they are on', v)).toEqual({ value: 'buy the space they are on' });
-    expect(parseParam('done', 'rolled', v)).toEqual({ value: 'roll the dice' });
-    expect(parseParam('done', 'bought', v)).toEqual({ value: 'buy the space they are on' });
-    expect(parseParam('done', 'ended', v)).toEqual({ value: 'end their turn' });
+    expect(parseParam('done', 'rolled', v)).toEqual({ value: ['roll the dice'] });
+    expect(parseParam('done', 'bought', v)).toEqual({ value: ['buy the space they are on'] });
+    expect(parseParam('done', 'ended', v)).toEqual({ value: ['end their turn'] });
   });
-  it('reads what was done as a button only when one button has the verb', () => {
+  it('reads what was done as every button that has the verb', () => {
     const building = vocabFrom({
       maxPlayers: 2,
       actions: [
-        { verb: 'build', words: 'build a house', base: 'build a house', targeted: false },
-        { verb: 'build', words: 'build a hotel', base: 'build a hotel', targeted: false },
-        { verb: 'end', words: 'end their turn', base: 'end their turn', targeted: false },
+        { verb: 'build', words: 'build a house', base: 'build a house', targeted: false, anyone: false, amount: false, picksPlayer: false },
+        { verb: 'build', words: 'build a hotel', base: 'build a hotel', targeted: false, anyone: false, amount: false, picksPlayer: false },
+        { verb: 'end', words: 'end their turn', base: 'end their turn', targeted: false, anyone: false, amount: false, picksPlayer: false },
       ],
     });
-    expect(parseParam('done', 'built', building)).toEqual({ error: '“built” could mean “build a house” or “build a hotel”.' });
-    expect(parseParam('done', 'ended', building)).toEqual({ value: 'end their turn' });
+    expect(parseParam('done', 'built', building)).toEqual({ value: ['build a house', 'build a hotel'] });
+    expect(parseParam('done', 'built a hotel', building)).toEqual({ value: ['build a hotel'] });
+    expect(parseParam('done', 'ended', building)).toEqual({ value: ['end their turn'] });
     expect(parseParam('action', 'builds a hotel', building)).toEqual({ value: 'build a hotel' });
     // The same wording in two phases is still one button.
-    const roll = { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false };
+    const roll = { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false, anyone: false, amount: false, picksPlayer: false };
     const twice = vocabFrom({ maxPlayers: 2, actions: [roll, roll] });
-    expect(parseParam('done', 'rolled', twice)).toEqual({ value: 'roll the dice' });
+    expect(parseParam('done', 'rolled', twice)).toEqual({ value: ['roll the dice'] });
+  });
+  it('reads a bare participle as every button with that verb, and a whole done-wording as one button', () => {
+    const rolls = vocabFrom({ maxPlayers: 2, actions: [
+      { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false, anyone: false, amount: false, picksPlayer: false },
+      { verb: 'roll', words: 'roll for a double', base: 'roll for a double', targeted: false, anyone: false, amount: false, picksPlayer: false },
+      { verb: 'end', words: 'end their turn', base: 'end their turn', targeted: false, anyone: false, amount: false, picksPlayer: false },
+    ] });
+    expect(parseParam('done', 'rolled', rolls)).toEqual({ value: ['roll the dice', 'roll for a double'] });
+    expect(parseParam('done', 'Rolled For A Double', rolls)).toEqual({ value: ['roll for a double'] });
+    expect(parseParam('done', 'rolled the dice', rolls)).toEqual({ value: ['roll the dice'] });
+    expect(parseParam('done', 'ended their turn', rolls)).toEqual({ value: ['end their turn'] });
+    expect(parseParam('done', 'ended', rolls)).toEqual({ value: ['end their turn'] });
+    expect(parseParam('done', 'rolled two doubles', rolls)).toBeNull();
+  });
+  it('never reads what was done as a button any player may press, and says so', () => {
+    const waving = vocabFrom({
+      maxPlayers: 2,
+      actions: [
+        { verb: 'end', words: 'end their turn', base: 'end their turn', targeted: false, anyone: false, amount: false, picksPlayer: false },
+        { verb: 'wave', words: 'wave', base: 'wave', targeted: false, anyone: true, amount: false, picksPlayer: false },
+        { verb: 'wave', words: 'wave to the crowd', base: 'wave to the crowd', targeted: false, anyone: false, amount: false, picksPlayer: false },
+        { verb: 'plant', words: 'plant a flag on a street they own', base: 'plant a flag', targeted: true, anyone: true, amount: false, picksPlayer: false },
+      ],
+    });
+    // The word is still recognised, so it is the reason that is given rather than “I don't understand”.
+    const never = (text: string) => ({ error: `“${text}” names a button any player may press at any time, which is never part of a turn.` });
+    expect(parseParam('done', 'planted', waving)).toEqual(never('planted'));
+    expect(parseParam('done', 'Planted A Flag', waving)).toEqual(never('Planted A Flag'));
+    expect(parseParam('done', 'waved to the crowd', waving)).toEqual({ value: ['wave to the crowd'] });
+    // A bare participle that a button of the turn shares with one anyone may press is that button alone.
+    expect(parseParam('done', 'waved', waving)).toEqual({ value: ['wave to the crowd'] });
+    expect(parseParam('done', 'ended', waving)).toEqual({ value: ['end their turn'] });
+    const alone = vocabFrom({ maxPlayers: 2, actions: [{ verb: 'wave', words: 'wave', base: 'wave', targeted: false, anyone: true, amount: false, picksPlayer: false }] });
+    expect(parseParam('done', 'waved', alone)).toEqual(never('waved'));
   });
   it('reads a button that picks a target as {targetaction}, by the third person of its base, and never as {action}', () => {
     expect(parseParam('targetaction', 'builds a house', v)).toEqual({ value: 'build a house on a street they own' });
@@ -370,12 +415,44 @@ describe('board references', () => {
     expect(parseParam('targetaction', 'rolls the dice', v)).toBeNull();
     expect(parseParam('targetaction', 'builds a house', emptyVocab())).toBeNull();
   });
+  it('reads a button that carries an amount as {amountaction} by the third person of its base, and as {action} by its whole wording', () => {
+    const carrying = vocabFrom({
+      maxPlayers: 2,
+      actions: [
+        { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false, anyone: false, amount: false, picksPlayer: false },
+        { verb: 'raise', words: 'raise an amount', base: 'raise', targeted: false, anyone: false, amount: true, picksPlayer: false },
+      ],
+    });
+    expect(parseParam('amountaction', 'raises', carrying)).toEqual({ value: 'raise an amount' });
+    expect(parseParam('amountaction', 'Raises', carrying)).toEqual({ value: 'raise an amount' });
+    expect(parseParam('amountaction', 'rolls the dice', carrying)).toBeNull();
+    expect(parseParam('amountaction', 'raises', emptyVocab())).toBeNull();
+    // Said with its whole wording, a press carries no amount.
+    expect(parseParam('action', 'raises an amount', carrying)).toEqual({ value: 'raise an amount' });
+    expect(parseParam('action', 'raises', carrying)).toBeNull();
+  });
+  it('reads a button that picks another player as {pickaction} by the third person of its base, and as {action} by its whole wording', () => {
+    const picking = vocabFrom({
+      maxPlayers: 2,
+      actions: [
+        { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false, anyone: false, amount: false, picksPlayer: false },
+        { verb: 'trade', words: 'trade with another player', base: 'trade with', targeted: false, anyone: false, amount: false, picksPlayer: true },
+      ],
+    });
+    expect(parseParam('pickaction', 'trades with', picking)).toEqual({ value: 'trade with another player' });
+    expect(parseParam('pickaction', 'Trades With', picking)).toEqual({ value: 'trade with another player' });
+    expect(parseParam('pickaction', 'rolls the dice', picking)).toBeNull();
+    expect(parseParam('pickaction', 'trades with', emptyVocab())).toBeNull();
+    // Said with its whole wording, a press picks no one.
+    expect(parseParam('action', 'trades with another player', picking)).toEqual({ value: 'trade with another player' });
+    expect(parseParam('action', 'trades with', picking)).toBeNull();
+  });
   it('says so when two buttons that pick a target share a base, since an example could not tell them apart', () => {
     const both = vocabFrom({
       maxPlayers: 2,
       actions: [
-        { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true },
-        { verb: 'build', words: 'build a house on a station they own', base: 'build a house', targeted: true },
+        { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true, anyone: false, amount: false, picksPlayer: false },
+        { verb: 'build', words: 'build a house on a station they own', base: 'build a house', targeted: true, anyone: false, amount: false, picksPlayer: false },
       ],
     });
     expect(parseParam('targetaction', 'builds a house', both)).toEqual({
@@ -383,7 +460,31 @@ describe('board references', () => {
     });
   });
   it('reads what was done by a button that picks a target as the button, by its whole wording', () => {
-    expect(parseParam('done', 'built', v)).toEqual({ value: 'build a house on a street they own' });
+    expect(parseParam('done', 'built', v)).toEqual({ value: ['build a house on a street they own'] });
+    expect(parseParam('done', 'built a house on a street they own', v)).toEqual({ value: ['build a house on a street they own'] });
+  });
+  it('reads what was done by a button that picks a target as its base too, since the target is not part of what was done', () => {
+    expect(parseParam('done', 'built a house', v)).toEqual({ value: ['build a house on a street they own'] });
+    expect(parseParam('done', 'Built A House', v)).toEqual({ value: ['build a house on a street they own'] });
+    // Two buttons that share a base are both what was done; a rule asking whether either was pressed is still clear.
+    const both = vocabFrom({
+      maxPlayers: 2,
+      actions: [
+        { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true, anyone: false, amount: false, picksPlayer: false },
+        { verb: 'build', words: 'build a house on a station they own', base: 'build a house', targeted: true, anyone: false, amount: false, picksPlayer: false },
+      ],
+    });
+    expect(parseParam('done', 'built a house', both)).toEqual({ value: ['build a house on a street they own', 'build a house on a station they own'] });
+    // A button's own wording still wins over another's base, and a base is no wording for a button that takes no target.
+    const plain = vocabFrom({
+      maxPlayers: 2,
+      actions: [
+        { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true, anyone: false, amount: false, picksPlayer: false },
+        { verb: 'build', words: 'build a house', base: 'build a house', targeted: false, anyone: false, amount: false, picksPlayer: false },
+      ],
+    });
+    expect(parseParam('done', 'built a house', plain)).toEqual({ value: ['build a house'] });
+    expect(parseParam('done', 'built a house on a street', v)).toBeNull();
   });
   it('does not read what the game does not have', () => {
     expect(parseParam('counter', 'gold', v)).toBeNull();
@@ -447,6 +548,25 @@ describe('facts and the bank', () => {
     expect(parseParam('cardflag', 'jail', jail)).toEqual({ value: 'jail' });
   });
 
+  it('reads the facts of players by kind of fact, a number in the singular too', () => {
+    const players = vocabFrom({
+      maxPlayers: 2,
+      facts: [{ name: 'in jail', on: 'player', kind: 'flag' }, { name: 'jail turns', on: 'player', kind: 'number' }, { name: 'hotel', on: 'space', kind: 'flag' }],
+    });
+    expect(parseParam('playerflag', 'In Jail', players)).toEqual({ value: 'in jail' });
+    expect(parseParam('playernumber', 'jail turns', players)).toEqual({ value: 'jail turns' });
+    expect(parseParam('playernumber', 'Jail Turn', players)).toEqual({ value: 'jail turns' });
+    for (const [type, text] of [
+      ['playerflag', 'jail turns'], ['playerflag', 'jail turn'], ['playerflag', 'hotel'], ['playernumber', 'in jail'], ['playernumber', 'jail'],
+    ]) {
+      expect(parseParam(type, text, players)).toBeNull();
+    }
+    // A fact of a space or a card says nothing of players, and the other way round.
+    expect(parseParam('spaceflag', 'in jail', players)).toBeNull();
+    expect(parseParam('cardflag', 'in jail', players)).toBeNull();
+    for (const type of ['playerflag', 'playernumber']) expect(parseParam(type, 'in jail', emptyVocab())).toBeNull();
+  });
+
   it('reads a thing in the bank in the singular or the plural, and the article belongs to the phrase', () => {
     expect(parseParam('banked', 'house', v)).toEqual({ value: 'houses' });
     expect(parseParam('banked', 'houses', v)).toEqual({ value: 'houses' });
@@ -464,10 +584,25 @@ describe('facts and the bank', () => {
     ]);
   });
   it('reads nothing of what the game does not declare', () => {
-    for (const type of ['spacekind', 'spaceflag', 'spacenumber', 'cardflag', 'banked']) {
+    for (const type of ['spacekind', 'spaceflag', 'spacenumber', 'cardflag', 'playerflag', 'playernumber', 'banked']) {
       expect(parseParam(type, 'hotel', emptyVocab())).toBeNull();
       expect(parseParam(type, 'hotel', BOARD)).toBeNull();
     }
+  });
+});
+
+describe('the player who holds a flag', () => {
+  const flags = vocabFrom({
+    maxPlayers: 4, facts: [{ name: 'leading', on: 'player', kind: 'flag' }, { name: 'the rival', on: 'player', kind: 'flag' }],
+  });
+
+  it('reads “the player who is …” with any flag players can have, as that flag', () => {
+    expect(parseParam('holder', 'the player who is leading', flags)).toEqual({ value: 'leading' });
+    for (const text of ['the player who is the rival', 'the rival', 'The Rival']) expect(parseParam('holder', text, flags), text).toEqual({ value: 'the rival' });
+  });
+  it('reads a flag alone only when its name starts with “the”, and no flag the game does not declare', () => {
+    expect(parseParam('holder', 'leading', flags)).toBeNull();
+    expect(parseParam('holder', 'the player who is asleep', flags)).toBeNull();
   });
 });
 
@@ -492,9 +627,18 @@ describe('plurals', () => {
     // A name no singular comes from is left as it is.
     expect(counted(1, 'money')).toBe('1 money');
   });
+  it('keeps a name that ends in “us” as it is, for one as for any other number', () => {
+    expect([counted(1, 'bonus'), counted(2, 'bonus'), counted(1, 'status'), counted(1, 'extra bonus')]).toEqual(['1 bonus', '2 bonus', '1 status', '1 extra bonus']);
+    expect(counted(1, 'Bonus')).toBe('1 Bonus');
+  });
 });
 
 describe('verb forms', () => {
+  it('puts the verb of a wording in the past, and leaves the rest as it is', () => {
+    expect(['roll for a double', 'end their turn', 'build a house on a street they own', 'pay'].map(pastWording)).toEqual([
+      'rolled for a double', 'ended their turn', 'built a house on a street they own', 'paid',
+    ]);
+  });
   it('makes participles', () => {
     expect(['roll', 'end', 'buy', 'draw', 'trade', 'bury', 'play'].map(participle))
       .toEqual(['rolled', 'ended', 'bought', 'drawn', 'traded', 'buried', 'played']);
@@ -579,7 +723,7 @@ describe('inside a phrase library', () => {
     expect(l.match('effect', 'They pay its rent to Chance', BOARD)).toEqual({
       status: 'invalid', message: 'There are 2 spaces called “Chance”, so this can\'t tell which one.',
     });
-    expect(l.match('condition', 'p1 has rolled this turn and at least two money', BOARD)).toMatchObject({ status: 'ok', args: ['p1', 'roll the dice', 2, 'money'] });
+    expect(l.match('condition', 'p1 has rolled this turn and at least two money', BOARD)).toMatchObject({ status: 'ok', args: ['p1', ['roll the dice'], 2, 'money'] });
     expect(l.match('action', 'p0 ends their turn', BOARD)).toMatchObject({ status: 'ok', args: ['p0', 'end their turn'] });
   });
   it('turns a space the game never defined into a designer message', () => {
@@ -613,7 +757,7 @@ describe('names the game never defined', () => {
   const missing = (what: string, name: string, suggestions: string[]) => ({ message: `There is no ${what} called “${name}”.`, suggestions });
 
   // Actions and what was done are phrases of their own, not names to misspell, so they have no loose shape.
-  const NAMES = VOCAB_TYPES.filter((t) => !['action', 'targetaction', 'done'].includes(t.name));
+  const NAMES = VOCAB_TYPES.filter((t) => !['action', 'targetaction', 'amountaction', 'pickaction', 'done'].includes(t.name));
 
   it('gives every type of names a loose shape, and no other', () => {
     expect(VOCAB_TYPES.filter((t) => t.loose).map((t) => t.name)).toEqual(NAMES.map((t) => t.name));
@@ -665,6 +809,10 @@ describe('names the game never defined', () => {
     expect(misnamed('phase', 'playing now')).toBeNull();
     expect(misnamed('move', 'plyas')).toEqual(missing('move', 'plyas', ['plays']));
     expect(misnamed('attribute', 'colour')).toEqual(missing('card attribute', 'colour', ['color']));
+    // The singular of a count is a name the game has, so it is not reported; a misspelling of it is.
+    const charged = vocabFrom({ maxPlayers: 2, facts: [{ name: 'charges', on: 'card', kind: 'number' }] });
+    expect(misnamed('attribute', 'charge', charged)).toBeNull();
+    expect(misnamed('attribute', 'chrage', charged)).toEqual(missing('card attribute', 'chrage', ['charges']));
   });
 
   it('names the suit, rank or card value that is not one', () => {
@@ -732,6 +880,54 @@ describe('names the game never defined', () => {
     expect(misnamed('cardflag', 'poisonned', FACTS)).toEqual(missing('card fact', 'poisonned', ['poisoned']));
     expect(misnamed('cardflag', 'purple', FACTS)).toEqual(missing('card fact', 'purple', ['poisoned']));
   });
+  it('names a fact of a player, with the player facts of that kind closest to it', () => {
+    const players = vocabFrom({
+      maxPlayers: 2, facts: [{ name: 'in jail', on: 'player', kind: 'flag' }, { name: 'jail turns', on: 'player', kind: 'number' }],
+    });
+    expect(misnamed('playerflag', 'in jial', players)).toEqual(missing('player fact', 'in jial', ['in jail']));
+    expect(misnamed('playerflag', 'jail turns', players)).toEqual(missing('player fact', 'jail turns', ['in jail']));
+    expect(misnamed('playerflag', 'in jail twice', players)).toBeNull();
+    expect(misnamed('playernumber', 'jail turnn', players)).toEqual(missing('player fact', 'jail turnn', ['jail turns']));
+    expect(misnamed('playernumber', 'jail turn twice', players)).toBeNull();
+  });
+  describe('the player who holds a flag', () => {
+    const holders = vocabFrom({
+      maxPlayers: 4,
+      facts: [
+        { name: 'proposing', on: 'player', kind: 'flag' }, { name: 'the trade partner', on: 'player', kind: 'flag' },
+        { name: 'the rival', on: 'player', kind: 'flag' }, { name: 'jail turns', on: 'player', kind: 'number' },
+      ],
+    });
+    it('names the flag of “the player who is …” that players can\'t have, with the flags closest to it', () => {
+      expect(misnamed('holder', 'the player who is propsing', holders)).toEqual(missing('player fact', 'propsing', ['proposing']));
+      expect(misnamed('holder', 'The Player Who Is the rivel', holders)).toEqual(missing('player fact', 'the rivel', ['the rival']));
+      // A count is no flag a player holds.
+      expect(misnamed('holder', 'the player who is jail turns', holders)).toMatchObject({ message: 'There is no player fact called “jail turns”.' });
+    });
+    it('names a flag said alone that is close to one whose name starts with “the”', () => {
+      expect(misnamed('holder', 'the trade partnr', holders)).toEqual(missing('player fact', 'the trade partnr', ['the trade partner']));
+      expect(misnamed('holder', 'the rivel', holders)).toEqual(missing('player fact', 'the rivel', ['the rival']));
+    });
+    it('leaves other words to other phrases: a real holder among them, a “the …” like no flag, or a flag without “the”', () => {
+      expect(misnamed('holder', 'the rival twice', holders)).toBeNull();
+      expect(misnamed('holder', 'the player who is proposing now', holders)).toBeNull();
+      expect(misnamed('holder', 'the bank', holders)).toBeNull();
+      expect(misnamed('holder', 'the player on their left', holders)).toBeNull();
+      expect(misnamed('holder', 'proposing', holders)).toBeNull();
+    });
+    it('has a loose shape only in a game whose players can have a flag', () => {
+      const shaped = (vocab: Vocab) => new RegExp(`^(?:${VOCAB_TYPES.find((t) => t.name === 'holder')!.loose!.source(vocab)})$`, 'i').test('the rivel');
+      expect([shaped(holders), shaped(FACTS), shaped(emptyVocab())]).toEqual([true, true, false]);
+      expect(shaped(vocabFrom({ maxPlayers: 2, facts: [{ name: 'jail turns', on: 'player', kind: 'number' }] }))).toBe(false);
+    });
+    it('is explained by misnamedParam only for text shaped like one that is no holder of the game', () => {
+      expect(misnamedParam('holder', 'the rivel', holders)).toEqual(missing('player fact', 'the rivel', ['the rival']));
+      expect(misnamedParam('holder', 'the rival', holders)).toBeNull();
+      expect(misnamedParam('holder', 'the rivel', emptyVocab())).toBeNull();
+      // A type with no loose shape has nothing to explain.
+      expect(misnamedParam('action', 'rolls the dice', BOARD)).toBeNull();
+    });
+  });
   it('names a thing in the bank with the bank\'s own names', () => {
     expect(misnamed('banked', 'hotl', FACTS)).toEqual(missing('bank item', 'hotl', ['hotels']));
     expect(misnamed('banked', 'huses', FACTS)).toEqual(missing('bank item', 'huses', ['houses']));
@@ -743,6 +939,9 @@ describe('names the game never defined', () => {
     const shaped = (type: string, vocab: Vocab) => new RegExp(`^(?:${VOCAB_TYPES.find((t) => t.name === type)!.loose!.source(vocab)})$`, 'i').test('hotl');
     expect(['spaceflag', 'spacenumber', 'cardflag', 'banked', 'spacekind'].map((t) => shaped(t, FACTS))).toEqual([true, true, true, true, true]);
     expect(['spaceflag', 'spacenumber', 'cardflag', 'banked', 'spacekind'].map((t) => shaped(t, emptyVocab()))).toEqual([false, false, false, false, false]);
+    // FACTS has a flag on players but no number on them.
+    expect(['playerflag', 'playernumber'].map((t) => shaped(t, FACTS))).toEqual([true, false]);
+    expect(['playerflag', 'playernumber'].map((t) => shaped(t, emptyVocab()))).toEqual([false, false]);
     // Facts of spaces say nothing of cards: a game with only card facts has no loose flag of spaces.
     const cardsOnly = vocabFrom({ maxPlayers: 2, facts: [{ name: 'poisoned', on: 'card', kind: 'flag' }] });
     expect(['spaceflag', 'spacenumber', 'cardflag'].map((t) => shaped(t, cardsOnly))).toEqual([false, false, true]);

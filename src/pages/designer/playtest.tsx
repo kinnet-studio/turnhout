@@ -18,7 +18,7 @@ import { loopbackChannel } from '@/engine/net/loopback';
 import type { ClientChannel, ClientView } from '@/engine/net/protocol';
 import { designerFaceRenderer } from '@/engine/pixi/text-faces';
 import { makeInitApp } from '@/utils/init-app';
-import { ActionButtons, MoneyLine } from './board-controls';
+import { ActionButtons, BANNER_SLOT, BANNER_STYLE, MoneyLine, PlayerPicker } from './board-controls';
 import { BoardGrid } from './board-grid';
 import { seatStatus } from './seat-status';
 
@@ -104,14 +104,15 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError }: {
   onError: (message: string | null) => void;
 }) {
   const { view, send, notice, flash } = useSeat(session, seat, onError);
-  // The move type of the button this seat is choosing a space for, until a space is picked or it is cancelled.
+  // The move type of the button this seat is choosing a space or another player for, until one is picked or it is cancelled.
   const [picking, setPicking] = useState<string | null>(null);
   const extras = readSeatExtras(view?.extras);
   // What may be picked is read from the seat's latest view, so a button that has since been greyed (an Undo took the turn
   // back, say) ends the picking instead of leaving a stale board to click.
   const action = picking === null ? undefined : extras?.actions.find((a) => a.move === picking);
   const choosing = action?.allowed === true && action.target !== null ? { move: action.move, ...action.target } : null;
-  const stale = picking !== null && choosing === null;
+  const choosingPlayer = action?.allowed === true && action.players !== null ? { move: action.move, players: action.players } : null;
+  const stale = picking !== null && choosing === null && choosingPlayer === null;
   useEffect(() => {
     if (stale) setPicking(null);
   }, [stale]);
@@ -125,16 +126,22 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError }: {
     else if (intent.toZoneId !== null && intent.toZoneId !== intent.fromZoneId) flash(NO_RULE);
   };
   const status = `seat: ${seat} — ${seatStatus(game, view, seat)}`;
-  const canvas = tableDef.zones.length > 0 && (
+  // A card game always gets its table. A board game gets one only when some phase has cards to drag: it moves them by hand, or
+  // lets players rearrange theirs. Piles that only rules draw from have nothing to drag. Asking the game, not the view, means
+  // nothing mounts before the first view arrives.
+  const showsCards = tableDef.zones.length > 0
+    && (game.board === null || game.phases.some((phase) => phase.moves.length > 0 || phase.rearrange.length > 0));
+  const canvas = showsCards && (
     <Wrapper option={option} initFunction={initAppWithFaces}>
       <CardTable tableDef={tableDef} placement={placement} viewer={undefined} onDrop={submit} />
     </Wrapper>
   );
   if (extras?.board) {
-    const press = (move: string) => {
+    // A blank box sends no amount at all; the rules answer that with what is missing, and it flashes like any other refusal.
+    const press = (move: string, amount?: number | null) => {
       onError(null);
       setPicking(null);
-      send({ type: move });
+      send(typeof amount === 'number' ? { type: move, amount } : { type: move });
     };
     const startPicking = ({ move }: ActionView) => {
       onError(null);
@@ -150,17 +157,30 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError }: {
       },
       onRefused: flash,
     } : undefined;
+    const playerPicker = choosingPlayer && (
+      <PlayerPicker
+        players={choosingPlayer.players}
+        onPick={(player) => {
+          onError(null);
+          setPicking(null);
+          send({ type: choosingPlayer.move, player });
+        }}
+        onRefused={flash}
+        onCancel={() => setPicking(null)}
+      />
+    );
     return (
       <div style={{ ...PANEL_STYLE, boxSizing: 'content-box', padding: 8, display: 'flex', flexDirection: 'column', gap: 8, font: '14px sans-serif', color: '#eee' }}>
         <div>{status}</div>
         {/* Room for the notice and the banner is kept, so the board does not jump when either appears. */}
-        <div style={{ minHeight: 28, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ minHeight: BANNER_SLOT, display: 'flex', alignItems: 'center', gap: 12 }}>
           {choosing && (
-            <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 8px', background: '#78350f', color: '#fff' }}>
+            <div role="status" style={BANNER_STYLE}>
               <span>{choosing.prompt}</span>
               <button type="button" onClick={() => setPicking(null)}>Cancel</button>
             </div>
           )}
+          {playerPicker}
           <span style={{ color: '#ff8a65' }}>{notice}</span>
         </div>
         <BoardGrid board={extras.board} picking={picker} />

@@ -21,8 +21,8 @@ const view = (turn: ClientView['turn'], result?: ClientView['result'], extras?: 
   extras,
 });
 
-const boardExtras = (out: string[]) => ({
-  board: { spaces: [], pieces: {}, roll: null, counters: [], out, bank: [] },
+const boardExtras = (out: string[], interrupted = false) => ({
+  board: { spaces: [], pieces: {}, roll: null, counters: [], out, bank: [], playerFacts: {}, lastDrawn: null, playerCards: {}, playerCardFlags: {}, owes: {}, gameNumbers: [], interrupted },
   actions: [],
 });
 
@@ -77,5 +77,35 @@ describe('seatStatus', () => {
 
   it('ignores extras it does not recognise', () => {
     expect(seatStatus(colorMatch, view({ current: 'p0', phase: 'playing' }, undefined, { board: 'nope' }), 'p0')).toBe(`Your turn — ${HINT}`);
+  });
+
+  describe('while a turn is interrupted', () => {
+    const turn = { current: 'p1', phase: 'playing' };
+
+    it("starts with the phase's name, for the seat whose turn it is and for the others", () => {
+      expect(seatStatus(colorMatch, view(turn, undefined, boardExtras([], true)), 'p1')).toBe(`playing — Your turn — ${HINT}`);
+      expect(seatStatus(colorMatch, view(turn, undefined, boardExtras([], true)), 'p0')).toBe(`playing — ${HINT} — waiting for p1`);
+    });
+
+    it('is the status it always was when no turn is interrupted', () => {
+      expect(seatStatus(colorMatch, view(turn, undefined, boardExtras([], false)), 'p1')).toBe(`Your turn — ${HINT}`);
+      expect(seatStatus(colorMatch, view(turn, undefined, boardExtras([], false)), 'p0')).toBe(`${HINT} — waiting for p1`);
+    });
+
+    it('adds nothing to a phase with no hint, which already shows its name', () => {
+      const unhinted: CompiledGame = { ...colorMatch, phases: colorMatch.phases.map((p) => ({ ...p, hint: null })) };
+      expect(seatStatus(unhinted, view(turn, undefined, boardExtras([], true)), 'p1')).toBe('Your turn — playing');
+      expect(seatStatus(unhinted, view(turn, undefined, boardExtras([], true)), 'p0')).toBe('playing — waiting for p1');
+    });
+
+    it('leaves a game with no board, and a seat that is out, as they were', () => {
+      expect(seatStatus(hearts, view({ current: 'p0', phase: 'playing' }), 'p0')).toBe('Your turn — Drag a card to the center.');
+      expect(seatStatus(hearts, view({ current: 'p0', phase: 'playing' }, undefined, { board: null, actions: [] }), 'p0')).toBe('Your turn — Drag a card to the center.');
+      expect(seatStatus(colorMatch, view(turn, undefined, boardExtras(['p0'], true)), 'p0')).toBe("You're out.");
+    });
+
+    it('names a phase everyone acts in at once too, in front of its hint alone', () => {
+      expect(seatStatus(hearts, view({ current: 'p1', phase: 'passing' }, undefined, boardExtras([], true)), 'p0')).toBe('passing — Drag 3 cards to your pass pile.');
+    });
   });
 });

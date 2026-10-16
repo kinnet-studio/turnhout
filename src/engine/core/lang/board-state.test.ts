@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import type { GameState } from '../game-state';
 import {
-  TURN_KEY, addToCounter, bankOf, clearTurnLog, counterOf, didThisTurn, endsTurn, isOut, markOut, nextIn, ownerOf, pieceAt, placePiece,
-  playerFact, playersIn, queueRoll, recordAction, setBank, setOwner, setPlayerFact, setSpaceFact, spaceFact, takeQueuedRoll, withBoardData,
+  INTERRUPTED_KEY, LAST_DRAWN_KEY, OWES_KEY, TURN_KEY, TURN_ROLLS_KEY, addToCounter, bankOf, clearTurnLog, counterOf, didThisTurn, endsTurn, holderOf,
+  interruptTurn, interruptedTurn, isOut, lastDrawn, markOut, nextIn, ownerOf, owedTo, pieceAt, placePiece, playerFact, playersIn, queueRoll,
+  recordAction, recordDebt, recordRoll, resumeTurn, rollsThisTurn, setBank, setCounter, setLastDrawn, setOwner, setPlayerFact, setSpaceFact,
+  spaceFact, takeQueuedRoll, withBoardData,
 } from './board-state';
-import { fixtureBoardGame, fixtureGame, fixturePhase, fixtureState } from './testing';
+import { RuleError } from './diagnostics';
+import { fixtureBoardGame, fixtureBoardState, fixtureGame, fixturePhase, fixtureState } from './testing';
 import { chooseNext } from './zones';
 
 const seats = ['p0', 'p1', 'p2'];
@@ -60,6 +64,17 @@ describe('board state', () => {
     const s = chooseNext(recordAction(recordAction(fresh(), 'p0', 'roll the dice'), 'p1', 'roll the dice'), 'p0');
     expect([didThisTurn(s, 'p0', 'roll the dice'), didThisTurn(s, 'p1', 'roll the dice')]).toEqual([false, false]);
     expect(chooseNext(fixtureState([]), 'p0').data).toEqual({});
+  });
+  it('keeps each roll of a seat this turn, apart from the other seats', () => {
+    const s = recordRoll(recordRoll(recordRoll(fresh(), 'p0', [3, 3]), 'p1', [2, 5]), 'p0', [1, 2]);
+    expect([rollsThisTurn(s, 'p0'), rollsThisTurn(s, 'p1'), rollsThisTurn(s, 'p2')]).toEqual([[[3, 3], [1, 2]], [[2, 5]], []]);
+    expect(s.data[TURN_ROLLS_KEY]).toEqual({ p0: [[3, 3], [1, 2]], p1: [[2, 5]] });
+  });
+  it('forgets the rolls with the turn log, and adds no key a state never had', () => {
+    const rolled = recordRoll(fresh(), 'p0', [3, 3]);
+    expect(rollsThisTurn(clearTurnLog(rolled), 'p0')).toEqual([]);
+    expect(rollsThisTurn(chooseNext(rolled, 'p1'), 'p0')).toEqual([]);
+    expect(clearTurnLog(recordAction(fresh(), 'p0', 'roll the dice')).data).not.toHaveProperty(TURN_ROLLS_KEY);
   });
   it('knows which moves pass the turn: the ones the phase\'s After line names', () => {
     const after = { moves: ['play', 'end their turn'], next: { kind: 'turn' as const, phrase: 'the turn passes to the left', args: [], line: 9, text: '' }, line: 9 };
@@ -142,5 +157,76 @@ describe('board state', () => {
       expect(after).not.toBe(before);
       expect(spaceFact(before, 5, 'houses')).toBeNull();
     });
+  });
+});
+
+describe('the last card drawn', () => {
+  const drawn = { seat: 'p0', zone: 'the lucky pile', name: 'Dividend', says: 'They get 50 money.' };
+  it('is none until a card is drawn, and then the card drawn last', () => {
+    expect(lastDrawn(fresh())).toBeNull();
+    expect(lastDrawn(setLastDrawn(fresh(), drawn))).toEqual(drawn);
+    expect(lastDrawn(setLastDrawn(setLastDrawn(fresh(), drawn), { ...drawn, seat: 'p1', name: 'Fine' }))).toMatchObject({ seat: 'p1', name: 'Fine' });
+  });
+  it('is kept for a card game too, and survives being saved and loaded', () => {
+    const cards = setLastDrawn(fixtureState([]), drawn);
+    expect(lastDrawn(JSON.parse(JSON.stringify(cards)))).toEqual(drawn);
+    expect(JSON.parse(JSON.stringify(cards.data[LAST_DRAWN_KEY]))).toEqual(drawn);
+  });
+  it('does not change the state it was given', () => {
+    const before = fresh();
+    setLastDrawn(before, drawn);
+    expect(lastDrawn(before)).toBeNull();
+  });
+});
+
+describe('debts', () => {
+  it('reads whom a seat owes only while its counter is below 0, and a creditor who is out as the bank', () => {
+    let s = fixtureBoardState(fixtureBoardGame(), ['p0', 'p1', 'p2']);
+    expect(owedTo(s, 'p0', 'money')).toBeNull();
+    s = recordDebt(setCounter(s, 'money', 'p0', -5), 'p0', 'p1');
+    expect(owedTo(s, 'p0', 'money')).toBe('p1');
+    expect(owedTo(setCounter(s, 'money', 'p0', 0), 'p0', 'money')).toBeNull();
+    expect(owedTo(markOut(s, 'p1'), 'p0', 'money')).toBe('bank');
+    expect(owedTo(recordDebt(s, 'p0', 'bank'), 'p0', 'money')).toBe('bank');
+    expect(JSON.parse(JSON.stringify(s.data[OWES_KEY]))).toEqual({ p0: 'p1' });
+  });
+});
+
+describe('an interrupted turn', () => {
+  const before = recordAction(fixtureBoardState(), 'p0', 'call a vote');
+  it('Review Focus: comes back exactly as it was: a key that was absent comes back absent, and presses made meanwhile are gone', () => {
+    const during = interruptTurn(before, 'vote', 'p1');
+    expect(during.turn).toEqual({ current: 'p1', phase: 'vote' });
+    expect(during.data[TURN_KEY]).toEqual({});
+    expect(interruptedTurn(during)).toEqual({ phase: 'playing', current: 'p0', log: { p0: ['call a vote'] }, rolls: null });
+    const after = resumeTurn(recordRoll(recordAction(during, 'p1', 'abstain'), 'p1', [3, 4]));
+    expect(after.turn).toEqual(before.turn);
+    expect(after.data).toEqual(before.data);
+    expect(after.data).not.toHaveProperty(TURN_ROLLS_KEY);
+    expect(after.data).not.toHaveProperty(INTERRUPTED_KEY);
+  });
+  it('Review Focus: allows one at a time, and going back needs one', () => {
+    expect(() => interruptTurn(interruptTurn(before, 'vote', 'p1'), 'vote', 'p0'))
+      .toThrow('A turn is already interrupted; go back to it before interrupting another.');
+    expect(() => resumeTurn(before)).toThrow('There is no interrupted turn to go back to.');
+  });
+  it('needs a turn to interrupt', () => {
+    expect(() => interruptTurn(fresh(), 'vote', 'p1')).toThrow('There is no turn to interrupt.');
+  });
+});
+
+describe('the player who holds a flag', () => {
+  const fresh = fixtureBoardState(undefined, seats);
+  const leading = (state: GameState, ...who: string[]) => who.reduce((s, seat) => setPlayerFact(s, seat, 'leading', true), state);
+
+  it('is the one player still in with the flag set', () => {
+    expect(holderOf(leading(fresh, 'p1'), seats, 'leading')).toBe('p1');
+    expect(holderOf(markOut(leading(fresh, 'p1', 'p2'), 'p2'), seats, 'leading')).toBe('p1');
+  });
+  it('Review Focus: is an error naming the flag when no player still in has it, or more than one does', () => {
+    expect(() => holderOf(fresh, seats, 'leading')).toThrow(new RuleError('No player is leading.'));
+    expect(() => holderOf(markOut(leading(fresh, 'p2'), 'p2'), seats, 'leading')).toThrow('No player is leading.');
+    expect(() => holderOf(setPlayerFact(fresh, 'p1', 'leading', false), seats, 'leading')).toThrow('No player is leading.');
+    expect(() => holderOf(leading(fresh, 'p0', 'p1', 'p2'), seats, 'leading')).toThrow('More than one player is leading: p0, p1 and p2.');
   });
 });

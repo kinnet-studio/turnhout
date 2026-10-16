@@ -2,24 +2,35 @@ import type { Json } from '../table-def';
 import { RuleError, type Diagnostic } from './diagnostics';
 import type { OutlineNode } from './outline';
 import { normalizeLine, stubFor, type MatchResult, type Misnamed, type PhraseLibrary, type PhraseOpts } from './phrases';
+import { misnamedParam, parseParam } from './refs';
 import type { ParamType, PhraseKind, PhraseRef, Vocab } from './types';
 
 /**
  * What every line of one compile stage shares. Never change `vocab` after a line has been matched with it. `inMove`,
  * `player`, `space` and `card` say what the rule around a line is about: a card move, a player ("they"), a space or a
- * card ("it").
+ * card ("it"). `drawn` is true only for the sentences of a card's says column: they are run for a card that was just drawn.
+ * `amount` is true only for the lines of a button whose wording ends in “an amount”: its press carries a number. `picked` is true
+ * only for the lines of a button whose wording ends in “another player”: its press picks a player.
  */
 export type LineCtx = {
-  library: PhraseLibrary; vocab: Vocab; gameName: string; inMove: boolean; player: boolean; space: boolean; card: boolean;
-  diagnostics: Diagnostic[];
+  library: PhraseLibrary; vocab: Vocab; gameName: string; inMove: boolean; player: boolean; space: boolean; card: boolean; drawn: boolean;
+  amount: boolean; picked: boolean; diagnostics: Diagnostic[];
 };
 
 const MAX_SUGGESTIONS = 3;
 const NOT_INDENTED = "This line shouldn't be indented under the line above.";
-const NEEDS_PAYMENT = 'Say what players pay with, like “Players pay with coins.” under Board:.';
+/** What a game with nothing to pay with is told, by the compiler and by a phrase that finds out only when it runs. */
+export const NEEDS_PAYMENT = 'Say what players pay with, like “Players pay with coins.” under Board:.';
 const NEEDS_BOARD = (clean: string) => `“${clean}” needs a board. Add a Board: section with a line like “The board is a loop of spaces, starting at Go:”.`;
 const NEEDS_DICE = (clean: string) => `“${clean}” needs dice. Add a line like “There are two six-sided dice.” under Board:.`;
+const NEEDS_TWO_DICE = 'A double needs exactly two dice.';
+const NEEDS_AMOUNT = (clean: string) =>
+  `“${clean}” only makes sense in a button whose wording ends in “an amount”, like “A player may give an amount.”`;
+const NEEDS_PICK = (clean: string) =>
+  `“${clean}” only makes sense in a button whose wording ends in “another player”, like “A player may challenge another player.”`;
 const IF_FRAME = /^if\s+(.+)$/i;
+const FOR_FRAME = /^for\s+(.+)$/i;
+const NO_HOLDER_NAMED = (head: string) => `“${head}” doesn't name a player. Write “For the player who is …,” with something players can be.`;
 const COMMA = /, /g;
 const PHASE_NAME = /^phase\s*:\s*(.*)$/i;
 
@@ -96,6 +107,15 @@ export function canRead(kind: PhraseKind, text: string, ctx: LineCtx): boolean {
   return tryMatch(kind, text, ctx).status === 'ok';
 }
 
+/**
+ * True when the library has something to say about `text` as a phrase of `kind`: a phrase matches it (even to refuse it), phrases are
+ * alike enough to be suggested, or a name in it was never defined by the game. Words that are like nothing in the library say nothing.
+ */
+export function libraryHasSayOn(kind: PhraseKind, text: string, ctx: LineCtx): boolean {
+  const result = tryMatch(kind, text, ctx);
+  return result.status !== 'unknown' || result.suggestions.length > 0 || tryMisnamed([kind], text, ctx) !== null;
+}
+
 /** A name in a line no phrase matched that the game never defined; a library that fails here just says nothing. */
 function tryMisnamed(kinds: PhraseKind[], text: string, ctx: LineCtx): Misnamed | null {
   try {
@@ -113,6 +133,7 @@ function unmetNeed(entry: Required<PhraseOpts> | undefined, args: Json[], clean:
   // A game has a board when its Board: section has a loop of spaces, and dice only come with a board.
   if (entry?.needsBoard && ctx.vocab.spaces.length === 0) return NEEDS_BOARD(clean);
   if (entry?.needsDice && !ctx.vocab.dice) return NEEDS_DICE(clean);
+  if (entry?.needsTwoDice && ctx.vocab.diceCount !== 2) return NEEDS_TWO_DICE;
   const aboutPlayer = ctx.inMove || ctx.player;
   if (!ctx.inMove && entry?.needsMove) return `“${clean}” only makes sense in a rule about a player's move.`;
   if (!aboutPlayer && entry?.needsPlayer) {
@@ -121,6 +142,9 @@ function unmetNeed(entry: Required<PhraseOpts> | undefined, args: Json[], clean:
   if (!aboutPlayer && args.some(mentionsActor)) return `“${clean}” only makes sense in a rule about a player's move.`;
   if (!ctx.space && entry?.needsSpace) return `“${clean}” only makes sense in a rule about a space, such as an action or a “lands on” rule.`;
   if (!ctx.card && entry?.needsCard) return `“${clean}” only makes sense in a rule about a card, such as “When a card …”.`;
+  if (!ctx.drawn && entry?.needsDrawnCard) return `“${clean}” only makes sense in a card's says column.`;
+  if (!ctx.amount && entry?.needsAmount) return NEEDS_AMOUNT(clean);
+  if (!ctx.picked && entry?.needsPick) return NEEDS_PICK(clean);
   if (entry?.needsPayment && ctx.vocab.payWith === null) return NEEDS_PAYMENT;
   return null;
 }
@@ -191,11 +215,40 @@ export function matchLine(
 }
 
 /**
- * Reads one effect line. “If <condition>, <effect>” is tried at every comma, since either part may hold commas; the
- * first comma where both parts are phrases wins. When none does, the part that needs fixing is the one reported.
+ * Reads “For <the player who holds a flag>, <effect>”: the effect is run as that player, so “they” and “their” are them, in a rule
+ * about no one too. It runs with no card move, so a phrase that needs one is refused here even in a move. The line is cut at the
+ * first comma before which a holder is named; when none is, what comes before the first comma is reported, as a misspelt holder
+ * when it is one (“the rivel”).
+ */
+function matchForLine(body: string, clean: string, line: number, ctx: LineCtx): PhraseRef {
+  const cuts = [...body.matchAll(COMMA)].map((m) => ({ head: body.slice(0, m.index), effect: body.slice(m.index + 2) }));
+  for (const { head, effect } of cuts) {
+    const holder = parseParam('holder', head, ctx.vocab);
+    if (holder === null || !('value' in holder)) continue;
+    const ref = matchLine('effect', effect, line, { ...ctx, player: true, inMove: false });
+    return { kind: 'lang', phrase: 'for', args: [holder.value, ref], line, text: clean };
+  }
+  const head = cuts[0]?.head ?? body;
+  const misnamed = misnamedParam('holder', head, ctx.vocab);
+  if (misnamed) addProblem(ctx.diagnostics, line, misnamed.message, { kind: 'invalid', text: clean, suggestions: misnamed.suggestions });
+  else addProblem(ctx.diagnostics, line, NO_HOLDER_NAMED(head), { kind: 'invalid', text: clean });
+  return missingRef('effect', clean, line);
+}
+
+/** What a line does: the effect of an `If …, …` or a `For …, …` line, else the line itself. */
+export function innerEffect(ref: PhraseRef): PhraseRef {
+  return ref.kind === 'lang' && (ref.phrase === 'if' || ref.phrase === 'for') ? (ref.args[1] as PhraseRef) : ref;
+}
+
+/**
+ * Reads one effect line. “For …, <effect>” runs the effect as the player who holds a flag. “If <condition>, <effect>” is tried
+ * at every comma, since either part may hold commas; the first comma where both parts are phrases wins. When none does, the
+ * part that needs fixing is the one reported.
  */
 export function matchEffectLine(text: string, line: number, ctx: LineCtx): PhraseRef {
   const clean = normalizeLine(text);
+  const holding = FOR_FRAME.exec(clean);
+  if (holding) return matchForLine(holding[1], clean, line, ctx);
   const frame = IF_FRAME.exec(clean);
   if (!frame) return matchLine('effect', clean, line, ctx);
 

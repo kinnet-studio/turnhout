@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { canPlay, compileGame } from './compile';
 import { actionLabel, compilePhase } from './compile-phase';
+import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { parseOutline } from './outline';
 import { vocabFrom } from './phrases';
-import { TINY_BOARD_HEAD, fixtureBoardGame } from './testing';
+import { AMOUNT_BOARD, ANY_PLAYER_BOARD, MARK_BOARD, PICK_BOARD, TINY_BOARD_HEAD, fixtureBoardGame } from './testing';
 
 const lib = createDefaultLibrary();
 const BASE = [
@@ -308,7 +309,7 @@ describe('compilePhase', () => {
   });
 
   it('says what it does not understand in a phase', () => {
-    const expected = 'I don\'t understand this line in a phase. Phase lines start with Hint:, A player may…, When…, After a player…, Players take turns or Everyone acts at once.';
+    const expected = 'I don\'t understand this line in a phase. Phase lines start with Hint:, A player may…, Any player may…, When…, After a player…, Players take turns or Everyone acts at once.';
     for (const line of ['  Dance.', '  When the deck is empty', '  After a player, the turn passes to the left.', '  Players may rearrange at any time.']) {
       expect(messages(rules(line))).toEqual([[17, expected]]);
     }
@@ -388,7 +389,7 @@ describe('compilePhase on its own', () => {
       maxPlayers: 2, phases: ['main'], verbs: ['play', 'reorder'],
       zones: [{ name: 'deck', perPlayer: false, layout: 'pile', visibility: 'secret' }, { name: 'hand', perPlayer: true, layout: 'hand', visibility: 'owner' }],
     });
-    const phase = compilePhase(parseOutline(text).roots[0], { library: lib, vocab, gameName: 'Tiny', inMove: false, player: false, space: false, card: false, diagnostics });
+    const phase = compilePhase(parseOutline(text).roots[0], { library: lib, vocab, gameName: 'Tiny', inMove: false, player: false, space: false, card: false, drawn: false, amount: false, picked: false, diagnostics });
     return { phase, diagnostics };
   };
 
@@ -437,7 +438,7 @@ describe('actions, moments and player rules on a board', () => {
   const phase = (lines: string[]) => compileGame(`${TINY_BOARD_HEAD}\n${lines.map((l) => `  ${l}`).join('\n')}`, lib);
   const errorsOf = (lines: string[]) => phase(lines).diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message]);
   const TURN_ACTIONS = ['A player may roll the dice.', 'A player may end their turn.'];
-  const NOT_UNDERSTOOD = "I don't understand this line in a phase. Phase lines start with Hint:, A player may…, When…, After a player…, Players take turns or Everyone acts at once.";
+  const NOT_UNDERSTOOD = "I don't understand this line in a phase. Phase lines start with Hint:, A player may…, Any player may…, When…, After a player…, Players take turns or Everyone acts at once.";
   const NEEDS_PLAYER = (line: string) => `“${line}” only makes sense in a rule about a player, such as a move, an action or a “When a player …” rule.`;
   const NEEDS_SPACE = (line: string) => `“${line}” only makes sense in a rule about a space, such as an action or a “lands on” rule.`;
 
@@ -619,6 +620,32 @@ describe('actions, moments and player rules on a board', () => {
     const pay = compileGame(`${TINY_BOARD_HEAD.replace('  Players pay with money.\n', '')}\n  A player may buy the space they are on.\n    Then:\n      They pay its price.`, lib);
     expect(pay.diagnostics).toContainEqual(expect.objectContaining({ message: 'Say what players pay with, like “Players pay with coins.” under Board:.' }));
   });
+  it('takes an amount with the counter named, and says how to put it when another counter is named', () => {
+    const fee = (counter: string) => [
+      '  A player may pay a fee.', '    Then:', `      They pay 50 ${counter}.`, '',
+      'Example: paying the fee', '  When p0 pays a fee', '  Then p0 has 1450 money',
+    ].join('\n');
+    const both = (text: string) => compileGame(text.replace('  Players pay with money.', '  Each player has 5 tokens that everyone can see.\n  Players pay with money.'), lib);
+    const ok = both(`${TINY_BOARD_HEAD}\n${fee('money')}`);
+    expect(ok.diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(runExamples(ok.game!, lib)).toEqual([expect.objectContaining({ status: 'pass' })]);
+    const wrong = both(`${TINY_BOARD_HEAD}\n${fee('tokens')}`);
+    expect(runExamples(wrong.game!, lib)).toEqual([expect.objectContaining({ status: 'fail', message: expect.stringContaining('Players pay with money, so say “They pay 50 money.”') })]);
+    // With nothing to pay with, the amount is refused as it is without the counter.
+    const none = compileGame(`${TINY_BOARD_HEAD.replace('  Players pay with money.\n', '')}\n${fee('money')}`, lib);
+    expect(none.diagnostics).toContainEqual(expect.objectContaining({ message: 'Say what players pay with, like “Players pay with coins.” under Board:.' }));
+  });
+  it('reads “they have not built a house this turn” as the button that picks a street to build on', () => {
+    const lines = [
+      '  A player may build a house on a street they own.', '    Only if they have not built a house this turn.', '    Then:', '      They pay 10.',
+      '  A player may end their turn.', '    Only if they have built a house this turn.',
+    ];
+    const { game, diagnostics } = compileGame(`${TINY_BOARD_HEAD}\n${lines.join('\n')}`, lib);
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    const [build, end] = game!.phases[0].actions;
+    expect(build.conditions[0].refs[0]).toMatchObject({ phrase: 'they have not {done} this turn', args: [['build a house on a street they own']] });
+    expect(end.conditions[0].refs[0]).toMatchObject({ phrase: 'they have {done} this turn', args: [['build a house on a street they own']] });
+  });
   it('refuses board phrases in a game with no board, and rolling in a game with no dice', () => {
     const NEEDS_BOARD = (line: string) => `“${line}” needs a board. Add a Board: section with a line like “The board is a loop of spaces, starting at Go:”.`;
     const NEEDS_DICE = (line: string) => `“${line}” needs dice. Add a line like “There are two six-sided dice.” under Board:.`;
@@ -643,6 +670,16 @@ describe('actions, moments and player rules on a board', () => {
       [18, NEEDS_DICE('They pay 4 times the roll to its owner')],
     ]);
     expect(noDice(['A player may give up.', '  Then:', '    Their spaces go back to the bank.', '    They own it.'])).toEqual([]);
+  });
+  it('refuses a double in a game without exactly two dice, on the line that says it', () => {
+    const withDice = (dice: string, lines: string[]) =>
+      compileGame(`${TINY_BOARD_HEAD.replace('  There are two six-sided dice.', dice)}\n${lines.map((l) => `  ${l}`).join('\n')}`, lib)
+        .diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message]);
+    const lines = ['A player may roll the dice.', '  Only if they rolled a double.', 'When a player has rolled 3 doubles this turn:', '  They are out.'];
+    for (const dice of ['  There is one six-sided die.', '  There are three six-sided dice.']) {
+      expect(withDice(dice, lines), dice).toEqual([[19, 'A double needs exactly two dice.'], [20, 'A double needs exactly two dice.']]);
+    }
+    expect(withDice('  There are two six-sided dice.', lines)).toEqual([]);
   });
   it('reports a line that lacks several things once, naming the first: a player, then a space, then something to pay with', () => {
     expect(errorsOf(['When one player is left:', '  They pay its price.'])).toEqual([[19, NEEDS_PLAYER('They pay its price')]]);
@@ -694,11 +731,17 @@ describe('actions, moments and player rules on a board', () => {
       [20, '“dances” isn\'t a move in this phase. The moves here are: builds a house, builds a hotel.'],
     ]);
   });
-  it('says which buttons “built” could mean when two of them share the verb, and takes what only one button did', () => {
-    const hotels = ['A player may build a house.', '  Only if they have not built this turn.', 'A player may build a hotel.'];
-    expect(errorsOf(hotels)).toEqual([[19, '“built” could mean “build a house” or “build a hotel”.']]);
-    const ends = ['A player may build a house.', 'A player may build a hotel.', 'A player may end their turn.', '  Only if they have not ended this turn.'];
-    expect(errorsOf(ends)).toEqual([]);
+  it('reads “rolled” as every roll button and a whole done-wording as one, while an After line still needs one button', () => {
+    const buttons = [
+      'A player may roll the dice.', 'A player may roll for a double.', 'A player may end their turn.',
+      '  Only if they have rolled this turn.', '  Only if they have not rolled for a double this turn.',
+    ];
+    const { game, diagnostics } = phase(buttons);
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(game!.phases[0].actions[2].conditions.map((g) => g.refs[0].args)).toEqual([[['roll the dice', 'roll for a double']], [['roll for a double']]]);
+    expect(errorsOf([...buttons, 'After a player rolls, the turn passes to the left.'])).toEqual([
+      [23, '“rolls” could be “roll the dice” or “roll for a double”; write the whole wording.'],
+    ]);
   });
   it('refuses two actions with the same wording', () => {
     const { diagnostics, game } = phase(['A player may pay the fine.', 'A player may pay the fine.']);
@@ -845,12 +888,17 @@ describe('buttons that pick a target', () => {
       ['build a house on one of the streets they own', 'on a street they own'],
       ['build a house on each street', 'on a street'],
       ['Build a House on Every Street', 'on a street'],
-      ['build a house on any orange street they own', 'on an orange street they own'],
-      ['build a house on one of their orange streets', 'on an orange street they own'],
     ];
     for (const [line, written] of lines) {
       const built = phase([`A player may ${line}.`, '  Then:', '    It gets a house from the bank.']);
       expect(problems(built).map((d) => [d.line, d.message]), line).toEqual([[20, `Write “${written}” so the player picks one.`]]);
+      expect(built.game, line).toBeUndefined();
+    }
+  });
+  it('suggests no wording when the words after the pick are more than a kind of space, and still makes no button', () => {
+    for (const line of ['build a house on any orange street they own', 'build a house on one of their orange streets', 'build a house on any street with houses']) {
+      const built = phase([`A player may ${line}.`, '  Then:', '    It gets a house from the bank.']);
+      expect(problems(built).map((d) => [d.line, d.message]), line).toEqual([[20, 'Write “on a …” so the player picks one.']]);
       expect(built.game, line).toBeUndefined();
     }
   });
@@ -878,7 +926,7 @@ describe('buttons that pick a target', () => {
     const vocab = vocabFrom({ maxPlayers: 2, phases: ['main'], board: fixtureBoardGame().board });
     const built = compilePhase(
       parseOutline('Phase: main\n  A player may build a house on a stret they own.').roots[0],
-      { library: lib, vocab, gameName: 'Tiny', inMove: false, player: false, space: false, card: false, diagnostics },
+      { library: lib, vocab, gameName: 'Tiny', inMove: false, player: false, space: false, card: false, drawn: false, amount: false, picked: false, diagnostics },
     );
     expect(diagnostics.map((d) => [d.line, d.message])).toEqual([[2, 'There is no kind of space called “stret”.']]);
     expect(built.actions).toEqual([]);
@@ -914,20 +962,190 @@ describe('buttons that pick a target', () => {
     ]);
     const compiled = compilePhase(
       parseOutline('Phase: main\n  A player may build a house on a street they own.\n  A player may build a house on a street.').roots[0],
-      { library: lib, vocab: vocabFrom({ maxPlayers: 2, phases: ['main'], board: fixtureBoardGame().board }), gameName: 'Tiny', inMove: false, player: false, space: false, card: false, diagnostics: [] },
+      { library: lib, vocab: vocabFrom({ maxPlayers: 2, phases: ['main'], board: fixtureBoardGame().board }), gameName: 'Tiny', inMove: false, player: false, space: false, card: false, drawn: false, amount: false, picked: false, diagnostics: [] },
     );
     expect(compiled.actions.map((a) => a.words)).toEqual(['build a house on a street they own']);
     expect(errorsOf(['A player may build a house on a street they own.', 'A player may Build a House on a Street they own.'])).toEqual([
       [21, 'Two rules in this phase say “A player may build a house on a street they own”.'],
     ]);
   });
-  it('allows buttons that pick a space with different words before “on”, and a button that picks nothing with the same words', () => {
-    const both = phase(['A player may build a house on a street they own.', 'A player may knock down a house on a street they own.', 'A player may build a house.']);
+  it('allows buttons that pick a space with different words before “on”, and refuses a button that picks nothing with the same label', () => {
+    const lines = ['A player may build a house on a street they own.', 'A player may knock down a house on a street they own.', 'A player may build a house.'];
+    // The third would show “Build a house” too, as the first does.
+    expect(errorsOf(lines)).toEqual([[22, 'Two buttons in this phase would both read “Build a house”; give one of them other words.']]);
+    const both = phase(lines.slice(0, 2));
     expect(problems(both)).toEqual([]);
     expect(both.game!.phases[0].actions.map((a) => [a.base, a.words])).toEqual([
       ['build a house', 'build a house on a street they own'], ['knock down a house', 'knock down a house on a street they own'],
-      ['build a house', 'build a house'],
     ]);
+  });
+});
+
+describe('buttons that pick a space without “on”', () => {
+  const ending = (button: string) => MARK_BOARD.replace('  A player may end their turn.', `  ${button}\n  A player may end their turn.`);
+
+  it('picks with a target phrase after the verb: the words before it are the base and the label', () => {
+    const { game, diagnostics } = compileGame(MARK_BOARD, lib);
+    expect(diagnostics).toEqual([]);
+    expect(game!.phases[0].actions.map((a) => [a.words, a.base, a.label, a.target?.text ?? null])).toEqual([
+      ['mark a space they own', 'mark', 'Mark', 'a space they own'], ['end their turn', 'end their turn', 'End your turn', null],
+    ]);
+  });
+  it('reads a kind of space after the verb as a pick too, and leaves words that read no target a plain button', () => {
+    const seize = compileGame(ending('A player may seize a street.'), lib).game!.phases[0].actions[1];
+    expect([seize.base, seize.label, seize.target?.text]).toEqual(['seize', 'Seize', 'a street']);
+    const pass = compileGame(ending('A player may use a free pass.'), lib).game!.phases[0].actions[1];
+    expect([pass.base, pass.label, pass.target]).toEqual(['use a free pass', 'Use a free pass', null]);
+  });
+  it('refuses a second button in the phase that would read the same label', () => {
+    expect(messages(ending('A player may mark an amount.'))).toEqual([
+      [23, 'Two buttons in this phase would both read “Mark”; give one of them other words.'],
+    ]);
+  });
+  it('compares labels in any capitals, and reports the later line\'s own', () => {
+    expect(messages(ending('A player may MARK a street.'))).toEqual([[23, 'Two buttons in this phase would both read “MARK”; give one of them other words.']]);
+  });
+  it('leaves the later of two buttons with one label out, as it does a repeated wording', () => {
+    const diagnostics: Parameters<typeof compilePhase>[1]['diagnostics'] = [];
+    const compiled = compilePhase(
+      parseOutline('Phase: main\n  A player may mark a space they own.\n  A player may mark an amount.\n  A player may end their turn.').roots[0],
+      { library: lib, vocab: vocabFrom({ maxPlayers: 2, phases: ['main'], board: fixtureBoardGame().board }), gameName: 'Tiny', inMove: false, player: false, space: false, card: false, drawn: false, amount: false, picked: false, diagnostics },
+    );
+    expect(diagnostics.map((d) => [d.line, d.message])).toEqual([[3, 'Two buttons in this phase would both read “Mark”; give one of them other words.']]);
+    expect(compiled.actions.map((a) => a.words)).toEqual(['mark a space they own', 'end their turn']);
+  });
+  it('refuses a button that picks a space and ends in “an amount” at its own line, with or without “on”', () => {
+    expect(messages(ending('A player may bid an amount on a street they own.'))).toEqual([
+      [23, 'A button can\'t both pick a space and carry an amount: drop “an amount” or “on a street they own”.'],
+    ]);
+    expect(messages(ending('A player may raise an amount a space they own.'))).toEqual([
+      [23, 'A button can\'t both pick a space and carry an amount: drop “an amount” or “a space they own”.'],
+    ]);
+  });
+  it('lets an After line name the button by its whole wording', () => {
+    const named = compileGame(MARK_BOARD.replace('After a player ends their turn,', 'After a player marks a space they own or ends their turn,'), lib);
+    expect(named.diagnostics).toEqual([]);
+    expect(named.game!.phases[0].after).toMatchObject({ moves: ['mark a space they own', 'end their turn'] });
+  });
+  it('still reports a pick said with “any”, since the words after the cut read no target', () => {
+    expect(messages(ending('A player may mark a space on any street they own.'))).toEqual([
+      [23, 'Write “on a street they own” so the player picks one.'],
+    ]);
+  });
+  it('keeps a pick with “on” a pick of its own: two of them with one base are refused as before, and one without “on” is not one of them', () => {
+    const phrase = (...buttons: string[]) => messages(ending(buttons.join('\n  ')));
+    expect(phrase('A player may plant a flag on a street they own.', 'A player may plant a flag on a street.')).toEqual([
+      [24, 'Two rules in this phase say “A player may plant a flag on …”; give them different words.'],
+    ]);
+    // Without “on” the base is the label's too, so it is the label that is shared.
+    expect(phrase('A player may plant a street.', 'A player may plant a space they own.')).toEqual([
+      [24, 'Two buttons in this phase would both read “Plant”; give one of them other words.'],
+    ]);
+  });
+  it('reports the same wording twice as that, not as a shared label', () => {
+    expect(messages(ending('A player may plant a street.\n  A player may plant a street.'))).toEqual([
+      [24, 'Two rules in this phase say “A player may plant a street”.'],
+    ]);
+  });
+});
+
+describe('a pick without “on” whose words read no target', () => {
+  /** MARK_BOARD with a flag players can have on line 16, and `button` on line 24, before ending a turn. */
+  const RIVAL_BOARD = MARK_BOARD.replace('  Spaces can be marked.', '  Spaces can be marked.\n  Players can be the rival.');
+  const withButton = (button: string) => RIVAL_BOARD.replace('  A player may end their turn.', `  ${button}\n    Then:\n      They own it.\n  A player may end their turn.`);
+  const buttonsOf = (text: string) => compileGame(text, lib).game!.phases[0].actions.map((a) => a.words);
+
+  it('is a pick that was meant: reported at the button line with the target phrase\'s own words, and no button at all', () => {
+    const { game, diagnostics } = compileGame(withButton('A player may seize a space the rivel owns.'), lib);
+    expect(diagnostics).toEqual([
+      expect.objectContaining({ line: 24, kind: 'invalid', message: 'There is no player fact called “the rivel”.', suggestions: ['the rival'] }),
+    ]);
+    expect(game).toBeUndefined();
+    // The phase itself makes no button of it, not even a plain one that would act on the presser's own space.
+    const diagnosed: Parameters<typeof compilePhase>[1]['diagnostics'] = [];
+    const vocab = vocabFrom({
+      maxPlayers: 2, phases: ['main'], board: fixtureBoardGame().board, facts: [{ name: 'the rival', on: 'player', kind: 'flag' }],
+    });
+    const built = compilePhase(
+      parseOutline('Phase: main\n  A player may seize a space the rivel owns.\n  A player may end their turn.').roots[0],
+      { library: lib, vocab, gameName: 'Tiny', inMove: false, player: false, space: false, card: false, drawn: false, amount: false, picked: false, diagnostics: diagnosed },
+    );
+    expect(diagnosed.map((d) => [d.line, d.message])).toEqual([[2, 'There is no player fact called “the rivel”.']]);
+    expect(built.actions.map((a) => a.words)).toEqual(['end their turn']);
+  });
+  it('says the same as the pick written with “on” does', () => {
+    const said = (button: string) => compileGame(withButton(button), lib).diagnostics.map((d) => [d.line, d.kind, d.message, d.suggestions]);
+    expect(said('A player may seize a space the rivel owns.')).toEqual(said('A player may seize on a space the rivel owns.'));
+    expect(said('A player may seize a street they onw.')).toEqual(said('A player may seize on a street they onw.'));
+  });
+  it('is meant when its words start with “space” or a kind of space the board has, in any capitals', () => {
+    for (const [button, rest] of [
+      ['A player may seize a space they onw.', 'a space they onw'], ['A player may seize a street they onw.', 'a street they onw'],
+      ['A player may seize a Street they onw.', 'a Street they onw'], ['A player may seize an orange street they own.', 'an orange street they own'],
+      ['A player may seize a tax space twice.', 'a tax space twice'],
+    ]) {
+      const { game, diagnostics } = compileGame(withButton(button), lib);
+      expect(diagnostics, button).toEqual([expect.objectContaining({ line: 24, kind: 'unknown-phrase', message: `“${rest}” isn't in the phrase library yet.` })]);
+      // A line nobody has written a phrase for still lets the game be read, but makes no button.
+      expect(game!.phases[0].actions.map((a) => a.words), button).toEqual(['mark a space they own', 'end their turn']);
+    }
+    expect(compileGame(withButton('A player may seize a space they onw.'), lib).diagnostics[0].suggestions).toContain('a space they own');
+  });
+  it('leaves a button a plain one when the words after its “a” or “an” start with no kind of space', () => {
+    // A board with Jail and Go To Jail beside Go, so that neither “Get Out Of Jail Free” nor “leave jail” is read as one.
+    const board = TINY_BOARD_HEAD.replace(
+      '    | Rose Lane  | street | orange | 180   | 14   |     |',
+      '    | Rose Lane  | street | orange | 180   | 14   |     |\n    | Jail       | jail   |        |       |      |     |\n    | Go To Jail | go to jail |    |       |      |     |',
+    );
+    const buttons = [
+      'use a Get Out Of Jail Free', 'bid an amount', 'offer to pay an amount', 'roll for a double', 'pay to leave jail', 'build a house on a street they own',
+      'use a free pass', 'trade with another player',
+    ];
+    const { game, diagnostics } = compileGame(`${board}\n${buttons.map((b) => `  A player may ${b}.`).join('\n')}`, lib);
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(game!.phases[0].actions.map((a) => [a.words, a.base, a.label, a.target?.text ?? null, a.amount, a.picksPlayer])).toEqual([
+      ['use a get out of jail free', 'use a get out of jail free', 'Use a Get Out Of Jail Free', null, false, false],
+      ['bid an amount', 'bid', 'Bid', null, true, false],
+      ['offer to pay an amount', 'offer to pay', 'Offer to pay', null, true, false],
+      ['roll for a double', 'roll for a double', 'Roll for a double', null, false, false],
+      ['pay to leave jail', 'pay to leave jail', 'Pay to leave jail', null, false, false],
+      ['build a house on a street they own', 'build a house', 'Build a house', 'a street they own', false, false],
+      ['use a free pass', 'use a free pass', 'Use a free pass', null, false, false],
+      ['trade with another player', 'trade with', 'Trade with another player', null, false, true],
+    ]);
+  });
+  it('leaves a button a plain one when its words only start like a pick and the library has nothing to say about them as a target', () => {
+    // Kinds tax, station, utility, jail and street, and the colours brown, orange and red: each of the buttons below has a " a …" tail that begins with one.
+    const board = TINY_BOARD_HEAD.replace(
+      '    | Rose Lane  | street | orange | 180   | 14   |     |',
+      [
+        '    | Rose Lane  | street | orange | 180   | 14   |     |', '    | Market Sq  | street | red    | 220   | 18   |     |',
+        '    | North Stn  | station |       | 200   |      |     |', '    | Power Co   | utility |       | 150   |      |     |',
+        '    | Jail       | jail   |        |       |      |     |',
+      ].join('\n'),
+    );
+    const buttons = ['pay a tax bill', 'use a jail pass', 'collect a station bonus', 'claim a red bonus', 'pay a street fine', 'pay a utility fee'];
+    const end = '\nEnd:\n  The game ends when one player is left.\n  That player wins.';
+    const { game, diagnostics } = compileGame(`${board}\n${buttons.map((b) => `  A player may ${b}.`).join('\n')}\n${end}`, lib);
+    expect(diagnostics).toEqual([]);
+    expect(game!.phases[0].actions.map((a) => [a.words, a.base, a.label, a.target?.text ?? null])).toEqual([
+      ['pay a tax bill', 'pay a tax bill', 'Pay a tax bill', null],
+      ['use a jail pass', 'use a jail pass', 'Use a jail pass', null],
+      ['collect a station bonus', 'collect a station bonus', 'Collect a station bonus', null],
+      ['claim a red bonus', 'claim a red bonus', 'Claim a red bonus', null],
+      ['pay a street fine', 'pay a street fine', 'Pay a street fine', null],
+      ['pay a utility fee', 'pay a utility fee', 'Pay a utility fee', null],
+    ]);
+  });
+  it('still reports a pick whose words the library is close to reading as a target', () => {
+    for (const rest of ['a space tehy own', 'a space they onw', 'a street they onw', 'an orange street they onw', 'a space the trade partnr owns']) {
+      // A plain button would be read with no diagnostics at all, so one error at the button's line is a pick that was meant.
+      expect(compileGame(withButton(`A player may seize ${rest}.`), lib).diagnostics.map((d) => [d.line, d.severity]), rest).toEqual([[24, 'error']]);
+    }
+  });
+  it('still tells the designer to write “on a …” for a pick said with another word', () => {
+    expect(messages(withButton('A player may seize a space on any street they own.'))).toEqual([[24, 'Write “on a street they own” so the player picks one.']]);
+    expect(buttonsOf(withButton('A player may seize a street they own.'))).toEqual(['mark a space they own', 'seize a street they own', 'end their turn']);
   });
 });
 
@@ -1005,5 +1223,152 @@ describe('rules about a card, and the other player', () => {
     expect(errorsOf(['When the deck is empty:', '  Every card in the other player\'s camp is poisoned.'])).toEqual([
       [20, '“Every card in the other player\'s camp is poisoned” only makes sense in a rule about a player\'s move.'],
     ]);
+  });
+});
+
+describe('buttons any player may press', () => {
+  const found = (text: string) => compileGame(text, lib).diagnostics.map((d) => [d.line, d.message]);
+
+  it('are told apart from the other buttons, and keep their own wording', () => {
+    const { game, diagnostics } = compileGame(ANY_PLAYER_BOARD, lib);
+    expect(diagnostics).toEqual([]);
+    expect(game!.phases[0].actions.map((a) => [a.label, a.anyone])).toEqual([
+      ['Roll the dice', false], ['End your turn', false], ['Wave', true], ['Plant a flag', true],
+    ]);
+  });
+  it('can be written in any capitals', () => {
+    const shouted = ANY_PLAYER_BOARD.replace('  Any player may wave.', '  ANY PLAYER MAY wave.');
+    expect(compileGame(shouted, lib).game!.phases[0].actions.map((a) => a.anyone)).toEqual([false, false, true, true]);
+  });
+  it('can not be named by an After line, since they never pass the turn', () => {
+    expect(found(ANY_PLAYER_BOARD.replace('After a player ends their turn,', 'After a player ends their turn or waves,')))
+      .toContainEqual([34, '“waves” names a button any player may press at any time, so it can\'t pass the turn.']);
+  });
+  it('can not be named by a done-wording, since they are never part of a turn', () => {
+    const waved = ANY_PLAYER_BOARD.replace('  A player may end their turn.\n    Only if they have rolled this turn.', '  A player may end their turn.\n    Only if they have waved this turn.');
+    expect(found(waved)).toContainEqual([24, '“waved” names a button any player may press at any time, which is never part of a turn.']);
+  });
+  it('still read a done-wording that names a button of the turn as well, as that button alone', () => {
+    const both = ANY_PLAYER_BOARD
+      .replace('  Any player may wave.', '  A player may wave to the crowd.\n  Any player may wave.')
+      .replace('Only if they have rolled this turn.', 'Only if they have waved this turn.');
+    // “waved” is the participle of both buttons; the one anyone may press is no part of a turn, so only the other is meant.
+    expect(found(both).filter(([line]) => line === 24)).toEqual([]);
+    const end = compileGame(both, lib).game!.phases[0].actions.find((a) => a.words === 'end their turn')!;
+    expect(end.conditions[0].refs[0].args).toEqual([['wave to the crowd']]);
+  });
+  describe('written both ways', () => {
+    /** The errors alone: nothing leads to the second phase, which is only a warning here. */
+    const errors = (text: string) => compileGame(text, lib).diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message]);
+    /** ANY_PLAYER_BOARD with a second phase that also has a button called “wave”; the second phase's button is on line 38. */
+    const later = (opening: string) => ANY_PLAYER_BOARD.replace(
+      '\n\nEnd:', `\n\nPhase: later\n  Players take turns.\n  ${opening} wave.\n    Then:\n      They get 5 money.\n\nEnd:`,
+    );
+    it('is told when a later phase opens a button with “A player may” that another phase opens with “Any player may”', () => {
+      expect(errors(later('A player may'))).toEqual([
+        [38, '“wave” is a button any player may press in another phase; use the same opening in both.'],
+      ]);
+    });
+    it('is told when a later phase opens a button with “Any player may” that another phase opens with “A player may”', () => {
+      const first = later('Any player may').replace('  Any player may wave.', '  A player may wave.');
+      expect(errors(first)).toEqual([[38, '“wave” is written “A player may …” in another phase; use the same opening in both.']]);
+    });
+    it('is fine when both phases open it the same way', () => {
+      expect(errors(later('Any player may'))).toEqual([]);
+    });
+  });
+  it('are never card moves: “Any player may take a card …” is a move the phase can not read', () => {
+    const MALFORMED_MOVE = 'I can\'t read this card move. Write it as “A player may <verb> a card from <zone> to <zone>.”';
+    const lines = ANY_PLAYER_BOARD.split('\n');
+    lines.splice(24, 0, '  Any player may take a card from the draw pile to their hand.');
+    expect(found(lines.join('\n'))).toContainEqual([25, MALFORMED_MOVE]);
+  });
+});
+
+describe('buttons that carry an amount', () => {
+  it('refuses a phrase that reads the amount outside a button whose wording ends in “an amount”', () => {
+    const outside = AMOUNT_BOARD.replace(
+      '    Only if they have rolled this turn.\n    Then:\n      They pay the pot.',
+      '    Only if the amount is more than the pot.\n    Then:\n      They pay the pot.',
+    );
+    expect(outside).not.toBe(AMOUNT_BOARD);
+    expect(compileGame(outside, lib).diagnostics.map((d) => [d.line, d.message])).toContainEqual(
+      [31, '“the amount is more than the pot” only makes sense in a button whose wording ends in “an amount”, like “A player may give an amount.”'],
+    );
+  });
+  it('says on the button line, and only there, that a button cannot both pick a space and carry an amount', () => {
+    const both = [
+      '  A player may bid an amount on a street they own.', '    Only if the amount is more than the pot.', '    Then:', '      The pot is the amount.',
+    ].join('\n');
+    const text = AMOUNT_BOARD.replace('  A player may end their turn.', `${both}\n  A player may end their turn.`);
+    const line = text.split('\n').indexOf('  A player may bid an amount on a street they own.') + 1;
+    // Its lines that read the amount are not blamed too: the button line says what to change.
+    expect(compileGame(text, lib).diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message])).toEqual([
+      [line, 'A button can\'t both pick a space and carry an amount: drop “an amount” or “on a street they own”.'],
+    ]);
+  });
+  it('leaves a button that picks a space and says “an amount” earlier in its words a plain button that picks a space', () => {
+    const built = compileGame(AMOUNT_BOARD.replace('  A player may end their turn.', '  A player may plant an amount of seed on a street they own.\n  A player may end their turn.'), lib);
+    expect(built.diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(built.game!.phases[0].actions.find((a) => a.verb === 'plant')).toMatchObject({
+      amount: false, base: 'plant an amount of seed', target: { kind: 'target' },
+    });
+  });
+  it('reads “an amount” in any capitals, and leaves the designer\'s capitals on the label', () => {
+    const shouted = compileGame(AMOUNT_BOARD.replace('  A player may raise an amount.', '  A player may Raise An Amount.'), lib);
+    expect(shouted.diagnostics).toEqual([]);
+    expect(shouted.game!.phases[0].actions[1]).toMatchObject({ words: 'raise an amount', base: 'raise', label: 'Raise', amount: true });
+  });
+  it('lets a button of the turn and one any player may press carry an amount', () => {
+    const anyone = compileGame(AMOUNT_BOARD.replace('  A player may raise an amount.', '  Any player may raise an amount.'), lib);
+    expect(anyone.diagnostics).toEqual([]);
+    expect(anyone.game!.phases[0].actions[1]).toMatchObject({ anyone: true, amount: true });
+  });
+});
+
+describe('buttons that pick another player', () => {
+  it('refuses “that player” outside a button whose wording ends in “another player”', () => {
+    const outside = PICK_BOARD.replace(
+      '  A player may end their turn.\n    Only if they have rolled this turn.',
+      '  A player may end their turn.\n    Only if they have rolled this turn.\n    Then:\n      That player is the rival.',
+    );
+    expect(outside).not.toBe(PICK_BOARD);
+    expect(compileGame(outside, lib).diagnostics.map((d) => [d.line, d.message])).toContainEqual(
+      [31, '“That player is the rival” only makes sense in a button whose wording ends in “another player”, like “A player may challenge another player.”'],
+    );
+  });
+  it('picks a player only at the end of the wording', () => {
+    const built = compileGame(PICK_BOARD.replace('  A player may end their turn.', '  A player may challenge another player twice.\n  A player may end their turn.'), lib);
+    expect(built.diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(built.game!.phases[0].actions.find((a) => a.verb === 'challenge' && a.words.endsWith('twice'))).toMatchObject({
+      picksPlayer: false, words: 'challenge another player twice', base: 'challenge another player twice', label: 'Challenge another player twice',
+    });
+  });
+  it('leaves “another player” in the words and out of the base, and reads it in any capitals', () => {
+    const shouted = compileGame(PICK_BOARD.replace('  A player may challenge another player.', '  A player may Trade With Another Player.'), lib);
+    expect(shouted.game!.phases[0].actions[1]).toMatchObject({
+      words: 'trade with another player', base: 'trade with', label: 'Trade With Another Player', picksPlayer: true,
+    });
+  });
+  it('lets a button of the turn and one any player may press pick a player', () => {
+    const anyone = compileGame(PICK_BOARD.replace('  A player may challenge another player.', '  Any player may challenge another player.'), lib);
+    expect(anyone.diagnostics).toEqual([]);
+    expect(anyone.game!.phases[0].actions[1]).toMatchObject({ anyone: true, picksPlayer: true });
+  });
+  it('does not make a button that picks a space, or one that carries an amount, a button that picks a player', () => {
+    // Said with no Then lines, since “That player” belongs to the buttons that do pick one.
+    const without = (wording: string) => PICK_BOARD.replace(
+      '  A player may challenge another player.\n    Only if they have rolled this turn.\n    Then:\n      That player is the rival.', `  A player may ${wording}.`,
+    );
+    const space = compileGame(without('challenge another player on a street they own'), lib);
+    expect(space.diagnostics).toEqual([]);
+    expect(space.game!.phases[0].actions[1]).toMatchObject({ picksPlayer: false, base: 'challenge another player' });
+    const amount = compileGame(without('challenge another player an amount'), lib);
+    expect(amount.diagnostics).toEqual([]);
+    expect(amount.game!.phases[0].actions[1]).toMatchObject({ picksPlayer: false, amount: true, base: 'challenge another player' });
+  });
+  it('keeps two buttons that read alike apart, as it does for any other', () => {
+    const twice = PICK_BOARD.replace('  A player may end their turn.', '  A player may challenge another player.\n  A player may end their turn.');
+    expect(compileGame(twice, lib).diagnostics.map((d) => d.message)).toContain('Two rules in this phase say “A player may challenge another player”.');
   });
 });

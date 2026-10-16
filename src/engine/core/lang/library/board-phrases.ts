@@ -1,15 +1,19 @@
 import type { GameState } from '../../game-state';
 import { nextInt } from '../../rng';
 import type { PlayerId } from '../../scene';
+import type { Json } from '../../table-def';
 import { numberIn, readSpaceTable } from '../board';
 import {
   addToCounter, counterOf, didThisTurn, isOut, latestRoll, markOut, nextIn, ownerOf, pieceAt, placePiece, playersIn, queueRoll, recordAction,
-  setCounter, setOwner, setRoll, takeQueuedRoll,
+  recordDebt, recordRoll, rollsThisTurn, setCounter, setOwner, setRoll, setRollsThisTurn, takeQueuedRoll,
 } from '../board-state';
+import { innerEffect } from '../compile-util';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
-import { canon } from '../refs';
-import type { ActionFn, BankSpec, BoardFn, BoardSpec, ConditionFn, EffectFn, ExpectFn, MomentFn, PhraseEnv, SpaceClass, WhoFn, WinnerFn } from '../types';
+import { canon, joinOr, participle, pastWording } from '../refs';
+import type {
+  ActionFn, BankSpec, BoardFn, BoardSpec, ConditionFn, EffectFn, ExpectFn, MomentFn, PhraseEnv, PhraseRef, SpaceClass, WhoFn, WinnerFn,
+} from '../types';
 import { chooseNext } from '../zones';
 import { itOf, seatOf, theyOf } from './support';
 
@@ -21,8 +25,14 @@ const MAX_SIDES = 100;
 /** The most dice an example can fix a roll for: the Given lines take one number or two. */
 const MAX_FIXED_DICE = 2;
 
+/** The most doubles an example may say a player has rolled this turn; one roll is made for each. */
+const MAX_GIVEN_DOUBLES = 20;
+
 /** Said by anything that rolls or fixes a roll in a game that has no dice. */
 const NO_DICE = 'This game has no dice. Add a line like “There are two six-sided dice.” under Board:';
+
+/** The wording of the effect that rolls the dice: a button whose lines say it is the button that rolls. */
+const ROLL_THE_DICE = 'roll the dice';
 
 /** A `{name}` arrives in lowercase; to show it back the way a space is usually written, each word gets a capital. */
 const titled = (name: string): string => name.replace(/(^|\s)(\S)/g, (_, space: string, letter: string) => space + letter.toUpperCase());
@@ -86,12 +96,22 @@ function amountOf(env: PhraseEnv, attr: string): number {
   return value;
 }
 
+/** A share of a detail of the space, rounded down to a whole number, as a counter holds only whole ones: 55% of 150 is 82.5, which comes to 82. */
+const percentOf = (env: PhraseEnv, n: number, attr: string): number => Math.floor((n * amountOf(env, attr)) / 100);
+
 /** What the dice showed last, added up. */
 export function rollTotal(state: GameState): number {
   const faces = latestRoll(state);
   if (!faces) throw new RuleError('Nobody has rolled the dice yet.');
   return faces.reduce((sum, face) => sum + face, 0);
 }
+
+/** A double is exactly two dice that show the same face: one die, or three alike, is not a double. */
+export function isDouble(faces: number[]): boolean {
+  return faces.length === 2 && faces[0] === faces[1];
+}
+
+const doublesRolled = (state: GameState, seat: PlayerId): number => rollsThisTurn(state, seat).filter(isDouble).length;
 
 /** The seat that owns the space the rule is about; whoever is owed must exist. */
 function ownerOfIt(env: PhraseEnv): PlayerId {
@@ -101,21 +121,49 @@ function ownerOfIt(env: PhraseEnv): PlayerId {
   return owner;
 }
 
-/** Takes the amount from `from` and gives it to `to`; the bank (null) has no counter to fill. */
-function transfer(env: PhraseEnv, from: PlayerId, to: PlayerId | null, amount: number): GameState {
+/** The counter players pay with. Each phrase that moves it says `needsPayment`, so the compiler only lets it into a game that names one. */
+function payCounter(env: PhraseEnv): string {
   const counter = boardIn(env).payWith;
   if (counter === null) throw new Error('This phrase needs something to pay with, but the board names none.');
+  return counter;
+}
+
+/**
+ * Takes the amount from `from` and gives it to `to`; the bank (null) has no counter to fill. A payment that leaves the payer
+ * below 0 notes whom they owe, so the latest one names their creditor; one of 0, such as the charge of a space that costs
+ * nothing, moves nothing and so notes nothing.
+ */
+export function transfer(env: PhraseEnv, from: PlayerId, to: PlayerId | null, amount: number): GameState {
+  const counter = payCounter(env);
   const paid = addToCounter(env.state, counter, from, -amount);
-  return to === null ? paid : addToCounter(paid, counter, to, amount);
+  const settled = to === null ? paid : addToCounter(paid, counter, to, amount);
+  return amount > 0 && counterOf(settled, counter, from) < 0 ? recordDebt(settled, from, to ?? 'bank') : settled;
 }
 
 // ---- conditions ------------------------------------------------------------------------------
 
-const hasDoneThisTurn = (done: boolean): ConditionFn => (env, [move]) => didThisTurn(env.state, theyOf(env), move as string) === done;
+/** Any of the move types the wording names counts: “rolled” holds once either roll button has been pressed. */
+const hasDoneThisTurn = (done: boolean): ConditionFn => (env, [moves]) =>
+  (moves as string[]).some((move) => didThisTurn(env.state, theyOf(env), move)) === done;
+
+/** Reads the player's own latest roll this turn, so another seat's double, or one from an earlier turn, never counts. */
+const rolledADouble = (expected: boolean): ConditionFn => (env) => {
+  const last = rollsThisTurn(env.state, theyOf(env)).at(-1);
+  return (last !== undefined && isDouble(last)) === expected;
+};
+
+const hasRolledDoubles: ConditionFn = (env, [n]) => doublesRolled(env.state, theyOf(env)) === n;
+
+const hasRolledFewerDoubles: ConditionFn = (env, [n]) => doublesRolled(env.state, theyOf(env)) < (n as number);
 
 const spaceHas: ConditionFn = (env, [attr]) => boardIn(env).spaces[itOf(env)].attrs[attr as string] !== undefined;
 
+const spaceHasNo: ConditionFn = (env, args) => !spaceHas(env, args);
+
 const noOneOwns: ConditionFn = (env) => ownerOf(env.state, itOf(env)) === null;
+
+/** Anyone at all, the player the rule is about included, which “someone else owns it” leaves out. */
+const someoneOwns: ConditionFn = (env) => ownerOf(env.state, itOf(env)) !== null;
 
 /** “Else” is relative to the subject player; with no player in the rule, any owner is someone else. */
 const someoneElseOwns: ConditionFn = (env) => {
@@ -128,6 +176,9 @@ const theyOwn: ConditionFn = (env) => ownerOf(env.state, itOf(env)) === theyOf(e
 const haveAtLeastItsAmount: ConditionFn = (env, [attr, counter]) =>
   counterOf(env.state, counter as string, theyOf(env)) >= amountOf(env, attr as string);
 
+const haveAtLeastItsPercent: ConditionFn = (env, [n, attr, counter]) =>
+  counterOf(env.state, counter as string, theyOf(env)) >= percentOf(env, n as number, attr as string);
+
 const haveAtLeast: ConditionFn = (env, [n, counter]) => counterOf(env.state, counter as string, theyOf(env)) >= (n as number);
 
 const oneLeft: ConditionFn = (env) => playersIn(env.state, env.seats).length === 1;
@@ -136,6 +187,8 @@ const oneLeft: ConditionFn = (env) => playersIn(env.state, env.seats).length ===
 
 const lessThan: WhoFn = (env, [n, counter]) =>
   playersIn(env.state, env.seats).filter((seat) => counterOf(env.state, counter as string, seat) < (n as number));
+
+const rolledDoubles: WhoFn = (env, [n]) => playersIn(env.state, env.seats).filter((seat) => doublesRolled(env.state, seat) === n);
 
 // ---- moments ---------------------------------------------------------------------------------
 
@@ -156,46 +209,116 @@ const landsOnClassOwnedByOther: MomentFn = (env, args, moment) => {
 
 // ---- effects ---------------------------------------------------------------------------------
 
-const rollDice: EffectFn = (env) => {
-  const { dice } = boardIn(env);
-  if (!dice) throw new RuleError(NO_DICE);
-  const queued = takeQueuedRoll(env.state);
-  // An example that fixed the roll gets exactly it, and the rng stays where it was.
-  if (queued.faces) return setRoll(queued.state, queued.faces);
-  let { rng } = env.state;
+/** Rolls every die from the rng; the state comes back with the rng moved on. */
+function drawFaces(state: GameState, dice: { count: number; sides: number }): { faces: number[]; state: GameState } {
+  let { rng } = state;
   const faces: number[] = [];
   for (let die = 0; die < dice.count; die++) {
     const drawn = nextInt(rng, dice.sides);
     rng = drawn.rng;
     faces.push(drawn.value + 1);
   }
-  return setRoll({ ...env.state, rng }, faces);
+  return { faces, state: { ...state, rng } };
+}
+
+const rollDice: EffectFn = (env) => {
+  const { dice } = boardIn(env);
+  if (!dice) throw new RuleError(NO_DICE);
+  const queued = takeQueuedRoll(env.state);
+  // An example that fixed the roll gets exactly it, and the rng stays where it was.
+  const { faces, state } = queued.faces ? { faces: queued.faces, state: queued.state } : drawFaces(env.state, dice);
+  const seat = env.subject?.player ?? null;
+  // Whoever rolls, by any button, has it counted; a roll that is nobody's in particular is only the latest roll.
+  return setRoll(seat === null ? state : recordRoll(state, seat, faces), faces);
 };
+
+/** Where their piece stands; a player with no piece (one who is out) has nothing to move, and must not be given one. */
+function pieceOfThey(env: PhraseEnv): { they: PlayerId; from: number } {
+  const they = theyOf(env);
+  const from = pieceAt(env.state, they);
+  if (from === null) throw new RuleError('They have no piece on the board.');
+  return { they, from };
+}
+
+/** Moves on the board are told to the game's rules as they happen, so a move with no one listening is a bug. */
+function announcerOf(env: PhraseEnv): NonNullable<PhraseEnv['announce']> {
+  if (!env.announce) throw new Error('This phrase needs to announce where the piece passes and lands, but nothing is listening.');
+  return env.announce;
+}
 
 /**
  * One space at a time, so a rule about passing a space (like collecting on the way) sees every space on the way. If such a
  * rule moves the piece somewhere else, or takes the player out, the walk ends there: the move is over and nothing lands.
  */
-const moveByRoll: EffectFn = (env) => {
-  const they = theyOf(env);
-  const steps = rollTotal(env.state);
-  if (!env.announce) throw new Error('This phrase needs to announce where the piece passes and lands, but nothing is listening.');
-  const from = pieceAt(env.state, they);
-  if (from === null) throw new RuleError('They have no piece on the board.');
+function walk(env: PhraseEnv, steps: number): GameState {
+  const { they, from } = pieceOfThey(env);
+  const announce = announcerOf(env);
   const count = boardIn(env).spaces.length;
   let state = env.state;
   let space = from;
   for (let step = 1; step <= steps; step++) {
     space = (from + step) % count;
-    state = env.announce(placePiece(state, they, space), { kind: 'pass', seat: they, space });
+    state = announce(placePiece(state, they, space), { kind: 'pass', seat: they, space });
     if (pieceAt(state, they) !== space || isOut(state, they)) return state;
   }
-  return env.announce(state, { kind: 'land', seat: they, space });
+  return announce(state, { kind: 'land', seat: they, space });
+}
+
+// The roll is read first, so a move that needs one says so before anything about the piece.
+const moveByRoll: EffectFn = (env) => walk(env, rollTotal(env.state));
+
+/** Walks, passing Go if it is on the way; from the space itself that is once round the board, never no move at all. */
+const movesForwardToSpace: EffectFn = (env, [target]) => {
+  const { from } = pieceOfThey(env);
+  const count = boardIn(env).spaces.length;
+  return walk(env, ((target as number) - from - 1 + count) % count + 1);
+};
+
+/** The first space ahead of the piece of the kind; the space it is on only counts after a whole round. */
+const movesForwardToNearest: EffectFn = (env, [kind]) => {
+  const { from } = pieceOfThey(env);
+  const count = boardIn(env).spaces.length;
+  for (let step = 1; step <= count; step++) {
+    if (isOfClass(env, (from + step) % count, kind as SpaceClass)) return walk(env, step);
+  }
+  throw new Error('This phrase needs a space of that kind on the board, but there is none.');
+};
+
+/** Backwards nothing is passed, so there is no walk: the piece is placed, and only the landing is announced. */
+const movesBack: EffectFn = (env, [n]) => {
+  const spaces = n as number;
+  if (spaces < 1) throw new RuleError('Say how many spaces back, 1 or more.');
+  const { they, from } = pieceOfThey(env);
+  const announce = announcerOf(env);
+  const count = boardIn(env).spaces.length;
+  // Going back past Go wraps to the far end of the loop, and a remainder of a negative number is itself negative.
+  const space = (((from - spaces) % count) + count) % count;
+  return announce(placePiece(env.state, they, space), { kind: 'land', seat: they, space });
+};
+
+/** Puts the piece on the space without a walk, so nothing is passed or landed on and no rule waiting for either happens. */
+const goesStraightTo: EffectFn = (env, [space]) => {
+  const { they } = pieceOfThey(env);
+  return placePiece(env.state, they, space as number);
 };
 
 const gets: EffectFn = (env, [n, counter]) => addToCounter(env.state, counter as string, theyOf(env), n as number);
 
 const paysBank: EffectFn = (env, [attr]) => transfer(env, theyOf(env), null, amountOf(env, attr as string));
+
+const getsPercent: EffectFn = (env, [n, attr]) => addToCounter(env.state, payCounter(env), theyOf(env), percentOf(env, n as number, attr as string));
+
+/** Like paying its amount: a share that leaves them below 0 is owed to the bank. */
+const paysPercent: EffectFn = (env, [n, attr]) => transfer(env, theyOf(env), null, percentOf(env, n as number, attr as string));
+
+const paysAmount: EffectFn = (env, [n]) => transfer(env, theyOf(env), null, n as number);
+
+/** Players pay with one counter, so naming another is no use; the way to say it is given in the game's own words. */
+const paysAmountOf: EffectFn = (env, [n, counter]) => {
+  const payWith = boardIn(env).payWith;
+  if (payWith !== null && counter !== payWith) throw new RuleError(`Players pay with ${payWith}, so say “They pay ${n} ${payWith}.”`);
+  return paysAmount(env, [n]);
+};
 
 const paysOwner: EffectFn = (env, [attr]) => {
   const owner = ownerOfIt(env);
@@ -206,6 +329,29 @@ const paysRollToOwner: EffectFn = (env, [times]) => {
   const owner = ownerOfIt(env);
   return transfer(env, theyOf(env), owner, (times as number) * rollTotal(env.state));
 };
+
+/**
+ * Each other player still in, in seat order, ends up with the amount more of the counter than they had, and they with as much
+ * less; or the other way round. A count may go below 0 here: what a player left with less than none must do is a rule of the game.
+ * What players pay with moves as a payment does, pair by pair, so the last pair that leaves a payer below 0 names their creditor;
+ * any other counter just moves.
+ */
+const swapsWithEachOther = (theyPay: boolean): EffectFn => (env, [n, counter]) => {
+  const they = theyOf(env);
+  const others = playersIn(env.state, env.seats).filter((seat) => seat !== they);
+  if (counter === boardIn(env).payWith) {
+    return others.reduce((state, seat) => {
+      const pair = { ...env, state };
+      return theyPay ? transfer(pair, they, seat, n as number) : transfer(pair, seat, they, n as number);
+    }, env.state);
+  }
+  const gain = (theyPay ? 1 : -1) * (n as number);
+  return others.reduce((state, seat) => addToCounter(addToCounter(state, counter as string, seat, gain), counter as string, they, -gain), env.state);
+};
+
+const paysEachOther = swapsWithEachOther(true);
+
+const getsFromEachOther = swapsWithEachOther(false);
 
 const owns: EffectFn = (env) => setOwner(env.state, itOf(env), theyOf(env));
 
@@ -240,12 +386,22 @@ const hasGiven: EffectFn = (env, [seat, n, counter]) => setCounter(env.state, co
 // Going out in an example only arranges the table: whose turn it is stays as the example set it.
 const isOutGiven: EffectFn = (env, [seat]) => markOut(env.state, seatOf(env, seat));
 
-const hasDoneGiven: EffectFn = (env, [seat, move]) => recordAction(env.state, seatOf(env, seat), move as string);
+/** Only one button is pressed at a time, so a participle that stands for several buttons cannot say which one the player did. */
+const hasDoneGiven: EffectFn = (env, [seat, moves]) => {
+  const who = seatOf(env, seat);
+  const [move, ...others] = moves as string[];
+  if (others.length > 0) {
+    const said = participle(move.split(' ')[0]);
+    // Said the way the example says it, in the past, so the wordings to choose from read like the line that was refused.
+    throw new RuleError(`“${said}” could mean ${joinOr([move, ...others].map((m) => `“${pastWording(m)}”`))}; write the whole wording.`);
+  }
+  return recordAction(env.state, who, move);
+};
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 
-/** The next roll an example fixes has to be one these dice could show, or the example would test something that cannot happen. */
-const nextRollIs: EffectFn = (env, faces) => {
+/** A roll an example fixes has to be one these dice could show, or the example would test something that cannot happen. */
+function fixedFaces(env: PhraseEnv, faces: Json[]): number[] {
   // A card game has no board to read, but it can still be told about the dice it lacks.
   const dice = env.game.board?.dice ?? null;
   if (!dice) throw new RuleError(NO_DICE);
@@ -256,7 +412,40 @@ const nextRollIs: EffectFn = (env, faces) => {
   }
   const impossible = (faces as number[]).find((face) => face < 1 || face > dice.sides);
   if (impossible !== undefined) throw new RuleError(`A ${dice.sides}-sided die can't roll ${impossible}.`);
-  return queueRoll(env.state, faces as number[]);
+  return faces as number[];
+}
+
+/** Whether a button's Then line rolls the dice, alone or as the effect of an If or For line. */
+const rollsTheDice = (ref: PhraseRef): boolean => {
+  const effect = innerEffect(ref);
+  return effect.kind === 'effect' && effect.phrase === ROLL_THE_DICE;
+};
+
+/**
+ * Every roll is `[1, 1]`: only that they were doubles matters to a rule. The first button of the phase that rolls is noted as
+ * done too, so “they have rolled this turn” holds along with the doubles; for no doubles nothing was rolled, so nothing is noted.
+ */
+const rolledDoublesGiven: EffectFn = (env, [seat, n]) => {
+  const who = seatOf(env, seat);
+  const count = n as number;
+  // One roll is made for each, so a huge number would stall the page or fail with a message nobody can read.
+  if (count > MAX_GIVEN_DOUBLES) throw new RuleError(`Say ${MAX_GIVEN_DOUBLES} doubles or fewer.`);
+  if (count < 0) throw new RuleError(`Say how many doubles, from 0 to ${MAX_GIVEN_DOUBLES}.`);
+  const rolled = setRollsThisTurn(env.state, who, Array.from({ length: count }, () => [1, 1]));
+  if (count === 0) return rolled;
+  const phase = env.game.phases.find((p) => p.id === env.state.turn?.phase);
+  const button = phase?.actions.find((action) => action.effects.some(rollsTheDice));
+  if (!button) throw new RuleError('No button in this phase rolls the dice.');
+  return recordAction(rolled, who, button.words);
+};
+
+const nextRollIs: EffectFn = (env, faces) => queueRoll(env.state, fixedFaces(env, faces));
+
+/** Goes behind the rolls already fixed, so it needs one: a lone “roll after that” would be the next roll under another name. */
+const rollAfterThat: EffectFn = (env, faces) => {
+  const fixed = fixedFaces(env, faces);
+  if (takeQueuedRoll(env.state).faces === null) throw new RuleError('Say what the next roll is first.');
+  return queueRoll(env.state, fixed);
 };
 
 // ---- examples: action --------------------------------------------------------------------------
@@ -300,6 +489,10 @@ const isOutExpected: ExpectFn = (env, [seat]) => {
   return isOut(env.state, who) ? true : `Expected ${who} to be out, but they are still in.`;
 };
 
+// A double is two equal faces, so every phrase about one needs dice, and exactly two of them.
+const ABOUT_DOUBLES = { needsDice: true, needsTwoDice: true };
+const THEIR_DOUBLES = { needsPlayer: true, ...ABOUT_DOUBLES };
+
 /**
  * The sentences under Board: that say what the board is, who plays on it, what they roll and pay with and what the bank
  * holds, the ones that play a board game, and the Given, When and Then lines of its examples.
@@ -315,26 +508,44 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .board('there is one {count}-sided die', ([sides]) => diceOf(1, sides as number))
     .condition('they have {done} this turn', hasDoneThisTurn(true), { needsPlayer: true })
     .condition('they have not {done} this turn', hasDoneThisTurn(false), { needsPlayer: true })
+    .condition('they rolled a double', rolledADouble(true), THEIR_DOUBLES)
+    .condition('they did not roll a double', rolledADouble(false), THEIR_DOUBLES)
+    .condition('they have rolled {int} double(s) this turn', hasRolledDoubles, THEIR_DOUBLES)
+    .condition('they have rolled fewer than {int} double(s) this turn', hasRolledFewerDoubles, THEIR_DOUBLES)
     .condition('it has a {spaceattr}', spaceHas, { needsSpace: true })
     .condition('it has an {spaceattr}', spaceHas, { needsSpace: true })
+    .condition('it has no {spaceattr}', spaceHasNo, { needsSpace: true })
     .condition('no one owns it', noOneOwns, { needsSpace: true, needsBoard: true })
+    .condition('someone owns it', someoneOwns, { needsSpace: true, needsBoard: true })
     .condition('someone else owns it', someoneElseOwns, { needsSpace: true, needsBoard: true })
     .condition('they own it', theyOwn, { needsPlayer: true, needsSpace: true, needsBoard: true })
     .condition('they have at least its {spaceattr} in {counter}', haveAtLeastItsAmount, { needsPlayer: true, needsSpace: true })
+    .condition('they have at least {int}% of its {spaceattr} in {counter}', haveAtLeastItsPercent, { needsPlayer: true, needsSpace: true })
     .condition('they have at least {int} {counter}', haveAtLeast, { needsPlayer: true })
     .condition('one player is left', oneLeft)
     .who('a player has less than {int} {counter}', lessThan)
+    .who('a player has rolled {int} double(s) this turn', rolledDoubles, ABOUT_DOUBLES)
     .moment('a piece passes {space}', passes)
     .moment('a player lands on {space}', landsOn)
     .moment('a player lands on {spaceclass}', landsOnClass)
     .moment('a player lands on {spaceclass} someone else owns', landsOnClassOwnedByOther)
-    .effect('roll the dice', rollDice, { needsDice: true })
+    .effect(ROLL_THE_DICE, rollDice, { needsDice: true })
     .effect('their piece moves forward by the roll', moveByRoll, { needsPlayer: true, needsBoard: true, needsDice: true })
+    .effect('their piece moves forward to {space}', movesForwardToSpace, { needsPlayer: true, needsBoard: true })
+    .effect('their piece moves forward to the nearest {spacekind}', movesForwardToNearest, { needsPlayer: true, needsBoard: true })
+    .effect('their piece moves back {int} space(s)', movesBack, { needsPlayer: true, needsBoard: true })
+    .effect('their piece goes straight to {space}', goesStraightTo, { needsPlayer: true, needsBoard: true })
     .effect('its player gets {int} {counter}', gets, { needsPlayer: true })
     .effect('they get {int} {counter}', gets, { needsPlayer: true })
+    .effect('they get {int}% of its {spaceattr}', getsPercent, { needsPlayer: true, needsSpace: true, needsPayment: true })
+    .effect('they pay {int}% of its {spaceattr}', paysPercent, { needsPlayer: true, needsSpace: true, needsPayment: true })
+    .effect('they pay {int}', paysAmount, { needsPlayer: true, needsPayment: true })
+    .effect('they pay {int} {counter}', paysAmountOf, { needsPlayer: true, needsPayment: true })
     .effect('they pay its {spaceattr}', paysBank, { needsPlayer: true, needsSpace: true, needsPayment: true })
     .effect('they pay its {spaceattr} to its owner', paysOwner, { needsPlayer: true, needsSpace: true, needsPayment: true })
     .effect('they pay {int} times the roll to its owner', paysRollToOwner, { needsPlayer: true, needsSpace: true, needsPayment: true, needsDice: true })
+    .effect('they pay {int} {counter} to each other player', paysEachOther, { needsPlayer: true })
+    .effect('they get {int} {counter} from each other player', getsFromEachOther, { needsPlayer: true })
     .effect('they own it', owns, { needsPlayer: true, needsSpace: true, needsBoard: true })
     .effect('they are out', goesOut, { needsPlayer: true })
     .effect('their spaces go back to the bank', returnToBank, { needsPlayer: true, needsBoard: true })
@@ -344,10 +555,14 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .given('{player} has {int} {counter}', hasGiven)
     .given('{player} is out', isOutGiven)
     .given('{player} has {done} this turn', hasDoneGiven)
+    .given('{player} has rolled {int} double(s) this turn', rolledDoublesGiven, ABOUT_DOUBLES)
     .given('the next roll is {int} and {int}', nextRollIs)
     .given('the next roll is {int}', nextRollIs)
+    .given('the roll after that is {int} and {int}', rollAfterThat)
+    .given('the roll after that is {int}', rollAfterThat)
     .action('{player} {action}', pressesButton)
     .action('{player} {targetaction} on {space}', pressesButtonOn)
+    .action('{player} {targetaction} {space}', pressesButtonOn)
     .expect('{player} is on {space}', isOnExpected)
     .expect('{player} owns {space}', ownsExpected)
     .expect('no one owns {space}', noOneOwnsExpected)
