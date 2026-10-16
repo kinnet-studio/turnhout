@@ -126,6 +126,78 @@ describe('examples that press a button that picks a card', () => {
     });
   });
 
+  describe('Review Focus: three buttons that neither where the card comes from nor where it goes tells apart', () => {
+    const STALL = '  The shop is a row in the center that everyone can see.\n';
+    /** CARD_PICK_GAME with a stall beside the shop, and `buttons` written before the sell. */
+    const withStall = (buttons: string[]) => CARD_PICK_GAME
+      .replace(STALL, `${STALL}  The stall is a row in the center that everyone can see.\n`)
+      .replace('  A player may sell a card in their stash.\n', [...buttons, '  A player may sell a card in their stash.', ''].join('\n'));
+    /** Buys from the shop to the stash or the case, and from the stall to the stash. */
+    const THREE_WAYS = withStall([
+      '  A player may buy a card from the stall to their stash.', '    It costs 1 move.',
+      '  A player may buy a card from the shop to their case.', '    It costs 1 move.',
+    ]);
+    /** An example of one press with a Ruby in both rows: `when` is the When line. */
+    const inBoth = (when: string, then: string[] = []) =>
+      ['Example: a Ruby in both rows', '  Given the shop has a Ruby', '  And the stall has a Ruby', `  When ${when}`, ...then.map((line) => `  ${line}`)].join('\n');
+    /** The wordings an advice gives, each as the words an example adds after its cards. */
+    const wordingsIn = (message: string) => [...message.matchAll(/“… ([^”]+)”/g)].map(([, wording]) => wording);
+
+    it('is a game of three buys', () => expect(THREE_WAYS.match(/A player may buy /g)).toHaveLength(3));
+    it('names, for each button, the fewest words that press it and no other', () => {
+      const [result] = run(THREE_WAYS, inBoth('p0 buys the Ruby', ['Then it is accepted']));
+      expect(result.status).toBe('fail');
+      const buttons = '“buy a card from the shop to their stash”, “buy a card from the stall to their stash” or “buy a card from the shop to their case”';
+      const ask = "Say which: “… from the shop to p0's stash”, “… from the stall” or “… to p0's case”.";
+      expect(result.message!.slice(-`${buttons}. ${ask}`.length)).toBe(`${buttons}. ${ask}`);
+    });
+    it('gives wordings that each press the one button they are given for', () => {
+      const [advice] = run(THREE_WAYS, inBoth('p0 buys the Ruby', ['Then it is accepted']));
+      const lands: Record<string, string[]> = {
+        "from the shop to p0's stash": ["And p0's stash has a Ruby", 'And the shop is empty', 'And the stall has a Ruby'],
+        'from the stall': ["And p0's stash has a Ruby", 'And the stall is empty', 'And the shop has a Ruby'],
+        "to p0's case": ["And p0's case has a Ruby", 'And the shop is empty', 'And the stall has a Ruby'],
+      };
+      const wordings = wordingsIn(advice.message!);
+      expect(wordings.sort()).toEqual(Object.keys(lands).sort());
+      for (const wording of wordings) {
+        const results = run(THREE_WAYS, inBoth(`p0 buys the Ruby ${wording}`, ['Then it is accepted', ...lands[wording]]));
+        expect(results, wording).toEqual([expect.objectContaining({ status: 'pass', message: null })]);
+      }
+    });
+    it('names the buttons no wording presses alone, and the wording of each other one', () => {
+      // A set and a one-card buy take the Ruby from the shop to the stash alike: only the stall's buy has words of its own.
+      const SOME_TOO = withStall([
+        '  A player may buy some cards from the shop to their stash.', '    It costs 1 move.',
+        '  A player may buy a card from the stall to their stash.', '    It costs 1 move.',
+      ]);
+      const [result] = run(SOME_TOO, inBoth('p0 buys the Ruby', ['Then it is accepted']));
+      expect(result.status).toBe('fail');
+      const ask = 'Say which: “… from the stall”. “buy a card from the shop to their stash” and “buy some cards from the shop to their stash” need different words.';
+      expect(result.message!.slice(-ask.length)).toBe(ask);
+      const [stall] = run(SOME_TOO, inBoth(`p0 buys the Ruby ${wordingsIn(ask)[0]}`, ['Then it is accepted', 'And the stall is empty', 'And the shop has a Ruby']));
+      expect(stall).toEqual(expect.objectContaining({ status: 'pass', message: null }));
+    });
+    it('names the card it goes to in the wording of a button that picks one', () => {
+      // Three shows to a card in the case: from the stash, a set from the stash, and from the shop, which alone says where it comes from.
+      const SHOWS = withStall([]).replace('  A player may stop.\n', [
+        '  A player may show some cards from their stash to a card in their case.',
+        '  A player may show a card from the shop to a card in their case.', '    Then:', '      Move it to their case.',
+        '  A player may stop.', '',
+      ].join('\n'));
+      const showing = (when: string, then: string[]) => [
+        'Example: showing an Opal', "  Given p0's stash has an Opal", '  And the shop has an Opal', "  And p0's case has an Opal", `  When ${when}`,
+        ...then.map((line) => `  ${line}`),
+      ].join('\n');
+      const [result] = run(SHOWS, showing('p0 shows the Opal to the Opal', ['Then it is accepted']));
+      expect(result.status).toBe('fail');
+      const ask = 'Say which: “… from the shop to an Opal”. “show a card from their stash to a card in their case” and “show some cards from their stash to a card in their case” need different words.';
+      expect(result.message!.slice(-ask.length)).toBe(ask);
+      const [shop] = run(SHOWS, showing(`p0 shows the Opal ${wordingsIn(ask)[0]}`, ['Then it is accepted', 'And the shop is empty', "And p0's case has an Opal and an Opal"]));
+      expect(shop).toEqual(expect.objectContaining({ status: 'pass', message: null }));
+    });
+  });
+
   describe('a zone no button takes the card to', () => {
     it('presses the button whose zone it is', () => {
       const results = run(CARD_PICK_GAME, pressing("p0 buys the Ruby to p0's stash", ["Then p0's stash has a Ruby"]));

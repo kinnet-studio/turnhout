@@ -3,7 +3,7 @@ import type { CardState, PlayerId } from '../../scene';
 import { moveZoneId } from '../declared-moves';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
-import { joinOr } from '../refs';
+import { joinAnd, joinOr } from '../refs';
 import type { ActionFn, CardMatch, CardPick, ConditionFn, DeclaredAction, EffectFn, PhraseEnv, ZoneRef } from '../types';
 import { BOX_ZONE, matchesCard, relocate, zoneNameOf } from '../zones';
 import { byCardId, describeCard } from './example-phrases';
@@ -58,19 +58,76 @@ function cardFor(inPlay: CardState[], match: CardMatch, zoneId: string | null, t
 
 const allDifferent = (values: (string | null)[]): boolean => new Set(values).size === values.length;
 
+/** Where an example says its cards come from and where they go, with the zones as ids: what tells one button from another. */
+type Wording = { form: Form; from: string | null; to: string | null };
+
+/** Who presses, the button's base, the cards the example names, and every card in play: what each wording of the press is judged on. */
+type Press = { by: PlayerId; base: string; matches: CardMatch[]; inPlay: CardState[] };
+
+/** Whether an example with `wording` could mean the button that picks `pick`. */
+function fitsWording(env: PhraseEnv, by: PlayerId, pick: CardPick, { form, from, to }: Wording): boolean {
+  if (from !== null && moveZoneId(pick.from, env.seats, by) !== from) return false;
+  if (form === 'to card') return pick.onto !== null;
+  if (form === 'alone') return pick.onto === null;
+  return pick.to !== null && moveZoneId(pick.to, env.seats, by) === to;
+}
+
+/**
+ * The buttons with the press's base that `wording` fits, for one card or a set as the example names, and of those the ones that could
+ * take the cards: the current phase's, whose zone holds each card named.
+ */
+function buttonsFor(env: PhraseEnv, { by, base, matches, inPlay }: Press, wording: Wording): { fits: Button[]; takers: Button[] } {
+  const fits = buttonsWithBase(env, base)
+    .filter(({ action }) => fitsWording(env, by, action.pick!, wording) && (matches.length === 1 || action.pick!.some));
+  const takers = fits.filter(({ action, here }) =>
+    here && holdsEach(inPlay.filter((card) => card.zoneId === moveZoneId(action.pick!.from, env.seats, by)), matches));
+  return { fits, takers };
+}
+
+/**
+ * The wordings that could press `pick`'s button, fewest words first: where its cards come from, where they go, then both. A button
+ * that picks a card for them to go to is told only by where they come from, since an example names the card, not its zone.
+ */
+function wordingsOf(env: PhraseEnv, by: PlayerId, pick: CardPick): Wording[] {
+  const from = moveZoneId(pick.from, env.seats, by);
+  if (pick.onto !== null) return from === null ? [] : [{ form: 'to card', from, to: null }];
+  const to = pick.to === null ? null : moveZoneId(pick.to, env.seats, by);
+  const whence: Wording[] = from === null ? [] : [{ form: 'alone', from, to: null }];
+  if (to === null) return whence;
+  return [...whence, { form: 'to zone', from: null, to }, ...(from === null ? [] : [{ form: 'to zone', from, to } satisfies Wording])];
+}
+
+/** A wording as the words an example adds after its cards: “… from the stall to p0's stash”. */
+function sayWording(env: PhraseEnv, { form, from, to }: Wording, target: CardMatch | null): string {
+  const whence = from === null ? '' : ` from ${zoneNameOf(env.game, from)}`;
+  const where = form === 'to zone' ? ` to ${zoneNameOf(env.game, to!)}` : form === 'to card' ? ` to ${describeCard(target!)}` : '';
+  return `“…${whence}${where}”`;
+}
+
 /**
  * What an example has to say to press one of several buttons that could take its cards: where they come from, when each takes them from
- * a zone of its own; else where they go, when each puts them somewhere else; else no wording of the example can choose, and the buttons
- * need other words. The card they go to is no place an example can name: it names the card, not where the card lies.
+ * a zone of its own; else where they go, when each puts them somewhere else. When neither alone is enough, each button gets the fewest
+ * words that press it and no other: where its cards come from, where they go, or both. A button no words can press alone needs other
+ * words. `target` is the card an example named for its cards to go to, if it named one.
  */
-function tellApart(env: PhraseEnv, takers: DeclaredAction[], by: PlayerId): string {
+function tellApart(env: PhraseEnv, press: Press, takers: DeclaredAction[], target: CardMatch | null): string {
+  const { by } = press;
   const sources = takers.map((action) => moveZoneId(action.pick!.from, env.seats, by));
   if (allDifferent(sources)) {
     const named = sources.flatMap((zoneId) => (zoneId === null ? [] : [`“… from ${zoneNameOf(env.game, zoneId)}”`]));
     return `Say where it comes from: ${joinOr(named)}.`;
   }
   const goes = takers.map(({ pick }) => (pick!.onto !== null ? 'a card' : pick!.to === null ? 'nowhere' : moveZoneId(pick!.to, env.seats, by)));
-  return allDifferent(goes) ? 'Say where it goes.' : 'Give the buttons different words.';
+  if (allDifferent(goes)) return 'Say where it goes.';
+  const pressesAlone = (action: DeclaredAction) => (wording: Wording) => {
+    const { takers: pressed } = buttonsFor(env, press, wording);
+    return pressed.length === 1 && pressed[0].action === action;
+  };
+  const own = takers.map((action) => wordingsOf(env, by, action.pick!).find(pressesAlone(action)) ?? null);
+  const said = own.flatMap((wording) => (wording === null ? [] : [sayWording(env, wording, target)]));
+  if (said.length === 0) return 'Give the buttons different words.';
+  const unsaid = takers.filter((_, i) => own[i] === null).map((action) => `“${action.words}”`);
+  return `Say which: ${joinOr(said)}.${unsaid.length === 0 ? '' : ` ${joinAnd(unsaid)} need different words.`}`;
 }
 
 /**
@@ -86,40 +143,35 @@ const pressesCardButton = (form: Form, saysFrom = false): ActionFn => (env, args
   const [seat, base, matches, ...rest] = args as [string, string, CardMatch[], ...(ZoneRef | CardMatch)[]];
   const [from, after] = saysFrom ? [rest[0] as ZoneRef, rest[1]] : [undefined, rest[0]];
   const by = seatOf(env, seat);
-  const comesFrom = from === undefined ? null : soleZone(from, env, by);
-  const goesTo = form === 'to zone' ? soleZone(after as ZoneRef, env, by) : null;
-  const fitsForm = (pick: CardPick): boolean => {
-    if (comesFrom !== null && moveZoneId(pick.from, env.seats, by) !== comesFrom) return false;
-    if (form === 'to card') return pick.onto !== null;
-    if (form === 'alone') return pick.onto === null;
-    return pick.to !== null && moveZoneId(pick.to, env.seats, by) === goesTo;
+  const wording: Wording = {
+    form, from: from === undefined ? null : soleZone(from, env, by), to: form === 'to zone' ? soleZone(after as ZoneRef, env, by) : null,
   };
-  const fits = buttonsWithBase(env, base).filter(({ action }) => fitsForm(action.pick!) && (matches.length === 1 || action.pick!.some));
+  const press: Press = { by, base, matches, inPlay: env.state.cards.filter((card) => card.zoneId !== BOX_ZONE).sort(byCardId) };
+  const { fits, takers } = buttonsFor(env, press, wording);
   if (fits.length === 0) {
     const whence = from === undefined ? '' : ` from ${describeZone(from)}`;
     const where = form === 'to zone' ? ` to ${describeZone(after as ZoneRef)}` : form === 'to card' ? ' to another card' : '';
     throw new RuleError(`No button lets ${by} ${base} ${matches.length === 1 ? 'a card' : 'more than one card'}${whence}${where}.`);
   }
-  const inPlay = env.state.cards.filter((card) => card.zoneId !== BOX_ZONE).sort(byCardId);
-  const fromZone = (action: DeclaredAction) => moveZoneId(action.pick!.from, env.seats, by);
-  const takers = fits.filter(({ action, here }) => here && holdsEach(inPlay.filter((card) => card.zoneId === fromZone(action)), matches));
   if (takers.length > 1) {
     const actions = takers.map(({ action }) => action);
     const wordings = joinOr(actions.map((action) => `“${action.words}”`));
-    throw new RuleError(`${by} could ${base} ${describeCard(matches[0])} with more than one button: ${wordings}. ${tellApart(env, actions, by)}`);
+    const target = form === 'to card' ? after as CardMatch : null;
+    throw new RuleError(`${by} could ${base} ${describeCard(matches[0])} with more than one button: ${wordings}. ${tellApart(env, press, actions, target)}`);
   }
   const button = (takers[0] ?? fits[0]).action;
   const pick = button.pick!;
+  const fromZone = moveZoneId(pick.from, env.seats, by);
   const taken = new Set<string>();
   const ids = matches.map((match) => {
-    const id = cardFor(inPlay, match, fromZone(button), taken, by, base);
+    const id = cardFor(press.inPlay, match, fromZone, taken, by, base);
     taken.add(id);
     return id;
   });
   const move: Move = pick.some ? { type: button.words, cardIds: ids } : { type: button.words, cardId: ids[0] };
   if (form === 'to card') {
     const ontoZone = pick.onto === null ? null : moveZoneId(pick.onto, env.seats, by);
-    move.onto = cardFor(inPlay, after as CardMatch, ontoZone, taken, by, base);
+    move.onto = cardFor(press.inPlay, after as CardMatch, ontoZone, taken, by, base);
   }
   return { by, move };
 };
@@ -127,7 +179,7 @@ const pressesCardButton = (form: Form, saysFrom = false): ActionFn => (env, args
 /**
  * What the lines of a button that picks cards may say about them: “the target card” for the card a press picked for its cards to go
  * to, and “the picked cards” for a set. And the lines of an example that press such a button (“A player may buy a card from the shop to
- * their stash.”), naming the cards after the button's base, and where they come from or where they go when two buttons could take them.
+ * their stash.”), naming the cards after the button's base, and where they come from, where they go or both when several buttons could take them.
  */
 export function registerCardPickPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
