@@ -4,6 +4,9 @@ import { PixiTable } from './pixi-table';
 import { FaceTextureCache } from './face-texture-cache';
 import { CardSprite } from './card-sprite';
 import type { Scene } from '../core/scene';
+import { deriveScene } from '../core/derive-scene';
+import { TABLE } from '@/pages/hearts-demo/cards';
+import { createHeartsServer } from '@/pages/hearts-demo/game';
 
 const faces = () => new FaceTextureCache(() => Texture.EMPTY, () => Texture.EMPTY);
 const scene = (ids: string[]): Scene => ({
@@ -132,5 +135,71 @@ describe('zone names', () => {
     const [shop, lost] = texts(table);
     expect(shop.style).toMatchObject({ wordWrap: true, wordWrapWidth: 420, align: 'center' });
     expect(lost.style).toMatchObject({ wordWrap: true, wordWrapWidth: 120, align: 'center' });
+  });
+});
+
+describe('decor', () => {
+  const madeBy = (): { table: PixiTable; made: CardSprite[] } => {
+    const made: CardSprite[] = [];
+    const table = new PixiTable({
+      faces: faces(),
+      createSprite: () => {
+        const sprite = new CardSprite();
+        made.push(sprite);
+        return sprite;
+      },
+    });
+    return { table, made };
+  };
+  const kids = (s: CardSprite, label: string) => s.children.filter((c) => c.label === label);
+  const descendants = (c: Container): Container[] => c.children.flatMap((ch) => [ch, ...(ch instanceof Container ? descendants(ch) : [])]);
+
+  it('gives a card its decor, and one that comes later its own', () => {
+    const { table, made } = madeBy();
+    table.setScene(scene(['a', 'b']));
+    table.setDecor({ a: { caption: 'x' } });
+    expect((kids(made[0], 'card-caption')[0] as Text).text).toBe('x');
+    expect(kids(made[1], 'card-caption')).toHaveLength(0);
+
+    table.setScene(scene(['a', 'b', 'c']));
+    expect((kids(made[0], 'card-caption')[0] as Text).text).toBe('x');
+    expect(kids(made[2], 'card-caption')).toHaveLength(0);
+
+    table.setDecor({ c: { ring: 'choice' } });
+    expect(kids(made[0], 'card-caption')).toHaveLength(0);
+    expect(kids(made[2], 'card-ring')).toHaveLength(1);
+  });
+
+  it('gives a card that arrives after the decor was set the decor stored for it', () => {
+    const { table, made } = madeBy();
+    table.setScene(scene(['a']));
+    table.setDecor({ b: { ring: 'chosen' } });
+    table.setScene(scene(['a', 'b']));
+    expect(kids(made[0], 'card-ring')).toHaveLength(0);
+    expect(kids(made[1], 'card-ring')).toHaveLength(1);
+  });
+
+  it('never touches a sprite\'s decor for a table that is given none', () => {
+    const calls: unknown[] = [];
+    const table = new PixiTable({
+      faces: faces(),
+      createSprite: () => {
+        const sprite = new CardSprite();
+        sprite.setDecor = (decor) => calls.push(decor);
+        return sprite;
+      },
+    });
+    table.setScene(scene(['a', 'b']));
+    table.setScene(scene(['a', 'b', 'c']));
+    expect(calls).toEqual([]);
+  });
+
+  // A guard: this passes before the change, and pins that a page that puts no decor draws Hearts as it did.
+  it('draws Hearts with no ring and no caption, and two children to a card', () => {
+    const { table, made } = madeBy();
+    table.setScene(deriveScene(TABLE, { cards: createHeartsServer(42).viewFor('p0').scene.cards }));
+    expect(made.length).toBeGreaterThan(0);
+    for (const sprite of made) expect(sprite.children).toHaveLength(2);
+    expect(descendants(table).filter((c) => c.label === 'card-ring' || c.label === 'card-caption')).toEqual([]);
   });
 });

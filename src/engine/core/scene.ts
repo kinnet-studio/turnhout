@@ -44,6 +44,12 @@ export interface ZoneState {
   label?: string;
 }
 
+/**
+ * What a page may put on a card: a ring around it, and a caption under it. It lives in what the page hands the canvas, never
+ * in the game's state.
+ */
+export type CardDecor = { ring?: 'choice' | 'chosen'; caption?: string };
+
 export interface Scene {
   cards: CardState[];
   zones: ZoneState[];

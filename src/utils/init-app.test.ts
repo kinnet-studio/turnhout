@@ -68,3 +68,13 @@ describe('makeInitApp', () => {
     leave.mockRestore();
   });
 });
+
+describe('makeInitApp decor', () => {
+  it('hands a decor to the table it draws', async () => {
+    const app = await start();
+    const draw = vi.spyOn(app.pixiTable, 'setDecor');
+    const decor = { a: { ring: 'choice' as const, caption: 'x' } };
+    app.setDecor(decor);
+    expect(draw).toHaveBeenCalledWith(decor);
+  });
+});

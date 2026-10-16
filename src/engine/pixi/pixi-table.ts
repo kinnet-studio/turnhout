@@ -5,6 +5,7 @@ import { TableModel } from '../core/table-model';
 import { placeZone } from '../core/zone-geometry';
 import { CardSprite } from './card-sprite';
 import type { FaceTextureCache } from './face-texture-cache';
+import type { CardDecor } from '../core/scene';
 
 export interface PixiTableDeps {
   faces: FaceTextureCache;
@@ -23,6 +24,8 @@ export class PixiTable extends Container {
   /** Behind everything else, so a name never covers a card. */
   private zoneNames = new Container();
   private nameTexts = new Map<string, Text>();
+  /** Null until a page gives some, so a table that never is leaves every card's sprite as it was made. */
+  private decor: { [cardId: string]: CardDecor } | null = null;
 
   constructor(deps: PixiTableDeps) {
     super();
@@ -54,6 +57,7 @@ export class PixiTable extends Container {
         sprite = this.createSprite();
         this.sprites.set(card.id, sprite);
         this.addChild(sprite);
+        if (this.decor) sprite.setDecor(this.decor[card.id] ?? null);
       }
       const upTex = this.faces.get({ ...card, faceUp: true });
       const downTex = this.faces.get({ ...card, faceKey: 'back', faceUp: false });
@@ -62,6 +66,12 @@ export class PixiTable extends Container {
 
     if (this.showEmptyZones) this.drawEmptyZoneOutlines(scene);
     this.drawZoneNames(scene);
+  }
+
+  /** The ring and caption each card wears, by card id. A card the map lacks goes bare, and so does one that arrives later. */
+  setDecor(decor: { [cardId: string]: CardDecor }): void {
+    this.decor = decor;
+    for (const [id, sprite] of this.sprites) sprite.setDecor(decor[id] ?? null);
   }
 
   /**

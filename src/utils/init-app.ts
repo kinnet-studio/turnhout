@@ -146,6 +146,7 @@ export const makeInitApp =
       setIntents: (next) => {
         intents = next;
       },
+      setDecor: (decor) => pixiTable.setDecor(decor),
       clientToWorld,
     };
   };
