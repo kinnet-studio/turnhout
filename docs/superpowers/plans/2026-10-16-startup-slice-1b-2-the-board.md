@@ -44,6 +44,37 @@
   - **The open job market's eviction.** 1a's long runs can't reach it (no income). Once Income exists, this plan's long runs add a fourth trigger key, the open job market letting a card go to the box, expected above 0.
   - **Example counts.** 1a-1's final fix wave adds examples to `startup-simulator.rules` (research with the last action, a 1-card research deck, the Crash on the last seat's turn) and moves the Market Crash into the growth products table as its first row (its card id is no longer fixed). Wherever this plan says "21 examples" or "21 of 21", read the count the committed file has when this plan starts, and add this plan's examples to it.
 
+- **Controller amendment (pre-flight, after plans 1a-2 and 1b-1 were built).** The scan is in the plan's SDD workspace
+  (`preflight.md`). Each task's brief carries its rulings; in short:
+  - **P1 (Task 8).** Adding ", 0 market share" after the actions count changes seven more money lines: `tableaux.test.ts:37`
+    and `playtest-fitted.test.tsx` 137, 235, 242, 259, 263, 268 (`:259` becomes
+    `'0 actions, 0 market share · bench 5 · backlog 2 · research 0'`). They count as money lines Task 8 may change.
+  - **P2 (Tasks 7–8).** The rules hold 24 examples, so Task 7 ends at 34 and Task 8 at 53 (the test file, both places in
+    `designer-page.test.tsx`, and the README's "Its 53 examples").
+  - **P3 (Task 1).** `CREW_GAME` has `Each player has 3 moves each turn.`; the hire bullet expects "p0 has 2 moves".
+  - **P4 (Task 3).** One loop guard keyed by card and name, shared by `workedValue` and `workedFlag`, cleared in `finally`;
+    tests for a flag reading itself and for a value line reading a worked flag.
+  - **P5 (Task 9).** The tally keeps 1a-1's three happenings and adds the open job market's eviction and the agency
+    push-out (a card leaving `agency-row` for `open-job-market` in a move that isn't a hire), each above 0.
+  - **P6 (Task 9).** The auto-player dismisses the first ops team card when `t % 9 === 4` and the first development team
+    card when `t % 9 === 8`, at most once per turn.
+  - **P7 (Task 1).** `onCardsZoneOf` picks the first per-player zone marked `'every'`; `attachmentProblem`'s rule 1 applies
+    to `'every'` zones only, rule 2 to unmarked zones (slice 4 R5 and slice 8 R2 add `'some'` zones later).
+  - **P8 (Task 4).** `runtime.readsCard` also counts a ref whose args hold a `CardGroup` of kind `picked` or `on it`.
+  - **P9 (Task 2).** `it is not {cardflag}` removes the key.
+  - **P10 (Task 8).** The README's tableau sample and its "When p0 hires the Hacker" line are updated to 1b.
+  - **P11 (Tasks 1, 6).** 1b-1's `NEEDS_CARDS`/`NEEDS_ONTO` are private: tests spell the text.
+  - **P12 (Task 9).** `Run` gains `until?: (log: readonly Move[]) => boolean`; the view check covers
+    `ActionView.cards.onto.targets` against `ontoCandidates`, card by card (a set press is judged whole). 1b-1 built
+    `playGame(players, seed, watch, { moves, throughView })` and `playTurn` taking a runtime.
+  - **P13 (Tasks 4, 6).** T4's expected diagnostic is the `mentionsActor` one; its `for each` tests run through a host line.
+    T6 puts a Potter in `crew-p0` and adds the stars counter to `CREW_GAME`'s players in the test.
+  - **P14 (Tasks 1, 4).** Reuse `namedCardIn`/`noCardIn`/`cardsInZones` (exported from `fact-phrases.ts` or moved to
+    `support.ts`); move `pickName` next to `cardName` in `card-facts.ts`, exported.
+  - **P15 (Task 1).** A card with `lang:on` sent into the bottom fifth loses the key (a test in `queue-phrases.test.ts`).
+  - **P16.** Bullets that pass before their task is built are marked "(guard: passes before and after)"; Task 5's PAYDAY is
+    trimmed to what is new.
+  - **P17 (Task 4).** `whose` stays `{ attribute; above } | null`; slice 3 widens it.
 - **Hard constraints (verbatim):**
   - Protected files must not change: `src/engine/core/game-state.ts`, `src/engine/core/flow.ts`, `src/engine/core/game-engine.ts`, and anything under `src/pages/hearts-demo/**`.
   - The core is pure: no pixi/react/DOM imports in `src/engine/core/**`, no `Math.random` or `Date.now`.
