@@ -180,6 +180,12 @@ function play(engine: GameEngine, move: Move, watch: Watch): void {
 }
 
 /**
+ * How many cards `viewedCards` has checked the targets of, and how many cards of a set button: the long runs that pick through the view
+ * count on it, so that the check is known to have looked at some.
+ */
+const viewChecks = { targets: 0, sets: 0 };
+
+/**
  * The cards `extras`, the page's view of `seat` in `state`, offers for the button `type`, once the view is checked against the
  * rules: they are the button's candidates, which are the cards of `zoneId` in slot order, each is named by its card's name, and
  * the button is allowed exactly when some card is. A button that puts its cards on a card picks that card in `ontoZoneId`, and the
@@ -208,8 +214,10 @@ function viewedCards(
       const named = targets.map((target) => [target.id, nameOf(target)]);
       expect(goes.map(({ id, name }) => [id, name]), `the targets the view offers ${card.id} in ${at}`).toEqual(named);
       expect(card.allowed === true, `whether ${at} allows ${card.id}, with ${JSON.stringify(goes)}`).toBe(goes.some((t) => t.allowed === true));
+      viewChecks.targets += 1;
     }
   }
+  if (picking.some) viewChecks.sets += offered.length;
   const some = offered.some((card) => card.allowed === true);
   expect(button!.allowed === true, `whether ${at} is allowed, with ${JSON.stringify(offered)}`).toBe(some);
   return picking;
@@ -1165,11 +1173,17 @@ describe('Startup Simulator (designer language)', () => {
         const where = `${players} players, seed ${seed}`;
         const rules = keepsTheRules(seats);
         const budget = keepsTheBudget(seats);
+        const checked = { ...viewChecks };
         const engine = playGame(players, seed, (before, move, after) => {
           rules(before, move, after);
           budget(before, move, after);
           for (const key of [move.type, ...happenings(before, move, after)]) tally[key] = (tally[key] ?? 0) + 1;
         }, { throughView: seed === 1 });
+        if (seed === 1) {
+          // The view was checked card by card: the cards each card may go on, and the cards of a set, each judged alone.
+          expect(viewChecks.targets - checked.targets, `${where}: cards whose targets the view was checked for`).toBeGreaterThan(0);
+          expect(viewChecks.sets - checked.sets, `${where}: cards of a set the view was checked for`).toBeGreaterThan(0);
+        }
         const state = engine.getState();
         const turns = turnsIn(engine.getLog());
         expect(state.result, `${where}: the result after ${turns.length} turns`).toBeDefined();
