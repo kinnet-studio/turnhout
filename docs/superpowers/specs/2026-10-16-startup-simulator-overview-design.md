@@ -103,8 +103,9 @@ rulebook as written, every rule and every card.
     have a holder in another seat's public zone, the seat fixed when it was placed. "The cards on it" reads only the
     holder owner's cards; a separate phrase reads the others.
   - No protected file and no `CardState` change is needed.
-- **Equity tokens are cards** (three per player, with a `founder` column). Invest, Consultant, Vest and CTO become zones
-  plus attachment, and "holds B's Equity" and "Partners" become conditions over cards. No facts between pairs of players
+- **Equity tokens are cards** (three per player, with a `founder` column). Invest and Consultant become zones plus
+  attachment; Vest and CTO are a mark on the employee plus a parked token (slice 8 R1); an Integration is a Client
+  attached to its Host inside operations (slice 8 R2, the one case of an attached card in its holder's zone); and "holds B's Equity" and "Partners" become conditions over cards. No facts between pairs of players
   are needed.
 - **XP, Skill, Badge, Bug, Hype, Scandal, Onboarding and cubes stay counts and flags on cards.** New phrases pick the fact
   by a color worked out from context ("XP in its mode's color").

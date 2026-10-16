@@ -1,7 +1,7 @@
 # Startup Simulator, Slice 8: Selling, Poaching, Hit Piece, Integration and the CTO
 
 **Date:** 2026-10-16
-**Status:** Draft, waiting for its builder check. The user handed over every design call for the full implementation;
+**Status:** Settled after its builder check (see "Builder-check rulings" at the end). The user handed over every design call for the full implementation;
 the calls below are the builder's.
 **Part of:** `2026-10-16-startup-simulator-overview-design.md`. Its decisions, calls, anti-goals and constraints apply.
 **Builds on:** slices 1a to 7.
@@ -63,8 +63,8 @@ The game after this slice:
 - **What this slice leaves out:** the Broken Chain and Come Clean on a sale (slice 10), Bankruptcy's forced sales
   (slice 10), the CTO's Audit Shield in effect (slice 9).
 - **Cease & Desist and Vest are offered in a reaction window** after the fee is paid, to the victim only, before the
-  transfer (§16.D.2: "immediately"). The window opens only when the victim could react (a C&D in hand, or an Equity
-  token in supply).
+  transfer (§16.D.2: "immediately"). The window opens when the victim has an Equity token in supply or any Strategy
+  card in hand (both public; R4).
 - **A Market Sale asks rivals in turn order from the seller's left;** the first who accepts buys. A rival without the
   bandwidth or cash isn't asked.
 - **Integration choices** are made by the owner in Phase C (0 AP); a stack whose card leaves breaks at once (§10.D).
@@ -104,6 +104,11 @@ The game after this slice:
 | Cease & Desist | cancelled and refunded |
 | The transfer | Onboarding Token even on an Agile team; the Hacker's Bug on joining; the old project Stalls without its Lead |
 | Destroyed Equity | a Vested employee fired: the token leaves the game |
+| Vest survives the Bench | a Pivot sends a Vested employee to the Bench; the mark and the locked token stay |
+| Sold with a Vest | a Vested Sales Rep leaves with an Acquired product: the seller's token leaves the game; a Fire Sale keeps it |
+| Integration breaks on sale | selling the Host breaks the stack; the Client stays with its owner |
+| No Offline by choice at game end | everything fits: a −5 Scandal product stays Online and scores −5 |
+| Window with an empty supply | a victim with no Equity in supply and an empty Strategy Hand: the transfer happens at once |
 | Hit Piece | +1 Scandal; not against a Founder whose Equity you hold |
 | Scandal scores | −5 VP each, below 0 possible |
 | Crisis Management | a Director of QA removes Scandal before Bugs |
@@ -132,3 +137,38 @@ The game after this slice:
 ## Left to the builder
 
 - Exact wordings; how stacks and windows look; the auto-player's choices.
+
+## Builder-check rulings
+
+The builder check (`builder-check-startup-8.md`) raised four questions. The user handed every design call to the builder;
+these are the calls.
+
+- **R1. Vest and CTO tokens are a mark on the employee plus a parked card (slice 6 R2's pattern), not attached cards.**
+  - Vesting or promoting puts `1 vest` or `1 cto` on the employee and moves one of the player's own supply tokens to a
+    public per-player "locked equity" pile. Destroying the token strips the mark and boxes one locked card; every locked
+    card is the player's own, so any one will do.
+  - The mark rides with the employee through Recall, Pivot, the Bench and slice 9's Fold, and hides with it on the Bench,
+    as slice 5 R4 and slice 6 R2 provide. Destruction (§18.B: firing or a Bench discard) hooks into the existing "firing
+    strips tokens" lines.
+  - When a Vested or CTO employee leaves with a product in an Acquisition or Market Sale, the seller's token is
+    destroyed (§16.D.2 "can't be sold or moved"; Rust's `release_talent`). A Fire Sale returns the employee to the
+    seller's Bench, and the token stays.
+  - Why: the employee is often on the hidden Bench, where 1b R3's check forbids a holder; and unlike a Consultant (slice 7
+    R1) the token's identity never matters, since it is always its holder's own and never moves or trades.
+- **R2. An Integration is attachment inside operations.**
+  - The Client stays in "their operations" with its holder (`lang:on`) set to the Host; operations gets slice 4 R5's
+    `'some'` mark (a zone where some cards sit on cards). "One Client per Host" is "no product card on it", and "a Client
+    sits under only one Host" (§10.A) holds by construction.
+  - Every rule that takes a product off its owner's Board first breaks the stack it is in, then returns Consultants
+    (slice 7 R1), then moves the product with everything on it. "With everything on it" therefore never carries a
+    Client.
+  - Lines that count staff on a product name staff ("the talent cards on it"); a product card has no rev bonus value, so
+    the existing sums don't change.
+  - Why: one attachment mechanism and its check, no zone phrase changes, and the stack breaks by explicit, checked lines.
+    The overview's "never in the holder's zone" is amended for this one case.
+- **R3. No product goes Offline by choice at the game-end check** (§12 step 2: "If all your products fit, they are all
+  Online"). When some product must go Offline, the choice is already any set that leaves the rest fitting (slice 4 R6),
+  so a Scandal product may be chosen then. This answers the question slice 4 carried here; pinned by an example.
+- **R4. The Vest / Cease & Desist window opens when the victim has an Equity token in supply or any Strategy card in
+  hand.** Both are public, so whether the window opens reveals nothing about the hidden hand (the overview's
+  hidden-information anti-goal). With neither, the transfer happens at once. The victim may always let it go.
