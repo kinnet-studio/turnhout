@@ -215,7 +215,7 @@ Phase: playing
 **A table too big for one screen.** When a game's zones don't fit the table, the playtest shows one seat at a time, with a tab for each seat:
 
 - **The tabs.** A tab reads `p1`, or `p1 — to act` for the seat that must act. The tabs jump to the seat that must act when the turn moves on, Undo included; in between, any seat's tab can be opened to look at its table.
-- **The table.** The shared zones wrap onto lines across the top, each named above it. The seat's own zones run along the bottom, and the other seats' zones are left off. A row's cards stand side by side, so every face can be read; a longer row squeezes them to stay in its place.
+- **The table.** The shared zones wrap onto lines across the top, each named above it. The seat's own zones that only it can see run along the bottom, its public zones in the band between those and the shared zones, and the other seats' zones are left off. A row's cards stand side by side, so every face can be read; a longer row squeezes them to stay in its place.
 - **The other seats.** Every player's line shows their numbers, how many cards each of their zones holds, and the start player: `p0 7 capital, 3 actions, 0 market share · bench 3 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0 · start player`.
 - **Faces.** A card face shows its name and its first three columns, so a card table puts its key columns first. Pointing at a card shows all of it under the table: `Architect — cost 7 · skill software · output 3 · salary 2 · role Senior Developer · trait Clean Code`.
 - **The Board.**
