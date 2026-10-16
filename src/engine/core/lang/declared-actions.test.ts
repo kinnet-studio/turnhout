@@ -516,7 +516,10 @@ describe('buttons that carry an amount', () => {
   });
   it('Review Focus: an amount that is not a whole number of 0 or more is refused before any Only if line reads it', () => {
     const engine = rolled();
-    for (const amount of [1.5, -5, '50', null, true]) expect(engine.canDispatch({ type: RAISE, by: 'p0', amount })).toBe('Say how much to raise.');
+    // 2**53 is past the whole numbers that can be told apart exactly, so “more than the pot” could not be trusted on it.
+    for (const amount of [1.5, -5, '50', null, true, 2 ** 53, NaN, Infinity]) {
+      expect(engine.canDispatch({ type: RAISE, by: 'p0', amount }), String(amount)).toBe('Say how much to raise.');
+    }
   });
 
   describe('amountReady', () => {

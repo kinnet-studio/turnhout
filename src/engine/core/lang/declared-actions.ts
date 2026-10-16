@@ -21,10 +21,13 @@ function pickedBy(m: Move, runtime: LangRuntime): number | null {
   return typeof target === 'number' && Number.isInteger(target) && target >= 0 && target < spaces ? target : null;
 }
 
-/** The amount the move carries, or null when it carries none that is a whole number of 0 or more. */
+/**
+ * The amount the move carries, or null when it carries none that is a whole number of 0 or more. It must be one that is exact,
+ * too: past 2**53 two different numbers can be equal, and “more than” could not be trusted.
+ */
 function pickedAmount(m: Move): number | null {
   const { amount } = m;
-  return typeof amount === 'number' && Number.isInteger(amount) && amount >= 0 ? amount : null;
+  return typeof amount === 'number' && Number.isSafeInteger(amount) && amount >= 0 ? amount : null;
 }
 
 /** What a button that carries an amount asks of the player who has not said how much. */
