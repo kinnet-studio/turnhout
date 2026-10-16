@@ -13,7 +13,7 @@ import { amountPrompt, amountReady, playerCandidates, targetCandidates } from '.
 import { friendlyError, friendlyReason } from './friendly';
 import { secondPersonWords } from './refs';
 import type { LangRuntime } from './runtime';
-import { START_PLAYER_KEY } from './turns';
+import { startPlayerOf, usesTurns } from './turns';
 import type { DeclaredAction } from './types';
 import { zoneIdFor } from './zones';
 
@@ -45,7 +45,7 @@ type FactsView = { [fact: string]: number | boolean };
  * public too, so every seat sees the same.
  * `interrupted` is true while another phase holds a turn that will be gone back to, which the page says in a seat's status so a
  * phase that is not the first is not mistaken for the game's ordinary turns.
- * `startPlayer` is the seat that took the game's first turn, null in a game that never chose one; every seat sees the same.
+ * `startPlayer` is the seat that takes each round's first turn, null in a game that does not take turns; every seat sees the same.
  */
 export type BoardView = {
   spaces: SpaceView[]; pieces: { [seat: string]: number }; roll: number[] | null; counters: CounterView[]; out: PlayerId[]; bank: BankView[];
@@ -133,10 +133,12 @@ function gameNumbersIn(runtime: LangRuntime, state: GameState): { name: string; 
     .filter(({ value }) => value !== 0);
 }
 
-/** The seat kept as the one that took the first turn, or null when the game never chose one. */
-function startPlayerIn(state: GameState): PlayerId | null {
-  const kept = state.data[START_PLAYER_KEY];
-  return typeof kept === 'string' ? kept : null;
+/**
+ * The seat that takes each round's first turn: the one Setup chose, else the first seat, which starts a game of turns that has no
+ * line choosing. Null in a game that does not take turns, where no seat starts anything.
+ */
+function startPlayerIn(runtime: LangRuntime, state: GameState): PlayerId | null {
+  return usesTurns(runtime.game) ? startPlayerOf(state, runtime.seats) : null;
 }
 
 function boardView(runtime: LangRuntime, state: GameState, seat: PlayerId): BoardView | null {
@@ -167,7 +169,7 @@ function boardView(runtime: LangRuntime, state: GameState, seat: PlayerId): Boar
     lastDrawn: lastDrawn(state), owes: debtsIn(runtime, state),
     playerCards: Object.fromEntries(kept.map(([s, cards]) => [s, cards.map((card) => cardName(card, runtime.game))])),
     playerCardFlags: Object.fromEntries(kept.map(([s, cards]) => [s, cards.map((card) => flagsOnCard(runtime, card))])),
-    gameNumbers: gameNumbersIn(runtime, state), interrupted: interruptedTurn(state) !== null, startPlayer: startPlayerIn(state),
+    gameNumbers: gameNumbersIn(runtime, state), interrupted: interruptedTurn(state) !== null, startPlayer: startPlayerIn(runtime, state),
   };
 }
 

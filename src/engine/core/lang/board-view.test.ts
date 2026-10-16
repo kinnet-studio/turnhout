@@ -781,7 +781,17 @@ describe('seat views of who started the game', () => {
     expect(typeof state.data[START_PLAYER_KEY]).toBe('string');
     for (const seat of ['p0', 'p1', 'p2']) expect(seatExtras(engine, runtime, state, seat).board!.startPlayer, seat).toBe(state.data[START_PLAYER_KEY]);
   });
-  it('names no one in a game that never chose one', () => {
+  it('names the first seat in a game that takes turns with no line choosing who starts, since that seat starts', () => {
+    const text = TURN_GAME.replace('Setup:\n  The start player is chosen at random.\n\n', '');
+    expect(text).not.toContain('Setup:');
+    const { game: chores, diagnostics } = compileGame(text, lib);
+    expect(diagnostics).toEqual([]);
+    const { engine, runtime } = createEngine(chores!, lib, 3, initialState(chores!, 1));
+    const state = engine.getState();
+    expect(state.data[START_PLAYER_KEY]).toBeUndefined();
+    for (const seat of ['p0', 'p1', 'p2']) expect(seatExtras(engine, runtime, state, seat).board!.startPlayer, seat).toBe('p0');
+  });
+  it('names no one in a game that does not take turns', () => {
     const rentDay = compileGame(RENT_DAY, lib).game!;
     const { engine, runtime } = createEngine(rentDay, lib, 2, initialState(rentDay, 1));
     expect(seatExtras(engine, runtime, engine.getState(), 'p0').board!.startPlayer).toBeNull();
