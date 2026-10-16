@@ -71,8 +71,9 @@ export type TargetView = { prompt: string; spaces: { [space: string]: true | str
 export type ChoiceView = { at: number; prompt: string; options: { value: string; allowed: true | string }[] };
 /**
  * A card a button may pick, by its id: `name` is how the seat sees it, and `allowed` is true when the move takes it, else why not.
- * `choices` is there only when the press of the card asks a choice: of the card alone, or of the card with this one as its target in
- * `onto.targets`. A card is allowed when only a choice is missing: the engine is asked with each choice at its first option.
+ * `choices` is there only when the press of the card asks a choice and is allowed: the press of the card alone, or of the card with this
+ * one as its target in `onto.targets`. A card is allowed when only a choice is missing: the engine is asked with each choice at its first
+ * option.
  */
 export type PickCardView = { id: string; name: string; allowed: true | string; choices?: ChoiceView[] };
 /**
@@ -92,7 +93,7 @@ export type CardPickView = {
  * true for a button that carries an amount, which the player types before pressing it. `players` is null for every button but one
  * that picks another player; for that one it has each player to pick, `true` when the move accepts that player and otherwise the
  * sentence for why it does not. `cards` is there only on a button that picks a card: the cards to pick from. `choices` is there only
- * on a button that picks nothing whose press asks a choice; it is allowed when only a choice is missing, as a card is.
+ * on a button that picks nothing whose press asks a choice and is allowed; it is allowed when only a choice is missing, as a card is.
  */
 export type ActionView = {
   move: string; label: string; allowed: true | string; target: TargetView | null; amount: boolean; players: { [seat: string]: true | string } | null;
@@ -209,10 +210,10 @@ const noneWords = (target: NonNullable<DeclaredAction['target']>): string => tar
 const pickPrompt = (target: NonNullable<DeclaredAction['target']>): string => `Pick ${targetWords(target)}`;
 
 /** What a press picks, and the choices it names: each part goes on the move only when it is given. */
-type Pick = { target?: number; player?: PlayerId; cardId?: string; cardIds?: string[]; onto?: string; choices?: (string | null)[] };
+type PressPick = { target?: number; player?: PlayerId; cardId?: string; cardIds?: string[]; onto?: string; choices?: (string | null)[] };
 
 /** The move `seat` sends to press the button `move` with `pick`. */
-function pressOf(seat: PlayerId, move: string, pick: Pick): Move {
+function pressOf(seat: PlayerId, move: string, pick: PressPick): Move {
   return { type: move, by: seat, ...Object.fromEntries(Object.entries(pick).filter(([, value]) => value !== undefined)) };
 }
 
@@ -220,7 +221,7 @@ function pressOf(seat: PlayerId, move: string, pick: Pick): Move {
  * Whether `seat` may press the button now, with the space, the player or the cards it picks when it picks any, and the choices it names;
  * a rule that cannot be answered (“Go has no price.”) greys it with that sentence.
  */
-function allowedNow(engine: GameEngine, state: GameState, seat: PlayerId, move: string, pick: Pick = {}): true | string {
+function allowedNow(engine: GameEngine, state: GameState, seat: PlayerId, move: string, pick: PressPick = {}): true | string {
   try {
     const verdict = engine.canDispatch(pressOf(seat, move, pick));
     return verdict === true ? true : friendlyReason(verdict, state.turn?.current);
@@ -233,7 +234,7 @@ function allowedNow(engine: GameEngine, state: GameState, seat: PlayerId, move: 
  * The choices the press asks, as `pressChoices` finds them; none for a button whose lines ask none, and none for a press the button
  * refuses before they are asked, or that a rule can't answer, whose verdict says so without them.
  */
-function askedOf(runtime: LangRuntime, state: GameState, seat: PlayerId, action: DeclaredAction, pick: Pick): AskedChoice[] {
+function askedOf(runtime: LangRuntime, state: GameState, seat: PlayerId, action: DeclaredAction, pick: PressPick): AskedChoice[] {
   if (choicesOf(action).length === 0) return [];
   try {
     const asked = pressChoices(runtime, state, pressOf(seat, action.words, pick));
@@ -246,16 +247,19 @@ function askedOf(runtime: LangRuntime, state: GameState, seat: PlayerId, action:
 /**
  * Whether `seat` may press the button with `pick` now, and the choices that press asks with the engine's verdict on each answer. The
  * press is asked of the engine with every asked choice at its first option and null elsewhere, so that a press whose only missing piece
- * is a choice is allowed (R1); each answer, with the other choices at their first options. `choices` is left out when none is asked.
+ * is a choice is allowed (R1); each answer, with the other choices at their first options. `choices` is left out when none is asked, and
+ * when the engine refuses the press: who may answer a choice can hang on zones the seat can't see, so the view names them only to a seat
+ * the engine would ask them of, and to no other (one whose turn it isn't, once the game is over).
  */
 function pressView(
-  engine: GameEngine, runtime: LangRuntime, state: GameState, seat: PlayerId, action: DeclaredAction, pick: Pick = {},
+  engine: GameEngine, runtime: LangRuntime, state: GameState, seat: PlayerId, action: DeclaredAction, pick: PressPick = {},
 ): { allowed: true | string; choices?: ChoiceView[] } {
   const asked = askedOf(runtime, state, seat, action, pick);
   if (asked.length === 0) return { allowed: allowedNow(engine, state, seat, action.words, pick) };
   const first: (string | null)[] = Array.from({ length: choicesOf(action).length }, () => null);
   for (const { at, options } of asked) first[at] = options[0];
   const allowed = allowedNow(engine, state, seat, action.words, { ...pick, choices: first });
+  if (allowed !== true) return { allowed };
   const answering = (at: number, value: string): true | string => (value === first[at]
     ? allowed
     : allowedNow(engine, state, seat, action.words, { ...pick, choices: first.map((given, i) => (i === at ? value : given)) }));

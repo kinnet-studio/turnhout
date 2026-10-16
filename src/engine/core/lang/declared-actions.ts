@@ -2,7 +2,7 @@ import { cardById, zoneCards, type GameState } from '../game-state';
 import type { Move, MoveHandler } from '../moves';
 import type { CardState, PlayerId } from '../scene';
 import { addToCounter, clearTurnLog, counterOf, endsTurn, isOut, playersIn, recordAction } from './board-state';
-import { askChoices, choicesOf, fillChoices, type AskedChoice } from './choices';
+import { askChoices, choicesOf, fillChoices, type AskedChoice, type ChoiceOption } from './choices';
 import { isPile, isTakeable, moveZoneId, yours } from './declared-moves';
 import { RuleError } from './diagnostics';
 import { canon, counted, joinOr, secondPersonWords } from './refs';
@@ -258,16 +258,21 @@ export function pressChoices(runtime: LangRuntime, state: GameState, move: Move)
   return typeof press === 'string' ? press : askChoices(runtime, press.action, state, press.info, press.subject);
 }
 
+/** What an example is told when it names choices for a move no button makes, which would otherwise be sent without them. */
+const NO_BUTTON = 'Only the press of a button can name choices, and this move presses none.';
+
 /**
  * The `choices` of a press an example makes (“…, paying p1 and p2, choosing trim 2 gold”), from what it names: `players` fill the
- * choices of a player the press asks, in order, and `option` the first block it asks that offers that option, whatever its case. A choice
- * named nothing is left null, to be filled in or asked for as the press would be, and a player is sent as named, so that one who doesn't
- * qualify is refused with the prompt. Null when nothing is named, and when the button refuses the press before its choices are asked:
- * the move is then sent as it is, for the game to say why. An example that names more players than the press asks for, or an option
- * no block it asks offers, is told so.
+ * choices of a player the press asks, in order, and `option` the first block it asks that has that option, whatever its case. A choice
+ * named nothing is left null, to be filled in or asked for as the press would be. A player is sent as named, and so is an option of the
+ * block that doesn't hold for this press, so that each is refused with the prompt, as a press that names it would be. Null when nothing
+ * is named, and when the button refuses the press before its choices are asked: the move is then sent as it is, for the game to say why.
+ * An example is told when it names choices for a move that presses no button, more players than the press asks for, or an option that
+ * no block it asks has, since a value for a choice that is not asked would be ignored.
  */
 export function namedChoices(runtime: LangRuntime, state: GameState, move: Move, players: string[], option: string | null): (string | null)[] | null {
   if (players.length === 0 && option === null) return null;
+  if (!runtime.game.phases.some((phase) => phase.actions.some((action) => action.words === move.type))) throw new RuleError(NO_BUTTON);
   const press = pressUpToChoices(move.type, runtime, state, move);
   if (typeof press === 'string') return null;
   const asked = askChoices(runtime, press.action, state, press.info, press.subject);
@@ -280,10 +285,13 @@ export function namedChoices(runtime: LangRuntime, state: GameState, move: Move,
   if (option === null) return choices;
   const blocks = asked.filter((choice) => choice.kind === 'option');
   if (blocks.length === 0) throw new RuleError(`“${option}” isn't a choice here: this press chooses nothing.`);
-  const offers = (label: string) => canon(label) === canon(option);
-  const block = blocks.find((choice) => choice.options.some(offers));
-  if (!block) throw new RuleError(`“${option}” isn't a choice here. The choices are: ${joinOr(blocks.flatMap((choice) => choice.options))}.`);
-  choices[block.at] = block.options.find(offers)!;
+  // Every option of an asked block, as written, whether or not it holds for this press.
+  const labelsOf = ({ at }: AskedChoice): string[] =>
+    (choicesOf(press.action).find((ref) => ref.args[0] === at)!.args[2] as ChoiceOption[]).map((choice) => choice.label);
+  const has = (label: string) => canon(label) === canon(option);
+  const block = blocks.find((choice) => labelsOf(choice).some(has));
+  if (!block) throw new RuleError(`“${option}” isn't a choice here. The choices are: ${joinOr(blocks.flatMap(labelsOf))}.`);
+  choices[block.at] = labelsOf(block).find(has)!;
   return choices;
 }
 

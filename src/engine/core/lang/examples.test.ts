@@ -568,6 +568,43 @@ describe('examples that name choices', () => {
     });
   });
 
+  it('sends an option of the block that does not fit the card, to be refused with the prompt', () => {
+    const lines = [
+      '', 'Example: a Vase is red alone', "  Given p0's workshop has a Vase", '  When p0 trims the Vase, choosing trim 2 gold',
+      '  Then it is rejected because "Choose one: Trim 2 red."',
+    ];
+    expect(run(...lines).results[0]).toMatchObject({ status: 'pass' });
+  });
+
+  it('fails an example that names an option the block does not have, listing every option it has', () => {
+    const { results } = run('', 'Example: a third trim', "  Given p0's workshop has a Vase", '  When p0 trims the Vase, choosing trim 3');
+    expect(results[0]).toMatchObject({
+      status: 'fail', message: '“trim 3” isn\'t a choice here. The choices are: Trim 2 red, Trim 2 gold or Trim 1 of each.',
+    });
+  });
+
+  it('fails an example that names an option of a block the press does not ask, which would be ignored', () => {
+    // The block's guard asks nothing of a Tower.
+    const { text, results } = run(
+      '', 'Example: a trimmed Tower', "  Given p0's workshop has a Tower", '  When p0 trims the Tower, choosing trim 2 gold',
+    );
+    expect(results[0]).toMatchObject({
+      status: 'fail', message: '“trim 2 gold” isn\'t a choice here: this press chooses nothing.',
+      atLine: lineOf(text, 'When p0 trims the Tower, choosing trim 2 gold', true),
+    });
+  });
+
+  it('fails an example that names a choice for a move that presses no button, on its When line', () => {
+    const { text, result } = runOne(
+      'Example: a card move pays no one', '  Given p0 holds the 3 of clubs and the 4 of clubs', '  And p1 holds the 9 of diamonds',
+      '  When p0 plays the 3 of clubs, paying p1',
+    );
+    expect(result).toMatchObject({
+      status: 'fail', message: 'Only the press of a button can name choices, and this move presses none.',
+      atLine: lineOf(text, 'When p0 plays the 3 of clubs, paying p1', true),
+    });
+  });
+
   it('fails an example that names an option for a press that chooses none', () => {
     expect(run(...naming('choosing trim 2 gold')).results[0]).toMatchObject({
       status: 'fail', message: '“trim 2 gold” isn\'t a choice here: this press chooses nothing.',

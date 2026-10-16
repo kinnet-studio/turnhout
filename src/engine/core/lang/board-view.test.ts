@@ -1247,6 +1247,28 @@ describe('choices in the view', () => {
     expect(b.engine.canDispatch({ type: PEEK, by: 'p0', cardId: top, choices: ['p2'] })).toBe(true);
   });
 
+  it('Review Focus: lists choices only for a press the engine allows, so no other seat learns who meets a clause about hidden zones', () => {
+    // A payee must hold a stone card in their stash, which only its owner sees: p0 and p1 each hold a Statue there, p2 none.
+    const PAY_STONE = PAY_CLAY.replace('in their workshop whose mark is clay', 'in their stash whose mark is stone');
+    const STASHED = beforeStop('  A player may tip.', '    Then:', PAY_STONE);
+    const b = built(setUp, STASHED);
+    // The engine tells p2 only whose turn it is, and so does the view.
+    expect(button(b, 'tip', 'p2')).toEqual({ move: 'tip', label: 'Tip', allowed: "It's p0's turn.", target: null, amount: false, players: null });
+    // The player whose turn it is still sees whom they may pay.
+    expect(button(b, 'tip').choices).toEqual([{ at: 0, prompt: 'Pick who to pay the fee to: p1.', options: [{ value: 'p1', allowed: true }] }]);
+    // A card the engine would not take now has none either: p1's Vase, whose press would trim it 2 red.
+    const vase = dealt('Vase', 'stash-p1');
+    expect(button(built(twoProviders), TRIM, 'p1').cards!.cards).toEqual([{ id: vase, name: 'Vase', allowed: "It's p0's turn." }]);
+  });
+
+  it('lists no choices once the game is over', () => {
+    const over = { ...twoProviders, result: { winner: 'p0' } };
+    expect(button(built(over), OPEN).cards!.cards.find((c) => c.id === statue)).toEqual({ id: statue, name: 'Statue', allowed: 'The game is over.' });
+    expect(button(built(over, TIPPING), 'tip')).toEqual({
+      move: 'tip', label: 'Tip', allowed: 'The game is over.', target: null, amount: false, players: null,
+    });
+  });
+
   it('is plain data, and readSeatExtras reads it back, and nothing else for a choice', () => {
     const b = built(twoProviders, TIPPING);
     const extras = seatExtras(b.engine, b.runtime, b.engine.getState(), 'p0');
