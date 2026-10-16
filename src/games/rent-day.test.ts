@@ -186,9 +186,13 @@ function playTurn(table: Table, watch: Watch = () => {}): void {
   const may = (type: string) => stillTheirs() && engine.canDispatch({ type, by }) === true;
   // Every move here is the current seat's in the auction, so the lander's turn comes back once nobody is left bidding.
   const playAuction = () => {
+    let presses = 0;
     for (let state = engine.getState(); state.result === undefined && state.turn!.phase === AUCTION_PHASE; state = engine.getState()) {
       const bidder = state.turn!.current;
-      const price = attr(upForAuction(state)[0], 'price');
+      const at = upForAuction(state)[0];
+      const price = attr(at, 'price');
+      // Each bid raises the high bid by RAISE up to the price, and each drop-out takes a seat away, so no auction needs more presses.
+      expect(++presses, `presses in the auction of ${runtime.game.board!.spaces[at].name}`).toBeLessThanOrEqual(price / RAISE + runtime.seats.length);
       const next = highBid(state) + RAISE;
       const bids = highBid(state) < price && counterOf(state, 'money', bidder) - next >= KEEP;
       make(bids ? { type: BID, by: bidder, amount: next } : { type: DROP, by: bidder });
@@ -729,8 +733,9 @@ describe('Rent Day (designer language)', () => {
     expect(playersIn(table.engine.getState(), seatsFor(n))).toEqual([winner]);
   });
 
-  it('undo takes back every move, and the log rebuilds the same game', () => {
-    const fresh = () => createEngine(game!, lib, 4, initialState(game!, 42));
+  it('undo takes back every move, and the log rebuilds the same game, through an auction and back', () => {
+    // Seed 2 auctions a space in the 21st turn and someone wins it, so undo and replay go into the interrupted turn and back out.
+    const fresh = () => createEngine(game!, lib, 4, initialState(game!, 2));
     const table = fresh();
     const { engine } = table;
     const states = [engine.getState()];
@@ -741,6 +746,8 @@ describe('Rent Day (designer language)', () => {
     expect(log.length).toBe(states.length - 1);
     expect(log.length).toBeGreaterThanOrEqual(80);
     expect(log.some((move) => move.type === BUY)).toBe(true);
+    expect(log.some((move) => move.type === BID)).toBe(true);
+    expect(log.some((move) => move.type === DROP)).toBe(true);
 
     // The same moves from the same seed roll the same dice and fire the same moments.
     const replayed = fresh().engine;
