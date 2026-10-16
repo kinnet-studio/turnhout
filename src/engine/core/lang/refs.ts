@@ -685,8 +685,10 @@ const HOLDER = wordType('holder', '[the player who is …]', holderNames, {
 });
 
 // Actions and what was done are whole phrases ("ends their turn", "rolled") with a fixed form, not names to misspell.
-// An action is its wording, which is the move a button sends. A button that picks a space is not one an example can press
-// by its wording: it names the space after the base (“plants a flag” on Rose Lane), so that is a type of its own.
+// An action is its wording, which is the move a button sends. A button that picks a space, whether its line ends in “on a …”
+// (“plant a flag on a … they own”) or its words after the verb are the pick (“mark a space they own”), is not one an example can
+// press by its wording: it names the space after the base (“plants a flag on Rose Lane”, “marks Rose Lane”), so that is a type of
+// its own.
 const ACTION = wordType('action', '[action]', (v) => v.actions.filter((a) => !a.targeted).map((a) => [thirdPersonWords(a.words), a.words]), undefined);
 
 /** The base of a button that picks a space, in the third person; two such buttons with one base could not be told apart by it. */
