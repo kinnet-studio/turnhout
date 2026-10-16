@@ -1164,3 +1164,65 @@ Example: the last one bidding wins with their own bid
   And p0 has 1490 money
   And the phase is playing
   And it is p0's turn
+
+Example: you cannot auction before rolling
+  Given p0 is on Rose Lane
+  When p0 auctions the space they are on
+  Then it is rejected because "they have rolled this turn"
+
+Example: you cannot auction a space that has no price
+  Given p0 is on Go
+  And the next roll is 1 and 3
+  When p0 rolls the dice
+  Then p0 is on Income Tax
+  When p0 auctions the space they are on
+  Then it is rejected because "it has a price"
+
+Example: you cannot auction a space someone owns
+  Given p1 owns Rose Lane
+  And p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  Then it is rejected because "no one owns it"
+
+Example: you cannot auction while someone owes
+  Given p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  Given p1 has -5 money
+  When p0 auctions the space they are on
+  Then it is rejected because "no player has less than 0 money"
+  Given p1 has 5 money
+  When p0 auctions the space they are on
+  Then it is accepted
+  And Rose Lane is up for auction
+
+Example: a player who is not bidding can neither bid nor drop out
+  Given the phase is auction
+  And p0 is bidding
+  And it is p1's turn
+  When p1 bids 10
+  Then it is rejected because "they are bidding"
+  When p1 drops out
+  Then it is rejected because "they are bidding"
+
+Example: a double's roll clears a space nobody bid on, and the next one can be auctioned
+  Given p0 is on Go
+  And the next roll is 3 and 3
+  And the roll after that is 1 and 2
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  And p1 drops out
+  And p0 drops out
+  Then no one owns Ash Street
+  And Ash Street is up for auction
+  When p0 rolls the dice
+  Then it is accepted
+  And Ash Street is not up for auction
+  And p0 is on Cedar Avenue
+  When p0 auctions the space they are on
+  Then it is accepted
+  And the phase is auction
+  And Cedar Avenue is up for auction
+  And Ash Street is not up for auction
