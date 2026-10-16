@@ -7,9 +7,9 @@ import { RuleError } from '../diagnostics';
 import { TURN_KEY, TURN_ROLLS_KEY, counterOf, interruptedTurn, markOut, playerFact, queueRoll, setPlayerFact, withBoardData } from '../board-state';
 import { createEngine, initialState, seatsFor } from '../build';
 import { compileGame } from '../compile';
-import { CREW_GAME, INTERRUPT_BOARD, TURN_GAME, fixtureBoardGame, fixtureBoardState, fixtureCard, fixtureEnv, fixtureGame, fixturePhase, fixtureState, runPhrase, vocabFor } from '../testing';
+import { CREW_GAME, INTERRUPT_BOARD, TURN_GAME, WORKED_GAME, fixtureBoardGame, fixtureBoardState, fixtureCard, fixtureEnv, fixtureGame, fixturePhase, fixtureState, runPhrase, vocabFor } from '../testing';
 import type { CompiledGame, PhraseKind, PhraseEnv } from '../types';
-import { WINNER_KEY } from '../zones';
+import { WINNER_KEY, relocate } from '../zones';
 import { createDefaultLibrary } from './index';
 
 const lib = createDefaultLibrary();
@@ -561,10 +561,26 @@ describe('each card in a zone scores its number', () => {
       status: 'ok', pattern: "each {cardclass} in a player's {perzone} scores {int} point(s)",
     });
   });
-  it('throws, over a card with no such number, in the words a rule that asks for a number says', () => {
-    // A Potter has no worth: the number is the rule's mistake here, as it is anywhere that is not a value worked out for cards.
-    const env = scoring([...workshop, fixtureCard('crew', 'crew-p0', { name: 'Potter', craft: 'red', skill: 1, wage: 1 })]);
-    const over = () => run('score', "each card in a player's crew scores its worth", env, 'p0');
-    expect(over).toThrow(new RuleError('This card has no worth.'));
+  it('scores a card without the number as 0, as a total does, and adds up the others', () => {
+    // A Potter has no worth: in a zone of several kinds of card it counts nothing, as it does in the total of a group.
+    const potter = fixtureCard('potter', 'crew-p0', { name: 'Potter', craft: 'red', skill: 1, wage: 1 });
+    expect(run('score', "each card in a player's crew scores its worth", scoring([potter]), 'p0')).toBe(0);
+    expect(run('score', "each card in a player's crew scores its worth", scoring([potter, worth('Vase', 'v', 'crew-p0', 3)]), 'p0')).toBe(3);
+  });
+  it('still throws over a number that is no number (guard: passes before and after)', () => {
+    const env = scoring([...workshop, fixtureCard('odd', 'workshop-p0', { name: 'Vase', worth: 'a lot' })]);
+    expect(() => run('score', SCORE, env, 'p0')).toThrow(new RuleError("This card's worth isn't a number."));
+  });
+  it('reads the number as it is worked out for the card, not as its own column has it (guard: passes before and after)', () => {
+    // WORKED_GAME: a Tinker's wage is 1 whatever its column says (0), a Potter's and a Smith's are their columns' (1 and 2).
+    const worked = compileGame(WORKED_GAME, lib).game!;
+    const { engine, runtime } = createEngine(worked, lib, 2, initialState(worked, 1));
+    const setUp = engine.getState();
+    const named = (name: string) => setUp.cards.find((c) => c.data?.name === name)!;
+    const hands = ['Tinker', 'Potter', 'Smith'].map((name) => named(name).id);
+    const idle = relocate(setUp, hands, 'idle-p0', worked);
+    expect(named('Tinker').data?.wage).toBe(0);
+    // 1 + 1 + 2, where the columns alone add up to 0 + 1 + 2.
+    expect(run('score', "each card in a player's idle scores its wage", runtime.env(idle), 'p0')).toBe(4);
   });
 });

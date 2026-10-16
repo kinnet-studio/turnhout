@@ -7,7 +7,7 @@ import type { PhraseLibrary } from '../phrases';
 import { phaseTakesTurns } from '../turns';
 import type { CardMatch, ConditionFn, EffectFn, PhraseEnv, ScoreFn, Subject, TurnFn, WinnerFn, ZoneRef } from '../types';
 import { chooseNext, leftOf, matchesCard, relocate, resolveSeat, resolveZoneIds, topCard, zoneIdFor, zoneInfo } from '../zones';
-import { cardNumber, describeZone, soleZone, theyOf } from './support';
+import { describeZone, soleZone, theyOf, totalOf } from './support';
 
 const idsIn = (state: GameState, zoneId: string): string[] => zoneCards(state, zoneId).map((c) => c.id);
 
@@ -222,11 +222,11 @@ const oneCardScores: ScoreFn = (env, args, seat) => {
 };
 
 /**
- * The number each card of the seat's zone has, added up, as every phrase that does arithmetic on a card's number reads it. A card
- * without the number is the rule's mistake here, not a card that counts 0: a score over a zone of several kinds of card would hide it.
+ * The number each card of the seat's zone has, added up as the total of a group is: each read as every phrase reads a card's number,
+ * through the values worked out for cards, and a card without it counting 0, since a zone may well hold cards of several kinds.
  */
 const everyCardScoresItsNumber: ScoreFn = (env, [zone, attribute], seat) =>
-  zoneCards(env.state, zoneIdFor(zone as string, seat)).reduce((sum, card) => sum + cardNumber(env, card, attribute as string), 0);
+  totalOf(env, attribute as string, { kind: 'in', zones: [{ of: { seat }, zone: zone as string }], whose: null });
 
 /** The seat whose score `better` prefers; a tie goes to the earlier seat. */
 const bestScore = (better: (score: number, best: number) => boolean): WinnerFn => (env: PhraseEnv, _args, scores) => {
