@@ -476,4 +476,59 @@ describe('Go to a phase', () => {
     expect(() => run('effect', 'go to tidying', env)).toThrow(RuleError);
     expect(() => run('effect', 'go to tidying', env)).toThrow('There is no turn to move on.');
   });
+  it('runs the start lines about the turn’s player where players take turns, and about no one where everyone acts at once', () => {
+    const line = { kind: 'effect' as const, phrase: 'noop', args: [], line: 1, text: 'Noop' };
+    const about: unknown[] = [];
+    const game = (actor: 'current' | 'any') => fixtureGame({ phases: [fixturePhase('tidying', [], { actor, onEnter: [line] })] });
+    const goTo = (actor: 'current' | 'any') => {
+      const state = fixtureState([], { turn: { current: 'p1', phase: 'working' } });
+      const env = fixtureEnv(state, { game: game(actor), seats: ['p0', 'p1'], runLine: (s, _ref, subject) => (about.push(subject), s) });
+      return run<GameState>('effect', 'go to tidying', env);
+    };
+    expect(goTo('current').turn).toEqual({ current: 'p1', phase: 'tidying' });
+    expect(goTo('any').turn).toEqual({ current: 'p1', phase: 'tidying' });
+    expect(about).toEqual([{ player: 'p1', space: null, card: null }, { player: null, space: null, card: null }]);
+  });
+
+  describe('a chain of phases that goes back to one it went through', () => {
+    /** HURRY where tidying's start line goes to a rest phase, whose start line is `restLine`: a coin, or a way back to tidying. */
+    const withRest = (restLine: string) => HURRY
+      .replace('  When this phase starts:\n    They get 1 coin.', '  When this phase starts:\n    Go to rest.')
+      .replace('End:', `Phase: rest\n  Players take turns.\n  When this phase starts:\n    ${restLine}\n\nEnd:`);
+    const engineFor = (text: string): GameEngine => {
+      const { game, diagnostics } = compileGame(text, lib);
+      if (!game) throw new Error(JSON.stringify(diagnostics));
+      return createEngine(game, lib, 3, { ...initialState(game, 1), turn: { current: 'p0', phase: 'working' } }).engine;
+    };
+    const LOOP = '“Go to tidying” comes back to a phase this line already went through: tidying → rest → tidying.';
+
+    it('is refused in words that name the phases, on the line that came back, and the press changes nothing', () => {
+      const text = withRest('Go to tidying.');
+      const engine = engineFor(text);
+      const before = engine.getState();
+      const error = (() => {
+        try {
+          engine.dispatch({ type: 'hurry', by: 'p0' });
+        } catch (e) {
+          return e;
+        }
+        throw new Error('Expected it to throw.');
+      })();
+      expect(error).toBeInstanceOf(RuleError);
+      expect(error).toMatchObject({ message: LOOP, line: text.split('\n').findIndex((l) => l === '    Go to tidying.') + 1 });
+      expect(engine.getState()).toEqual(before);
+      // The chain was forgotten with the line, so the same press is refused for the same reason rather than for an older one.
+      expect(() => engine.dispatch({ type: 'hurry', by: 'p0' })).toThrow(LOOP);
+    });
+    it('lets a chain of different phases through, and the same phase twice one after the other', () => {
+      const engine = engineFor(withRest('They get 1 coin.'));
+      expect(engine.dispatch({ type: 'hurry', by: 'p0' }).reason).toBeUndefined();
+      // Rest's start line gave the coin, and the phase stays rest, for nothing there passes the turn.
+      expect(counterOf(engine.getState(), 'coins', 'p0')).toBe(1);
+      expect(engine.getState().turn).toEqual({ current: 'p0', phase: 'rest' });
+      const twice = engineFor(withRest('They get 1 coin.').replace('    Go to rest.', '    Go to rest.\n    Go to rest.'));
+      expect(twice.dispatch({ type: 'hurry', by: 'p0' }).reason).toBeUndefined();
+      expect(counterOf(twice.getState(), 'coins', 'p0')).toBe(2);
+    });
+  });
 });

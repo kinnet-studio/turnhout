@@ -127,7 +127,7 @@ function runStartLines(env: PhraseEnv, state: GameState, phase: string, seat: Pl
 }
 
 /**
- * Interrupts the turn for another phase, which starts with `next`. The phase's start lines then run, as `go to` runs them: about
+ * Interrupts the turn for another phase, which starts with `next`. The phase's start lines then run, as an advance runs them: about
  * `next` where players take turns, and about no one in particular where everyone acts at once.
  *
  * Meant for a button's lines. Started by a `When` rule after a press the After line names, it swallows that pass: the flow runs
@@ -139,13 +139,34 @@ function startPhase(env: PhraseEnv, phase: string, next: PlayerId): GameState {
 }
 
 /**
+ * The phases the chain of “go to” effects now running has gone to, outermost first, for each game. The lines of a phase gone to may
+ * themselves go to another, so a chain is the effects now running inside one another, and it is forgotten as each one finishes.
+ */
+const wentThrough = new WeakMap<object, string[]>();
+
+/**
  * Moves the game on to the phase and runs its start lines, as an advance does (R2), with the turn where it was: it is still the
  * same player's. Only the start lines run: a phase's “When a player's turn starts:” lines run as a turn starts, never as a phase
  * is gone to, so a first phase that starts each turn is not started again by a “go to” that comes back to it.
+ *
+ * A start line that goes back to a phase the chain already went to would never stop, so it is refused, naming the phases, rather
+ * than left to the cap on lines inside lines, whose words are about cards.
  */
 const goToPhase: EffectFn = (env, [phase]) => {
   if (!env.state.turn) throw new RuleError('There is no turn to move on.');
-  return runStartLines(env, setPhase(env.state, phase as string), phase as string, env.state.turn.current);
+  const name = phase as string;
+  const chain = wentThrough.get(env.game) ?? [];
+  if (chain.includes(name)) {
+    throw new RuleError(`“Go to ${name}” comes back to a phase this line already went through: ${[...chain, name].join(' → ')}.`);
+  }
+  wentThrough.set(env.game, [...chain, name]);
+  try {
+    return runStartLines(env, setPhase(env.state, name), name, env.state.turn.current);
+  } finally {
+    // Back to the chain this one was reached by, or to none when it was the first, even when a line threw.
+    if (chain.length === 0) wentThrough.delete(env.game);
+    else wentThrough.set(env.game, chain);
+  }
 };
 
 /** The phase starts with the next player still in on their left: a player who is out could not act in it. */

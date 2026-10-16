@@ -966,6 +966,16 @@ describe('a first phase that starts each turn', () => {
     expect(state.turn).toEqual({ current: 'p1', phase: 'payday' });
     expect(coinsOf(state)).toEqual([7, 6, 0]);
   });
+  it('does not start payday’s turn again when a “Go to” comes back to it', () => {
+    const back = compiled(PAYDAY.replace('  A player may stop.', '  A player may return.\n    Then:\n      Go to payday.\n  A player may stop.'));
+    const engine = createEngine(back, lib, 3, { ...initialState(back, 1), turn: { current: 'p0', phase: 'payday' } }).engine;
+    press(engine, 'settle', 'p0');
+    press(engine, 'return', 'p0');
+    const state = engine.getState();
+    // Payday's 5 coins come as a turn starts, not as the phase is gone to: p0 still has the 6 of the turn's start.
+    expect(state.turn).toEqual({ current: 'p0', phase: 'payday' });
+    expect([coinsOf(state), state.data[ROUND_KEY]]).toEqual([[6, 0, 0], 1]);
+  });
   it('keeps payday out of the round’s last window: the round ends before p0’s next payday (R2)', () => {
     const engine = table();
     press(engine, 'settle', 'p0');
