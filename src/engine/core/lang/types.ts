@@ -20,7 +20,8 @@ export type CondGroup = { mode: 'all' | 'any'; refs: PhraseRef[]; text: string; 
 export type DeclaredMove = { verb: string; from: ZoneRef; to: ZoneRef; fromText: string; conditions: CondGroup[]; effects: PhraseRef[]; line: number };
 /** One row of a board's table: `attrs` holds every column but `space`, blank cells left out. */
 export type SpaceSpec = { name: string; attrs: { [k: string]: Json } };
-export type CounterSpec = { name: string; start: number; visibility: 'public' | 'owner' };
+/** `perTurn` marks a number that goes back to its start at the start of each of its owner's turns. */
+export type CounterSpec = { name: string; start: number; visibility: 'public' | 'owner'; perTurn: boolean };
 /** What the box holds that is not any player's: `name` is plural ('tokens') and `start` is how many there are to begin with. */
 export type BankSpec = { name: string; start: number };
 export type BoardSpec = {

@@ -333,7 +333,7 @@ export function fixtureBoardGame(over: Partial<CompiledGame> = {}): CompiledGame
     board: {
       spaces: FIXTURE_SPACES,
       pieces: { start: 0 },
-      counters: [{ name: 'money', start: 1500, visibility: 'public' }],
+      counters: [{ name: 'money', start: 1500, visibility: 'public', perTurn: false }],
       dice: { count: 2, sides: 6 },
       payWith: 'money',
       bank: [],

@@ -341,6 +341,20 @@ describe('board references', () => {
     expect(parseParam('spaceclass', 'a street', emptyVocab())).toBeNull();
   });
 
+  it('reads the singular of a counter the game declares in the plural, as the name it declared', () => {
+    const board = {
+      ...fixtureBoardGame().board!,
+      counters: [
+        { name: 'actions', start: 3, visibility: 'public' as const, perTurn: true },
+        { name: 'money', start: 0, visibility: 'public' as const, perTurn: false },
+      ],
+    };
+    const counting = vocabFrom({ maxPlayers: 2, board });
+    expect(parseParam('counter', 'action', counting)).toEqual({ value: 'actions' });
+    expect(parseParam('counter', 'actions', counting)).toEqual({ value: 'actions' });
+    expect(parseParam('counter', 'money', counting)).toEqual({ value: 'money' });
+  });
+
   it('reads counters, space details, actions and what was done', () => {
     expect(parseParam('counter', 'money', v)).toEqual({ value: 'money' });
     expect(parseParam('counter', 'Money', v)).toEqual({ value: 'money' });

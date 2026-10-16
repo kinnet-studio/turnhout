@@ -4,10 +4,11 @@ import {
   OWES_KEY, TURN_KEY, TURN_ROLLS_KEY, addToCounter, clearTurnLog, counterOf, isOut, latestRoll, markOut, ownerOf, owedTo, pieceAt, placePiece,
   queueRoll, recordAction, recordDebt, rollsThisTurn, setCounter, setOwner, setRoll, setRollsThisTurn, takeQueuedRoll,
 } from '../board-state';
+import { createEngine, initialState } from '../build';
 import { compileGame } from '../compile';
 import { RuleError } from '../diagnostics';
 import {
-  FIXTURE_SPACES, MARK_BOARD, TINY_BOARD, fixtureBoardGame, fixtureBoardState, fixtureEnv, fixtureGame, fixturePhase, fixtureState, runPhrase, vocabFor,
+  COUNTER_GAME, FIXTURE_SPACES, MARK_BOARD, TINY_BOARD, fixtureBoardGame, fixtureBoardState, fixtureEnv, fixtureGame, fixturePhase, fixtureState, runPhrase, vocabFor,
 } from '../testing';
 import type { DeclaredAction, Moment } from '../types';
 import { chooseNext } from '../zones';
@@ -296,7 +297,7 @@ describe('paying', () => {
   });
   describe('an amount with the counter named', () => {
     const base = fixtureBoardGame().board!;
-    const twoCounters = fixtureBoardGame({ board: { ...base, counters: [...base.counters, { name: 'tokens', start: 5, visibility: 'public' }] } });
+    const twoCounters = fixtureBoardGame({ board: { ...base, counters: [...base.counters, { name: 'tokens', start: 5, visibility: 'public', perTurn: false }] } });
     const pays = (text: string, g = twoCounters) => runPhrase<GameState>(lib, 'effect', text, env(fixtureBoardState(g), { game: g, ...as('p0') }));
 
     it('pays the bank, as the plain amount does', () => {
@@ -458,7 +459,7 @@ describe('debts recorded by payments', () => {
     expect([owes(s, 'p1'), owes(s, 'p2')]).toEqual(['p0', 'p0']);
   });
   it('records nothing for another counter, which is not what players pay with', () => {
-    const tokens = fixtureBoardGame({ board: { ...game.board!, counters: [...game.board!.counters, { name: 'tokens', start: 5, visibility: 'public' }] } });
+    const tokens = fixtureBoardGame({ board: { ...game.board!, counters: [...game.board!.counters, { name: 'tokens', start: 5, visibility: 'public', perTurn: false }] } });
     const s = runPhrase<GameState>(lib, 'effect', 'they pay 50 tokens to each other player', fixtureEnv(fixtureBoardState(tokens, seats), { game: tokens, seats, ...as('p0') }));
     expect(counterOf(s, 'tokens', 'p0')).toBe(-95);
     expect(s.data[OWES_KEY]).toBeUndefined();
@@ -878,5 +879,67 @@ describe('the bank line', () => {
   });
   it('refuses a name the line lists twice, whatever the capitals', () => {
     expect(() => read('The bank has 32 houses and 12 Houses')).toThrow(new RuleError('There are two bank items called “houses”.'));
+  });
+});
+
+describe('a budget each turn', () => {
+  /** COUNTER_GAME with a number each player has each turn, and a button that spends it. */
+  const BUDGET = COUNTER_GAME
+    .replace('  Each player has 7 coins that everyone can see.', '  Each player has 7 coins that everyone can see.\n  Each player has 2 moves each turn.')
+    .replace('  A player may pass.', '  A player may rest.\n    Only if they have at least 1 move.\n    Then:\n      They spend 1 move.\n  A player may pass.');
+  const compiled = compileGame(BUDGET, lib);
+  // Read when a test runs, so a game that does not compile fails its own tests and not the whole file.
+  const budget = () => compiled.game!;
+  const seats = ['p0', 'p1'];
+  const start = () => fixtureBoardState(budget(), seats);
+  const run = (text: string, state: GameState = start()) =>
+    runPhrase<GameState>(lib, 'effect', text, fixtureEnv(state, { game: budget(), seats, ...as('p0') }));
+
+  it('compiles, with the counters that are back each turn marked', () => {
+    expect(compiled.diagnostics).toEqual([]);
+    expect(budget().board!.counters).toEqual([
+      { name: 'coins', start: 7, visibility: 'public', perTurn: false }, { name: 'moves', start: 2, visibility: 'public', perTurn: true },
+    ]);
+  });
+  it('reads a counter in the singular, as the game declares it in the plural', () => {
+    const vocab = vocabFor(budget());
+    expect(lib.match('condition', 'they have at least 1 move', vocab)).toMatchObject({ status: 'ok', args: [1, 'moves'] });
+    expect(lib.match('effect', 'they spend 1 move', vocab)).toMatchObject({ status: 'ok', args: [1, 'moves'] });
+    expect(lib.match('given', 'p0 has 1 move', vocab).status).toBe('ok');
+  });
+  describe('spending', () => {
+    it('takes the amount off their number, down to 0', () => {
+      expect(counterOf(run('they spend 1 move'), 'moves', 'p0')).toBe(1);
+      expect(counterOf(run('they spend 2 moves'), 'moves', 'p0')).toBe(0);
+      expect(counterOf(run('they spend 2 moves'), 'moves', 'p1')).toBe(2);
+    });
+    it('is refused for more than they have, in the words a designer reads', () => {
+      expect(() => run('they spend 3 moves')).toThrow(new RuleError("They have 2 moves, so they can't spend 3."));
+    });
+    it('is refused for less than 0, which would give them some', () => {
+      expect(() => run('they spend -1 moves')).toThrow(new RuleError("They have 2 moves, so they can't spend -1."));
+    });
+    it('says the one they have in the singular', () => {
+      expect(() => run('they spend 2 moves', setCounter(start(), 'moves', 'p0', 1))).toThrow(new RuleError("They have 1 move, so they can't spend 2."));
+    });
+  });
+  describe('going back', () => {
+    it('sets their number, whether it is a budget or not', () => {
+      expect(counterOf(run('their moves go back to 0'), 'moves', 'p0')).toBe(0);
+      expect(counterOf(run('their coins go back to 3'), 'coins', 'p0')).toBe(3);
+      expect(counterOf(run('their coins go back to 3'), 'coins', 'p1')).toBe(7);
+    });
+  });
+  it('needs a player, for both effects', () => {
+    expect(lib.get('effect', 'they spend {int} {counter}')).toMatchObject({ needsPlayer: true });
+    expect(lib.get('effect', 'their {counter} go back to {int}')).toMatchObject({ needsPlayer: true });
+  });
+  it('plays: a button that spends is open until the budget is gone', () => {
+    const { engine } = createEngine(budget(), lib, 2, initialState(budget(), 1));
+    expect(counterOf(engine.getState(), 'moves', 'p0')).toBe(2);
+    expect(engine.dispatch({ type: 'rest', by: 'p0' }).ok).toBe(true);
+    expect(engine.dispatch({ type: 'rest', by: 'p0' }).ok).toBe(true);
+    expect(counterOf(engine.getState(), 'moves', 'p0')).toBe(0);
+    expect(engine.dispatch({ type: 'rest', by: 'p0' })).toMatchObject({ ok: false, reason: 'they have at least 1 move' });
   });
 });

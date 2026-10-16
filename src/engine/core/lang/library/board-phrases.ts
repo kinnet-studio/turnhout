@@ -10,7 +10,7 @@ import {
 import { innerEffect } from '../compile-util';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
-import { canon, joinOr, participle, pastWording } from '../refs';
+import { canon, counted, joinOr, participle, pastWording } from '../refs';
 import type {
   ActionFn, BankSpec, BoardFn, BoardSpec, ConditionFn, EffectFn, ExpectFn, MomentFn, PhraseEnv, PhraseRef, SpaceClass, WhoFn, WinnerFn,
 } from '../types';
@@ -51,8 +51,13 @@ const pieces: BoardFn = ([space]) => ({ kind: 'pieces', start: space as number }
 
 const counter: BoardFn = ([start, name, visibility]) => {
   if (visibility === 'secret') throw new RuleError('A number a player has can be seen by everyone or only by them.');
-  return { kind: 'counter', counter: { name: name as string, start: start as number, visibility: visibility as 'public' | 'owner' } };
+  return { kind: 'counter', counter: { name: name as string, start: start as number, visibility: visibility as 'public' | 'owner', perTurn: false } };
 };
+
+/** A number everyone can see that is meant to go back to its start when each of its owner's turns starts: a budget for the turn. */
+const counterEachTurn: BoardFn = ([start, name]) => ({
+  kind: 'counter', counter: { name: name as string, start: start as number, visibility: 'public', perTurn: true },
+});
 
 const payWith: BoardFn = ([name]) => ({ kind: 'pay-with', counter: name as string });
 
@@ -353,6 +358,16 @@ const paysEachOther = swapsWithEachOther(true);
 
 const getsFromEachOther = swapsWithEachOther(false);
 
+/** Not below 0 and not more than they have, so a rule that spends a number can't leave them with less than none or give them some. */
+const spends: EffectFn = (env, [n, counter]) => {
+  const they = theyOf(env);
+  const have = counterOf(env.state, counter as string, they);
+  if ((n as number) < 0 || (n as number) > have) throw new RuleError(`They have ${counted(have, counter as string)}, so they can't spend ${n}.`);
+  return addToCounter(env.state, counter as string, they, -(n as number));
+};
+
+const goesBackTo: EffectFn = (env, [counter, n]) => setCounter(env.state, counter as string, theyOf(env), n as number);
+
 const owns: EffectFn = (env) => setOwner(env.state, itOf(env), theyOf(env));
 
 const goesOut: EffectFn = (env) => {
@@ -502,6 +517,7 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .board('the board is a loop of spaces, starting at {name}', loop)
     .board('each player has a piece that starts on {space}', pieces)
     .board('each player has {int} {name} that {visibility}', counter)
+    .board('each player has {int} {name} each turn', counterEachTurn)
     .board('players pay with {counter}', payWith)
     .board('the bank has {banklist}', bank)
     .board('there are {count} {count}-sided dice', ([count, sides]) => diceOf(count as number, sides as number))
@@ -546,6 +562,8 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('they pay {int} times the roll to its owner', paysRollToOwner, { needsPlayer: true, needsSpace: true, needsPayment: true, needsDice: true })
     .effect('they pay {int} {counter} to each other player', paysEachOther, { needsPlayer: true })
     .effect('they get {int} {counter} from each other player', getsFromEachOther, { needsPlayer: true })
+    .effect('they spend {int} {counter}', spends, { needsPlayer: true })
+    .effect('their {counter} go back to {int}', goesBackTo, { needsPlayer: true })
     .effect('they own it', owns, { needsPlayer: true, needsSpace: true, needsBoard: true })
     .effect('they are out', goesOut, { needsPlayer: true })
     .effect('their spaces go back to the bank', returnToBank, { needsPlayer: true, needsBoard: true })

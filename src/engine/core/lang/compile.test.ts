@@ -600,7 +600,7 @@ describe('the Board: section', () => {
         { name: 'Income Tax', attrs: { kind: 'tax', tax: 200 } },
         { name: 'Rose Lane', attrs: { kind: 'street', color: 'orange', price: 180, rent: 14 } },
       ],
-      pieces: { start: 0 }, counters: [{ name: 'money', start: 1500, visibility: 'public' }],
+      pieces: { start: 0 }, counters: [{ name: 'money', start: 1500, visibility: 'public', perTurn: false }],
       dice: { count: 2, sides: 6 }, payWith: 'money', bank: [],
     });
   });
@@ -667,7 +667,7 @@ describe('the Board: section', () => {
     const { game, diagnostics } = compileGame(withLines(12, '  Each player has 3 lives that only they can see.'), createDefaultLibrary());
     expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
     expect(game!.board!.counters).toEqual([
-      { name: 'money', start: 1500, visibility: 'public' }, { name: 'lives', start: 3, visibility: 'owner' },
+      { name: 'money', start: 1500, visibility: 'public', perTurn: false }, { name: 'lives', start: 3, visibility: 'owner', perTurn: false },
     ]);
   });
   it('lets no one hide a counter from everybody', () => {

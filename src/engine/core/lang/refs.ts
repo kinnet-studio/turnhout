@@ -612,10 +612,8 @@ const SPACEATTR = wordType(
   'spaceattr', '[space detail]', (v) => v.spaceAttributes.map((a) => [a, a]),
   looseAs(ANY_TEXT, misnamedWord('space detail', (v) => v.spaceAttributes)),
 );
-const COUNTER = wordType(
-  'counter', '[counter]', (v) => v.counters.map((c) => [c, c]),
-  looseAs(ANY_TEXT, misnamedWord('counter', (v) => v.counters)),
-);
+// A count of one says the singular ("1 action"), and any text may be a misspelt counter, as it always has been.
+const COUNTER = declaredWord('counter', '[counter]', 'counter', (v) => v.counters, true, true);
 
 /**
  * A type whose text is a name the game declares. With `singulars` the text may also be the singular of a plural name
