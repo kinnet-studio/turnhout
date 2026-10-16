@@ -57,7 +57,8 @@ export function MoneyLine({ board }: { board: BoardView }) {
   );
 }
 
-const BUTTON_STYLE = { padding: '6px 12px', font: '14px sans-serif' } as const;
+/** A button's padding and text, shared with the card picker so its buttons match the row above it. */
+export const BUTTON_STYLE = { padding: '6px 12px', font: '14px sans-serif' } as const;
 
 /**
  * One button. One that carries an amount has a number box right before it, greyed with it, which keeps what was typed so the next
@@ -74,7 +75,7 @@ function ActionButton({ action, onPress, onPick, onRefused }: {
   const [typed, setTyped] = useState('');
   const live = allowed === true;
   const press = () => {
-    if (target !== null || players !== null) onPick(action);
+    if (target !== null || players !== null || action.cards !== undefined) onPick(action);
     else if (amount) onPress(move, typed.trim() === '' ? null : Number(typed));
     else onPress(move);
   };
@@ -118,8 +119,8 @@ function ActionButton({ action, onPress, onPick, onRefused }: {
 
 /**
  * The seat's buttons. A button that may not be pressed stays on the page, greyed, with the reason on hover; pressing it
- * explains instead of sending (a real `disabled` button would say nothing on a tap). A button that picks a space or another
- * player does not send when pressed: it asks to pick, and the move goes once one is picked.
+ * explains instead of sending (a real `disabled` button would say nothing on a tap). A button that picks a space, another
+ * player or cards does not send when pressed: it asks to pick, and the move goes once they are picked.
  */
 export function ActionButtons({ actions, onPress, onPick, onRefused }: {
   actions: ActionView[];

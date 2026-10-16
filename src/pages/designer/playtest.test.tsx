@@ -3,11 +3,12 @@ import { StrictMode, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import COLOR_MATCH from '@/games/color-match.rules?raw';
 import RENT_DAY from '@/games/rent-day.rules?raw';
+import { zoneCards } from '@/engine/core/game-state';
 import { markOut, placePiece, playerFact, queueRoll, setCounter, setOwner, setPlayerFact, withBoardData } from '@/engine/core/lang/board-state';
 import { createEngine, initialState } from '@/engine/core/lang/build';
 import { compileGame } from '@/engine/core/lang/compile';
 import { createDefaultLibrary } from '@/engine/core/lang/library';
-import { COUNTER_GAME } from '@/engine/core/lang/testing';
+import { CARD_PICK_GAME, COUNTER_GAME } from '@/engine/core/lang/testing';
 import { relocate, zoneIdFor } from '@/engine/core/lang/zones';
 import type { DropIntent } from '@/engine/input/table-input-context';
 import { GameServer } from '@/engine/net/game-server';
@@ -699,5 +700,152 @@ describe('Playtest: picking another player', () => {
     fireEvent.click(within(panelOf('p0')).getByRole('button', { name: 'Pick p2' }));
     expect(picker()).toBeNull();
     expect(screen.getByText('seat: p2 — trade — Offer and ask for spaces, cash and kept cards, then propose. The other player accepts or declines. — waiting for p0')).toBeTruthy();
+  });
+});
+
+describe('Playtest: picking cards', () => {
+  const pickGame = compileGame(CARD_PICK_GAME, lib).game!;
+  const SHOW = 'show a card from their stash to a card in their case';
+  const TRADE = 'trade some cards from their stash to the shop';
+  const BUY_BUTTON = 'Buy a card from the shop to your stash';
+  const COST = "they have at least the card's cost in coins";
+  // The money line ends with the cards in p0's case, which everyone can see.
+  const CASE = ' · Ruby 3 · Opal 1';
+  const started = createEngine(pickGame, lib, 2, initialState(pickGame, SEED)).engine.getState();
+  const named = (name: string) => started.cards.filter((c) => c.data?.name === name).map((c) => c.id);
+  const [r1, r2, r3] = named('Ruby');
+  const [o1, o2, o3] = named('Opal');
+  /** After Setup, with the shop holding a Ruby and an Opal, and p0's stash and case each a Ruby and an Opal too. */
+  const initial = [['shop', r1, o1], ['stash-p0', r2, o2], ['case-p0', r3, o3]].reduce(
+    (state, [zone, ...ids]) => relocate(state, ids, zone, pickGame),
+    relocate(started, zoneCards(started, 'shop').map((c) => c.id), 'pile', pickGame),
+  );
+  const mountPicks = (over: Partial<Parameters<typeof Playtest>[0]> = {}) => mount({ game: pickGame, players: 2, initial, ...over });
+  /** A seat's whole panel: what holds its status line. */
+  const panelOf = (seat: string) => screen.getByText(new RegExp(`^seat: ${seat} `)).parentElement!;
+  const buttonOf = (seat: string, name: string) => within(panelOf(seat)).getByRole('button', { name });
+  const submit = () => vi.spyOn(GameServer.prototype, 'submit');
+  const picker = () => within(panelOf('p0')).queryByRole('group', { name: 'Pick cards' });
+  const pick = (name: string) => fireEvent.click(within(picker()!).getByRole('button', { name }));
+  const buttonsOf = (group: HTMLElement) => within(group).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
+
+  it('buys the card picked: the picker lists the shop under the buttons, and closes once a card is picked', () => {
+    mountPicks();
+    expect(picker()).toBeNull();
+    fireEvent.click(buttonOf('p0', BUY_BUTTON));
+    expect(within(picker()!).getByText('Pick a card from the shop to buy')).toBeTruthy();
+    expect(buttonsOf(picker()!)).toEqual(['Pick Ruby', 'Pick Opal', 'Cancel']);
+    // It comes right after the row of buttons.
+    expect(picker()!.previousElementSibling!.contains(buttonOf('p0', BUY_BUTTON))).toBe(true);
+    pick('Pick Ruby');
+    expect(picker()).toBeNull();
+    expect(screen.getAllByText(`p0 4 coins, 1 move${CASE}`)).toHaveLength(2);
+  });
+  it('greys a card the player can not pay for, and explains it in the seat\'s panel instead of sending, staying open', () => {
+    mountPicks({ initial: setCounter(initial, 'coins', 'p0', 2) });
+    fireEvent.click(buttonOf('p0', BUY_BUTTON));
+    const ruby = within(picker()!).getByRole('button', { name: 'Pick Ruby' });
+    expect([ruby.getAttribute('aria-disabled'), ruby.getAttribute('title')]).toEqual(['true', COST]);
+    const sent = submit();
+    fireEvent.click(ruby);
+    expect(sent).not.toHaveBeenCalled();
+    expect(within(panelOf('p0')).getByText(COST)).toBeTruthy();
+    expect(picker()).not.toBeNull();
+  });
+  it('sells the card picked', () => {
+    mountPicks();
+    fireEvent.click(buttonOf('p0', 'Sell a card in your stash'));
+    pick('Pick Opal');
+    expect(picker()).toBeNull();
+    expect(screen.getAllByText(`p0 8 coins, 2 moves${CASE}`)).toHaveLength(2);
+  });
+  it('shows a card to a card in the case: the case is listed once the card is picked, with the target the move refuses greyed', () => {
+    mountPicks();
+    fireEvent.click(buttonOf('p0', 'Show a card from your stash to a card in your case'));
+    pick('Pick Opal');
+    expect(within(picker()!).getByText('Pick where it goes: a card in your case')).toBeTruthy();
+    const ruby = within(picker()!).getByRole('button', { name: 'Pick Ruby' });
+    expect([ruby.getAttribute('aria-disabled'), ruby.getAttribute('title')]).toEqual(['true', 'the target card is not a Ruby']);
+    const sent = submit();
+    pick('Pick Opal');
+    expect(sent).toHaveBeenLastCalledWith('p0', expect.objectContaining({ type: SHOW, cardId: o2, onto: o3 }));
+    expect(picker()).toBeNull();
+  });
+  it('trades the cards picked, in the order picked, on Confirm', () => {
+    mountPicks();
+    fireEvent.click(buttonOf('p0', 'Trade some cards from your stash to the shop'));
+    const sent = submit();
+    pick('Pick Opal');
+    pick('Pick Ruby');
+    expect(sent).not.toHaveBeenCalled();
+    pick('Confirm');
+    expect(sent).toHaveBeenLastCalledWith('p0', expect.objectContaining({ type: TRADE, cardIds: [o2, r2] }));
+    expect(picker()).toBeNull();
+  });
+  it("tells another seat whose turn it is, and opens no picker in that seat's panel", () => {
+    mountPicks();
+    expect(buttonOf('p1', BUY_BUTTON).getAttribute('title')).toBe("It's p0's turn.");
+    const sent = submit();
+    fireEvent.click(buttonOf('p1', BUY_BUTTON));
+    expect(sent).not.toHaveBeenCalled();
+    expect(within(panelOf('p1')).queryByRole('group', { name: 'Pick cards' })).toBeNull();
+    expect(within(panelOf('p1')).getByText("It's p0's turn.")).toBeTruthy();
+  });
+  it('closes when another button is pressed', () => {
+    mountPicks();
+    fireEvent.click(buttonOf('p0', BUY_BUTTON));
+    expect(picker()).not.toBeNull();
+    fireEvent.click(buttonOf('p0', 'Stop'));
+    expect(picker()).toBeNull();
+  });
+  it('Review Focus: ends once Undo hands the turn back and the button greys, and does not open again by itself', () => {
+    mountPicks();
+    const pickerOf = (seat: string) => within(panelOf(seat)).queryByRole('group', { name: 'Pick cards' });
+    fireEvent.click(buttonOf('p0', 'Stop'));
+    fireEvent.click(buttonOf('p1', BUY_BUTTON));
+    expect(pickerOf('p1')).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(buttonOf('p1', BUY_BUTTON).getAttribute('title')).toBe("It's p0's turn.");
+    expect(pickerOf('p1')).toBeNull();
+    fireEvent.click(buttonOf('p0', 'Stop'));
+    expect(buttonOf('p1', BUY_BUTTON).getAttribute('aria-disabled')).toBe('false');
+    expect(pickerOf('p1')).toBeNull();
+  });
+  it('Review Focus: drops a card Undo takes out of the stash from the set, and stays open without it', () => {
+    mountPicks({ initial: relocate(initial, [r2], 'pile', pickGame) });
+    fireEvent.click(buttonOf('p0', BUY_BUTTON));
+    pick('Pick Ruby');
+    fireEvent.click(buttonOf('p0', 'Trade some cards from your stash to the shop'));
+    pick('Pick Opal');
+    pick('Pick Ruby');
+    const undo = vi.spyOn(GameServer.prototype, 'undo');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    const shop = () => (undo.mock.contexts[0] as GameServer).viewFor('p0').scene.cards.filter((c) => c.zoneId === 'shop').map((c) => c.id);
+    expect(shop()).toEqual(expect.arrayContaining([r1, o1]));
+    expect(shop()).toHaveLength(2);
+    expect(buttonsOf(picker()!)).toEqual(['Pick Opal', 'Confirm', 'Cancel']);
+    expect(within(picker()!).getByRole('button', { name: 'Pick Opal' }).getAttribute('aria-pressed')).toBe('true');
+    const sent = submit();
+    pick('Confirm');
+    expect(sent).toHaveBeenLastCalledWith('p0', expect.objectContaining({ type: TRADE, cardIds: [o2] }));
+  });
+  it('closes on Cancel without sending', () => {
+    mountPicks();
+    fireEvent.click(buttonOf('p0', BUY_BUTTON));
+    const sent = submit();
+    pick('Cancel');
+    expect(picker()).toBeNull();
+    expect(sent).not.toHaveBeenCalled();
+    expect(screen.getAllByText(`p0 7 coins, 2 moves${CASE}`)).toHaveLength(2);
+  });
+  it('opens inside the room kept for the buttons on a table too big for one screen', () => {
+    const SHOP = '  The shop is a row in the center that everyone can see.';
+    const rows = ['hall', 'yard', 'loft', 'barn'].map((zone) => `  The ${zone} is a row in the center that everyone can see.`);
+    const crowded = compileGame(CARD_PICK_GAME.replace(SHOP, [SHOP, ...rows].join('\n')), lib).game!;
+    mountPicks({ game: crowded, initial: undefined });
+    const room = screen.getByTestId('seat-buttons');
+    expect(within(room).queryByRole('group', { name: 'Pick cards' })).toBeNull();
+    fireEvent.click(within(room).getByRole('button', { name: BUY_BUTTON }));
+    expect(within(room).getByRole('group', { name: 'Pick cards' })).toBeTruthy();
   });
 });

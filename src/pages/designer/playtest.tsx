@@ -22,6 +22,7 @@ import { makeInitApp } from '@/utils/init-app';
 import { ActionButtons, BANNER_SLOT, BANNER_STYLE, BUTTON_ROW, MoneyLine, PlayerPicker } from './board-controls';
 import { BoardGrid } from './board-grid';
 import { cardDetail } from './card-detail';
+import { CardPicker } from './card-picker';
 import { seatStatus, seatToAct } from './seat-status';
 import { SeatTabs } from './seat-tabs';
 import { Tableaux } from './tableaux';
@@ -122,7 +123,7 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
     // Until its first view arrives the seat knows nothing of the turn, which is not the same as no seat having to act.
     if (viewed) onTurn?.(toAct);
   }, [viewed, toAct, onTurn]);
-  // The move type of the button this seat is choosing a space or another player for, until one is picked or it is cancelled.
+  // The move type of the button this seat is choosing a space, another player or cards for, until they are picked or it is cancelled.
   const [picking, setPicking] = useState<string | null>(null);
   const extras = readSeatExtras(view?.extras);
   // What may be picked is read from the seat's latest view, so a button that has since been greyed (an Undo took the turn
@@ -130,7 +131,8 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
   const action = picking === null ? undefined : extras?.actions.find((a) => a.move === picking);
   const choosing = action?.allowed === true && action.target !== null ? { move: action.move, ...action.target } : null;
   const choosingPlayer = action?.allowed === true && action.players !== null ? { move: action.move, players: action.players } : null;
-  const stale = picking !== null && choosing === null && choosingPlayer === null;
+  const choosingCards = action?.allowed === true && action.cards !== undefined ? { move: action.move, pick: action.cards } : null;
+  const stale = picking !== null && choosing === null && choosingPlayer === null && choosingCards === null;
   useEffect(() => {
     if (stale) setPicking(null);
   }, [stale]);
@@ -207,6 +209,20 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
       ? view && <Tableaux game={game} seats={seats} board={board} cards={view.scene.cards} />
       : board && (board.counters.length > 0 || game.facts.length > 0 || board.bank.length > 0) && <MoneyLine board={board} />;
     const buttons = hasButtons && extras && <ActionButtons actions={extras.actions} onPress={press} onPick={startPicking} onRefused={flash} />;
+    // Keyed by the button, so pressing another that picks cards starts a fresh pick.
+    const cardPicker = choosingCards && (
+      <CardPicker
+        key={choosingCards.move}
+        pick={choosingCards.pick}
+        onSend={(chosen) => {
+          onError(null);
+          setPicking(null);
+          send({ type: choosingCards.move, ...chosen });
+        }}
+        onRefused={flash}
+        onCancel={() => setPicking(null)}
+      />
+    );
     const canvasBox = fitted ? { width: FITTED_WIDTH, height: FITTED_HEIGHT } : { height: SEAT_HEIGHT };
     return (
       <div style={{ ...PANEL_STYLE, width: fitted ? FITTED_WIDTH : SEAT_WIDTH, boxSizing: 'content-box', padding: 8, display: 'flex', flexDirection: 'column', gap: 8, font: '14px sans-serif', color: '#eee' }}>
@@ -224,8 +240,11 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
         </div>
         {board && board.spaces.length > 0 && <BoardGrid board={board} picking={picker} />}
         {numbers}
-        {/* A fitted table keeps the buttons' room when a phase has none, so the table under them does not jump. */}
-        {fitted && hasButtons ? <div data-testid="seat-buttons" style={{ minHeight: BUTTON_ROW }}>{buttons}</div> : buttons}
+        {/* A fitted table keeps the buttons' room when a phase has none, so the table under them does not jump. The card picker opens
+            inside that room, which grows only while it is open. */}
+        {fitted && hasButtons ? (
+          <div data-testid="seat-buttons" style={{ minHeight: BUTTON_ROW, display: 'flex', flexDirection: 'column', gap: 8 }}>{buttons}{cardPicker}</div>
+        ) : <>{buttons}{cardPicker}</>}
         {canvas && <div style={{ position: 'relative', ...canvasBox }}>{canvas}</div>}
         {fitted && <div data-testid="card-detail" style={{ minHeight: 20 }}>{detail}</div>}
       </div>
