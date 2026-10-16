@@ -113,7 +113,8 @@ export class PixiTable extends Container {
     const byZone = cardsByZone(scene);
     for (const zone of scene.zones) {
       const cards = byZone.get(zone.id) ?? [];
-      if (cards.length > 0) continue;
+      // Each card of a free zone says where it goes, so an empty one has no place to mark, only its resting point.
+      if (cards.length > 0 || zone.layout === 'free') continue;
       const box = placeZone(zone, cards);
       const width = box.width > 0 ? box.width : CARD_WIDTH;
       const height = box.height > 0 ? box.height : CARD_HEIGHT;

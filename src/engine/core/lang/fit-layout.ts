@@ -104,7 +104,7 @@ function placeLine(
  * - the viewer's public zones (the board) in the band between, its lines sharing the band's height, each zone's cards at the top
  *   of its line so the cards on them can hang below;
  * - a zone where every card sits on a card as a free zone with no slot, last, so its cards draw over the board and a drop on one
- *   of them lands in it.
+ *   of them lands in it; empty, it rests under the first board zone's middle card, where the first card hanging there goes.
  *
  * The private and board zones come in the order the table lists them, then the shared ones, then the free ones. Each zone keeps
  * the id the engine gives it, so a card dropped here goes where the engine's own layout would send it. A viewer with no public
@@ -144,7 +144,11 @@ export function fittedLayout(zones: ZoneSpec[], viewer: PlayerId): ZoneDef[] {
   for (const def of board) placed.set(def.id, def);
 
   const slotted = own.filter((spec) => !isAttached(spec)).map((spec) => placed.get(ownId(spec))!);
-  const at = board[0]?.transform ?? { x: 0, y: 0 };
+  // A free zone rests where the first card hanging under the first board slot's middle card would go. Its box, a card's when it
+  // is empty, then lies under the cards it could hang from and never on one, so a click on one of them that wobbles into a short
+  // drag stays in that card's own zone.
+  const boardAt = board[0]?.transform;
+  const at = boardAt ? { x: boardAt.x, y: boardAt.y + CARD_HEIGHT + STACK_GAP } : { x: 0, y: 0 };
   const attached = own.filter(isAttached).map((spec): ZoneDef => {
     // A row's spacing means nothing once each card says where it goes.
     const { layoutOptions: _spacing, ...def } = zoneDef(spec, ownId(spec), at, viewer);

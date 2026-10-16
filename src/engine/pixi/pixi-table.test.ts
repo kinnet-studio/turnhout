@@ -222,3 +222,23 @@ describe('decor', () => {
     expect(descendants(table).filter((c) => c.label === 'card-ring' || c.label === 'card-caption')).toEqual([]);
   });
 });
+
+describe('the empty-zone outline of a free zone', () => {
+  const outlineOf = (table: PixiTable): Graphics => table.children.find((c): c is Graphics => c instanceof Graphics)!;
+
+  // Each card of a free zone says where it goes, so the zone has no place of its own to mark: on a fitted table its box lies under a
+  // card on the board, and an outline there would read as a slot.
+  it('draws none, and still outlines an empty pile beside it', () => {
+    const table = new PixiTable({ faces: faces(), createSprite: () => new CardSprite(), showEmptyZones: true });
+    table.setScene({
+      cards: [],
+      zones: [
+        { id: 'loose', layout: 'free', transform: { x: -200, y: 0 } },
+        { id: 'empty', layout: 'pile', transform: { x: 200, y: 0 } },
+      ],
+    });
+    // The pile's card-sized box at (200, 0), and the stroke's half-width around it, as above: nothing at x -250..-150.
+    const b = outlineOf(table).context.bounds;
+    expect({ minX: b.minX, maxX: b.maxX, minY: b.minY, maxY: b.maxY }).toEqual({ minX: 149, maxX: 251, minY: -71, maxY: 71 });
+  });
+});

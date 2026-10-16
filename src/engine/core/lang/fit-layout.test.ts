@@ -216,7 +216,7 @@ describe("a band for the seat's public zones", () => {
     expect(at(defs, 'peek-p1')).toEqual({ x: 210, y: 510 });
     expect(at(defs, 'workshop-p1')).toEqual({ x: -210, y: -306 });
     expect(at(defs, 'idle-p1')).toEqual({ x: 210, y: -306 });
-    expect(at(defs, 'crew-p1')).toEqual({ x: -210, y: -306 });
+    expect(at(defs, 'crew-p1')).toEqual({ x: -210, y: -130 });
   });
 
   it('gives a board row the whole band, named, its cards a little apart at the top of it', () => {
@@ -234,9 +234,12 @@ describe("a band for the seat's public zones", () => {
   it('makes a public zone with no mark a board row', () =>
     expect(get('idle-p1')).toMatchObject({ layout: 'row', bounds: { height: 776 } }));
 
-  it('gives the zone of cards on cards no slot: it is free, at the first board zone, with no name and no bounds', () => {
+  it('gives the zone of cards on cards no slot: it is free, where a card hanging under the first board zone\'s middle card goes, with no name and no bounds', () => {
     const crew = get('crew-p1');
-    expect(crew).toMatchObject({ layout: 'free', owner: 'p1', visibility: 'public', transform: at(defs, 'workshop-p1') });
+    // -306 + 140 + 36: a card's height and the gap a caption takes under the workshop's middle card.
+    expect(crew).toMatchObject({ layout: 'free', owner: 'p1', visibility: 'public', transform: { x: -210, y: -130 } });
+    // Empty, its box starts below the bottom edge of the workshop's cards, so a press on one of them never lands in it.
+    expect(placeZone(crew, []).y - CARD_HEIGHT / 2).toBe(at(defs, 'workshop-p1').y + CARD_HEIGHT / 2 + 36);
     expect('label' in crew).toBe(false);
     expect('bounds' in crew).toBe(false);
     expect('layoutOptions' in crew).toBe(false);
@@ -253,13 +256,15 @@ describe("a band for the seat's public zones", () => {
   });
 
   // Closes 1a-2's parked guard on the top and bottom lines: the band between them never runs into either, nor closes up.
-  describe.each([['one line', BOARD], ['two lines', TWO_LINES]] as const)('with the board on %s, long rows and tall piles', (_, zones) => {
+  describe.each([['one line', BOARD, []], ['two lines', TWO_LINES, ['workshop']]] as const)('with the board on %s, long rows and tall piles', (_, zones, under) => {
     for (const viewer of seats(5)) {
       it(`keeps every slot inside the world, apart and at least a card tall, and every zone reachable, for ${viewer}`, () => {
         const table = fittedLayout(zones, viewer);
         expect(misfits(table)).toEqual([]);
-        // The zone of cards on cards comes last, so a drop at its place lands in it.
-        expect(unreachableZones(table, 7)).toEqual([]);
+        // The zone of cards on cards comes last, so a drop at its place, under the first board zone's middle card, lands in it. On
+        // a band of two lines that zone is short enough that its own middle falls there too: a drop there lands where one on the
+        // first card hanging under the middle card would, and the zone's cards, at its top, are above it.
+        expect(unreachableZones(table, 7)).toEqual(under.map((zone) => `${zone}-${viewer}: centre goes to crew-${viewer}`));
       });
     }
   });

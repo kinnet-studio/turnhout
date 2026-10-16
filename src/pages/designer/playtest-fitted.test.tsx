@@ -26,6 +26,12 @@ import { computeZoneLayout } from '@/engine/core/layout';
 import { deriveScene } from '@/engine/core/derive-scene';
 import { cardsByZone } from '@/engine/core/scene';
 import { GameServer } from '@/engine/net/game-server';
+import { RuleRegistry } from '@/engine/core/rules';
+import { registerStarterRules } from '@/engine/core/rules-library';
+import { TableModel } from '@/engine/core/table-model';
+import type { DropIntent } from '@/engine/input/table-input-context';
+import { TableInputTracker } from '@/engine/input/table-input-tracker';
+import { STACK_STEP } from '@/engine/core/lang/fit-layout';
 
 // The canvas a seat is drawn on: keep what its app was last made with.
 let canvasMadeWith: unknown = null;
@@ -385,7 +391,8 @@ describe("the Board's place on the table", () => {
   });
 
   it('hangs the development team under the development, as a free zone last in the list', () => {
-    expect(get('development-team')).toMatchObject({ layout: 'free', transform: { x: -420, y: -126 } });
+    // Where the first card hanging under the development's middle card goes: -126 + 140 + 36.
+    expect(get('development-team')).toMatchObject({ layout: 'free', transform: { x: -420, y: 50 } });
     expect(fittedLayout(game.zones, 'p1').at(-1)?.id).toBe('development-team-p1');
   });
 
@@ -394,7 +401,9 @@ describe("the Board's place on the table", () => {
   it.each(seatsOf(5))('keeps every slot inside the world, apart and at least a card tall, and every zone reachable, for %s', (viewer) => {
     const placed = fittedLayout(game.zones, viewer);
     expect(misfits(placed)).toEqual([]);
-    expect(unreachableZones(placed, 7)).toEqual([]);
+    // The development's middle is where the first card hanging under its middle card goes, so a drop there lands in the
+    // development team, as one on a card hanging there would; the development's cards, at its top, are above it.
+    expect(unreachableZones(placed, 7)).toEqual([`development-${viewer}: centre goes to development-team-${viewer}`]);
   });
 });
 
@@ -823,5 +832,124 @@ describe('the Board played by clicking', () => {
       press('End your actions');
     }
     expect(lineOf(S)?.startsWith(`${S} 8 capital, 3 actions, 1 market share · `)).toBe(true);
+  });
+});
+
+/**
+ * The real tracker over the table the page last drew, as the canvas runs it, its clicks and drops handed to the page, with every
+ * drop it reports. The pointer is given in world units, and every card rests where the page put it.
+ */
+const trackTable = () => {
+  const model = new TableModel();
+  model.setScene(deriveScene(table!.tableDef, table!.placement, table!.viewer));
+  const drops: DropIntent[] = [];
+  const tracker = new TableInputTracker({
+    clientToWorld: (x, y) => ({ x, y }),
+    getPlacedCards: () => model.getPlacedCards(),
+    getZones: () => table!.tableDef.zones,
+    getCards: () => table!.placement.cards,
+    registry: registerStarterRules(new RuleRegistry()),
+    beginDrag: (id) => model.beginDrag(id),
+    dragTo: (id, world) => model.dragTo(id, world),
+    endDrag: (id) => model.endDrag(id),
+    intents: {
+      onDrop: (intent) => {
+        drops.push(intent);
+        act(() => table!.onDrop!(intent));
+      },
+      onCardClick: (id) => act(() => table!.onCardClick!(id)),
+    },
+  });
+  const restOf = (id: string) => model.getPlacedCards().find((c) => c.id === id)!.transform;
+  /** Presses at (x, y), moves by (dx, dy) and lets go there. */
+  const gesture = (x: number, y: number, dx: number, dy: number) => {
+    tracker.pointerDown(x, y);
+    tracker.pointerMove(x + dx, y + dy);
+    tracker.pointerUp(x + dx, y + dy);
+  };
+  return { drops, restOf, gesture };
+};
+
+// As hearts-clicks.test.ts drives the tracker over Hearts' table, this drives it over the Board: a press that moves 6, past the 5 a
+// click allows, is a drop, and the page takes a drop back in the card's own zone as a click on the card.
+describe('a click that wobbles into a short drag on the Board, through the real tracker', () => {
+  type Point = { x: number; y: number };
+  const NO_RULE = 'No rule lets you move a card there.';
+  const WOBBLES = [[6, 0], [-6, 0], [0, 6], [0, -6]] as const;
+  const team = `development-team-${S}`;
+  /** S's development holds these cards in this order, with these cards from S's bench on the one named, if any. */
+  const board = (cards: readonly string[], staff: readonly string[] = [], on = cards[0]): GameState => {
+    let state = setUp();
+    state = relocate(state, cards.map((name) => idOf(state, name)), `development-${S}`, game);
+    if (staff.length === 0) return state;
+    return putOn(state, staff.map((name) => idOf(state, name, `bench-${S}`)), team, idOf(state, on), game);
+  };
+  /**
+   * Wobbles each way from a point on the card, each time a fresh press: the drop lands back in the card's zone, the offer of its
+   * buttons opens and no move is refused. Cancel closes the offer before the next.
+   */
+  const wobblesAreClicks = (card: string, name: string, zone: string, aim: (rest: Point) => Point) => {
+    for (const [dx, dy] of WOBBLES) {
+      const { drops, restOf, gesture } = trackTable();
+      const { x, y } = aim(restOf(card));
+      gesture(x, y, dx, dy);
+      expect(drops, `${name} wobbled ${dx}, ${dy}`).toEqual([expect.objectContaining({ cardId: card, fromZoneId: zone, toZoneId: zone })]);
+      expect(within(offer()).getByText(`${name}:`)).toBeTruthy();
+      expect(screen.queryByText(NO_RULE)).toBeNull();
+      fireEvent.click(within(offer()).getByRole('button', { name: 'Cancel' }));
+    }
+  };
+  const middle = (rest: Point) => rest;
+  /** The middle of the top strip of a card that the next card in its column is drawn over. */
+  const strip = (rest: Point) => ({ x: rest.x, y: rest.y - CARD_HEIGHT / 2 + STACK_STEP / 2 });
+  /** The drops reported when S's Junior QA Tester is dragged from its bench to a point. */
+  const dragQaTo = (state: GameState, to: Point) => {
+    const { drops, restOf, gesture } = trackTable();
+    const from = restOf(idOf(state, 'Junior QA Tester', `bench-${S}`));
+    gesture(from.x, from.y, to.x - from.x, to.y - from.y);
+    return drops;
+  };
+
+  it.each([
+    ['a lone card, and no card on any card', ['Dating App'], [], 'Dating App'],
+    ['a lone card with a card on it', ['Dating App'], ['Junior Hardware Eng'], 'Dating App'],
+    ['two cards, and no card on any card', ['Dating App', 'To-Do List'], [], 'Dating App'],
+    ['two cards, a card on the first', ['Dating App', 'To-Do List'], ['Junior Hardware Eng'], 'Dating App'],
+    ['two cards, a card on the second', ['Dating App', 'To-Do List'], ['Junior Hardware Eng'], 'To-Do List'],
+  ] as const)('takes a wobble on a card in the development as a click on it: %s', (_, cards, staff, on) => {
+    const state = board(cards, staff, on);
+    mount({ initial: state });
+    for (const name of cards) wobblesAreClicks(idOf(state, name), name, `development-${S}`, middle);
+  });
+
+  it.each([
+    ['on a lone card', ['Dating App']],
+    ['on the first of two cards', ['Dating App', 'To-Do List']],
+  ] as const)('takes a wobble on the strip of a card in a stack, and on the last card, as a click on it: %s', (_, cards) => {
+    const state = board(cards, ['Junior Software Dev', 'Junior Hardware Eng']);
+    mount({ initial: state });
+    wobblesAreClicks(idOf(state, 'Junior Software Dev', team), 'Junior Software Dev', team, strip);
+    wobblesAreClicks(idOf(state, 'Junior Hardware Eng', team), 'Junior Hardware Eng', team, middle);
+    for (const name of cards) wobblesAreClicks(idOf(state, name), name, `development-${S}`, middle);
+  });
+
+  it('drops a card dragged onto a stack in the development team', () => {
+    const state = board(['Dating App'], ['Junior Software Dev', 'Junior Hardware Eng']);
+    mount({ initial: state });
+    const first = trackTable().restOf(idOf(state, 'Junior Software Dev', team));
+    expect(dragQaTo(state, strip(first))).toEqual([expect.objectContaining({ fromZoneId: `bench-${S}`, toZoneId: team })]);
+  });
+
+  it.each([
+    ['a lone card, and no card on any card', ['Dating App'], []],
+    ['two cards, and no card on any card', ['Dating App', 'To-Do List'], []],
+    ['two cards, a card on the first', ['Dating App', 'To-Do List'], ['Junior Hardware Eng']],
+  ] as const)('drops a card dragged onto a card in the development in the development: %s', (_, cards, staff) => {
+    const state = board(cards, staff);
+    mount({ initial: state });
+    for (const name of cards) {
+      const card = trackTable().restOf(idOf(state, name));
+      expect(dragQaTo(state, card), name).toEqual([expect.objectContaining({ fromZoneId: `bench-${S}`, toZoneId: `development-${S}` })]);
+    }
   });
 });
