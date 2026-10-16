@@ -136,9 +136,11 @@ Red output:
 
 Blue team output:
   A card's blue team output is the total blue output of the cards on it.
+  A stalled card's blue team output is 0.
 
 Red team output:
   A card's red team output is the total red output of the cards on it.
+  A stalled card's red team output is 0.
 
 Blue need:
   A card's blue need is its blue cost.
@@ -147,6 +149,46 @@ Blue need:
 Red need:
   A card's red need is its red cost.
   A card's red need goes down by its cut red cubes.
+
+Leading software:
+  Only if it is a Senior Developer card.
+  Only if one of:
+    It is a software card.
+    It is a flex card.
+  Only if it is not onboarding.
+
+Leading hardware:
+  Only if it is a Senior Developer card.
+  Only if one of:
+    It is a hardware card.
+    It is a flex card.
+  Only if it is not onboarding.
+
+Stalled:
+  Only if it is not a Tier 1 card.
+  Only if one of:
+    Its blue need is 0.
+    No card on it is leading software.
+  Only if one of:
+    Its red need is 0.
+    No card on it is leading hardware.
+
+Fully led:
+  Only if one of:
+    It is a Tier 1 card.
+    Its blue need is 0.
+    Some card on it is leading software.
+  Only if one of:
+    It is a Tier 1 card.
+    Its red need is 0.
+    Some card on it is leading hardware.
+
+Efficient in ops:
+  Only if it is an Efficient card.
+  Only if it is in an ops team.
+
+Salary:
+  An efficient in ops card's salary is 1.
 
 Feature complete:
   Only if its blue cubes are at least its blue need.
@@ -318,12 +360,14 @@ Phase: actions
     Only if their operations is not empty.
   A player may reassign a card from their development team to a card in their development.
     It costs 1 action.
+    Only if the card is not an Ego card.
     Only if it is not on the target card.
     Then:
       It goes to their development team, on the target card.
       It is onboarding.
   A player may reassign a card from their ops team to a card in their development.
     It costs 1 action.
+    Only if the card is not an Ego card.
     Then:
       It goes to their development team, on the target card.
       It is onboarding.
@@ -363,11 +407,13 @@ Phase: actions
   A player may launch a card from their development to their operations.
     It costs 1 action.
     Only if it is feature complete.
+    Only if it is fully led.
     Then:
       Every card on it goes to their ops team.
   A player may pivot a card in their development.
     It costs 1 action.
     Then:
+      Every card on it whose trait is Ego goes to the open job market.
       Every card on it is onboarding.
       Every card on it goes to their bench.
       It loses its blue cubes.
@@ -972,13 +1018,14 @@ Example: cubes beyond the cost are lost (section 6)
   And the Dating App in p0's development has 0 new blue cubes
   And the Dating App in p0's development is feature complete
 
-Example: staff of the wrong color add nothing (section 6)
+Example: staff of the wrong color add nothing, though a Tier 1 project is never Stalled (section 3, section 6)
   Given the phase is actions
   And p0's development has a Dating App
   And the Dating App in p0's development has a Junior Hardware Eng and a Junior QA Tester on it
   When p0 ends their actions
   Then the Dating App in p0's development has 0 blue cubes
   And the Dating App in p0's development has 0 red cubes
+  And the Dating App in p0's development is not stalled
 
 Example: flex staff work in blue until modes arrive (section 11)
   Given the phase is actions
@@ -1163,7 +1210,7 @@ Example: the player chooses whom to pay when several provide the Tag (section 6,
   And p1 has 7 capital
   And p2 has 10 capital
 
-Example: two missing Tags cost a License each, to a provider of each (section 6)
+Example: two missing Tags cost a License each, to a provider of each, and a rival's product of the sector cuts nothing (section 6, section 19)
   Given 3 players
   And p1's operations has a Neobank
   And p2's operations has a Server Farm
@@ -1173,6 +1220,7 @@ Example: two missing Tags cost a License each, to a provider of each (section 6)
   And p0 has 1 capital
   And p1 has 10 capital
   And p2 has 10 capital
+  And the Global Currency in p0's development has 18 blue need
 
 Example: with no one providing the Tag the card can't be Greenlit (section 14)
   Given p0's backlog has a Server Farm
@@ -1301,3 +1349,124 @@ Example: Domain Expertise never takes a product below 1 cube (section 19; no pri
   And the Messaging App in p0's backlog has 2 blue cost
   When p0 greenlights the Messaging App
   Then the Messaging App in p0's development has 1 blue need
+
+Example: a Tier 2 Software project with only a Hardware Senior and a Specialist is Stalled, so its whole team generates nothing (section 3, section 7)
+  Given the phase is actions
+  And p0's development has a Neobank
+  And the Neobank in p0's development has the Diva, a Junior PM and a Junior Software Dev on it
+  When p0 ends their actions
+  Then the Neobank in p0's development has 0 blue cubes
+  And the Neobank in p0's development is stalled
+
+Example: a hybrid led by one Senior Backend progresses, its Hardware Junior generating Red too (section 3, section 7)
+  Given the phase is actions
+  And p0's development has a Drone Delivery
+  And the Drone Delivery in p0's development has the Architect and a Junior Hardware Eng on it
+  When p0 ends their actions
+  Then the Drone Delivery in p0's development has 3 blue cubes
+  And the Drone Delivery in p0's development has 1 red cube
+  And the Drone Delivery in p0's development is not fully led
+
+Example: a hybrid Launches only with both leads or one cross-functional lead (section 3, section 6)
+  Given the phase is actions
+  And p0's development has a Drone Delivery
+  And the Drone Delivery in p0's development has 6 blue cubes
+  And the Drone Delivery in p0's development has 6 red cubes
+  And the Drone Delivery in p0's development has the Architect on it
+  When p0 launches the Drone Delivery
+  Then it is rejected because "it is fully led"
+  Given the Drone Delivery in p0's development has a Firmware Specialist on it
+  Then the Firmware Specialist in p0's development team is leading software
+  And the Firmware Specialist in p0's development team is leading hardware
+  When p0 launches the Drone Delivery
+  Then it is accepted
+  And p0's operations has a Drone Delivery
+
+Example: an onboarding Senior leads nothing that turn (section 6, ruling 8)
+  Given the phase is actions
+  And p0's development has a Neobank and a Dating App
+  And the Dating App in p0's development has the Architect on it
+  And the Neobank in p0's development has a Junior Software Dev on it
+  When p0 reassigns the Architect to the Neobank
+  And p0 ends their actions
+  Then the Neobank in p0's development has 0 blue cubes
+  When p1 ends their actions
+  And p0 pays salaries
+  And p0 ends their actions
+  Then p0 has 5 capital
+  And the Neobank in p0's development has 4 blue cubes
+
+Example: a Launch is refused when its only lead was Reassigned away this turn (section 6)
+  Given the phase is actions
+  And p0's development has a Neobank and a Dating App
+  And the Neobank in p0's development has 10 blue cubes
+  And the Neobank in p0's development has the Architect on it
+  Then the Neobank in p0's development is fully led
+  When p0 reassigns the Architect to the Dating App
+  And p0 launches the Neobank
+  Then it is rejected because "it is fully led"
+
+Example: Greenlighting without a lead is allowed, and the project is Stalled (section 14)
+  Given p0's operations has a Mobile Wallet
+  And p0's backlog has a Neobank
+  When p0 greenlights the Neobank
+  Then it is accepted
+  And the Neobank in p0's development is stalled
+
+Example: the type follows the cut: Smart Grid cut by 2 blue is pure Hardware (this slice's call)
+  Given the phase is actions
+  And p0's operations has a Smart Thermostat
+  And p0's backlog has a Smart Grid
+  When p0 greenlights the Smart Grid, choosing cut 2 blue
+  Then the Smart Grid in p0's development has 0 blue need
+  Given the Smart Grid in p0's development has the Hacker on it
+  Then the Smart Grid in p0's development is stalled
+  Given the Smart Grid in p0's development has 10 red cubes
+  And the Smart Grid in p0's development has the Engineer on it
+  Then the Smart Grid in p0's development is not stalled
+  When p0 launches the Smart Grid
+  Then it is accepted
+
+Example: the Diva can't be Reassigned from a project (section 6, section 20)
+  Given the phase is actions
+  And p0's development has a Smart Lock and a Smart Toy
+  And the Smart Lock in p0's development has the Diva on it
+  When p0 reassigns the Diva to the Smart Toy
+  Then it is rejected because "the card is not an Ego card"
+  And p0 has 3 actions
+
+Example: the Diva in the ops team can't be Reassigned, but can be Recalled (section 6, section 20)
+  Given the phase is actions
+  And p0's development has a Smart Lock
+  And p0's operations has a USB Gadget
+  And p0's ops team has the Diva
+  When p0 reassigns the Diva to the Smart Lock
+  Then it is rejected because "the card is not an Ego card"
+  When p0 recalls the Diva
+  Then it is accepted
+  And p0's bench has the Diva
+
+Example: a Pivot fires the Diva to the open job market instead of benching her (ruling 9)
+  Given the phase is actions
+  And p0's development has a Smart Lock
+  And the Smart Lock in p0's development has the Diva and a Junior Hardware Eng on it
+  When p0 pivots the Smart Lock
+  Then it is accepted
+  And the open job market has the Diva
+  And p0's bench has a Junior Hardware Eng
+  And the Diva in the open job market is not onboarding
+
+Example: the Engineer's salary is $2 on a project (section 20)
+  Given p1's development has a Smart Lock
+  And the Smart Lock in p1's development has the Engineer on it
+  And the turn passes to the left
+  When p1 pays salaries
+  Then p1 has 5 capital
+
+Example: the Engineer's salary is $1 in the ops team (section 20)
+  Given p1's operations has a USB Gadget
+  And p1's ops team has the Engineer and a Junior QA Tester
+  And the turn passes to the left
+  Then p1 has 8 capital
+  When p1 pays salaries
+  Then p1 has 7 capital

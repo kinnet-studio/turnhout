@@ -147,9 +147,9 @@ Phase: playing
   - A blank cell in a card table is left out, so the card has no value for that column.
   - Rows and queues: `Move the bottom card of the open idea pool to the box.`, `When the growth market has the market crash:`, `Move the market crash from their research to the crash pile.`, `Deal up to 3 cards from the seed deck to their research.` (it takes what's there), `Deal 1 card from the seed deck to each backlog.` and `The market crash goes into the bottom fifth of the growth deck.`
   - Examples check the order of a row with `…, in that order` and where a card lies with `the market crash is among the bottom 8 cards of the growth deck`.
-- **Startup Simulator (slice 1b)** plays the table, money and turns (recruiting, drafting, Research, Cleanup and the Market Crash), and now builds Tier 1 products: the Board (Greenlight, Assign, Reassign, Recall and Dismiss), Income with Market Share and Salaries, the Engine, Launch, Pivot, Layoff / Source and the score's Val and Market Share. Its 55 examples pin rulings 5, 7, 8, 10, 12, 13, 18, 20, 24 and 25.
-  - It still leaves out Ops bandwidth and Offline, Bugs and QA, modes, XP and the Specialists' effects, the Senior Developers' traits, Tier 2/3, Face-Down Greenlight and the Audit, Dividends, Integration, and Hype and Scandal. Each comes in a later slice.
-  - Until modes arrive, flex staff work in Blue; until Tier 2/3, growth cards are drafted but can't be greenlit.
+- **Startup Simulator (slice 3)** plays the table, money and turns (recruiting, drafting, Research, Cleanup and the Market Crash), and builds products: the Board (Greenlight, Assign, Reassign, Recall and Dismiss), Income with Market Share and Salaries, the Engine, Launch, Pivot, Layoff / Source and the score's Val and Market Share. It now plays slice 3 too: Tier 2 and 3 products with their Tags and Licenses, Domain Expertise, Matching Leads, Stalled projects, the hybrid Launch, the Diva and the Engineer. Its 84 examples pin rulings 3, 5, 7, 8, 9, 10, 12, 13, 18, 20, 21, 24 and 25.
+  - It still leaves out Ops bandwidth and Offline, Bugs and QA, modes, XP and the Specialists' effects, the traits of the Hacker, the Architect, the Veteran, the Fixer and the Full Stack Ninja, Face-Down Greenlight and the Audit, Partners' free License, Patent Trolls, badged Juniors and the Visionary as leads, Dividends, Integration, and Hype and Scandal. Each comes in a later slice.
+  - Until modes arrive, flex staff work in Blue.
   - The game-end Ops check (§12.2) and the last Milestone check (§12.3) are still left out too.
 
 **Buttons that pick cards.** A button can ask the player for a card, for a card and the card it goes to, or for a set of cards, and can cost a number each player has each turn:
@@ -211,6 +211,26 @@ Phase: playing
   - `Then the Dating App in p0's development has the Architect on it` and `… has no cards on it` check what sits on a card.
   - `the Dating App in p0's development has 4 blue cubes` sets or checks a number, and `the Architect in p0's bench is onboarding` a yes-or-no. A check reads a worked-out one too: `the Dating App in p0's development is feature complete`.
 - **Startup Simulator** builds its Board this way.
+
+**Choices and comparing cards.** A button's press can carry choices the presser makes, and a rule can compare a card with another card, in anyone's zones:
+
+- **A player of their choice.** The `Then:` line `They pay the license to another player of their choice who has a card in their operations whose tag is the card's requires.` runs `They pay the license to that player` about a player the presser picks: one of the others still in who meets the clause after "who". The clause is read about each of them as "they", so "their operations" are theirs. `Only if` lines right under the line say when it is asked at all: `Only if they have no card in their operations whose tag is the card's requires.`
+- **One of a block of options.** `They choose one:` starts a block. Its own `Only if` lines come first and say when it is asked at all. Then each option is a line ending in `:` (`Cut 2 blue:`), with the `Only if` lines that must hold for it and the lines it runs under it.
+- **Filled in, or asked.**
+  - A press is judged on its cost and its `Only if` lines first, then each choice on the state it is pressed in.
+  - A choice with one player who qualifies, or one option that holds, is filled in.
+  - One with several must be named, or the press is refused with its prompt: `Pick who to pay the license to: p1 or p2.` or `Choose one: cut 2 blue, cut 2 red or cut 1 of each.` A choice named with an answer that isn't one of its own is refused the same way, even when it has only one; an option's capitals don't matter.
+  - A choice with no one who qualifies, or no option that holds, is not asked, and its line does nothing. So a rule that must refuse says so in an `Only if` line.
+  - Replaying the log fills in the same choices.
+- **Where a choice can sit.** Only in the `Then:` of a button that picks one card (alone, or with the card it goes to) or picks nothing. Never inside `If …,` or `For …,`: its condition goes under it as an `Only if` line.
+- **Comparing cards.**
+  - After "whose", a test compares a column with a value or with another card's: `whose trait is Ego`, `whose tag is the card's requires` and `whose sector is the card's sector`. A blank cell matches nothing, on either side, so a card that requires nothing is never given it by a card that provides nothing.
+  - Rules ask `they have a card in their operations whose …` (the player the line is about), `some player has a card in their operations whose …` (any player still in) and `the card has no also requires` (a blank cell).
+  - `Every card on it whose trait is Ego goes to the open job market.` moves only the cards on it that pass.
+- **The card a rule is about.** A section that works out a value, or a button's `Only if` lines, can ask `it is a Senior Developer card`, `it is not a Tier 1 card`, `it is in an ops team`, `its blue need is 0`, `some card on it is leading software` and `no card on it is leading hardware`. A number can go down by another: `A card's blue need goes down by its cut blue cubes.`
+- **Examples** name a press's choices after it: `When p0 greenlights the Server Farm, paying p2` names the players, in line order, and `…, choosing cut 2 red` names an option.
+- **In the playtest,** a choice with one answer is filled in. A press with several answers is refused with the prompt for now; a picker for choices comes later.
+- **Startup Simulator** plays slice 3 this way: the Greenlight's License to a provider of each missing Tag and the cut Domain Expertise gives, which a hybrid's owner chooses; the sections that work out Matching Leads, Stalled and Fully led; and the Pivot that fires the Diva.
 
 **A table too big for one screen.** When a game's zones don't fit the table, the playtest shows one seat at a time, with a tab for each seat:
 

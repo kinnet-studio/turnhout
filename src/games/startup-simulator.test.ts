@@ -13,7 +13,7 @@ import { moveZoneId } from '@/engine/core/lang/declared-moves';
 import { CHOOSE_ONE, CHOOSE_PLAYER, choicesOf, type ChoiceOption } from '@/engine/core/lang/choices';
 import { pressChoices } from '@/engine/core/lang/declared-actions';
 import { RuleError } from '@/engine/core/lang/diagnostics';
-import type { LangRuntime } from '@/engine/core/lang/runtime';
+import { LangRuntime } from '@/engine/core/lang/runtime';
 import type { ZoneRef } from '@/engine/core/lang/types';
 import { markTurnStarted, ROUND_KEY, START_PLAYER_KEY, startPlayerOf, TURN_OF_KEY } from '@/engine/core/lang/turns';
 import { HOLDER_KEY, relocate, zoneIdFor, zoneInfo } from '@/engine/core/lang/zones';
@@ -155,9 +155,13 @@ const cubesOn = (card: CardState, kind: string) => (card.data?.[kind] as number 
 const operationsOf = (state: GameState, seat: PlayerId) => zoneCards(state, zoneIdFor('operations', seat));
 /** Whether a product in operation earns at Income, and so gives a market share: its rev is more than 0 (§5, ruling 25). */
 const earns = (product: CardState) => (product.data?.rev as number) > 0;
-/** What `seat` pays at Income: the salary of every staff member on its Board, on its projects and in its ops team (§5). */
-const payrollOf = (state: GameState, seat: PlayerId) =>
-  sum([...zoneCards(state, zoneIdFor('development team', seat)), ...zoneCards(state, zoneIdFor('ops team', seat))], 'salary');
+/**
+ * What `seat` pays at Income: the salary of every staff member on its Board, on its projects and in its ops team (§5). A salary is the
+ * one the rules work out, since a trait may change the printed one: the Engineer's is $1 in the ops team (§20.B.1).
+ */
+const payrollOf = (runtime: LangRuntime, state: GameState, seat: PlayerId) =>
+  [...zoneCards(state, zoneIdFor('development team', seat)), ...zoneCards(state, zoneIdFor('ops team', seat))]
+    .reduce((total, card) => total + (runtime.workedValue(state, card.id, 'salary') as number), 0);
 /** The colors of cube each skill makes in 1b: flex staff work in blue until modes arrive (§11), and QA and the Specialists make none. */
 const COLOR_OF_SKILL: Record<string, string> = { software: 'blue', flex: 'blue', hardware: 'red' };
 /**
@@ -480,7 +484,7 @@ function playTurn(
   for (let a = 0; going();) {
     const { phase } = engine.getState().turn!;
     if (phase === 'income') {
-      if (payrollOf(engine.getState(), by) > capital() || (t % 6 === 5 && !letGo)) {
+      if (payrollOf(runtime, engine.getState(), by) > capital() || (t % 6 === 5 && !letGo)) {
         letGo = true;
         play(engine, choose(lettingGo()), watch);
       } else {
@@ -581,7 +585,8 @@ function scoreOf(state: GameState, seat: PlayerId): number {
 }
 
 /**
- * A watch that checks, after every move of a game at `seats` played from Setup:
+ * A watch that checks, after every move of a game at `seats` played from Setup, reading through `runtime` the values the rules work
+ * out for cards, such as a salary:
  *
  * - Money is conserved: each seat's capital changes by what it earned less what it paid. The mover pays the bank 2 for a recruit,
  *   the card's cost for a hire from the agency row, 1 for one from the open job market, the total cost of the picked cards for a
@@ -603,7 +608,7 @@ function scoreOf(state: GameState, seat: PlayerId): number {
  *   turn exactly when that turn is the start player's.
  * - Every card in a player's bench, backlog, research or scouting shows its back to every other player and its face to its owner.
  */
-function keepsTheRules(seats: PlayerId[]): Watch {
+function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
   const tableDef = tableDefFor(game!, seats);
   const owners = new Map(seats.flatMap((seat) => OWN_ROWS.map((row) => [zoneIdFor(row, seat), seat] as const)));
   /** Each pool's cards in the order they entered it, oldest first, less those taken or let go of. */
@@ -634,7 +639,7 @@ function keepsTheRules(seats: PlayerId[]): Watch {
       : AGENCY_HIRES.includes(move.type) ? (card!.data?.cost as number)
         : move.type === HIRE_MARKET ? 1
           : SOURCE_HIRES.includes(move.type) ? costOf(move.cardIds as string[])
-            : move.type === PAY_SALARIES ? payrollOf(before, by) : 0;
+            : move.type === PAY_SALARIES ? payrollOf(runtime, before, by) : 0;
     const earned = (seat: PlayerId) => (seat === started ? sum(operationsOf(after, seat), 'rev') : 0);
     const gained = seats.map((seat) => capital(after, seat) - capital(before, seat));
     expect(gained, `capital gained by ${seats.join(', ')} ${at}`).toEqual(seats.map((seat) => earned(seat) - (seat === by ? paid : 0)));
@@ -769,7 +774,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(72);
+    expect(results).toHaveLength(84);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -780,6 +785,17 @@ describe('Startup Simulator (designer language)', () => {
     expect(refs.map((ref) => [ref.phrase, ref.args[0]])).toEqual([[CHOOSE_PLAYER, 0], [CHOOSE_PLAYER, 1], [CHOOSE_ONE, 2]]);
     const options = refs[2].args[2] as ChoiceOption[];
     expect(options.map((option) => option.label)).toEqual(['Cut 2 blue', 'Cut 2 red', 'Cut 1 of each', 'Cut 1 blue', 'Cut 1 red']);
+  });
+
+  it('works out each product’s need and whether it is Stalled or fully led, the Seniors who lead, and the Engineer’s salary in the ops team (§3, §6, §19.A, §20.B.1)', () => {
+    const worked = game!.worked!;
+    // The need is the cost less the cut, a number of its own; the salary is the talent table's column, which the Engineer's trait refines.
+    expect(worked['blue need']).toMatchObject({ kind: 'number', refines: false });
+    expect(worked['red need']).toMatchObject({ kind: 'number', refines: false });
+    for (const flag of ['leading software', 'leading hardware', 'stalled', 'fully led', 'efficient in ops']) {
+      expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
+    }
+    expect(worked.salary).toMatchObject({ kind: 'number', refines: true });
   });
 
   it('asks an example which hire it means when both rows hold the card, in words that each press one button', () => {
@@ -1207,7 +1223,7 @@ describe('Startup Simulator (designer language)', () => {
       const seats = seatsFor(players);
       for (let seed = 1; seed <= 5; seed++) {
         const where = `${players} players, seed ${seed}`;
-        const rules = keepsTheRules(seats);
+        const rules = keepsTheRules(seats, new LangRuntime(game!, lib, seats));
         const budget = keepsTheBudget(seats);
         const checked = { ...viewChecks };
         const engine = playGame(players, seed, (before, move, after) => {
@@ -1295,6 +1311,18 @@ describe('Startup Simulator (designer language)', () => {
       expect(logs[0][0]).toEqual({ type: GREENLIGHT, by: 'p0', cardId: idOf('Sleep Monitor'), choices: [null, null, 'Cut 2 blue'] });
       expect(logs[0].at(-1)).toEqual({ type: LAUNCH, by: 'p0', cardId: viral });
       expect(logs[1]).toEqual(logs[0]);
+    });
+
+    it('checks the salaries a seat pays at Income as the rules work them out: the Engineer costs $1 in the ops team (§20.B.1)', () => {
+      const seats = seatsFor(2);
+      const rules = keepsTheRules(seats, new LangRuntime(game!, lib, seats));
+      const engine = arrange({ 'operations-p1': [idOf('USB Gadget')], 'ops-team-p1': [idOf('Engineer')] });
+      play(engine, { type: END_ACTIONS, by: 'p0' }, rules);
+      // The USB Gadget's $1 rev came in as p1's turn started, and the $1 payroll keeps p1 at Income.
+      expect(engine.getState().turn).toMatchObject({ current: 'p1', phase: 'income' });
+      expect(counterOf(engine.getState(), 'capital', 'p1')).toBe(8);
+      play(engine, { type: PAY_SALARIES, by: 'p1' }, rules);
+      expect(counterOf(engine.getState(), 'capital', 'p1')).toBe(7);
     });
 
     it('a refused press spends nothing', () => {
