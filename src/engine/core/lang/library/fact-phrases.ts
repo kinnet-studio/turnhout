@@ -96,7 +96,7 @@ const bankHasAtLeast: ConditionFn = (env, [n, name]) => bankOf(env.state, name a
 const hasSome: ConditionFn = (env, [fact]) => heldBy(env.state, itOf(env), fact as string) > 0;
 
 /** The card a rule about a card is about. */
-function itCard(env: PhraseEnv): CardState {
+export function itCard(env: PhraseEnv): CardState {
   const id = cardOf(env);
   const card = cardById(env.state, id);
   if (!card) throw new Error(`No card ${id} to judge.`);
@@ -358,14 +358,14 @@ const spaceIsGiven = (value: boolean): EffectFn => (env, [space, fact]) => setSp
 const bankHasGiven: EffectFn = (env, [n, name]) => setBank(env.state, name as string, n as number);
 
 /** “the Knight” for the match of a card, as an example says it. */
-const theCard = (match: CardMatch): string => describeCard(match).replace(/^an? /, 'the ');
+export const theCard = (match: CardMatch): string => describeCard(match).replace(/^an? /, 'the ');
 
 /** The first card of the zone, in slot order, that is the named one. */
-const namedCardIn = (env: PhraseEnv, match: CardMatch, ref: ZoneRef): CardState | undefined =>
+export const namedCardIn = (env: PhraseEnv, match: CardMatch, ref: ZoneRef): CardState | undefined =>
   zoneCards(env.state, soleZone(ref, env)).find((card) => matchesCard(card, match));
 
 /** What an example found instead of the card: “no Viper in p0's camp”. */
-const noCardIn = (match: CardMatch, ref: ZoneRef): string => `no ${describeCard(match).replace(/^(?:an?|the) /, '')} in ${describeZone(ref)}`;
+export const noCardIn = (match: CardMatch, ref: ZoneRef): string => `no ${describeCard(match).replace(/^(?:an?|the) /, '')} in ${describeZone(ref)}`;
 
 const cardInZoneIsGiven: EffectFn = (env, [match, zone, fact]) => {
   const card = namedCardIn(env, match as CardMatch, zone as ZoneRef);

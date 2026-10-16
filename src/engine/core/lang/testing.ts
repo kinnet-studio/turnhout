@@ -377,6 +377,40 @@ export const ROUNDS_GAME = TURN_GAME.replace('Phase: working', [
   'Phase: working',
 ].join('\n'));
 
+/**
+ * A card game whose workers sit on the jobs they work on. Players start jobs from their stash in their workshop, hire workers
+ * from the hall onto a job, shift a worker to another job and finish a job, which sends its crew to the idle row. Every card in a
+ * crew sits on a job.
+ */
+export const CREW_GAME = [
+  'Game: Crew', 'Players: 2 to 3', '  Each player has 9 coins that everyone can see.', '  Each player has 3 moves each turn.',
+  '  Players pay with coins.', '',
+  'Cards:', '  A deck called jobs, starting in the pile:',
+  '    | name   | red need | gold need | pay | worth | copies |', '    | Vase   | 2        | 0         | 1   | 3     | 2      |',
+  '    | Statue | 1        | 2         | 2   | 4     | 2      |',
+  '  A deck called hands, starting in the hall:',
+  '    | name   | craft | skill | wage | copies |', '    | Potter | red   | 1     | 1    | 3      |',
+  '    | Smith  | gold  | 2     | 2    | 2      |', '    | Tinker | mixed | 1     | 0    | 2      |',
+  '  Cards can be tired.', '',
+  'Table:', '  The pile is a pile in the center that no one can see.', '  The hall is a row in the center that everyone can see.',
+  '  The scrap is a row in the center that everyone can see.', '  Each player has a stash row that only they can see.',
+  '  Each player has a workshop row that everyone can see.',
+  '  Each player has a crew row that everyone can see, where every card is on a card.',
+  '  Each player has an idle row that everyone can see.', '',
+  'Setup:', '  Deal 2 cards from the pile to each stash.', '',
+  'Phase: working', '  Players take turns.',
+  '  A player may start a card in their stash.', '    Then:', '      Move it to their workshop.',
+  '  A player may hire some cards from the hall to a card in their workshop.', '    It costs 1 move.', '    Then:',
+  '      The picked cards go to their crew, on the target card.',
+  '  A player may shift a card from their crew to a card in their workshop.', '    It costs 1 move.',
+  '    Only if it is not on the target card.', '    Then:', '      It goes to their crew, on the target card.',
+  '  A player may finish a card in their workshop.', '    It costs 1 move.', '    Then:',
+  '      Every card on it is tired.', '      Every card on it goes to their idle.', '      Move it to the scrap.',
+  '  A player may stop.', '    Then:', '      Their moves go back to 0.',
+  '  When they have less than 1 move:', '    The turn passes to the left.', '',
+  'End:', '  The game ends when the scrap has more than 3 cards.', '  The highest score wins.',
+].join('\n');
+
 /** The loop of the board fixtures: a start, two streets, a tax, a station, a utility and two chance spaces. */
 export const FIXTURE_SPACES: SpaceSpec[] = [
   { name: 'Go', attrs: { kind: 'go' } },

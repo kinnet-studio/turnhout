@@ -230,4 +230,10 @@ describe('a card goes into the bottom fifth of a zone', () => {
     const none = () => effect('an Opal goes into the bottom fifth of the pile', envOf([gem('o0', 'pile', 'Ruby', 0)]));
     expect(none).toThrow(new RuleError('No card is an Opal.'));
   });
+  it('takes the card off the card it sat on, as any move does', () => {
+    const env = envOf([gem('o0', 'pile', 'Ruby', 0), fixtureCard('in', 'shop', { name: 'Opal', cost: 1, 'lang:on': 'o0' })]);
+    const next = effect('an Opal goes into the bottom fifth of the pile', env);
+    expect(next.cards.find((c) => c.id === 'in')).toMatchObject({ zoneId: 'pile', data: { name: 'Opal', cost: 1 } });
+    expect(next.cards.find((c) => c.id === 'in')?.data).not.toHaveProperty('lang:on');
+  });
 });

@@ -5,7 +5,7 @@ import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import { joinOr } from '../refs';
 import type { ActionFn, CardMatch, CardPick, ConditionFn, DeclaredAction, EffectFn, PhraseEnv, ZoneRef } from '../types';
-import { BOX_ZONE, matchesCard, relocate, zoneInfo } from '../zones';
+import { BOX_ZONE, matchesCard, relocate, zoneNameOf } from '../zones';
 import { byCardId, describeCard } from './example-phrases';
 import { describeZone, seatOf, soleZone, theTargetCard, thePickedCards } from './support';
 
@@ -56,13 +56,6 @@ function cardFor(inPlay: CardState[], match: CardMatch, zoneId: string | null, t
   return card.id;
 }
 
-/** A zone by its id, as an example names it: “the shop”, “p0's stash”. */
-function exampleZone(env: PhraseEnv, zoneId: string): string {
-  const info = zoneInfo(env.game, zoneId);
-  if (!info) return zoneId;
-  return info.seat === null ? `the ${info.spec.name}` : `${info.seat}'s ${info.spec.name}`;
-}
-
 const allDifferent = (values: (string | null)[]): boolean => new Set(values).size === values.length;
 
 /**
@@ -73,7 +66,7 @@ const allDifferent = (values: (string | null)[]): boolean => new Set(values).siz
 function tellApart(env: PhraseEnv, takers: DeclaredAction[], by: PlayerId): string {
   const sources = takers.map((action) => moveZoneId(action.pick!.from, env.seats, by));
   if (allDifferent(sources)) {
-    const named = sources.flatMap((zoneId) => (zoneId === null ? [] : [`“… from ${exampleZone(env, zoneId)}”`]));
+    const named = sources.flatMap((zoneId) => (zoneId === null ? [] : [`“… from ${zoneNameOf(env.game, zoneId)}”`]));
     return `Say where it comes from: ${joinOr(named)}.`;
   }
   const goes = takers.map(({ pick }) => (pick!.onto !== null ? 'a card' : pick!.to === null ? 'nowhere' : moveZoneId(pick!.to, env.seats, by)));

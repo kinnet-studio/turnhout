@@ -54,7 +54,7 @@ const countOf = (n: number) => `${n} ${n === 1 ? 'card' : 'cards'}`;
  * The attributes that make up a card's face in this game, so bookkeeping like who played it is left out. What a card says is
  * left out too: a card is named by its name, not by its rules.
  */
-function describeCards(cards: CardState[], game: CompiledGame): string {
+export function describeCards(cards: CardState[], game: CompiledGame): string {
   const keys = [...new Set(game.cards.flatMap((set) => set.identities.flatMap((i) => Object.keys(i.attrs))))].filter((key) => !isSaysColumn(key));
   return joinAnd(cards.map((card) => describeCard(Object.fromEntries(
     keys.flatMap((key) => (card.data?.[key] === undefined ? [] : [[key, card.data[key] as Json]])),
@@ -62,7 +62,7 @@ function describeCards(cards: CardState[], game: CompiledGame): string {
 }
 
 /** Can each wanted card be matched to a different card, using up all of them? A general match may stand for a particular card. */
-function coversExactly(cards: CardState[], wanted: CardMatch[]): boolean {
+export function coversExactly(cards: CardState[], wanted: CardMatch[]): boolean {
   if (cards.length !== wanted.length) return false;
   const takenBy: number[] = cards.map(() => -1);
   const place = (w: number, tried: boolean[]): boolean =>
@@ -78,18 +78,25 @@ function coversExactly(cards: CardState[], wanted: CardMatch[]): boolean {
 
 // ---- given: arranging the table ----------------------------------------------------------------
 
-/** Replaces what a zone holds: its cards leave the game, then these cards are claimed and put there in order. */
-function fill(env: PhraseEnv, zoneId: string, wanted: CardMatch[]): GameState {
+/** The ids of a card for each match, in order, each one no other line of the example has claimed, and the state with any made card in. */
+export function claimCards(env: PhraseEnv, wanted: CardMatch[], from: GameState): { ids: string[]; state: GameState } {
   const example = exampleOf(env);
-  let state = relocate(env.state, zoneCards(env.state, zoneId).map((c) => c.id), BOX_ZONE, env.game);
-  const claimed: string[] = [];
+  let state = from;
+  const ids: string[] = [];
   // A claim that makes a card hands back the state with it in, which the next claim must see: it takes the next id.
   for (const match of wanted) {
     const claim = example.claim(match, describeCard(match), state);
-    claimed.push(claim.id);
+    ids.push(claim.id);
     state = claim.state;
   }
-  return relocate(state, claimed, zoneId, env.game);
+  return { ids, state };
+}
+
+/** Replaces what a zone holds: its cards leave the game, then these cards are claimed and put there in order. */
+function fill(env: PhraseEnv, zoneId: string, wanted: CardMatch[]): GameState {
+  const emptied = relocate(env.state, zoneCards(env.state, zoneId).map((c) => c.id), BOX_ZONE, env.game);
+  const { ids, state } = claimCards(env, wanted, emptied);
+  return relocate(state, ids, zoneId, env.game);
 }
 
 const phaseIs: EffectFn = (env, args) => ({

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BOX_ZONE, WINNER_KEY, chooseNext, handZoneOf, leftOf, matchesCard, relocate, resolveSeat, resolveZoneIds, slug, toBottom,
-  topCard, zoneIdFor, zoneInfo,
+  BOX_ZONE, HOLDER_KEY, WINNER_KEY, chooseNext, handZoneOf, leftOf, matchesCard, relocate, resolveSeat, resolveZoneIds, slug, toBottom,
+  topCard, withoutHolder, zoneIdFor, zoneInfo,
 } from './zones';
 import { RuleError } from './diagnostics';
 import { makeRng } from '../rng';
@@ -286,5 +286,36 @@ describe('toBottom', () => {
   });
   it('rejects a card that is not in the game', () => {
     expect(() => toBottom(stateWith([]), 'c9', 'draw-pile', game)).toThrow('c9');
+  });
+});
+
+describe('a card that moves comes off the card it was on', () => {
+  /** A Ruby sitting on the card c9. */
+  const ruby = (id: string, zoneId: string, slot: number) => card(id, zoneId, slot, { data: { name: 'Ruby', 'lang:on': 'c9' } });
+  const dataOf = (state: GameState, id: string) => state.cards.find((c) => c.id === id)?.data;
+
+  it('keeps the card it sits on under “lang:on” in its data', () => expect(HOLDER_KEY).toBe('lang:on'));
+  it('withoutHolder takes the key out, and hands back a card without it as it is', () => {
+    const on = ruby('c1', 'deck', 0);
+    expect(withoutHolder(on)).toEqual({ ...on, data: { name: 'Ruby' } });
+    expect(on.data).toEqual({ name: 'Ruby', 'lang:on': 'c9' });
+    const plain = card('c2', 'deck', 1, { data: { name: 'Ruby' } });
+    expect(withoutHolder(plain)).toBe(plain);
+  });
+  it('relocate and toBottom leave a moved card on nothing', () => {
+    const state = stateWith([ruby('c1', 'deck', 0), card('c2', 'deck', 1)]);
+    expect(dataOf(relocate(state, ['c1'], 'trick', GAME), 'c1')).toEqual({ name: 'Ruby' });
+    expect(dataOf(toBottom(state, 'c1', 'trick', GAME), 'c1')).toEqual({ name: 'Ruby' });
+    expect(dataOf(toBottom(state, 'c1', 'deck', GAME), 'c1')).toEqual({ name: 'Ruby' });
+  });
+  it('leaves a card that does not move on its card', () => {
+    const state = stateWith([card('c1', 'deck', 0), ruby('c2', 'deck', 1)]);
+    expect(dataOf(relocate(state, ['c1'], 'trick', GAME), 'c2')).toEqual({ name: 'Ruby', 'lang:on': 'c9' });
+    expect(dataOf(toBottom(state, 'c1', 'deck', GAME), 'c2')).toEqual({ name: 'Ruby', 'lang:on': 'c9' });
+  });
+  it('keeps the very data of a moved card that sat on nothing', () => {
+    const plain = card('c1', 'deck', 0, { data: { name: 'Ruby' } });
+    expect(relocate(stateWith([plain]), ['c1'], 'trick', GAME).cards[0].data).toBe(plain.data);
+    expect(toBottom(stateWith([plain]), 'c1', 'trick', GAME).cards[0].data).toBe(plain.data);
   });
 });

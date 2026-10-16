@@ -9,7 +9,7 @@ import { bankItemOf } from './board';
 import {
   bankOf, counterOf, gameNumber, interruptedTurn, isOut, lastDrawn, latestRoll, owedTo, ownerOf, pieceAt, playerFact, spaceFact, type Creditor, type LastDrawn,
 } from './board-state';
-import { cardFact, cardName } from './card-facts';
+import { cardFact, cardName, pickName } from './card-facts';
 import {
   amountPrompt, amountReady, cardCandidates, cardPrompt, faceDownReady, noCardIn, ontoCandidates, ontoPrompt, playerCandidates, targetCandidates,
 } from './declared-actions';
@@ -275,12 +275,6 @@ function playersView(
 export function seesFace(game: CompiledGame, card: CardState, seat: PlayerId): boolean {
   const zone = zoneInfo(game, card.zoneId);
   return isRevealed(card, zone ? { visibility: zone.spec.visibility, owner: zone.seat ?? 'shared' } : undefined, seat);
-}
-
-/** A card as a button that picks it names it: by its name, the way its face is labelled, else as the page names any card. */
-function pickName(card: CardState, game: CompiledGame): string {
-  const named = card.data?.name;
-  return typeof named === 'string' || typeof named === 'number' ? String(named) : cardName(card, game);
 }
 
 /** A card as `seat` sees it among the cards to pick: by its name, or as a face-down card when its face is hidden from the seat. */

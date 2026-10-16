@@ -3,6 +3,7 @@ import type { GameState } from '../game-state';
 import type { Move } from '../moves';
 import type { PlayerId } from '../scene';
 import type { Json } from '../table-def';
+import { attachmentProblem } from './attach';
 import { numberIn } from './board';
 import { holderOf, interruptedTurn, setCounter } from './board-state';
 import { isMissing, readsPressCard } from './compile-util';
@@ -302,6 +303,16 @@ export class LangRuntime {
       numberIn(spec, column),
     );
   };
+
+  /**
+   * The state, when every card that must sit on a card does, on one still with it; else a RuleError that names the card left behind.
+   * Thrown from a move or a rule, it refuses the whole change, so the engine keeps the state from before it.
+   */
+  checkAttachments(state: GameState): GameState {
+    const problem = attachmentProblem(this.game, state);
+    if (problem !== null) throw new RuleError(problem);
+    return state;
+  }
 
   /** The move an example's When step makes, and who makes it. */
   act(ref: PhraseRef, state: GameState, example: ExampleEnv): { by: PlayerId; move: Move } {

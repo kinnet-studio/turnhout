@@ -8,7 +8,9 @@ import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
-import { COUNTER_GAME, HOLDING_BOARD, INTERRUPT_BOARD, PICK_BOARD, ROUNDS_GAME, TINY_BOARD_HEAD, TURN_GAME, deckGameText } from './testing';
+import {
+  COUNTER_GAME, CREW_GAME, HOLDING_BOARD, INTERRUPT_BOARD, PICK_BOARD, ROUNDS_GAME, TINY_BOARD_HEAD, TURN_GAME, deckGameText,
+} from './testing';
 import type { ParamType } from './types';
 
 const lib = createDefaultLibrary();
@@ -1219,5 +1221,31 @@ describe('cards that say what they do', () => {
       // Once the zone is fixed, the says problems and the rule's own are all shown.
       expect(summary(fixed).map(([line]) => line)).toEqual([7, 8, lineOf(fixed, '    They sing.')]);
     });
+  });
+});
+
+describe('zones whose cards sit on cards', () => {
+  /** The 1-based number of `line` in `text`. */
+  const at = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+  const zoneOf = (text: string, name: string) => compileGame(text, lib).game!.zones.find((zone) => zone.name === name)!;
+
+  it('compiles CREW_GAME with no problems', () => expect(compileGame(CREW_GAME, lib).diagnostics).toEqual([]));
+  it('marks a row each player has whose line ends “, where every card is on a card”', () => {
+    expect(zoneOf(CREW_GAME, 'crew')).toEqual({ name: 'crew', perPlayer: true, layout: 'row', visibility: 'public', onCards: 'every' });
+  });
+  it('leaves the mark out of a zone whose line does not say it, and reads “an idle row” as a row', () => {
+    const idle = zoneOf(CREW_GAME, 'idle');
+    expect('onCards' in idle).toBe(false);
+    expect(idle).toEqual({ name: 'idle', perPlayer: true, layout: 'row', visibility: 'public' });
+  });
+  it('reads “an” before a zone each player has that is no row, as a pile', () => {
+    const text = CREW_GAME.replace('  Each player has an idle row', '  Each player has an apron that only they can see.\n  Each player has an idle row');
+    expect(compileGame(text, lib).diagnostics).toEqual([]);
+    expect(zoneOf(text, 'apron')).toEqual({ name: 'apron', perPlayer: true, layout: 'pile', visibility: 'owner' });
+  });
+  it('refuses the mark on a zone in the center, on its line', () => {
+    const line = '  The hall is a row in the center that everyone can see, where every card is on a card.';
+    const text = CREW_GAME.replace('  The hall is a row in the center that everyone can see.', line);
+    expect(messages(text)).toContainEqual([at(text, line), 'Only a zone each player has can hold cards on cards.']);
   });
 });

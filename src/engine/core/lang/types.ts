@@ -12,7 +12,13 @@ export type PhraseRef = { kind: PhraseKind | 'lang'; phrase: string; args: Json[
 export type SeatRef = { seat: string } | { who: 'actor' | 'winner' | 'other' };
 export type ZoneRef = { shared: string } | { each: string } | { of: SeatRef; zone: string };
 export type CardMatch = { [attr: string]: Json };
-export type ZoneSpec = { name: string; perPlayer: boolean; layout: 'pile' | 'row' | 'hand'; visibility: 'secret' | 'owner' | 'public' };
+/**
+ * `onCards` is there only for a zone each player has whose line ends “, where every card is on a card”: every card in it must sit on
+ * a card, and only such a zone may hold a card that sits on one.
+ */
+export type ZoneSpec = {
+  name: string; perPlayer: boolean; layout: 'pile' | 'row' | 'hand'; visibility: 'secret' | 'owner' | 'public'; onCards?: 'every';
+};
 export type CardIdentity = { attrs: { [k: string]: Json }; faceKey: string };
 /**
  * A set of cards the game starts with. An `endless` set has the identities of its table but puts no card on the table (its

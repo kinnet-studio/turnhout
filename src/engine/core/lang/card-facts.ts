@@ -46,6 +46,12 @@ export function cardName(card: CardState, game: CompiledGame): string {
   return parts.length === 0 ? card.faceKey : parts.join(' ');
 }
 
+/** A card by its name, the way its face is labelled, else as the page names any card: as a button that picks it or a rule's message names it. */
+export function pickName(card: CardState, game: CompiledGame): string {
+  const named = card.data?.name;
+  return typeof named === 'string' || typeof named === 'number' ? String(named) : cardName(card, game);
+}
+
 /**
  * How a fact that is set shows on a card's face: a flag that is true says `yes` and a number that is not 0 says its
  * value. A flag that is false, a number of 0 and a fact never set leave the face as it was.

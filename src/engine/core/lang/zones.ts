@@ -8,6 +8,8 @@ import type { CardMatch, CompiledGame, PhraseEnv, SeatRef, ZoneRef, ZoneSpec } f
 export const BOX_ZONE = '__box';
 /** `state.data` key holding the seat that won the last trick or round. */
 export const WINNER_KEY = 'lang:winner';
+/** The key in a card's own `data` holding the id of the card it sits on; a card that sits on nothing has none. */
+export const HOLDER_KEY = 'lang:on';
 
 /** What is said when “the other player” is asked of a game that is not for two. */
 export const NEEDS_TWO = '“the other player” needs a game for two players.';
@@ -40,6 +42,13 @@ export function zoneInfo(game: CompiledGame, zoneId: string): { spec: ZoneSpec; 
     }
   }
   return null;
+}
+
+/** A zone by its id, as a designer names it: “the shop”, “p0's stash”; an id the game does not have, as it is. */
+export function zoneNameOf(game: CompiledGame, zoneId: string): string {
+  const info = zoneInfo(game, zoneId);
+  if (!info) return zoneId;
+  return info.seat === null ? `the ${info.spec.name}` : `${info.seat}'s ${info.spec.name}`;
 }
 
 /** The one seat that is not `seat`, at a table of two. */
@@ -103,9 +112,18 @@ export function topCard(state: GameState, zoneId: string): CardState | undefined
   return zoneCards(state, zoneId).at(-1);
 }
 
+/** The card off whatever card it sat on; a card that sat on none comes back as it is, `data` and all. */
+export function withoutHolder(card: CardState): CardState {
+  if (card.data === undefined || !Object.hasOwn(card.data, HOLDER_KEY)) return card;
+  const data = { ...card.data };
+  delete data[HOLDER_KEY];
+  return { ...card, data };
+}
+
 /**
  * Moves cards to the end of a zone, in the order given. Cards end up face up only in public
  * zones of the game; any other zone (secret, owner, or outside the game) holds them face down.
+ * A card that moves comes off any card it sat on: a rule that puts it on one says so after the move.
  */
 export function relocate(state: GameState, cardIds: string[], toZoneId: string, game: CompiledGame): GameState {
   const moving = new Set(cardIds);
@@ -121,7 +139,7 @@ export function relocate(state: GameState, cardIds: string[], toZoneId: string, 
   cardIds.forEach((id, i) => {
     const card = byId.get(id);
     if (!card) throw new Error(`No card ${id} to move.`);
-    moved.set(id, { ...card, zoneId: toZoneId, slot: start + i, faceUp });
+    moved.set(id, { ...withoutHolder(card), zoneId: toZoneId, slot: start + i, faceUp });
   });
   return {
     ...state,
@@ -134,7 +152,8 @@ export function relocate(state: GameState, cardIds: string[], toZoneId: string, 
 
 /**
  * Puts a card under every other card of a zone and numbers the zone's slots 0 to n-1 with it first, so a pile that is drawn
- * from the top comes round to the card again only after all the others. Like `relocate`, it ends up face up only in a public zone.
+ * from the top comes round to the card again only after all the others. Like `relocate`, it ends up face up only in a public zone,
+ * on no card.
  */
 export function toBottom(state: GameState, cardId: string, zoneId: string, game: CompiledGame): GameState {
   if (!state.cards.some((c) => c.id === cardId)) throw new Error(`No card ${cardId} to move.`);
@@ -143,7 +162,7 @@ export function toBottom(state: GameState, cardId: string, zoneId: string, game:
   return {
     ...state,
     cards: state.cards.map((c) => {
-      if (c.id === cardId) return { ...c, zoneId, slot: 0, faceUp };
+      if (c.id === cardId) return { ...withoutHolder(c), zoneId, slot: 0, faceUp };
       const slot = slots.get(c.id);
       return slot === undefined ? c : { ...c, slot };
     }),

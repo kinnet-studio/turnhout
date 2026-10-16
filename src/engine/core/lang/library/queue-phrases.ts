@@ -3,7 +3,7 @@ import { nextInt } from '../../rng';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import type { CardMatch, ConditionFn, EffectFn, ZoneRef } from '../types';
-import { BOX_ZONE, matchesCard, relocate, resolveZoneIds, zoneIdFor, zoneInfo } from '../zones';
+import { BOX_ZONE, matchesCard, relocate, resolveZoneIds, withoutHolder, zoneIdFor, zoneInfo } from '../zones';
 import { describeCard } from './example-phrases';
 import { deal } from './flow-phrases';
 import { describeZone, soleZone } from './support';
@@ -59,7 +59,7 @@ const dealOne: EffectFn = (env, args) => deal(env, [1, ...args]);
 /**
  * Puts a card back among the oldest of a zone: into one of the bottom fifth of the cards already there, but always at least the
  * bottom one, and never past the top. The place is drawn from the game's random numbers, so the same game goes the same way.
- * The card is the first one in play that is that kind, wherever it is; it is face up only in a zone everyone can see.
+ * The card is the first one in play that is that kind, wherever it is; it is face up only in a zone everyone can see, and on no card.
  */
 const goesIntoBottomFifth: EffectFn = (env, args) => {
   const [match, zoneRef] = args as [CardMatch, ZoneRef];
@@ -71,9 +71,9 @@ const goesIntoBottomFifth: EffectFn = (env, args) => {
   // With `others` cards there are only `others` + 1 places to go into, so a short zone has fewer than the fifth's.
   const { value: slot, rng } = nextInt(env.state.rng, Math.min(reach, others) + 1);
   const placed = insertAtSlot({ ...env.state, rng }, card.id, zoneId, slot);
-  // insertAtSlot leaves the face as it was, so it is turned as `relocate` would turn it.
+  // insertAtSlot leaves the face and the card it sat on as they were, so both go as `relocate` would have them go.
   const faceUp = zoneInfo(env.game, zoneId)?.spec.visibility === 'public';
-  return { ...placed, cards: placed.cards.map((c) => (c.id === card.id ? { ...c, faceUp } : c)) };
+  return { ...placed, cards: placed.cards.map((c) => (c.id === card.id ? { ...withoutHolder(c), faceUp } : c)) };
 };
 
 /** The bottom card of a zone, a shared zone that has a card, moving a named card, dealing up to a number, and the bottom fifth. */
