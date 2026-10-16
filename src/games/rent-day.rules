@@ -99,6 +99,14 @@ Board:
   Players can be bidding.
   Players can be the high bidder.
   The game has a high bid of 0.
+  Spaces can be offered.
+  Spaces can be asked for.
+  Cards can be handed over.
+  Cards can be claimed.
+  Players can be proposing.
+  Players can be the trade partner.
+  The game has a cash offer of 0.
+  The game has a cash request of 0.
 
 Setup:
   Shuffle the chance pile.
@@ -197,6 +205,14 @@ Phase: playing
       If it has 4 houses, it gets a hotel from the bank.
       If it has a hotel, its houses go back to the bank.
       If it has no hotel, it gets a house from the bank.
+  A player may trade with another player.
+    Only if no player has less than 0 money.
+    Then:
+      They are proposing.
+      That player is the trade partner.
+      The cash offer is 0.
+      The cash request is 0.
+      The trade phase starts with them.
   A player may end their turn.
     Only if no player has less than 0 money.
     Only if they have rolled this turn.
@@ -295,6 +311,92 @@ Phase: auction
     The high bid is 0.
     Go back to the interrupted turn.
   After a player bids or drops out, the turn passes to the next player on the left who is bidding.
+
+Phase: trade
+  Hint: Offer and ask for spaces, cash and kept cards, then propose. The other player accepts or declines.
+  A player may offer a space they own.
+    Only if they are proposing.
+    Only if it is not offered.
+    Only if no street of its color has a building.
+    Then:
+      It is offered.
+  A player may ask for a space the trade partner owns.
+    Only if they are proposing.
+    Only if it is not asked for.
+    Only if no street of its color has a building.
+    Then:
+      It is asked for.
+  A player may offer to pay an amount.
+    Only if they are proposing.
+    Only if they have at least the amount in money.
+    Then:
+      The cash offer is the amount.
+  A player may ask to be paid an amount.
+    Only if they are proposing.
+    Then:
+      The cash request is the amount.
+  A player may offer everything they keep.
+    Only if they are proposing.
+    Only if their kept cards are not empty.
+    Then:
+      Every card in their kept cards is handed over.
+  A player may ask for everything the trade partner keeps.
+    Only if they are proposing.
+    Then:
+      For the trade partner, every card in their kept cards is claimed.
+  A player may propose the trade.
+    Only if they are proposing.
+    Only if one of:
+      some space is offered
+      some space is asked for
+      some card is handed over
+      some card is claimed
+      the cash offer is more than 0
+      the cash request is more than 0
+  A player may cancel the trade.
+    Only if they are proposing.
+    Then:
+      No space is offered.
+      No space is asked for.
+      No card is handed over.
+      No card is claimed.
+      No player is proposing.
+      No player is the trade partner.
+      The cash offer is 0.
+      The cash request is 0.
+      Go back to the interrupted turn.
+  A player may accept the trade.
+    Only if they are the trade partner.
+    Only if they have at least the cash request in money.
+    Then:
+      They own every space that is offered.
+      Every card that is handed over goes to their kept cards.
+      They pay the cash request to the player who is proposing.
+      For the player who is proposing, they own every space that is asked for.
+      For the player who is proposing, every card that is claimed goes to their kept cards.
+      For the player who is proposing, they pay the cash offer to the trade partner.
+      No space is offered.
+      No space is asked for.
+      No card is handed over.
+      No card is claimed.
+      No player is proposing.
+      No player is the trade partner.
+      The cash offer is 0.
+      The cash request is 0.
+      Go back to the interrupted turn.
+  A player may decline the trade.
+    Only if they are the trade partner.
+    Then:
+      No space is offered.
+      No space is asked for.
+      No card is handed over.
+      No card is claimed.
+      No player is proposing.
+      No player is the trade partner.
+      The cash offer is 0.
+      The cash request is 0.
+      Go back to the interrupted turn.
+  After a player proposes the trade, the turn passes to the next player on the left who is the trade partner.
 
 End:
   The game ends when one player is left.
@@ -1239,3 +1341,203 @@ Example: you cannot buy a space nobody bid on at auction
   Then it is rejected because "it is not up for auction"
   And no one owns Rose Lane
   And p0 has 1500 money
+
+Example: starting a trade
+  When p0 trades with p1
+  Then it is accepted
+  And the phase is trade
+  And it is p0's turn
+  And p0 is proposing
+  And p1 is the trade partner
+  And the cash offer is 0
+
+Example: you cannot trade with yourself or with nobody
+  When p0 trades with p0
+  Then it is rejected because "Pick another player to trade with."
+  When p0 trades with another player
+  Then it is rejected because "Pick another player to trade with."
+
+Example: you cannot trade while someone owes
+  Given p1 has -10 money
+  When p0 trades with p1
+  Then it is rejected because "no player has less than 0 money"
+
+Example: building an offer
+  Given p0 owns Mill Lane
+  And p1 owns Rose Lane
+  When p0 trades with p1
+  And p0 offers Mill Lane
+  And p0 asks for Rose Lane
+  And p0 offers to pay 100
+  Then it is accepted
+  And Mill Lane is offered
+  And Rose Lane is asked for
+  And the cash offer is 100
+  When p0 offers Mill Lane
+  Then it is rejected because "it is not offered"
+  When p0 offers to pay 1600
+  Then it is rejected because "they have at least the amount in money"
+
+Example: you can only offer your own spaces and ask for the other player's
+  Given p0 owns Mill Lane
+  And p1 owns Rose Lane
+  When p0 trades with p1
+  And p0 offers Rose Lane
+  Then it is rejected because "That isn't a space you own."
+  When p0 asks for Mill Lane
+  Then it is rejected because "That isn't a space the trade partner owns."
+
+Example: a street whose color has a building cannot be offered
+  Given p0 owns Mill Lane
+  And p0 owns Ferry Row
+  And Ferry Row has 1 house
+  When p0 trades with p1
+  And p0 offers Mill Lane
+  Then it is rejected because "no street of its color has a building"
+
+Example: an empty trade cannot be proposed
+  When p0 trades with p1
+  And p0 proposes the trade
+  Then it is rejected because "some space is offered or some space is asked for or some card is handed over or some card is claimed or the cash offer is more than 0 or the cash request is more than 0"
+
+Example: proposing hands the turn to the other player
+  Given p1 owns Rose Lane
+  When p0 trades with p1
+  And p0 asks for Rose Lane
+  And p0 proposes the trade
+  Then it is accepted
+  And the phase is trade
+  And it is p1's turn
+
+Example: the other player answers only after the proposal
+  Given p1 owns Rose Lane
+  When p0 trades with p1
+  And p0 asks for Rose Lane
+  And p1 accepts the trade
+  Then it is rejected because "It's p0's turn."
+
+Example: accepting swaps everything in the offer
+  Given p0 owns Mill Lane
+  And p1 owns Rose Lane
+  When p0 trades with p1
+  And p0 offers Mill Lane
+  And p0 asks for Rose Lane
+  And p0 offers to pay 100
+  And p0 proposes the trade
+  And p1 accepts the trade
+  Then it is accepted
+  And p1 owns Mill Lane
+  And p0 owns Rose Lane
+  And p0 has 1400 money
+  And p1 has 1600 money
+  And Mill Lane is not offered
+  And Rose Lane is not asked for
+  And p0 is not proposing
+  And p1 is not the trade partner
+  And the cash offer is 0
+  And the phase is playing
+  And it is p0's turn
+
+Example: declining changes nothing
+  Given p0 owns Mill Lane
+  And p1 owns Rose Lane
+  When p0 trades with p1
+  And p0 offers Mill Lane
+  And p0 asks for Rose Lane
+  And p0 asks to be paid 50
+  And p0 proposes the trade
+  And p1 declines the trade
+  Then it is accepted
+  And p0 owns Mill Lane
+  And p1 owns Rose Lane
+  And p0 has 1500 money
+  And p1 has 1500 money
+  And Mill Lane is not offered
+  And Rose Lane is not asked for
+  And p1 is not the trade partner
+  And the cash request is 0
+  And the phase is playing
+  And it is p0's turn
+
+Example: cancelling a trade changes nothing
+  Given p0 owns Mill Lane
+  When p0 trades with p1
+  And p0 offers Mill Lane
+  And p0 offers to pay 100
+  And p0 cancels the trade
+  Then it is accepted
+  And p0 owns Mill Lane
+  And p0 has 1500 money
+  And Mill Lane is not offered
+  And p0 is not proposing
+  And the cash offer is 0
+  And the phase is playing
+  And it is p0's turn
+
+Example: kept cards change hands
+  Given p1's kept cards has a Get Out Of Jail Free
+  When p0 trades with p1
+  And p0 asks for everything the trade partner keeps
+  And p0 proposes the trade
+  And p1 accepts the trade
+  Then it is accepted
+  And p0's kept cards has a Get Out Of Jail Free
+  And p1's kept cards are empty
+  And a Get Out Of Jail Free in p0's kept cards is not claimed
+
+Example: kept cards change hands both ways
+  Given p0 is on Jail
+  And p0 is in jail
+  And p0's kept cards has a Get Out Of Jail Free
+  And p1's kept cards has a Get Out Of Jail Free
+  When p0 trades with p1
+  And p0 offers everything they keep
+  And p0 asks for everything the trade partner keeps
+  And p0 proposes the trade
+  And p1 accepts the trade
+  Then p0's kept cards has a Get Out Of Jail Free
+  And p1's kept cards has a Get Out Of Jail Free
+  When p0 uses a Get Out Of Jail Free
+  Then it is accepted
+  And the bottom card of the treasury pile is a Get Out Of Jail Free
+
+Example: the other player must be able to pay
+  Given p0 owns Mill Lane
+  And p1 has 50 money
+  When p0 trades with p1
+  And p0 offers Mill Lane
+  And p0 asks to be paid 100
+  And p0 proposes the trade
+  And p1 accepts the trade
+  Then it is rejected because "they have at least the cash request in money"
+
+Example: a mortgaged space trades as it is
+  Given p0 owns Mill Lane
+  And Mill Lane is mortgaged
+  When p0 trades with p1
+  And p0 offers Mill Lane
+  And p0 proposes the trade
+  And p1 accepts the trade
+  Then it is accepted
+  And p1 owns Mill Lane
+  And Mill Lane is mortgaged
+  And Mill Lane is not offered
+
+Example: the turn resumes where it was
+  Given p0 is on Go
+  And p1 owns Rose Lane
+  And the next roll is 1 and 3
+  When p0 rolls the dice
+  And p0 trades with p1
+  And p0 asks for Rose Lane
+  And p0 offers to pay 300
+  And p0 proposes the trade
+  And p1 accepts the trade
+  Then p0 owns Rose Lane
+  And p0 has 1000 money
+  And p1 has 1800 money
+  When p0 rolls the dice
+  Then it is rejected because "they have not rolled this turn or they rolled a double"
+  When p0 ends their turn
+  Then it is accepted
+  And it is p1's turn

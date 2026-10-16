@@ -8,6 +8,7 @@ import {
   bankOf, counterOf, gameNumber, isOut, LAST_DRAWN_KEY, lastDrawn, latestRoll, nextIn, owedTo, ownerOf, pieceAt, playerFact, playersIn, queueRoll,
   rollsThisTurn, setBank, setCounter, setOwner, setRoll, setSpaceFact, spaceFact, TURN_KEY, TURN_ROLLS_KEY, withBoardData,
 } from '@/engine/core/lang/board-state';
+import { cardFact } from '@/engine/core/lang/card-facts';
 import { deckOf } from '@/engine/core/lang/cards';
 import { targetCandidates } from '@/engine/core/lang/declared-actions';
 import { isDouble } from '@/engine/core/lang/library/board-phrases';
@@ -45,6 +46,36 @@ const HIGH_BID = 'high bid';
 /** How much more than the high bid the auto-player bids, and the money it keeps back when it does. */
 const RAISE = 10;
 const KEEP = 200;
+// The trade: its button in playing picks the other player, and the trade phase's buttons build the offer, propose it, call it
+// off, or answer it. A space is picked as `target` and cash carried as `amount`.
+const TRADE = 'trade with another player';
+const OFFER = 'offer a space they own';
+const ASK = 'ask for a space the trade partner owns';
+const OFFER_CASH = 'offer to pay an amount';
+const ASK_CASH = 'ask to be paid an amount';
+const OFFER_KEPT = 'offer everything they keep';
+const ASK_KEPT = 'ask for everything the trade partner keeps';
+const PROPOSE = 'propose the trade';
+const CANCEL = 'cancel the trade';
+const ACCEPT = 'accept the trade';
+const DECLINE = 'decline the trade';
+/** The phase a trade is built and answered in, the flags it sets on spaces, cards and players, and its two game numbers. */
+const TRADE_PHASE = 'trade';
+const OFFERED = 'offered';
+const ASKED = 'asked for';
+const HANDED = 'handed over';
+const CLAIMED = 'claimed';
+const PROPOSING = 'proposing';
+const PARTNER = 'the trade partner';
+const CASH_OFFER = 'cash offer';
+const CASH_REQUEST = 'cash request';
+/**
+ * The auto-player offers PREMIUM times the price of the street it asks for, and only while it would keep TRADE_KEEP money; the
+ * other player accepts when the cash it gets is at least ACCEPT_RATIO times what the spaces it gives away are worth.
+ */
+const PREMIUM = 2;
+const TRADE_KEEP = 200;
+const ACCEPT_RATIO = 1.5;
 // The buttons any player may press at any time, to raise money or to settle a debt by going out.
 const SELL = 'sell a house on a street they own';
 const MORTGAGE = 'take a mortgage on a space they own';
@@ -95,8 +126,23 @@ const isBidding = (state: GameState, seat: PlayerId): boolean => playerFact(stat
 const isHighBidder = (state: GameState, seat: PlayerId): boolean => playerFact(state, seat, HIGH_BIDDER) === true;
 /** The bid to beat; 0 whenever no auction is open. */
 const highBid = (state: GameState): number => gameNumber(state, game!, HIGH_BID);
+/** The spaces whose flag is set, in board order. */
+const flaggedSpaces = (state: GameState, flag: string): number[] => Array.from({ length: SPACES }, (_, at) => at).filter((at) => spaceFact(state, at, flag) === true);
 /** The spaces up for auction, in board order: the one being auctioned, or one nobody won until the lander rolls or ends their turn. */
-const upForAuction = (state: GameState): number[] => Array.from({ length: SPACES }, (_, at) => at).filter((at) => isUp(state, at));
+const upForAuction = (state: GameState): number[] => flaggedSpaces(state, UP);
+/** The seats still in whose flag is set, in seat order. */
+const holders = (state: GameState, seats: PlayerId[], flag: string): PlayerId[] => playersIn(state, seats).filter((seat) => playerFact(state, seat, flag) === true);
+const cashOffer = (state: GameState): number => gameNumber(state, game!, CASH_OFFER);
+const cashRequest = (state: GameState): number => gameNumber(state, game!, CASH_REQUEST);
+
+/** Whether nothing of a trade is left: no space offered or asked for, no card handed over or claimed, no seat in it, no cash. */
+function noTrade(state: GameState, seats: PlayerId[]): boolean {
+  const spaces = flaggedSpaces(state, OFFERED).length === 0 && flaggedSpaces(state, ASKED).length === 0;
+  const cards = state.cards.every((card) => cardFact(card, HANDED) !== true && cardFact(card, CLAIMED) !== true);
+  // Every seat, not only those still in: nobody should go out still holding a part in a trade.
+  const players = seats.every((seat) => playerFact(state, seat, PROPOSING) !== true && playerFact(state, seat, PARTNER) !== true);
+  return spaces && cards && players && cashOffer(state) === 0 && cashRequest(state) === 0;
+}
 
 /** The first seat left of `from`, going round, that is still in and bidding; `from` itself when there is none. */
 function nextBidder(state: GameState, from: PlayerId, seats: PlayerId[]): PlayerId {
@@ -130,8 +176,16 @@ function firstBest(candidates: number[], value: (space: number) => number, beats
  * it keeps `PAY_OFF_RESERVE` money after each, so that spaces handed over mortgaged charge rent again. In jail, a player
  * holding a Get Out Of Jail Free uses it first. Otherwise an even seat pays to leave whenever it may; an odd seat never does,
  * so it rolls for a double and sometimes reaches the third failed roll, and every way out of jail comes up even with two
- * players. Then it rolls while it may (a double rolls again, until the third sends it to jail), builds on the first street it
- * may until it can't, and ends its turn.
+ * players. Then it rolls while it may (a double rolls again, until the third sends it to jail), trades at most once, builds on
+ * the first street it may until it can't, and ends its turn.
+ *
+ * It trades for the first color, in board order, whose streets are all its own but one, owned by a player still in, with no
+ * building on any of them, when it would keep `TRADE_KEEP` money after paying `PREMIUM` times that street's price and the
+ * engine lets it trade with that player. It asks for the street, offers that cash, and proposes. The answer is played there
+ * and then by the player whose turn in the trade it is: it accepts when the cash it would get, less the cash it would pay, is
+ * at least `ACCEPT_RATIO` times the price of the spaces asked for less that of the spaces offered, and the engine lets it;
+ * else it declines. The auto-player never asks for cash, so its proposals are always accepted. Either answer gives the turn
+ * back to the proposer as it stood, which then goes on to build and end it.
  *
  * After each roll it buys the space it landed on if it may, and otherwise auctions it if it may. The auction is played out
  * there and then, inside the lander's turn, so a turn is still one call: each player whose turn in the auction it is bids
@@ -206,6 +260,43 @@ function playTurn(table: Table, watch: Watch = () => {}): void {
       playAuction();
     }
   };
+  // A proposal hands the turn in the trade to the other player, whose answer takes it back to the proposer and ends the trade.
+  const answer = () => {
+    let answers = 0;
+    for (let state = engine.getState(); state.result === undefined && state.turn!.phase === TRADE_PHASE; state = engine.getState()) {
+      expect(++answers, 'answers to one proposal').toBe(1);
+      const partner = state.turn!.current;
+      const value = cashOffer(state) - cashRequest(state);
+      const priceOf = (flag: string) => flaggedSpaces(state, flag).reduce((sum, at) => sum + attr(at, 'price'), 0);
+      const worth = priceOf(ASKED) - priceOf(OFFERED);
+      const accepts = value >= ACCEPT_RATIO * worth && engine.canDispatch({ type: ACCEPT, by: partner }) === true;
+      make({ type: accepts ? ACCEPT : DECLINE, by: partner });
+    }
+  };
+  // Asks for the last street of the first color it lacks only that one of, and pays for it; see the doc comment for when.
+  const tradeForASet = () => {
+    const state = engine.getState();
+    const { spaces } = runtime.game.board!;
+    for (const color of colorsInBoardOrder()) {
+      const streets = spaces.flatMap((space, at) => (space.attrs.kind === 'street' && space.attrs.color === color ? [at] : []));
+      const missing = streets.filter((at) => ownerOf(state, at) !== by);
+      if (missing.length !== 1) continue;
+      const [last] = missing;
+      const owner = ownerOf(state, last);
+      if (owner === null || isOut(state, owner) || streets.some((at) => buildingsOn(state, at) > 0)) continue;
+      const price = attr(last, 'price');
+      if (counterOf(state, 'money', by) - PREMIUM * price < TRADE_KEEP) continue;
+      const proposal: Move = { type: TRADE, by, player: owner };
+      if (engine.canDispatch(proposal) !== true) continue;
+      make(proposal);
+      make({ type: ASK, by, target: last });
+      make({ type: OFFER_CASH, by, amount: PREMIUM * price });
+      make({ type: PROPOSE, by });
+      answer();
+      expect(stillTheirs(), `${by}'s turn back after trading for ${spaces[last].name}`).toBe(true);
+      return;
+    }
+  };
   const evenSeat = isEven(by);
   for (let at = accepted(table, by, PAY_OFF)[0]; at !== undefined; at = accepted(table, by, PAY_OFF)[0]) {
     if (counterOf(engine.getState(), 'money', by) - payOff(attr(at, 'price')) < PAY_OFF_RESERVE) break;
@@ -216,6 +307,7 @@ function playTurn(table: Table, watch: Watch = () => {}): void {
   if (may(ROLL_FOR_DOUBLE)) rollWith(ROLL_FOR_DOUBLE);
   while (may(ROLL)) rollWith(ROLL);
   if (!stillTheirs()) return;
+  tradeForASet();
   for (let target = buildable(table, by); target !== null; target = buildable(table, by)) make({ type: BUILD, by, target });
   make({ type: END, by });
 }
@@ -247,6 +339,15 @@ const totalMoney = (state: GameState, seats: PlayerId[]) => seats.reduce((sum, s
  * pays and it stays up for auction, unowned. Either way the turn goes back to the lander as it stood, with what they did and
  * rolled in it. The phase is the auction exactly while someone is bidding, one space at most is up for auction, and outside
  * an auction the high bid is 0.
+ *
+ * A trade starts only in the playing phase, on the proposer's own turn, with another player still in, while nobody owes and
+ * nothing is left of another trade. Only the proposer builds the offer, asking for spaces the other player owns, on colors
+ * with no building, and offering no more cash than they have. Proposing hands the turn to the other player. Only that player
+ * can accept, and then the offered spaces and handed-over cards become theirs, the asked-for spaces and claimed cards become
+ * the proposer's, the cash offer and request change hands, and nothing else moves: the money of all players together, the
+ * other spaces' owners and every mortgage stay as they were. No other trade move moves money or a space. However a trade
+ * ends, the proposer's turn is back as it stood, with the trade press in it, and nothing of the trade is left; outside one
+ * nothing of a trade is ever set, and within one exactly one player proposes and one is the trade partner.
  */
 function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
   const { game } = runtime;
@@ -255,6 +356,16 @@ function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
   const highBidders = (state: GameState) => seats.filter((seat) => isHighBidder(state, seat));
   /** The auction under way: who landed, on which space, and their turn as it stood, to check it comes back exactly. */
   let open: { lander: PlayerId; at: number; log: Json; rolls: Json | null } | null = null;
+  /** The trade under way: who proposes it, to whom, and the proposer's turn as it stood, to check it comes back exactly. */
+  let trade: { proposer: PlayerId; partner: PlayerId; log: Json; rolls: Json | null } | null = null;
+  /** The names of the streets of the space's color that have a building; none for a space that is no street. */
+  const builtOnColorOf = (state: GameState, at: number): string[] => {
+    const { kind, color } = spaces[at].attrs;
+    const sameColor = (other: (typeof spaces)[number]) => kind === 'street' && other.attrs.kind === 'street' && other.attrs.color === color;
+    return spaces.filter((other, street) => sameColor(other) && buildingsOn(state, street) > 0).map((other) => other.name);
+  };
+  const owners = (state: GameState) => spaces.map((_, at) => ownerOf(state, at));
+  const inTrade = (state: GameState) => state.turn!.phase === TRADE_PHASE;
 
   /** Each seat's money changed by what `moved` says for it, and nobody else's changed at all. */
   const moneyMoves = (before: GameState, after: GameState, moved: Record<PlayerId, number>, why: string) => {
@@ -303,6 +414,18 @@ function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
     // The auction this move was made in, if any; a move that ends it closes `open` below, and the turn check still needs it.
     const opened = open;
     const inAuction = (state: GameState) => state.turn!.phase === AUCTION_PHASE;
+    // Likewise the trade this move was made in, if any.
+    const traded = trade;
+    /** The move was made in the trade phase by `who`, whose turn in it it was. */
+    const madeInTrade = (who: PlayerId | undefined) => {
+      const standing = [inTrade(before), before.turn!.current, by];
+      expect(standing, `${by} ${move.type} in the phase ${before.turn!.phase}, in ${before.turn!.current}'s turn`).toEqual([true, who, who]);
+    };
+    /** The move moved no money and no space. */
+    const movesNothing = (why: string) => {
+      moneyMoves(before, after, {}, why);
+      expect(owners(after), `who owns each space after ${why}`).toEqual(owners(before));
+    };
     if (move.type === ROLL || move.type === ROLL_FOR_DOUBLE) {
       const roll = latestRoll(after)!;
       expect(roll).toHaveLength(2);
@@ -430,6 +553,64 @@ function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
           moneyMoves(before, after, { [winner]: -highBid(before) }, `${winner} won ${name} with ${highBid(before)}`);
         }
       }
+    } else if (move.type === TRADE) {
+      const partner = move.player as PlayerId;
+      const other = playersIn(before, seats).includes(partner) && partner !== by;
+      const standing = [before.turn!.phase, before.turn!.current, debtors(before, seats), other, noTrade(before, seats)];
+      expect(standing, `${by} traded with ${partner} in the phase ${before.turn!.phase}, in ${before.turn!.current}'s turn`)
+        .toEqual(['playing', by, [], true, true]);
+      const started = [after.turn!.phase, after.turn!.current, holders(after, seats, PROPOSING), holders(after, seats, PARTNER), cashOffer(after), cashRequest(after)];
+      expect(started, `the trade ${by} started with ${partner}`).toEqual([TRADE_PHASE, by, [by], [partner], 0, 0]);
+      movesNothing(`${by} started a trade with ${partner}`);
+      // The press is noted before its lines run, so the turn kept to go back to has it as done.
+      const log = [...((before.data[TURN_KEY] as Record<string, string[]> | undefined)?.[by] ?? []), TRADE];
+      trade = { proposer: by, partner, log, rolls: before.data[TURN_ROLLS_KEY] ?? null };
+    } else if (move.type === ASK) {
+      madeInTrade(traded?.proposer);
+      const at = move.target as number;
+      const name = spaces[at].name;
+      expect([ownerOf(before, at), builtOnColorOf(before, at)], `the owner of ${name} and the buildings on its color as ${by} asked for it`)
+        .toEqual([traded!.partner, []]);
+      expect(spaceFact(after, at, ASKED), `${name} asked for by ${by}`).toBe(true);
+      movesNothing(`${by} asked for ${name}`);
+    } else if (move.type === OFFER_CASH) {
+      madeInTrade(traded?.proposer);
+      const amount = move.amount as number;
+      expect(amount, `${by}'s offer to pay ${amount}`).toBeLessThanOrEqual(counterOf(before, 'money', by));
+      expect(cashOffer(after), `the cash offer after ${by} offered to pay ${amount}`).toBe(amount);
+      movesNothing(`${by} offered to pay ${amount}`);
+    } else if (move.type === PROPOSE) {
+      madeInTrade(traded?.proposer);
+      expect([after.turn!.phase, after.turn!.current], `the phase and whose turn it is once ${by} proposed`).toEqual([TRADE_PHASE, traded!.partner]);
+      movesNothing(`${by} proposed a trade`);
+    } else if (move.type === ACCEPT) {
+      const { proposer, partner } = traded ?? { proposer: undefined, partner: undefined };
+      madeInTrade(partner);
+      const offer = cashOffer(before);
+      const request = cashRequest(before);
+      const why = `${by} accepted ${proposer}'s trade of ${offer} for ${request}`;
+      // Both payments are between the two of them, so the money of all players together is unchanged.
+      moneyMoves(before, after, { [proposer!]: request - offer, [by]: offer - request }, why);
+      const offered = flaggedSpaces(before, OFFERED);
+      const asked = flaggedSpaces(before, ASKED);
+      for (const [at, space] of spaces.entries()) {
+        const owner = offered.includes(at) ? by : asked.includes(at) ? proposer : ownerOf(before, at);
+        expect(ownerOf(after, at), `who owns ${space.name} after ${why}`).toBe(owner);
+        expect(isMortgaged(after, at), `${space.name} mortgaged after ${why}`).toBe(isMortgaged(before, at));
+      }
+      for (const at of [...offered, ...asked]) expect(builtOnColorOf(after, at), `streets with buildings on the color of ${spaces[at].name}, traded`).toEqual([]);
+      for (const [flag, to] of [[HANDED, by], [CLAIMED, proposer!]]) {
+        for (const card of before.cards.filter((c) => cardFact(c, flag) === true)) {
+          const now = after.cards.find((c) => c.id === card.id);
+          expect(now?.zoneId, `where ${card.data?.name} (${card.id}), ${flag}, went after ${why}`).toBe(zoneIdFor(KEPT, to));
+        }
+      }
+    } else if ([OFFER, ASK_CASH, OFFER_KEPT, ASK_KEPT, CANCEL].includes(move.type)) {
+      madeInTrade(traded?.proposer);
+      movesNothing(`${by} ${move.type}`);
+    } else if (move.type === DECLINE) {
+      madeInTrade(traded?.partner);
+      movesNothing(`${by} declined ${traded?.proposer}'s trade`);
     } else {
       expect(change).toBe(0);
     }
@@ -450,18 +631,37 @@ function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
     expect(upForAuction(after).length, `spaces up for auction after ${by} ${move.type}`).toBeLessThanOrEqual(1);
     if (!inAuction(after)) expect(highBid(after), `the high bid outside an auction, after ${by} ${move.type}`).toBe(0);
 
+    if (inTrade(before) && !inTrade(after)) {
+      // The trade is over, however it ended: the proposer's turn is back exactly as it stood, and nothing of the trade is left.
+      const { proposer, log, rolls } = traded!;
+      expect([after.turn!.phase, after.turn!.current], `the phase and whose turn it is after ${proposer}'s trade`).toEqual(['playing', proposer]);
+      expect(after.data[TURN_KEY], `${proposer}'s turn log after the trade`).toEqual({ [proposer]: log });
+      expect(after.data[TURN_ROLLS_KEY] ?? null, `${proposer}'s rolls after the trade`).toEqual(rolls);
+      trade = null;
+    }
+    if (inTrade(after)) {
+      const sides = [holders(after, seats, PROPOSING).length, holders(after, seats, PARTNER).length];
+      expect(sides, `players proposing and trade partners after ${by} ${move.type}`).toEqual([1, 1]);
+    } else {
+      expect(noTrade(after, seats), `something of a trade left after ${by} ${move.type}`).toBe(true);
+    }
+
     // Nobody goes below 0 without owing someone, so giving up always has someone to give to.
     for (const seat of debtors(after, seats)) expect(owedTo(after, seat, 'money'), `whom ${seat} owes after ${by} ${move.type}`).not.toBeNull();
 
     // The turn moves on only when its player gives up, or ends it once nobody owes anything; an auction hands it round the
-    // bidders from the lander's left, and back to the lander when it ends.
+    // bidders from the lander's left, and back to the lander when it ends; a proposal hands it to the trade partner, and the
+    // answer back to the proposer.
     if (after.turn!.current !== before.turn!.current) {
       const gaveUp = move.type === GIVE_UP && by === before.turn!.current;
       const ended = move.type === END && debtors(before, seats).length === 0;
       const auctioned = move.type === AUCTION && after.turn!.current === nextIn(before, by, seats);
       const bidOn = inAuction(after) ? nextBidder(after, by, seats) : opened?.lander;
       const bidded = (move.type === BID || move.type === DROP) && inAuction(before) && after.turn!.current === bidOn;
-      expect(gaveUp || ended || auctioned || bidded, `the turn passed from ${before.turn!.current} on ${by} ${move.type}`).toBe(true);
+      const proposed = move.type === PROPOSE && after.turn!.current === traded?.partner;
+      const answered = (move.type === ACCEPT || move.type === DECLINE) && after.turn!.current === traded?.proposer;
+      const passed = gaveUp || ended || auctioned || bidded || proposed || answered;
+      expect(passed, `the turn passed from ${before.turn!.current} on ${by} ${move.type}`).toBe(true);
     }
 
     let houses = 0;
@@ -474,10 +674,7 @@ function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
       if (buildingsOn(after, space) > 0) expect(owner, `${spaces[space].name} has buildings but no owner`).not.toBeNull();
       if (isMortgaged(after, space)) {
         expect(owner, `${spaces[space].name} is mortgaged but has no owner`).not.toBeNull();
-        const { kind, color } = spaces[space].attrs;
-        const sameColor = (other: (typeof spaces)[number]) => kind === 'street' && other.attrs.kind === 'street' && other.attrs.color === color;
-        const builtOn = spaces.filter((other, at) => sameColor(other) && buildingsOn(after, at) > 0);
-        expect(builtOn.map((other) => other.name), `streets with buildings on the color of ${spaces[space].name}, which is mortgaged`).toEqual([]);
+        expect(builtOnColorOf(after, space), `streets with buildings on the color of ${spaces[space].name}, which is mortgaged`).toEqual([]);
       }
       houses += built;
       hotels += hasHotel(after, space) ? 1 : 0;
@@ -537,8 +734,8 @@ function colorsInBoardOrder(): string[] {
 
 describe('Rent Day (designer language)', () => {
   // Paying off a mortgage takes a player who mortgaged growing rich again before anyone gives up. In a 2-player game only the
-  // even seat ever mortgages, since the odd one gives up and so ends the game, and none of the ten below happens to pay one
-  // off (seven of the seeds 1 to 60 do). So the full-set games count it too, and the last test checks it once all have run.
+  // even seat ever mortgages, since the odd one gives up and so ends the game, and of the ten below only seed 2 happens to pay
+  // one off (four of the seeds 1 to 60 do). So the full-set games count it too, and the last test checks it once all have run.
   let paidOff = 0;
 
   it('compiles with no diagnostics', () => expect(diagnostics).toEqual([]));
@@ -567,7 +764,7 @@ describe('Rent Day (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(89);
+    expect(results).toHaveLength(106);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -602,6 +799,8 @@ describe('Rent Day (designer language)', () => {
     };
     // And how many auctions ended with a winner, and with everyone dropping out.
     const auctions = { won: 0, 'nobody bid': 0 };
+    // And how many trades were accepted: the auto-player's always are, so declines are left to the examples.
+    const trades = { accepted: 0 };
     for (let seed = 1; seed <= 10; seed++) {
       const table = createEngine(game!, lib, 2, initialState(game!, seed));
       const rules = keepsTheRules(table.runtime, seats);
@@ -633,6 +832,8 @@ describe('Rent Day (designer language)', () => {
           raising['sold a building']++;
         } else if (move.type === GIVE_UP) {
           raising[owedTo(before, by, 'money') === 'bank' ? 'gave up to the bank' : 'gave up to a player']++;
+        } else if (move.type === ACCEPT) {
+          trades.accepted++;
         }
       });
       const { result } = table.engine.getState();
@@ -646,6 +847,7 @@ describe('Rent Day (designer language)', () => {
     for (const [way, times] of Object.entries(jail)) expect(times, `times a player was ${way}`).toBeGreaterThan(0);
     for (const [way, times] of Object.entries(raising)) expect(times, `times a player ${way}: ${JSON.stringify(raising)}`).toBeGreaterThan(0);
     for (const [end, times] of Object.entries(auctions)) expect(times, `auctions that ${end}: ${JSON.stringify(auctions)}`).toBeGreaterThan(0);
+    for (const [end, times] of Object.entries(trades)) expect(times, `trades ${end}: ${JSON.stringify(trades)}`).toBeGreaterThan(0);
   }, 60_000);
 
   it.each([[4, 1], [4, 2], [4, 3], [8, 1], [8, 2], [8, 3]])(
@@ -689,8 +891,8 @@ describe('Rent Day (designer language)', () => {
     // The Setup has shuffled the piles; then p0 is to roll 1 and 1 onto Treasury, where Opera Night is on top, and every
     // other player has 30 money, so all four owe p0 at once in p0's turn. Each settles in its own way: p1 has nothing and
     // gives up, p2 sells a house off the brown set, p3 gives up and hands North Station to p0, and p4 mortgages Power Works.
-    // The fixed roll makes that happen whatever the seed. Of the seeds 1 to 20, seed 19 plays on longest (234 turns to a
-    // winner), and in it p0 later sells a house in p2's turn of its own accord.
+    // The fixed roll makes that happen whatever the seed. Seed 19 was picked as the one of the seeds 1 to 20 that played on
+    // longest; with trading it reaches a winner in 90 turns, and nobody presses out of turn after that first settling.
     const started = createEngine(game!, lib, n, initialState(game!, 19)).engine.getState();
     const pile = zoneIdFor('treasury pile');
     const opera = zoneCards(started, pile).find((card) => card.data?.name === 'Opera Night')!;
