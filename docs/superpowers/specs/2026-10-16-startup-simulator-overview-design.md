@@ -82,8 +82,9 @@ rulebook as written, every rule and every card.
   - Each seat's private strip holds the Bench, Backlog, Strategy Hand, its buttons and its choices. A switcher shows one
     seat's strip at a time and jumps to the seat that must act next.
   - Rivals' hidden hands show as counts.
-- **The page's base is built in slice 1a,** as its own tasks: buttons and counters without a board, picking cards by
-  clicking, and the new layout. Card faces with pips, token badges, attached-card stacks and choice banners arrive with
+- **The page's base is built in slice 1a,** as its own tasks: buttons and counters without a board, and the new layout.
+  Cards move by dragging in 1a; picking cards by clicking arrives in 1b with the card-pick buttons (the 1a builder
+  check's call). Card faces with pips, token badges, attached-card stacks and choice banners arrive with
   the slices that need them.
 - **The physical aids become page features:** a Blue and a Red bandwidth gauge per Ops Zone instead of Server Rack strips,
   AP left, the Event in play and claimed Milestones.
