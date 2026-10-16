@@ -1,7 +1,8 @@
 import { MAX_CARDS, TOO_MANY_CARDS, isSaysColumn } from './cards';
 import { compileExample } from './compile-example';
 import {
-  actionLine, actionOf, cardMoveVerb, compilePhase, compileTrigger, pickLine, startsLineOf, targetWords, TURN_STARTS, type TargetWords, type VerbUses,
+  actionLine, actionOf, cardMoveVerb, compilePhase, compileTrigger, pickLine, reportHiddenCardReads, startsLineOf, targetWords, TURN_STARTS, type TargetWords,
+  type VerbUses,
 } from './compile-phase';
 import {
   addProblem, attempt, FOR_EVERY_AT_LEAST_ONE, innerEffect, matchEffectLine, matchLine, phaseId, phraseFn, POINTS_FOR_EVERY, rejectChildren, type LineCtx,
@@ -596,6 +597,8 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   const uses: VerbUses = { moves: new Set(), actions: new Set() };
   for (const node of named) {
     const phase = compilePhase(node, ctx, uses);
+    // A phase is read without the table, so whether a pick's cards can be hidden from the player who presses it is asked here.
+    reportHiddenCardReads(phase, zones, ctx);
     if (seen.has(phase.id)) addProblem(diagnostics, node.line, `There are two phases called “${phase.id}”.`);
     seen.add(phase.id);
     phases.push(phase);

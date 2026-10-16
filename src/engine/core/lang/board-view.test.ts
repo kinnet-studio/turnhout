@@ -902,10 +902,22 @@ describe('buttons that pick a card', () => {
     const emptied = relocate(s, zoneCards(s, 'shop').map((c) => c.id), 'pile', game);
     return relocate(relocate(emptied, [r1, o1], 'shop', game), [r2, o2], 'stash-p0', game);
   };
-  /** An engine on the arranged table, after `arrange`; `text` is the game, CARD_PICK_GAME unless said. */
-  const picks = (arrange: (s: GameState) => GameState = (s) => s, text = CARD_PICK_GAME) => {
-    const game = compileGame(text, lib).game!;
+  /** An engine on the arranged table, after `arrange`; `text` is the game, CARD_PICK_GAME unless said, or a game built by hand. */
+  const picks = (arrange: (s: GameState) => GameState = (s) => s, text: string | CompiledGame = CARD_PICK_GAME) => {
+    const game = typeof text === 'string' ? compileGame(text, lib).game! : text;
     return createEngine(game, lib, 2, arrange(arranged(started, game)));
+  };
+  const STASH = '  Each player has a stash row that only they can see.';
+  /**
+   * `text`, whose pick reads a card in a stash the presser can't see, which the compiler refuses (final review I1), built by hand: read
+   * with every stash in view, then hidden again. The view's own judgement of a hidden card is still tested so: slice 9's face-down cards
+   * in a zone everyone sees will reach it.
+   */
+  const hiddenAgain = (text: string): CompiledGame => {
+    expect(compileGame(text, lib).game).toBeUndefined();
+    const shown = compileGame(text.replace(STASH, STASH.replace('only they can see', 'everyone can see')), lib);
+    expect(shown.diagnostics).toEqual([]);
+    return { ...shown.game!, zones: shown.game!.zones.map((zone) => (zone.name === 'stash' ? { ...zone, visibility: 'owner' } : zone)) };
   };
   const actionsOf = (seat: string, built: ReturnType<typeof picks>) => seatExtras(built.engine, built.runtime, built.engine.getState(), seat).actions;
   const view = (seat: string, built: ReturnType<typeof picks>, move = BUY) => actionsOf(seat, built).find((a) => a.move === move)!;
@@ -966,20 +978,20 @@ describe('buttons that pick a card', () => {
       '  A player may stop.', '',
     ].join('\n'));
     expect(text.split('\n').length).toBe(CARD_PICK_GAME.split('\n').length + 5);
-    expect(compileGame(text, lib).diagnostics).toEqual([]);
+    const built = hiddenAgain(text);
     const inStash = (s: GameState) => relocate(s, [r3, o2], 'stash-p1', g);
-    const hidden = picks(inStash, text);
+    const hidden = picks(inStash, built);
     expect(view('p0', hidden, PEEK).cards!.cards).toEqual([{ id: r3, name: 'a face-down card', allowed: true }, { id: o2, name: 'a face-down card', allowed: true }]);
     // The press still judges the card itself.
     expect(hidden.engine.canDispatch({ type: PEEK, by: 'p0', cardId: r3 })).toBe('the card is not a Ruby');
     expect(hidden.engine.canDispatch({ type: PEEK, by: 'p0', cardId: o2 })).toBe(true);
     // What does not read the card still speaks for each: the turn (p0's stash holds r2 alone now), and a line about the player alone.
     expect(view('p1', hidden, PEEK).cards!.cards).toEqual([{ id: r2, name: 'a face-down card', allowed: "It's p0's turn." }]);
-    const poor = view('p0', picks((s) => setCounter(inStash(s), 'coins', 'p0', 0), text), PEEK);
+    const poor = view('p0', picks((s) => setCounter(inStash(s), 'coins', 'p0', 0), built), PEEK);
     expect([poor.allowed, ...poor.cards!.cards.map((c) => c.allowed)]).toEqual(Array(3).fill('they have at least 1 coin'));
     // Shown to p0, the same cards are judged one by one.
     const shownTo = (s: GameState): GameState => ({ ...s, cards: s.cards.map((c) => (c.id === r3 || c.id === o2 ? { ...c, revealTo: ['p0'] } : c)) });
-    expect(view('p0', picks((s) => shownTo(inStash(s)), text), PEEK).cards!.cards).toEqual([
+    expect(view('p0', picks((s) => shownTo(inStash(s)), built), PEEK).cards!.cards).toEqual([
       { id: r3, name: 'Ruby', allowed: 'the card is not a Ruby' }, { id: o2, name: 'Opal', allowed: true },
     ]);
   });
@@ -999,11 +1011,10 @@ describe('buttons that pick a card', () => {
     const [, , o3, o4] = named('Opal');
     /** The arranged table with `ids` put in `zone` too. */
     const plus = (zone: string, ...ids: string[]) => (s: GameState) => relocate(s, ids, zone, g);
-    /** A two-player game whose “their” zones in the show and trade lines are the other player's stash, which only they can see. */
+    /** A two-player game with `lines` put in before the stop button, whose pick reads a card in the other player's stash: built by hand. */
     const peeking = (lines: string[]) => {
       const text = CARD_PICK_GAME.replace('Players: 2 to 3', 'Players: 2').replace('  A player may stop.\n', `${lines.join('\n')}\n  A player may stop.\n`);
-      expect(compileGame(text, lib).diagnostics).toEqual([]);
-      return text;
+      return hiddenAgain(text);
     };
 
     it('lists the cards p0 could show, and for each the cards it could go to', () => {
@@ -1053,8 +1064,8 @@ describe('buttons that pick a card', () => {
     });
     it('Review Focus: judges a hidden target without the lines about the target card', () => {
       const SPY = "spy a card from their stash to a card in the other player's stash";
-      const text = peeking([`  A player may ${SPY}.`, '    Only if the target card is not a Ruby.']);
-      const built = picks(plus('stash-p1', r3, o3), text);
+      const spying = peeking([`  A player may ${SPY}.`, '    Only if the target card is not a Ruby.']);
+      const built = picks(plus('stash-p1', r3, o3), spying);
       const hidden = [{ id: r3, name: 'a face-down card', allowed: true }, { id: o3, name: 'a face-down card', allowed: true }];
       expect(view('p0', built, SPY).cards!.onto!.targets).toEqual({ [r2]: hidden, [o2]: hidden });
       // The press still judges the target itself.
@@ -1063,15 +1074,15 @@ describe('buttons that pick a card', () => {
     });
     it('Review Focus: judges a hidden card of a set without the lines about the picked cards', () => {
       const SNOOP = "snoop some cards from the other player's stash";
-      const text = peeking([`  A player may ${SNOOP}.`, '    Only if they picked at most 0 cards.']);
-      const built = picks(plus('stash-p1', r3, o3), text);
+      const snooping = peeking([`  A player may ${SNOOP}.`, '    Only if they picked at most 0 cards.']);
+      const built = picks(plus('stash-p1', r3, o3), snooping);
       expect(view('p0', built, SNOOP).cards!.cards).toEqual([
         { id: r3, name: 'a face-down card', allowed: true }, { id: o3, name: 'a face-down card', allowed: true },
       ]);
       expect(built.engine.canDispatch({ type: SNOOP, by: 'p0', cardIds: [r3] })).toBe('they picked at most 0 cards');
       // Shown to p0, the same cards are judged by the line.
       const shownTo = (s: GameState): GameState => ({ ...s, cards: s.cards.map((c) => (c.id === r3 ? { ...c, revealTo: ['p0'] } : c)) });
-      const shown = picks((s) => shownTo(plus('stash-p1', r3, o3)(s)), text);
+      const shown = picks((s) => shownTo(plus('stash-p1', r3, o3)(s)), snooping);
       expect(view('p0', shown, SNOOP).cards!.cards.map((c) => c.allowed)).toEqual(['they picked at most 0 cards', true]);
     });
     it('is plain data, and readSeatExtras reads targets back', () => {

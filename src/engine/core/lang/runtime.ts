@@ -5,7 +5,7 @@ import type { PlayerId } from '../scene';
 import type { Json } from '../table-def';
 import { numberIn } from './board';
 import { holderOf, interruptedTurn, setCounter } from './board-state';
-import { isMissing } from './compile-util';
+import { isMissing, readsPressCard } from './compile-util';
 import { MissingPhraseError, RuleError } from './diagnostics';
 import type { PhraseLibrary } from './phrases';
 import { phaseTakesTurns, ROUND_FRAME, ROUND_KEY, roundFinished, roundOf, startPlayerOf, TURN_OF_KEY } from './turns';
@@ -130,14 +130,10 @@ export class LangRuntime {
 
   /**
    * Whether a line of the group reads a card a press is about: the card a move makes, or “it”, the picked cards of a set, or the
-   * target card. Only such phrases may, so a group without one says the same of every card. Looked up as `readsAmount` does; a ref
-   * nobody wrote a phrase for reads nothing.
+   * target card. The compiler asks the same (`readsPressCard`) of a pick from a zone the presser may not see.
    */
   readsCard(group: CondGroup): boolean {
-    return group.refs.some((ref) => {
-      const entry = ref.kind === 'lang' ? undefined : this.library.get(ref.kind, ref.phrase);
-      return entry?.needsMove === true || entry?.needsCard === true || entry?.needsCards === true || entry?.needsOnto === true;
-    });
+    return readsPressCard(this.library, group);
   }
 
   /** Whether a button's target phrase allows the player in `subject` to pick `space`. */

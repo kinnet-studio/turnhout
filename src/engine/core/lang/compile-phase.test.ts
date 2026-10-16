@@ -1288,10 +1288,12 @@ describe('buttons any player may press', () => {
     });
   });
   it('are never card moves: “Any player may take a card …” is a move the phase can not read', () => {
-    const MALFORMED_MOVE = 'I can\'t read this card move. Write it as “A player may <verb> a card from <zone> to <zone>.”';
+    // With no cost line it can only be a button, so it is told how to be one (final review m2).
+    const ONLY_A_BUTTON = '“Any player may …” can only be a button: add a cost line under it, like “It costs 1 action.”, or write '
+      + '“Any player may take a card in the draw pile.” with “Then: Move it to their hand.” under it.';
     const lines = ANY_PLAYER_BOARD.split('\n');
     lines.splice(24, 0, '  Any player may take a card from the draw pile to their hand.');
-    expect(found(lines.join('\n'))).toContainEqual([25, MALFORMED_MOVE]);
+    expect(found(lines.join('\n'))).toContainEqual([25, ONLY_A_BUTTON]);
   });
 });
 
@@ -1472,6 +1474,22 @@ describe('a button that costs part of the turn budget', () => {
       expect(messages(text)).toEqual([[second, TWO_COSTS]]);
       expect(compileGame(text, lib).game).toBeUndefined();
     });
+    it('says a cost line goes right under a button, when it is under Then: or under a When rule', () => {
+      const MISPLACED = '“It costs …” goes right under a button, beside its Only if lines.';
+      const COST = '      It costs 1 move.';
+      const inThen = COSTED.replace('    It costs 1 move.\n    Then:\n', `    Then:\n${COST}\n`);
+      expect(inThen).not.toBe(COSTED);
+      expect(messages(inThen)).toEqual([[at(inThen, COST), MISPLACED]]);
+      expect(compileGame(inThen, lib).game).toBeUndefined();
+      const RULE = '  When their list has fewer than 2 cards:';
+      const inRule = COSTED.replace(`${RULE}\n`, `${RULE}\n    It costs 1 move.\n`);
+      expect(inRule).not.toBe(COSTED);
+      expect(messages(inRule)).toEqual([[at(inRule, RULE) + 1, MISPLACED]]);
+      const STARTS = '  When this phase starts:';
+      const inStart = COSTED.replace(`${STARTS}\n`, `${STARTS}\n    It costs 1 move.\n`);
+      expect(inStart).not.toBe(COSTED);
+      expect(messages(inStart)).toEqual([[at(inStart, STARTS) + 1, MISPLACED]]);
+    });
   });
 });
 
@@ -1569,6 +1587,12 @@ describe('buttons that pick a card', () => {
       expect(errors).toEqual([[line, MALFORMED_MOVE]]);
       expect(buttons).toEqual(NOT_SELL);
     });
+    it('says a card line any player may press with no cost line can only be a button, and how to write it', () => {
+      const { errors, line, buttons } = sellAs('  Any player may sell a card from their stash to the shop.');
+      expect(errors).toEqual([[line, '“Any player may …” can only be a button: add a cost line under it, like “It costs 1 action.”, or write '
+        + '“Any player may sell a card in their stash.” with “Then: Move it to the shop.” under it.']]);
+      expect(buttons).toEqual(NOT_SELL);
+    });
   });
 
   it('can not be a card move in one phase and a button that picks a card in another, on the later line', () => {
@@ -1657,6 +1681,54 @@ describe('buttons that pick a card', () => {
           [at(judged, '    Only if the card is a Ruby.'), "“the card is a Ruby” only makes sense in a rule about a player's move."],
         ]);
       });
+    });
+  });
+
+  describe('Review Focus: a line that would tell the player a card they can not see', () => {
+    const hidden = (zone: string) =>
+      `This line would tell the player what the card is, though they can't see the cards in ${zone}. Check it in the Then: lines, after a reveal.`;
+    const NOT_RUBY = '    Only if the card is not a Ruby.';
+    const MOVE_IT = ['    Then:', '      Move it to their case.'];
+    /** CARD_PICK_GAME for two, so that “the other player” is one seat, with `lines` put in before the stop button. */
+    const forTwo = (lines: string[]) => {
+      const text = CARD_PICK_GAME.replace('Players: 2 to 3', 'Players: 2').replace('  A player may stop.\n', `${lines.join('\n')}\n  A player may stop.\n`);
+      expect(text.split('\n').length).toBe(CARD_PICK_GAME.split('\n').length + lines.length);
+      return text;
+    };
+
+    it('refuses a line about the card under a pick from the other player\'s stash, on that line, and leaves no game', () => {
+      const text = forTwo(["  A player may peek a card in the other player's stash.", NOT_RUBY, ...MOVE_IT]);
+      expect(messages(text)).toEqual([[at(text, NOT_RUBY), hidden("the other player's stash")]]);
+      expect(compileGame(text, lib).game).toBeUndefined();
+    });
+    it('reads the same line under a pick from the presser\'s own stash, or from a zone everyone sees', () => {
+      expect(compileGame(forTwo(['  A player may peek a card in their stash.', NOT_RUBY, ...MOVE_IT]), lib).diagnostics).toEqual([]);
+      expect(compileGame(forTwo(["  A player may peek a card in the other player's case.", NOT_RUBY, ...MOVE_IT]), lib).diagnostics).toEqual([]);
+    });
+    it('refuses a line about the target card when the card it goes to is in the other player\'s stash', () => {
+      const ONTO = '    Only if the target card is not a Ruby.';
+      const text = forTwo(["  A player may spy a card from their stash to a card in the other player's stash.", ONTO]);
+      // The show button has the same line; the one under spy is the last.
+      expect(messages(text)).toEqual([[text.split('\n').lastIndexOf(ONTO) + 1, hidden("the other player's stash")]]);
+      expect(compileGame(forTwo(["  A player may spy a card from their stash to a card in the other player's case.", ONTO]), lib).diagnostics).toEqual([]);
+    });
+    it('refuses it under a pick from a zone no one can see, and from a zone named for one seat', () => {
+      const pile = forTwo(['  A player may take a card in the pile.', NOT_RUBY, ...MOVE_IT]);
+      expect(messages(pile)).toEqual([[at(pile, NOT_RUBY), hidden('the pile')]]);
+      const seat = forTwo(["  A player may peek a card in p1's stash.", NOT_RUBY, ...MOVE_IT]);
+      expect(messages(seat)).toEqual([[at(seat, NOT_RUBY), hidden("p1's stash")]]);
+    });
+    it('refuses a line about the picked cards of a set, and every line of an Only if one of: block that reads one', () => {
+      const AT_MOST = '    Only if they picked at most 1 card.';
+      const set = forTwo(["  A player may snoop some cards from the other player's stash.", AT_MOST]);
+      expect(messages(set)).toEqual([[at(set, AT_MOST), hidden("the other player's stash")]]);
+      const ONE_OF = '    Only if one of:';
+      const either = forTwo(["  A player may peek a card in the other player's stash.", ONE_OF, '      they have at least 9 coins', '      the card is a Ruby', ...MOVE_IT]);
+      expect(messages(either)).toEqual([[at(either, ONE_OF), hidden("the other player's stash")]]);
+    });
+    it('reads a line about the player alone under the same pick', () => {
+      const text = forTwo(["  A player may peek a card in the other player's stash.", '    Only if they have at least 1 coin.', ...MOVE_IT]);
+      expect(compileGame(text, lib).diagnostics).toEqual([]);
     });
   });
 });

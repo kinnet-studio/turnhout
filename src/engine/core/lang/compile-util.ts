@@ -3,7 +3,7 @@ import { RuleError, type Diagnostic } from './diagnostics';
 import type { OutlineNode } from './outline';
 import { normalizeLine, stubFor, type MatchResult, type Misnamed, type PhraseLibrary, type PhraseOpts } from './phrases';
 import { misnamedParam, parseParam } from './refs';
-import type { ParamType, PhraseKind, PhraseRef, Vocab } from './types';
+import type { CondGroup, ParamType, PhraseKind, PhraseRef, Vocab } from './types';
 
 /**
  * What every line of one compile stage shares. Never change `vocab` after a line has been matched with it. `inMove`,
@@ -39,6 +39,9 @@ const NEEDS_ONTO = (clean: string) =>
   `“${clean}” only makes sense in a button that picks a card and the card it goes to, like “A player may stack a card from their hand to a card in the row.”`;
 const IF_FRAME = /^if\s+(.+)$/i;
 const FOR_FRAME = /^for\s+(.+)$/i;
+/** A button's cost line, which is no effect: under a rule or in `Then:` it is in the wrong place, not a phrase nobody has written. */
+const COST_LINE = /^it costs /i;
+const MISPLACED_COST = '“It costs …” goes right under a button, beside its Only if lines.';
 const NO_HOLDER_NAMED = (head: string) => `“${head}” doesn't name a player. Write “For the player who is …,” with something players can be.`;
 const COMMA = /, /g;
 const PHASE_NAME = /^phase\s*:\s*(.*)$/i;
@@ -132,6 +135,17 @@ function tryMisnamed(kinds: PhraseKind[], text: string, ctx: LineCtx): Misnamed 
   } catch {
     return null;
   }
+}
+
+/**
+ * Whether a line of the group reads a card a press is about: the card a move makes, or “it”, the picked cards of a set, or the
+ * target card. Only such phrases may, so a group without one says the same of every card. A ref nobody wrote a phrase for reads nothing.
+ */
+export function readsPressCard(library: PhraseLibrary, group: CondGroup): boolean {
+  return group.refs.some((ref) => {
+    const entry = ref.kind === 'lang' ? undefined : library.get(ref.kind, ref.phrase);
+    return entry?.needsMove === true || entry?.needsCard === true || entry?.needsCards === true || entry?.needsOnto === true;
+  });
 }
 
 /**
@@ -254,10 +268,14 @@ export function innerEffect(ref: PhraseRef): PhraseRef {
 /**
  * Reads one effect line. “For …, <effect>” runs the effect as the player who holds a flag. “If <condition>, <effect>” is tried
  * at every comma, since either part may hold commas; the first comma where both parts are phrases wins. When none does, the
- * part that needs fixing is the one reported.
+ * part that needs fixing is the one reported. A button's cost line is reported as one in the wrong place, and kept as a placeholder.
  */
 export function matchEffectLine(text: string, line: number, ctx: LineCtx): PhraseRef {
   const clean = normalizeLine(text);
+  if (COST_LINE.test(clean)) {
+    addProblem(ctx.diagnostics, line, MISPLACED_COST, { text: clean });
+    return missingRef('effect', clean, line);
+  }
   const holding = FOR_FRAME.exec(clean);
   if (holding) return matchForLine(holding[1], clean, line, ctx);
   const frame = IF_FRAME.exec(clean);

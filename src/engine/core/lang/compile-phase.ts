@@ -1,10 +1,12 @@
-import { addProblem, canRead, isMissing, libraryHasSayOn, matchEffectLine, matchLine, phaseId, rejectChildren, type LineCtx } from './compile-util';
+import {
+  addProblem, canRead, isMissing, libraryHasSayOn, matchEffectLine, matchLine, phaseId, readsPressCard, rejectChildren, type LineCtx,
+} from './compile-util';
 import type { OutlineNode } from './outline';
 import { normalizeLine, suggestNames } from './phrases';
 import { joinOr, misnamedParam, parseParam, secondPersonWords, thirdPerson, thirdPersonWords, VOCAB_TYPES } from './refs';
 import type {
   ActionCost, CardPick, CompiledMoment, CompiledPhase, CompiledTrigger, CondGroup, DeclaredAction, DeclaredMove, ParamType, PhraseKind, PhraseRef, SpaceClass,
-  Vocab, ZoneRef,
+  Vocab, ZoneRef, ZoneSpec,
 } from './types';
 
 const HINT = /^hint:\s*(.*)$/i;
@@ -67,6 +69,16 @@ const ONE_AFTER = 'A phase can have only one “After a player …” rule.';
 const EMPTY_ONE_OF = 'Add the conditions under “Only if one of:”, one on each line.';
 const COST_SHAPE = 'Write a cost as “It costs 1 action.”: a whole number, then a number each player has each turn.';
 const TWO_COSTS = 'A button can have only one “It costs …” line.';
+/**
+ * “Any player may” always makes a button, so a card line it starts has no card move to fall back on without a cost line (R1): it gets
+ * one, or it picks the card “in” its zone and its `Then:` lines move it.
+ */
+const anyoneMove = (base: string, fromText: string, toText: string) =>
+  `“Any player may …” can only be a button: add a cost line under it, like “It costs 1 action.”, or write “Any player may ${base} a card in ${fromText}.” `
+  + `with “Then: Move it to ${toText}.” under it.`;
+/** A press the rules refuse costs nothing and changes nothing, so a line about a card the presser can't see would tell them what it is. */
+const tellsHiddenCard = (zoneText: string) =>
+  `This line would tell the player what the card is, though they can't see the cards in ${zoneText}. Check it in the Then: lines, after a reveal.`;
 /** Only a number each player has each turn can be a cost, so that “costs an action” and “has a cost” are one thing. */
 const notABudget = (counter: string) =>
   `A button can only cost a number each player has each turn, like “Each player has 3 actions each turn.”; ${counter} isn't one.`;
@@ -265,8 +277,11 @@ export type PickWords = {
   ontoText: string | null;
 };
 
-/** What a line that mentions a card is: a card move, a button that picks a card, or a card line the phase can't read. */
-type CardLine = { kind: 'move'; verb: string } | { kind: 'pick'; words: PickWords } | { kind: 'unread'; verb: string };
+/**
+ * What a line that mentions a card is: a card move, a button that picks a card, or a card line the phase can't read, with what to tell
+ * the designer when it is more than how to write a card move.
+ */
+type CardLine = { kind: 'move'; verb: string } | { kind: 'pick'; words: PickWords } | { kind: 'unread'; verb: string; message?: string };
 
 /** Whether a line has an `It costs …` line under it, which makes a card line a button. */
 const hasCostLine = (node: OutlineNode): boolean => node.children.some((child) => COST_LINE.test(normalizeLine(child.text)));
@@ -291,8 +306,9 @@ function pickCardLine(clean: string, base: string, howMany: string, fromText: st
  * What an `A player may …` line that mentions a card is, by its words and by whether a cost line sits under it (R1), trying in order:
  * a card or some cards and the card they go to; a card move, when there is no cost line; a card from a zone to a zone, with a cost
  * line, or some cards from a zone to a zone; some cards from a zone; a card in a zone. Anything else is a card line the phase can't
- * read, even when the rest of it is mistyped: it is reported as one, never made into a plain button. Null for a line that is no
- * `A player may …` line about a card.
+ * read, even when the rest of it is mistyped: it is reported as one, never made into a plain button. One card from a zone to a zone
+ * that any player may press, with no cost line, is told how to be a button. Null for a line that is no `A player may …` line about a
+ * card.
  */
 function cardLineOf(node: OutlineNode): CardLine | null {
   const clean = normalizeLine(node.text);
@@ -305,6 +321,7 @@ function cardLineOf(node: OutlineNode): CardLine | null {
   // Only one card from a zone to a zone with no cost line is a card move, so a set is a button whether or not it costs anything.
   const to = PICK_TO.exec(clean);
   if (to && (costed || SOME_CARDS.test(to[2]))) return pickCardLine(clean, to[1], to[2], to[3], to[4], null);
+  if (to && ANYONE_LINE.test(clean)) return { kind: 'unread', verb: found[1].toLowerCase(), message: anyoneMove(to[1], to[3], to[4]) };
   const some = PICK_SOME.exec(clean);
   if (some) return pickCardLine(clean, some[1], 'some cards', some[2], null, null);
   const inZone = PICK_IN.exec(clean);
@@ -492,6 +509,36 @@ function compileCardPick(node: OutlineNode, words: PickWords, ctx: LineCtx): Dec
     verb, words: words.words, base, label: actionLabel(written), target: null, anyone, amount: false, picksPlayer: false, conditions, effects,
     line: node.line, pick, ...(cost ? { cost } : {}),
   };
+}
+
+/**
+ * Whether a zone a pick names may hide its cards from the player who presses: one no one can see, or one only its owner can see that
+ * is not the presser's own (another seat's, a seat named by its number, or one in the center).
+ */
+function mayHideFromPresser(ref: ZoneRef, zones: ZoneSpec[]): boolean {
+  const name = 'shared' in ref ? ref.shared : 'each' in ref ? ref.each : ref.zone;
+  const spec = zones.find((zone) => zone.name.toLowerCase() === name.toLowerCase());
+  if (!spec || spec.visibility === 'public') return false;
+  return spec.visibility === 'secret' || !('of' in ref && 'who' in ref.of && ref.of.who === 'actor');
+}
+
+/**
+ * Reports each `Only if` line of the phase's buttons that reads a card of the press (“the card”, the target card, the picked cards)
+ * under a pick whose cards, or the card they go to, the presser may not see. A press the line refuses costs nothing and changes
+ * nothing, so pressing each face-down card in turn would tell the player which is which. Face-down cards in a zone everyone sees are
+ * slice 9's.
+ */
+export function reportHiddenCardReads(phase: CompiledPhase, zones: ZoneSpec[], ctx: LineCtx): void {
+  for (const { pick, conditions } of phase.actions) {
+    if (!pick) continue;
+    const places = [{ ref: pick.from, text: pick.fromText }];
+    if (pick.onto !== null && pick.ontoText !== null) places.push({ ref: pick.onto, text: pick.ontoText });
+    const hidden = places.find(({ ref }) => mayHideFromPresser(ref, zones));
+    if (!hidden) continue;
+    for (const group of conditions) {
+      if (readsPressCard(ctx.library, group)) addProblem(ctx.diagnostics, group.line, tellsHiddenCard(hidden.text), { text: group.text });
+    }
+  }
 }
 
 /** The `Only if` groups and the effects under a `When …:` rule; every line that is not an `Only if` is an effect. */
@@ -705,7 +752,7 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx, uses: VerbUses = {
     const cardLine = cardLineOf(child);
     // The strict line reads zones whose names hold “ to ”; the loose one still finds the verb when a zone is misnamed.
     const move = cardLine?.kind === 'move' ? (moveLine.exec(clean) ?? LOOSE_MOVE_LINE.exec(clean)) : null;
-    const unreadMove = cardLine?.kind === 'unread' ? cardLine.verb : null;
+    const unread = cardLine?.kind === 'unread' ? cardLine : null;
     const picked = cardLine?.kind === 'pick' ? cardLine.words : null;
     const action = cardLine === null ? actionLine(child) : null;
     const goTo = GO_TO.exec(clean);
@@ -737,10 +784,10 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx, uses: VerbUses = {
       const declared = compileMove(child, move, ctx);
       if (declared) phase.moves.push(declared);
       continue;
-    } else if (unreadMove !== null) {
+    } else if (unread) {
       // Its verb still counts as a move here, so an After line that names it is not blamed for this line's mistake.
-      moveVerbs.push(unreadMove);
-      addProblem(ctx.diagnostics, child.line, MALFORMED_MOVE, { text: clean });
+      moveVerbs.push(unread.verb);
+      addProblem(ctx.diagnostics, child.line, unread.message ?? MALFORMED_MOVE, { text: clean });
       // It may have been meant as a button that picks a card, whose lines say “it” for the card: only the line itself is blamed.
       readRuleBody(child, { ...ctx, inMove: true, player: true, card: true });
       continue;
