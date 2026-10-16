@@ -1,7 +1,7 @@
 import { MAX_CARDS, TOO_MANY_CARDS, isSaysColumn } from './cards';
 import { compileExample } from './compile-example';
 import { actionLine, actionOf, cardMoveVerb, compilePhase, targetReader, type VerbUses } from './compile-phase';
-import { addProblem, attempt, matchEffectLine, matchLine, phaseId, phraseFn, rejectChildren, type LineCtx } from './compile-util';
+import { addProblem, attempt, innerEffect, matchEffectLine, matchLine, phaseId, phraseFn, rejectChildren, type LineCtx } from './compile-util';
 import type { Diagnostic } from './diagnostics';
 import { parseOutline, type OutlineNode } from './outline';
 import { normalizeLine, suggestNames, vocabFrom, type PhraseLibrary } from './phrases';
@@ -381,10 +381,14 @@ function compileColumns(sections: Section[], ctx: LineCtx): CompiledGame['column
   return Object.fromEntries(lines);
 }
 
-/** The phase a line starts when its phrase enters the phase it names; through what an `If …, …` line does. Null for any other line. */
+/**
+ * The phase a line starts when its phrase enters the phase it names, read through what an `If …, …` or `For …, …` line does. Null
+ * for any other line.
+ */
 function phaseStartedBy(ref: PhraseRef, library: PhraseLibrary): string | null {
-  if (ref.kind === 'lang') return ref.phrase === 'if' ? phaseStartedBy(ref.args[1] as PhraseRef, library) : null;
-  return library.get(ref.kind, ref.phrase)?.entersPhase ? (ref.args[0] as string) : null;
+  const effect = innerEffect(ref);
+  if (effect.kind === 'lang') return null;
+  return library.get(effect.kind, effect.phrase)?.entersPhase ? (effect.args[0] as string) : null;
 }
 
 /** Every line of a phase that does something: its buttons, card moves, rules and start lines. */

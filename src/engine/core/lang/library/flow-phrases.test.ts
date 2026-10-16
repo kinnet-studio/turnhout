@@ -4,11 +4,11 @@ import { zoneCards, type GameState } from '../../game-state';
 import { shuffleWithRng } from '../../rng';
 import type { CardState } from '../../scene';
 import { RuleError } from '../diagnostics';
-import { TURN_KEY, TURN_ROLLS_KEY, markOut, playerFact, queueRoll, setPlayerFact, withBoardData } from '../board-state';
+import { TURN_KEY, TURN_ROLLS_KEY, interruptedTurn, markOut, playerFact, queueRoll, setPlayerFact, withBoardData } from '../board-state';
 import { createEngine, initialState, seatsFor } from '../build';
 import { compileGame } from '../compile';
 import { INTERRUPT_BOARD, fixtureBoardGame, fixtureBoardState, fixtureCard, fixtureEnv, fixtureGame, fixtureState, runPhrase } from '../testing';
-import type { PhraseKind, PhraseEnv } from '../types';
+import type { CompiledGame, PhraseKind, PhraseEnv } from '../types';
 import { WINNER_KEY } from '../zones';
 import { createDefaultLibrary } from './index';
 
@@ -303,10 +303,11 @@ describe('who goes next', () => {
 
 describe('a phase that interrupts the turn', () => {
   const vote = compileGame(INTERRUPT_BOARD, lib).game!;
-  /** An engine for `players` seats with the turn at p0 in playing, its board arranged by `arrange`. */
-  const voting = (players: number, arrange: (s: GameState) => GameState): GameEngine => {
-    const start = withBoardData(initialState(vote, 1), vote, seatsFor(players));
-    return createEngine(vote, lib, players, arrange({ ...start, turn: { current: 'p0', phase: 'playing' } })).engine;
+  const WITH_THEM = compileGame(INTERRUPT_BOARD.replace('      The vote phase starts with the player on their left.', '      The vote phase starts with them.'), lib).game!;
+  /** An engine for `players` seats with the turn at p0 in playing, its board arranged by `arrange`, playing `game`. */
+  const voting = (players: number, arrange: (s: GameState) => GameState, game: CompiledGame = vote): GameEngine => {
+    const start = withBoardData(initialState(game, 1), game, seatsFor(players));
+    return createEngine(game, lib, players, arrange({ ...start, turn: { current: 'p0', phase: 'playing' } })).engine;
   };
   const press = (engine: GameEngine, type: string, by: string) => expect(engine.dispatch({ type, by }).reason).toBeUndefined();
 
@@ -336,6 +337,23 @@ describe('a phase that interrupts the turn', () => {
   });
   it('needs the player on whose left it starts, and enters the phase it names', () => {
     expect(lib.get('effect', 'the {phase} phase starts with the player on their left')).toMatchObject({ needsPlayer: true, entersPhase: true });
+  });
+  it('starts with the player who pressed, runs its start lines, and goes back to their turn as it was', () => {
+    const engine = voting(3, (s) => queueRoll(s, [1, 2]), WITH_THEM);
+    press(engine, 'roll the dice', 'p0');
+    press(engine, 'call a vote', 'p0');
+    let s = engine.getState();
+    expect(s.turn).toEqual({ current: 'p0', phase: 'vote' });
+    expect(['p0', 'p1', 'p2'].map((seat) => playerFact(s, seat, 'voting'))).toEqual([true, true, true]);
+    expect(interruptedTurn(s)).toEqual({ phase: 'playing', current: 'p0', log: { p0: ['roll the dice', 'call a vote'] }, rolls: { p0: [[1, 2]] } });
+    for (const seat of ['p0', 'p1', 'p2']) press(engine, 'abstain', seat);
+    s = engine.getState();
+    expect(s.turn).toEqual({ current: 'p0', phase: 'playing' });
+    expect(s.data[TURN_KEY]).toEqual({ p0: ['roll the dice', 'call a vote'] });
+    expect(engine.canDispatch({ type: 'end their turn', by: 'p0' })).toBe(true);
+  });
+  it('needs the player it starts with, and enters the phase it names', () => {
+    expect(lib.get('effect', 'the {phase} phase starts with them')).toMatchObject({ needsPlayer: true, entersPhase: true });
   });
   it('cannot run start lines with nothing to run them', () => {
     const state = fixtureBoardState(vote, ['p0', 'p1']);

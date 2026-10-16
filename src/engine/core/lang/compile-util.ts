@@ -2,6 +2,7 @@ import type { Json } from '../table-def';
 import { RuleError, type Diagnostic } from './diagnostics';
 import type { OutlineNode } from './outline';
 import { normalizeLine, stubFor, type MatchResult, type Misnamed, type PhraseLibrary, type PhraseOpts } from './phrases';
+import { parseParam } from './refs';
 import type { ParamType, PhraseKind, PhraseRef, Vocab } from './types';
 
 /**
@@ -28,6 +29,8 @@ const NEEDS_AMOUNT = (clean: string) =>
 const NEEDS_PICK = (clean: string) =>
   `“${clean}” only makes sense in a button whose wording ends in “another player”, like “A player may challenge another player.”`;
 const IF_FRAME = /^if\s+(.+)$/i;
+const FOR_FRAME = /^for\s+(.+)$/i;
+const NO_HOLDER_NAMED = (head: string) => `“${head}” doesn't name a player. Write “For the player who is …,” with something players can be.`;
 const COMMA = /, /g;
 const PHASE_NAME = /^phase\s*:\s*(.*)$/i;
 
@@ -203,11 +206,36 @@ export function matchLine(
 }
 
 /**
- * Reads one effect line. “If <condition>, <effect>” is tried at every comma, since either part may hold commas; the
- * first comma where both parts are phrases wins. When none does, the part that needs fixing is the one reported.
+ * Reads “For <the player who holds a flag>, <effect>”: the effect is run as that player, so “they” and “their” are them, in a rule
+ * about no one too. It runs with no card move, so a phrase that needs one is refused here even in a move. The line is cut at the
+ * first comma before which a holder is named; when none is, what comes before the first comma is reported.
+ */
+function matchForLine(body: string, clean: string, line: number, ctx: LineCtx): PhraseRef {
+  const cuts = [...body.matchAll(COMMA)].map((m) => ({ head: body.slice(0, m.index), effect: body.slice(m.index + 2) }));
+  for (const { head, effect } of cuts) {
+    const holder = parseParam('holder', head, ctx.vocab);
+    if (holder === null || !('value' in holder)) continue;
+    const ref = matchLine('effect', effect, line, { ...ctx, player: true, inMove: false });
+    return { kind: 'lang', phrase: 'for', args: [holder.value, ref], line, text: clean };
+  }
+  addProblem(ctx.diagnostics, line, NO_HOLDER_NAMED(cuts[0]?.head ?? body), { kind: 'invalid', text: clean });
+  return missingRef('effect', clean, line);
+}
+
+/** What a line does: the effect of an `If …, …` or a `For …, …` line, else the line itself. */
+export function innerEffect(ref: PhraseRef): PhraseRef {
+  return ref.kind === 'lang' && (ref.phrase === 'if' || ref.phrase === 'for') ? (ref.args[1] as PhraseRef) : ref;
+}
+
+/**
+ * Reads one effect line. “For …, <effect>” runs the effect as the player who holds a flag. “If <condition>, <effect>” is tried
+ * at every comma, since either part may hold commas; the first comma where both parts are phrases wins. When none does, the
+ * part that needs fixing is the one reported.
  */
 export function matchEffectLine(text: string, line: number, ctx: LineCtx): PhraseRef {
   const clean = normalizeLine(text);
+  const holding = FOR_FRAME.exec(clean);
+  if (holding) return matchForLine(holding[1], clean, line, ctx);
   const frame = IF_FRAME.exec(clean);
   if (!frame) return matchLine('effect', clean, line, ctx);
 

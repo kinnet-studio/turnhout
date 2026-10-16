@@ -3,6 +3,7 @@ import type { GameState } from '../game-state';
 import type { Move } from '../moves';
 import type { PlayerId } from '../scene';
 import { numberIn } from './board';
+import { holderOf } from './board-state';
 import { isMissing } from './compile-util';
 import { MissingPhraseError, RuleError } from './diagnostics';
 import type { PhraseLibrary } from './phrases';
@@ -35,7 +36,7 @@ function located(error: unknown, ref: PhraseRef): RuleError {
 
 /**
  * Runs a compiled game's phrases against game states: the code behind each `PhraseRef`, plus the compiler's own
- * `lang` refs (all, any, phase, always, if, missing). A ref nobody has written a phrase for throws a
+ * `lang` refs (all, any, phase, always, if, for, missing). A ref nobody has written a phrase for throws a
  * MissingPhraseError when it is reached; whatever else a phrase throws comes out as a RuleError with its line.
  */
 export class LangRuntime {
@@ -80,13 +81,30 @@ export class LangRuntime {
     return this.call<ConditionFn, boolean>(ref, ['condition'], (fn) => fn(this.env(state, move, example, subject), ref.args));
   }
 
-  /** An effect or a Given step, or the compiler's “If …, …”. */
+  /**
+   * An effect or a Given step, or the compiler's “If …, …” or “For …, …”. A For line runs its effect as the player who holds
+   * the flag, with no card move, so “their” is theirs too; the space, amount and pick of a press stay as they were.
+   */
   run(ref: PhraseRef, state: GameState, move?: MoveInfo, example?: ExampleEnv, subject?: Subject): GameState {
     if (ref.kind === 'lang' && ref.phrase === 'if') {
       const [condition, effect] = ref.args as PhraseRef[];
       return this.test(condition, state, move, example, subject) ? this.run(effect, state, move, example, subject) : state;
     }
+    if (ref.kind === 'lang' && ref.phrase === 'for') {
+      const [flag, effect] = ref.args as [string, PhraseRef];
+      const holder = this.holderFor(ref, state, flag);
+      return this.run(effect, state, undefined, example, { ...(subject ?? { player: null, space: null, card: null }), player: holder });
+    }
     return this.call<EffectFn, GameState>(ref, ['effect', 'given'], (fn) => fn(this.env(state, move, example, subject), ref.args));
+  }
+
+  /** The player a For line runs as; nobody holding the flag, or several, is a mistake on that line. */
+  private holderFor(ref: PhraseRef, state: GameState, flag: string): PlayerId {
+    try {
+      return holderOf(state, this.seats, flag);
+    } catch (error) {
+      throw located(error, ref);
+    }
   }
 
   /** The words of the first `Only if` group that does not hold, or null when they all do. Later groups are not asked. */

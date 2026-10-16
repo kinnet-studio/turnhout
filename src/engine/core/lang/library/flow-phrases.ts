@@ -1,5 +1,6 @@
 import { zoneCards, type GameState } from '../../game-state';
 import { shuffleWithRng } from '../../rng';
+import type { PlayerId } from '../../scene';
 import { interruptTurn, isOut, nextIn, playerFact, resumeTurn } from '../board-state';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
@@ -112,23 +113,31 @@ const holderGoesFirst: EffectFn = (env, args) => {
 // ---- interrupting a turn ---------------------------------------------------------------------
 
 /**
- * Interrupts the turn for another phase, which starts with the next player still in on their left: a player who is out could
- * not act in it. The phase's start lines then run, as `go to` runs them, about no one in particular.
+ * Interrupts the turn for another phase, which starts with `next`. The phase's start lines then run, as `go to` runs them, about no
+ * one in particular.
  *
  * Meant for a button's lines. Started by a `When` rule after a press the After line names, it swallows that pass: the flow runs
  * `When` rules before it passes the turn, and by then the phase is the new one, whose After line does not name the press. The
  * kept turn is still the presser's, with nothing done in it, so going back to it gives them the turn again.
  */
-const phaseStartsOnTheirLeft: EffectFn = (env, [phase]) => {
-  const id = phase as string;
-  const started = interruptTurn(env.state, id, nextIn(env.state, theyOf(env), env.seats));
-  const startLines = env.game.phases.find((p) => p.id === id)?.onEnter ?? [];
+function startPhase(env: PhraseEnv, phase: string, next: PlayerId): GameState {
+  const started = interruptTurn(env.state, phase, next);
+  const startLines = env.game.phases.find((p) => p.id === phase)?.onEnter ?? [];
   if (startLines.length === 0) return started;
   const { runLine } = env;
   if (!runLine) throw new Error('This phrase needs to run the start lines of a phase, but nothing is listening.');
   const nobody: Subject = { player: null, space: null, card: null };
   return startLines.reduce((state, ref) => runLine(state, ref, nobody), started);
-};
+}
+
+/** The phase starts with the next player still in on their left: a player who is out could not act in it. */
+const phaseStartsOnTheirLeft: EffectFn = (env, [phase]) => startPhase(env, phase as string, nextIn(env.state, theyOf(env), env.seats));
+
+/**
+ * The phase starts with the player the rule is about, who keeps the turn in it. A button's press is noted before its lines run, so
+ * the turn kept to go back to already has it.
+ */
+const phaseStartsWithThem: EffectFn = (env, [phase]) => startPhase(env, phase as string, theyOf(env));
 
 /**
  * Goes back to the interrupted turn. Whether a button's lines or a `When` rule after a press go back, the flow then judges that
@@ -206,6 +215,7 @@ export function registerFlowPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('the winner goes next', winnerGoesNext)
     .effect('the player holding {card} goes first', holderGoesFirst)
     .effect('the {phase} phase starts with the player on their left', phaseStartsOnTheirLeft, { needsPlayer: true, entersPhase: true })
+    .effect('the {phase} phase starts with them', phaseStartsWithThem, { needsPlayer: true, entersPhase: true })
     .effect('go back to the interrupted turn', goBackToTheTurn)
     .turn('the turn passes to the left', passesLeft)
     .turn('the turn passes to the next player on the left who is {playerflag}', passesToNextWhoIs)

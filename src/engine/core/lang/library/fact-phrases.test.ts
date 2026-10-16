@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { zoneCards, type GameState } from '../../game-state';
 import { bankItemOf } from '../board';
-import { bankOf, counterOf, ownerOf, placePiece, setBank, setOwner, setSpaceFact, spaceFact } from '../board-state';
+import { bankOf, counterOf, ownerOf, placePiece, setBank, setOwner, setPlayerFact, setSpaceFact, spaceFact } from '../board-state';
 import { cardFact, changeCard } from '../card-facts';
 import { textFaceKey } from '../cards';
 import { compileGame } from '../compile';
 import { runExamples } from '../examples';
 import { RuleError } from '../diagnostics';
 import {
-  FIXTURE_SPACES, TINY_BOARD_HEAD, fixtureBoardGame, fixtureBoardState, fixtureCard, fixtureEnv, fixtureGame, fixtureState, runPhrase,
+  FIXTURE_SPACES, PICK_BOARD, TINY_BOARD_HEAD, fixtureBoardGame, fixtureBoardState, fixtureCard, fixtureEnv, fixtureGame, fixtureState, runPhrase,
 } from '../testing';
 import type { CompiledGame, FactSpec, Moment, MoveInfo, SpaceSpec, Subject } from '../types';
 import { createDefaultLibrary } from './index';
@@ -451,6 +451,42 @@ describe('the spaces a button may point at', () => {
     for (const phrase of ['a {spacekind} they own', 'an {spacekind} they own', 'a {spacekind}', 'an {spacekind}', 'a space they own']) {
       expect(lib.get('target', phrase), phrase).toMatchObject({ needsBoard: true, needsPlayer: phrase.endsWith('they own') });
     }
+  });
+});
+
+describe('a space the player who holds a flag owns', () => {
+  const picking = compileGame(PICK_BOARD, lib).game!;
+  const seats = ['p0', 'p1', 'p2'];
+  const MILL_LANE = 1;
+  const ROSE_LANE = 3;
+  const owned = setOwner(setOwner(fixtureBoardState(picking, seats), MILL_LANE, 'p0'), ROSE_LANE, 'p1');
+  /** Whether the target allows p0 to pick `space`. */
+  const allows = (text: string, state: GameState, space: number) =>
+    runPhrase<boolean>(lib, 'target', text, fixtureEnv(state, { game: picking, seats, subject: { player: 'p0', space: null, card: null } }), space);
+
+  it('allows a space that player owns and no other, named either way', () => {
+    const rivalry = setPlayerFact(owned, 'p1', 'the rival', true);
+    for (const text of ['a space the rival owns', 'a space the player who is the rival owns']) {
+      expect([allows(text, rivalry, ROSE_LANE), allows(text, rivalry, MILL_LANE)], text).toEqual([true, false]);
+    }
+  });
+  it('is an error when no player holds the flag', () => {
+    expect(() => allows('a space the rival owns', owned, ROSE_LANE)).toThrow('No player is the rival.');
+  });
+  it('is picked by a button without “on”, refused in the player\'s words for a space that player does not own', () => {
+    const text = [
+      PICK_BOARD.replace('  A player may end their turn.', '  A player may seize a space the rival owns.\n    Then:\n      They own it.\n  A player may end their turn.'),
+      '',
+      'Example: seizing a space of the rival', '  Given p1 is the rival', '  And p1 owns Rose Lane', '  And p0 owns Mill Lane',
+      '  When p0 seizes Mill Lane', '  Then it is rejected because "That isn\'t a space the rival owns."', '  When p0 seizes Rose Lane',
+      '  Then it is accepted', '  And p0 owns Rose Lane',
+    ].join('\n');
+    const { game: built, diagnostics } = compileGame(text, lib);
+    expect(diagnostics).toEqual([]);
+    expect(runExamples(built!, lib).map((r) => [r.status, r.message])).toEqual([['pass', null]]);
+  });
+  it('needs a board, and no player of its own: the player is the one who holds the flag', () => {
+    expect(lib.get('target', 'a space {holder} owns')).toMatchObject({ needsBoard: true, needsPlayer: false });
   });
 });
 

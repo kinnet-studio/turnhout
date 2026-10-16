@@ -2,16 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { cardById, zoneCards, type GameState } from '../game-state';
 import type { PlayerId } from '../scene';
 import type { Json } from '../table-def';
-import { counterOf, isOut, recordAction, setCounter, setOwner, withBoardData } from './board-state';
+import { counterOf, isOut, markOut, recordAction, setCounter, setOwner, setPlayerFact, withBoardData } from './board-state';
 import { createEngine, flowDefFor, initialState, seatsFor, tableDefFor } from './build';
+import { cardFact } from './card-facts';
 import { compileGame } from './compile';
 import { MissingPhraseError, RuleError } from './diagnostics';
 import { friendlyError } from './friendly';
 import { createDefaultLibrary } from './library';
 import { LangRuntime } from './runtime';
-import { TEST_DUEL, TINY_BOARD } from './testing';
+import { HOLDING_BOARD, TEST_DUEL, TINY_BOARD } from './testing';
 import type { CompiledGame, ExampleEnv, MoveInfo, PhraseRef } from './types';
-import { matchesCard } from './zones';
+import { matchesCard, relocate, zoneIdFor } from './zones';
 import RENT_DAY from '@/games/rent-day.rules?raw';
 
 const lib = createDefaultLibrary();
@@ -360,6 +361,62 @@ describe('LangRuntime on a board', () => {
     const playing = flowDefFor(board, ['p0', 'p1']).phases[1];
     expect(playing).toMatchObject({
       allow: ['roll the dice', 'buy the space they are on', 'end their turn'], endTurn: { after: ['end their turn'] },
+    });
+  });
+});
+
+describe('a line about the player who holds a flag', () => {
+  const holding = compiled(HOLDING_BOARD);
+  const lend = holding.phases[0].actions.find((a) => a.words === 'lend')!;
+  const seats = seatsFor(3);
+  const start: GameState = { ...withBoardData(initialState(holding, 1), holding, seats), turn: { current: 'p0', phase: 'playing' } };
+  const idNamed = (name: string) => start.cards.find((c) => c.data?.name === name)!.id;
+  const pass = idNamed('Pass');
+  const calm = idNamed('Calm');
+  const FOR_LINE = HOLDING_BOARD.split('\n').indexOf('      For the player who is leading, every card in their kept cards is lent.') + 1;
+
+  /** Each of `who` has the flag. */
+  const flagged = (state: GameState, flag: string, ...who: string[]) => who.reduce((s, seat) => setPlayerFact(s, seat, flag, true), state);
+  /** The seat keeps the card. */
+  const keeps = (state: GameState, seat: string, id: string) => relocate(state, [id], zoneIdFor('kept cards', seat), holding);
+  const isLent = (state: GameState, id: string) => cardFact(cardById(state, id)!, 'lent');
+  /** The state after p0 presses lend, from `state`. */
+  const lending = (state: GameState) => {
+    const { engine } = createEngine(holding, lib, 3, state);
+    expect(engine.dispatch({ type: 'lend', by: 'p0' }).reason).toBeUndefined();
+    return engine.getState();
+  };
+
+  it('is compiled with the flag and the line it runs', () => {
+    expect(compileGame(HOLDING_BOARD, lib).diagnostics).toEqual([]);
+    expect(lend.effects[1]).toMatchObject({
+      kind: 'lang', phrase: 'for', args: ['the rival', { kind: 'effect', phrase: 'they get {int} {counter}', args: [5, 'money'] }],
+    });
+  });
+  it('runs the line as the player who holds the flag: “they” and “their” are that player', () => {
+    const s = lending(flagged(flagged(keeps(start, 'p1', pass), 'leading', 'p1'), 'the rival', 'p2'));
+    expect(isLent(s, pass)).toBe(true);
+    expect(seats.map((seat) => counterOf(s, 'money', seat))).toEqual([1500, 1500, 1505]);
+  });
+  it('Review Focus: runs it with no move inside a card move, so “their” is the holder and not the player moving', () => {
+    const runtime = new LangRuntime(holding, lib, seats);
+    const state = keeps(keeps(flagged(start, 'leading', 'p1'), 'p1', pass), 'p0', calm);
+    const move: MoveInfo = { verb: 'play', by: 'p0', cardId: calm, from: zoneIdFor('kept cards', 'p0'), to: 'lucky-pile' };
+    const s = runtime.run(lend.effects[0], state, move, undefined, { player: 'p0', space: null, card: null });
+    expect([isLent(s, pass), isLent(s, calm)]).toEqual([true, null]);
+  });
+  describe('Review Focus: no holder, or two', () => {
+    it('is an error on the For line when no player holds the flag', () => {
+      const error = thrown(() => lending(flagged(start, 'the rival', 'p2')));
+      expect(error).toBeInstanceOf(RuleError);
+      expect(error).toMatchObject({ message: 'No player is leading.', line: FOR_LINE });
+    });
+    it('is an error naming them when more than one player does', () => {
+      expect(() => lending(flagged(start, 'leading', 'p1', 'p2'))).toThrow('More than one player is leading: p1 and p2.');
+    });
+    it('passes over a player who is out', () => {
+      const s = lending(flagged(markOut(flagged(keeps(start, 'p2', pass), 'leading', 'p1', 'p2'), 'p1'), 'the rival', 'p0'));
+      expect(isLent(s, pass)).toBe(true);
     });
   });
 });

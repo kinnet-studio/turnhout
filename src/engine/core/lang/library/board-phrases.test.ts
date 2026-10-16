@@ -7,7 +7,7 @@ import {
 import { compileGame } from '../compile';
 import { RuleError } from '../diagnostics';
 import {
-  FIXTURE_SPACES, MARK_BOARD, fixtureBoardGame, fixtureBoardState, fixtureEnv, fixtureGame, fixturePhase, fixtureState, runPhrase, vocabFor,
+  FIXTURE_SPACES, MARK_BOARD, TINY_BOARD, fixtureBoardGame, fixtureBoardState, fixtureEnv, fixtureGame, fixturePhase, fixtureState, runPhrase, vocabFor,
 } from '../testing';
 import type { DeclaredAction, Moment } from '../types';
 import { chooseNext } from '../zones';
@@ -679,6 +679,13 @@ describe('example phrases', () => {
         };
         const other = fixtureBoardGame({ phases: [fixturePhase('playing', [], { actions: [BUY, IFFY, ROLLING, END] })] });
         expect(givenRolling('p0 has rolled 1 double this turn', other).data[TURN_KEY]).toEqual({ p0: ['roll for a double'] });
+      });
+      it('finds the button that rolls in a For line', () => {
+        const text = TINY_BOARD.replace('      Roll the dice.', '      For the player who is leading, roll the dice.')
+          .replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  Players can be leading.');
+        const built = compileGame(text, lib);
+        expect(built.diagnostics).toEqual([]);
+        expect(givenRolling('p0 has rolled 1 double this turn', built.game!).data[TURN_KEY]).toEqual({ p0: ['roll the dice'] });
       });
       it('does not take a button whose lines roll nothing', () => {
         const quiet: DeclaredAction = { ...ROLL, effects: [{ kind: 'effect', phrase: 'they get {int} {counter}', args: [1, 'money'], line: 1, text: '' }] };

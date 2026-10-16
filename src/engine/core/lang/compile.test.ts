@@ -6,7 +6,7 @@ import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
-import { INTERRUPT_BOARD, TINY_BOARD_HEAD, deckGameText } from './testing';
+import { HOLDING_BOARD, INTERRUPT_BOARD, TINY_BOARD_HEAD, deckGameText } from './testing';
 import type { ParamType } from './types';
 
 const lib = createDefaultLibrary();
@@ -374,6 +374,39 @@ describe('phases a line starts', () => {
     const lucky = ['| name | says |', '| Recess | The vote phase starts with the player on their left. |'];
     const text = `${deckGameText(lucky, ['| name | says |', '| Calm | They get 0 money. |'])}\n\nPhase: vote\n  Hint: Vote.`;
     expect(compileGame(text, lib).diagnostics).toEqual([]);
+  });
+  it('counts a line that starts it with the player who pressed, alone, under an If or in a For line', () => {
+    for (const line of [
+      '      The vote phase starts with them.', '      If they have rolled this turn, the vote phase starts with them.',
+      '      For the player who is voting, the vote phase starts with them.',
+    ]) {
+      const text = INTERRUPT_BOARD.replace(START, line);
+      expect(text).not.toBe(INTERRUPT_BOARD);
+      expect(compileGame(text, lib).diagnostics, line).toEqual([]);
+    }
+  });
+  it('does not count a For line of the phase itself', () => {
+    const own = unstarted.replace(
+      '      Go back to the interrupted turn.\n  When', '      Go back to the interrupted turn.\n      For the player who is voting, the vote phase starts with them.\n  When',
+    );
+    expect(own).not.toBe(unstarted);
+    expect(messages(own)).toEqual([[32, 'Nothing leads to the phase “vote”.']]);
+  });
+});
+
+describe('lines about the player who holds a flag', () => {
+  /** The 1-based number of `line` in `text`. */
+  const at = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+
+  it('says when a For line names no player, and how to name one', () => {
+    const text = HOLDING_BOARD.replace('For the rival,', 'For the rivel,');
+    expect(messages(text)).toContainEqual([
+      at(text, '      For the rivel, they get 5 money.'), '“the rivel” doesn\'t name a player. Write “For the player who is …,” with something players can be.',
+    ]);
+  });
+  it('reads the rest of a For line as an effect, and says when no phrase reads it', () => {
+    const text = HOLDING_BOARD.replace('they get 5 money', 'they dance');
+    expect(messages(text)).toContainEqual([at(text, '      For the rival, they dance.'), '“they dance” isn\'t in the phrase library yet.']);
   });
 });
 

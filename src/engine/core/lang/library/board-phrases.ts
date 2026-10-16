@@ -7,6 +7,7 @@ import {
   addToCounter, counterOf, didThisTurn, isOut, latestRoll, markOut, nextIn, ownerOf, pieceAt, placePiece, playersIn, queueRoll, recordAction,
   recordDebt, recordRoll, rollsThisTurn, setCounter, setOwner, setRoll, setRollsThisTurn, takeQueuedRoll,
 } from '../board-state';
+import { innerEffect } from '../compile-util';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import { canon, joinOr, participle, pastWording } from '../refs';
@@ -414,9 +415,9 @@ function fixedFaces(env: PhraseEnv, faces: Json[]): number[] {
   return faces as number[];
 }
 
-/** Whether a button's Then line rolls the dice, alone or as the effect of an If line. */
+/** Whether a button's Then line rolls the dice, alone or as the effect of an If or For line. */
 const rollsTheDice = (ref: PhraseRef): boolean => {
-  const effect = ref.kind === 'lang' && ref.phrase === 'if' ? (ref.args as PhraseRef[])[1] : ref;
+  const effect = innerEffect(ref);
   return effect.kind === 'effect' && effect.phrase === ROLL_THE_DICE;
 };
 

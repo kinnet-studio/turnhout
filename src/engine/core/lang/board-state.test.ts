@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import type { GameState } from '../game-state';
 import {
-  INTERRUPTED_KEY, LAST_DRAWN_KEY, OWES_KEY, TURN_KEY, TURN_ROLLS_KEY, addToCounter, bankOf, clearTurnLog, counterOf, didThisTurn, endsTurn,
+  INTERRUPTED_KEY, LAST_DRAWN_KEY, OWES_KEY, TURN_KEY, TURN_ROLLS_KEY, addToCounter, bankOf, clearTurnLog, counterOf, didThisTurn, endsTurn, holderOf,
   interruptTurn, interruptedTurn, isOut, lastDrawn, markOut, nextIn, ownerOf, owedTo, pieceAt, placePiece, playerFact, playersIn, queueRoll,
   recordAction, recordDebt, recordRoll, resumeTurn, rollsThisTurn, setBank, setCounter, setLastDrawn, setOwner, setPlayerFact, setSpaceFact,
   spaceFact, takeQueuedRoll, withBoardData,
 } from './board-state';
+import { RuleError } from './diagnostics';
 import { fixtureBoardGame, fixtureBoardState, fixtureGame, fixturePhase, fixtureState } from './testing';
 import { chooseNext } from './zones';
 
@@ -210,5 +212,21 @@ describe('an interrupted turn', () => {
   });
   it('needs a turn to interrupt', () => {
     expect(() => interruptTurn(fresh(), 'vote', 'p1')).toThrow('There is no turn to interrupt.');
+  });
+});
+
+describe('the player who holds a flag', () => {
+  const fresh = fixtureBoardState(undefined, seats);
+  const leading = (state: GameState, ...who: string[]) => who.reduce((s, seat) => setPlayerFact(s, seat, 'leading', true), state);
+
+  it('is the one player still in with the flag set', () => {
+    expect(holderOf(leading(fresh, 'p1'), seats, 'leading')).toBe('p1');
+    expect(holderOf(markOut(leading(fresh, 'p1', 'p2'), 'p2'), seats, 'leading')).toBe('p1');
+  });
+  it('Review Focus: is an error naming the flag when no player still in has it, or more than one does', () => {
+    expect(() => holderOf(fresh, seats, 'leading')).toThrow(new RuleError('No player is leading.'));
+    expect(() => holderOf(markOut(leading(fresh, 'p2'), 'p2'), seats, 'leading')).toThrow('No player is leading.');
+    expect(() => holderOf(setPlayerFact(fresh, 'p1', 'leading', false), seats, 'leading')).toThrow('No player is leading.');
+    expect(() => holderOf(leading(fresh, 'p0', 'p1', 'p2'), seats, 'leading')).toThrow('More than one player is leading: p0, p1 and p2.');
   });
 });

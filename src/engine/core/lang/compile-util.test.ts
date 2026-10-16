@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { matchLine, type LineCtx } from './compile-util';
+import { innerEffect, matchEffectLine, matchLine, type LineCtx } from './compile-util';
 import type { Diagnostic } from './diagnostics';
 import { PhraseLibrary, STATIC_TYPES, emptyVocab } from './phrases';
 import { VOCAB_TYPES } from './refs';
+import type { PhraseRef } from './types';
 
 const library = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
   .cards('a deck called {name}', () => ({ kind: 'table', identities: [], start: 'deck', acesHigh: false }))
@@ -13,6 +14,8 @@ const library = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
   .effect('move it away', (env) => env.state, { needsCard: true })
   .effect('they keep this card', (env) => env.state, { needsPlayer: true, needsDrawnCard: true })
   .effect('that player is {playerflag}', (env) => env.state, { needsPick: true })
+  .effect('they cheer', (env) => env.state, { needsPlayer: true })
+  .effect('the card flips', (env) => env.state, { needsMove: true })
   .which('a card in a {perzone} has {int} {attribute}', () => []);
 
 const ctx = (): LineCtx & { diagnostics: Diagnostic[] } =>
@@ -116,5 +119,36 @@ describe('matchLine and the player a button picks', () => {
     const picking = { ...rival(), player: true, space: true, picked: true };
     expect(matchLine('effect', 'That player is the rival', 4, picking)).toMatchObject({ kind: 'effect', phrase: 'that player is {playerflag}' });
     expect(picking.diagnostics).toEqual([]);
+  });
+});
+
+describe('a line run as the player who holds a flag', () => {
+  const leading = () => ({ ...ctx(), vocab: { ...emptyVocab(), facts: [{ name: 'leading', on: 'player' as const, kind: 'flag' as const }] } });
+
+  it('reads the rest of the line about that player, even in a rule about no one', () => {
+    const none = leading();
+    expect(matchEffectLine('For the player who is leading, they cheer.', 5, none)).toEqual({
+      kind: 'lang', phrase: 'for', line: 5, text: 'For the player who is leading, they cheer',
+      args: ['leading', { kind: 'effect', phrase: 'they cheer', args: [], line: 5, text: 'they cheer' }],
+    });
+    expect(none.diagnostics).toEqual([]);
+  });
+  it('refuses a phrase that needs a card move, even in one: the line runs with no move', () => {
+    const moving = { ...leading(), inMove: true, player: true };
+    expect(matchEffectLine('For the player who is leading, the card flips.', 5, moving)).toMatchObject({
+      phrase: 'for', args: ['leading', { kind: 'lang', phrase: 'missing', args: ['effect'] }],
+    });
+    expect(moving.diagnostics.map((d) => [d.line, d.message])).toEqual([[5, '“the card flips” only makes sense in a rule about a player\'s move.']]);
+  });
+});
+
+describe('the effect a line runs', () => {
+  const effect: PhraseRef = { kind: 'effect', phrase: 'they cheer', args: [], line: 3, text: 'they cheer' };
+  const condition: PhraseRef = { kind: 'condition', phrase: 'the bank is empty', args: [], line: 3, text: 'the bank is empty' };
+
+  it('is the line itself, or what an If or For line does', () => {
+    expect(innerEffect(effect)).toBe(effect);
+    expect(innerEffect({ kind: 'lang', phrase: 'if', args: [condition, effect], line: 3, text: 'If the bank is empty, they cheer' })).toBe(effect);
+    expect(innerEffect({ kind: 'lang', phrase: 'for', args: ['leading', effect], line: 3, text: 'For the player who is leading, they cheer' })).toBe(effect);
   });
 });

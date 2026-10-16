@@ -1,7 +1,7 @@
 import { cardById, zoneCards, type GameState } from '../../game-state';
 import type { CardState, PlayerId } from '../../scene';
 import { bankItemOf } from '../board';
-import { bankOf, ownerOf, setBank, setOwner, setSpaceFact, spaceFact } from '../board-state';
+import { bankOf, holderOf, ownerOf, setBank, setOwner, setSpaceFact, spaceFact } from '../board-state';
 import { cardAttribute, cardFact, changeCard } from '../card-facts';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
@@ -157,6 +157,9 @@ const ofKind: TargetFn = (env, [kind], space) => isOfKind(boardOf(env).spaces[sp
 const theyOwn: TargetFn = (env, _args, space) => ownerOf(env.state, space) === theyOf(env);
 
 const ofKindTheyOwn: TargetFn = (env, args, space) => ofKind(env, args, space) && theyOwn(env, args, space);
+
+/** Any space the player who holds the flag owns, whoever presses the button: “a space the rival owns”. */
+const holderOwns: TargetFn = (env, [flag], space) => ownerOf(env.state, space) === holderOf(env.state, env.seats, flag as string);
 
 // ---- moments ---------------------------------------------------------------------------------
 
@@ -429,10 +432,10 @@ const bankHasExpected: ExpectFn = (env, [n, name]) => {
  * The sentences that say what a game keeps facts about: what a space or a card can have, or be, while the game is played.
  * A plural noun is a count (starting at 0) and “a” or “an” and a noun, or an adjective, is a yes/no (starting at no). Then the
  * sentences that read and change what a space has or is, and what the bank holds, that ask whether a player owns a whole set, that
- * say which spaces a button may pick, and that act on the one space with a flag set, or on every space with it, or ask whether
- * some space has it. And those about cards: which cards a rule is about, whether one has a flag, or some card does, changing every
- * card of a zone, moving every card with a flag to a zone, taking a flag off every card, raising or lowering a number a card has,
- * moving the card a rule is about, and the player with the most cards.
+ * say which spaces a button may pick (theirs, or those of the player who holds a flag), and that act on the one space with a flag
+ * set, or on every space with it, or ask whether some space has it. And those about cards: which cards a rule is about, whether one
+ * has a flag, or some card does, changing every card of a zone, moving every card with a flag to a zone, taking a flag off every
+ * card, raising or lowering a number a card has, moving the card a rule is about, and the player with the most cards.
  */
 export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
@@ -463,6 +466,7 @@ export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
     .target('a {spacekind}', ofKind, { needsBoard: true })
     .target('an {spacekind}', ofKind, { needsBoard: true })
     .target('a space they own', theyOwn, { needsPlayer: true, needsBoard: true })
+    .target('a space {holder} owns', holderOwns, { needsBoard: true })
     .moment('a player lands on a space someone else owns', landsOnSpaceOwnedByOther)
     .which('a card in a {perzone} has {int} {attribute}', cardsWithNumber)
     .effect('it gets a {banked} from the bank', getsFromBank, { needsSpace: true })

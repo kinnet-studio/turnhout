@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GameState } from '../../game-state';
-import { counterOf, gameNumber, owedTo, setCounter, setGameNumber } from '../board-state';
+import { counterOf, gameNumber, owedTo, setCounter, setGameNumber, setPlayerFact } from '../board-state';
 import { compileGame } from '../compile';
 import { fixtureBoardState, fixtureEnv, runPhrase, TINY_BOARD_HEAD } from '../testing';
 import { createDefaultLibrary } from './index';
@@ -61,5 +61,33 @@ describe('numbers that belong to the game', () => {
   });
   it('says the game has no number called that when it never declared one', () => {
     expect(() => gameNumber(start, game, 'ante')).toThrow('The game has no number called “ante”.');
+  });
+});
+
+describe('a number of the game and the player who holds a flag', () => {
+  const HELD = POT.replace('  The game has a pot of 5.', '  The game has a pot of 5.\n  Players can be leading.\n  Players can be the rival.');
+  const held = compileGame(HELD, lib).game!;
+  const rivalry = setPlayerFact(fixtureBoardState(held), 'p1', 'the rival', true);
+  /** A rule about p0. */
+  const ofP0 = (state: GameState) => fixtureEnv(state, { game: held, seats: ['p0', 'p1'], subject: { player: 'p0', space: null, card: null } });
+  const run = <T>(kind: 'effect' | 'condition', text: string, state: GameState) => runPhrase<T>(lib, kind, text, ofP0(state));
+
+  it('is paid to that player, named either way', () => {
+    const paid = run<GameState>('effect', 'they pay the pot to the rival', rivalry);
+    expect([counterOf(paid, 'money', 'p0'), counterOf(paid, 'money', 'p1')]).toEqual([1495, 1505]);
+    expect(run<GameState>('effect', 'they pay the pot to the player who is the rival', rivalry)).toEqual(paid);
+  });
+  it('notes a debt to that player when paying it takes them below 0', () => {
+    const s = run<GameState>('effect', 'they pay the pot to the rival', setCounter(rivalry, 'money', 'p0', 3));
+    expect([counterOf(s, 'money', 'p0'), owedTo(s, 'p0', 'money')]).toEqual([-2, 'p1']);
+  });
+  it('is compared with a number, and with what they have', () => {
+    expect([run('condition', 'the pot is more than 4', rivalry), run('condition', 'the pot is more than 5', rivalry)]).toEqual([true, false]);
+    const having = (money: number) => run('condition', 'they have at least the pot in money', setCounter(rivalry, 'money', 'p0', money));
+    expect([having(5), having(4)]).toEqual([true, false]);
+  });
+  it('needs a player, and something to pay with, to be paid; and a player to be compared with what they have', () => {
+    expect(lib.get('effect', 'they pay the {gamenumber} to {holder}')).toMatchObject({ needsPlayer: true, needsPayment: true });
+    expect(lib.get('condition', 'they have at least the {gamenumber} in {counter}')).toMatchObject({ needsPlayer: true });
   });
 });

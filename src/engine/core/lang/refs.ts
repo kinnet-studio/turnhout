@@ -646,6 +646,18 @@ const PLAYERNUMBER = declaredWord('playernumber', '[player fact]', 'player fact'
 const GAMENUMBER = declaredWord('gamenumber', '[game number]', 'game number', factNames('game', 'number'), false);
 const BANKED = declaredWord('banked', '[bank item]', 'bank item', (vocab) => vocab.bank, true);
 
+/**
+ * The player who holds a flag players can have, standing for the flag: “the player who is leading”. A flag whose name starts with
+ * “the” already reads as someone, so it may also be said alone (“the rival”); “leading” alone names no one. The runtime finds who
+ * holds it.
+ */
+const holderNames = (vocab: Vocab): [text: string, flag: string][] =>
+  factNames('player', 'flag')(vocab).flatMap((flag): [string, string][] => {
+    const named: [string, string] = [`the player who is ${flag}`, flag];
+    return canon(flag).startsWith('the ') ? [named, [flag, flag]] : [named];
+  });
+const HOLDER = wordType('holder', '[the player who is …]', holderNames, undefined);
+
 // Actions and what was done are whole phrases ("ends their turn", "rolled") with a fixed form, not names to misspell.
 // An action is its wording, which is the move a button sends. A button that picks a space is not one an example can press
 // by its wording: it names the space after the base (“plants a flag” on Rose Lane), so that is a type of its own.
@@ -726,7 +738,7 @@ const DONE: ParamType = {
 /** Parameter types whose text depends on the game being compiled. */
 export const VOCAB_TYPES: ParamType[] = [
   ZONE, ZONES, PERZONE, PLAYER, PHASE, MOVE, ATTRIBUTE, CARD, CARDLIST, CARDCLASS, SPACE, SPACECLASS, SPACEATTR, COUNTER, ACTION, TARGETACTION,
-  AMOUNTACTION, PICKACTION, DONE, SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, PLAYERFLAG, PLAYERNUMBER, GAMENUMBER, BANKED,
+  AMOUNTACTION, PICKACTION, DONE, SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, PLAYERFLAG, PLAYERNUMBER, GAMENUMBER, BANKED, HOLDER,
 ];
 
 const TYPES_BY_NAME = new Map(VOCAB_TYPES.map((t) => [t.name, t] as const));

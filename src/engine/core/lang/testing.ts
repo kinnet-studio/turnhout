@@ -282,6 +282,19 @@ export function deckGameText(lucky: string[], fate: string[], rules: string[] = 
   ].join('\n');
 }
 
+/**
+ * deckGameText with a lucky card players keep (Pass), a flag cards can have (lent), and two flags players can have (leading, the
+ * rival). Its one new button runs two lines about the players who hold them: lending flags every card the leader keeps, and the
+ * rival gets 5 money.
+ */
+export const HOLDING_BOARD = deckGameText(
+  ['| name | says |', '| Pass | They keep this card in their kept cards. |'], ['| name | says |', '| Calm | They get 0 money. |'],
+  [
+    '  A player may lend.', '    Then:',
+    '      For the player who is leading, every card in their kept cards is lent.', '      For the rival, they get 5 money.',
+  ],
+).replace('  The bank has 32 houses and 12 hotels.', '  The bank has 32 houses and 12 hotels.\n  Cards can be lent.\n  Players can be leading.\n  Players can be the rival.');
+
 /** The loop of the board fixtures: a start, two streets, a tax, a station, a utility and two chance spaces. */
 export const FIXTURE_SPACES: SpaceSpec[] = [
   { name: 'Go', attrs: { kind: 'go' } },

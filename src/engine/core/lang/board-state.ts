@@ -258,6 +258,17 @@ export function nextIn(state: GameState, seat: PlayerId, seats: PlayerId[]): Pla
   throw new RuleError('No other player is still in.');
 }
 
+/**
+ * The one player still in whose flag is set, as “the player who is leading” names them: a player who is out holds nothing. Nobody
+ * holding it, or more than one player, is a mistake in the rules, said with the flag's name and, for several, who they are.
+ */
+export function holderOf(state: GameState, seats: PlayerId[], flag: string): PlayerId {
+  const holders = playersIn(state, seats).filter((seat) => playerFact(state, seat, flag) === true);
+  if (holders.length === 0) throw new RuleError(`No player is ${flag}.`);
+  if (holders.length > 1) throw new RuleError(`More than one player is ${flag}: ${holders.slice(0, -1).join(', ')} and ${holders.at(-1)}.`);
+  return holders[0];
+}
+
 /** Whether the seat has already done this since the turn last passed. */
 export function didThisTurn(state: GameState, seat: PlayerId, move: string): boolean {
   return turnLogOf(state)[seat]?.includes(move) ?? false;

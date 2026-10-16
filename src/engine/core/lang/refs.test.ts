@@ -47,6 +47,7 @@ describe('vocabulary types', () => {
       ['action', '[action]'], ['targetaction', '[action]'], ['amountaction', '[action]'], ['pickaction', '[action]'], ['done', '[action done]'],
       ['spacekind', '[kind of space]'], ['spaceflag', '[space fact]'], ['spacenumber', '[space fact]'], ['cardflag', '[card fact]'],
       ['playerflag', '[player fact]'], ['playernumber', '[player fact]'], ['gamenumber', '[game number]'], ['banked', '[bank item]'],
+      ['holder', '[the player who is …]'],
     ]);
     const order = Object.fromEntries(VOCAB_TYPES.filter((t) => t.stubOrder !== undefined).map((t) => [t.name, t.stubOrder]));
     // A stub never turns words into a space: a name like "Go To Jail" would swallow the words of an ordinary sentence.
@@ -590,6 +591,21 @@ describe('facts and the bank', () => {
   });
 });
 
+describe('the player who holds a flag', () => {
+  const flags = vocabFrom({
+    maxPlayers: 4, facts: [{ name: 'leading', on: 'player', kind: 'flag' }, { name: 'the rival', on: 'player', kind: 'flag' }],
+  });
+
+  it('reads “the player who is …” with any flag players can have, as that flag', () => {
+    expect(parseParam('holder', 'the player who is leading', flags)).toEqual({ value: 'leading' });
+    for (const text of ['the player who is the rival', 'the rival', 'The Rival']) expect(parseParam('holder', text, flags), text).toEqual({ value: 'the rival' });
+  });
+  it('reads a flag alone only when its name starts with “the”, and no flag the game does not declare', () => {
+    expect(parseParam('holder', 'leading', flags)).toBeNull();
+    expect(parseParam('holder', 'the player who is asleep', flags)).toBeNull();
+  });
+});
+
 describe('plurals', () => {
   it('makes the plural of a noun', () => {
     expect(['street', 'tax', 'church', 'dish', 'glass', 'penny', 'day', 'go to jail'].map(plural)).toEqual([
@@ -740,8 +756,9 @@ describe('names the game never defined', () => {
   };
   const missing = (what: string, name: string, suggestions: string[]) => ({ message: `There is no ${what} called “${name}”.`, suggestions });
 
-  // Actions and what was done are phrases of their own, not names to misspell, so they have no loose shape.
-  const NAMES = VOCAB_TYPES.filter((t) => !['action', 'targetaction', 'amountaction', 'pickaction', 'done'].includes(t.name));
+  // Actions and what was done are phrases of their own, not names to misspell, so they have no loose shape. Nor has the player
+  // who holds a flag: a For line that names no one says so in its own words.
+  const NAMES = VOCAB_TYPES.filter((t) => !['action', 'targetaction', 'amountaction', 'pickaction', 'done', 'holder'].includes(t.name));
 
   it('gives every type of names a loose shape, and no other', () => {
     expect(VOCAB_TYPES.filter((t) => t.loose).map((t) => t.name)).toEqual(NAMES.map((t) => t.name));
