@@ -1,10 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { GameState } from '../../game-state';
+import { OWES_KEY, counterOf, setCounter, withBoardData } from '../board-state';
+import { createEngine, initialState, seatsFor } from '../build';
+import { compileGame } from '../compile';
 import { RuleError } from '../diagnostics';
 import {
-  fixtureCard, fixtureColorGame, fixtureEnv, fixtureMove, fixturePhase, fixtureState, runPhrase,
+  COUNTER_GAME, fixtureCard, fixtureColorGame, fixtureEnv, fixtureMove, fixturePhase, fixtureState, runPhrase,
 } from '../testing';
-import type { MoveInfo, PhraseEnv, PhraseKind } from '../types';
+import type { CompiledGame, MoveInfo, PhraseEnv, PhraseKind } from '../types';
+import { relocate } from '../zones';
 import { createDefaultLibrary } from './index';
 
 const lib = createDefaultLibrary();
@@ -173,5 +177,93 @@ describe('they have no card they could play', () => {
     const check = vi.fn<PhraseEnv['check']>(() => true);
     expect(cond('they have no card they could play', fixtureEnv(fixtureState(cards), { game, move: draw, check }))).toBe(true);
     expect(check).not.toHaveBeenCalled();
+  });
+});
+
+describe('paying what the card says', () => {
+  /** COUNTER_GAME where a card costs the number its table shows, which it must be able to pay. */
+  const PRICED = COUNTER_GAME.replace(
+    '    Then:\n      They pay 1.',
+    "    Only if they have at least the card's cost in coins.\n    Then:\n      They pay the card's cost.",
+  );
+  const compiled = compileGame(PRICED, lib);
+  // Read when a test runs, so a game that does not compile fails its own tests and not the whole file.
+  const priced = (): CompiledGame => compiled.game!;
+  const seats = seatsFor(2);
+  const cardNamed = (state: GameState, name: string) => state.cards.find((c) => c.data?.name === name)!;
+
+  /** Two players, p0 to buy from a shop that holds a Ruby (costs 3) and an Opal (costs 1), with `coins` each. */
+  function shopping(coins = 7) {
+    const game = priced();
+    const start = initialState(game, 1);
+    const stocked = relocate(start, [cardNamed(start, 'Ruby').id, cardNamed(start, 'Opal').id], 'shop', game);
+    const state: GameState = setCounter(
+      { ...withBoardData(stocked, game, seats), turn: { current: 'p0', phase: 'shopping' } }, 'coins', 'p0', coins,
+    );
+    const { engine } = createEngine(game, lib, 2, state);
+    const buy = (name: string, by = 'p0') => engine.dispatch({ type: 'buy', cardId: cardNamed(engine.getState(), name).id, by });
+    return { engine, buy };
+  }
+
+  const ruby = fixtureCard('ruby', 'shop', { name: 'Ruby', cost: 3 });
+  const buyRuby: MoveInfo = { verb: 'buy', by: 'p0', cardId: 'ruby', from: 'shop', to: 'stash-p0' };
+  const inMove = (cards: ReturnType<typeof fixtureCard>[], move: MoveInfo = buyRuby) =>
+    fixtureEnv(
+      { ...withBoardData(fixtureState(cards), priced(), seats), turn: { current: 'p0', phase: 'shopping' } },
+      { game: priced(), seats, move, subject: { player: 'p0', space: null, card: null } },
+    );
+
+  it('compiles', () => {
+    expect(compiled.diagnostics).toEqual([]);
+  });
+  it('pays the number the card shows, as it asks for it', () => {
+    const { engine, buy } = shopping();
+    expect(buy('Ruby').ok).toBe(true);
+    expect(counterOf(engine.getState(), 'coins', 'p0')).toBe(4);
+    // The turn went to p1, who passes it back.
+    expect(engine.dispatch({ type: 'pass', by: 'p1' }).ok).toBe(true);
+    expect(buy('Opal').ok).toBe(true);
+    expect(counterOf(engine.getState(), 'coins', 'p0')).toBe(3);
+    expect(counterOf(engine.getState(), 'coins', 'p1')).toBe(7);
+  });
+  it('is refused, and nothing changes, when they have less than the card shows', () => {
+    const { engine, buy } = shopping(2);
+    const before = engine.getState();
+    expect(buy('Ruby')).toMatchObject({ ok: false, reason: "they have at least the card's cost in coins" });
+    expect(engine.getState()).toEqual(before);
+    expect(buy('Opal').ok).toBe(true);
+    expect(counterOf(engine.getState(), 'coins', 'p0')).toBe(1);
+  });
+  it('asks while the card is still in the shop, and pays once it is in the stash', () => {
+    const { engine, buy } = shopping(3);
+    expect(buy('Ruby').ok).toBe(true);
+    const state = engine.getState();
+    expect([cardNamed(state, 'Ruby').zoneId, counterOf(state, 'coins', 'p0')]).toEqual(['stash-p0', 0]);
+  });
+  it('says so when the card shows something that is not a number', () => {
+    const pay = () => run('effect', "they pay the card's name", inMove([ruby]));
+    expect(pay).toThrow(new RuleError("This card's name isn't a number."));
+    expect(() => cond("they have at least the card's name in coins", inMove([ruby]))).toThrow(new RuleError("This card's name isn't a number."));
+  });
+  it('says so when the card shows nothing under that name', () => {
+    const bare = fixtureCard('ruby', 'shop', { name: 'Ruby' });
+    expect(() => run('effect', "they pay the card's cost", inMove([bare]))).toThrow(new RuleError('This card has no cost.'));
+    expect(() => cond("they have at least the card's cost in coins", inMove([bare]))).toThrow(new RuleError('This card has no cost.'));
+  });
+  it('notes a payment that leaves them below 0 as any other payment does', () => {
+    const poor = inMove([ruby]);
+    const broke = run<GameState>('effect', "they pay the card's cost", { ...poor, state: setCounter(poor.state, 'coins', 'p0', 1) });
+    expect(counterOf(broke, 'coins', 'p0')).toBe(-2);
+    expect(broke.data[OWES_KEY]).toEqual({ p0: 'bank' });
+  });
+  it('is registered as needing a move and a player, and the payment a way to pay', () => {
+    expect(lib.get('condition', "they have at least the card's {attribute} in {counter}")).toMatchObject({ needsMove: true, needsPlayer: true });
+    expect(lib.get('effect', "they pay the card's {attribute}")).toMatchObject({ needsMove: true, needsPayment: true });
+  });
+  it('only makes sense in a rule about a player\'s move', () => {
+    const asButton = COUNTER_GAME.replace('  A player may pass.', "  A player may pass.\n    Only if they have at least the card's cost in coins.");
+    expect(compileGame(asButton, lib).diagnostics.map((d) => d.message)).toEqual([
+      "“they have at least the card's cost in coins” only makes sense in a rule about a player's move.",
+    ]);
   });
 });

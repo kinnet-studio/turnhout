@@ -1,10 +1,13 @@
 import { zoneCards } from '../../game-state';
 import type { CardState } from '../../scene';
+import { counterOf } from '../board-state';
 import { cardAttribute } from '../card-facts';
+import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
-import type { CardMatch, ConditionFn, PhraseEnv, ZoneRef } from '../types';
+import type { CardMatch, ConditionFn, EffectFn, PhraseEnv, ZoneRef } from '../types';
 import { handZoneOf, matchesCard, resolveZoneIds, topCard, zoneInfo } from '../zones';
-import { currentMove, movedCard, soleZone } from './support';
+import { transfer } from './board-phrases';
+import { currentMove, movedCard, soleZone, theyOf } from './support';
 
 const cardIs = (wanted: boolean): ConditionFn => (env, args) => matchesCard(movedCard(env), args[0] as CardMatch) === wanted;
 
@@ -19,6 +22,21 @@ const sameAsTop: ConditionFn = (env, args) => {
 
 const holdsOnly: ConditionFn = (env, args) =>
   zoneCards(env.state, handZoneOf(env.game, currentMove(env).by)).every((c) => matchesCard(c, args[0] as CardMatch));
+
+/** The number the card being moved shows under the name, or the sentence that says why it shows none. */
+function cardNumber(env: PhraseEnv, attribute: string): number {
+  const value = cardAttribute(movedCard(env), attribute, env.game);
+  if (value === null) throw new RuleError(`This card has no ${attribute}.`);
+  if (typeof value !== 'number') throw new RuleError(`This card's ${attribute} isn't a number.`);
+  return value;
+}
+
+/** Every condition of a move is judged before the card moves, so this asks about the card where it still is. */
+const haveAtLeastTheCards: ConditionFn = (env, [attribute, counter]) =>
+  counterOf(env.state, counter as string, theyOf(env)) >= cardNumber(env, attribute as string);
+
+/** Like any payment to the bank: one that leaves them below 0 notes the debt. */
+const paysTheCards: EffectFn = (env, [attribute]) => transfer(env, theyOf(env), null, cardNumber(env, attribute as string));
 
 /** The cards a move could take from a zone: the top card of a pile, any card of a hand or row. */
 function candidates(env: PhraseEnv, zoneId: string): CardState[] {
@@ -37,12 +55,14 @@ const hasNoPlay: ConditionFn = (env) => {
   );
 };
 
-/** Conditions on the card being moved and on what its player could do instead. */
+/** Conditions on the card being moved and on what its player could do instead, and paying the number the card shows. */
 export function registerMovePhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
     .condition('the card is {cardclass}', cardIs(true), { needsMove: true })
     .condition('the card is not {cardclass}', cardIs(false), { needsMove: true })
     .condition('the card has the same {attribute} as the top card of {zone}', sameAsTop, { needsMove: true })
     .condition('they hold only {cardclass}', holdsOnly, { needsMove: true })
-    .condition('they have no card they could play', hasNoPlay, { needsMove: true });
+    .condition('they have no card they could play', hasNoPlay, { needsMove: true })
+    .condition("they have at least the card's {attribute} in {counter}", haveAtLeastTheCards, { needsMove: true, needsPlayer: true })
+    .effect("they pay the card's {attribute}", paysTheCards, { needsMove: true, needsPayment: true });
 }
