@@ -2,6 +2,7 @@ import { cardById } from '../../game-state';
 import type { CardState, PlayerId } from '../../scene';
 import type { Json } from '../../table-def';
 import { pieceAt } from '../board-state';
+import { cardAttribute } from '../card-facts';
 import { RuleError } from '../diagnostics';
 import type { MoveInfo, PhraseEnv, ZoneRef } from '../types';
 import { resolveSeat, resolveZoneIds } from '../zones';
@@ -84,6 +85,17 @@ export function thePickedCards(env: PhraseEnv): string[] {
   const cards = env.subject?.cards;
   if (cards === undefined) throw new Error('This phrase needs the picked cards, but the button carries none.');
   return cards;
+}
+
+/**
+ * The number a card shows under a name: a column of its table or a count the game keeps on cards (0 until it changes), else the sentence
+ * that says why it shows none. Every phrase that does arithmetic on a card's numbers reads them here.
+ */
+export function cardNumber(env: PhraseEnv, card: CardState, name: string): number {
+  const value = cardAttribute(card, name, env.game);
+  if (value === null) throw new RuleError(`This card has no ${name}.`);
+  if (typeof value !== 'number') throw new RuleError(`This card's ${name} isn't a number.`);
+  return value;
 }
 
 /** The seat an example line names; it has to be sitting at the table. */

@@ -3,6 +3,7 @@ import { VOCAB_TYPES } from '../refs';
 import { registerAmountPhrases } from './amount-phrases';
 import { registerAttachPhrases } from './attach-phrases';
 import { registerBoardPhrases } from './board-phrases';
+import { registerCardNumberPhrases } from './card-number-phrases';
 import { registerCardPickPhrases } from './card-pick-phrases';
 import { registerDebtPhrases } from './debt-phrases';
 import { registerDrawPhrases } from './draw-phrases';
@@ -29,6 +30,7 @@ const REGISTRARS: ((lib: PhraseLibrary) => PhraseLibrary)[] = [
   registerBoardPhrases,
   registerFactPhrases,
   registerAttachPhrases,
+  registerCardNumberPhrases,
   registerPlayerFactPhrases,
   registerDrawPhrases,
   registerDebtPhrases,

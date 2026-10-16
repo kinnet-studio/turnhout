@@ -2,12 +2,11 @@ import { zoneCards } from '../../game-state';
 import type { CardState } from '../../scene';
 import { counterOf } from '../board-state';
 import { cardAttribute } from '../card-facts';
-import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import type { CardMatch, ConditionFn, EffectFn, PhraseEnv, ZoneRef } from '../types';
 import { handZoneOf, matchesCard, resolveZoneIds, topCard, zoneInfo } from '../zones';
 import { transfer } from './board-phrases';
-import { currentMove, movedCard, soleZone, theyOf } from './support';
+import { cardNumber, currentMove, movedCard, soleZone, theyOf } from './support';
 
 const cardIs = (wanted: boolean): ConditionFn => (env, args) => matchesCard(movedCard(env), args[0] as CardMatch) === wanted;
 
@@ -23,20 +22,12 @@ const sameAsTop: ConditionFn = (env, args) => {
 const holdsOnly: ConditionFn = (env, args) =>
   zoneCards(env.state, handZoneOf(env.game, currentMove(env).by)).every((c) => matchesCard(c, args[0] as CardMatch));
 
-/** The number the card being moved shows under the name, or the sentence that says why it shows none. */
-function cardNumber(env: PhraseEnv, attribute: string): number {
-  const value = cardAttribute(movedCard(env), attribute, env.game);
-  if (value === null) throw new RuleError(`This card has no ${attribute}.`);
-  if (typeof value !== 'number') throw new RuleError(`This card's ${attribute} isn't a number.`);
-  return value;
-}
-
 /** Every condition of a move is judged before the card moves, so this asks about the card where it still is. */
 const haveAtLeastTheCards: ConditionFn = (env, [attribute, counter]) =>
-  counterOf(env.state, counter as string, theyOf(env)) >= cardNumber(env, attribute as string);
+  counterOf(env.state, counter as string, theyOf(env)) >= cardNumber(env, movedCard(env), attribute as string);
 
 /** Like any payment to the bank: one that leaves them below 0 notes the debt. */
-const paysTheCards: EffectFn = (env, [attribute]) => transfer(env, theyOf(env), null, cardNumber(env, attribute as string));
+const paysTheCards: EffectFn = (env, [attribute]) => transfer(env, theyOf(env), null, cardNumber(env, movedCard(env), attribute as string));
 
 /** The cards a move could take from a zone: the top card of a pile, any card of a hand or row. */
 function candidates(env: PhraseEnv, zoneId: string): CardState[] {
