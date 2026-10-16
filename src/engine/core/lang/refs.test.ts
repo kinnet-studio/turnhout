@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  STANDARD_RANKS, STANDARD_SUITS, VOCAB_TYPES, counted, parseParam, participle, pastWording, plural, secondPersonWords, singularForms, thirdPerson, thirdPersonWords,
+  STANDARD_RANKS, STANDARD_SUITS, VOCAB_TYPES, counted, misnamedParam, parseParam, participle, pastWording, plural, secondPersonWords, singularForms, thirdPerson, thirdPersonWords,
 } from './refs';
 import { PhraseLibrary, STATIC_TYPES, emptyVocab, stubFor, vocabFrom } from './phrases';
 import { FIXTURE_SPACES, fixtureBoardGame } from './testing';
@@ -756,9 +756,8 @@ describe('names the game never defined', () => {
   };
   const missing = (what: string, name: string, suggestions: string[]) => ({ message: `There is no ${what} called “${name}”.`, suggestions });
 
-  // Actions and what was done are phrases of their own, not names to misspell, so they have no loose shape. Nor has the player
-  // who holds a flag: a For line that names no one says so in its own words.
-  const NAMES = VOCAB_TYPES.filter((t) => !['action', 'targetaction', 'amountaction', 'pickaction', 'done', 'holder'].includes(t.name));
+  // Actions and what was done are phrases of their own, not names to misspell, so they have no loose shape.
+  const NAMES = VOCAB_TYPES.filter((t) => !['action', 'targetaction', 'amountaction', 'pickaction', 'done'].includes(t.name));
 
   it('gives every type of names a loose shape, and no other', () => {
     expect(VOCAB_TYPES.filter((t) => t.loose).map((t) => t.name)).toEqual(NAMES.map((t) => t.name));
@@ -890,6 +889,44 @@ describe('names the game never defined', () => {
     expect(misnamed('playerflag', 'in jail twice', players)).toBeNull();
     expect(misnamed('playernumber', 'jail turnn', players)).toEqual(missing('player fact', 'jail turnn', ['jail turns']));
     expect(misnamed('playernumber', 'jail turn twice', players)).toBeNull();
+  });
+  describe('the player who holds a flag', () => {
+    const holders = vocabFrom({
+      maxPlayers: 4,
+      facts: [
+        { name: 'proposing', on: 'player', kind: 'flag' }, { name: 'the trade partner', on: 'player', kind: 'flag' },
+        { name: 'the rival', on: 'player', kind: 'flag' }, { name: 'jail turns', on: 'player', kind: 'number' },
+      ],
+    });
+    it('names the flag of “the player who is …” that players can\'t have, with the flags closest to it', () => {
+      expect(misnamed('holder', 'the player who is propsing', holders)).toEqual(missing('player fact', 'propsing', ['proposing']));
+      expect(misnamed('holder', 'The Player Who Is the rivel', holders)).toEqual(missing('player fact', 'the rivel', ['the rival']));
+      // A count is no flag a player holds.
+      expect(misnamed('holder', 'the player who is jail turns', holders)).toMatchObject({ message: 'There is no player fact called “jail turns”.' });
+    });
+    it('names a flag said alone that is close to one whose name starts with “the”', () => {
+      expect(misnamed('holder', 'the trade partnr', holders)).toEqual(missing('player fact', 'the trade partnr', ['the trade partner']));
+      expect(misnamed('holder', 'the rivel', holders)).toEqual(missing('player fact', 'the rivel', ['the rival']));
+    });
+    it('leaves other words to other phrases: a real holder among them, a “the …” like no flag, or a flag without “the”', () => {
+      expect(misnamed('holder', 'the rival twice', holders)).toBeNull();
+      expect(misnamed('holder', 'the player who is proposing now', holders)).toBeNull();
+      expect(misnamed('holder', 'the bank', holders)).toBeNull();
+      expect(misnamed('holder', 'the player on their left', holders)).toBeNull();
+      expect(misnamed('holder', 'proposing', holders)).toBeNull();
+    });
+    it('has a loose shape only in a game whose players can have a flag', () => {
+      const shaped = (vocab: Vocab) => new RegExp(`^(?:${VOCAB_TYPES.find((t) => t.name === 'holder')!.loose!.source(vocab)})$`, 'i').test('the rivel');
+      expect([shaped(holders), shaped(FACTS), shaped(emptyVocab())]).toEqual([true, true, false]);
+      expect(shaped(vocabFrom({ maxPlayers: 2, facts: [{ name: 'jail turns', on: 'player', kind: 'number' }] }))).toBe(false);
+    });
+    it('is explained by misnamedParam only for text shaped like one that is no holder of the game', () => {
+      expect(misnamedParam('holder', 'the rivel', holders)).toEqual(missing('player fact', 'the rivel', ['the rival']));
+      expect(misnamedParam('holder', 'the rival', holders)).toBeNull();
+      expect(misnamedParam('holder', 'the rivel', emptyVocab())).toBeNull();
+      // A type with no loose shape has nothing to explain.
+      expect(misnamedParam('action', 'rolls the dice', BOARD)).toBeNull();
+    });
   });
   it('names a thing in the bank with the bank\'s own names', () => {
     expect(misnamed('banked', 'hotl', FACTS)).toEqual(missing('bank item', 'hotl', ['hotels']));

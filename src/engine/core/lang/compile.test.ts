@@ -6,7 +6,7 @@ import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
-import { HOLDING_BOARD, INTERRUPT_BOARD, TINY_BOARD_HEAD, deckGameText } from './testing';
+import { HOLDING_BOARD, INTERRUPT_BOARD, PICK_BOARD, TINY_BOARD_HEAD, deckGameText } from './testing';
 import type { ParamType } from './types';
 
 const lib = createDefaultLibrary();
@@ -399,10 +399,31 @@ describe('lines about the player who holds a flag', () => {
   const at = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
 
   it('says when a For line names no player, and how to name one', () => {
-    const text = HOLDING_BOARD.replace('For the rival,', 'For the rivel,');
+    const text = HOLDING_BOARD.replace('For the rival,', 'For everyone,');
     expect(messages(text)).toContainEqual([
-      at(text, '      For the rivel, they get 5 money.'), '“the rivel” doesn\'t name a player. Write “For the player who is …,” with something players can be.',
+      at(text, '      For everyone, they get 5 money.'), '“everyone” doesn\'t name a player. Write “For the player who is …,” with something players can be.',
     ]);
+  });
+  it('names a misspelt holder in a For line, with the flag closest to it, for the designer to fix', () => {
+    for (const [from, to, message, suggestions] of [
+      ['For the rival,', 'For the rivel,', 'There is no player fact called “the rivel”.', ['the rival']],
+      ['For the player who is leading,', 'For the player who is leadng,', 'There is no player fact called “leadng”.', ['leading']],
+    ] as const) {
+      const text = HOLDING_BOARD.replace(from, to);
+      const line = at(text, text.split('\n').find((l) => l.includes(to))!);
+      const { game, diagnostics } = compileGame(text, lib);
+      expect(diagnostics, to).toEqual([expect.objectContaining({ line, kind: 'invalid', message, suggestions })]);
+      expect(game, to).toBeUndefined();
+    }
+  });
+  it('names a misspelt holder that is paid, rather than asking a developer for the line', () => {
+    const text = PICK_BOARD.replace('  Players can be the rival.', '  Players can be the rival.\n  The game has a pot of 5.')
+      .replace('      That player is the rival.', '      They pay the pot to the rivel.');
+    const { game, diagnostics } = compileGame(text, lib);
+    expect(diagnostics).toEqual([expect.objectContaining({
+      line: at(text, '      They pay the pot to the rivel.'), kind: 'invalid', message: 'There is no player fact called “the rivel”.', suggestions: ['the rival'],
+    })]);
+    expect(canPlay({ game, diagnostics })).toEqual({ ok: false, reason: 'Fix 1 problem in the rules first.' });
   });
   it('reads the rest of a For line as an effect, and says when no phrase reads it', () => {
     const text = HOLDING_BOARD.replace('they get 5 money', 'they dance');

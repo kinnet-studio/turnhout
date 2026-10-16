@@ -656,7 +656,33 @@ const holderNames = (vocab: Vocab): [text: string, flag: string][] =>
     const named: [string, string] = [`the player who is ${flag}`, flag];
     return canon(flag).startsWith('the ') ? [named, [flag, flag]] : [named];
   });
-const HOLDER = wordType('holder', '[the player who is …]', holderNames, undefined);
+
+/** group 1 = the flag “the player who is …” names */
+const WHO_IS = /^the player who is (.+)$/i;
+const STARTS_WITH_THE = /^the /i;
+const withoutThe = (name: string) => name.replace(STARTS_WITH_THE, '');
+
+/**
+ * “the player who is leadng” names a flag players can't have, and “the rivel” is a slip in one said alone (“the rival”). Text that
+ * holds a real holder among other words is some other phrase, and so is a “the …” like no flag said alone (“the bank”).
+ */
+function misnamedHolder(text: string, vocab: Vocab): NameProblem | null {
+  if (holdsName(text, holderNames(vocab).map(([form]) => form))) return null;
+  const flags = factNames('player', 'flag')(vocab);
+  const named = WHO_IS.exec(text)?.[1];
+  if (named !== undefined) return missing('player fact', named, closestOrFirst(named, flags));
+  if (!STARTS_WITH_THE.test(text)) return null;
+  // Compared without the “the” they all share, which alone would make “the bank” look like “the rival”.
+  const alone = flags.filter((flag) => STARTS_WITH_THE.test(flag));
+  const close = suggestNames(withoutThe(text), alone.map(withoutThe)).flatMap((name) => alone.filter((flag) => withoutThe(flag) === name));
+  return close.length > 0 ? missing('player fact', text, close) : null;
+}
+
+const HOLDER = wordType('holder', '[the player who is …]', holderNames, {
+  // A game whose players can have no flag has no holder to misspell: the line is some other phrase.
+  source: (vocab) => (factNames('player', 'flag')(vocab).length === 0 ? NEVER : ANY_TEXT),
+  explain: misnamedHolder,
+});
 
 // Actions and what was done are whole phrases ("ends their turn", "rolled") with a fixed form, not names to misspell.
 // An action is its wording, which is the move a button sends. A button that picks a space is not one an example can press
@@ -743,9 +769,25 @@ export const VOCAB_TYPES: ParamType[] = [
 
 const TYPES_BY_NAME = new Map(VOCAB_TYPES.map((t) => [t.name, t] as const));
 
-/** Reads `text` as one instance of the named type; null when the type's pattern does not cover all of it. */
-export function parseParam(type: string, text: string, vocab: Vocab): Parsed | null {
+function typeNamed(type: string): ParamType {
   const found = TYPES_BY_NAME.get(type);
   if (!found) throw new Error(`unknown parameter type {${type}}`);
+  return found;
+}
+
+/** Reads `text` as one instance of the named type; null when the type's pattern does not cover all of it. */
+export function parseParam(type: string, text: string, vocab: Vocab): Parsed | null {
+  const found = typeNamed(type);
   return fullMatch(found, text, vocab) ? found.resolve(text, vocab) : null;
+}
+
+/**
+ * What is wrong with `text` as the named type when it is shaped like one but names something the game never defined; null when it
+ * is one, or is not meant as one at all.
+ */
+export function misnamedParam(type: string, text: string, vocab: Vocab): NameProblem | null {
+  const found = typeNamed(type);
+  if (!found.loose || fullMatch(found, text, vocab)) return null;
+  const shaped = memo(vocab, `loose:${type}`, () => new RegExp(`^(?:${found.loose!.source(vocab)})$`, 'i'));
+  return shaped.test(text) ? found.loose.explain(text, vocab) : null;
 }

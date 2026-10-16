@@ -2,7 +2,7 @@ import type { Json } from '../table-def';
 import { RuleError, type Diagnostic } from './diagnostics';
 import type { OutlineNode } from './outline';
 import { normalizeLine, stubFor, type MatchResult, type Misnamed, type PhraseLibrary, type PhraseOpts } from './phrases';
-import { parseParam } from './refs';
+import { misnamedParam, parseParam } from './refs';
 import type { ParamType, PhraseKind, PhraseRef, Vocab } from './types';
 
 /**
@@ -208,7 +208,8 @@ export function matchLine(
 /**
  * Reads “For <the player who holds a flag>, <effect>”: the effect is run as that player, so “they” and “their” are them, in a rule
  * about no one too. It runs with no card move, so a phrase that needs one is refused here even in a move. The line is cut at the
- * first comma before which a holder is named; when none is, what comes before the first comma is reported.
+ * first comma before which a holder is named; when none is, what comes before the first comma is reported, as a misspelt holder
+ * when it is one (“the rivel”).
  */
 function matchForLine(body: string, clean: string, line: number, ctx: LineCtx): PhraseRef {
   const cuts = [...body.matchAll(COMMA)].map((m) => ({ head: body.slice(0, m.index), effect: body.slice(m.index + 2) }));
@@ -218,7 +219,10 @@ function matchForLine(body: string, clean: string, line: number, ctx: LineCtx): 
     const ref = matchLine('effect', effect, line, { ...ctx, player: true, inMove: false });
     return { kind: 'lang', phrase: 'for', args: [holder.value, ref], line, text: clean };
   }
-  addProblem(ctx.diagnostics, line, NO_HOLDER_NAMED(cuts[0]?.head ?? body), { kind: 'invalid', text: clean });
+  const head = cuts[0]?.head ?? body;
+  const misnamed = misnamedParam('holder', head, ctx.vocab);
+  if (misnamed) addProblem(ctx.diagnostics, line, misnamed.message, { kind: 'invalid', text: clean, suggestions: misnamed.suggestions });
+  else addProblem(ctx.diagnostics, line, NO_HOLDER_NAMED(head), { kind: 'invalid', text: clean });
   return missingRef('effect', clean, line);
 }
 
