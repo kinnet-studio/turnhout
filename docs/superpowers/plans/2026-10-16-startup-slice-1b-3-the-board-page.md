@@ -50,6 +50,29 @@
 
 ## Global Constraints
 
+- **Controller amendment (pre-flight, after plans 1a-2, 1b-1 and 1b-2 were built).** The scan is in the plan's SDD
+  workspace (`preflight.md` §3, rulings C1–C18 and F1–F3); each task's brief carries its rulings. In short:
+  - **C1, C2, C10 (Task 4).** The picker keeps 1b-1's built behaviour: a picked card always unpicks; a target with no
+    verdict for a picked card stays allowed; picks are pruned to the live view and the pruned value is written back; one
+    `sendPick` closes the picker only once the press is taken (a set refused as a whole keeps its picks, on the list and
+    on the canvas); `openPicker`/`closePicker` reset the pick state where picking is set, not in an effect.
+  - **C3, C4 (Task 4).** The out-of-turn test arranges a card in O's development; the CARD_PICK_GAME money line lists the
+    case cards.
+  - **C5, C6, C13 (Task 3).** A face-down project's staff stay listed with it (slice 9 R3); "the first column wins"
+    expects `['Red 1/2']`; a one-word count has no column; `cardLabel` uses `pickName`.
+  - **C7 (Tasks 1, 3).** Zones are "attached" only when `onCards === 'every'`; a card with a holder is listed only under
+    its holder; the cards on a card are ordered by Table index, seat, slot (slices 4, 7 and 8 add other marks and
+    cross-seat holders).
+  - **C8, C9, C17 (Task 5).** Click N's tab before N ends its actions; the browser helper uses 105 in the strip and 110
+    on the board; re-read 1b-2's committed labels before writing the browser check.
+  - **C11 (Task 4).** `showsCards` also holds when a button picks cards (1b-1's parked m6).
+  - **C12.** Import Hearts from `@/pages/hearts-demo/cards` and `/game`; the directory is protected.
+  - **C14, C15, C16.** Shared test helpers at module level; new names in new import lines; Task 4's memo inputs widen.
+  - **C18 (parked items).** Task 1's "fits" checks close 1a-2's top/bottom-lines guard (plus: every board row is at least
+    `CARD_HEIGHT` tall); a wrapped zone name stays parked to the first game that needs one; `PickCardView.detail` is
+    closed (canvas rings and stacks tell staff apart); worked flags in the card view move to plan 3-2.
+  - **Start and BASE.** Task 1 starts after plan 1b-2's final fix wave; `BASE` is recorded then.
+
 - **Hard constraints (verbatim):**
   - Protected files must not change: `src/engine/core/game-state.ts`, `src/engine/core/flow.ts`, `src/engine/core/game-engine.ts`, and anything under `src/pages/hearts-demo/**`.
   - The core is pure: no pixi/react/DOM imports in `src/engine/core/**`, no `Math.random` or `Date.now`.
