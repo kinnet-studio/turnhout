@@ -4,6 +4,7 @@ Players: 2 to 5
   Each player has 3 actions each turn.
   Each player has 0 market share that everyone can see.
   Players pay with capital.
+  The game has a license of 3.
 
 Cards:
   A deck called talent cards, starting in the talent deck:
@@ -102,6 +103,7 @@ Cards:
     | Planetary Wi-Fi | Tier 3 | 6 | 16 | 8 | 16 | 0 | 3 | Infra | Cloud | IoT |  | 1 |
   Cards can be onboarding.
   Cards can have blue cubes, red cubes, new blue cubes and new red cubes.
+  Cards can have cut blue cubes and cut red cubes.
 
 Table:
   The talent deck is a pile in the center that no one can see.
@@ -138,9 +140,17 @@ Blue team output:
 Red team output:
   A card's red team output is the total red output of the cards on it.
 
+Blue need:
+  A card's blue need is its blue cost.
+  A card's blue need goes down by its cut blue cubes.
+
+Red need:
+  A card's red need is its red cost.
+  A card's red need goes down by its cut red cubes.
+
 Feature complete:
-  Only if its blue cubes are at least its blue cost.
-  Only if its red cubes are at least its red cost.
+  Only if its blue cubes are at least its blue need.
+  Only if its red cubes are at least its red need.
 
 Setup:
   Shuffle the talent deck.
@@ -196,7 +206,7 @@ Phase: income
 
 Phase: actions
   Players take turns.
-  Hint: Spend 3 actions on hiring, drafting, research and your board. Greenlighting and dismissing are free. Press a button, then pick the cards.
+  Hint: Spend 3 actions on hiring, drafting, research and your board. Greenlighting and dismissing cost no actions, though a product may need Licenses. Press a button, then pick the cards.
   A player may recruit a junior software dev.
     It costs 1 action.
     Only if they have at least 2 capital.
@@ -239,8 +249,65 @@ Phase: actions
       They pay the card's cost.
   A player may greenlight a card in their backlog.
     Only if their development has fewer than 3 cards.
-    Only if the card is a Tier 1 card.
+    Only if one of:
+      The card has no requires.
+      Some player has a card in their operations whose tag is the card's requires.
+    Only if one of:
+      The card has no also requires.
+      Some player has a card in their operations whose tag is the card's also requires.
+    Only if one of:
+      The card has no requires.
+      They have a card in their operations whose tag is the card's requires.
+      They have at least the license in capital.
+    Only if one of:
+      The card has no also requires.
+      They have a card in their operations whose tag is the card's also requires.
+      They have at least the license in capital.
+    Only if one of:
+      The card has no requires.
+      The card has no also requires.
+      They have a card in their operations whose tag is the card's requires.
+      They have a card in their operations whose tag is the card's also requires.
+      They have at least 2 times the license in capital.
     Then:
+      They pay the license to another player of their choice who has a card in their operations whose tag is the card's requires.
+        Only if they have no card in their operations whose tag is the card's requires.
+      They pay the license to another player of their choice who has a card in their operations whose tag is the card's also requires.
+        Only if they have no card in their operations whose tag is the card's also requires.
+      It loses its cut blue cubes.
+      It loses its cut red cubes.
+      They choose one:
+        Only if they have a card in their operations whose sector is the card's sector.
+        Only if the card is not an Infra card.
+        Only if the card is not a Concept card.
+        Cut 2 blue:
+          Only if its blue cost is more than 1.
+          Only if one of:
+            Its blue cost is more than 2.
+            Its red cost is more than 0.
+          It gains 2 cut blue cubes.
+        Cut 2 red:
+          Only if its red cost is more than 1.
+          Only if one of:
+            Its red cost is more than 2.
+            Its blue cost is more than 0.
+          It gains 2 cut red cubes.
+        Cut 1 of each:
+          Only if its blue cost is more than 0.
+          Only if its red cost is more than 0.
+          Only if one of:
+            Its blue cost is more than 1.
+            Its red cost is more than 1.
+          It gains 1 cut blue cube.
+          It gains 1 cut red cube.
+        Cut 1 blue:
+          Only if its blue cost is 2.
+          Only if its red cost is 0.
+          It gains 1 cut blue cube.
+        Cut 1 red:
+          Only if its red cost is 2.
+          Only if its blue cost is 0.
+          It gains 1 cut red cube.
       Move it to their development.
   A player may assign some cards from their bench to a card in their development.
     It costs 1 action.
@@ -305,6 +372,8 @@ Phase: actions
       Every card on it goes to their bench.
       It loses its blue cubes.
       It loses its red cubes.
+      It loses its cut blue cubes.
+      It loses its cut red cubes.
       Move it to the open idea pool.
   A player may lay off some cards from their bench to the open job market.
     It costs 1 action.
@@ -359,8 +428,8 @@ Phase: engine
 
 Phase: commit
   When this phase starts:
-    For each card in their development, its blue cubes go up by its new blue cubes, up to its blue cost.
-    For each card in their development, its red cubes go up by its new red cubes, up to its red cost.
+    For each card in their development, its blue cubes go up by its new blue cubes, up to its blue need.
+    For each card in their development, its red cubes go up by its new red cubes, up to its red need.
     For each card in their development, it loses its new blue cubes.
     For each card in their development, it loses its new red cubes.
     Go to bench cleanup.
@@ -730,12 +799,6 @@ Example: three projects at most (section 3)
   Then it is rejected because "their development has fewer than 3 cards"
   And p0's backlog has a Smart Lock
 
-Example: only Tier 1 products are greenlit until Leads and Tags arrive (this slice's call)
-  Given p0's backlog has a Neobank
-  When p0 greenlights the Neobank
-  Then it is rejected because "the card is a Tier 1 card"
-  And p0's backlog has a Neobank
-
 Example: assigning several staff to one project costs 1 action (section 6)
   Given the phase is actions
   And p0's development has a Dating App
@@ -1069,3 +1132,172 @@ Example: the score adds each product's val in operations and 2 points for each m
   And p0 scores 14
   And p1 scores 1
   And p0 wins
+
+Example: a Tier 2 Greenlight is free when you provide its Tag (section 14)
+  Given p0's operations has a Tech Blog
+  And p0's backlog has a Server Farm
+  When p0 greenlights the Server Farm
+  Then it is accepted
+  And p0 has 7 capital
+  And p0's development has a Server Farm
+
+Example: a License is $3 to the only provider (section 6)
+  Given p1's operations has a Tech Blog
+  And p0's backlog has a Server Farm
+  When p0 greenlights the Server Farm
+  Then it is accepted
+  And p0 has 4 capital
+  And p1 has 10 capital
+
+Example: the player chooses whom to pay when several provide the Tag (section 6, ruling 25)
+  Given 3 players
+  And p1's operations has a Tech Blog
+  And p2's operations has a VPN Service
+  And p0's backlog has a Server Farm
+  When p0 greenlights the Server Farm
+  Then it is rejected because "Pick who to pay the license to: p1 or p2."
+  And p0's backlog has a Server Farm
+  When p0 greenlights the Server Farm, paying p2
+  Then it is accepted
+  And p0 has 4 capital
+  And p1 has 7 capital
+  And p2 has 10 capital
+
+Example: two missing Tags cost a License each, to a provider of each (section 6)
+  Given 3 players
+  And p1's operations has a Neobank
+  And p2's operations has a Server Farm
+  And p0's backlog has a Global Currency
+  When p0 greenlights the Global Currency
+  Then it is accepted
+  And p0 has 1 capital
+  And p1 has 10 capital
+  And p2 has 10 capital
+
+Example: with no one providing the Tag the card can't be Greenlit (section 14)
+  Given p0's backlog has a Server Farm
+  When p0 greenlights the Server Farm
+  Then it is rejected because "the card has no requires or some player has a card in their operations whose tag is the card's requires"
+  And p0's backlog has a Server Farm
+
+Example: a product in development provides nothing (section 14)
+  Given p1's development has a Tech Blog
+  And p0's backlog has a Server Farm
+  When p0 greenlights the Server Farm
+  Then it is rejected because "the card has no requires or some player has a card in their operations whose tag is the card's requires"
+
+Example: a Greenlight is refused when its License can't be paid, and nothing changes (section 6)
+  Given p0 has 2 capital
+  And p1's operations has a Tech Blog
+  And p0's backlog has a Server Farm
+  When p0 greenlights the Server Farm
+  Then it is rejected because "the card has no requires or they have a card in their operations whose tag is the card's requires or they have at least the license in capital"
+  And p0 has 2 capital
+  And p1 has 7 capital
+  And p0's backlog has a Server Farm
+
+Example: Fusion Reactor needs Robotics and AI, and one provider of both is paid a License for each (ruling 3, section 6)
+  Given p0 has 5 capital
+  And p1's operations has a Drone Delivery and a Search Engine
+  And p0's backlog has a Fusion Reactor
+  When p0 greenlights the Fusion Reactor
+  Then it is rejected because "the card has no requires or the card has no also requires or they have a card in their operations whose tag is the card's requires or they have a card in their operations whose tag is the card's also requires or they have at least 2 times the license in capital"
+  Given p0 has 7 capital
+  When p0 greenlights the Fusion Reactor
+  Then it is accepted
+  And p0 has 1 capital
+  And p1 has 13 capital
+  And p0's development has a Fusion Reactor
+
+Example: a player who provides the Tag pays nobody, even when rivals provide it too (section 14)
+  Given 3 players
+  And p0's operations has a Tech Blog
+  And p1's operations has a VPN Service
+  And p2's operations has a Dev Tools
+  And p0's backlog has a Server Farm
+  When p0 greenlights the Server Farm
+  Then it is accepted
+  And p0 has 7 capital
+  And p1 has 7 capital
+  And p2 has 7 capital
+
+Example: drafting a Tier 2 needs no Tag (ruling 18)
+  Given the growth market has a Neobank and a Search Engine
+  When p0 drafts the Neobank
+  Then it is accepted
+  And p0's backlog has a Neobank
+
+Example: card text wins: NFT Marketplace needs Platform, not Commerce (ruling 21)
+  Given p0's operations has a Mobile Wallet
+  And p0's backlog has an NFT Marketplace
+  When p0 greenlights the NFT Marketplace
+  Then it is rejected because "the card has no requires or some player has a card in their operations whose tag is the card's requires"
+  Given p1's operations has a Tech Blog
+  When p0 greenlights the NFT Marketplace
+  Then it is accepted
+  And p0 has 4 capital
+  And p1 has 10 capital
+
+Example: an Active product of the sector cuts 2 cubes, Tier 1 included (section 19, ruling 25)
+  Given p0's operations has a Dating App
+  And p0's backlog has a Viral Video App and a Streaming Service
+  When p0 greenlights the Viral Video App
+  Then it is accepted
+  And the Viral Video App in p0's development has 2 cut blue cubes
+  And the Viral Video App in p0's development has 4 blue need
+  When p0 greenlights the Streaming Service
+  Then it is accepted
+  And p0 has 7 capital
+  And the Streaming Service in p0's development has 8 blue need
+
+Example: no Domain Expertise for Infrastructure or the Concept cards (section 19, ruling 25)
+  Given p0's operations has a Tech Blog and a Basic Website
+  And p0's backlog has a Dev Tools and a To-Do List
+  When p0 greenlights the Dev Tools
+  Then the Dev Tools in p0's development has 6 blue need
+  When p0 greenlights the To-Do List
+  Then the To-Do List in p0's development has 4 blue need
+
+Example: a hybrid's owner chooses how to split the cut (section 19, ruling 25)
+  Given p0's operations has a Health Tracker
+  And p0's backlog has a Sleep Monitor
+  When p0 greenlights the Sleep Monitor
+  Then it is rejected because "Choose one: cut 2 blue, cut 2 red or cut 1 of each."
+  When p0 greenlights the Sleep Monitor, choosing cut 2 red
+  Then it is accepted
+  And the Sleep Monitor in p0's development has 2 blue need
+  And the Sleep Monitor in p0's development has 2 red need
+
+Example: the cut is locked at Greenlight (section 19, ruling 25)
+  Given p0's operations has a Dating App
+  And p0's backlog has a Viral Video App
+  When p0 greenlights the Viral Video App
+  Given p0's operations is empty
+  Then the Viral Video App in p0's development has 4 blue need
+
+Example: a pivot clears the cut, so the card costs its full price again (this slice's call)
+  Given the phase is actions
+  And p0's operations has a Dating App
+  And p0's backlog has a Viral Video App
+  When p0 greenlights the Viral Video App
+  And p0 pivots the Viral Video App
+  Then the Viral Video App in the open idea pool has 0 cut blue cubes
+  And the Viral Video App in the open idea pool has 6 blue need
+
+Example: cubes beyond the need are lost (section 6, this slice's call)
+  Given the phase is actions
+  And p0's operations has a Dating App
+  And p0's backlog has a Viral Video App
+  When p0 greenlights the Viral Video App
+  Given the Viral Video App in p0's development has 3 blue cubes
+  And the Viral Video App in p0's development has a Junior Software Dev and the Architect on it
+  When p0 ends their actions
+  Then the Viral Video App in p0's development has 4 blue cubes
+  And the Viral Video App in p0's development is feature complete
+
+Example: Domain Expertise never takes a product below 1 cube (section 19; no printed product is this cheap, so the cost is set)
+  Given p0's operations has a Dating App
+  And p0's backlog has a Messaging App
+  And the Messaging App in p0's backlog has 2 blue cost
+  When p0 greenlights the Messaging App
+  Then the Messaging App in p0's development has 1 blue need

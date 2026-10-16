@@ -10,6 +10,8 @@ import { attachmentProblem, cardsOn, putOn } from '@/engine/core/lang/attach';
 import { deckOf, NEXT_CARD_KEY } from '@/engine/core/lang/cards';
 import { cardCandidates, hasCost, ontoCandidates } from '@/engine/core/lang/declared-actions';
 import { moveZoneId } from '@/engine/core/lang/declared-moves';
+import { CHOOSE_ONE, CHOOSE_PLAYER, choicesOf, type ChoiceOption } from '@/engine/core/lang/choices';
+import { pressChoices } from '@/engine/core/lang/declared-actions';
 import { RuleError } from '@/engine/core/lang/diagnostics';
 import type { LangRuntime } from '@/engine/core/lang/runtime';
 import type { ZoneRef } from '@/engine/core/lang/types';
@@ -158,9 +160,12 @@ const payrollOf = (state: GameState, seat: PlayerId) =>
   sum([...zoneCards(state, zoneIdFor('development team', seat)), ...zoneCards(state, zoneIdFor('ops team', seat))], 'salary');
 /** The colors of cube each skill makes in 1b: flex staff work in blue until modes arrive (§11), and QA and the Specialists make none. */
 const COLOR_OF_SKILL: Record<string, string> = { software: 'blue', flex: 'blue', hardware: 'red' };
-/** The colors a project's tracks still lack cubes of; none once it is feature complete (§6). */
-const lacking = (project: CardState) =>
-  ['blue', 'red'].filter((color) => cubesOn(project, `${color} cubes`) < (project.data?.[`${color} cost`] as number));
+/**
+ * The colors a project's tracks still lack cubes of; none once it is feature complete (§6). A track holds its need: its cost less the cut
+ * Domain Expertise gave it at Greenlight (§19.A), which the rules work out.
+ */
+const lacking = (runtime: LangRuntime, state: GameState, project: CardState) =>
+  ['blue', 'red'].filter((color) => cubesOn(project, `${color} cubes`) < (runtime.workedValue(state, project.id, `${color} need`) as number));
 
 /**
  * How an auto-player gets its growth ideas: by researching the growth deck, or by drafting from the growth market. A game that
@@ -274,14 +279,19 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  * The Board moves come before a recruit as the fallback because a recruit alone spends a seat's capital on Juniors before it can hire
  * staff for its Board, and a seat that can't pay for one ends its turn with actions left; the Board moves cost nothing.
  *
- * Without a `runtime` it finds the cards a button picks in the zones. With one, it finds them as a player at the page would: among
+ * Without `throughView` it finds the cards a button picks in the zones. With it, it finds them as a player at the page would: among
  * the cards the page's view of the seat offers for the button and the cards each may go on (both checked by `viewedCards`). The
  * view must judge each card it picks as the engine judges a press of that card alone, with its target, and allow every card of a
  * press the engine takes. A set is judged whole (R1), so the engine's word on the press is no one card's. It chooses the same
  * cards either way, so a game plays the same.
+ *
+ * A press that asks a choice, as a Greenlight asks who is paid each License and how Domain Expertise cuts a hybrid, answers each one
+ * with its first option: with `throughView` from the `choices` the view lists for the card, else from `pressChoices`. The answers go on
+ * the move before the view's word on it is kept, so that the view is checked on the move the seat makes.
  */
 function playTurn(
-  engine: GameEngine, t: number, style: Style, watch: Watch, stop: (log: readonly Move[]) => boolean, runtime: LangRuntime | null,
+  engine: GameEngine, t: number, style: Style, watch: Watch, stop: (log: readonly Move[]) => boolean, runtime: LangRuntime,
+  throughView: boolean,
 ): void {
   const by = engine.getState().turn!.current;
   const cards = (zoneId: string) => zoneCards(engine.getState(), zoneId);
@@ -293,13 +303,13 @@ function playTurn(
   /** The view's word on each card of each move whose cards were found through the view, on the card it goes on when it goes on one. */
   const verdicts = new Map<Move, { id: string; allowed: true | string }[]>();
   /**
-   * The cards `type` offers from `zoneId`, and for each the cards of `ontoZoneId` it may go on: the zones' cards, or, with a runtime,
+   * The cards `type` offers from `zoneId`, and for each the cards of `ontoZoneId` it may go on: the zones' cards, or, through the view,
    * the ones the page's view lists, with the view itself.
    */
   const offers = (type: string, zoneId: string, ontoZoneId: string | null) => {
     const state = engine.getState();
     const byId = (id: string) => cardById(state, id)!;
-    if (runtime === null) {
+    if (!throughView) {
       return { row: zoneCards(state, zoneId), targetsOf: (_id: string) => (ontoZoneId === null ? [] : zoneCards(state, ontoZoneId)), seen: null };
     }
     if (view?.of !== state) view = { of: state, extras: seatExtras(engine, runtime, state, by) };
@@ -316,9 +326,25 @@ function playTurn(
     if (picked.length === 0) return null;
     const target = onto?.which(targetsOf(picked[0].id), picked[0]);
     if (onto && !target) return null;
-    const move: Move = {
+    const pressed: Move = {
       type, by, ...(some ? { cardIds: picked.map((card) => card.id) } : { cardId: picked[0].id }), ...(target ? { onto: target.id } : {}),
     };
+    // The choices the press asks, as the view lists them for the card (on its target, when it has one) or as the rules ask them.
+    const asked = (): { at: number; options: string[] }[] => {
+      if (seen === null) {
+        const choices = pressChoices(runtime, engine.getState(), pressed);
+        return typeof choices === 'string' ? [] : choices;
+      }
+      const card = target
+        ? seen.onto!.targets[picked[0].id].find(({ id }) => id === target.id)!
+        : seen.cards.find(({ id }) => id === picked[0].id)!;
+      return (card.choices ?? []).map(({ at, options }) => ({ at, options: options.map(({ value }) => value) }));
+    };
+    const button = buttonOf(engine.getState(), type);
+    const count = button === undefined ? 0 : choicesOf(button).length;
+    const asking = count === 0 ? [] : asked();
+    const choices = Array.from({ length: count }, (_, at): string | null => asking.find((choice) => choice.at === at)?.options[0] ?? null);
+    const move: Move = asking.length === 0 ? pressed : { ...pressed, choices };
     if (seen !== null) {
       const verdictOf = (id: string) => (target
         ? seen.onto!.targets[id].find((card) => card.id === target.id)!
@@ -390,7 +416,8 @@ function playTurn(
   const affordable = (row: CardState[]) => row.find((card) => (card.data?.cost as number) <= capital());
   /** Which of its three places a hire goes to this turn. */
   const place = (t + Math.floor(t / 9)) % 3;
-  const launch = () => pick(LAUNCH, own('development'), (projects) => projects.find((project) => lacking(project).length === 0));
+  const lacks = (project: CardState) => lacking(runtime, engine.getState(), project);
+  const launch = () => pick(LAUNCH, own('development'), (projects) => projects.find((project) => lacks(project).length === 0));
   /** The move the action numbered `action` makes as the turn's action `a`, or null when it has nothing to pick (see above). */
   const boardAction = (action: number, a: number): Move | null => {
     const projects = cards(own('development'));
@@ -407,9 +434,9 @@ function playTurn(
       case 2:
         return first(HIRE_MARKET, 'open-job-market');
       case 3: {
-        const unfinished = projects.find((project) => lacking(project).length > 0);
+        const unfinished = projects.find((project) => lacks(project).length > 0);
         if (unfinished === undefined) return null;
-        const makers = (bench: CardState[]) => bench.filter((card) => lacking(unfinished).includes(COLOR_OF_SKILL[card.data?.skill as string]));
+        const makers = (bench: CardState[]) => bench.filter((card) => lacks(unfinished).includes(COLOR_OF_SKILL[card.data?.skill as string]));
         return pickSome(ASSIGN_TO_PROJECT, own('bench'), (bench) => (makers(bench).length > 0 ? makers(bench) : bench.slice(0, 1)),
           onProject((targets) => targets.find((project) => project.id === unfinished.id)));
       }
@@ -500,7 +527,7 @@ function playGame(
   const style: Style = seed % 2 === 0 ? 'drafts' : 'researches';
   const stop = (log: readonly Move[]) => log.length >= moves || until(log);
   for (let t = 0; t < MAX_TURNS && engine.getState().result === undefined && !stop(engine.getLog()); t++) {
-    playTurn(engine, t, style, watch, stop, throughView ? runtime : null);
+    playTurn(engine, t, style, watch, stop, runtime, throughView);
   }
   return engine;
 }
@@ -742,8 +769,17 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(55);
+    expect(results).toHaveLength(72);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
+  });
+
+  it('greenlights with a License to a provider of each Tag the player chooses, then the cut Domain Expertise gives, as one of five options (§6, §19.A)', () => {
+    const greenlight = game!.phases.find((phase) => phase.id === 'actions')!.actions.find((action) => action.words === GREENLIGHT)!;
+    const refs = choicesOf(greenlight);
+    // The License for what it requires, the License for what it also requires, and the cut: `choices` 0, 1 and 2 of its press.
+    expect(refs.map((ref) => [ref.phrase, ref.args[0]])).toEqual([[CHOOSE_PLAYER, 0], [CHOOSE_PLAYER, 1], [CHOOSE_ONE, 2]]);
+    const options = refs[2].args[2] as ChoiceOption[];
+    expect(options.map((option) => option.label)).toEqual(['Cut 2 blue', 'Cut 2 red', 'Cut 1 of each', 'Cut 1 blue', 'Cut 1 red']);
   });
 
   it('asks an example which hire it means when both rows hold the card, in words that each press one button', () => {
@@ -1240,6 +1276,26 @@ describe('Startup Simulator (designer language)', () => {
       expect(viewed.getLog()).toEqual(plain.getLog());
       expect(viewed.getState()).toEqual(plain.getState());
     }, 60_000);
+
+    it('answers the cut a hybrid’s Greenlight asks with its first option through the page’s view and without it, and launches a project once its tracks hold its need (§19.A)', () => {
+      // p0 runs a Life Sci product, so the Sleep Monitor (2 blue, 4 red) may be cut three ways; the Viral Video App was cut by 2 blue.
+      const arranged = arrange({
+        'operations-p0': [idOf('Health Tracker')],
+        'backlog-p0': [idOf('Sleep Monitor')],
+        'development-p0': [idOf('Viral Video App')],
+      }).getState();
+      const viral = idOf('Viral Video App');
+      const tracks = { 'cut blue cubes': 2, 'blue cubes': 4 };
+      const cut = { ...arranged, cards: arranged.cards.map((card) => (card.id === viral ? { ...card, data: { ...card.data, ...tracks } } : card)) };
+      const logs = [false, true].map((throughView) => {
+        const { engine, runtime } = createEngine(game!, lib, 2, cut);
+        playTurn(engine, 1, 'researches', () => {}, (log) => log.some((move) => move.type === LAUNCH), runtime, throughView);
+        return engine.getLog();
+      });
+      expect(logs[0][0]).toEqual({ type: GREENLIGHT, by: 'p0', cardId: idOf('Sleep Monitor'), choices: [null, null, 'Cut 2 blue'] });
+      expect(logs[0].at(-1)).toEqual({ type: LAUNCH, by: 'p0', cardId: viral });
+      expect(logs[1]).toEqual(logs[0]);
+    });
 
     it('a refused press spends nothing', () => {
       const setup = setUp(2, 1);
