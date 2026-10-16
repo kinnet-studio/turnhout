@@ -1,6 +1,6 @@
 import { MAX_CARDS, TOO_MANY_CARDS, isSaysColumn } from './cards';
 import { compileExample } from './compile-example';
-import { actionLine, actionOf, cardMoveVerb, compilePhase, type VerbUses } from './compile-phase';
+import { actionLine, actionOf, cardMoveVerb, compilePhase, targetReader, type VerbUses } from './compile-phase';
 import { addProblem, attempt, matchEffectLine, matchLine, phaseId, phraseFn, rejectChildren, type LineCtx } from './compile-util';
 import type { Diagnostic } from './diagnostics';
 import { parseOutline, type OutlineNode } from './outline';
@@ -134,16 +134,17 @@ function holdBack(diagnostics: Diagnostic[], stages: Section[][]): number | null
  * mistyped, and is no button. One wording is one move type, so it can't be a button any player may press in one phase and not in
  * another: the later line is reported. (Twice in one phase is reported by the phase.)
  */
-function readActions(phases: OutlineNode[], diagnostics: Diagnostic[]): Vocab['actions'] {
+function readActions(phases: OutlineNode[], ctx: LineCtx): Vocab['actions'] {
+  const readsTarget = targetReader(ctx);
   const byWords = new Map<string, { action: Vocab['actions'][number]; phase: OutlineNode }>();
   for (const phase of phases) {
     for (const child of phase.children) {
       const found = actionLine(normalizeLine(child.text));
       if (!found) continue;
-      const { verb, words, base, target, anyone, amount } = actionOf(found);
+      const { verb, words, base, target, anyone, amount } = actionOf(found, readsTarget);
       const first = byWords.get(words);
       if (!first) byWords.set(words, { action: { verb, words, base, targeted: target !== null, anyone, amount }, phase });
-      else if (first.phase !== phase && first.action.anyone !== anyone) addProblem(diagnostics, child.line, openedDifferently(words, first.action.anyone));
+      else if (first.phase !== phase && first.action.anyone !== anyone) addProblem(ctx.diagnostics, child.line, openedDifferently(words, first.action.anyone));
     }
   }
   return [...byWords.values()].map((first) => first.action);
@@ -474,14 +475,15 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   const phaseLines = named.flatMap((node) => node.children).map((c) => normalizeLine(c.text));
   // A card move that has a mistake still names its verb, so the examples that make it are not blamed for that mistake.
   const verbs = [...new Set(phaseLines.flatMap((line) => cardMoveVerb(line) ?? []))];
-  // Buttons are read ahead too: “they have not rolled this turn” may come before the action that rolls.
-  const actions = readActions(named, diagnostics);
 
   const { sets: cards, says: saysCells } = compileCards(
-    linesOf(of('cards')), stage(vocabFrom({ maxPlayers, zones, phases: phaseIds, verbs, actions })), declared,
+    linesOf(of('cards')), stage(vocabFrom({ maxPlayers, zones, phases: phaseIds, verbs })), declared,
   );
   // Facts are checked once both tables are read, since a fact may be named like a column of either.
   const facts = acceptFacts(declared, board, of('board').length > 0, cards, diagnostics);
+  // Buttons are read ahead too: “they have not rolled this turn” may come before the action that rolls. They wait for the facts,
+  // since the words a button picks a space with may name one, and no card or declare line reads a button.
+  const actions = readActions(named, stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board, facts })));
 
   const ctx = stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board, actions, facts }));
   const setup = linesOf(of('setup')).map((node) => {

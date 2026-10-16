@@ -561,6 +561,7 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .given('the roll after that is {int}', rollAfterThat)
     .action('{player} {action}', pressesButton)
     .action('{player} {targetaction} on {space}', pressesButtonOn)
+    .action('{player} {targetaction} {space}', pressesButtonOn)
     .expect('{player} is on {space}', isOnExpected)
     .expect('{player} owns {space}', ownsExpected)
     .expect('no one owns {space}', noOneOwnsExpected)

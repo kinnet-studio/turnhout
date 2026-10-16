@@ -4,9 +4,10 @@ import {
   OWES_KEY, TURN_KEY, TURN_ROLLS_KEY, addToCounter, clearTurnLog, counterOf, isOut, latestRoll, markOut, ownerOf, owedTo, pieceAt, placePiece,
   queueRoll, recordAction, recordDebt, rollsThisTurn, setCounter, setOwner, setRoll, setRollsThisTurn, takeQueuedRoll,
 } from '../board-state';
+import { compileGame } from '../compile';
 import { RuleError } from '../diagnostics';
 import {
-  FIXTURE_SPACES, fixtureBoardGame, fixtureBoardState, fixtureEnv, fixtureGame, fixturePhase, fixtureState, runPhrase, vocabFor,
+  FIXTURE_SPACES, MARK_BOARD, fixtureBoardGame, fixtureBoardState, fixtureEnv, fixtureGame, fixturePhase, fixtureState, runPhrase, vocabFor,
 } from '../testing';
 import type { DeclaredAction, Moment } from '../types';
 import { chooseNext } from '../zones';
@@ -801,6 +802,17 @@ describe('example phrases', () => {
       expect(m('p0 rolls the dice on Rose Lane').status).toBe('unknown');
       expect(m('p0 rolls the dice')).toMatchObject({ status: 'ok', pattern: '{player} {action}' });
       expect(m('p0 builds a house on Rose Lane')).toMatchObject({ status: 'ok', pattern: '{player} {targetaction} on {space}' });
+    });
+    it('is a player pressing a button that picks a space with a target phrase after its verb, with or without “on”', () => {
+      const mark = compileGame(MARK_BOARD, lib).game!;
+      const vocab = vocabFor(mark);
+      for (const text of ['p0 marks Mill Lane', 'p0 marks on Mill Lane']) {
+        expect(lib.match('action', text, vocab), text).toMatchObject({ status: 'ok', args: ['p0', 'mark a space they own', 1] });
+        expect(runPhrase(lib, 'action', text, fixtureEnv(fixtureBoardState(), { game: mark })), text).toEqual({
+          by: 'p0', move: { type: 'mark a space they own', target: 1 },
+        });
+      }
+      expect(lib.match('action', 'p0 marks', vocab).status).toBe('unknown');
     });
     it('refuses a player who is not at the table when they build', () => {
       expect(() => runPhrase(lib, 'action', 'p3 builds a house on Rose Lane', at(fixtureBoardState(playing)))).toThrow('There is no player p3 at this table.');

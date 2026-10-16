@@ -208,6 +208,19 @@ export const INTERRUPT_BOARD = [
 ].join('\n');
 
 /**
+ * TINY_BOARD_HEAD with a flag a button sets on a space it picks without “on”: a player may mark a space they own that is not
+ * marked yet. Line 15 declares the flag, `A player may mark a space they own.` is line 19 and `A player may end their turn.`
+ * line 23.
+ */
+export const MARK_BOARD = [
+  TINY_BOARD_HEAD.replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  Spaces can be marked.'),
+  '  A player may mark a space they own.', '    Only if it is not marked.', '    Then:', '      It is marked.',
+  '  A player may end their turn.',
+  '  After a player ends their turn, the turn passes to the left.',
+  '', 'End:', '  The game ends when one player is left.', '  That player wins.',
+].join('\n');
+
+/**
  * A board game whose two decks say what their cards do. `lucky` and `fate` are the tables under each deck line, header row
  * first; `rules` are lines under `Phase: playing`, indented as written there. Lines: the lucky table starts on line 6 (its
  * first card on line 7); the fate deck line is line 6 + lucky.length and its first card line 8 + lucky.length. The loop is

@@ -48,8 +48,9 @@ export type SpaceClass = { attribute: string; values: Json[] };
  * `words` is the lowercase text after "a player may" ('roll the dice'); `label` is the button text in the second person,
  * with the designer's capitals ('Roll the dice', 'Go to Rose Lane'). `words` is also the button's move type, so that
  * “pay the fine” and “pay the toll” are two buttons although they start with the same `verb`.
- * A button whose line ends in “on a …” picks a space on the board: `base` is the lowercase wording before “on” ('plant a
- * flag') and `target` the phrase that says which spaces it may pick. Any other button has `base` equal to `words`, no target.
+ * A button picks a space on the board when its line ends in “on a …”, or in a target phrase after its verb ('mark a space they
+ * own'): `base` is the lowercase wording before “on” or the phrase ('plant a flag', 'mark') and `target` the phrase that says
+ * which spaces it may pick. Any other button has `base` equal to `words`, no target.
  * `anyone` is true for a line that starts “Any player may”: any seat still in may press it, whoever's turn it is.
  * `amount` is true for a button that picks no space and whose wording ends in “ an amount” (“A player may raise an amount.”): its
  * press carries a whole number, `base` and `label` leave “ an amount” out ('raise', 'Raise'), and `words` keeps it, as the move type.

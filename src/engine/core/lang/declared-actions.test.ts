@@ -14,7 +14,7 @@ import { friendlyError } from './friendly';
 import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { MAX_MOMENT_DEPTH } from './runtime';
-import { AMOUNT_BOARD, ANY_PLAYER_BOARD, INTERRUPT_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD } from './testing';
+import { AMOUNT_BOARD, ANY_PLAYER_BOARD, INTERRUPT_BOARD, MARK_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD } from './testing';
 
 const lib = createDefaultLibrary();
 const game = compileGame(TINY_BOARD, lib).game!;
@@ -394,6 +394,58 @@ describe('a button that picks a target', () => {
       expect(bare.diagnostics.map((d) => d.message)).toEqual(['“p0 builds a house” isn\'t in the phrase library yet.']);
       const wrong = compileGame(`${BUILDING}\n\nExample: wrong\n  When p0 ends their turn on Rose Lane`, lib);
       expect(wrong.diagnostics.map((d) => d.message)).toEqual(['“p0 ends their turn on Rose Lane” isn\'t in the phrase library yet.']);
+    });
+  });
+});
+
+describe('buttons that pick a space without “on”', () => {
+  const mark = compileGame(MARK_BOARD, lib).game!;
+  const MARK = 'mark a space they own';
+  const MILL = 1;
+  const ROSE = 3;
+  /** p0 owns Mill Lane and p1 owns Rose Lane, with the turn at p0 in the playing phase. */
+  const owned = (s: GameState): GameState => setOwner(setOwner(s, MILL, 'p0'), ROSE, 'p1');
+
+  it('is accepted on a space they own, and the lines under the button are about it', () => {
+    const engine = engineWith(owned, mark);
+    expect(engine.dispatch({ type: MARK, by: 'p0', target: MILL }).ok).toBe(true);
+    expect(spaceFact(engine.getState(), MILL, 'marked')).toBe(true);
+    expect(spaceFact(engine.getState(), ROSE, 'marked')).toBeNull();
+  });
+  it('refuses a space the target phrase does not allow, in the second person', () => {
+    expect(engineWith(owned, mark).canDispatch({ type: MARK, by: 'p0', target: ROSE })).toBe("That isn't a space you own.");
+  });
+  it('asks where when the move carries no target', () => {
+    expect(engineWith(owned, mark).canDispatch({ type: MARK, by: 'p0' })).toBe('Pick where to mark.');
+  });
+  it('refuses a space its Only if line refuses, once it is marked', () => {
+    const engine = engineWith(owned, mark);
+    expect(engine.dispatch({ type: MARK, by: 'p0', target: MILL }).ok).toBe(true);
+    expect(engine.canDispatch({ type: MARK, by: 'p0', target: MILL })).toBe('it is not marked');
+  });
+
+  describe('as an example', () => {
+    const EXAMPLE = [
+      'Example: marking a space',
+      '  Given p0 owns Mill Lane',
+      '  And p1 owns Rose Lane',
+      '  When p0 marks Rose Lane',
+      '  Then it is rejected because "That isn\'t a space you own."',
+      '  When p0 marks Mill Lane',
+      '  Then it is accepted',
+      '  And Mill Lane is marked',
+      '  When p0 marks Mill Lane',
+      '  Then it is rejected because "it is not marked"',
+    ].join('\n');
+    it('names the space after the button and runs through runExamples, beside the form with “on”', () => {
+      const { game: withExample, diagnostics } = compileGame(`${MARK_BOARD}\n\n${EXAMPLE}`, lib);
+      expect(diagnostics).toEqual([]);
+      const results = runExamples(withExample!, lib);
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({ status: 'pass', message: null });
+      const withOn = compileGame(`${MARK_BOARD}\n\n${EXAMPLE.replace(/marks (\w+ Lane)/g, 'marks on $1')}`, lib);
+      expect(withOn.diagnostics).toEqual([]);
+      expect(runExamples(withOn.game!, lib)[0]).toMatchObject({ status: 'pass' });
     });
   });
 });

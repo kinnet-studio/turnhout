@@ -31,10 +31,12 @@ const ANYONE_LINE = /^any player may /i;
 /** “card” or “cards” as a word of its own: “discard” does not count. */
 const MENTIONS_CARD = /\bcards?\b/i;
 /**
- * A button that picks a space ends in “on a …” or “on an …”: group 1 is what comes before the last “ on ”, group 2 what the
+ * A button that picks a space with “on” ends in “on a …” or “on an …”: group 1 is what comes before the last “ on ”, group 2 what the
  * player may pick. A line whose last “on” has no “a” or “an” after it (“buy the space they are on”) picks nothing.
  */
 const TARGETED = /^(.+) on ((?:a|an) (?:(?! on ).)+)$/i;
+/** Each place a pick without “on” may start: a space before “a” or “an”, so the first word of a wording is never one. */
+const BEFORE_A = / (?=an? \S)/gi;
 /** A button that picks no space and ends in “an amount” carries a whole number with its press: group 1 is the wording before those words. */
 const AMOUNT_WORDING = /^(.+) an amount$/i;
 /**
@@ -59,6 +61,8 @@ const sameVerb = (verb: string) => `Two rules in this phase start “A player ma
 const sameWords = (words: string) => `Two rules in this phase say “A player may ${words}”.`;
 /** Two buttons that pick a space with the same words before “on” would show one label, and an example could name neither. */
 const samePick = (base: string) => `Two rules in this phase say “A player may ${base} on …”; give them different words.`;
+/** Two buttons of one phase that read alike, whatever their wording, would be told apart by nobody who sees only the buttons. */
+const sameLabel = (label: string) => `Two buttons in this phase would both read “${label}”; give one of them other words.`;
 /** A bare verb in an After line that more than one button in the phase starts with. */
 const sharedVerb = (word: string, wordings: string[]) => `“${word}” could be ${joinOr(wordings.map((w) => `“${w}”`))}; write the whole wording.`;
 /** A button any player may press can't be what an After line waits for. */
@@ -191,23 +195,39 @@ export function actionLine(clean: string): RegExpExecArray | null {
 }
 
 /**
+ * A pick the wording makes without “on”: it is cut before each “a” or “an” that is not its first word, the leftmost cut first,
+ * and the first cut whose rest `readsTarget` is where the player picks. `base` is the words before it and `target` the rest
+ * as written, so “mark a space they own” picks “a space they own”. Null when no rest reads as a target.
+ */
+function pickAfterVerb(written: string, readsTarget: (text: string) => boolean): { base: string; target: string } | null {
+  for (const cut of written.matchAll(BEFORE_A)) {
+    const rest = written.slice(cut.index + 1);
+    if (readsTarget(rest)) return { base: written.slice(0, cut.index), target: rest };
+  }
+  return null;
+}
+
+/**
  * What follows “a player may” in an action line: the verb, and all the words (lowercase, so rules and examples can
  * repeat them in any capitals). `written` keeps the designer's capitals for the button, so “Go to Rose Lane” stays one.
- * A line that ends in “on a …” picks a space: `base` and `baseWritten` are the words before that “on”, and `target` is what
- * follows it as written. Any other line has `base` equal to `words` and no target. `anyone` is true for “Any player may …”.
+ * A line picks a space when it ends in “on a …”, or else when the words from some “a” or “an” on (not the first word) are a target
+ * phrase `readsTarget` reads: `base` and `baseWritten` are the words before that “on” or “a”, and `target` is what follows as
+ * written. Any other line has `base` equal to `words` and no target. `label` is the button's text, from `baseWritten`.
+ * `anyone` is true for “Any player may …”.
  * A line that picks no space and ends in “an amount” is a button that carries one: `amount` is true, and `base` and `baseWritten`
  * are the words before those, so that “raise an amount” is the button 'raise' (`words` keeps them, as the move type).
  */
-export function actionOf(found: RegExpExecArray): {
-  verb: string; words: string; written: string; base: string; baseWritten: string; target: string | null; anyone: boolean; amount: boolean;
+export function actionOf(found: RegExpExecArray, readsTarget: (text: string) => boolean): {
+  verb: string; words: string; written: string; base: string; baseWritten: string; label: string; target: string | null; anyone: boolean; amount: boolean;
 } {
   const written = found[2] === undefined ? found[1] : `${found[1]} ${found[2]}`;
   const targeted = TARGETED.exec(written);
-  const carrying = targeted ? null : AMOUNT_WORDING.exec(written);
-  const baseWritten = targeted ? targeted[1] : carrying ? carrying[1] : written;
+  const picked = targeted ? { base: targeted[1], target: targeted[2] } : pickAfterVerb(written, readsTarget);
+  const carrying = picked ? null : AMOUNT_WORDING.exec(written);
+  const baseWritten = picked ? picked.base : carrying ? carrying[1] : written;
   return {
-    verb: found[1].toLowerCase(), words: written.toLowerCase(), written, base: baseWritten.toLowerCase(), baseWritten, target: targeted ? targeted[2] : null,
-    anyone: ANYONE_LINE.test(found[0]), amount: carrying !== null,
+    verb: found[1].toLowerCase(), words: written.toLowerCase(), written, base: baseWritten.toLowerCase(), baseWritten, label: actionLabel(baseWritten),
+    target: picked ? picked.target : null, anyone: ANYONE_LINE.test(found[0]), amount: carrying !== null,
   };
 }
 
@@ -242,7 +262,10 @@ function otherPick(written: string, vocab: Vocab): { written: string | null } | 
 }
 
 /** A button whose words before the space it picks end in “an amount” (“raise an amount on a field they own”) means to do both. */
-const pickAndAmount = (target: string) => `A button can't both pick a space and carry an amount: drop “an amount” or “on ${target}”.`;
+const pickAndAmount = (pick: string) => `A button can't both pick a space and carry an amount: drop “an amount” or “${pick}”.`;
+
+/** Whether a target phrase reads these words, as the player who presses the button: how a pick without “on” is told from words that pick nothing. */
+export const targetReader = (ctx: LineCtx) => (text: string): boolean => canRead('target', text, { ...ctx, player: true });
 
 /** What an action's button says: its words in the second person, as the player reads them. */
 export function actionLabel(words: string): string {
@@ -255,7 +278,7 @@ export function actionLabel(words: string): string {
  * space it picks is not something the language can read (a mistyped target is reported and never makes a plain button).
  */
 function compileAction(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx): DeclaredAction | null {
-  const { verb, words, written, base, baseWritten, target: targetText, anyone, amount } = actionOf(found);
+  const { verb, words, written, base, baseWritten, label, target: targetText, anyone, amount } = actionOf(found, targetReader(ctx));
   const reserved = verb === RESERVED_VERB;
   if (reserved) addProblem(ctx.diagnostics, node.line, `“${RESERVED_VERB}” is reserved; pick another word.`, { text: found[1] });
   // The player who presses the button is the one the target is about ("a field they own").
@@ -267,11 +290,12 @@ function compileAction(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx):
   }
   // Said once on the button line; its lines are then read as the designer meant them, with the amount, so none is blamed for it.
   const both = targetText !== null && AMOUNT_WORDING.test(baseWritten);
-  if (both) addProblem(ctx.diagnostics, node.line, pickAndAmount(targetText), { kind: 'invalid', text: normalizeLine(node.text) });
+  // The pick is told back as it was written, with its “on” or without.
+  if (both) addProblem(ctx.diagnostics, node.line, pickAndAmount(written.slice(baseWritten.length).trim()), { kind: 'invalid', text: normalizeLine(node.text) });
   // An action is about the player who presses it and the space it picks, else the space their piece is on; a button that carries an amount has it.
   const { conditions, effects } = readRuleBody(node, { ...ctx, player: true, space: true, amount: amount || both });
   if (reserved || pick !== null || both || (target !== null && isMissing(target))) return null;
-  return { verb, words, base, label: actionLabel(baseWritten), target, anyone, amount, conditions, effects, line: node.line };
+  return { verb, words, base, label, target, anyone, amount, conditions, effects, line: node.line };
 }
 
 /** The `Only if` groups and the effects under a `When …:` rule; every line that is not an `Only if` is an effect. */
@@ -419,8 +443,11 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx, uses: VerbUses = {
   const afters: { node: OutlineNode; cuts: AfterCut[] }[] = [];
   const moveVerbs: string[] = [];
   const actionNames: { verb: string; words: string; anyone: boolean }[] = [];
-  /** The words before “on” of the buttons that pick a space. */
+  /** The words before “on” of the buttons that pick a space with it. */
   const pickBases = new Set<string>();
+  /** What each button reads, lowercase: two that read alike could not be told apart on the page. */
+  const labels = new Set<string>();
+  const readsTarget = targetReader(ctx);
   let hinted = false;
   let sawGoTo = false;
 
@@ -468,17 +495,24 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx, uses: VerbUses = {
       readRuleBody(child, { ...ctx, inMove: true, player: true });
       continue;
     } else if (action) {
-      const { verb, words: actionWords, base, target, anyone } = actionOf(action);
-      // Buttons that start alike are different moves; only the same wording twice is a repeat, or two picks with one base.
+      const { verb, words: actionWords, base, label, anyone } = actionOf(action, readsTarget);
+      // Buttons that start alike are different moves; only the same wording twice is a repeat, or two picks with one base, or two
+      // buttons with one label.
       const repeated = actionNames.some((a) => a.words === actionWords);
-      const pickedAlike = target !== null && pickBases.has(base);
-      const taken = repeated || pickedAlike || moveVerbs.includes(verb);
+      const pickedWithOn = TARGETED.test(actionWords);
+      const pickedAlike = pickedWithOn && pickBases.has(base);
+      const labelled = labels.has(label.toLowerCase());
+      const taken = repeated || pickedAlike || labelled || moveVerbs.includes(verb);
       if (repeated) addProblem(ctx.diagnostics, child.line, sameWords(actionWords), { text: clean });
       else if (pickedAlike) addProblem(ctx.diagnostics, child.line, samePick(base), { text: clean });
+      else if (labelled) addProblem(ctx.diagnostics, child.line, sameLabel(label), { text: clean });
       else if (taken) addProblem(ctx.diagnostics, child.line, sameVerb(verb), { text: clean });
       else if (uses.moves.has(verb)) addProblem(ctx.diagnostics, child.line, moveElsewhere(verb), { text: clean });
-      if (!taken) actionNames.push({ verb, words: actionWords, anyone });
-      if (!taken && target !== null) pickBases.add(base);
+      if (!taken) {
+        actionNames.push({ verb, words: actionWords, anyone });
+        labels.add(label.toLowerCase());
+        if (pickedWithOn) pickBases.add(base);
+      }
       const declared = compileAction(child, action, ctx);
       if (declared && !taken) phase.actions.push(declared);
       continue;
