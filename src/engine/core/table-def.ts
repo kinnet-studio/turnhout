@@ -14,6 +14,8 @@ export interface ZoneDef {
   capacity?: number;
   accept?: { rule: string; params?: Json };
   ordering?: 'stack' | 'ordered' | 'free';
+  /** The zone's name, to draw beside it. Only the fitted layout sets it. */
+  label?: string;
 }
 
 export interface TableDef {

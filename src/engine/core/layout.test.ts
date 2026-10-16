@@ -53,3 +53,32 @@ describe('computeZoneLayout', () => {
     expect(m.get('b')).toMatchObject({ x: 1, y: 2 });
   });
 });
+
+describe('computeZoneLayout of a row with a maxWidth', () => {
+  const row = (maxWidth?: number): ZoneState => ({
+    id: 'z', layout: 'row', transform: { x: 0, y: 0 }, layoutOptions: { spacing: 75, ...(maxWidth === undefined ? {} : { maxWidth }) },
+  });
+  const xs = (zone: ZoneState, n: number) =>
+    [...computeZoneLayout(zone, Array.from({ length: n }, (_, i) => card(`c${i}`))).values()].map((p) => p.x);
+
+  it('a row with a maxWidth squeezes its cards to stay within it', () => {
+    const eight = xs(row(400), 8);
+    expect(eight[0]).toBeCloseTo(-150);
+    expect(eight[7]).toBeCloseTo(150);
+    expect(eight[1] - eight[0]).toBeCloseTo(300 / 7);
+
+    const five = xs(row(400), 5);
+    expect(five[0]).toBeCloseTo(-150);
+    expect(five[4]).toBeCloseTo(150);
+    expect(five[1] - five[0]).toBeCloseTo(75);
+
+    const two = xs(row(400), 2);
+    expect(two[0]).toBeCloseTo(-37.5);
+    expect(two[1]).toBeCloseTo(37.5);
+
+    expect(xs(row(400), 1)[0]).toBeCloseTo(0);
+
+    const loose = xs(row(), 8);
+    expect(loose[1] - loose[0]).toBeCloseTo(75);
+  });
+});

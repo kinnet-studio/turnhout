@@ -33,7 +33,9 @@ export function computeZoneLayout(
         break;
       }
       case 'row': {
-        const spacing = opts.spacing ?? DEFAULT_ROW_SPACING;
+        const wanted = opts.spacing ?? DEFAULT_ROW_SPACING;
+        // A row given a width draws its first and last card inside it, however many cards it holds.
+        const spacing = opts.maxWidth !== undefined && n > 1 ? Math.min(wanted, (opts.maxWidth - CARD_WIDTH) / (n - 1)) : wanted;
         t = { x: zx + (i - (n - 1) / 2) * spacing, y: zy, rotation: zr, scale: 1, z };
         break;
       }

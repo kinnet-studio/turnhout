@@ -3,7 +3,7 @@ import { type BaseAppComponents, type InitAppOptions, baseInitApp } from '@ue-to
 import { Container, Graphics, RenderTexture, type Texture } from 'pixi.js';
 import type { AppComponents } from '@/app-components';
 import type { CardState, PlayerId, Vec2 } from '@/engine/core/scene';
-import { CARD_HEIGHT, CARD_WIDTH } from '@/engine/core/scene';
+import { CARD_HEIGHT, CARD_WIDTH, TABLE_BOUNDS } from '@/engine/core/scene';
 import type { Placement, TableDef } from '@/engine/core/table-def';
 import { RuleRegistry } from '@/engine/core/rules';
 import { registerStarterRules } from '@/engine/core/rules-library';
@@ -14,8 +14,6 @@ import { TableKmtParser } from '@/engine/input/table-kmt-parser';
 import { TableInputTracker } from '@/engine/input/table-input-tracker';
 import { type FaceDraw, type FaceRenderer, FaceTextureCache } from '@/engine/pixi/face-texture-cache';
 import { PixiTable } from '@/engine/pixi/pixi-table';
-
-const TABLE_BOUNDS = { min: { x: -800, y: -600 }, max: { x: 800, y: 600 } };
 
 // A neutral default face renderer; the demo (Task 16) overrides this per game.
 const defaultRenderer: FaceRenderer = (card) => (container: Container) => {

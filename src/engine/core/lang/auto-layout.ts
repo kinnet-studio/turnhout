@@ -27,7 +27,7 @@ const ZONE_SPREAD = 120;
 
 // The fan's drop box, measured from computeZoneLayout for 13 cards (see the Hearts table in pages/hearts-demo).
 const HAND_FAN = { fanAngleDeg: 48, fanRadius: 200 };
-const HAND_BOUNDS = { width: 312, height: 178, anchor: { x: 0.5, y: 0.423 } };
+export const HAND_BOUNDS = { width: 312, height: 178, anchor: { x: 0.5, y: 0.423 } };
 
 const SHARED_GAP = 20;
 const SHARED_WIDTH = { pile: 120, row: 330, hand: HAND_BOUNDS.width } as const;
@@ -37,7 +37,8 @@ type Point = { x: number; y: number };
 /** Whole numbers keep the table readable; `+ 0` turns -0 into 0. */
 const snap = (n: number) => Math.round(n) + 0;
 
-function def(spec: ZoneSpec, id: string, at: Point, owner: PlayerId | 'shared'): ZoneDef {
+/** One zone of the table at a place; the fitted layout reuses it so both give a zone the same kind and visibility. */
+export function zoneDef(spec: ZoneSpec, id: string, at: Point, owner: PlayerId | 'shared'): ZoneDef {
   const base = { id, transform: { x: snap(at.x), y: snap(at.y) }, owner, visibility: spec.visibility };
   switch (spec.layout) {
     case 'hand':
@@ -68,7 +69,7 @@ export function autoLayout(zones: ZoneSpec[], seats: PlayerId[]): ZoneDef[] {
 
   const out: ZoneDef[] = [];
   for (const spec of hands) {
-    for (const { seat, at } of anchors) out.push(def(spec, zoneIdFor(spec.name, seat), at, seat));
+    for (const { seat, at } of anchors) out.push(zoneDef(spec, zoneIdFor(spec.name, seat), at, seat));
   }
   for (const { seat, theta, at } of anchors) {
     const tangent = { x: -Math.sin(theta), y: Math.cos(theta) };
@@ -76,14 +77,14 @@ export function autoLayout(zones: ZoneSpec[], seats: PlayerId[]): ZoneDef[] {
       const along = (i - (others.length - 1) / 2) * ZONE_SPREAD;
       const radius = spec.layout === 'row' && Math.abs(at.x) < 1 ? ROW_RADIUS : INNER_RADIUS;
       const where = { x: at.x * radius + tangent.x * along, y: at.y * radius + tangent.y * along };
-      out.push(def(spec, zoneIdFor(spec.name, seat), where, seat));
+      out.push(zoneDef(spec, zoneIdFor(spec.name, seat), where, seat));
     });
   }
 
   const widths = shared.map((spec) => SHARED_WIDTH[spec.layout]);
   let left = -(widths.reduce((sum, w) => sum + w, 0) + SHARED_GAP * Math.max(shared.length - 1, 0)) / 2;
   shared.forEach((spec, i) => {
-    out.push(def(spec, zoneIdFor(spec.name), { x: left + widths[i] / 2, y: 0 }, 'shared'));
+    out.push(zoneDef(spec, zoneIdFor(spec.name), { x: left + widths[i] / 2, y: 0 }, 'shared'));
     left += widths[i] + SHARED_GAP;
   });
   return out;

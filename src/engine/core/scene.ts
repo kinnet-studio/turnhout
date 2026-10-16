@@ -1,6 +1,9 @@
 export const CARD_WIDTH = 100;
 export const CARD_HEIGHT = 140;
 
+/** The fixed world a table canvas fits to its size; every zone of a table lies inside it. */
+export const TABLE_BOUNDS = { min: { x: -800, y: -600 }, max: { x: 800, y: 600 } } as const;
+
 export type LayoutKind = 'pile' | 'fan' | 'row' | 'grid' | 'free';
 export interface Vec2 {
   x: number;
@@ -27,6 +30,7 @@ export interface LayoutOptions {
   cols?: number;
   rowSpacing?: number;
   jitter?: number; // radians of max rotation jitter; 0 = none (default)
+  maxWidth?: number; // a row's cards squeeze together to span no more than this
 }
 
 export interface ZoneState {
