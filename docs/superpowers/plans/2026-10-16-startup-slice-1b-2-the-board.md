@@ -49,8 +49,8 @@
   - **P1 (Task 8).** Adding ", 0 market share" after the actions count changes seven more money lines: `tableaux.test.ts:37`
     and `playtest-fitted.test.tsx` 137, 235, 242, 259, 263, 268 (`:259` becomes
     `'0 actions, 0 market share · bench 5 · backlog 2 · research 0'`). They count as money lines Task 8 may change.
-  - **P2 (Tasks 7–8).** The rules hold 24 examples, so Task 7 ends at 34 and Task 8 at 53 (the test file, both places in
-    `designer-page.test.tsx`, and the README's "Its 53 examples").
+  - **P2 (Tasks 7–8).** The rules hold 25 examples (24, plus one from plan 1b-1's fix wave), so Task 7 ends at 35 and
+    Task 8 at 54 (the test file, both places in `designer-page.test.tsx`, and the README's "Its 54 examples").
   - **P3 (Task 1).** `CREW_GAME` has `Each player has 3 moves each turn.`; the hire bullet expects "p0 has 2 moves".
   - **P4 (Task 3).** One loop guard keyed by card and name, shared by `workedValue` and `workedFlag`, cleared in `finally`;
     tests for a flag reading itself and for a value line reading a worked flag.
