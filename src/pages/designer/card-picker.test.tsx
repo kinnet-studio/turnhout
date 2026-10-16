@@ -140,6 +140,21 @@ describe('CardPicker', () => {
       expect(onRefused).toHaveBeenLastCalledWith('y');
       expect(pressed()).toEqual(['false', 'false']);
     });
+    it('unpicks a picked card the view now refuses, and only then explains it', () => {
+      const { onSend, onRefused, rerender } = mount(TRADING);
+      fireEvent.click(button('Pick Ruby'));
+      fireEvent.click(button('Pick Opal'));
+      rerender({ ...TRADING, cards: [TRADING.cards[0], { ...TRADING.cards[1], allowed: 'y' }, TRADING.cards[2]] });
+      expect([button('Pick Opal').getAttribute('aria-pressed'), button('Pick Opal').getAttribute('aria-disabled')]).toEqual(['true', 'true']);
+      fireEvent.click(button('Pick Opal'));
+      expect(onRefused).not.toHaveBeenCalled();
+      expect(pressed()).toEqual(['true', 'false', 'false']);
+      fireEvent.click(button('Pick Opal'));
+      expect(onRefused).toHaveBeenLastCalledWith('y');
+      expect(pressed()).toEqual(['true', 'false', 'false']);
+      fireEvent.click(button('Confirm'));
+      expect(onSend).toHaveBeenLastCalledWith({ cardIds: ['c1'] });
+    });
   });
 
   describe('a set and the card it goes to', () => {

@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { CardPickView, PickCardView } from '@/engine/core/lang/board-view';
-import { BUTTON_STYLE } from './board-controls';
+import { BUTTON_STYLE, PICKING_BACKGROUND } from './board-controls';
 
 /** What a press that picks cards carries besides its move type: the card or the set picked, and the card they go to if any. */
-export type CardChoice = { cardId: string; onto?: string } | { cardIds: string[]; onto?: string };
+type CardChoice = { cardId: string; onto?: string } | { cardIds: string[]; onto?: string };
 
 /**
  * Each card the picked cards may go to, judged for all of them at once: it takes them when it takes each, and otherwise says why
@@ -32,18 +32,19 @@ export function CardPicker({ pick, onSend, onRefused, onCancel }: {
   const [chosen, setChosen] = useState<string[]>([]);
   const [placing, setPlacing] = useState(false);
   // The view can change while the picker is open (an Undo takes a card back): a card no longer listed drops out of what is
-  // picked, so it is never sent, and stays out if it comes back.
+  // picked, so it is never sent, and stays out if it comes back. Setting state while rendering makes React render again at once
+  // with the pruned list, before anything is drawn.
   const picked = chosen.filter((id) => pick.cards.some((card) => card.id === id));
-  const dropped = picked.length < chosen.length;
-  useEffect(() => {
-    if (!dropped) return;
+  if (picked.length < chosen.length) {
     setChosen(picked);
     if (picked.length === 0) setPlacing(false);
-  }, [dropped, picked]);
+  }
 
   const button = (card: PickCardView, onLive: () => void, pressed?: boolean) => {
     const verdict = card.allowed;
     const live = verdict === true;
+    // A card already picked always unpicks, even one the view has since refused, so a player can take back their own pick.
+    const acts = live || pressed === true;
     return (
       <button
         key={card.id}
@@ -52,10 +53,10 @@ export function CardPicker({ pick, onSend, onRefused, onCancel }: {
         aria-disabled={!live}
         aria-pressed={pressed}
         title={live ? undefined : verdict}
-        onClick={() => (live ? onLive() : onRefused(verdict))}
+        onClick={() => (acts ? onLive() : onRefused(verdict))}
         style={{
-          ...BUTTON_STYLE, opacity: live ? 1 : 0.5, cursor: live ? 'pointer' : 'not-allowed',
-          ...(pressed ? { background: '#78350f', color: '#fff' } : {}),
+          ...BUTTON_STYLE, opacity: live ? 1 : 0.5, cursor: acts ? 'pointer' : 'not-allowed',
+          ...(pressed ? { background: PICKING_BACKGROUND, color: '#fff' } : {}),
         }}
       >
         {card.name}
