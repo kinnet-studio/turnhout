@@ -6,7 +6,7 @@ import { compileGame } from '../compile';
 import { RuleError } from '../diagnostics';
 import { LangRuntime } from '../runtime';
 import { TURN_GAME, fixtureBoardState, runPhrase } from '../testing';
-import { START_PLAYER_KEY, START_PLAYER_PHRASE, startPlayerOf } from '../turns';
+import { START_PLAYER_KEY, START_PLAYER_PHRASE, TURN_OF_KEY, startPlayerOf } from '../turns';
 import type { CompiledGame } from '../types';
 import { createDefaultLibrary } from './index';
 
@@ -31,6 +31,12 @@ describe('the turn passes to the left, as a step of the turn', () => {
   });
   it('leaves a lone player the turn', () => {
     expect(run('effect', PASS, at({ current: 'p0', phase: 'tidying' }), chores, ['p0']).turn).toEqual({ current: 'p0', phase: 'working', chosen: true });
+  });
+  it('forgets whose turn had started, so the next turn starts even for a lone player who keeps it', () => {
+    const started = (state: GameState): GameState => ({ ...state, data: { ...state.data, [TURN_OF_KEY]: 'p0' } });
+    const tidying = started(at({ current: 'p0', phase: 'tidying' }));
+    expect(Object.hasOwn(run('effect', PASS, tidying).data, TURN_OF_KEY)).toBe(false);
+    expect(Object.hasOwn(run('effect', PASS, tidying, chores, ['p0']).data, TURN_OF_KEY)).toBe(false);
   });
   it('runs no phase’s start lines: the pass happens before the game checks whether it is over', () => {
     const started = compileGame(TURN_GAME.replace('Phase: working\n  Players take turns.\n', 'Phase: working\n  Players take turns.\n  When this phase starts:\n    They get 5 coins.\n'), lib).game!;

@@ -199,7 +199,9 @@ export class LangRuntime {
 
   /**
    * Whether the current player's turn has yet to start: the game goes on, in one of its own phases, with no turn interrupted (the
-   * player another phase handed the turn to is only standing in), and the turn that last started was another player's.
+   * player another phase handed the turn to is only standing in), and the turn that last started was another player's, or none.
+   * A turn that comes back to the same seat starts again only when it passes through “the turn passes to the left”, which forgets
+   * whose turn had started; an After line or a “goes next” rule that hands the turn back to that seat starts no new turn.
    */
   turnWaiting(state: GameState): boolean {
     return state.result === undefined && this.inGamePhase(state) && interruptedTurn(state) === null

@@ -755,6 +755,19 @@ describe('rounds and turns', () => {
     expect(state.turn).toEqual({ current: 'p0', phase: 'working' });
   });
 
+  it("starts a lone player's turn again once it passes back to them, in a new round", () => {
+    const solo = compiled(ROUNDS_GAME.replace('Players: 2 to 4', 'Players: 1 to 4'));
+    const engine = table(1, solo);
+    stop(engine, 'p0');
+    const state = engine.getState();
+    expect(state.turn).toEqual({ current: 'p0', phase: 'working' });
+    expect([state.data[ROUND_KEY], state.data[TURN_OF_KEY]]).toEqual([2, 'p0']);
+    // Stopping set the moves to 0. 1 coin as each turn started and 1 from tidying.
+    expect(counterOf(state, 'moves', 'p0')).toBe(2);
+    expect(coinsOf(state, 'p0')).toEqual([3]);
+    expect(doneOf(state)).toBe(2);
+  });
+
   it("runs a phase's own turn rules after the ones for every phase (C2)", () => {
     const ownRule = ROUNDS_GAME.replace('  Players take turns.', "  Players take turns.\n  When a player's turn starts:\n    If they have at least 1 coin, they get 10 coins.");
     const engine = table(3, compiled(ownRule));

@@ -8,7 +8,7 @@ import type { CompiledGame } from './types';
 /** The seat that took the game's first turn. */
 export const START_PLAYER_KEY = 'lang:start-player';
 
-/** The seat whose turn has started: until the turn passes to another seat, its start lines have run. */
+/** The seat whose turn has started: until the turn passes, its start lines have run. */
 export const TURN_OF_KEY = 'lang:turn-of';
 
 /** How many rounds have started. */
@@ -44,6 +44,15 @@ export function roundOf(state: GameState): number {
 export function markTurnStarted(state: GameState): GameState {
   if (!state.turn) return state;
   return { ...state, data: { ...state.data, [TURN_OF_KEY]: state.turn.current, [ROUND_KEY]: Math.max(1, roundOf(state)) } };
+}
+
+/**
+ * The state with no turn counted as started: the turn has passed, so the next one starts, even when it comes back to the same seat
+ * (a lone player, or everyone else out).
+ */
+export function clearTurnOf(state: GameState): GameState {
+  const { [TURN_OF_KEY]: _turnOf, ...data } = state.data;
+  return { ...state, data };
 }
 
 /** The state with no turn started, no round and no start player, as a game is before its Setup. */

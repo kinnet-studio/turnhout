@@ -2,7 +2,7 @@ import { nextInt } from '../../rng';
 import { nextIn } from '../board-state';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
-import { START_PLAYER_KEY, START_PLAYER_PHRASE } from '../turns';
+import { START_PLAYER_KEY, START_PLAYER_PHRASE, clearTurnOf } from '../turns';
 import type { EffectFn } from '../types';
 import { chooseNext } from '../zones';
 import { seatOf } from './support';
@@ -12,13 +12,14 @@ import { seatOf } from './support';
 /**
  * The turn's last step: the next player still in takes the turn, back at the game's first phase. A lone player keeps it, as with
  * an After line's “the turn passes to the left”. No phase's start lines run here: the pass happens inside a rule, before the flow
- * checks whether the game is over, so they would run for a turn that may never be played.
+ * checks whether the game is over, so they would run for a turn that may never be played. The turn that had started is forgotten,
+ * so that the next one starts once the flow has checked the game is not over, even for a lone player who keeps the turn.
  */
 const turnPassesLeft: EffectFn = (env) => {
   const { turn } = env.state;
   if (!turn) throw new RuleError('There is no turn to pass.');
   const next = env.seats.length === 1 ? turn.current : nextIn(env.state, turn.current, env.seats);
-  const passed = chooseNext(env.state, next);
+  const passed = clearTurnOf(chooseNext(env.state, next));
   return { ...passed, turn: { ...passed.turn, current: next, phase: env.game.phases[0].id } };
 };
 
