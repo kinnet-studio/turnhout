@@ -170,11 +170,10 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
   const livePick = choosingCards === null ? pickAt : liveAt(choosingCards.pick, pickAt);
   if (livePick !== pickAt) setPickAt(livePick);
   const takers = offer === null ? [] : takersOf(extras?.actions ?? [], offer);
-  // An offer whose card no button takes any more closes, as a stale picker does.
-  const offerGone = offer !== null && takers.length === 0;
-  useEffect(() => {
-    if (offerGone) setOffer(null);
-  }, [offerGone]);
+  // An offer whose card no button takes any more closes in this render, before anything is drawn, so neither the offer nor its
+  // ring outlasts the view that took its takers away: the card may have gone where this seat can't see it.
+  const offered = takers.length > 0 ? offer : null;
+  if (offered !== offer) setOffer(null);
   const option = useMemo(() => ({ fullScreen: false, limitEntireViewPort: false }), []);
   const drawn = useMemo(() => new Set(tableDef.zones.map((zone) => zone.id)), [tableDef]);
   // A fitted table leaves the other players' zones off, so their cards have nowhere to stand: they are counted in the tableaux.
@@ -195,10 +194,10 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
   const pickView = choosingCards?.pick ?? null;
   const decor = useMemo(() => {
     if (captions === null) return undefined;
-    const rings: { [cardId: string]: 'choice' | 'chosen' } = pickView !== null ? ringsOf(pickView, livePick) : offer !== null ? { [offer]: 'chosen' } : {};
+    const rings: { [cardId: string]: 'choice' | 'chosen' } = pickView !== null ? ringsOf(pickView, livePick) : offered !== null ? { [offered]: 'chosen' } : {};
     const ids = new Set([...Object.keys(captions), ...Object.keys(rings)]);
     return Object.fromEntries([...ids].map((id) => [id, { ...(id in rings && { ring: rings[id] }), ...(id in captions && { caption: captions[id] }) }]));
-  }, [captions, pickView, livePick, offer]);
+  }, [captions, pickView, livePick, offered]);
   // A card's face has room for only some of its columns, so a fitted table shows the card under the pointer in full below it.
   const [hovered, setHovered] = useState<string | null>(null);
   const hoveredCard = placement.cards.find((card) => card.id === hovered);
@@ -269,10 +268,11 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
       closePicker();
       send(typeof amount === 'number' ? { type: move, amount } : { type: move });
     };
+    // Pressing the button that is picking again keeps its picks.
     const startPicking = ({ move }: ActionView) => {
       onError(null);
       setOffer(null);
-      openPicker(move);
+      if (move !== picking) openPicker(move);
     };
     const picker = choosing ? {
       prompt: choosing.prompt,
@@ -319,9 +319,9 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
       }
     };
     // The card is named as the first button that takes it sees it.
-    const offerName = extras?.actions.flatMap((a) => a.cards?.cards ?? []).find((card) => card.id === offer)?.name ?? '';
-    const cardOffer = offer !== null && takers.length > 0 && (
-      <CardOffer name={offerName} takers={takers} onChoose={(move) => chooseOffered(offer, move)} onRefused={flash} onCancel={() => setOffer(null)} />
+    const offerName = extras?.actions.flatMap((a) => a.cards?.cards ?? []).find((card) => card.id === offered)?.name ?? '';
+    const cardOffer = offered !== null && (
+      <CardOffer name={offerName} takers={takers} onChoose={(move) => chooseOffered(offered, move)} onRefused={flash} onCancel={() => setOffer(null)} />
     );
     // It shows the picks this seat shares with clicks on its table, and closes once a press is taken (see sendPick).
     const cardPicker = choosingCards && (

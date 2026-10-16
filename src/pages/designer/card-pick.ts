@@ -4,7 +4,8 @@ import type { ActionView, CardPickView, PickCardView } from '@/engine/core/lang/
 
 /** The cards picked so far, in the order clicked, and whether the player has gone on to pick the card they go to. */
 export type PickAt = { picked: string[]; onto: boolean };
-export const PICK_START: PickAt = { picked: [], onto: false };
+// Frozen, since every pick that starts over shares it.
+export const PICK_START: PickAt = Object.freeze({ picked: Object.freeze([]) as unknown as string[], onto: false });
 /** What a press that picks cards carries besides its move type: the card or the set picked, and the card they go to if any. */
 export type PickChosen = { cardId: string; onto?: string } | { cardIds: string[]; onto?: string };
 /** What a click or a Confirm comes to: picks to keep, a press to send, or why nothing happens. */

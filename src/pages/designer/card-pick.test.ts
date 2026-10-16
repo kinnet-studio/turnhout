@@ -99,6 +99,10 @@ describe('liveAt', () => {
     expect(liveAt(SET, at)).toBe(at);
   });
 
+  it('starts from a value no one can change, since every pick that starts over shares it', () => {
+    expect([Object.isFrozen(PICK_START), Object.isFrozen(PICK_START.picked)]).toEqual([true, true]);
+  });
+
   it('starts over once every pick is gone, even picking the card they go to', () => {
     expect(liveAt({ ...ONE_ONTO, cards: [CARDS[2]] }, { picked: ['c1'], onto: true })).toBe(PICK_START);
     expect(liveAt(SET, PICK_START)).toBe(PICK_START);

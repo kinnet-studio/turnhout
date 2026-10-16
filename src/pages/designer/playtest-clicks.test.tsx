@@ -17,10 +17,15 @@ import { Playtest } from './playtest';
 // The canvas layer needs a real WebGL page; the seats' game logic does not.
 vi.mock('@/components/PixiCanvas', () => ({ Wrapper: ({ children }: { children: ReactNode }) => <div>{children}</div> }));
 // Each seat's table is a span that keeps the props it was last drawn with. Counting renders would mix the seats up once one
-// rerenders alone, as an open offer makes it do.
+// rerenders alone, as an open offer makes it do. Every table drawn is kept in order too, for a test that must know a ring never
+// reached the canvas, not even for one render.
 const propsOf = new Map<Element, CardTableProps>();
+const drawnWith: CardTableProps[] = [];
 vi.mock('@/engine/react', () => ({
-  CardTable: (p: CardTableProps) => <span data-testid="card-table" ref={(el) => { if (el) propsOf.set(el, p); }} />,
+  CardTable: (p: CardTableProps) => {
+    drawnWith.push(p);
+    return <span data-testid="card-table" ref={(el) => { if (el) propsOf.set(el, p); }} />;
+  },
 }));
 
 const lib = createDefaultLibrary();
@@ -34,9 +39,10 @@ const clickOn = (seat: string, cardId: string) => act(() => tableOf(seat).onCard
 
 beforeEach(() => {
   propsOf.clear();
+  drawnWith.length = 0;
 });
 
-describe('Playtest: clicking cards on a table that fits', () => {
+describe('Playtest: clicking cards with every seat on one screen', () => {
   const pickGame = compileGame(CARD_PICK_GAME, lib).game!;
   const started = createEngine(pickGame, lib, 2, initialState(pickGame, SEED)).engine.getState();
   const named = (name: string) => started.cards.filter((c) => c.data?.name === name).map((c) => c.id);
@@ -71,6 +77,22 @@ describe('Playtest: clicking cards on a table that fits', () => {
     clickOn('p1', o3);
     expect(within(panelOf('p1')).getByText('No button takes this card now.')).toBeTruthy();
   });
+
+  it("Review Focus: never rings an offered card once no button of the seat's takes it, as when it goes where the seat can't see", () => {
+    mount(CARD_PICK_GAME, 2, initial);
+    const offerOf = (seat: string) => within(panelOf(seat)).queryByRole('group', { name: 'Card buttons' });
+    clickOn('p1', r1);
+    expect(offerOf('p1')).not.toBeNull();
+    expect(tableOf('p1').decor?.[r1]?.ring).toBe('chosen');
+    fireEvent.click(within(panelOf('p0')).getByRole('button', { name: 'Buy a card from the shop to your stash' }));
+    drawnWith.length = 0;
+    fireEvent.click(within(panelOf('p0')).getByRole('button', { name: 'Pick Ruby' }));
+    // The Ruby is in p0's stash now, which p1 sees only as a back.
+    expect(tableOf('p1').placement.cards.find((c) => c.id === r1)).toMatchObject({ zoneId: 'stash-p0', faceUp: false });
+    expect(drawnWith.length).toBeGreaterThan(0);
+    expect(drawnWith.filter((p) => p.decor?.[r1]?.ring !== undefined)).toEqual([]);
+    expect(offerOf('p1')).toBeNull();
+  });
 });
 
 describe('Playtest: clicking cards on a board', () => {
@@ -81,6 +103,7 @@ describe('Playtest: clicking cards on a board', () => {
     );
     const compiled = compileGame(keeping, lib);
     expect(compiled.diagnostics).toEqual([]);
+    expect(compiled.game!.board!.spaces.length).toBeGreaterThan(0);
     expect(compiled.game!.phases.every((phase) => phase.moves.length === 0 && phase.rearrange.length === 0)).toBe(true);
     mount(keeping, 2);
     expect(tableOf('p0').onCardClick).toBeDefined();

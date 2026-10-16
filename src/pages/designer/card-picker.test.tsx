@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { CardPickView } from '@/engine/core/lang/board-view';
 import { CardPicker } from './card-picker';
-import type { PickAt } from './card-pick';
+import { PICK_START, type PickAt } from './card-pick';
 
 const COST = "they have at least the card's cost in coins";
 const NOT_RUBY = 'the target card is not a Ruby';
@@ -244,6 +244,12 @@ describe('CardPicker given the picks', () => {
     expect(within(picker()).getByText('Pick where they go: a card in your case')).toBeTruthy();
     fireEvent.click(button('Pick Pearl'));
     expect(first.onSend).toHaveBeenLastCalledWith({ cardIds: ['c1', 'c2'], onto: 'c8' });
+  });
+
+  it('cannot be given picks without being told where to report their changes', () => {
+    // @ts-expect-error -- `at` without `onAt` would drop every change; `bun run typecheck` fails if this is allowed.
+    const given = <CardPicker pick={TRADING} at={PICK_START} onSend={vi.fn()} onRefused={vi.fn()} onCancel={vi.fn()} />;
+    expect(given.props.at).toBe(PICK_START);
   });
 
   it('shows only the picks still in the view, and reports the pruned picks', () => {

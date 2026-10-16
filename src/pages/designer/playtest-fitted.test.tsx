@@ -691,13 +691,17 @@ describe('picking cards by clicking them', () => {
     expect([ring(hire!.id), ring(software)]).toEqual(['chosen', 'chosen']);
 
     const undo = vi.spyOn(GameServer.prototype, 'undo');
-    press('Undo');
+    let server: GameServer;
+    try {
+      press('Undo');
+      server = undo.mock.contexts[0] as GameServer;
+    } finally {
+      undo.mockRestore();
+    }
     expect(cardsIn('agency-row').map((c) => c.id)).toContain(hire!.id);
     expect(ring(hire!.id)).toBeUndefined();
     // Every press on this page closes the picker, so the same card comes back to the bench from the server, as another window on
     // the seat would hire it: it is offered to pick again, but not picked.
-    const server = undo.mock.contexts[0] as GameServer;
-    undo.mockRestore();
     act(() => {
       server.submit(S, { type: 'hire a card from the agency row to their bench', cardId: hire!.id });
     });
@@ -727,6 +731,20 @@ describe('picking cards by clicking them', () => {
     expect(cardsIn(`research-${S}`)).toEqual([]);
     noOffer();
     expect(ring(drawn.id)).toBeUndefined();
+  });
+
+  it('keeps the picks when the button picking is pressed again, and starts over for another button', () => {
+    mount();
+    const software = named(`bench-${S}`, 'Junior Software Dev');
+    press(LAY_OFF);
+    pickNamed('Junior Software Dev');
+    press(LAY_OFF);
+    expect(pressedIn('Junior Software Dev')).toBe('true');
+    expect(ring(software)).toBe('chosen');
+    press('Hire a card from the agency row to your bench');
+    press(LAY_OFF);
+    expect(pressedIn('Junior Software Dev')).toBe('false');
+    expect(ring(software)).toBe('choice');
   });
 
   it('Review Focus: closes the offer when a button is pressed', () => {

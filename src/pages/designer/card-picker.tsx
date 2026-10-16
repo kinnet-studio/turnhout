@@ -8,16 +8,14 @@ import { PICK_START, clickCard, confirmSet, liveAt, ontoChoices, type PickAt, ty
  * with the reason on hover, and pressing it explains instead of picking. One card goes as soon as it is picked; a set is picked card
  * by card and goes on Confirm. A move that also picks the card they go to lists those cards next, under its second prompt. Given
  * `at`, it shows those picks and reports each change through `onAt`, so a page can share them with clicks on its table; without
- * it, it keeps its own.
+ * it, it keeps its own. `at` comes only with `onAt` (the props' type says so), since picks it could not report would never change.
  */
 export function CardPicker({ pick, at, onAt, onSend, onRefused, onCancel }: {
   pick: CardPickView;
-  at?: PickAt;
-  onAt?(at: PickAt): void;
   onSend(chosen: PickChosen): void;
   onRefused(reason: string): void;
   onCancel(): void;
-}) {
+} & ({ at: PickAt; onAt(at: PickAt): void } | { at?: undefined; onAt?: undefined })) {
   const [own, setOwn] = useState<PickAt>(PICK_START);
   const stored = at ?? own;
   // The view can change while the picker is open (an Undo takes a card back): a card no longer listed drops out of what is
