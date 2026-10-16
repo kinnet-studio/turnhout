@@ -255,6 +255,9 @@ function keepsTheRules(seats: PlayerId[]): Watch {
         : move.type === 'hire' && from === 'open-job-market' ? 1 : 0;
     const spent = seats.map((seat) => capital(before, seat) - capital(after, seat));
     expect(spent, `capital paid by ${seats.join(', ')} ${at}`).toEqual(seats.map((seat) => (seat === by ? paid : 0)));
+    // No one pays what they don't have.
+    const inDebt = seats.filter((seat) => capital(after, seat) < 0).map((seat) => `${seat} has ${capital(after, seat)} capital`);
+    expect(inDebt, `capital below 0 ${at}`).toEqual([]);
 
     // No zone over its capacity.
     const atMost = (zoneId: string, most: number) => expect(size(zoneId), `${zoneId} ${at}`).toBeLessThanOrEqual(most);
@@ -308,6 +311,7 @@ function keepsTheRules(seats: PlayerId[]): Watch {
     expect(letGo.filter((id) => !box.includes(id)), `cards a pool let go of that are not in the box ${at}`).toEqual([]);
     // Only the pools fill the box, and only with their oldest cards: a pool that let go of a card the moment it entered would
     // show the same 5 cards as before, so this is what catches it.
+    // This assumes only the pools send cards to the box, as in slice 1a; a later slice that boxes cards some other way must widen it.
     expect(box.filter((id) => !boxed.has(id)).sort(), `cards new in the box ${at}`).toEqual(letGoNow.sort());
 
     // Turns: a turn starts when the turn marker becomes a seat, from no seat or from another one.
@@ -567,6 +571,8 @@ describe('Startup Simulator (designer language)', () => {
         expect(turns.length % players, `${where}: ${turns.length} turns`).toBe(0);
         const start = seats.indexOf(startPlayerOf(state, seats));
         expect(turns.at(-1), where).toBe(seats[(start + players - 1) % players]);
+        // A round was counted for each one played, and none for the one the Crash keeps from starting.
+        expect(state.data[ROUND_KEY], `${where}: rounds after ${turns.length} turns`).toBe(turns.length / players);
 
         const scores = Object.fromEntries(seats.map((seat) => [seat, scoreOf(state, seat)]));
         const top = Math.max(...Object.values(scores));
