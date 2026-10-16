@@ -81,9 +81,15 @@ function coversExactly(cards: CardState[], wanted: CardMatch[]): boolean {
 /** Replaces what a zone holds: its cards leave the game, then these cards are claimed and put there in order. */
 function fill(env: PhraseEnv, zoneId: string, wanted: CardMatch[]): GameState {
   const example = exampleOf(env);
-  const cleared = relocate(env.state, zoneCards(env.state, zoneId).map((c) => c.id), BOX_ZONE, env.game);
-  const claimed = wanted.map((match) => example.claim(match, describeCard(match), cleared));
-  return relocate(cleared, claimed, zoneId, env.game);
+  let state = relocate(env.state, zoneCards(env.state, zoneId).map((c) => c.id), BOX_ZONE, env.game);
+  const claimed: string[] = [];
+  // A claim that makes a card hands back the state with it in, which the next claim must see: it takes the next id.
+  for (const match of wanted) {
+    const claim = example.claim(match, describeCard(match), state);
+    claimed.push(claim.id);
+    state = claim.state;
+  }
+  return relocate(state, claimed, zoneId, env.game);
 }
 
 const phaseIs: EffectFn = (env, args) => ({
@@ -117,8 +123,8 @@ const played: EffectFn = (env, args) => {
   const [seat, match, ref] = args as [string, CardMatch, ZoneRef];
   const by = seatOf(env, seat);
   const zoneId = soleZone(ref, env, by);
-  const cardId = exampleOf(env).claim(match, describeCard(match), env.state);
-  const moved = relocate(env.state, [cardId], zoneId, env.game);
+  const { id: cardId, state } = exampleOf(env).claim(match, describeCard(match), env.state);
+  const moved = relocate(state, [cardId], zoneId, env.game);
   return { ...moved, cards: moved.cards.map((c) => (c.id === cardId ? { ...c, data: { ...c.data, movedBy: by } } : c)) };
 };
 

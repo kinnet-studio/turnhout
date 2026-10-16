@@ -39,7 +39,7 @@ function exampleEnv(
         .sort((a, b) => idNumber(a.id) - idNumber(b.id))[0];
       if (!card) throw new Error(`nothing to claim for ${text}`);
       claimed.add(card.id);
-      return card.id;
+      return { id: card.id, state: s };
     },
     setUp,
   };

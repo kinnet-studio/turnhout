@@ -4,7 +4,7 @@ import { compileGame } from './compile';
 import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import type { PhraseLibrary } from './phrases';
-import { ROUNDS_GAME, TEST_DUEL, TINY_BOARD, deckGameText } from './testing';
+import { COUNTER_GAME, ROUNDS_GAME, TEST_DUEL, TINY_BOARD, deckGameText } from './testing';
 import type { CompiledGame } from './types';
 
 const lib = createDefaultLibrary();
@@ -470,5 +470,39 @@ describe('examples in a game with rounds', () => {
       ['setting up starts the first round once', 'pass', null],
       ['a step that finishes the turn', 'pass', null],
     ]);
+  });
+});
+
+describe('examples with a stack that never runs out', () => {
+  // COUNTER_GAME with a stack of coupons that Setup deals one of to each stash, and a button that makes another one.
+  const STOCKED = COUNTER_GAME
+    .replace('    | Opal | 1    | 4      |', '    | Opal | 1    | 4      |\n  A stack called coupons that never runs out:\n    | name   | cost |\n    | Coupon | 0    |')
+    .replace('  Deal 2 cards from the pile to the shop.', '  Deal 2 cards from the pile to the shop.\n  A new Coupon goes to each stash.')
+    .replace('  A player may pass.', '  A player may clip a coupon.\n    Then:\n      A new Coupon goes to their stash.\n  A player may pass.');
+  const STASH_EXAMPLE = [
+    '', 'Example: a stash of coupons',
+    "  Given p0's stash has a Coupon, a Coupon and a Ruby",
+    '  When p0 clips a coupon',
+    "  Then p0's stash has a Coupon, a Coupon, a Coupon and a Ruby",
+  ].join('\n');
+
+  it('makes the coupons a Given line asks for, and the one a press makes, as the game would', () => {
+    const { game, diagnostics } = compileGame(`${STOCKED}\n${STASH_EXAMPLE}`, lib);
+    expect(diagnostics).toEqual([]);
+    expect(runExamples(game!, lib)).toEqual([
+      { name: 'a stash of coupons', line: expect.any(Number), status: 'pass', message: null, atLine: null },
+    ]);
+  });
+  it('fails an expectation of a coupon too few, saying what the stash has', () => {
+    const example = STASH_EXAMPLE.replace("Then p0's stash has a Coupon, a Coupon, a Coupon and a Ruby", "Then p0's stash has a Coupon, a Coupon and a Ruby");
+    const { game } = compileGame(`${STOCKED}\n${example}`, lib);
+    expect(runExamples(game!, lib)[0]).toMatchObject({
+      status: 'fail', message: expect.stringMatching(/^Expected p0's stash to have a Coupon, a Coupon and a Ruby, but it has a Coupon/),
+    });
+  });
+  it('still runs out of the cards of a deck, in plain words: only a stack that never runs out makes more', () => {
+    const example = STASH_EXAMPLE.replace('a Coupon, a Coupon and a Ruby', 'a Ruby, a Ruby, a Ruby, a Ruby and a Ruby');
+    const { game } = compileGame(`${STOCKED}\n${example}`, lib);
+    expect(runExamples(game!, lib)[0]).toMatchObject({ status: 'fail', message: expect.stringContaining('No card matches “a Ruby”.') });
   });
 });

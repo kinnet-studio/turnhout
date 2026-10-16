@@ -301,7 +301,7 @@ function compileCards(lines: OutlineNode[], ctx: LineCtx, declared: Declared[]):
     }
     total += set.identities.length;
     sets.push(set);
-    if (set.kind === 'table') says.push(...saysCellsOf(node.table));
+    if (set.kind !== 'standard') says.push(...saysCellsOf(node.table));
   }
   return { sets, says };
 }

@@ -15,11 +15,13 @@ import { registerPlayerFactPhrases } from './player-facts';
 import { registerQueuePhrases } from './queue-phrases';
 import { registerRentDayPhrases } from './rent-day';
 import { registerSetupPhrases } from './setup-phrases';
+import { registerStackPhrases } from './stack-phrases';
 import { registerStandardDeckPhrases } from './standard-deck';
 import { registerTurnPhrases } from './turn-phrases';
 
 const REGISTRARS: ((lib: PhraseLibrary) => PhraseLibrary)[] = [
   registerSetupPhrases,
+  registerStackPhrases,
   registerFlowPhrases,
   registerQueuePhrases,
   registerBoardPhrases,

@@ -3,6 +3,7 @@
 import type { GameState } from '../game-state';
 import { withBoardData } from './board-state';
 import { checkPlayers, createEngine, initialState, seatsFor } from './build';
+import { makeCard } from './cards';
 import { MissingPhraseError, RuleError } from './diagnostics';
 import { friendlyError, friendlyReason } from './friendly';
 import { byCardId } from './library/example-phrases';
@@ -10,7 +11,7 @@ import type { PhraseLibrary } from './phrases';
 import { LangRuntime } from './runtime';
 import { clearTurnMarkers, markTurnStarted, usesTurns } from './turns';
 import type { CompiledExample, CompiledGame, ExampleEnv } from './types';
-import { matchesCard } from './zones';
+import { BOX_ZONE, matchesCard } from './zones';
 
 export type ExampleResult = {
   name: string;
@@ -23,14 +24,18 @@ export type ExampleResult = {
 /** Every example is played from the same cards, so a run is the same every time. */
 const SEED = 1;
 
-/** Hands out each card at most once, the lowest-numbered one that matches first (c3 before c12). */
-function claimer(): ExampleEnv['claim'] {
+/**
+ * Hands out each card at most once, the lowest-numbered one that matches first (c3 before c12). A card the table lacks is made
+ * from a stack that never runs out, if the game has one with such a card; the made card is in the box, in the state handed back.
+ */
+function claimer(game: CompiledGame): ExampleEnv['claim'] {
   const claimed = new Set<string>();
   return (match, text, state) => {
     const card = state.cards.filter((c) => !claimed.has(c.id) && matchesCard(c, match)).sort(byCardId)[0];
-    if (!card) throw new RuleError(`No card matches “${text}”.`);
-    claimed.add(card.id);
-    return card.id;
+    const claim = card ? { id: card.id, state } : makeCard(state, game, match, BOX_ZONE);
+    if (!claim) throw new RuleError(`No card matches “${text}”.`);
+    claimed.add(claim.id);
+    return claim;
   };
 }
 
@@ -47,7 +52,7 @@ function runExample(game: CompiledGame, library: PhraseLibrary, example: Compile
 
     const env: ExampleEnv = {
       last: null,
-      claim: claimer(),
+      claim: claimer(game),
       // The game's own Setup, run on what is on the table so far, as a new game: no turn has started and no round, so the first
       // turn and round start once Setup is done.
       setUp: (state) => createEngine(game, library, players, clearTurnMarkers({ ...state, turn: undefined })).engine.getState(),

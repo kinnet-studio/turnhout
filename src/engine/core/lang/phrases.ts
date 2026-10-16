@@ -158,7 +158,7 @@ export function vocabFrom(game: {
         // What a card says is a rule for its player, not a word a rule can use about the card.
         if (isSaysColumn(attribute)) continue;
         attributes.add(attribute);
-        if (set.kind === 'table' && !cardValues.some((v) => v.attribute === attribute && v.value === value)) {
+        if (set.kind !== 'standard' && !cardValues.some((v) => v.attribute === attribute && v.value === value)) {
           cardValues.push({ attribute, value });
         }
       }

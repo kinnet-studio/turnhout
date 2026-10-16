@@ -24,7 +24,7 @@ export function cardAttribute(card: CardState, name: string, game: CompiledGame)
 
 /** The columns of the game's tables in table order, found the way a card's identity names them; a standard deck has none. */
 function tableColumns(game: CompiledGame): string[] {
-  const columns = game.cards.filter((set) => set.kind === 'table').flatMap((set) => set.identities.flatMap((i) => Object.keys(i.attrs)));
+  const columns = game.cards.filter((set) => set.kind !== 'standard').flatMap((set) => set.identities.flatMap((i) => Object.keys(i.attrs)));
   return [...new Set(columns)];
 }
 

@@ -1,9 +1,10 @@
+import type { GameState } from '../game-state';
 import { shuffleWithRng, type RngState } from '../rng';
 import type { CardState } from '../scene';
 import type { Json } from '../table-def';
 import { RuleError } from './diagnostics';
-import type { CardIdentity, CardSetSpec, CardTable } from './types';
-import { zoneIdFor } from './zones';
+import type { CardIdentity, CardMatch, CardSetSpec, CardTable, CompiledGame } from './types';
+import { BOX_ZONE, relocate, zoneIdFor } from './zones';
 
 const STANDARD_SUIT_LETTERS = ['S', 'H', 'D', 'C'];
 const STANDARD_RANK_COUNT = 13;
@@ -118,12 +119,14 @@ export function expandCardTable(table: CardTable): CardIdentity[] {
 /**
  * Every card of every set. Each set is shuffled on its own, in the order listed with the rng threaded from one to the next,
  * before its ids are handed out; the sets get the next runs of ids in turn. An id says nothing about its face, only which set
- * the card came from (see `deckOf`). A game with one set is shuffled exactly as a game always was.
+ * the card came from (see `deckOf`). A game with one set is shuffled exactly as a game always was. A set that never runs out
+ * has no card to begin with, so it takes no ids and no shuffle.
  */
 export function buildCards(sets: CardSetSpec[], rng: RngState): { cards: CardState[]; rng: RngState } {
   const cards: CardState[] = [];
   let next = rng;
   for (const set of sets) {
+    if (set.kind === 'endless') continue;
     const shuffled = shuffleWithRng(set.identities, next);
     next = shuffled.rng;
     const zoneId = zoneIdFor(set.start);
@@ -146,8 +149,33 @@ export function deckOf(sets: CardSetSpec[], cardId: string): CardSetSpec | null 
   if (!found) return null;
   let rest = Number(found[1]);
   for (const set of sets) {
+    if (set.kind === 'endless') continue; // no card of it was handed out, so no id belongs to it
     if (rest < set.identities.length) return set;
     rest -= set.identities.length;
   }
   return null;
+}
+
+/**
+ * The `state.data` key holding the number the next card made will take: new cards are numbered on from the ones the sets
+ * dealt, and the state keeps the count, so a game replayed from its log makes the same cards with the same ids.
+ */
+export const NEXT_CARD_KEY = 'lang:next-card';
+
+/**
+ * A new card of a set that never runs out, put in `zoneId`: the first identity of the endless sets, in set order, that has every
+ * attribute of `match`. Null when no endless set has such a card. Its id is the next number in the state, after the cards the
+ * other sets dealt, so it belongs to no deck (see `deckOf`).
+ */
+export function makeCard(state: GameState, game: CompiledGame, match: CardMatch, zoneId: string): { id: string; state: GameState } | null {
+  const identity = game.cards.filter((set) => set.kind === 'endless')
+    .flatMap((set) => set.identities).find(({ attrs }) => Object.entries(match).every(([key, value]) => attrs[key] === value));
+  if (!identity) return null;
+  const kept = state.data[NEXT_CARD_KEY];
+  const n = typeof kept === 'number' ? kept : game.cards.reduce((total, set) => total + (set.kind === 'endless' ? 0 : set.identities.length), 0);
+  const id = `c${n}`;
+  // Made in the box and moved from there, so that `relocate` places it and turns it as it does any card.
+  const made: CardState = { id, zoneId: BOX_ZONE, faceUp: false, faceKey: identity.faceKey, data: { ...identity.attrs } };
+  const withCard: GameState = { ...state, cards: [...state.cards, made], data: { ...state.data, [NEXT_CARD_KEY]: n + 1 } };
+  return { id, state: relocate(withCard, [id], zoneId, game) };
 }

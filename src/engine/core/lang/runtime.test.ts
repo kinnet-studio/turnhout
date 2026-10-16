@@ -198,7 +198,7 @@ describe('LangRuntime', () => {
   const runtime = new LangRuntime(rules, lib, ['p0', 'p1']);
   const example: ExampleEnv = {
     last: null,
-    claim: (match, _text, state) => state.cards.find((c) => matchesCard(c, match))!.id,
+    claim: (match, _text, state) => ({ id: state.cards.find((c) => matchesCard(c, match))!.id, state }),
     setUp: (state) => state,
   };
   const ref = (kind: PhraseRef['kind'], phrase: string, args: Json[] = [], text = phrase): PhraseRef => ({ kind, phrase, args, line: 3, text });

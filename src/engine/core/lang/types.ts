@@ -14,7 +14,11 @@ export type ZoneRef = { shared: string } | { each: string } | { of: SeatRef; zon
 export type CardMatch = { [attr: string]: Json };
 export type ZoneSpec = { name: string; perPlayer: boolean; layout: 'pile' | 'row' | 'hand'; visibility: 'secret' | 'owner' | 'public' };
 export type CardIdentity = { attrs: { [k: string]: Json }; faceKey: string };
-export type CardSetSpec = { kind: 'standard' | 'table'; identities: CardIdentity[]; start: string; acesHigh: boolean };
+/**
+ * A set of cards the game starts with. An `endless` set has the identities of its table but puts no card on the table (its
+ * `start` is ''): a card of it is made, with `makeCard`, whenever a rule asks for a new one.
+ */
+export type CardSetSpec = { kind: 'standard' | 'table' | 'endless'; identities: CardIdentity[]; start: string; acesHigh: boolean };
 export type CardTable = { columns: string[]; rows: { cells: string[]; line: number }[] };
 export type CondGroup = { mode: 'all' | 'any'; refs: PhraseRef[]; text: string; line: number };
 export type DeclaredMove = { verb: string; from: ZoneRef; to: ZoneRef; fromText: string; conditions: CondGroup[]; effects: PhraseRef[]; line: number };
@@ -133,7 +137,8 @@ export type Moment = { kind: 'pass' | 'land'; seat: PlayerId; space: number };
 export interface MoveInfo { verb: string; by: PlayerId; cardId: string; from: string; to: string }
 export interface ExampleEnv {
   last: { ok: boolean; reason?: string } | null;
-  claim(match: CardMatch, text: string, state: GameState): string;   // returns a card id
+  /** The id of a card that matches, and the state with that card in it: one the table lacks is made, and only a made card changes the state. */
+  claim(match: CardMatch, text: string, state: GameState): { id: string; state: GameState };
   setUp(state: GameState): GameState;
 }
 export interface PhraseEnv {

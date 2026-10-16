@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildCards, deckOf, expandCardTable, parseTextFaceKey, standardDeckIdentities, textFaceKey } from './cards';
+import { buildCards, deckOf, expandCardTable, makeCard, NEXT_CARD_KEY, parseTextFaceKey, standardDeckIdentities, textFaceKey } from './cards';
 import { makeRng, shuffleWithRng } from '../rng';
+import type { CardSetSpec } from './types';
+import { fixtureGame, fixtureState } from './testing';
 
 const COLOR_TABLE = { columns: ['color', 'number', 'copies'], rows: ['red', 'yellow', 'green', 'blue'].map((c, i) => ({ cells: [c, '1 to 9', '2'], line: 10 + i })) };
 
@@ -154,5 +156,70 @@ describe('deckOf', () => {
   it('skips a set with no cards and reads only ids as buildCards writes them', () => {
     expect(['c0', 'c1', 'c2', 'c4'].map((id) => deckOf(sets, id)?.start)).toEqual(['draw pile', 'draw pile', 'deck', 'deck']);
     expect(['c5', 'c', 'c-1', 'c01', 'c1.5', 'c1x', ' c1', 'C1', '1'].map((id) => deckOf(sets, id))).toEqual(Array(9).fill(null));
+  });
+});
+
+describe('endless sets', () => {
+  const GEMS = { columns: ['name', 'cost', 'copies'], rows: [{ cells: ['Ruby', '3', '4'], line: 1 }, { cells: ['Opal', '1', '4'], line: 2 }] };
+  const COUPONS = { columns: ['name', 'cost'], rows: [{ cells: ['Coupon', '0'], line: 3 }] };
+  const sets: CardSetSpec[] = [
+    { kind: 'table', identities: expandCardTable(GEMS), start: 'pile', acesHigh: false },
+    { kind: 'endless', identities: expandCardTable(COUPONS), start: '', acesHigh: false },
+  ];
+  const game = fixtureGame({
+    zones: [{ name: 'stash', perPlayer: true, layout: 'row', visibility: 'owner' }, { name: 'bank', perPlayer: false, layout: 'row', visibility: 'public' }],
+    cards: sets,
+  });
+  const fresh = () => fixtureState(buildCards(sets, makeRng(1)).cards);
+
+  it('puts no card of an endless set in the game, so the ids of the others run from c0', () => {
+    const { cards } = buildCards(sets, makeRng(1));
+    expect(cards.map((c) => c.id)).toEqual(Array.from({ length: 8 }, (_, i) => `c${i}`));
+    expect(cards.every((c) => c.data?.name !== 'Coupon')).toBe(true);
+  });
+  it('gives a card an id that belongs to no deck, as none of the cards made yet has been dealt from a set', () => {
+    expect(deckOf(sets, 'c3')).toBe(sets[0]);
+    expect(deckOf(sets, 'c8')).toBeNull();
+  });
+  it('makes a card of the kind asked for, with the next id, in the zone, and counts on from it', () => {
+    const first = makeCard(fresh(), game, { name: 'Coupon' }, 'stash-p0');
+    expect(first?.id).toBe('c8');
+    expect(first?.state.data[NEXT_CARD_KEY]).toBe(9);
+    expect(first?.state.cards.find((c) => c.id === 'c8')).toMatchObject({
+      zoneId: 'stash-p0', faceUp: false, faceKey: sets[1].identities[0].faceKey, data: { name: 'Coupon', cost: 0 },
+    });
+    const second = makeCard(first!.state, game, { name: 'Coupon' }, 'stash-p0');
+    expect(second?.id).toBe('c9');
+    expect(second?.state.data[NEXT_CARD_KEY]).toBe(10);
+    expect(second?.state.cards).toHaveLength(10);
+  });
+  it('turns the card up in a zone everyone can see', () => {
+    expect(makeCard(fresh(), game, { name: 'Coupon' }, 'bank')?.state.cards.at(-1)).toMatchObject({ id: 'c8', zoneId: 'bank', faceUp: true });
+  });
+  it('leaves the state it was given as it was', () => {
+    const before = fresh();
+    makeCard(before, game, { name: 'Coupon' }, 'stash-p0');
+    expect(before.cards).toHaveLength(8);
+    expect(before.data[NEXT_CARD_KEY]).toBeUndefined();
+  });
+  it('gives null for a card no endless set has, though a deck has it', () => {
+    expect(makeCard(fresh(), game, { name: 'Ruby' }, 'stash-p0')).toBeNull();
+  });
+  it('takes the first identity of the endless sets, in set order, that has every attribute asked for', () => {
+    const several: CardSetSpec[] = [
+      sets[0],
+      { kind: 'endless', identities: expandCardTable({ columns: ['name', 'cost'], rows: [{ cells: ['Coupon', '0'], line: 1 }, { cells: ['Voucher', '2'], line: 2 }] }), start: '', acesHigh: false },
+      { kind: 'endless', identities: expandCardTable({ columns: ['name', 'cost'], rows: [{ cells: ['Gift card', '2'], line: 1 }] }), start: '', acesHigh: false },
+    ];
+    const withMore = fixtureGame({ ...game, cards: several });
+    const made = (match: { [k: string]: number | string }) => makeCard(fresh(), withMore, match, 'stash-p0')?.state.cards.at(-1)?.data;
+    expect(made({ cost: 2 })).toEqual({ name: 'Voucher', cost: 2 });
+    expect(made({ name: 'Gift card' })).toEqual({ name: 'Gift card', cost: 2 });
+    expect(made({})).toEqual({ name: 'Coupon', cost: 0 });
+  });
+  it('counts the cards of the sets that are not endless when no number is kept yet, and the kept number otherwise', () => {
+    const kept = makeCard({ ...fresh(), data: { [NEXT_CARD_KEY]: 20 } }, game, { name: 'Coupon' }, 'stash-p0');
+    expect(kept?.id).toBe('c20');
+    expect(kept?.state.data[NEXT_CARD_KEY]).toBe(21);
   });
 });
