@@ -708,6 +708,14 @@ describe('Startup Simulator (designer language)', () => {
       expect(every.filter((key) => !(tally[key] > 0)), `never made or seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
+    it('plays the same game through the page’s view as without it (2 players, seed 1)', () => {
+      const plain = playGame(2, 1, () => {});
+      const viewed = playGame(2, 1, () => {}, { throughView: true });
+      expect(plain.getState().result).toBeDefined();
+      expect(viewed.getLog()).toEqual(plain.getLog());
+      expect(viewed.getState()).toEqual(plain.getState());
+    }, 60_000);
+
     it('a refused press spends nothing', () => {
       const setup = setUp(2, 1);
       const start = setup.turn!.current;
