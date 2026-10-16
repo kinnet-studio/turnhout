@@ -1,17 +1,20 @@
 import type { GameState } from '../game-state';
 import type { Move, MoveHandler } from '../moves';
 import type { PlayerId } from '../scene';
-import { clearTurnLog, endsTurn, isOut, recordAction } from './board-state';
+import { clearTurnLog, endsTurn, isOut, playersIn, recordAction } from './board-state';
 import { secondPersonWords } from './refs';
 import type { LangRuntime } from './runtime';
 import type { CompiledPhase, DeclaredAction, Subject } from './types';
 
 const OUT = "You're out of the game.";
 
-/** What a refusal calls a button: its wording without the space it picks, in the second person. A move no phase declares is called by itself. */
+/**
+ * What a refusal calls a button: its wording without the space it picks, in the second person. A button that picks a player is called
+ * by its whole wording, since its base alone reads wrong (“You can't challenge now.”). A move no phase declares is called by itself.
+ */
 function calledBy(move: string, runtime: LangRuntime): string {
   const declared = runtime.game.phases.flatMap((p) => p.actions).find((a) => a.words === move);
-  return secondPersonWords(declared?.base ?? move);
+  return secondPersonWords(declared?.picksPlayer ? declared.words : declared?.base ?? move);
 }
 
 /** The space the move picks, or null when it carries none that the board has. */
@@ -36,14 +39,34 @@ export function amountPrompt(action: DeclaredAction): string {
 }
 
 /**
+ * The player the move picks, or null when it names none that is a seat of the game, someone else than `by` and still in. The
+ * move is the player's to make up, so every other kind of value is as good as none.
+ */
+function pickedPlayer(m: Move, runtime: LangRuntime, state: GameState, by: PlayerId): PlayerId | null {
+  const { player } = m;
+  return typeof player === 'string' && runtime.seats.includes(player) && player !== by && !isOut(state, player) ? player : null;
+}
+
+/** What a button that picks another player asks of the player who has not picked one. */
+export function pickPlayerPrompt(action: DeclaredAction): string {
+  return `Pick another player to ${secondPersonWords(action.base)}.`;
+}
+
+/**
  * Who a button is about: the player who presses it and, through “it”, the space it picks, else the space their piece is on.
  * A button that picks a space is refused, in the player's words, when the move names none or one its target does not allow.
  * A button that carries an amount is refused, asking how much, when the move carries none; else the subject has the amount too.
+ * A button that picks another player is refused, asking for one, when the move names no one else who is still in; else the subject
+ * has that player too.
  */
 function aboutPress(action: DeclaredAction, runtime: LangRuntime, state: GameState, m: Move, by: PlayerId): Subject | string {
   if (action.amount) {
     const amount = pickedAmount(m);
     return amount === null ? amountPrompt(action) : { player: by, space: null, card: null, amount };
+  }
+  if (action.picksPlayer) {
+    const picked = pickedPlayer(m, runtime, state, by);
+    return picked === null ? pickPlayerPrompt(action) : { player: by, space: null, card: null, picked };
   }
   if (action.target === null) return { player: by, space: null, card: null };
   const space = pickedBy(m, runtime);
@@ -77,7 +100,9 @@ function choose(
  * anyone's turn, so it is not noted for the turn, and the After line can't name it. A button that picks a space
  * (“A player may plant a flag on a field they own.”) takes it from the move's `target`, the index of the space on the
  * board, and its lines are about that space. A button that carries an amount (“A player may raise an amount.”) takes it from the
- * move's `amount`, a whole number of 0 or more, and is refused before any `Only if` line is read when there is none.
+ * move's `amount`, a whole number of 0 or more, and is refused before any `Only if` line is read when there is none. A button that
+ * picks another player (“A player may challenge another player.”) takes it from the move's `player`, a seat other than the one
+ * pressing that is still in, and is refused the same way when there is none.
  */
 export function declaredActionHandler(move: string, runtime: LangRuntime): MoveHandler {
   return {
@@ -108,6 +133,11 @@ export function targetCandidates(runtime: LangRuntime, action: DeclaredAction, s
   if (target === null) return [];
   const spaces = Array.from({ length: runtime.game.board?.spaces.length ?? 0 }, (_, space) => space);
   return spaces.filter((space) => runtime.allowsTarget(target, state, { player: seat, space, card: null }, space));
+}
+
+/** The seats a button that picks another player may be pointed at for `seat`: every one still in but `seat`, in seat order. */
+export function playerCandidates(runtime: LangRuntime, state: GameState, seat: PlayerId): PlayerId[] {
+  return playersIn(state, runtime.seats).filter((other) => other !== seat);
 }
 
 /**

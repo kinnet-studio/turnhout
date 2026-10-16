@@ -7,7 +7,7 @@ import { createEngine, initialState, seatsFor } from './build';
 import { compileGame } from './compile';
 import { RuleError } from './diagnostics';
 import { createDefaultLibrary } from './library';
-import { AMOUNT_BOARD, ANY_PLAYER_BOARD, deckGameText, INTERRUPT_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD } from './testing';
+import { AMOUNT_BOARD, ANY_PLAYER_BOARD, deckGameText, INTERRUPT_BOARD, PICK_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD } from './testing';
 import type { CompiledGame } from './types';
 import { relocate } from './zones';
 
@@ -45,9 +45,9 @@ describe('seat views of a board game', () => {
     expect(p0.board!.pieces).toEqual({ p0: 0, p1: 0 });
     expect(p0.board!.counters).toEqual([{ name: 'money', values: { p0: 1500, p1: 1500 } }]);
     expect(p0.actions).toEqual([
-      { move: 'roll the dice', label: 'Roll the dice', allowed: true, target: null, amount: false },
-      { move: 'buy the space they are on', label: 'Buy the space you are on', allowed: 'they have rolled this turn', target: null, amount: false },
-      { move: 'end their turn', label: 'End your turn', allowed: 'they have rolled this turn', target: null, amount: false },
+      { move: 'roll the dice', label: 'Roll the dice', allowed: true, target: null, amount: false, players: null },
+      { move: 'buy the space they are on', label: 'Buy the space you are on', allowed: 'they have rolled this turn', target: null, amount: false, players: null },
+      { move: 'end their turn', label: 'End your turn', allowed: 'they have rolled this turn', target: null, amount: false, players: null },
     ]);
     expect(seatExtras(engine, runtime, engine.getState(), 'p1').actions.every((a) => a.allowed === "It's p0's turn.")).toBe(true);
   });
@@ -124,7 +124,7 @@ describe('seat views of a board game', () => {
     const { engine, runtime } = createEngine(careless, lib, 2, initialState(careless, 1));
     // The sentence names the designer's line, so they can find the rule that needs an “Only if it has a price.”
     expect(seatExtras(engine, runtime, engine.getState(), 'p0').actions[1]).toEqual({
-      move: 'buy the space they are on', label: 'Buy the space you are on', allowed: 'Line 24 (“they have at least its price in money”): Go has no price.', target: null, amount: false,
+      move: 'buy the space they are on', label: 'Buy the space you are on', allowed: 'Line 24 (“they have at least its price in money”): Go has no price.', target: null, amount: false, players: null,
     });
   });
 
@@ -176,7 +176,7 @@ describe('seat views of a board with houses and a bank', () => {
   it('lists the spaces a button may pick, by their place on the board, with why the others are refused', () => {
     expect(build('p0')).toEqual({
       move: BUILD, label: 'Build a house', allowed: true,
-      target: { prompt: 'Pick a street you own', spaces: { [ROSE]: 'no street of its color has fewer buildings', [LILY]: true } }, amount: false,
+      target: { prompt: 'Pick a street you own', spaces: { [ROSE]: 'no street of its color has fewer buildings', [LILY]: true } }, amount: false, players: null,
     });
   });
 
@@ -192,14 +192,14 @@ describe('seat views of a board with houses and a bank', () => {
     // Lily Lane is p1's with nothing built, so Rose Lane, the only street p0 owns, has a street of its color with fewer buildings.
     expect(build('p0', setOwner(arranged, LILY, 'p1'))).toEqual({
       move: BUILD, label: 'Build a house', allowed: 'no street of its color has fewer buildings',
-      target: { prompt: 'Pick a street you own', spaces: { [ROSE]: 'no street of its color has fewer buildings' } }, amount: false,
+      target: { prompt: 'Pick a street you own', spaces: { [ROSE]: 'no street of its color has fewer buildings' } }, amount: false, players: null,
     });
   });
 
   it('says there is no such space for a seat that has none to pick', () => {
     expect(build('p1')).toEqual({
       move: BUILD, label: 'Build a house', allowed: 'There is no street you own.',
-      target: { prompt: 'Pick a street you own', spaces: {} }, amount: false,
+      target: { prompt: 'Pick a street you own', spaces: {} }, amount: false, players: null,
     });
   });
 
@@ -234,7 +234,7 @@ describe('seat views of a board with houses and a bank', () => {
     const { actions } = seatExtras(engine, runtime, engine.getState(), 'p0');
     expect(actions.find((a) => a.move === 'build a house on a cursed street')).toEqual({
       move: 'build a house on a cursed street', label: 'Build a house', allowed: `Line ${line} (“a cursed street”): Nobody knows which street is cursed.`,
-      target: { prompt: 'Pick a cursed street', spaces: {} }, amount: false,
+      target: { prompt: 'Pick a cursed street', spaces: {} }, amount: false, players: null,
     });
     // The other buttons are as they would be.
     expect(actions.find((a) => a.move === 'roll the dice')!.allowed).toBe(true);
@@ -270,7 +270,7 @@ describe('seat views of a board with houses and a bank', () => {
     const { engine, runtime } = createEngine(g, lib, 3, three);
     expect(seatExtras(engine, runtime, engine.getState(), 'p2').actions.find((a) => a.move === BUILD)).toEqual({
       move: BUILD, label: 'Build a house', allowed: "You're out of the game.",
-      target: { prompt: 'Pick a street you own', spaces: {} }, amount: false,
+      target: { prompt: 'Pick a street you own', spaces: {} }, amount: false, players: null,
     });
   });
 
@@ -596,7 +596,7 @@ describe('seat views of a button that carries an amount', () => {
   const raiseOf = (seat: string, built: ReturnType<typeof played>) => actionsOf(seat, built).find((a) => a.move === RAISE);
 
   it('shows the reason a rule that does not read the amount gives, before the turn has got that far', () => {
-    expect(raiseOf('p0', played(false))).toEqual({ move: RAISE, label: 'Raise', allowed: 'they have rolled this turn', target: null, amount: true });
+    expect(raiseOf('p0', played(false))).toEqual({ move: RAISE, label: 'Raise', allowed: 'they have rolled this turn', target: null, amount: true, players: null });
   });
   it('shows the button as live once only the amount is missing, although none has been typed', () => {
     const built = played(true);
@@ -613,6 +613,64 @@ describe('seat views of a button that carries an amount', () => {
   });
   it('tells the other buttons from it', () => {
     expect(actionsOf('p0', played(false)).map((a) => [a.move, a.amount])).toEqual([['roll the dice', false], [RAISE, true], ['end their turn', false]]);
+  });
+  it('is plain data, and readSeatExtras reads it back', () => {
+    const built = played(true);
+    const extras = seatExtras(built.engine, built.runtime, built.engine.getState(), 'p0');
+    expect(readSeatExtras(JSON.parse(JSON.stringify(extras)))).toEqual(extras);
+  });
+});
+
+describe('seat views of a button that picks another player', () => {
+  const pick = compileGame(PICK_BOARD, lib).game!;
+  const CHALLENGE = 'challenge another player';
+  /** A three-player game of PICK_BOARD with a roll of 1 and 2 queued, `arrange` having had its say on the start; p0 has rolled when `rolled`. */
+  const played = (rolled: boolean, arrange: (s: GameState) => GameState = (s) => s) => {
+    const built = createEngine(pick, lib, 3, arrange(queueRoll(withBoardData(initialState(pick, 1), pick, seatsFor(3)), [1, 2])));
+    if (rolled) expect(built.engine.dispatch({ type: 'roll the dice', by: 'p0' }).ok).toBe(true);
+    return built;
+  };
+  const actionsOf = (seat: string, built: ReturnType<typeof played>) => seatExtras(built.engine, built.runtime, built.engine.getState(), seat).actions;
+  const view = (seat: string, built: ReturnType<typeof played>) => actionsOf(seat, built).find((a) => a.move === CHALLENGE)!;
+
+  it('shows each player to pick with the reason the press would be refused, before the turn has got that far', () => {
+    expect(view('p0', played(false))).toEqual({
+      move: CHALLENGE, label: 'Challenge another player', allowed: 'they have rolled this turn', target: null, amount: false,
+      players: { p1: 'they have rolled this turn', p2: 'they have rolled this turn' },
+    });
+  });
+  it('shows every other player as one to pick once the player has rolled, and the others the turn that is not theirs', () => {
+    const built = played(true);
+    expect(view('p0', built)).toMatchObject({ allowed: true, players: { p1: true, p2: true } });
+    expect(view('p1', built)).toMatchObject({ allowed: "It's p0's turn.", players: { p0: "It's p0's turn.", p2: "It's p0's turn." } });
+  });
+  it('lists no player who is out, and says a seat that is out is out', () => {
+    const built = played(true, (s) => markOut(s, 'p2'));
+    expect(view('p0', built)).toMatchObject({ allowed: true, players: { p1: true } });
+    expect(Object.keys(view('p0', built).players!)).toEqual(['p1']);
+    expect(view('p2', built)).toMatchObject({ allowed: "You're out of the game.", players: {} });
+  });
+  it('has no one to pick when every other player is out, and asks for the pick that can not be made', () => {
+    // The end rule that PICK_BOARD has would end the game with one player left, so this table plays on while no one has 2000 money.
+    const going = compileGame(PICK_BOARD.replace('The game ends when one player is left.', 'The game ends when no player has less than 2000 money.'), lib).game!;
+    const built = createEngine(going, lib, 3, markOut(markOut(withBoardData(initialState(going, 1), going, seatsFor(3)), 'p1'), 'p2'));
+    expect(seatExtras(built.engine, built.runtime, built.engine.getState(), 'p0').actions.find((a) => a.move === CHALLENGE))
+      .toMatchObject({ allowed: 'Pick another player to challenge.', players: {} });
+  });
+  it('says the game is over to every seat, whoever is left to pick', () => {
+    // p0 puts themselves out by challenging, which leaves p1 the only player in.
+    const ending = compileGame(PICK_BOARD.replace('      That player is the rival.', '      That player is the rival.\n      They are out.'), lib).game!;
+    const over = createEngine(ending, lib, 2, queueRoll(withBoardData(initialState(ending, 1), ending, seatsFor(2)), [1, 2]));
+    over.engine.dispatch({ type: 'roll the dice', by: 'p0' });
+    expect(over.engine.dispatch({ type: CHALLENGE, by: 'p0', player: 'p1' }).ok).toBe(true);
+    expect(over.engine.getState().result).toBeDefined();
+    for (const seat of ['p0', 'p1']) {
+      const challenge = seatExtras(over.engine, over.runtime, over.engine.getState(), seat).actions.find((a) => a.move === CHALLENGE);
+      expect(challenge, seat).toMatchObject({ allowed: 'The game is over.' });
+    }
+  });
+  it('is null for the buttons that pick no player', () => {
+    expect(actionsOf('p0', played(false)).filter((a) => a.move !== CHALLENGE).map((a) => [a.move, a.players])).toEqual([['roll the dice', null], ['end their turn', null]]);
   });
   it('is plain data, and readSeatExtras reads it back', () => {
     const built = played(true);
@@ -673,8 +731,13 @@ describe('readSeatExtras', () => {
   const board = (over: { [k: string]: Json } = {}) => ({
     spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {}, lastDrawn: null, playerCards: {}, owes: {}, gameNumbers: [], interrupted: false, ...over,
   });
-  const action = (over: { [k: string]: Json } = {}) => ({ move: 'roll the dice', label: 'Roll', allowed: true, target: null, amount: false, ...over });
+  const action = (over: { [k: string]: Json } = {}) => ({ move: 'roll the dice', label: 'Roll', allowed: true, target: null, amount: false, players: null, ...over });
   const picking = (over: { [k: string]: Json } = {}) => action({ target: { prompt: 'Pick a street you own', spaces: { 3: true }, ...over } });
+
+  it('reads a button that picks another player, with a verdict for each player', () => {
+    const extras = { board: null, actions: [action({ players: { p1: true, p2: 'It\'s p0\'s turn.' } }), action({ players: {} })] };
+    expect(readSeatExtras(extras)).toEqual(extras);
+  });
 
   it('reads a board with facts, stripes, debts, a bank and a button that picks a space', () => {
     const extras = {
@@ -693,12 +756,16 @@ describe('readSeatExtras', () => {
     ['a list', []],
     ['no actions', { board: null }],
     ['actions that are not a list', { board: null, actions: {} }],
-    ['an action with no label', { board: null, actions: [{ move: 'roll the dice', allowed: true, target: null, amount: false }] }],
-    ['an action with no move type', { board: null, actions: [{ label: 'Roll', allowed: true, target: null, amount: false }] }],
+    ['an action with no label', { board: null, actions: [{ move: 'roll the dice', allowed: true, target: null, amount: false, players: null }] }],
+    ['an action with no move type', { board: null, actions: [{ label: 'Roll', allowed: true, target: null, amount: false, players: null }] }],
     ['an action that is allowed with false', { board: null, actions: [action({ allowed: false })] }],
-    ['an action with no target field', { board: null, actions: [{ move: 'roll the dice', label: 'Roll', allowed: true, amount: false }] }],
-    ['an action with no amount field', { board: null, actions: [{ move: 'roll the dice', label: 'Roll', allowed: true, target: null }] }],
+    ['an action with no target field', { board: null, actions: [{ move: 'roll the dice', label: 'Roll', allowed: true, amount: false, players: null }] }],
+    ['an action with no amount field', { board: null, actions: [{ move: 'roll the dice', label: 'Roll', allowed: true, target: null, players: null }] }],
     ['an action whose amount is not a boolean', { board: null, actions: [action({ amount: 'yes' })] }],
+    ['an action with no players field', { board: null, actions: [{ move: 'roll the dice', label: 'Roll', allowed: true, target: null, amount: false }] }],
+    ['players that are not a map', { board: null, actions: [action({ players: [] })] }],
+    ['a player that is neither true nor a reason', { board: null, actions: [action({ players: { p1: 3 } })] }],
+    ['a player that is false', { board: null, actions: [action({ players: { p1: false } })] }],
     ['a target that is not an object', { board: null, actions: [action({ target: 'a street' })] }],
     ['a target with no prompt', { board: null, actions: [action({ target: { spaces: {} } })] }],
     ['a target with no spaces', { board: null, actions: [action({ target: { prompt: 'Pick a street you own' } })] }],

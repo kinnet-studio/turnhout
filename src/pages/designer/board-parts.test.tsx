@@ -305,8 +305,8 @@ describe('MoneyLine', () => {
 
 describe('ActionButtons', () => {
   const actions = [
-    { move: 'roll the dice', label: 'Roll the dice', allowed: true as const, target: null, amount: false },
-    { move: 'end their turn', label: 'End your turn', allowed: 'they have rolled this turn', target: null, amount: false },
+    { move: 'roll the dice', label: 'Roll the dice', allowed: true as const, target: null, amount: false, players: null },
+    { move: 'end their turn', label: 'End your turn', allowed: 'they have rolled this turn', target: null, amount: false, players: null },
   ];
 
   it('presses an allowed button and greys the others with the reason', () => {
@@ -330,7 +330,7 @@ describe('ActionButtons', () => {
   it('sends nothing from a button greyed because the game is over', () => {
     const onPress = vi.fn();
     const onRefused = vi.fn();
-    render(<ActionButtons actions={[{ move: 'roll the dice', label: 'Roll the dice', allowed: 'The game is over.', target: null, amount: false }]} onPress={onPress} onPick={vi.fn()} onRefused={onRefused} />);
+    render(<ActionButtons actions={[{ move: 'roll the dice', label: 'Roll the dice', allowed: 'The game is over.', target: null, amount: false, players: null }]} onPress={onPress} onPick={vi.fn()} onRefused={onRefused} />);
     fireEvent.click(screen.getByRole('button', { name: 'Roll the dice' }));
     expect(onPress).not.toHaveBeenCalled();
     expect(onRefused).toHaveBeenCalledWith('The game is over.');
@@ -338,7 +338,7 @@ describe('ActionButtons', () => {
 
   describe('a button that picks a space', () => {
     const target = { prompt: 'Pick a street you own', spaces: { 1: true as const } };
-    const build = { move: 'build a house on a street they own', label: 'Build a house', allowed: true as const, target, amount: false };
+    const build = { move: 'build a house on a street they own', label: 'Build a house', allowed: true as const, target, amount: false, players: null };
 
     it('opens picking when pressed, and sends nothing yet', () => {
       const onPress = vi.fn();
@@ -365,7 +365,7 @@ describe('ActionButtons', () => {
 });
 
 describe("game numbers and buttons that carry an amount", () => {
-  const raise = { move: 'raise an amount', label: 'Raise', allowed: true as const, target: null, amount: true };
+  const raise = { move: 'raise an amount', label: 'Raise', allowed: true as const, target: null, amount: true, players: null };
   it('puts the game numbers that are set after the bank, and alone when there is no bank', () => {
     render(<MoneyLine board={board({ bank: [{ name: 'houses', count: 32 }], gameNumbers: [{ name: 'pot', value: 1200 }] })} />);
     expect(screen.getByText('bank: 32 houses · pot 1,200')).toBeTruthy();

@@ -9,7 +9,7 @@ import {
   bankOf, counterOf, gameNumber, interruptedTurn, isOut, lastDrawn, latestRoll, owedTo, ownerOf, pieceAt, playerFact, spaceFact, type Creditor, type LastDrawn,
 } from './board-state';
 import { cardName } from './card-facts';
-import { amountPrompt, amountReady, targetCandidates } from './declared-actions';
+import { amountPrompt, amountReady, playerCandidates, targetCandidates } from './declared-actions';
 import { friendlyError, friendlyReason } from './friendly';
 import { secondPersonWords } from './refs';
 import type { LangRuntime } from './runtime';
@@ -58,10 +58,14 @@ export type TargetView = { prompt: string; spaces: { [space: string]: true | str
 /**
  * `move` is the move type to send when the button is pressed. `allowed` is true when the button works now, otherwise the
  * sentence to show for why it does not; for a button that picks a space it is true when any space may be picked, and for a button
- * that carries an amount when only the amount is left to say. `target` is null for a button that picks no space. `amount` is true
- * for a button that carries an amount, which the player types before pressing it.
+ * that carries an amount when only the amount is left to say, and for a button that picks another player when any player may be
+ * picked. `target` is null for a button that picks no space. `amount` is true for a button that carries an amount, which the player
+ * types before pressing it. `players` is null for every button but one that picks another player; for that one it has each player
+ * to pick, `true` when the move accepts that player and otherwise the sentence for why it does not.
  */
-export type ActionView = { move: string; label: string; allowed: true | string; target: TargetView | null; amount: boolean };
+export type ActionView = {
+  move: string; label: string; allowed: true | string; target: TargetView | null; amount: boolean; players: { [seat: string]: true | string } | null;
+};
 export type SeatExtras = { board: BoardView | null; actions: ActionView[] };
 
 const OUT_OF_GAME = "You're out of the game.";
@@ -159,12 +163,15 @@ const noneWords = (target: NonNullable<DeclaredAction['target']>): string => tar
 const pickPrompt = (target: NonNullable<DeclaredAction['target']>): string => `Pick ${targetWords(target)}`;
 
 /**
- * Whether `seat` may press the button now, with the space it picks when it picks one; a rule that cannot be answered
+ * Whether `seat` may press the button now, with the space or the player it picks when it picks one; a rule that cannot be answered
  * (“Go has no price.”) greys it with that sentence.
  */
-function allowedNow(engine: GameEngine, state: GameState, seat: PlayerId, move: string, target?: number): true | string {
+function allowedNow(
+  engine: GameEngine, state: GameState, seat: PlayerId, move: string, pick: { target?: number; player?: PlayerId } = {},
+): true | string {
   try {
-    const verdict = engine.canDispatch({ type: move, by: seat, ...(target === undefined ? {} : { target }) });
+    const { target, player } = pick;
+    const verdict = engine.canDispatch({ type: move, by: seat, ...(target === undefined ? {} : { target }), ...(player === undefined ? {} : { player }) });
     return verdict === true ? true : friendlyReason(verdict, state.turn?.current);
   } catch (e) {
     return friendlyError(e);
@@ -190,7 +197,7 @@ function pickingView(
     // A target that cannot be answered greys the button with that sentence, as a rule that cannot be answered does.
     return { target: view, allowed: over ?? friendlyError(e) };
   }
-  for (const space of candidates) view.spaces[space] = allowedNow(engine, state, seat, action.words, space);
+  for (const space of candidates) view.spaces[space] = allowedNow(engine, state, seat, action.words, { target: space });
   const verdicts = Object.values(view.spaces);
   if (verdicts.length === 0) return { target: view, allowed: over ?? `There is no ${noneWords(target)}.` };
   return { target: view, allowed: verdicts.includes(true) ? true : verdicts[0] };
@@ -210,6 +217,23 @@ function amountView(engine: GameEngine, runtime: LangRuntime, state: GameState, 
   }
 }
 
+/**
+ * Which players a button that picks another player may be pointed at, and the button's own verdict from them. Each player still
+ * in but `seat` is asked of the engine, as the move would be sent; the button works when any of them does, and otherwise says why
+ * the first does not. With no one to pick it says what the move says without a pick.
+ */
+function playersView(
+  engine: GameEngine, runtime: LangRuntime, state: GameState, seat: PlayerId, action: DeclaredAction,
+): { players: { [seat: string]: true | string }; allowed: true | string } {
+  const players: { [seat: string]: true | string } = {};
+  for (const other of playerCandidates(runtime, state, seat)) players[other] = allowedNow(engine, state, seat, action.words, { player: other });
+  const verdicts = Object.values(players);
+  // Once the game is over every button says so, as the ones that pick nothing do, whoever is left to pick.
+  const over = state.result === undefined ? null : friendlyReason('game is over');
+  if (verdicts.length === 0) return { players, allowed: over ?? allowedNow(engine, state, seat, action.words) };
+  return { players, allowed: over ?? (verdicts.includes(true) ? true : verdicts[0]) };
+}
+
 /** The current phase's buttons in written order, each saying whether this seat may press it right now and if not why. */
 function actionViews(engine: GameEngine, runtime: LangRuntime, state: GameState, seat: PlayerId): ActionView[] {
   const phase = runtime.game.phases.find((p) => p.id === state.turn?.phase);
@@ -218,11 +242,18 @@ function actionViews(engine: GameEngine, runtime: LangRuntime, state: GameState,
   const out = isOut(state, seat) && state.result === undefined;
   return phase.actions.map((action): ActionView => {
     const { words: move, label, target } = action;
-    if (action.amount) return { move, label, allowed: out ? OUT_OF_GAME : amountView(engine, runtime, state, seat, action), target: null, amount: true };
-    if (target === null) return { move, label, allowed: out ? OUT_OF_GAME : allowedNow(engine, state, seat, move), target: null, amount: false };
-    if (out) return { move, label, allowed: OUT_OF_GAME, target: { prompt: pickPrompt(target), spaces: {} }, amount: false };
+    if (action.amount) {
+      return { move, label, allowed: out ? OUT_OF_GAME : amountView(engine, runtime, state, seat, action), target: null, amount: true, players: null };
+    }
+    if (action.picksPlayer) {
+      if (out) return { move, label, allowed: OUT_OF_GAME, target: null, amount: false, players: {} };
+      const picking = playersView(engine, runtime, state, seat, action);
+      return { move, label, allowed: picking.allowed, target: null, amount: false, players: picking.players };
+    }
+    if (target === null) return { move, label, allowed: out ? OUT_OF_GAME : allowedNow(engine, state, seat, move), target: null, amount: false, players: null };
+    if (out) return { move, label, allowed: OUT_OF_GAME, target: { prompt: pickPrompt(target), spaces: {} }, amount: false, players: null };
     const picking = pickingView(engine, runtime, state, seat, action, target);
-    return { move, label, allowed: picking.allowed, target: picking.target, amount: false };
+    return { move, label, allowed: picking.allowed, target: picking.target, amount: false, players: null };
   });
 }
 
@@ -255,7 +286,7 @@ const isVerdict = (v: unknown): boolean => v === true || isText(v);
 const isTarget = (v: unknown): boolean => isRecord(v) && isText(v.prompt) && isMap(v.spaces, isVerdict);
 const isAction = (v: unknown): boolean =>
   isRecord(v) && isText(v.move) && isText(v.label) && isVerdict(v.allowed) && (v.target === null || isTarget(v.target))
-  && typeof v.amount === 'boolean';
+  && typeof v.amount === 'boolean' && (v.players === null || isMap(v.players, isVerdict));
 
 /** For the page: the extras of a view when they have the shape `seatExtras` makes, null for anything else. */
 export function readSeatExtras(extras: Json | undefined): SeatExtras | null {

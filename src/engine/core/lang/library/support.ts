@@ -51,6 +51,13 @@ export function theAmount(env: PhraseEnv): number {
   return amount;
 }
 
+/** The player a `needsPick` phrase reads, the one the button's press picked. The compiler only lets such phrases into a button that picks one, so a missing pick is a bug. */
+export function thePick(env: PhraseEnv): PlayerId {
+  const picked = env.subject?.picked;
+  if (picked === undefined) throw new Error('This phrase needs a player picked, but the button carries none.');
+  return picked;
+}
+
 /** The card a `needsCard` phrase is about, by its id. The compiler only lets such phrases into rules that have one, so a missing one is a bug. */
 export function cardOf(env: PhraseEnv): string {
   const card = env.subject?.card;

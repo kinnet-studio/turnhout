@@ -12,10 +12,11 @@ const library = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
   .condition('it is flagged', () => true, { needsCard: true })
   .effect('move it away', (env) => env.state, { needsCard: true })
   .effect('they keep this card', (env) => env.state, { needsPlayer: true, needsDrawnCard: true })
+  .effect('that player is {playerflag}', (env) => env.state, { needsPick: true })
   .which('a card in a {perzone} has {int} {attribute}', () => []);
 
 const ctx = (): LineCtx & { diagnostics: Diagnostic[] } =>
-  ({ library, vocab: emptyVocab(), gameName: 'Test', inMove: false, player: false, space: false, card: false, drawn: false, amount: false, diagnostics: [] });
+  ({ library, vocab: emptyVocab(), gameName: 'Test', inMove: false, player: false, space: false, card: false, drawn: false, amount: false, picked: false, diagnostics: [] });
 
 describe('matchLine with other kinds to try', () => {
   it('reads a line as the kind asked for before any other', () => {
@@ -97,5 +98,23 @@ describe('matchLine and a card that was just drawn', () => {
     const none = { ...ctx(), drawn: false };
     matchLine('effect', 'They keep this card', 4, none);
     expect(none.diagnostics.map((d) => d.message)).toEqual([expect.stringContaining('only makes sense in a rule about a player')]);
+  });
+});
+
+describe('matchLine and the player a button picks', () => {
+  const NEEDS_PICK = '“That player is the rival” only makes sense in a button whose wording ends in “another player”, like “A player may challenge another player.”';
+  const rival = () => ({ ...ctx(), vocab: { ...emptyVocab(), facts: [{ name: 'the rival', on: 'player' as const, kind: 'flag' as const }] } });
+
+  it('refuses a phrase that reads the pick anywhere but in a button that picks another player', () => {
+    for (const about of [{}, { player: true }, { player: true, space: true }, { player: true, amount: true }]) {
+      const one = { ...rival(), ...about };
+      expect(matchLine('effect', 'That player is the rival', 4, one)).toMatchObject({ kind: 'lang', phrase: 'missing', args: ['effect'] });
+      expect(one.diagnostics.map((d) => [d.line, d.message]), JSON.stringify(about)).toEqual([[4, NEEDS_PICK]]);
+    }
+  });
+  it('reads it in a button that picks another player', () => {
+    const picking = { ...rival(), player: true, space: true, picked: true };
+    expect(matchLine('effect', 'That player is the rival', 4, picking)).toMatchObject({ kind: 'effect', phrase: 'that player is {playerflag}' });
+    expect(picking.diagnostics).toEqual([]);
   });
 });

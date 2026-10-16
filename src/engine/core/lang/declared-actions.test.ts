@@ -4,17 +4,17 @@ import { zoneCards, type GameState } from '../game-state';
 import type { Move, MoveContext } from '../moves';
 import { RuleRegistry } from '../rules';
 import {
-  TURN_KEY, counterOf, gameNumber, isOut, markOut, ownerOf, pieceAt, placePiece, queueRoll, setCounter, setOwner, setSpaceFact, spaceFact,
+  TURN_KEY, counterOf, gameNumber, isOut, markOut, ownerOf, pieceAt, placePiece, playerFact, queueRoll, setCounter, setOwner, setSpaceFact, spaceFact,
   withBoardData,
 } from './board-state';
 import { createEngine, flowDefFor, initialState, seatsFor } from './build';
 import { compileGame } from './compile';
-import { amountPrompt, amountReady, declaredActionHandler, targetCandidates } from './declared-actions';
+import { amountPrompt, amountReady, declaredActionHandler, pickPlayerPrompt, playerCandidates, targetCandidates } from './declared-actions';
 import { friendlyError } from './friendly';
 import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { MAX_MOMENT_DEPTH } from './runtime';
-import { AMOUNT_BOARD, ANY_PLAYER_BOARD, INTERRUPT_BOARD, MARK_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD } from './testing';
+import { AMOUNT_BOARD, ANY_PLAYER_BOARD, INTERRUPT_BOARD, MARK_BOARD, PICK_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD } from './testing';
 
 const lib = createDefaultLibrary();
 const game = compileGame(TINY_BOARD, lib).game!;
@@ -613,6 +613,86 @@ describe('buttons that carry an amount', () => {
     ].join('\n');
     it('runs on the engine and passes', () => {
       const { game: withExample, diagnostics } = compileGame(`${AMOUNT_BOARD}\n\n${EXAMPLE}`, lib);
+      expect(diagnostics).toEqual([]);
+      const results = runExamples(withExample!, lib);
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({ status: 'pass', message: null });
+    });
+  });
+});
+
+describe('buttons that pick another player', () => {
+  const pick = compileGame(PICK_BOARD, lib).game!;
+  const CHALLENGE = 'challenge another player';
+  /** A new game of `players` seats whose turn is at p0 in playing, after `arrange`. */
+  const table = (players: number, arrange: (s: GameState) => GameState) =>
+    createEngine(pick, lib, players, arrange(withBoardData(initialState(pick, 1), pick, seatsFor(players)))).engine;
+
+  it('compiles, keeps “another player” out of the base, and reads the pick from the move', () => {
+    expect(compileGame(PICK_BOARD, lib).diagnostics).toEqual([]);
+    expect(pick.phases[0].actions[1]).toMatchObject({
+      words: CHALLENGE, base: 'challenge', label: 'Challenge another player', picksPlayer: true, target: null, amount: false,
+    });
+    const engine = table(2, (s) => queueRoll(s, [1, 2]));
+    engine.dispatch({ type: 'roll the dice', by: 'p0' });
+    expect(engine.dispatch({ type: CHALLENGE, by: 'p0', player: 'p1' }).ok).toBe(true);
+    expect(playerFact(engine.getState(), 'p1', 'the rival')).toBe(true);
+  });
+  it('refuses in order: the turn, the pick, then every Only if line', () => {
+    const engine = table(2, (s) => s);
+    expect(engine.canDispatch({ type: CHALLENGE, by: 'p1', player: 'p0' })).toBe("not p1's turn");
+    expect(engine.canDispatch({ type: CHALLENGE, by: 'p0' })).toBe('Pick another player to challenge.');
+    expect(engine.canDispatch({ type: CHALLENGE, by: 'p0', player: 'p1' })).toBe('they have rolled this turn');
+  });
+  it('Review Focus: a pick that names no other player still in is refused before any Only if line is asked', () => {
+    const engine = table(3, (s) => markOut(s, 'p2'));
+    for (const player of [null, 7, 'p9', 'P1', 'p0', 'p2']) {
+      expect(engine.canDispatch({ type: CHALLENGE, by: 'p0', player }), String(player)).toBe('Pick another player to challenge.');
+    }
+    expect(engine.canDispatch({ type: CHALLENGE, by: 'p0' })).toBe('Pick another player to challenge.');
+  });
+  it('names the button by its whole wording, since its base alone reads wrong, when it is not there to press', () => {
+    const { runtime, tableDef } = createEngine(pick, lib, 2, initialState(pick, 1));
+    const ctx: MoveContext = { tableDef, rules: new RuleRegistry() };
+    const setup: GameState = { ...withBoardData(initialState(pick, 1), pick, ['p0', 'p1']), turn: { current: 'p0', phase: '__setup' } };
+    expect(declaredActionHandler(CHALLENGE, runtime).legal(setup, { type: CHALLENGE, by: 'p0', player: 'p1' }, ctx)).toBe("You can't challenge another player now.");
+  });
+  it('refuses a player who is out before it asks for the pick', () => {
+    const engine = table(3, (s) => markOut(s, 'p0'));
+    expect(engine.canDispatch({ type: CHALLENGE, by: 'p0' })).toBe("You're out of the game.");
+  });
+
+  describe('playerCandidates', () => {
+    const seats = (players: number, arrange: (s: GameState) => GameState = (s) => s) => {
+      const { engine, runtime } = createEngine(pick, lib, players, arrange(withBoardData(initialState(pick, 1), pick, seatsFor(players))));
+      return { runtime, state: engine.getState() };
+    };
+    it('lists every seat still in but the one asking, in seat order', () => {
+      const { runtime, state } = seats(3);
+      expect([playerCandidates(runtime, state, 'p0'), playerCandidates(runtime, state, 'p1')]).toEqual([['p1', 'p2'], ['p0', 'p2']]);
+    });
+    it('leaves out a seat that is out', () => {
+      const { runtime, state } = seats(3, (s) => markOut(s, 'p1'));
+      expect(playerCandidates(runtime, state, 'p0')).toEqual(['p2']);
+    });
+    it('says what to ask the player who has not picked', () => expect(pickPlayerPrompt(pick.phases[0].actions[1])).toBe('Pick another player to challenge.'));
+  });
+
+  describe('as an example', () => {
+    const EXAMPLE = [
+      'Example: challenging',
+      '  Given the next roll is 1 and 2',
+      '  When p0 rolls the dice',
+      '  And p0 challenges p0',
+      '  Then it is rejected because "Pick another player to challenge."',
+      '  When p0 challenges another player',
+      '  Then it is rejected because "Pick another player to challenge."',
+      '  When p0 challenges p1',
+      '  Then it is accepted',
+      '  And p1 is the rival',
+    ].join('\n');
+    it('runs on the engine and passes', () => {
+      const { game: withExample, diagnostics } = compileGame(`${PICK_BOARD}\n\n${EXAMPLE}`, lib);
       expect(diagnostics).toEqual([]);
       const results = runExamples(withExample!, lib);
       expect(results).toHaveLength(1);

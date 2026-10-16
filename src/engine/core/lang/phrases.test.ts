@@ -109,7 +109,7 @@ describe('PhraseLibrary.match', () => {
     const l = lib().condition('it is their move', fn, { needsMove: true }).condition('hearts are broken', () => true);
     expect(l.get('condition', 'it is their move')).toEqual({
       fn, needsMove: true, needsPlayer: false, needsSpace: false, needsCard: false, needsDrawnCard: false, needsPayment: false, needsBoard: false,
-      needsDice: false, needsTwoDice: false, needsAmount: false, entersPhase: false,
+      needsDice: false, needsTwoDice: false, needsAmount: false, needsPick: false, entersPhase: false,
     });
     expect(l.get('condition', 'hearts are broken')?.needsMove).toBe(false);
     expect(l.get('effect', 'it is their move')).toBeUndefined();
@@ -382,8 +382,8 @@ describe('board vocabulary and phrase flags', () => {
     const v = vocabFrom({
       maxPlayers: 2, board: fixtureBoardGame().board,
       actions: [
-        { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false, anyone: false, amount: false },
-        { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true, anyone: false, amount: false },
+        { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false, anyone: false, amount: false, picksPlayer: false },
+        { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true, anyone: false, amount: false, picksPlayer: false },
       ],
     });
     expect(v.spaces).toHaveLength(8);
@@ -393,8 +393,8 @@ describe('board vocabulary and phrase flags', () => {
     expect(v.counters).toEqual(['money']);
     expect(v.payWith).toBe('money');
     expect(v.actions).toEqual([
-      { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false, anyone: false, amount: false },
-      { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true, anyone: false, amount: false },
+      { verb: 'roll', words: 'roll the dice', base: 'roll the dice', targeted: false, anyone: false, amount: false, picksPlayer: false },
+      { verb: 'build', words: 'build a house on a street they own', base: 'build a house', targeted: true, anyone: false, amount: false, picksPlayer: false },
     ]);
     expect(v.dice).toBe(true);
     expect(v.diceCount).toBe(2);

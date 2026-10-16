@@ -141,9 +141,9 @@ function readActions(phases: OutlineNode[], ctx: LineCtx): Vocab['actions'] {
     for (const child of phase.children) {
       const found = actionLine(normalizeLine(child.text));
       if (!found) continue;
-      const { verb, words, base, target, anyone, amount } = actionOf(found, readsTarget);
+      const { verb, words, base, target, anyone, amount, picksPlayer } = actionOf(found, readsTarget);
       const first = byWords.get(words);
-      if (!first) byWords.set(words, { action: { verb, words, base, targeted: target !== null, anyone, amount }, phase });
+      if (!first) byWords.set(words, { action: { verb, words, base, targeted: target !== null, anyone, amount, picksPlayer }, phase });
       else if (first.phase !== phase && first.action.anyone !== anyone) addProblem(ctx.diagnostics, child.line, openedDifferently(words, first.action.anyone));
     }
   }
@@ -456,7 +456,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   const name = readGameName(of('game'), diagnostics);
   const players = readPlayers(of('players'), diagnostics);
   const maxPlayers = players?.max ?? 0;
-  const stage = (vocab: Vocab): LineCtx => ({ library, vocab, gameName: name ?? 'Untitled', inMove: false, player: false, space: false, card: false, drawn: false, amount: false, diagnostics });
+  const stage = (vocab: Vocab): LineCtx => ({ library, vocab, gameName: name ?? 'Untitled', inMove: false, player: false, space: false, card: false, drawn: false, amount: false, picked: false, diagnostics });
 
   // A board game may have no cards and no zones at all.
   if (of('board').length === 0) {

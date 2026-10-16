@@ -187,6 +187,21 @@ export const AMOUNT_BOARD = [
 ].join('\n');
 
 /**
+ * TINY_BOARD_HEAD with a button that picks another player: after rolling, a player may challenge another player, who becomes
+ * the rival. Line 15 declares the rival, `A player may challenge another player.` is line 24 and `A player may end their turn.`
+ * line 28.
+ */
+export const PICK_BOARD = [
+  TINY_BOARD_HEAD.replace('  There are two six-sided dice.', '  There are two six-sided dice.\n  Players can be the rival.'),
+  '  A player may roll the dice.', '    Only if they have not rolled this turn.', '    Then:', '      Roll the dice.',
+  '      Their piece moves forward by the roll.',
+  '  A player may challenge another player.', '    Only if they have rolled this turn.', '    Then:', '      That player is the rival.',
+  '  A player may end their turn.', '    Only if they have rolled this turn.',
+  '  After a player ends their turn, the turn passes to the left.',
+  '', 'End:', '  The game ends when one player is left.', '  That player wins.',
+].join('\n');
+
+/**
  * TINY_BOARD_HEAD with a vote that interrupts the turn. After rolling, a player may call one: the vote phase starts with the player
  * on their left, and its start line makes every player voting. Voters abstain in turn, the turn skipping players who are not
  * voting; once no player is, play goes back to the caller's turn. Closing the vote goes back at once, and the After line names it.
@@ -353,7 +368,7 @@ export function vocabFor(game: CompiledGame, players: number = game.players.max)
     verbs: [...new Set(game.phases.flatMap((p) => p.moves.map((m) => m.verb)))],
     board: game.board,
     actions: game.phases.flatMap((p) => p.actions.map((a) => ({
-      verb: a.verb, words: a.words, base: a.base, targeted: a.target !== null, anyone: a.anyone, amount: a.amount,
+      verb: a.verb, words: a.words, base: a.base, targeted: a.target !== null, anyone: a.anyone, amount: a.amount, picksPlayer: a.picksPlayer,
     }))),
     facts: game.facts,
   });

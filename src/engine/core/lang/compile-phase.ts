@@ -39,6 +39,8 @@ const TARGETED = /^(.+) on ((?:a|an) (?:(?! on ).)+)$/i;
 const BEFORE_A = / (?=an? \S)/gi;
 /** A button that picks no space and ends in “an amount” carries a whole number with its press: group 1 is the wording before those words. */
 const AMOUNT_WORDING = /^(.+) an amount$/i;
+/** A button that picks no space, carries no amount and ends in “another player” picks a player with its press: group 1 is the wording before those words. */
+const PLAYER_WORDING = /^(.+) another player$/i;
 /**
  * A line whose last “on” is followed by another word than “a” or “an”: group 1 is that word or words, group 2 “their”
  * when it is “one of their”, group 3 the rest. Nothing follows the last “on” of “…on the field they are on”, so that
@@ -216,18 +218,24 @@ function pickAfterVerb(written: string, readsTarget: (text: string) => boolean):
  * `anyone` is true for “Any player may …”.
  * A line that picks no space and ends in “an amount” is a button that carries one: `amount` is true, and `base` and `baseWritten`
  * are the words before those, so that “raise an amount” is the button 'raise' (`words` keeps them, as the move type).
+ * A line that does neither and ends in “another player” is a button that picks a player: `picksPlayer` is true, and `base` and
+ * `baseWritten` are the words before those, so that “challenge another player” is the button 'challenge'. Its `label` keeps
+ * “another player”, since the page shows the players to pick only after the press, so the button has to say what it does.
  */
 export function actionOf(found: RegExpExecArray, readsTarget: (text: string) => boolean): {
   verb: string; words: string; written: string; base: string; baseWritten: string; label: string; target: string | null; anyone: boolean; amount: boolean;
+  picksPlayer: boolean;
 } {
   const written = found[2] === undefined ? found[1] : `${found[1]} ${found[2]}`;
   const targeted = TARGETED.exec(written);
   const picked = targeted ? { base: targeted[1], target: targeted[2] } : pickAfterVerb(written, readsTarget);
   const carrying = picked ? null : AMOUNT_WORDING.exec(written);
-  const baseWritten = picked ? picked.base : carrying ? carrying[1] : written;
+  const choosing = picked || carrying ? null : PLAYER_WORDING.exec(written);
+  const baseWritten = picked ? picked.base : carrying ? carrying[1] : choosing ? choosing[1] : written;
   return {
-    verb: found[1].toLowerCase(), words: written.toLowerCase(), written, base: baseWritten.toLowerCase(), baseWritten, label: actionLabel(baseWritten),
-    target: picked ? picked.target : null, anyone: ANYONE_LINE.test(found[0]), amount: carrying !== null,
+    verb: found[1].toLowerCase(), words: written.toLowerCase(), written, base: baseWritten.toLowerCase(), baseWritten,
+    label: actionLabel(choosing ? written : baseWritten), target: picked ? picked.target : null, anyone: ANYONE_LINE.test(found[0]),
+    amount: carrying !== null, picksPlayer: choosing !== null,
   };
 }
 
@@ -278,7 +286,7 @@ export function actionLabel(words: string): string {
  * space it picks is not something the language can read (a mistyped target is reported and never makes a plain button).
  */
 function compileAction(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx): DeclaredAction | null {
-  const { verb, words, written, base, baseWritten, label, target: targetText, anyone, amount } = actionOf(found, targetReader(ctx));
+  const { verb, words, written, base, baseWritten, label, target: targetText, anyone, amount, picksPlayer } = actionOf(found, targetReader(ctx));
   const reserved = verb === RESERVED_VERB;
   if (reserved) addProblem(ctx.diagnostics, node.line, `“${RESERVED_VERB}” is reserved; pick another word.`, { text: found[1] });
   // The player who presses the button is the one the target is about ("a field they own").
@@ -292,10 +300,11 @@ function compileAction(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx):
   const both = targetText !== null && AMOUNT_WORDING.test(baseWritten);
   // The pick is told back as it was written, with its “on” or without.
   if (both) addProblem(ctx.diagnostics, node.line, pickAndAmount(written.slice(baseWritten.length).trim()), { kind: 'invalid', text: normalizeLine(node.text) });
-  // An action is about the player who presses it and the space it picks, else the space their piece is on; a button that carries an amount has it.
-  const { conditions, effects } = readRuleBody(node, { ...ctx, player: true, space: true, amount: amount || both });
+  // An action is about the player who presses it and the space it picks, else the space their piece is on; a button that carries an amount has it,
+  // and one that picks a player has that player.
+  const { conditions, effects } = readRuleBody(node, { ...ctx, player: true, space: true, amount: amount || both, picked: picksPlayer });
   if (reserved || pick !== null || both || (target !== null && isMissing(target))) return null;
-  return { verb, words, base, label, target, anyone, amount, conditions, effects, line: node.line };
+  return { verb, words, base, label, target, anyone, amount, picksPlayer, conditions, effects, line: node.line };
 }
 
 /** The `Only if` groups and the effects under a `When …:` rule; every line that is not an `Only if` is an effect. */

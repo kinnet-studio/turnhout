@@ -8,11 +8,12 @@ import type { ParamType, PhraseKind, PhraseRef, Vocab } from './types';
  * What every line of one compile stage shares. Never change `vocab` after a line has been matched with it. `inMove`,
  * `player`, `space` and `card` say what the rule around a line is about: a card move, a player ("they"), a space or a
  * card ("it"). `drawn` is true only for the sentences of a card's says column: they are run for a card that was just drawn.
- * `amount` is true only for the lines of a button whose wording ends in “an amount”: its press carries a number.
+ * `amount` is true only for the lines of a button whose wording ends in “an amount”: its press carries a number. `picked` is true
+ * only for the lines of a button whose wording ends in “another player”: its press picks a player.
  */
 export type LineCtx = {
   library: PhraseLibrary; vocab: Vocab; gameName: string; inMove: boolean; player: boolean; space: boolean; card: boolean; drawn: boolean;
-  amount: boolean; diagnostics: Diagnostic[];
+  amount: boolean; picked: boolean; diagnostics: Diagnostic[];
 };
 
 const MAX_SUGGESTIONS = 3;
@@ -24,6 +25,8 @@ const NEEDS_DICE = (clean: string) => `“${clean}” needs dice. Add a line lik
 const NEEDS_TWO_DICE = 'A double needs exactly two dice.';
 const NEEDS_AMOUNT = (clean: string) =>
   `“${clean}” only makes sense in a button whose wording ends in “an amount”, like “A player may give an amount.”`;
+const NEEDS_PICK = (clean: string) =>
+  `“${clean}” only makes sense in a button whose wording ends in “another player”, like “A player may challenge another player.”`;
 const IF_FRAME = /^if\s+(.+)$/i;
 const COMMA = /, /g;
 const PHASE_NAME = /^phase\s*:\s*(.*)$/i;
@@ -129,6 +132,7 @@ function unmetNeed(entry: Required<PhraseOpts> | undefined, args: Json[], clean:
   if (!ctx.card && entry?.needsCard) return `“${clean}” only makes sense in a rule about a card, such as “When a card …”.`;
   if (!ctx.drawn && entry?.needsDrawnCard) return `“${clean}” only makes sense in a card's says column.`;
   if (!ctx.amount && entry?.needsAmount) return NEEDS_AMOUNT(clean);
+  if (!ctx.picked && entry?.needsPick) return NEEDS_PICK(clean);
   if (entry?.needsPayment && ctx.vocab.payWith === null) return NEEDS_PAYMENT;
   return null;
 }

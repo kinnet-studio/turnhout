@@ -669,6 +669,12 @@ const TARGETACTION: ParamType = {
  */
 const AMOUNTACTION = wordType('amountaction', '[action]', (v) => v.actions.filter((a) => a.amount).map((a) => [thirdPersonWords(a.base), a.words]), undefined);
 
+/**
+ * The base of a button that picks another player, in the third person: an example gives the player after it (“p0 challenges p1”).
+ * The wording `ACTION` lists for the same button (“p0 challenges another player”) presses it with no pick.
+ */
+const PICKACTION = wordType('pickaction', '[action]', (v) => v.actions.filter((a) => a.picksPlayer).map((a) => [thirdPersonWords(a.base), a.words]), undefined);
+
 type VocabAction = Vocab['actions'][number];
 
 /** A button's wording with its verb, the first word, in the past: 'roll for a double' is 'rolled for a double'. */
@@ -720,7 +726,7 @@ const DONE: ParamType = {
 /** Parameter types whose text depends on the game being compiled. */
 export const VOCAB_TYPES: ParamType[] = [
   ZONE, ZONES, PERZONE, PLAYER, PHASE, MOVE, ATTRIBUTE, CARD, CARDLIST, CARDCLASS, SPACE, SPACECLASS, SPACEATTR, COUNTER, ACTION, TARGETACTION,
-  AMOUNTACTION, DONE, SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, PLAYERFLAG, PLAYERNUMBER, GAMENUMBER, BANKED,
+  AMOUNTACTION, PICKACTION, DONE, SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, PLAYERFLAG, PLAYERNUMBER, GAMENUMBER, BANKED,
 ];
 
 const TYPES_BY_NAME = new Map(VOCAB_TYPES.map((t) => [t.name, t] as const));
