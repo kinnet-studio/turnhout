@@ -387,7 +387,10 @@ stay as they are, and a prototype of the turn machine (`turns.ts` in the check's
 - **Tier is text:** "Tier 1", "Tier 2", "Tier 3", so "Each Tier 1 card in a player's backlog scores -2 points." reads by
   value without clashing with the numbers.
 - **Two requirements** use two columns, `requires` and `also requires`.
-- **The Market Crash is its own one-row set** starting in the Growth Deck; a setup line moves it into the bottom fifth.
+- **The Market Crash is the first row of the growth products table,** its other cells blank; a setup line moves it into
+  the bottom fifth. (First written as its own one-row set; the 1a-1 final review found that a one-card set always gets the
+  same card id, which told any seat view where the Crash sat in the hidden deck. In the growth table its id is shuffled
+  with the others.)
 - **Bottom fifth (a silent case, so the Rust engine decides):** with the deck at `n` cards, `window = max(1, ceil(n/5))`;
   the card goes in at a random position `0..=min(window, n)` counted from the bottom.
 - **Faces** show the name and the first three columns; each table puts its key columns first; the whole card shows on
