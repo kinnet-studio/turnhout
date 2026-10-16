@@ -67,7 +67,7 @@ The game after this slice:
 - **Ending actions early.** The rulebook says "Spend 3 Action Points" and never says how a turn ends with AP left. A
   free "End my actions" button moves on to Phase D, and unspent AP is lost. The Rust engine also lets a player stop.
 - **A turn moves on by itself after the third action.** When AP reaches 0, Phase D starts with no button press.
-- **Research is a private look.** The 3 drawn cards go to a "looking at" area only the drawing player sees. The player
+- **Research is a private look.** The 3 drawn cards go to a research row only the drawing player sees. The player
   picks 1 for the Backlog, and the other 2 go to the Open Idea Pool. A short deck gives fewer cards.
   - If the Market Crash is among them, it is set aside and replaced by the next card of that deck, so the player still
     sees up to 3 product cards.
