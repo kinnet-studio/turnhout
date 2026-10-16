@@ -111,10 +111,10 @@ function sayWording(env: PhraseEnv, { form, from, to }: Wording, target: CardMat
 
 /**
  * What an example has to say to press one of several buttons that could take its cards: where they come from, when each takes them from
- * a zone of its own; else where they go, when each puts them somewhere else. When neither alone is enough, each button gets the fewest
- * words that press it and no other: where its cards come from, where they go, or both. A button no words can press alone needs other
- * words. `target` is the card an example named for its cards to go to, if it named one: its wordings keep it, since only “… to {card}”
- * fits a button that picks one.
+ * a zone of its own. Otherwise each button gets the fewest words that press it and no other: where its cards come from, where they go, or
+ * both; when where each goes is enough, the example is told to say where it goes. A button no words can press alone needs other words.
+ * `target` is the card an example named for its cards to go to, if it named one: its wordings keep it, since only “… to {card}” fits a
+ * button that picks one.
  */
 function tellApart(env: PhraseEnv, press: Press, takers: DeclaredAction[], target: CardMatch | null): string {
   const { by } = press;
@@ -124,8 +124,6 @@ function tellApart(env: PhraseEnv, press: Press, takers: DeclaredAction[], targe
     const named = takenFrom.flatMap((zoneId) => (zoneId === null ? [] : [sayWording(env, { form, from: zoneId, to: null }, target)]));
     return `Say where it comes from: ${joinOr(named)}.`;
   }
-  const goes = takers.map(({ pick }) => (pick!.onto !== null ? 'a card' : pick!.to === null ? 'nowhere' : moveZoneId(pick!.to, env.seats, by)));
-  if (allDifferent(goes)) return 'Say where it goes.';
   const pressesAlone = (action: DeclaredAction) => (wording: Wording) => {
     const { takers: pressed } = buttonsFor(env, press, wording);
     return pressed.length === 1 && pressed[0].action === action;
@@ -133,6 +131,8 @@ function tellApart(env: PhraseEnv, press: Press, takers: DeclaredAction[], targe
   const own = takers.map((action) => wordingsOf(env, by, action.pick!).find(pressesAlone(action)) ?? null);
   const said = own.flatMap((wording) => (wording === null ? [] : [sayWording(env, wording, target)]));
   if (said.length === 0) return 'Give the buttons different words.';
+  const whereItGoes = own.every((wording) => wording !== null && wording.form === 'to zone' && wording.from === null);
+  if (whereItGoes) return `Say where it goes: ${joinOr(said)}.`;
   const unsaid = takers.filter((_, i) => own[i] === null).map((action) => `“${action.words}”`);
   const needs = unsaid.length === 1 ? 'needs' : 'need';
   return `Say which: ${joinOr(said)}.${unsaid.length === 0 ? '' : ` ${joinAnd(unsaid)} ${needs} different words.`}`;

@@ -60,10 +60,12 @@ describe('examples that press a button that picks a card', () => {
       const results = run(TWO_WAYS, pressing("p0 buys the Ruby to p0's case", ["Then p0's case has a Ruby"]));
       expect(results).toEqual([expect.objectContaining({ status: 'pass', message: null })]);
     });
-    it('says so, naming both wordings, when the example does not', () => {
+    it('says so, naming both buttons and the words that press each, when the example does not', () => {
       const [result] = run(TWO_WAYS, pressing('p0 buys the Ruby', ['Then it is accepted']));
       expect(result.status).toBe('fail');
-      expect(result.message).toMatch(/p0 could buy a Ruby with more than one button: “buy a card from the shop to their stash” or “buy a card from the shop to their case”\. Say where it goes\.$/);
+      expect(result.message).toMatch(
+        /p0 could buy a Ruby with more than one button: “buy a card from the shop to their stash” or “buy a card from the shop to their case”\. Say where it goes: “… to p0's stash” or “… to p0's case”\.$/,
+      );
     });
   });
 
@@ -297,7 +299,10 @@ describe('examples that press a button that picks a card', () => {
       expect(run(CARD_PICK_GAME, `${one}\n  Then it is accepted\n  And the shop has an Opal`)).toEqual([expect.objectContaining({ status: 'pass' })]);
       const [both] = run(ONE_OR_MORE, `${one}\n  Then it is accepted`);
       expect(both.status).toBe('fail');
-      expect(both.message).toMatch(/with more than one button: “trade some cards from their stash to the shop” or “trade a card in their stash”\. Say where it goes\.$/);
+      // One card can't press the button that puts it nowhere alone: no words an example adds leave out the one that puts it in the shop.
+      expect(both.message).toMatch(
+        /with more than one button: “trade some cards from their stash to the shop” or “trade a card in their stash”\. Say which: “… to the shop”\. “trade a card in their stash” needs different words\.$/,
+      );
     });
   });
 });

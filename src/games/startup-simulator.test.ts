@@ -767,6 +767,25 @@ describe('Startup Simulator (designer language)', () => {
     expect(pressed.map(({ status, message }) => [status, message])).toEqual(wordings.map(() => ['pass', null]));
   });
 
+  it('asks an example where an agency hire goes, in words that each press one button', () => {
+    const given = [
+      '  Given the phase is actions', '  And the agency row has the Hacker, the Architect, the Veteran and the Diva', "  And p0's operations has a To-Do List",
+    ];
+    const results = runExamples(compileGame(`${STARTUP_SIMULATOR}\n\n${['Example: hiring the Hacker', ...given, '  When p0 hires the Hacker'].join('\n')}\n`, lib).game!, lib);
+    expect(results.at(-1)!.status).toBe('fail');
+    const ask = ". Say where it goes: “… to p0's bench” or “… to p0's ops team”.";
+    const message = results.at(-1)!.message!;
+    expect(message.slice(-ask.length)).toBe(ask);
+
+    // Each wording the advice gives hires the Hacker to where it says.
+    const lands: Record<string, string> = { "to p0's bench": "  Then p0's bench has the Hacker", "to p0's ops team": "  Then p0's ops team has the Hacker" };
+    const wordings = [...message.matchAll(/“… ([^”]+)”/g)].map(([, wording]) => wording);
+    expect(wordings.sort()).toEqual(Object.keys(lands).sort());
+    const pressing = wordings.map((wording) => [`Example: hiring the Hacker ${wording}`, ...given, `  When p0 hires the Hacker ${wording}`, lands[wording]].join('\n'));
+    const pressed = runExamples(compileGame(`${STARTUP_SIMULATOR}\n\n${pressing.join('\n\n')}\n`, lib).game!, lib).slice(-wordings.length);
+    expect(pressed.map(({ status, message }) => [status, message])).toEqual(wordings.map(() => ['pass', null]));
+  });
+
   it('asks an example which reassign it means when a project and the ops team both have the staff member, keeping the project it goes to', () => {
     const given = [
       '  Given the phase is actions', "  And p0's development has a Dating App and a To-Do List",
