@@ -176,7 +176,7 @@ Phase: playing
   - A button that picks a card and the card it goes to puts it there with `It goes to their development team, on the target card.` A set goes with `The picked cards go to their development team, on the target card.` Its `Only if` lines can ask `it is not on the target card`.
   - Every move takes a card off the card it sat on. A rule that moves a card says where the cards on it go: `Every card on it goes to their bench.` `Every card on it is onboarding.` sets a flag on each of them.
   - After every Setup line, press and rule, and every line that starts a phase or a turn, the table is checked. Each card in a marked zone must sit on a card, no card anywhere else may, and the card it sits on must still be in a zone of the same player's that everyone can see.
-  - A rule that moves a card and forgets the cards on it is refused, and the game stays as it was before the press: `The Architect in p0's development team is on the Dating App, which is now in the open idea pool. Move the cards on a card along with it.`
+  - A rule that moves a card and forgets the cards on it is refused on the line that did it (the button, card move or rule, or a Setup or start line), and the game stays as it was before the press: `The Architect in p0's development team is on the Dating App, which is now in the open idea pool. Move the cards on a card along with it.` An example's `Given` that leaves the table like that is refused at that `Given`.
 - **Numbers on cards.** `Cards can have blue cubes, red cubes, new blue cubes and new red cubes.` declares numbers that start at 0 on every card. Rules change them with `Its blue cubes go up by its new blue cubes, up to its blue cost.` (the cap is optional) and `It loses its new blue cubes.` Rules ask about any number on a card: `its blue cubes are at least its blue cost` and `its salary is more than 0`.
 - **Values worked out for cards.** A section named after a value says what it comes to for each kind of card. Like `Rent:`, each line overrides the ones before it for the cards it fits:
 
@@ -187,15 +187,15 @@ Phase: playing
     An onboarding card's blue output is 0.
   ```
 
-  - A card that no line fits has no such value.
+  - A card that no line fits keeps what the value starts from: its own cell, under a section named after a column, and 0 for any other value, so a Junior QA Tester's blue output is 0.
   - A section of `Only if` lines works out a yes-or-no: under `Feature complete:`, `Only if its blue cubes are at least its blue cost.` and `Only if its red cubes are at least its red cost.` make `it is feature complete` true for a card that meets both. A card that lacks a number its lines read isn't that kind of card, so the answer is no.
   - A section named after a column, such as `Salary:`, refines that column.
-  - Every rule that reads a card's number or yes-or-no reads the worked-out one. A value worked out from itself, directly or through another value, is reported on the line that asked.
+  - Every rule that reads a card's number or yes-or-no reads the worked-out one. A value worked out from itself, directly or through another value, is reported on the line that asked. A rule or example that would change a worked-out value is refused on its line when the rules are read.
 - **Totals.** `the total salary of the cards in their development team and their ops team`, `the total blue output of the cards on it` and `the total cost of the picked cards` add a number up. A card without that number counts as 0. `the cards in their operations whose rev is more than 0` keeps only some cards. Rules say:
   - `They get the total rev of the cards in their operations.` and `They pay the total cost of the picked cards.`;
   - `Only if they have at least the total cost of the picked cards in capital.`;
   - `A card's blue team output is the total blue output of the cards on it.` in a section that works out a value.
-- **For each card.** `For each card in their development, its blue cubes go up by its new blue cubes.` runs the rest of the line once for each card that was there when it began, in order, as "it". `For each card in their operations whose rev is more than 0, they get 1 market share.` runs it once for each card that passes the filter.
+- **For each card.** `For each card in their development, its blue cubes go up by its new blue cubes.` runs the rest of the line once for each card that was there when it began, in order, as "it". `For each card in their operations whose rev is more than 0, they get 1 market share.` runs it once for each card that passes the filter. The rest of the line is one plain effect: no `If …` or `For each …` inside it.
 - **Going to a phase.** `Go to commit.` moves on to the named phase and runs its `When this phase starts:` lines, so a phase that only works at its start can hand on to the next one. A chain of `Go to` lines that comes back to a phase it went through is refused, in words that name the phases.
 - **Rows.**
   - `Deal up to as many cards as they picked from the talent deck to their scouting.` deals one card for each card the button picked, or what the deck has.
