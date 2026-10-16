@@ -3,8 +3,9 @@ import type { GameEngine } from '../../game-engine';
 import { zoneCards, type GameState } from '../../game-state';
 import { counterOf, isOut, lastDrawn, pieceAt, placePiece, queueRoll, setCounter, setOwner, withBoardData } from '../board-state';
 import { createEngine, initialState, seatsFor } from '../build';
-import { deckOf } from '../cards';
+import { deckOf, makeCard } from '../cards';
 import { compileGame } from '../compile';
+import { RuleError } from '../diagnostics';
 import { LangRuntime, MAX_MOMENT_DEPTH } from '../runtime';
 import { deckGameText, fixtureCard, fixtureEnv, fixtureGame, fixtureState, runPhrase } from '../testing';
 import type { CompiledGame, PhraseEnv, PhraseRef, Subject } from '../types';
@@ -219,6 +220,19 @@ describe('using a kept card', () => {
       expect(runPhrase(lib, 'condition', said, env(game, passOf('fate-pile'))), said).toBe(true);
       expect(runPhrase(lib, 'condition', said, env(game)), said).toBe(false);
     }
+  });
+  it('says a card made from a stack that never runs out has no pile to go back to', () => {
+    // The Free Pass a stack that never runs out makes, with the lucky deck's own Free Pass besides.
+    const stack = ['', '  A stack called spare passes that never runs out:', `    ${HEAD}`, `    ${PASS}`].join('\n');
+    const text = deckGameText([HEAD, DIVIDEND, PASS], CALM, USE).replace('\n\nTable:', `${stack}\n\nTable:`);
+    const { game: stocked, diagnostics } = compileGame(text, lib);
+    expect(diagnostics).toEqual([]);
+    const made = makeCard(started(stocked!, [1, 1]).getState(), stocked!, { name: 'Free Pass' }, 'kept-cards-p0')!;
+    expect(deckOf(stocked!.cards, made.id)).toBeNull();
+    const env = fixtureEnv(made.state, { game: stocked!, seats: ['p0', 'p1'], subject: { player: 'p0', space: null, card: null } });
+    const putBack = () => runPhrase(lib, 'effect', 'a Free Pass from their kept cards goes to the bottom of the pile it came from', env);
+    expect(putBack).toThrow(RuleError);
+    expect(putBack).toThrow('A card made from a stack that never runs out has no pile to go back to.');
   });
   it('says there is no such card when they keep none', () => {
     const state = started(game, [1, 1]).getState();

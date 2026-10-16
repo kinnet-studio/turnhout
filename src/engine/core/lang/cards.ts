@@ -157,6 +157,16 @@ export function deckOf(sets: CardSetSpec[], cardId: string): CardSetSpec | null 
 }
 
 /**
+ * The pile a card goes back under: the one its set starts in. A card made from a stack that never runs out was dealt from no
+ * set, so the designer is told it has nowhere to go.
+ */
+export function homePileOf(sets: CardSetSpec[], cardId: string): string {
+  const deck = deckOf(sets, cardId);
+  if (!deck) throw new RuleError('A card made from a stack that never runs out has no pile to go back to.');
+  return zoneIdFor(deck.start);
+}
+
+/**
  * The `state.data` key holding the number the next card made will take: new cards are numbered on from the ones the sets
  * dealt, and the state keeps the count, so a game replayed from its log makes the same cards with the same ids.
  */

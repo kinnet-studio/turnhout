@@ -1,6 +1,6 @@
 import { zoneCards, type GameState } from '../../game-state';
 import { counterOf, owedTo, ownerOf, playersIn, setOwner, type Creditor } from '../board-state';
-import { deckOf } from '../cards';
+import { homePileOf } from '../cards';
 import { NEEDS_PAYMENT } from '../compile-util';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
@@ -54,11 +54,7 @@ const everythingGoesToCreditor: EffectFn = (env) => {
       state = relocate(state, kept.map((card) => card.id), zoneIdFor(zone.name, to), env.game);
       continue;
     }
-    for (const { id } of kept) {
-      const deck = deckOf(env.game.cards, id);
-      if (!deck) throw new Error(`The card ${id} came from no deck.`);
-      state = toBottom(state, id, zoneIdFor(deck.start), env.game);
-    }
+    for (const { id } of kept) state = toBottom(state, id, homePileOf(env.game.cards, id), env.game);
   }
   return state;
 };

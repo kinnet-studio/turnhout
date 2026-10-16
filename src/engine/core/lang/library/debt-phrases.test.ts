@@ -4,7 +4,7 @@ import {
   addToCounter, counterOf, markOut, ownerOf, recordDebt, setCounter, setOwner, setSpaceFact, spaceFact, withBoardData, type Creditor,
 } from '../board-state';
 import { initialState } from '../build';
-import { deckOf } from '../cards';
+import { deckOf, makeCard } from '../cards';
 import { compileGame } from '../compile';
 import { NEEDS_PAYMENT } from '../compile-util';
 import { RuleError } from '../diagnostics';
@@ -76,6 +76,19 @@ describe('debt phrases', () => {
       expect(ownerOf(s, 2)).toBe('p2');
       expect(zoneCards(s, 'kept-cards-p2').map((c) => c.id)).toEqual([passOf('fate-pile')]);
       expect(zoneCards(s, 'kept-cards-p1').map((c) => c.id)).toEqual([passOf('lucky-pile')]);
+    });
+    it('says a card made from a stack that never runs out has no pile to go back to when the bank takes it', () => {
+      // A Free Pass from a stack that never runs out, besides the decks' two.
+      const stack = ['', '  A stack called spare passes that never runs out:', `    ${HEAD}`, `    ${PASS}`].join('\n');
+      const { game: stocked, diagnostics } = compileGame(deckGameText([HEAD, PASS], [HEAD, '| Calm | They get 0 money. |']).replace('\n\nTable:', `${stack}\n\nTable:`), lib);
+      expect(diagnostics).toEqual([]);
+      const dealt = { ...withBoardData(initialState(stocked!, 1), stocked!, SEATS), turn: { current: 'p0', phase: 'playing' } };
+      const made = makeCard(dealt, stocked!, { name: 'Free Pass' }, 'kept-cards-p0')!;
+      expect(deckOf(stocked!.cards, made.id)).toBeNull();
+      const broke = recordDebt(setCounter(made.state, 'money', 'p0', -4), 'p0', 'bank');
+      const run = () => runPhrase(lib, 'effect', 'everything they own goes to the player they owe', fixtureEnv(broke, { game: stocked!, seats: SEATS, subject: { player: 'p0', space: null, card: null } }));
+      expect(run).toThrow(RuleError);
+      expect(run).toThrow('A card made from a stack that never runs out has no pile to go back to.');
     });
     it('Review Focus: owing no one is said plainly, and nothing is handed over', () => {
       expect(() => handOver(setCounter(owing('p1'), 'money', 'p0', 5))).toThrow('They owe no one: no payment took them below 0.');

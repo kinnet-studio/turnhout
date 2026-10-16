@@ -1,7 +1,7 @@
 import { cardById, zoneCards, type GameState } from '../../game-state';
 import { pieceAt, setLastDrawn } from '../board-state';
 import { cardName, saysOf } from '../card-facts';
-import { deckOf } from '../cards';
+import { homePileOf } from '../cards';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import type { CardMatch, CompiledGame, ConditionFn, EffectFn, PhraseEnv, ZoneRef } from '../types';
@@ -67,9 +67,7 @@ const keptGoesBack: EffectFn = (env, [match, zone]) => {
     const what = describeCard(match as CardMatch).replace(/^(?:an?|the) /, '');
     throw new RuleError(`There is no ${what} in their ${zone}.`);
   }
-  const deck = deckOf(env.game.cards, found.id);
-  if (!deck) throw new Error(`The card ${found.id} came from no deck.`);
-  return toBottom(env.state, found.id, zoneIdFor(deck.start), env.game);
+  return toBottom(env.state, found.id, homePileOf(env.game.cards, found.id), env.game);
 };
 
 /** The sentences of a card that is drawn and does what it says, keeping it instead of putting it back, and using a card kept. */
