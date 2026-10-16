@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { CardPickView } from '@/engine/core/lang/board-view';
 import { CardPicker } from './card-picker';
+import type { PickAt } from './card-pick';
 
 const COST = "they have at least the card's cost in coins";
 const NOT_RUBY = 'the target card is not a Ruby';
@@ -215,5 +216,39 @@ describe('CardPicker', () => {
   it('wraps its prompt and buttons like the row of buttons above it', () => {
     mount(TRADING);
     expect([picker().style.display, picker().style.flexWrap]).toEqual(['flex', 'wrap']);
+  });
+});
+
+describe('CardPicker given the picks', () => {
+  const mountAt = (pick: CardPickView, at: PickAt) => {
+    const calls = { onSend: vi.fn(), onRefused: vi.fn(), onCancel: vi.fn(), onAt: vi.fn() };
+    const view = render(<CardPicker pick={pick} at={at} {...calls} />);
+    return { ...calls, rerender: (next: PickAt) => view.rerender(<CardPicker pick={pick} at={next} {...calls} />) };
+  };
+
+  it('shows the picks it is given and reports each change instead of keeping it', () => {
+    const { onAt, rerender } = mountAt(TRADING, { picked: ['c3'], onto: false });
+    expect(pressed()).toEqual(['false', 'false', 'true']);
+    fireEvent.click(button('Pick Ruby'));
+    expect(onAt).toHaveBeenLastCalledWith({ picked: ['c3', 'c1'], onto: false });
+    expect(pressed()).toEqual(['false', 'false', 'true']);
+    rerender({ picked: ['c3', 'c1'], onto: false });
+    expect(pressed()).toEqual(['true', 'false', 'true']);
+  });
+
+  it('goes on to the targets it is given, and reports a confirmed set going on to them', () => {
+    const first = mountAt(STACKING, { picked: ['c1', 'c2'], onto: false });
+    fireEvent.click(button('Confirm'));
+    expect(first.onAt).toHaveBeenLastCalledWith({ picked: ['c1', 'c2'], onto: true });
+    first.rerender({ picked: ['c1', 'c2'], onto: true });
+    expect(within(picker()).getByText('Pick where they go: a card in your case')).toBeTruthy();
+    fireEvent.click(button('Pick Pearl'));
+    expect(first.onSend).toHaveBeenLastCalledWith({ cardIds: ['c1', 'c2'], onto: 'c8' });
+  });
+
+  it('shows only the picks still in the view, and reports the pruned picks', () => {
+    const { onAt } = mountAt(TRADING, { picked: ['c4', 'c2'], onto: false });
+    expect(pressed()).toEqual(['false', 'true', 'false']);
+    expect(onAt).toHaveBeenLastCalledWith({ picked: ['c2'], onto: false });
   });
 });

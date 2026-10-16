@@ -23,6 +23,8 @@ import { ActionButtons, BANNER_SLOT, BANNER_STYLE, BUTTON_ROW, MoneyLine, Player
 import { BoardGrid } from './board-grid';
 import { boardCaptions } from './board-text';
 import { cardDetail } from './card-detail';
+import { CardOffer } from './card-offer';
+import { NOTHING_TAKES, PICK_START, clickCard, liveAt, ringsOf, takersOf, type PickAt, type PickChosen } from './card-pick';
 import { CardPicker } from './card-picker';
 import { seatStatus, seatToAct } from './seat-status';
 import { SeatTabs } from './seat-tabs';
@@ -139,6 +141,19 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
   }, [viewed, toAct, onTurn]);
   // The move type of the button this seat is choosing a space, another player or cards for, until they are picked or it is cancelled.
   const [picking, setPicking] = useState<string | null>(null);
+  // The cards picked so far for a button that picks cards, shared by its list and clicks on the table. They start over where
+  // picking starts and ends, in the same update, so a button chosen for a card clicked on the table opens with that card picked.
+  const [pickAt, setPickAt] = useState<PickAt>(PICK_START);
+  const openPicker = useCallback((move: string, at: PickAt = PICK_START) => {
+    setPicking(move);
+    setPickAt(at);
+  }, []);
+  const closePicker = useCallback(() => {
+    setPicking(null);
+    setPickAt(PICK_START);
+  }, []);
+  // The card clicked on the table whose buttons are offered, until one is chosen or the offer closes.
+  const [offer, setOffer] = useState<string | null>(null);
   const extras = readSeatExtras(view?.extras);
   // What may be picked is read from the seat's latest view, so a button that has since been greyed (an Undo took the turn
   // back, say) ends the picking instead of leaving a stale board to click.
@@ -148,8 +163,18 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
   const choosingCards = action?.allowed === true && action.cards !== undefined ? { move: action.move, pick: action.cards } : null;
   const stale = picking !== null && choosing === null && choosingPlayer === null && choosingCards === null;
   useEffect(() => {
-    if (stale) setPicking(null);
-  }, [stale]);
+    if (stale) closePicker();
+  }, [stale, closePicker]);
+  // The view can change while cards are picked (an Undo takes one back): a card no longer listed drops out of the picks, so it is
+  // never sent or ringed, and stays out if it comes back. Storing the pruned picks while rendering makes React render again at once.
+  const livePick = choosingCards === null ? pickAt : liveAt(choosingCards.pick, pickAt);
+  if (livePick !== pickAt) setPickAt(livePick);
+  const takers = offer === null ? [] : takersOf(extras?.actions ?? [], offer);
+  // An offer whose card no button takes any more closes, as a stale picker does.
+  const offerGone = offer !== null && takers.length === 0;
+  useEffect(() => {
+    if (offerGone) setOffer(null);
+  }, [offerGone]);
   const option = useMemo(() => ({ fullScreen: false, limitEntireViewPort: false }), []);
   const drawn = useMemo(() => new Set(tableDef.zones.map((zone) => zone.id)), [tableDef]);
   // A fitted table leaves the other players' zones off, so their cards have nowhere to stand: they are counted in the tableaux.
@@ -159,32 +184,63 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
     return fitted ? stackOnHolders(tableDef.zones, cards.filter((card) => drawn.has(card.zoneId))) : cards;
   }, [view, fitted, tableDef, drawn]);
   const placement: Placement = { cards: placed };
-  // Only a game whose buttons pick cards puts anything on its cards, so every other game's table draws as it always has. A card
-  // on a seat's Board is captioned with its counts, which change only with the view.
+  // Only a game whose buttons pick cards puts anything on its cards or takes clicks on them, so every other game's table draws and
+  // plays as it always has. A card on a seat's Board is captioned with its counts, which change only with the view.
   const picksCards = game.phases.some((phase) => phase.actions.some((a) => a.pick !== undefined));
+  const captions = useMemo(
+    () => (picksCards && view !== null ? boardCaptions(game, placed) : null),
+    [picksCards, view, game, placed],
+  );
+  // While cards are picked, the cards picked and those to pick next are ringed; while an offer is open, the card it is for.
+  const pickView = choosingCards?.pick ?? null;
   const decor = useMemo(() => {
-    if (!picksCards || view === null) return undefined;
-    return Object.fromEntries(Object.entries(boardCaptions(game, placed)).map(([id, caption]) => [id, { caption }]));
-  }, [picksCards, view, game, placed]);
+    if (captions === null) return undefined;
+    const rings: { [cardId: string]: 'choice' | 'chosen' } = pickView !== null ? ringsOf(pickView, livePick) : offer !== null ? { [offer]: 'chosen' } : {};
+    const ids = new Set([...Object.keys(captions), ...Object.keys(rings)]);
+    return Object.fromEntries([...ids].map((id) => [id, { ...(id in rings && { ring: rings[id] }), ...(id in captions && { caption: captions[id] }) }]));
+  }, [captions, pickView, livePick, offer]);
   // A card's face has room for only some of its columns, so a fitted table shows the card under the pointer in full below it.
   const [hovered, setHovered] = useState<string | null>(null);
   const hoveredCard = placement.cards.find((card) => card.id === hovered);
   // A face-down card is a back to this seat, so pointing at it shows nothing.
   const detail = hoveredCard?.faceUp ? cardDetail(hoveredCard.faceKey) : null;
+  // A press that picks cards ends the picking only once it is taken: a set the rules refuse as a whole keeps its picks, on the list
+  // and on the table, to be changed and sent again.
+  const sendPick = (move: string, chosen: PickChosen) => {
+    onError(null);
+    send({ type: move, ...chosen }, (taken) => {
+      if (taken) closePicker();
+    });
+  };
+  // A card clicked on the table goes to the card picker while one is open; otherwise it is offered to the buttons that take it.
+  const clickOnTable = (cardId: string) => {
+    if (choosingCards !== null) {
+      const outcome = clickCard(choosingCards.pick, livePick, cardId);
+      if ('send' in outcome) sendPick(choosingCards.move, outcome.send);
+      else if ('at' in outcome) setPickAt(outcome.at);
+      else flash(outcome.refused);
+      return;
+    }
+    const taken = takersOf(extras?.actions ?? [], cardId).length > 0;
+    setOffer(taken ? cardId : null);
+    if (!taken) flash(NOTHING_TAKES);
+  };
   const submit = (intent: DropIntent) => {
     onError(null);
     const move = moveForDrop(game, seats, view?.turn?.phase, seat, intent);
     if (move) send(move);
+    // In a game whose cards are clicked, a card let go back in its own zone with no rule for that was a click that wobbled.
+    else if (picksCards && intent.toZoneId === intent.fromZoneId) clickOnTable(intent.cardId);
     // A card let go outside every zone, or back where it came from, just snaps back: nothing to explain.
     else if (intent.toZoneId !== null && intent.toZoneId !== intent.fromZoneId) flash(NO_RULE);
   };
   const status = `seat: ${seat} — ${seatStatus(game, view, seat)}`;
   // A card game always gets its table, and so does a game whose board has no spaces: it has only numbers, so it is a card game
-  // however it moves its cards. A board game gets one only when some phase has cards to drag: it moves them by hand, or lets
-  // players rearrange theirs. Piles that only rules draw from have nothing to drag. Asking the game, not the view, means nothing
-  // mounts before the first view arrives.
+  // however it moves its cards. A board game gets one only when some phase has cards to drag (it moves them by hand, or lets
+  // players rearrange theirs) or a button that picks cards, which are clicked there. Piles that only rules draw from have nothing
+  // to drag. Asking the game, not the view, means nothing mounts before the first view arrives.
   const showsCards = tableDef.zones.length > 0
-    && (game.board === null || game.board.spaces.length === 0
+    && (game.board === null || game.board.spaces.length === 0 || picksCards
       || game.phases.some((phase) => phase.moves.length > 0 || phase.rearrange.length > 0));
   const canvas = showsCards && (
     <Wrapper option={option} initFunction={fitted ? initFittedApp : initAppWithFaces}>
@@ -193,6 +249,7 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
         placement={placement}
         viewer={undefined}
         onDrop={submit}
+        onCardClick={picksCards ? clickOnTable : undefined}
         onHover={fitted ? setHovered : undefined}
         decor={decor}
       />
@@ -205,21 +262,24 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
   const board = extras?.board ?? null;
   if (fitted || (extras && (board !== null || hasButtons))) {
     // A blank box sends no amount at all; the rules answer that with what is missing, and it flashes like any other refusal.
+    // Pressing a button, or starting to pick for one, closes the offer of a card clicked on the table.
     const press = (move: string, amount?: number | null) => {
       onError(null);
-      setPicking(null);
+      setOffer(null);
+      closePicker();
       send(typeof amount === 'number' ? { type: move, amount } : { type: move });
     };
     const startPicking = ({ move }: ActionView) => {
       onError(null);
-      setPicking(move);
+      setOffer(null);
+      openPicker(move);
     };
     const picker = choosing ? {
       prompt: choosing.prompt,
       spaces: choosing.spaces,
       onPick: (space: number) => {
         onError(null);
-        setPicking(null);
+        closePicker();
         send({ type: choosing.move, target: space });
       },
       onRefused: flash,
@@ -229,11 +289,11 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
         players={choosingPlayer.players}
         onPick={(player) => {
           onError(null);
-          setPicking(null);
+          closePicker();
           send({ type: choosingPlayer.move, player });
         }}
         onRefused={flash}
-        onCancel={() => setPicking(null)}
+        onCancel={closePicker}
       />
     );
     // The money line's place on a fitted table goes to every player's tableau, which counts the cards their zones hold.
@@ -241,20 +301,37 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
       ? view && <Tableaux game={game} seats={seats} board={board} cards={view.scene.cards} />
       : board && (board.counters.length > 0 || game.facts.length > 0 || board.bank.length > 0) && <MoneyLine board={board} />;
     const buttons = hasButtons && extras && <ActionButtons actions={extras.actions} onPress={press} onPick={startPicking} onRefused={flash} />;
-    // Keyed by the button, so pressing another that picks cards starts a fresh pick. It closes once the press is taken: a set the rules
-    // refuse as a whole keeps its picks, to be changed and confirmed again.
+    // A button chosen for a card clicked on the table takes the card as a click in its picker would: one card with nowhere else to
+    // go is sent at once, and otherwise the picker opens with the card picked.
+    const chooseOffered = (cardId: string, move: string) => {
+      setOffer(null);
+      const pick = extras?.actions.find((a) => a.move === move)?.cards;
+      if (pick === undefined) return;
+      const outcome = clickCard(pick, PICK_START, cardId);
+      onError(null);
+      if ('send' in outcome) {
+        closePicker();
+        send({ type: move, ...outcome.send });
+      } else if ('at' in outcome) {
+        openPicker(move, outcome.at);
+      } else {
+        flash(outcome.refused);
+      }
+    };
+    // The card is named as the first button that takes it sees it.
+    const offerName = extras?.actions.flatMap((a) => a.cards?.cards ?? []).find((card) => card.id === offer)?.name ?? '';
+    const cardOffer = offer !== null && takers.length > 0 && (
+      <CardOffer name={offerName} takers={takers} onChoose={(move) => chooseOffered(offer, move)} onRefused={flash} onCancel={() => setOffer(null)} />
+    );
+    // It shows the picks this seat shares with clicks on its table, and closes once a press is taken (see sendPick).
     const cardPicker = choosingCards && (
       <CardPicker
-        key={choosingCards.move}
         pick={choosingCards.pick}
-        onSend={(chosen) => {
-          onError(null);
-          send({ type: choosingCards.move, ...chosen }, (taken) => {
-            if (taken) setPicking(null);
-          });
-        }}
+        at={livePick}
+        onAt={setPickAt}
+        onSend={(chosen) => sendPick(choosingCards.move, chosen)}
         onRefused={flash}
-        onCancel={() => setPicking(null)}
+        onCancel={closePicker}
       />
     );
     const canvasBox = fitted ? { width: FITTED_WIDTH, height: FITTED_HEIGHT } : { height: SEAT_HEIGHT };
@@ -266,7 +343,7 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
           {choosing && (
             <div role="status" style={BANNER_STYLE}>
               <span>{choosing.prompt}</span>
-              <button type="button" onClick={() => setPicking(null)}>Cancel</button>
+              <button type="button" onClick={closePicker}>Cancel</button>
             </div>
           )}
           {playerPicker}
@@ -274,11 +351,12 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
         </div>
         {board && board.spaces.length > 0 && <BoardGrid board={board} picking={picker} />}
         {numbers}
-        {/* A fitted table keeps the buttons' room when a phase has none, so the table under them does not jump. The card picker opens
-            inside that room, which grows only while it is open. */}
+        {/* A fitted table keeps the buttons' room when a phase has none, so the table under them does not jump. The card picker, or the
+            offer of a card clicked on the table, opens inside that room, which grows only while one is open, as it does when a phase
+            has more rows of buttons. */}
         {fitted && hasButtons ? (
-          <div data-testid="seat-buttons" style={{ minHeight: BUTTON_ROW, display: 'flex', flexDirection: 'column', gap: 8 }}>{buttons}{cardPicker}</div>
-        ) : <>{buttons}{cardPicker}</>}
+          <div data-testid="seat-buttons" style={{ minHeight: BUTTON_ROW, display: 'flex', flexDirection: 'column', gap: 8 }}>{buttons}{cardOffer}{cardPicker}</div>
+        ) : <>{buttons}{cardOffer}{cardPicker}</>}
         {canvas && <div style={{ position: 'relative', ...canvasBox }}>{canvas}</div>}
         {fitted && <div data-testid="card-detail" style={{ minHeight: 20 }}>{detail}</div>}
       </div>

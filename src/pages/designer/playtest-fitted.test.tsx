@@ -24,6 +24,8 @@ import { putOn } from '@/engine/core/lang/attach';
 import { changeCard } from '@/engine/core/lang/card-facts';
 import { computeZoneLayout } from '@/engine/core/layout';
 import { deriveScene } from '@/engine/core/derive-scene';
+import { cardsByZone } from '@/engine/core/scene';
+import { GameServer } from '@/engine/net/game-server';
 
 // The canvas a seat is drawn on: keep what its app was last made with.
 let canvasMadeWith: unknown = null;
@@ -492,5 +494,272 @@ describe('the Board on the page', () => {
     mount({ game: compileGame(COLOR_MATCH, lib).game! });
     expect(table).not.toBeNull();
     expect(table!.decor).toBeUndefined();
+  });
+});
+
+// Shared by the tests that pick cards by clicking them on the table: a click on a card, the offer of the buttons that take it and a
+// choice there, a card's ring, and a zone's cards in slot order (`cardsIn` keeps state order) or one of them by name.
+const click = (id: string) => act(() => table!.onCardClick!(id));
+const offer = () => screen.getByRole('group', { name: 'Card buttons' });
+const choose = (label: string) => fireEvent.click(within(offer()).getByRole('button', { name: label }));
+const ring = (id: string) => table!.decor?.[id]?.ring;
+const inOrder = (zoneId: string) => cardsByZone({ cards: table!.placement.cards, zones: [] }).get(zoneId) ?? [];
+const named = (zoneId: string, name: string) => inOrder(zoneId).find((c) => parseTextFaceKey(c.faceKey)!.name === name)!.id;
+/** The offer's buttons before its Cancel, each as its label and `true` when live, else the reason it is greyed. */
+const offered = () => {
+  const buttons = within(offer()).getAllByRole('button');
+  expect(buttons.at(-1)!.textContent).toBe('Cancel');
+  return buttons.slice(0, -1).map((b) => [b.textContent, b.getAttribute('aria-disabled') === 'true' ? b.getAttribute('title') : true]);
+};
+const noOffer = () => expect(screen.queryByRole('group', { name: 'Card buttons' })).toBeNull();
+
+describe('picking cards by clicking them', () => {
+  const tab = (name: string) => screen.getByRole('tab', { name });
+  const boardOf = (seat: string) => screen.getByTestId(`board-${seat}`).textContent;
+  const confirm = () => fireEvent.click(within(picker()).getByRole('button', { name: 'Confirm' }));
+  const pressedIn = (name: string) => within(picker()).getByRole('button', { name: `Pick ${name}` }).getAttribute('aria-pressed');
+  const ASSIGN = 'Assign some cards from your bench to a card in your development';
+  const LAY_OFF = 'Lay off some cards from your bench to the open job market';
+  const HIRES = ['to your bench', 'to your ops team', 'to a card in your development'].map((to) => `Hire some cards from your scouting ${to}`);
+
+  /** S greenlights the card in its backlog by clicking it, and gets its id. */
+  const greenlight = () => {
+    const [card] = cardsIn(`backlog-${S}`);
+    click(card.id);
+    choose('Greenlight a card in your backlog');
+    return card.id;
+  };
+  /** S assigns its Junior Software Dev and Junior Hardware Eng to the card greenlit, clicking the card last. */
+  const assign = (onto: string) => {
+    click(named(`bench-${S}`, 'Junior Software Dev'));
+    choose(ASSIGN);
+    click(named(`bench-${S}`, 'Junior Hardware Eng'));
+    click(onto);
+  };
+
+  it('greenlights a card clicked in the backlog, offered by its one button', () => {
+    mount();
+    const [card] = cardsIn(`backlog-${S}`);
+    click(card.id);
+    expect(within(offer()).getByText(`${parseTextFaceKey(card.faceKey)!.name}:`)).toBeTruthy();
+    expect(offered()).toEqual([['Greenlight a card in your backlog', true]]);
+    expect(ring(card.id)).toBe('chosen');
+    choose('Greenlight a card in your backlog');
+    expect(cardsIn(`development-${S}`).map((c) => c.id)).toContain(card.id);
+    expect(lineOf(S)).toContain('3 actions');
+    expect(lineOf(S)).toContain('development 1');
+    noOffer();
+    expect(Object.values(table!.decor ?? {}).filter((d) => d.ring !== undefined)).toEqual([]);
+  });
+
+  it('assigns a set to the card it goes to by clicking only: a card, its button, another card, then the card they go to', () => {
+    mount();
+    const greenlit = greenlight();
+    const attrs = parseTextFaceKey(cardsIn(`development-${S}`)[0].faceKey)!;
+    const software = named(`bench-${S}`, 'Junior Software Dev');
+    const hardware = named(`bench-${S}`, 'Junior Hardware Eng');
+    const qa = named(`bench-${S}`, 'Junior QA Tester');
+    click(software);
+    expect(offered()).toEqual([
+      [ASSIGN, true],
+      ['Assign some cards from your bench to your ops team', 'their operations is not empty'],
+      [LAY_OFF, true],
+    ]);
+    choose(ASSIGN);
+    noOffer();
+    expect(['Junior Software Dev', 'Junior Hardware Eng', 'Junior QA Tester'].map(pressedIn)).toEqual(['true', 'false', 'false']);
+    expect([ring(software), ring(hardware), ring(qa)]).toEqual(['chosen', 'choice', 'choice']);
+
+    click(hardware);
+    expect([ring(software), ring(hardware), ring(qa)]).toEqual(['chosen', 'chosen', 'choice']);
+    click(greenlit);
+    const team = cardsIn(`development-team-${S}`);
+    expect(team.map((c) => c.id).sort()).toEqual([software, hardware].sort());
+    expect(team.map((c) => c.data?.['lang:on'])).toEqual([greenlit, greenlit]);
+    expect(lineOf(S)).toContain('2 actions');
+    expect(boardOf(S)).toBe(
+      `development: ${attrs.name} [Blue 0/${attrs['blue cost']}, Red 0/${attrs['red cost']}] with Junior Software Dev and Junior Hardware Eng`,
+    );
+    expect(screen.queryByRole('group', { name: 'Pick cards' })).toBeNull();
+  });
+
+  it('sources by clicking, shows the scouting in the private strip to the seat alone, and passes the rest to the left end of the row', () => {
+    mount();
+    assign(greenlight());
+    click(named(`bench-${S}`, 'Junior QA Tester'));
+    choose(LAY_OFF);
+    confirm();
+    expect(status()).toBe(`seat: ${S} — sourcing — Your turn — ${hint('sourcing')}`);
+    const scouted = cardsIn(`scouting-${S}`);
+    expect(scouted).toHaveLength(1);
+    expect(scouted[0].faceUp).toBe(true);
+    const found = scouted[0].id;
+    expect(lineOf(S)).toContain('1 action,');
+    expect(lineOf(S)).toContain('scouting 1');
+
+    click(found);
+    expect(offered().map(([label]) => label)).toEqual(HIRES);
+    fireEvent.click(within(offer()).getByRole('button', { name: 'Cancel' }));
+    noOffer();
+    fireEvent.click(tab(O));
+    expect(cardsIn(`scouting-${S}`)).toEqual([]);
+    expect(lineOf(S)).toContain('scouting 1');
+    expect(screen.getByTestId(`board-${S}`)).toBeTruthy();
+
+    fireEvent.click(tab(`${S} — to act`));
+    press('Pass on the rest');
+    expect(status()).toBe(`seat: ${S} — Your turn — ${hint('actions')}`);
+    expect(inOrder('agency-row')[0].id).toBe(found);
+  });
+
+  it('keeps the picks of a set the rules refuse as a whole, on the list and on the table', () => {
+    const set = setUp();
+    const dating = idOf(set, 'Dating App');
+    mount({ initial: relocate(set, [dating], `development-${S}`, game) });
+    press(LAY_OFF);
+    pickNamed('Junior Software Dev');
+    pickNamed('Junior Hardware Eng');
+    confirm();
+    const [first, second] = inOrder(`scouting-${S}`);
+    const costOf = (card: CardState) => Number(parseTextFaceKey(card.faceKey)!.cost);
+    expect([costOf(first) <= 7, costOf(second) <= 7, costOf(first) + costOf(second) > 7], 'seed 1 scouts two cards that 7 capital buys one at a time, not both')
+      .toEqual([true, true, true]);
+    click(first.id);
+    choose(HIRES[2]);
+    click(second.id);
+    click(dating);
+    expect(screen.getByText('they have at least the total cost of the picked cards in capital')).toBeTruthy();
+    expect([ring(first.id), ring(second.id)]).toEqual(['chosen', 'chosen']);
+    expect([first, second].map((card) => pressedIn(parseTextFaceKey(card.faceKey)!.name))).toEqual(['true', 'true']);
+    expect(cardsIn(`scouting-${S}`)).toHaveLength(2);
+  });
+
+  it('launches a card clicked in the development, and explains a button greyed for it, keeping the offer', () => {
+    let set = setUp();
+    const dating = idOf(set, 'Dating App');
+    set = relocate(set, [dating], `development-${S}`, game);
+    set = putOn(set, [idOf(set, 'Junior Software Dev', `bench-${S}`)], `development-team-${S}`, dating, game);
+    set = changeCard(set, dating, { 'blue cubes': 6 }, game);
+    const lock = idOf(set, 'Smart Lock');
+    mount({ initial: relocate(set, [lock], `development-${S}`, game) });
+    const LAUNCH = 'Launch a card from your development to your operations';
+
+    click(lock);
+    expect(offered()).toEqual([[LAUNCH, 'it is feature complete'], ['Pivot a card in your development', true]]);
+    choose(LAUNCH);
+    expect(screen.getByText('it is feature complete')).toBeTruthy();
+    expect(within(offer()).getByText('Smart Lock:')).toBeTruthy();
+
+    fireEvent.click(within(offer()).getByRole('button', { name: 'Cancel' }));
+    click(dating);
+    choose(LAUNCH);
+    expect(boardOf(S)).toBe('development: Smart Lock [Blue 0/1, Red 0/5] · operations: Dating App [Blue 6/6, Red 0/0] · ops team: Junior Software Dev');
+    expect(lineOf(S)).toContain('2 actions');
+  });
+
+  it('Review Focus: offers another seat its buttons greyed with whose turn it is, and sends nothing', () => {
+    const set = setUp();
+    mount({ initial: relocate(set, [idOf(set, 'Dating App')], `development-${O}`, game) });
+    fireEvent.click(tab(O));
+    const before = lineOf(O);
+    click(named(`bench-${O}`, 'Junior Software Dev'));
+    const turn = `It's ${S}'s turn.`;
+    expect(offered()).toEqual([ASSIGN, 'Assign some cards from your bench to your ops team', LAY_OFF].map((label) => [label, turn]));
+    choose(ASSIGN);
+    expect(screen.getByText(turn)).toBeTruthy();
+    expect(lineOf(O)).toBe(before);
+  });
+
+  it('Review Focus: says no button takes a card nothing takes, and offers nothing', () => {
+    mount();
+    click(cardsIn('talent-deck')[0].id);
+    expect(screen.getByText('No button takes this card now.')).toBeTruthy();
+    noOffer();
+  });
+
+  it('Review Focus: drops a picked card that leaves, and does not pick it again when it comes back', () => {
+    mount();
+    const hire = inOrder('agency-row').find((c) => Number(parseTextFaceKey(c.faceKey)!.cost) <= 7);
+    expect(hire, 'seed 1 deals an agency card that 7 capital buys').toBeDefined();
+    click(hire!.id);
+    choose('Hire a card from the agency row to your bench');
+    expect(cardsIn(`bench-${S}`).map((c) => c.id)).toContain(hire!.id);
+    click(hire!.id);
+    choose(LAY_OFF);
+    const software = named(`bench-${S}`, 'Junior Software Dev');
+    click(software);
+    expect([ring(hire!.id), ring(software)]).toEqual(['chosen', 'chosen']);
+
+    const undo = vi.spyOn(GameServer.prototype, 'undo');
+    press('Undo');
+    expect(cardsIn('agency-row').map((c) => c.id)).toContain(hire!.id);
+    expect(ring(hire!.id)).toBeUndefined();
+    // Every press on this page closes the picker, so the same card comes back to the bench from the server, as another window on
+    // the seat would hire it: it is offered to pick again, but not picked.
+    const server = undo.mock.contexts[0] as GameServer;
+    undo.mockRestore();
+    act(() => {
+      server.submit(S, { type: 'hire a card from the agency row to their bench', cardId: hire!.id });
+    });
+    expect(cardsIn(`bench-${S}`).map((c) => c.id)).toContain(hire!.id);
+    expect(ring(hire!.id)).toBe('choice');
+    expect(ring(software)).toBe('chosen');
+    confirm();
+    expect(cardsIn('open-job-market').map((c) => c.id)).toEqual([software]);
+  });
+
+  it('Review Focus: keeps an offer while its card has a button to take it, and closes it once none does', () => {
+    mount();
+    const hire = inOrder('agency-row').find((c) => Number(parseTextFaceKey(c.faceKey)!.cost) <= 7)!.id;
+    click(hire);
+    choose('Hire a card from the agency row to your bench');
+    click(hire);
+    expect(offered().map(([label]) => label)).toEqual([ASSIGN, 'Assign some cards from your bench to your ops team', LAY_OFF]);
+    press('Undo');
+    expect(offered().map(([label]) => label)).toEqual(['to your bench', 'to a card in your development', 'to your ops team'].map((to) => `Hire a card from the agency row ${to}`));
+    expect(ring(hire)).toBe('chosen');
+
+    press('Research the seed deck');
+    const [drawn] = inOrder(`research-${S}`);
+    click(drawn.id);
+    expect(offered()).toEqual([['Keep a card in your research', true]]);
+    press('Undo');
+    expect(cardsIn(`research-${S}`)).toEqual([]);
+    noOffer();
+    expect(ring(drawn.id)).toBeUndefined();
+  });
+
+  it('Review Focus: closes the offer when a button is pressed', () => {
+    mount();
+    const card = named(`bench-${S}`, 'Junior QA Tester');
+    click(card);
+    press('Recruit a junior software dev');
+    noOffer();
+    expect(status()).toBe(`seat: ${S} — Your turn — ${hint('actions')}`);
+    click(card);
+    press('Hire a card from the agency row to your bench');
+    noOffer();
+    expect(picker()).toBeTruthy();
+    click(card);
+    expect(screen.getByText('Pick a card from the agency row to hire.')).toBeTruthy();
+    fireEvent.click(within(picker()).getByRole('button', { name: 'Cancel' }));
+    click(card);
+    press('End your actions');
+    noOffer();
+  });
+
+  it('Review Focus: takes a click that wobbles into a short drag back to its zone as a click, on a card in a stack too', () => {
+    let set = setUp();
+    const dating = idOf(set, 'Dating App');
+    set = relocate(set, [dating], `development-${S}`, game);
+    const hardware = idOf(set, 'Junior Hardware Eng', `bench-${S}`);
+    mount({ initial: putOn(set, [hardware], `development-team-${S}`, dating, game) });
+    drop(named(`bench-${S}`, 'Junior Software Dev'), `bench-${S}`, `bench-${S}`);
+    expect(within(offer()).getByText('Junior Software Dev:')).toBeTruthy();
+    drop(hardware, `development-team-${S}`, `development-team-${S}`);
+    expect(within(offer()).getByText('Junior Hardware Eng:')).toBeTruthy();
+    expect(offered().map(([label]) => label)).toEqual([
+      'Reassign a card from your development team to a card in your development', 'Dismiss a card in your development team',
+    ]);
   });
 });
