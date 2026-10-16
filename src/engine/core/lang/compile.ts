@@ -1,19 +1,22 @@
 import { MAX_CARDS, TOO_MANY_CARDS, isSaysColumn } from './cards';
 import { compileExample } from './compile-example';
-import { actionLine, actionOf, cardMoveVerb, compilePhase, targetWords, type VerbUses } from './compile-phase';
+import {
+  actionLine, actionOf, cardMoveVerb, compilePhase, compileTrigger, startsLineOf, targetWords, TURN_STARTS, type VerbUses,
+} from './compile-phase';
 import { addProblem, attempt, innerEffect, matchEffectLine, matchLine, phaseId, phraseFn, rejectChildren, type LineCtx } from './compile-util';
 import type { Diagnostic } from './diagnostics';
 import { parseOutline, type OutlineNode } from './outline';
 import { normalizeLine, suggestNames, vocabFrom, type PhraseLibrary } from './phrases';
 import { canon } from './refs';
+import { usesTurns } from './turns';
 import type {
-  BankSpec, BoardFn, BoardSpec, CardSetSpec, CardsFn, CardTable, CompiledEnd, CompiledGame, CompiledPhase, DeclareFn, FactSpec, PhraseRef, SpaceSpec, Vocab,
-  ZoneFn, ZoneSpec,
+  BankSpec, BoardFn, BoardSpec, CardSetSpec, CardsFn, CardTable, CompiledEnd, CompiledGame, CompiledPhase, DeclareFn, EveryPhase, FactSpec, PhraseRef,
+  SpaceSpec, Vocab, ZoneFn, ZoneSpec,
 } from './types';
 
 export type CompileResult = { game?: CompiledGame; diagnostics: Diagnostic[] };
 
-const SECTION_NAMES = ['Game', 'Players', 'Cards', 'Table', 'Board', 'Setup', 'Phase', 'End', 'Example'];
+const SECTION_NAMES = ['Game', 'Players', 'Cards', 'Table', 'Board', 'Setup', 'In every phase', 'Phase', 'End', 'Example'];
 const SECTION = new RegExp(`^(${SECTION_NAMES.join('|')})\\s*:\\s*(.*)$`, 'i');
 /** A top-level line that is only a name and a colon: a section that holds lines, whatever it is named. */
 const HEADER = /^([^:]+?)\s*:$/;
@@ -21,9 +24,13 @@ const PLAYERS = /^(\d+)(?:\s+to\s+(\d+))?$/i;
 const GAME_ENDS = /^the game ends when\s+(.+)$/i;
 const SAYS_WINS = /\bwins\b/i;
 const LOOP_LINE = /^the\s+board\s+is\s+a\s+loop\b/i;
-const BLOCK_SECTIONS = new Set(['cards', 'table', 'board', 'setup', 'end']);
+const BLOCK_SECTIONS = new Set(['cards', 'table', 'board', 'setup', 'in every phase', 'end']);
 /** Where one sentence of a says cell ends and the next begins: a full stop followed by whitespace. */
 const SENTENCE_END = /\.\s+/;
+/** The lines under `In every phase:` that start each round. */
+const ROUND_STARTS = /^when a round starts:?$/i;
+/** Any other rule under `In every phase:`: group 1 is what it waits for. */
+const EVERY_PHASE_RULE = /^when (.+):$/i;
 
 const MAX_PLAYERS = 12;
 /** “They are out” already says a player has left the game, so a fact about players may not be called that. */
@@ -51,6 +58,10 @@ const HOLD_BACK_SAYS = (line: number) => `Some card lines can't be checked until
 // The example uses one of the game's own counters, so the compiler needs no word of its own for a thing players have.
 const SAYS_NOTHING = (counter: string) => `Say what this card does, like “They get 50 ${counter}.”`;
 const SAYS_EXAMPLE_COUNTER = 'coins';
+const ONLY_WHEN_RULES = 'Only “When …:” rules go under In every phase:, like “When the shop has fewer than 4 cards:”.';
+/** The first phase starts once, as the game does: each turn after the first goes back to it without starting it again. */
+const FIRST_PHASE_STARTS =
+  'This phase comes first, so its “When this phase starts:” lines run only on the game\'s first turn. Put what starts each turn under “When a player\'s turn starts:”.';
 
 type Section = { keyword: string; rest: string; node: OutlineNode };
 
@@ -417,16 +428,44 @@ function phaseStartedBy(ref: PhraseRef, library: PhraseLibrary): string | null {
   return library.get(effect.kind, effect.phrase)?.entersPhase ? (effect.args[0] as string) : null;
 }
 
-/** Every line of a phase that does something: its buttons, card moves, rules and start lines. */
+/**
+ * The rules of the `In every phase:` sections, in the order written: the lines that start each round, about no one; the lines that
+ * start each turn, about the player whose turn it is; and `When …:` rules that fire whatever the phase. Those are read as a phase's
+ * rules are, except that one about no one in particular is about no one, for the phase may be one where everyone acts at once. Any
+ * other line is reported.
+ */
+function compileEveryPhase(sections: Section[], ctx: LineCtx): EveryPhase {
+  const everyPhase: EveryPhase = { triggers: [], roundStarts: [], turnStarts: [] };
+  const effects = (node: OutlineNode, about: LineCtx) => node.children.map((line) => {
+    rejectChildren(line, ctx.diagnostics);
+    return matchEffectLine(line.text, line.line, about);
+  });
+  for (const node of linesOf(sections)) {
+    const clean = normalizeLine(node.text);
+    const rule = EVERY_PHASE_RULE.exec(clean);
+    if (ROUND_STARTS.test(clean)) everyPhase.roundStarts.push(...effects(node, ctx));
+    else if (TURN_STARTS.test(clean)) everyPhase.turnStarts.push(...effects(node, { ...ctx, player: true }));
+    else if (rule) everyPhase.triggers.push(compileTrigger(node, clean, rule[1], ctx, false));
+    else addProblem(ctx.diagnostics, node.line, ONLY_WHEN_RULES, { text: clean });
+  }
+  return everyPhase;
+}
+
+/** Every line of the `In every phase:` sections that does something. */
+const everyPhaseEffects = ({ triggers, roundStarts, turnStarts }: EveryPhase): PhraseRef[] => [
+  ...roundStarts, ...turnStarts, ...triggers.flatMap((t) => t.effects),
+];
+
+/** Every line of a phase that does something: its buttons, card moves, rules, start lines and the lines that start a turn in it. */
 const effectsOf = (phase: CompiledPhase): PhraseRef[] => [
   ...phase.onEnter, ...phase.actions.flatMap((a) => a.effects), ...phase.moves.flatMap((m) => m.effects),
-  ...phase.triggers.flatMap((t) => t.effects), ...phase.moments.flatMap((m) => m.effects),
+  ...phase.triggers.flatMap((t) => t.effects), ...phase.moments.flatMap((m) => m.effects), ...phase.turnStarts,
 ];
 
 /**
  * A phase that is not the first needs something to lead to it, or the game can never reach it: a `go to` in another phase, or a
- * line that starts it, in another phase or `elsewhere` (Setup, or what a card says). A phase's own lines run only once it is
- * reached, so they never lead to it.
+ * line that starts it, in another phase or `elsewhere` (Setup, what a card says, or a rule for every phase). A phase's own lines
+ * run only once it is reached, so they never lead to it.
  */
 function warnUnreachable(phases: CompiledPhase[], elsewhere: PhraseRef[], library: PhraseLibrary, diagnostics: Diagnostic[]): void {
   const starts = (refs: PhraseRef[]) => new Set(refs.flatMap((ref) => phaseStartedBy(ref, library) ?? []));
@@ -524,6 +563,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   const boardFailed = board === null && of('board').length > 0;
   const columns = compileColumns(readColumnSections(others, board, boardFailed, diagnostics), ctx);
   const { says, diagnostics: saysDiagnostics } = compileSays(saysCells, ctx);
+  const everyPhase = compileEveryPhase(of('in every phase'), ctx);
 
   const phases: CompiledPhase[] = [];
   const seen = new Set<string>();
@@ -535,9 +575,13 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
     phases.push(phase);
   }
   if (phaseNodes.length === 0) addProblem(diagnostics, 1, 'Add at least one Phase: section.');
-  warnUnreachable(phases, [...setup, ...Object.values(says).flat()], library, diagnostics);
+  warnUnreachable(phases, [...setup, ...Object.values(says).flat(), ...everyPhaseEffects(everyPhase)], library, diagnostics);
 
   const end = compileEnd(of('end'), ctx);
+  const firstStarts = named.length > 0 ? startsLineOf(named[0]) : null;
+  if (firstStarts !== null && usesTurns({ board, setup, everyPhase, end, phases })) {
+    addProblem(diagnostics, firstStarts, FIRST_PHASE_STARTS, { severity: 'warning' });
+  }
   const examples = of('example').map((s) => compileExample(s.node, ctx, players));
 
   // Decided before anything is held back: a game whose held-back lines have problems is not one to play, and neither is one
@@ -553,7 +597,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
     addProblem(diagnostics, Math.min(...saysDiagnostics.map((d) => d.line)), HOLD_BACK_SAYS(brokenAt), { severity: 'warning' });
   }
   if (name === null || players === null || phases.length === 0 || !onlyUnknownPhrases) return undefined;
-  return { name, players, zones, cards, setup, phases, end, examples, board, facts, columns, says };
+  return { name, players, zones, cards, setup, phases, end, examples, board, facts, columns, says, everyPhase };
 }
 
 /**

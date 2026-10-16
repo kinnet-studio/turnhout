@@ -8,7 +8,7 @@ import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
-import { COUNTER_GAME, HOLDING_BOARD, INTERRUPT_BOARD, PICK_BOARD, TINY_BOARD_HEAD, deckGameText } from './testing';
+import { COUNTER_GAME, HOLDING_BOARD, INTERRUPT_BOARD, PICK_BOARD, ROUNDS_GAME, TINY_BOARD_HEAD, TURN_GAME, deckGameText } from './testing';
 import type { ParamType } from './types';
 
 const lib = createDefaultLibrary();
@@ -109,7 +109,7 @@ describe('compileGame header and sections', () => {
 
   it('flags unknown top-level lines', () => {
     expect(messages(`${BASE}\nRules:\n  Be nice.`)).toEqual([
-      [22, 'I don\'t understand this section. Sections are Game, Players, Cards, Table, Board, Setup, Phase, End and Example, or a column of the board\'s table.'],
+      [22, 'I don\'t understand this section. Sections are Game, Players, Cards, Table, Board, Setup, In every phase, Phase, End and Example, or a column of the board\'s table.'],
     ]);
   });
 
@@ -576,7 +576,7 @@ describe('compileGame after a broken Players:, Cards: or Table: line', () => {
   it('still reports structure problems below a broken line', () => {
     expect(messages(`${BASE.replace('Players: 2 to 3', 'Players: four')}\nRules:\n  Be nice.`)).toEqual([
       [2, 'Say how many players, like “Players: 4” or “Players: 2 to 5”.'],
-      [22, 'I don\'t understand this section. Sections are Game, Players, Cards, Table, Board, Setup, Phase, End and Example, or a column of the board\'s table.'],
+      [22, 'I don\'t understand this section. Sections are Game, Players, Cards, Table, Board, Setup, In every phase, Phase, End and Example, or a column of the board\'s table.'],
     ]);
   });
 });
@@ -950,8 +950,61 @@ describe('counters and facts under Players:', () => {
   });
 });
 
+describe('In every phase:', () => {
+  const ONLY_WHEN = 'Only “When …:” rules go under In every phase:, like “When the shop has fewer than 4 cards:”.';
+  const NEEDS_PLAYER = (line: string) => `“${line}” only makes sense in a rule about a player, such as a move, an action or a “When a player …” rule.`;
+  const FIRST_PHASE_STARTS =
+    'This phase comes first, so its “When this phase starts:” lines run only on the game\'s first turn. Put what starts each turn under “When a player\'s turn starts:”.';
+  /** ROUNDS_GAME with `lines` (already indented) put in after line 22, `When a round starts:`. */
+  const inRoundStart = (...lines: string[]) => ROUNDS_GAME.replace('  When a round starts:', ['  When a round starts:', ...lines].join('\n'));
+  /** A game with `lines` (already indented) put in after the first phase's `Players take turns.` line. */
+  const underFirstPhase = (text: string, ...lines: string[]) => text.replace('  Players take turns.', ['  Players take turns.', ...lines].join('\n'));
+
+  it('reads the rules for a round, a turn and any time', () => {
+    const { game, diagnostics } = compileGame(ROUNDS_GAME, lib);
+    expect(diagnostics).toEqual([]);
+    expect(game!.everyPhase.roundStarts).toMatchObject([{ kind: 'effect', phrase: 'move the top card of {zone} to {zone}', line: 23 }]);
+    expect(game!.everyPhase.turnStarts).toMatchObject([{ kind: 'effect', phrase: 'they get {int} {counter}', args: [1, 'coins'], line: 25 }]);
+    expect(game!.everyPhase.triggers).toMatchObject([{ line: 26, when: { phrase: '{zone} has more than {int} card(s)' } }]);
+  });
+
+  it('gives a game without the section empty lists', () => {
+    expect(compileGame(TURN_GAME, lib).game!.everyPhase).toEqual({ triggers: [], roundStarts: [], turnStarts: [] });
+  });
+
+  it('takes a turn rule written with a curly apostrophe', () => {
+    const { game, diagnostics } = compileGame(ROUNDS_GAME.replace("  When a player's turn starts:", '  When a player’s turn starts:'), lib);
+    expect(diagnostics).toEqual([]);
+    expect(game!.everyPhase.turnStarts).toHaveLength(1);
+  });
+
+  it('reports a line that is not a “When …:” rule', () => {
+    expect(messages(ROUNDS_GAME.replace('In every phase:', 'In every phase:\n  Players take turns.'))).toEqual([[22, ONLY_WHEN]]);
+  });
+
+  it('reads the lines that start a round about no one', () => {
+    expect(messages(inRoundStart('    They get 1 coin.'))).toEqual([[23, NEEDS_PLAYER('They get 1 coin')]]);
+  });
+
+  it('warns that the start lines of the first phase run only on the first turn, in a game that uses turns', () => {
+    const starts = ['  When this phase starts:', '    They get 5 coins.'];
+    expect(compileGame(underFirstPhase(ROUNDS_GAME, ...starts), lib).diagnostics).toEqual([
+      expect.objectContaining({ line: 31, severity: 'warning', message: FIRST_PHASE_STARTS }),
+    ]);
+    expect(messages(underFirstPhase(COUNTER_GAME, ...starts))).toEqual([]);
+  });
+
+  it('keeps the turn rules written under a phase with that phase, about the player whose turn it is', () => {
+    const { game, diagnostics } = compileGame(underFirstPhase(ROUNDS_GAME, "  When a player's turn starts:", '    They get 2 coins.'), lib);
+    expect(diagnostics).toEqual([]);
+    expect(game!.phases[0].turnStarts).toMatchObject([{ phrase: 'they get {int} {counter}', args: [2, 'coins'], line: 32 }]);
+    expect(game!.phases[0].triggers).toEqual([]);
+    expect(game!.phases[1].turnStarts).toEqual([]);
+  });
+});
+
 describe('a section named after a table column', () => {
-  const UNKNOWN = "I don't understand this section. Sections are Game, Players, Cards, Table, Board, Setup, Phase, End and Example, or a column of the board's table.";
+  const UNKNOWN = "I don't understand this section. Sections are Game, Players, Cards, Table, Board, Setup, In every phase, Phase, End and Example, or a column of the board's table.";
   const DOUBLE = 'A street in a full set with no buildings has double rent.';
   const compiled = (text: string) => compileGame(text, createDefaultLibrary());
   const errors = (text: string) => compiled(text).diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message]);

@@ -8,6 +8,7 @@ import { friendlyError, friendlyReason } from './friendly';
 import { byCardId } from './library/example-phrases';
 import type { PhraseLibrary } from './phrases';
 import { LangRuntime } from './runtime';
+import { clearTurnMarkers, markTurnStarted, usesTurns } from './turns';
 import type { CompiledExample, CompiledGame, ExampleEnv } from './types';
 import { matchesCard } from './zones';
 
@@ -47,14 +48,18 @@ function runExample(game: CompiledGame, library: PhraseLibrary, example: Compile
     const env: ExampleEnv = {
       last: null,
       claim: claimer(),
-      // The game's own Setup, run on what is on the table so far.
-      setUp: (state) => createEngine(game, library, players, { ...state, turn: undefined }).engine.getState(),
+      // The game's own Setup, run on what is on the table so far, as a new game: no turn has started and no round, so the first
+      // turn and round start once Setup is done.
+      setUp: (state) => createEngine(game, library, players, clearTurnMarkers({ ...state, turn: undefined })).engine.getState(),
     };
 
     // Cards are in their starting zones and the first phase is on, so Given lines can arrange the table.
     // A board game's pieces are on their start space and its counters are full, as in a new game.
+    // In a game of rounds that turn has started, in the first round: building the engine must not start it again over what the
+    // Given lines arrange, such as a number each player has each turn.
     const turn = first ? { current: seats[0], phase: first.id } : undefined;
-    let table: GameState = withBoardData({ ...initialState(game, SEED), turn }, game, seats);
+    const fresh: GameState = withBoardData({ ...initialState(game, SEED), turn }, game, seats);
+    let table: GameState = usesTurns(game) ? markTurnStarted(fresh) : fresh;
     let built: ReturnType<typeof createEngine> | null = null;
     const arranging = new LangRuntime(game, library, seats);
 

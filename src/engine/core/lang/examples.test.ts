@@ -4,7 +4,7 @@ import { compileGame } from './compile';
 import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import type { PhraseLibrary } from './phrases';
-import { TEST_DUEL, TINY_BOARD, deckGameText } from './testing';
+import { ROUNDS_GAME, TEST_DUEL, TINY_BOARD, deckGameText } from './testing';
 import type { CompiledGame } from './types';
 
 const lib = createDefaultLibrary();
@@ -424,5 +424,51 @@ describe('cards that say what they do, in examples', () => {
     const results = runExamples(game!, lib);
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({ status: 'fail', message: 'Expected the lucky pile to have a Fine, but it has a Dividend.' });
+  });
+});
+
+describe('examples in a game with rounds', () => {
+  const ROUND_EXAMPLES = [
+    '',
+    'Example: an arranged turn has already started',
+    '  Given p0 has 1 move',
+    '  When p0 works',
+    "  Then it is p1's turn",
+    '  And p0 has 2 coins',
+    '  And p1 has 1 coin',
+    '  And p1 has 2 moves',
+    '',
+    'Example: each round starts with the start player',
+    '  Given 3 players',
+    '  And p1 is the start player',
+    "  And it is p1's turn",
+    '  When p1 stops',
+    "  Then it is p2's turn",
+    '  When p2 stops',
+    '  And p0 stops',
+    "  Then it is p1's turn",
+    '  And the done pile has 1 card',
+    '',
+    'Example: setting up starts the first round once',
+    '  Given the game is set up',
+    '  Then the done pile has 1 card',
+    '',
+    'Example: a step that finishes the turn',
+    '  Given the turn passes to the left',
+    '  When p1 stops',
+    "  Then it is p0's turn",
+    '  And p1 has 2 coins',
+  ].join('\n');
+
+  it('starts the arranged turn already, a round only with the start player, and the first round once on setting up', () => {
+    const { game, diagnostics } = compileGame(`${ROUNDS_GAME}\n${ROUND_EXAMPLES}`, lib);
+    expect(diagnostics).toEqual([]);
+    const results = runExamples(game!, lib);
+    expect(results.map((r) => [r.name, r.status, r.message])).toEqual([
+      ['an arranged turn has already started', 'pass', null],
+      ['each round starts with the start player', 'pass', null],
+      ['setting up starts the first round once', 'pass', null],
+      ['a step that finishes the turn', 'pass', null],
+    ]);
   });
 });

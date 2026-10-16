@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { cardById, zoneCards, type GameState } from '../game-state';
 import type { PlayerId } from '../scene';
 import type { Json } from '../table-def';
-import { counterOf, gameNumber, isOut, markOut, ownerOf, playerFact, recordAction, setCounter, setOwner, setPlayerFact, withBoardData } from './board-state';
+import {
+  counterOf, gameNumber, interruptTurn, isOut, markOut, ownerOf, playerFact, recordAction, setCounter, setOwner, setPlayerFact, withBoardData,
+} from './board-state';
 import { createEngine, flowDefFor, initialState, seatsFor, tableDefFor } from './build';
 import { cardFact } from './card-facts';
 import { compileGame } from './compile';
@@ -10,7 +12,8 @@ import { MissingPhraseError, RuleError } from './diagnostics';
 import { friendlyError } from './friendly';
 import { createDefaultLibrary } from './library';
 import { LangRuntime } from './runtime';
-import { HOLDING_BOARD, PICK_BOARD, TEST_DUEL, TINY_BOARD, TURN_GAME } from './testing';
+import { HOLDING_BOARD, PICK_BOARD, ROUNDS_GAME, TEST_DUEL, TINY_BOARD, TURN_GAME } from './testing';
+import { ROUND_KEY, TURN_OF_KEY } from './turns';
 import type { CompiledGame, ExampleEnv, MoveInfo, PhraseRef } from './types';
 import { matchesCard, relocate, zoneIdFor } from './zones';
 import RENT_DAY from '@/games/rent-day.rules?raw';
@@ -694,5 +697,106 @@ describe('turn steps', () => {
     expect(setup.onEnter).toEqual([{ name: 'lang:effect', params: chores.setup[0] }]);
     expect(working.advance).toEqual({ when: { name: 'lang:phase-cond', params: { phase: 'working', ref: chores.phases[0].goTo!.when } }, to: 'tidying' });
     expect(tidying.onEnter).toEqual([{ name: 'lang:phase-effect', params: { phase: 'tidying', ref: chores.phases[1].onEnter[0] } }]);
+  });
+});
+
+describe('rounds and turns', () => {
+  const rounds = compiled(ROUNDS_GAME);
+  /**
+   * A game of ROUNDS_GAME (or `game`) at `players` seats whose turn is p0's in working, so Setup is skipped and p0, the first seat,
+   * starts.
+   */
+  const table = (players = 3, game = rounds) =>
+    createEngine(game, lib, players, { ...initialState(game, 1), turn: { current: 'p0', phase: 'working' } }).engine;
+  const doneOf = (state: GameState) => zoneCards(state, zoneIdFor('done pile')).length;
+  const coinsOf = (state: GameState, ...seats: PlayerId[]) => seats.map((seat) => counterOf(state, 'coins', seat));
+  /** Each seat in turn presses stop, which spends their moves and so finishes their turn. */
+  const stop = (engine: ReturnType<typeof table>, ...seats: PlayerId[]) => {
+    for (const by of seats) expect(engine.dispatch({ type: 'stop', by }).reason).toBeUndefined();
+  };
+
+  it('starts the first round and the first turn as the engine is built', () => {
+    const state = table().getState();
+    expect([state.data[ROUND_KEY], state.data[TURN_OF_KEY]]).toEqual([1, 'p0']);
+    expect(coinsOf(state, 'p0', 'p1', 'p2')).toEqual([1, 0, 0]);
+    expect(doneOf(state)).toBe(1);
+  });
+
+  it("starts the next player's turn once the turn passes, in the same round", () => {
+    const engine = table();
+    stop(engine, 'p0');
+    const state = engine.getState();
+    // 1 as the turn started and 1 from tidying's start line.
+    expect(coinsOf(state, 'p0')).toEqual([2]);
+    expect(state.turn).toEqual({ current: 'p1', phase: 'working' });
+    expect(coinsOf(state, 'p1')).toEqual([1]);
+    expect(state.data[ROUND_KEY]).toBe(1);
+  });
+
+  it("starts a round each time the start player's turn starts, with their moves back at their start", () => {
+    const engine = table();
+    stop(engine, 'p0', 'p1', 'p2');
+    const state = engine.getState();
+    expect(state.turn).toEqual({ current: 'p0', phase: 'working' });
+    expect(state.data[ROUND_KEY]).toBe(2);
+    expect(doneOf(state)).toBe(2);
+    // Stopping set p0's moves to 0.
+    expect(counterOf(state, 'moves', 'p0')).toBe(2);
+    expect(coinsOf(state, 'p0')).toEqual([3]);
+  });
+
+  it('fires a rule for every phase once it holds', () => {
+    const engine = table();
+    stop(engine, 'p0', 'p1', 'p2', 'p0', 'p1', 'p2');
+    const state = engine.getState();
+    // Round 3 put a third card in the done pile, and the rule moved all three back to the pile.
+    expect(state.data[ROUND_KEY]).toBe(3);
+    expect(doneOf(state)).toBe(0);
+    expect(state.turn).toEqual({ current: 'p0', phase: 'working' });
+  });
+
+  it("runs a phase's own turn rules after the ones for every phase (C2)", () => {
+    const ownRule = ROUNDS_GAME.replace('  Players take turns.', "  Players take turns.\n  When a player's turn starts:\n    If they have at least 1 coin, they get 10 coins.");
+    const engine = table(3, compiled(ownRule));
+    stop(engine, 'p0');
+    // The coin for every phase came first, so p1 had one when working's rule asked; the other way round p1 would have 1.
+    expect(coinsOf(engine.getState(), 'p1')).toEqual([11]);
+  });
+
+  it('holds a rule for every phase in any phase the game declares, never in Setup, about no one', () => {
+    const SEATS = seatsFor(3);
+    const runtime = new LangRuntime(rounds, lib, SEATS);
+    const start = withBoardData(initialState(rounds, 1), rounds, SEATS);
+    const full = relocate(start, start.cards.slice(0, 3).map((c) => c.id), zoneIdFor('done pile'), rounds);
+    const [rule] = rounds.everyPhase.triggers;
+    const at = (phase: string): GameState => ({ ...full, turn: { current: 'p1', phase } });
+    expect(runtime.triggerSubject(null, rule, at('working'))).toEqual({ player: null, space: null, card: null });
+    expect(runtime.triggerSubject(null, rule, at('tidying'))).toEqual({ player: null, space: null, card: null });
+    expect(runtime.triggerSubject(null, rule, at('__setup'))).toBeNull();
+    expect(runtime.triggerSubject(null, rule, { ...at('working'), cards: start.cards })).toBeNull();
+  });
+
+  it('waits for no turn while another is interrupted, during Setup, or once the game is over', () => {
+    const SEATS = seatsFor(3);
+    const runtime = new LangRuntime(rounds, lib, SEATS);
+    const state: GameState = { ...withBoardData(initialState(rounds, 1), rounds, SEATS), turn: { current: 'p1', phase: 'working' } };
+    expect(runtime.turnWaiting(state)).toBe(true);
+    const started: GameState = { ...state, data: { ...state.data, [TURN_OF_KEY]: 'p1' } };
+    expect(runtime.turnWaiting(started)).toBe(false);
+    expect(runtime.turnWaiting(interruptTurn(started, 'tidying', 'p2'))).toBe(false);
+    expect(runtime.turnWaiting({ ...state, turn: { current: 'p1', phase: '__setup' } })).toBe(false);
+    expect(runtime.turnWaiting({ ...state, result: { winner: 'p0' } })).toBe(false);
+  });
+
+  it("adds the turn's rule only to a game that uses turns, ahead of the rules for every phase", () => {
+    expect(flowDefFor(game, seatsFor(2)).triggers!.map((t) => t.id)).not.toContain('a turn starts');
+    const rent = compiled(RENT_DAY);
+    expect(flowDefFor(rent, seatsFor(2)).triggers!.map((t) => t.id)).not.toContain('a turn starts');
+    const [turn, every] = flowDefFor(rounds, seatsFor(3)).triggers!;
+    expect(turn).toEqual({ id: 'a turn starts', when: { name: 'lang:turn-waiting' }, then: [{ name: 'lang:turn-start' }] });
+    const params = { phase: null, trigger: rounds.everyPhase.triggers[0] };
+    expect(every).toEqual({
+      id: 'line 26: When the done pile has more than 2 cards', when: { name: 'lang:trigger-when', params }, then: [{ name: 'lang:trigger-then', params }],
+    });
   });
 });

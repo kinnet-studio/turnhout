@@ -12,6 +12,8 @@ const TAKE_TURNS = 'players take turns';
 const AT_ONCE = 'everyone acts at once';
 const REARRANGE = /^players may rearrange their (.+) at any time$/i;
 const STARTS = /^when this phase starts:?$/i;
+/** The lines that start each turn, under a phase or in every phase; the apostrophe may be straight or curly. */
+export const TURN_STARTS = /^when a player['‘’]s turn starts:?$/i;
 const GO_TO = /^when (.+), go to ([^:]+)$/i;
 /** Moments come before triggers: “When a player lands on …:” is a rule about where a piece goes, not a condition. */
 const MOMENT_LINE = /^when (a piece passes .+|a player lands on .+):$/i;
@@ -370,7 +372,7 @@ function aboutOf(when: PhraseRef, ctx: LineCtx, otherwise: LineCtx = ctx): LineC
  * <which>:` (about each card it picks out). With `aboutTurn`, a rule of the first kind is about the player whose turn it is, its
  * `When` line too.
  */
-function compileTrigger(node: OutlineNode, clean: string, whenText: string, ctx: LineCtx, aboutTurn: boolean): CompiledTrigger {
+export function compileTrigger(node: OutlineNode, clean: string, whenText: string, ctx: LineCtx, aboutTurn: boolean): CompiledTrigger {
   const turnCtx: LineCtx = aboutTurn ? { ...ctx, player: true } : ctx;
   // Only a line a condition reads is a rule about no one in particular, and only a line a phrase reads can need a player, so the
   // `When` line of a rule about each player or each card is never read as about the turn's player too.
@@ -480,17 +482,22 @@ function takesTurns(node: OutlineNode): boolean {
   return said.filter((words) => words === TAKE_TURNS || words === AT_ONCE).at(-1) !== AT_ONCE;
 }
 
+/** The line of a phase's `When this phase starts:`, or null when it has none. */
+export function startsLineOf(node: OutlineNode): number | null {
+  return node.children.find((child) => STARTS.test(normalizeLine(child.text)))?.line ?? null;
+}
+
 /**
  * One `Phase:` block: its hint and who acts, the moves and actions players may make with their conditions and effects,
- * what happens when it starts, the rules that fire while it lasts, where it goes next, and when the turn passes.
- * `uses` holds the verbs of the phases above; this phase's are added to it.
+ * what happens when it starts and when a player's turn starts in it, the rules that fire while it lasts, where it goes next, and
+ * when the turn passes. `uses` holds the verbs of the phases above; this phase's are added to it.
  * Where players take turns, “they” in the start lines, the `go to` condition and a rule about no one in particular is the player
- * whose turn it is.
+ * whose turn it is. In the lines that start a turn it is always the player whose turn starts.
  */
 export function compilePhase(node: OutlineNode, ctx: LineCtx, uses: VerbUses = { moves: new Set(), actions: new Set() }): CompiledPhase {
   const phase: CompiledPhase = {
     id: phaseId(node), line: node.line, hint: null, actor: 'current', rearrange: [], moves: [], onEnter: [],
-    goTo: null, triggers: [], after: null, actions: [], moments: [],
+    goTo: null, triggers: [], after: null, actions: [], moments: [], turnStarts: [],
   };
   const moveLine = moveLineFor(ctx.vocab);
   // After lines are read last: they may come before the moves and actions they name. One with a problem still counts as named.
@@ -576,6 +583,13 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx, uses: VerbUses = {
       for (const line of child.children) {
         rejectChildren(line, ctx.diagnostics);
         phase.onEnter.push(matchEffectLine(line.text, line.line, turnCtx));
+      }
+      continue;
+    } else if (TURN_STARTS.test(clean)) {
+      // Read before moments and rules, whose “When …:” it would also fit; a turn is always some player's, whoever acts in the phase.
+      for (const line of child.children) {
+        rejectChildren(line, ctx.diagnostics);
+        phase.turnStarts.push(matchEffectLine(line.text, line.line, { ...ctx, player: true }));
       }
       continue;
     } else if (goTo) {

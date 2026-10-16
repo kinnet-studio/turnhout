@@ -20,10 +20,13 @@ import { declaredMoveHandler } from './declared-moves';
 import { RuleError } from './diagnostics';
 import type { PhraseLibrary } from './phrases';
 import { LangRuntime } from './runtime';
+import { usesTurns } from './turns';
 import type { CompiledGame, CompiledTrigger, PhraseRef } from './types';
 
 /** The phase the engine starts in: it runs the Setup lines, then goes straight to the game's first phase. */
 export const SETUP_PHASE = '__setup';
+/** The flow's name for the rule that starts each turn, in a game that plays in rounds of turns. */
+const TURN_START_RULE = 'a turn starts';
 
 export function seatsFor(players: number): PlayerId[] {
   return Array.from({ length: players }, (_, i) => `p${i}`);
@@ -45,8 +48,8 @@ const effect = (ref: PhraseRef): NamedRef => ({ name: 'lang:effect', params: ref
 type PhaseLineParams = { phase: string; ref: PhraseRef };
 const phaseCond = (phase: string, ref: PhraseRef): NamedRef => ({ name: 'lang:phase-cond', params: { phase, ref } satisfies PhaseLineParams });
 const phaseEffect = (phase: string, ref: PhraseRef): NamedRef => ({ name: 'lang:phase-effect', params: { phase, ref } satisfies PhaseLineParams });
-/** A `When …:` rule and the phase it is written under, as the flow hands it back to the runtime. */
-type TriggerParams = { phase: string; trigger: CompiledTrigger };
+/** A `When …:` rule and the phase it is written under (null for a rule for every phase), as the flow hands it back to the runtime. */
+type TriggerParams = { phase: string | null; trigger: CompiledTrigger };
 /** The End condition and the rules about a card that it waits for. */
 type EndParams = { when: PhraseRef; rules: TriggerParams[] };
 
@@ -72,20 +75,30 @@ export function flowDefFor(game: CompiledGame, seats: PlayerId[]): FlowDef {
     };
   });
 
-  // A rule written under a phase only fires while the game is in that phase. The runtime answers both halves, so
-  // that the lines of a rule about a player are about the player it picked out.
-  const triggers = game.phases.flatMap((phase) => phase.triggers.map((t): TriggerDef => {
-    const params: TriggerParams = { phase: phase.id, trigger: t };
-    return { id: `line ${t.line}: ${t.text}`, when: { name: 'lang:trigger-when', params }, then: [{ name: 'lang:trigger-then', params }] };
+  // A rule written under a phase only fires while the game is in that phase, and a rule for every phase in any of the game's
+  // phases. The runtime answers both halves, so that the lines of a rule about a player are about the player it picked out.
+  const rules: TriggerParams[] = [
+    ...game.everyPhase.triggers.map((trigger): TriggerParams => ({ phase: null, trigger })),
+    ...game.phases.flatMap((phase) => phase.triggers.map((trigger): TriggerParams => ({ phase: phase.id, trigger }))),
+  ];
+  const ruleTriggers = rules.map((params): TriggerDef => ({
+    id: `line ${params.trigger.line}: ${params.trigger.text}`,
+    when: { name: 'lang:trigger-when', params },
+    then: [{ name: 'lang:trigger-then', params }],
   }));
+  // A turn starts by itself, before any other rule, in a game that plays in rounds of turns. It is a rule, never part of what
+  // passes the turn: the flow checks End before it fires any rule, so once the turn has passed there is a moment, before the next
+  // turn starts, when the game may end with the round finished.
+  const turnStart: TriggerDef[] = usesTurns(game)
+    ? [{ id: TURN_START_RULE, when: { name: 'lang:turn-waiting' }, then: [{ name: 'lang:turn-start' }] }]
+    : [];
+  const triggers = [...turnStart, ...ruleTriggers];
 
   // A rule about a card tidies the table, and the game is decided on the tidied table: the flow checks End before it fires any
   // rule, so End would otherwise count a card (at 0 health, say) that such a rule is about to move away. Every rule the flow
   // fires re-checks End, so End holds as soon as no card rule has a card left. Rules about a player or about nothing in
   // particular do not tidy anything the winner depends on, so they never hold End back.
-  const cardRules = game.phases.flatMap((phase) => phase.triggers
-    .filter((t) => t.when.kind === 'which')
-    .map((trigger): TriggerParams => ({ phase: phase.id, trigger })));
+  const cardRules = rules.filter(({ trigger }) => trigger.when.kind === 'which');
   const endWhen = (when: PhraseRef): NamedRef => {
     if (cardRules.length === 0) return cond(when);
     const params: EndParams = { when, rules: cardRules };
@@ -124,6 +137,8 @@ function flowRegistryFor(runtime: LangRuntime): FlowRegistry {
       const { phase, trigger } = rule(params);
       return runtime.fireTrigger(phase, trigger, state);
     })
+    .registerPredicate('lang:turn-waiting', (state) => runtime.turnWaiting(state))
+    .registerEffect('lang:turn-start', (state) => runtime.startTurn(state))
     .registerPolicy('lang:turn', (state, _order, _ctx, params) => runtime.pick(ref(params), state))
     .registerEffect('lang:result', (state) => runtime.result(state));
 }

@@ -5,6 +5,7 @@ import { isSaysColumn } from '../cards';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import { STANDARD_RANKS, STANDARD_SUITS } from '../refs';
+import { TURN_OF_KEY, usesTurns } from '../turns';
 import type {
   ActionFn, CardMatch, CompiledGame, DeclaredMove, EffectFn, ExampleEnv, ExpectFn, PhraseEnv, ZoneRef,
 } from '../types';
@@ -90,7 +91,12 @@ const phaseIs: EffectFn = (env, args) => ({
   turn: { current: env.seats[0], ...env.state.turn, phase: args[0] as string },
 });
 
-const turnIs: EffectFn = (env, args) => ({ ...env.state, turn: { ...env.state.turn, current: seatOf(env, args[0]) } });
+/** In a game of rounds, the arranged turn has started already: building the engine must not start it again over the Given lines. */
+const turnIs: EffectFn = (env, args) => {
+  const seat = seatOf(env, args[0]);
+  const state: GameState = { ...env.state, turn: { ...env.state.turn, current: seat } };
+  return usesTurns(env.game) ? { ...state, data: { ...state.data, [TURN_OF_KEY]: seat } } : state;
+};
 
 const holds: EffectFn = (env, args) => {
   const [seat, wanted] = args as [string, CardMatch[]];

@@ -73,7 +73,14 @@ export type CompiledPhase = {
   /** `moves` are the move types the After line names: a card move's verb, a button's whole wording. */
   after: { moves: string[]; next: PhraseRef; line: number } | null;
   actions: DeclaredAction[]; moments: CompiledMoment[];
+  /** The lines under the phase's “When a player's turn starts:”, about the player whose turn starts in it. */
+  turnStarts: PhraseRef[];
 };
+/**
+ * The rules of an `In every phase:` section: `When …:` rules that fire whatever the phase, the lines that start each round, about
+ * no one, and the lines that start each turn, about the player whose turn it is.
+ */
+export type EveryPhase = { triggers: CompiledTrigger[]; roundStarts: PhraseRef[]; turnStarts: PhraseRef[] };
 export type CompiledEnd = { line: number; when: PhraseRef; scores: PhraseRef[]; winner: PhraseRef };
 export type ExampleStep = { keyword: 'given' | 'when' | 'then'; ref: PhraseRef };
 export type CompiledExample = { name: string; line: number; players: number | null; steps: ExampleStep[] };
@@ -91,6 +98,8 @@ export type CompiledGame = {
    * (trimmed): one effect ref per sentence, in order, each about the player who draws the card. Empty when no deck has the column.
    */
   says: { [cell: string]: PhraseRef[] };
+  /** The rules for every phase; empty lists when the game has no `In every phase:` section. */
+  everyPhase: EveryPhase;
 };
 export type Vocab = {
   sharedZones: string[]; playerZones: string[]; maxPlayers: number; phases: string[]; verbs: string[];

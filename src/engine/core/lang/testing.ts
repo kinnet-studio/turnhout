@@ -31,6 +31,7 @@ export function fixtureGame(over: Partial<CompiledGame> = {}): CompiledGame {
     zones: FIXTURE_ZONES.map((z) => ({ ...z })),
     cards: [{ kind: 'standard', identities: standardDeckIdentities(), start: 'deck', acesHigh: true }],
     setup: [], phases: [], end: null, examples: [], board: null, facts: [], columns: {}, says: {},
+    everyPhase: { triggers: [], roundStarts: [], turnStarts: [] },
     ...over,
   };
 }
@@ -334,6 +335,23 @@ export const TURN_GAME = [
   'End:', '  The game ends when the pile is empty.', '  The highest score wins.',
 ].join('\n');
 
+/**
+ * TURN_GAME with rules for every phase: a round starts by moving the top card of the pile to the done pile, each turn starts with
+ * a coin for the player whose turn it is, and a done pile of more than 2 cards goes back to the pile. `In every phase:` is line
+ * 21, `When a round starts:` line 22, `When a player's turn starts:` line 24, the done pile rule line 26 and `Phase: working` line 29.
+ */
+export const ROUNDS_GAME = TURN_GAME.replace('Phase: working', [
+  'In every phase:',
+  '  When a round starts:',
+  '    Move the top card of the pile to the done pile.',
+  "  When a player's turn starts:",
+  '    They get 1 coin.',
+  '  When the done pile has more than 2 cards:',
+  '    Move the done pile to the pile.',
+  '',
+  'Phase: working',
+].join('\n'));
+
 /** The loop of the board fixtures: a start, two streets, a tax, a station, a utility and two chance spaces. */
 export const FIXTURE_SPACES: SpaceSpec[] = [
   { name: 'Go', attrs: { kind: 'go' } },
@@ -405,7 +423,7 @@ export function fixtureMove(verb: string, from: ZoneRef, to: ZoneRef, over: Part
 export function fixturePhase(id: string, moves: DeclaredMove[], over: Partial<CompiledPhase> = {}): CompiledPhase {
   return {
     id, line: 1, hint: null, actor: 'current', rearrange: [], moves, onEnter: [], goTo: null, triggers: [], after: null,
-    actions: [], moments: [],
+    actions: [], moments: [], turnStarts: [],
     ...over,
   };
 }

@@ -3,11 +3,11 @@ import type { GameState } from '../game-state';
 import type { Move } from '../moves';
 import type { PlayerId } from '../scene';
 import { numberIn } from './board';
-import { holderOf } from './board-state';
+import { holderOf, interruptedTurn, setCounter } from './board-state';
 import { isMissing } from './compile-util';
 import { MissingPhraseError, RuleError } from './diagnostics';
 import type { PhraseLibrary } from './phrases';
-import { phaseTakesTurns } from './turns';
+import { phaseTakesTurns, ROUND_KEY, roundOf, startPlayerOf, TURN_OF_KEY } from './turns';
 import type {
   ActionFn, ColumnFn, CompiledGame, CompiledMoment, CompiledTrigger, CondGroup, ConditionFn, EffectFn, ExampleEnv, ExpectFn, MomentFn, Moment, MoveInfo,
   PhraseEnv, PhraseKind, PhraseRef, ScoreFn, Subject, TargetFn, TurnFn, WhichFn, WhoFn, WinnerFn,
@@ -18,6 +18,9 @@ type Checker = (state: GameState, move: Move) => true | string;
 const DEPEND_ON_EACH_OTHER = 'Two moves depend on each other through “they have no card they could play”.';
 const KEEPS_MOVING = 'It keeps moving pieces without stopping.';
 const KEEPS_DRAWING = 'Cards keep drawing cards without stopping.';
+
+/** Who a line about no one in particular is about. */
+const NO_ONE: Subject = { player: null, space: null, card: null };
 
 /**
  * How many moment rules may run inside one another. A lands-on rule that moves the piece again announces another
@@ -160,13 +163,20 @@ export class LangRuntime {
     return this.run(ref, state, undefined, undefined, this.turnSubject(phaseId, state));
   }
 
+  /** Whether the game is in one of the phases it declares: not in Setup, and not before any phase has started. */
+  private inGamePhase(state: GameState): boolean {
+    return this.game.phases.some((p) => p.id === state.turn?.phase);
+  }
+
   /**
    * Who a `When …:` rule of `phaseId` is about if it fires now, or null when it does not. A rule about a player is
    * about the first one it picks out whose `Only if` lines hold, and a rule about a card the first such card; any other
    * rule is about the player whose turn it is where players take turns, and about no one in particular elsewhere.
+   * A null `phaseId` is a rule for every phase: it holds in any phase the game declares, never in Setup, and a rule of it about no
+   * one in particular is about no one, whoever acts in the phase.
    */
-  triggerSubject(phaseId: string, trigger: CompiledTrigger, state: GameState): Subject | null {
-    if (state.turn?.phase !== phaseId) return null;
+  triggerSubject(phaseId: string | null, trigger: CompiledTrigger, state: GameState): Subject | null {
+    if (phaseId === null ? !this.inGamePhase(state) : state.turn?.phase !== phaseId) return null;
     const holdsFor = (subject: Subject) => this.failedGroup(trigger.conditions, state, undefined, subject) === null;
     if (trigger.when.kind === 'who') {
       const player = this.who(trigger.when, state).find((seat) => holdsFor({ player: seat, space: null, card: null }));
@@ -176,15 +186,49 @@ export class LangRuntime {
       const card = this.which(trigger.when, state).find((id) => holdsFor({ player: null, space: null, card: id }));
       return card === undefined ? null : { player: null, space: null, card };
     }
-    const about = this.turnSubject(phaseId, state);
+    const about = phaseId === null ? NO_ONE : this.turnSubject(phaseId, state);
     return this.test(trigger.when, state, undefined, undefined, about) && holdsFor(about) ? about : null;
   }
 
   /** Runs a `When …:` rule's lines about whoever or whichever card it is about now. The flow only fires a rule that holds. */
-  fireTrigger(phaseId: string, trigger: CompiledTrigger, state: GameState): GameState {
+  fireTrigger(phaseId: string | null, trigger: CompiledTrigger, state: GameState): GameState {
     const subject = this.triggerSubject(phaseId, trigger, state);
     if (subject === null) throw new Error(`The rule on line ${trigger.line} was run although it does not hold.`);
     return trigger.effects.reduce((s, ref) => this.run(ref, s, undefined, undefined, subject), state);
+  }
+
+  /**
+   * Whether the current player's turn has yet to start: the game goes on, in one of its own phases, with no turn interrupted (the
+   * player another phase handed the turn to is only standing in), and the turn that last started was another player's.
+   */
+  turnWaiting(state: GameState): boolean {
+    return state.result === undefined && this.inGamePhase(state) && interruptedTurn(state) === null
+      && state.data[TURN_OF_KEY] !== state.turn?.current;
+  }
+
+  /**
+   * Starts the current player's turn. The start player's turn starts a round first, whose lines are about no one. Then the player's
+   * numbers for each turn go back to their start, and the lines that start a turn run about them: those for every phase, then those
+   * of the phase the turn starts in (C2). Last, the turn counts as started, so that this runs once a turn.
+   */
+  startTurn(state: GameState): GameState {
+    const seat = state.turn?.current;
+    const phaseId = state.turn?.phase;
+    if (seat === undefined) throw new Error('There is no turn to start.');
+    const runAll = (from: GameState, refs: PhraseRef[], subject: Subject) =>
+      refs.reduce((s, ref) => this.run(ref, s, undefined, undefined, subject), from);
+    let s = state;
+    if (seat === startPlayerOf(s, this.seats)) {
+      s = { ...s, data: { ...s.data, [ROUND_KEY]: roundOf(s) + 1 } };
+      s = runAll(s, this.game.everyPhase.roundStarts, NO_ONE);
+    }
+    for (const counter of this.game.board?.counters ?? []) {
+      if (counter.perTurn) s = setCounter(s, counter.name, seat, counter.start);
+    }
+    const about: Subject = { player: seat, space: null, card: null };
+    const phase = this.game.phases.find((p) => p.id === phaseId);
+    s = runAll(s, [...this.game.everyPhase.turnStarts, ...(phase?.turnStarts ?? [])], about);
+    return { ...s, data: { ...s.data, [TURN_OF_KEY]: seat } };
   }
 
   /**
