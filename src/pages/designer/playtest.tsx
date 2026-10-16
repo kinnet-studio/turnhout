@@ -61,9 +61,13 @@ function useSeat(
   session: GameSession,
   seat: PlayerId,
   onError: (message: string) => void,
-): { view: ClientView | null; send: (move: Move) => void; notice: string | null; flash: (text: string) => void } {
+): {
+  view: ClientView | null; send: (move: Move, onAnswer?: (taken: boolean) => void) => void; notice: string | null; flash: (text: string) => void;
+} {
   const chan = useRef<ClientChannel | null>(null);
   const latest = useRef<ClientView | null>(null);
+  // Told whether the seat's last press was taken: the server answers a press with the seat's new view, or with why it refused it.
+  const answer = useRef<((taken: boolean) => void) | null>(null);
   const [view, setView] = useState<ClientView | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -77,12 +81,19 @@ function useSeat(
   useEffect(() => {
     const { server, client } = loopbackChannel();
     chan.current = client;
+    const settle = (taken: boolean) => {
+      const told = answer.current;
+      answer.current = null;
+      told?.(taken);
+    };
     client.onMessage((msg) => {
       if (msg.type === 'view') {
         latest.current = msg.view;
         setView(msg.view);
+        settle(true);
       } else if (msg.type === 'rejected') {
         flash(friendlyReason(msg.reason, latest.current?.turn?.current));
+        settle(false);
       }
     });
     const disconnect = session.connect(seat, server);
@@ -93,11 +104,13 @@ function useSeat(
     };
   }, [session, seat, flash]);
 
-  // The server runs the rules inside this call, so a rule that blows up throws here.
-  const send = (move: Move) => {
+  // The server runs the rules inside this call, so a rule that blows up throws here, and then no answer comes.
+  const send = (move: Move, onAnswer?: (taken: boolean) => void) => {
+    answer.current = onAnswer ?? null;
     try {
       chan.current?.send({ type: 'move', move });
     } catch (e) {
+      answer.current = null;
       onError(friendlyError(e));
     }
   };
@@ -209,15 +222,17 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
       ? view && <Tableaux game={game} seats={seats} board={board} cards={view.scene.cards} />
       : board && (board.counters.length > 0 || game.facts.length > 0 || board.bank.length > 0) && <MoneyLine board={board} />;
     const buttons = hasButtons && extras && <ActionButtons actions={extras.actions} onPress={press} onPick={startPicking} onRefused={flash} />;
-    // Keyed by the button, so pressing another that picks cards starts a fresh pick.
+    // Keyed by the button, so pressing another that picks cards starts a fresh pick. It closes once the press is taken: a set the rules
+    // refuse as a whole keeps its picks, to be changed and confirmed again.
     const cardPicker = choosingCards && (
       <CardPicker
         key={choosingCards.move}
         pick={choosingCards.pick}
         onSend={(chosen) => {
           onError(null);
-          setPicking(null);
-          send({ type: choosingCards.move, ...chosen });
+          send({ type: choosingCards.move, ...chosen }, (taken) => {
+            if (taken) setPicking(null);
+          });
         }}
         onRefused={flash}
         onCancel={() => setPicking(null)}

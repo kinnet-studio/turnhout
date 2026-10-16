@@ -145,7 +145,8 @@ describe('CardPicker', () => {
       fireEvent.click(button('Pick Ruby'));
       fireEvent.click(button('Pick Opal'));
       rerender({ ...TRADING, cards: [TRADING.cards[0], { ...TRADING.cards[1], allowed: 'y' }, TRADING.cards[2]] });
-      expect([button('Pick Opal').getAttribute('aria-pressed'), button('Pick Opal').getAttribute('aria-disabled')]).toEqual(['true', 'true']);
+      // It still reads as one to click, since clicking it unpicks it; why the view refuses it stays in its title.
+      expect(['aria-pressed', 'aria-disabled', 'title'].map((name) => button('Pick Opal').getAttribute(name))).toEqual(['true', 'false', 'y']);
       fireEvent.click(button('Pick Opal'));
       expect(onRefused).not.toHaveBeenCalled();
       expect(pressed()).toEqual(['true', 'false', 'false']);

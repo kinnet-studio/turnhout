@@ -782,6 +782,23 @@ describe('Playtest: picking cards', () => {
     expect(sent).toHaveBeenLastCalledWith('p0', expect.objectContaining({ type: TRADE, cardIds: [o2, r2] }));
     expect(picker()).toBeNull();
   });
+  it('keeps a set the rules refuse as a whole open with its picks, and closes once a set is taken', () => {
+    const r4 = named('Ruby')[3];
+    mountPicks({ initial: relocate(initial, [r4], 'stash-p0', pickGame) });
+    fireEvent.click(buttonOf('p0', 'Trade some cards from your stash to the shop'));
+    const cards = () => within(picker()!).getAllByRole('button', { name: /^Pick / });
+    for (const card of cards()) fireEvent.click(card);
+    const sent = submit();
+    pick('Confirm');
+    expect(sent).toHaveBeenLastCalledWith('p0', expect.objectContaining({ type: TRADE, cardIds: [r2, o2, r4] }));
+    expect(within(panelOf('p0')).getByText('they picked at most 2 cards')).toBeTruthy();
+    expect(cards().map((card) => card.getAttribute('aria-pressed'))).toEqual(['true', 'true', 'true']);
+    fireEvent.click(cards()[2]);
+    pick('Confirm');
+    expect(sent).toHaveBeenLastCalledWith('p0', expect.objectContaining({ type: TRADE, cardIds: [r2, o2] }));
+    expect(picker()).toBeNull();
+    expect(screen.getAllByText(`p0 7 coins, 1 move${CASE}`)).toHaveLength(2);
+  });
   it("tells another seat whose turn it is, and opens no picker in that seat's panel", () => {
     mountPicks();
     expect(buttonOf('p1', BUY_BUTTON).getAttribute('title')).toBe("It's p0's turn.");

@@ -7,7 +7,8 @@ type CardChoice = { cardId: string; onto?: string } | { cardIds: string[]; onto?
 
 /**
  * Each card the picked cards may go to, judged for all of them at once: it takes them when it takes each, and otherwise says why
- * the first it refuses is refused. The view lists the same targets for every card, so the first card's list names them.
+ * the first it refuses is refused. The view lists the same targets for every card (board-view.test.ts pins it), so the first card's
+ * list names them.
  */
 function targetsFor(targets: { [cardId: string]: PickCardView[] }, picked: string[]): PickCardView[] {
   return (targets[picked[0]] ?? []).map((target) => {
@@ -50,7 +51,7 @@ export function CardPicker({ pick, onSend, onRefused, onCancel }: {
         key={card.id}
         type="button"
         aria-label={`Pick ${card.name}`}
-        aria-disabled={!live}
+        aria-disabled={!acts}
         aria-pressed={pressed}
         title={live ? undefined : verdict}
         onClick={() => (acts ? onLive() : onRefused(verdict))}
@@ -65,35 +66,29 @@ export function CardPicker({ pick, onSend, onRefused, onCancel }: {
   };
 
   const onto = placing && picked.length > 0 ? pick.onto : null;
-  let prompt = pick.prompt;
-  let choices;
-  if (onto !== null) {
-    prompt = onto.prompt;
-    choices = targetsFor(onto.targets, picked).map((target) => button(target, () => onSend(
-      pick.some ? { cardIds: picked, onto: target.id } : { cardId: picked[0], onto: target.id },
-    )));
-  } else if (pick.some) {
-    const toggle = (id: string) => setChosen(picked.includes(id) ? picked.filter((p) => p !== id) : [...picked, id]);
-    const confirm = () => {
-      if (picked.length === 0) onRefused(`${pick.prompt}.`);
-      else if (pick.onto === null) onSend({ cardIds: picked });
-      else setPlacing(true);
-    };
-    choices = [
-      ...pick.cards.map((card) => button(card, () => toggle(card.id), picked.includes(card.id))),
-      <button key="confirm" type="button" onClick={confirm} style={BUTTON_STYLE}>Confirm</button>,
-    ];
-  } else {
-    const take = (id: string) => {
-      if (pick.onto === null) {
-        onSend({ cardId: id });
-      } else {
-        setChosen([id]);
-        setPlacing(true);
-      }
-    };
-    choices = pick.cards.map((card) => button(card, () => take(card.id)));
-  }
+  const sendOnto = (target: string) => onSend(pick.some ? { cardIds: picked, onto: target } : { cardId: picked[0], onto: target });
+  const toggle = (id: string) => setChosen(picked.includes(id) ? picked.filter((p) => p !== id) : [...picked, id]);
+  const confirm = () => {
+    if (picked.length === 0) onRefused(`${pick.prompt}.`);
+    else if (pick.onto === null) onSend({ cardIds: picked });
+    else setPlacing(true);
+  };
+  const take = (id: string) => {
+    if (pick.onto === null) {
+      onSend({ cardId: id });
+    } else {
+      setChosen([id]);
+      setPlacing(true);
+    }
+  };
+  const confirmButton = <button key="confirm" type="button" onClick={confirm} style={BUTTON_STYLE}>Confirm</button>;
+  // Once the cards are picked, the cards they go to; before that, a set's cards to toggle and its Confirm, or the cards to take one of.
+  const prompt = onto === null ? pick.prompt : onto.prompt;
+  const choices = onto !== null
+    ? targetsFor(onto.targets, picked).map((target) => button(target, () => sendOnto(target.id)))
+    : pick.some
+      ? [...pick.cards.map((card) => button(card, () => toggle(card.id), picked.includes(card.id))), confirmButton]
+      : pick.cards.map((card) => button(card, () => take(card.id)));
   return (
     <div role="group" aria-label="Pick cards" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
       <span>{prompt}</span>
