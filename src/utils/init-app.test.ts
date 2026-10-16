@@ -1,6 +1,8 @@
 import type { BaseAppComponents } from '@ue-too/board-pixi-integration';
 import { Container } from 'pixi.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach } from 'vitest';
+import { getTrueRect } from '@ue-too/board';
 import { TableInputTracker } from '@/engine/input/table-input-tracker';
 import { makeInitApp } from './init-app';
 
@@ -66,6 +68,38 @@ describe('makeInitApp', () => {
     canvas.dispatchEvent(new PointerEvent('pointerleave'));
     expect(leave).toHaveBeenCalledTimes(1);
     leave.mockRestore();
+  });
+});
+
+describe('makeInitApp pointer', () => {
+  /**
+   * A canvas in the page whose box starts at `box.top`, which a test moves as a row opening or closing above it would. The place
+   * the library keeps for it, measured as the library measures it, is where the canvas started: no scroll or resize moves it on.
+   */
+  const placedCanvas = (box: { top: number }, style: Partial<CSSStyleDeclaration> = {}) => {
+    const canvas = document.createElement('canvas');
+    Object.assign(canvas.style, { padding: '0px', border: '0px solid', ...style });
+    canvas.getBoundingClientRect = () => new DOMRect(0, box.top, 800, 600);
+    document.body.appendChild(canvas);
+    const kept = getTrueRect(canvas.getBoundingClientRect(), window.getComputedStyle(canvas));
+    Object.assign(base.canvasProxy, { position: { x: kept.left, y: kept.top } });
+    return canvas;
+  };
+  afterEach(() => document.body.replaceChildren());
+
+  it('reads the pointer against where the canvas is now, not where it was at its last scroll or resize', async () => {
+    const box = { top: 100 };
+    const app = await makeInitApp()(placedCanvas(box), { fullScreen: false });
+    // The camera's view port is centred on the canvas's middle, and the fake camera's world is its view port.
+    expect(app.clientToWorld(400, 400)).toEqual({ x: 0, y: 0 });
+    box.top = 60;
+    expect(app.clientToWorld(400, 400)).toEqual({ x: 0, y: 40 });
+    expect(app.clientToWorld(400, 360)).toEqual({ x: 0, y: 0 });
+  });
+
+  it('measures from inside the canvas\'s border and padding, as the library does', async () => {
+    const app = await makeInitApp()(placedCanvas({ top: 100 }, { padding: '5px', border: '3px solid' }), { fullScreen: false });
+    expect(app.clientToWorld(408, 408)).toEqual({ x: 0, y: 0 });
   });
 });
 

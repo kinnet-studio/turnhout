@@ -1,4 +1,4 @@
-import { type KmtInputStateMachine, convertFromCanvas2ViewPort, convertFromWindow2Canvas } from '@ue-too/board';
+import { type KmtInputStateMachine, convertFromCanvas2ViewPort, getTrueRect } from '@ue-too/board';
 import { type BaseAppComponents, type InitAppOptions, baseInitApp } from '@ue-too/board-pixi-integration';
 import { Container, Graphics, RenderTexture, type Texture } from 'pixi.js';
 import type { AppComponents } from '@/app-components';
@@ -54,14 +54,18 @@ export const makeInitApp =
     base.app.stage.addChild(pixiTable);
     base.app.ticker.add((t) => pixiTable.advance(t.deltaMS / 1000));
 
-    // Window client coords -> world coords, via canvasProxy + camera. Mirrors the
-    // real (azabu) recipe: convertFromWindow2Canvas -> convertFromCanvas2ViewPort
+    // Window client coords -> world coords, via the canvas's place + camera. Mirrors the
+    // real (azabu) recipe: window -> canvas -> convertFromCanvas2ViewPort
     // (centered on the canvas midpoint) -> camera.convertFromViewPort2WorldSpace.
     // (The plan sketch used the raw convertFromViewport2World free function with
     // camera.viewPortWidth/Height for centering; using the camera's own method and
     // canvasProxy dimensions instead matches the verified azabu implementation.)
+    // The canvas's place is measured at each call, inside its border and padding as canvasProxy measures it, rather than read
+    // from canvasProxy, which keeps it from the last scroll, resize or change to the canvas itself. A row that opens or closes
+    // above the canvas moves it with none of those, and would leave every click, hover and drag off by as much.
     const clientToWorld = (clientX: number, clientY: number): Vec2 => {
-      const canvasPt = convertFromWindow2Canvas({ x: clientX, y: clientY }, base.canvasProxy);
+      const { left, top } = getTrueRect(canvas.getBoundingClientRect(), window.getComputedStyle(canvas));
+      const canvasPt = { x: clientX - left, y: clientY - top };
       const viewportPt = convertFromCanvas2ViewPort(canvasPt, {
         x: base.canvasProxy.width / 2,
         y: base.canvasProxy.height / 2,
