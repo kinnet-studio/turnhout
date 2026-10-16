@@ -1,8 +1,9 @@
 # Startup Simulator, Slice 5: Talent Growth, Brainstorm and Training, Milestones
 
 **Date:** 2026-10-16
-**Status:** Draft, waiting for its builder check. The user handed over every design call for the full implementation;
-the calls below are the builder's.
+**Status:** Settled after its builder check (`builder-check-startup-5.md`, M1–M12, adopted in "Builder-check rulings"
+below; where they differ from the text above, the rulings win). The user handed over every design call for the full
+implementation; the calls below are the builder's.
 **Part of:** `2026-10-16-startup-simulator-overview-design.md`. Its decisions, calls, anti-goals and constraints apply.
 **Builds on:** slices 1a, 1b, 3 and 4.
 **Rulebook sections:** §3 (Your Three Hands, Talent Growth), §5 Phase D steps 1–2 (Pending XP) and step 7 (the Strategy
@@ -140,6 +141,132 @@ The game after this slice:
 2. Long runs end at every player count, with the earlier invariants plus: no Junior over 4 Permanent XP or with two
    Pending tokens of one color; each Milestone claimed at most once; no Strategy Hand over 3 after Cleanup.
 3. Each language piece has unit tests; the four games and typecheck pass.
+
+## Builder-check rulings
+
+The builder check (`builder-check-startup-5.md`) found nothing that needs the user. Every call below is the builder's,
+adopted from M1–M12. Corrections to the text above: mid-turn arrivals work in their native colour (every Junior has
+one); QA Certification needs a Junior with no QA skill and no Green token; the Mentor needs a **working** Veteran and its
+second token is the owner's choice; Synergy, Agile, the 2-XP QA Engineer and the Sales Rep need their card **working**
+(no Onboarding Token); Agile applies to Development teams only; the Pending Badge is also lost on a Reassign to a Tier 1
+project and when fired, and Launch makes the PM Agile; Cease & Desist is playable from slice 8. Citations: #25 (the
+Mentor's Junior, Pending on any cube, the Brainstorm PM on the Board, badged-Junior leads, the QA-only Junior, the
+Milestone texts, Human Capital on Bench and Board), #5, #19, #4, §18.B, §15.A.3, §13.B, §9.A.
+
+### R1. Milestones (M1)
+
+- Milestones are cards: Setup shuffles the 6, deals 3 to a public milestone row and boxes the rest. A claim moves the card
+  to the claimant's public `milestones` row; "Each card in a player's milestones scores its vp."
+- Claims at a moment go in that moment's lines: First Mover (Tier 2 exactly) and Clean Launch in Launch; Revenue Leader
+  in Income's revenue line.
+- Position claims (Talent Magnet, Platform Power, Full Stack Founder) are every-phase rules about a player with three new
+  pieces: a `When a player …:` frame whose candidates run in turn order **from the Active Player** (the seat whose turn
+  last started); a guard ("Only if no player is choosing offline products") so nothing is claimed from a provisional
+  Online set at Income or the final check; and **End waits for every-phase rules about a player**, so the last check
+  runs after the final Ops check and before the score (§12 step 3), from the seat whose turn ended the round (the Rust
+  engine). Existing games have no `In every phase:` section, so they are untouched.
+
+### R2. Graduation and the Mentor: a step after Launch (M2)
+
+- Launch records "they gain 1 mentoring" when a working Mentor card is on the team, badges each Junior PM on a Tier 2/3
+  project, moves the product and team (attaching Sales Reps and Growth Hackers), claims First Mover and Clean Launch, and
+  starts the graduation phase with them.
+- Card rules with no press: a Junior at 4 XP loses its Pending tokens; a Junior with exactly one Pending token makes it
+  Permanent and is marked graduated.
+- Buttons only where there is a choice: "keep {colour} on a card in their ops team" (it has that Pending token and more
+  than one, isn't graduated, is under 4); "mentor a card …, choosing {colour}" (they have mentoring; the card is
+  graduated, under 4 and has that token left; filled in when one option is valid).
+- When nothing is left to choose, every card loses its Pending tokens and mark, they lose mentoring, and the turn goes
+  back. With no real choice the step opens and closes with no press.
+
+### R3. Language the slice needs (M3)
+
+Replacing "What the language gains": tokens by colour and the 3-of-6 reveal already work. New pieces: counting cards
+("the number of {cards}", "at least N cards in {zones} whose …", "the number of different {attribute}s of {cards}");
+Synergy's shape (a product of two counts, or "the cards beside it"); owner scope in card values ("its owner has a card in
+their {zone} that is …"); target picks across several zones and conditions about the target; a deal that reshuffles the
+discard into the deck partway through; "the first N cards …"; text equality about a card subject ("its tag is IoT");
+the R1 claim pieces; example vocabulary ("When p0 keeps blue on the Junior Software Dev", "When p0 mentors …, choosing
+red", "When p0 plays the Full Stack Bootcamp on …, choosing blue").
+
+### R4. Firing strips tokens; Bench discards keep them (M4)
+
+- Dismiss, letting staff go unpaid and the Diva's Pivot strip XP, Skill, Pending and Badge tokens before the move
+  (§18.B). Bench Cleanup and Source discards keep them (§15.A.3, §13.B): another player can hire a trained Junior for $1.
+
+### R5. Juniors, modes and outputs (M5, M11)
+
+- The three University stacks gain a `role` column holding `Junior` ("a Junior card" must read).
+- `blue mode` joins the mode flags for any Junior whose native skill isn't Blue; the modes go-to and the forgetting rule
+  widen to Juniors with Skill tokens.
+- Output: native or Skill token gives 1, plus that colour's Permanent XP; another mode's flag gives 0; onboarding 0.
+- Counts: blue/red/green xp (Juniors), `training xp` (QA Engineer, Sales Rep, uncoloured), blue/red/green skill,
+  pending blue/red/green; flags badged and the graduation mark; worked `xp`, `skills`, `pending tokens`,
+  `human capital`. Salary: an experienced card (a Junior with xp more than 1) earns 1.
+
+### R6. Training (M6)
+
+- Five buttons in the actions phase only, each picking the card from their Strategy Hand and a target across their bench,
+  development team and ops team; each has the price guard, pays the price, checks its target, and moves the card to the
+  Strategy Discard. Bootcamp's colour is a choice carried by the press. A `kind` column (`Training`) keeps slice 6's
+  Online Course Boom a text change.
+
+### R7. Pending XP (M7)
+
+- None on a Stalled project or from an onboarding Junior; any colour counts, even one the project doesn't need; a Junior
+  at 4 XP still gains Pending tokens (returned at Launch).
+- Green: only Bugs actually removed, Juniors first in team (attach) order, then everyone else — "the first {its bugs}
+  Junior cards on it that work in QA and have no pending green".
+
+### R8. PMs (M8)
+
+- Synergy needs a working PM, applies in Development only, and counts QA teammates (+1 Bug removed). Agile is worked: a
+  Senior PM, or a badged Synergy card, working and on a Development team; a PM arriving in the same Assign doesn't count
+  (the Rust engine's reading; on the owner's call list).
+- The Pending Badge is a worked flag (an unbadged Junior PM on a Tier 2/3 project), for the face only; Launch of a Tier
+  2/3 project badges every Synergy card on it.
+
+### R9. Specialists in Ops (M9)
+
+- Slice 4's Viral Loop attach routes gain Rainmaker. Values: a Rainmaker card's rev bonus is 2 plus its training XP (0
+  when onboarding); a card's bug decay is its bugs, 0 with a working badged Rainmaker on it or when its owner has a
+  working 2-XP Bug Hunter in their ops team; `rev` goes down by its bug decay; a Bug Hunter's QA output is 1, plus 1 at 1
+  or more XP.
+
+### R10. Brainstorm and the Strategy Hand (M10)
+
+- Two buttons, "brainstorm" and "brainstorm, flushing some cards from their strategy hand"; the flush goes to the discard
+  first (so it can be reshuffled back); the reshuffling deal draws 2 (3 with a working PM anywhere on the Board) into a
+  private brainstorm row; the interrupt keeps 1; with nothing to draw it is refused; a single card is kept at once.
+- A `strategy cleanup` phase between bench cleanup and backlog cleanup.
+- The Strategy Discard is public (the Rust engine shows its top card), so the anti-goal covers the draw and the kept card.
+
+### R11. Examples (M12)
+
+Add the examples M1, M2, M4, M6, M7, M8 and M10 list, plus: a Junior Software Dev with 2 Blue XP in Red mode produces 1
+Red; Specialists' Training XP scores Human Capital and Pending tokens score nothing; Talent Magnet counts a Bench Junior;
+#14 (a QA Engineer on a Launching team gains no XP; no Training card fits a Senior). The "tie goes to the Active Player"
+row is built with Givens or comes from the game-end check.
+
+### R12. What still waits for later slices
+
+Slice 6: Online Course Boom, Regulation Audit on 2-XP Juniors, Workaholic on PMs and Sales Reps, Burnout on a PM, Toxic
+Personality on a Synergy team, Visionary, Crunch Time's cube, TechCrunch at $2 with a Sales Rep. Slice 7: the
+Consultant's cube or Bug (no Pending XP, not a Synergy teammate). Slice 8: Token Value, a poached Junior's Pending tokens
+and a Junior PM's Pending Badge, the HR Manager, the Director of QA, CTO on a badged Junior, the M&A +$5 per attached
+Sales Rep, Market Sales moving attached Sales Reps, Integration Clients ignoring decay, Milestones met by a non-active
+buyer. Slice 9: a Fold's Pending tokens and Badge; a Face-Down team's Pending tokens.
+
+### R13. Three plans
+
+- **5-1, language** (about 8 tasks): counting and text equality; Synergy's shape and owner scope; multi-zone targets;
+  the reshuffling deal and "first N"; the `When a player …` frame from the Active Player; End waiting for player rules;
+  the graduation step's pieces; example vocabulary and the word check (xp, pending, skill, badge, rank, mentor, synergy,
+  agile, graduate, training, brainstorm, strategy, milestone).
+- **5-2, rules text and long runs** (about 8; split talent / Strategy-and-Milestones if it grows).
+- **5-3, the page** (about 3).
+- Each written after the matching slice 4 plan lands, since slice 5 rewrites slice 4's modes, outputs, revenue, Ops
+  attachments, Income and end steps.
 
 ## Left to the builder
 
