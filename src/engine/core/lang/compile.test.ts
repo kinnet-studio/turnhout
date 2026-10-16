@@ -674,6 +674,18 @@ describe('declaring facts and the bank', () => {
     expect(compiled(text).diagnostics.filter((d) => d.line !== line)).toEqual([]);
     expect(errors(withFacts('  Players can be stung.'))).toEqual([]);
   });
+  it('refuses a number of the game in a game with no board, on its own line, as it does a fact about players', () => {
+    const text = VENOM_TEXT.replace('  Cards can be poisoned.', '  Cards can be poisoned.\n  The game has a pot of 3.');
+    const line = text.split('\n').findIndex((l) => l.includes('The game has a pot of 3.')) + 1;
+    expect(errors(text)).toEqual([[line, 'Numbers that belong to the game need a Board: section for now.']]);
+    expect(compiled(text).diagnostics.filter((d) => d.line !== line)).toEqual([]);
+    expect(errors(withFacts('  The game has a pot of 3.'))).toEqual([]);
+  });
+  it('refuses a number of the game that a counter already names, in words of its own', () => {
+    expect(errors(withFacts('  The game has a money of 0.'))).toEqual([[15, '“money” is already a number each player has; give the game\'s number another name.']]);
+    // A number of the game that names no counter is fine beside one that does.
+    expect(errors(withFacts('  The game has a money of 0.', '  The game has a pot of 0.'))).toEqual([[15, '“money” is already a number each player has; give the game\'s number another name.']]);
+  });
 
   it('declares facts about players, with names of several words', () => {
     const { game, diagnostics } = compiled(withFacts('  Players can be in jail.', '  Players can have jail turns and a crown.'));

@@ -180,12 +180,14 @@ export function setPlayerFact(state: GameState, seat: PlayerId, fact: string, va
 
 /**
  * A number of the game as a rule last set it, or the value it was declared to start at while none has. A name the game never
- * declared is a mistake in the rule, said as one.
+ * declared is a mistake in the rule, said as one. Only a value set under the name itself counts, so a number called
+ * “constructor” is never what every object has under that name.
  */
 export function gameNumber(state: GameState, game: CompiledGame, name: string): number {
   const declared = game.facts.find((fact): fact is GameNumber => fact.on === 'game' && fact.name === name);
   if (!declared) throw new Error(`The game has no number called “${name}”.`);
-  return factsOf(state).game[name] ?? declared.start;
+  const set = factsOf(state).game;
+  return Object.hasOwn(set, name) ? set[name] : declared.start;
 }
 
 export function setGameNumber(state: GameState, name: string, value: number): GameState {

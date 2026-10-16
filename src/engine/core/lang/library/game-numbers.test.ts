@@ -53,6 +53,12 @@ describe('numbers that belong to the game', () => {
   it('needs a player, and something to pay with, to be paid', () => {
     expect(lib.get('effect', 'they pay the {gamenumber}')).toMatchObject({ needsPlayer: true, needsPayment: true });
   });
+  it('reads a number named like something every object has as the game\'s own number, not as what objects have', () => {
+    const odd = compileGame(POT.replace('  The game has a pot of 5.', '  The game has a constructor of 3.'), lib).game!;
+    const begun = fixtureBoardState(odd);
+    expect(gameNumber(begun, odd, 'constructor')).toBe(3);
+    expect(gameNumber(setGameNumber(begun, 'constructor', 7), odd, 'constructor')).toBe(7);
+  });
   it('says the game has no number called that when it never declared one', () => {
     expect(() => gameNumber(start, game, 'ante')).toThrow('The game has no number called “ante”.');
   });
