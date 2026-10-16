@@ -95,6 +95,10 @@ Board:
   The bank has 32 houses and 12 hotels.
   Players can be in jail.
   Players can have jail turns.
+  Spaces can be up for auction.
+  Players can be bidding.
+  Players can be the high bidder.
+  The game has a high bid of 0.
 
 Setup:
   Shuffle the chance pile.
@@ -117,7 +121,13 @@ Phase: playing
     Only if one of:
       they have not rolled this turn
       they rolled a double
+    Only if one of:
+      they have not rolled this turn
+      it has no price
+      someone owns it
+      it is up for auction
     Then:
+      No space is up for auction.
       Roll the dice.
       If they have rolled fewer than 3 doubles this turn, their piece moves forward by the roll.
   A player may pay to leave jail.
@@ -157,6 +167,17 @@ Phase: playing
     Then:
       They pay its price.
       They own it.
+  A player may auction the space they are on.
+    Only if no player has less than 0 money.
+    Only if they have rolled this turn.
+    Only if it has a price.
+    Only if no one owns it.
+    Only if it is not up for auction.
+    Then:
+      It is up for auction.
+      Every player is bidding.
+      The high bid is 0.
+      The auction phase starts with the player on their left.
   A player may build a house on a street they own.
     Only if no player has less than 0 money.
     Only if they own every street of its color.
@@ -182,6 +203,12 @@ Phase: playing
       they did not roll a double
       they are in jail
       they have rolled for a double this turn
+    Only if one of:
+      it has no price
+      someone owns it
+      it is up for auction
+    Then:
+      No space is up for auction.
   Any player may take a mortgage on a space they own.
     Only if it is not mortgaged.
     Only if no street of its color has a building.
@@ -238,6 +265,35 @@ Phase: playing
   When a player lands on a treasury space:
     They draw from the treasury pile and do what it says.
   After a player ends their turn, the turn passes to the left.
+
+Phase: auction
+  Hint: Bid more than the high bid, or drop out.
+  A player may bid an amount.
+    Only if they are bidding.
+    Only if the amount is more than the high bid.
+    Only if they have at least the amount in money.
+    Then:
+      The high bid is the amount.
+      No player is the high bidder.
+      They are the high bidder.
+  A player may drop out.
+    Only if they are bidding.
+    Only if they are not the high bidder.
+    Then:
+      They are not bidding.
+  When a player is the high bidder:
+    Only if no other player is bidding.
+    They pay the high bid.
+    They own the space that is up for auction.
+    They are not the high bidder.
+    They are not bidding.
+    The space that is up for auction is not up for auction.
+    The high bid is 0.
+    Go back to the interrupted turn.
+  When no player is bidding:
+    The high bid is 0.
+    Go back to the interrupted turn.
+  After a player bids or drops out, the turn passes to the next player on the left who is bidding.
 
 End:
   The game ends when one player is left.
@@ -356,7 +412,7 @@ Example: the turn passes to the left, skipping players who are out
   Given 3 players
   And p1 is out
   And p0 is on Go
-  And the next roll is 1 and 2
+  And the next roll is 1 and 3
   When p0 rolls the dice
   And p0 ends their turn
   Then it is p2's turn
@@ -542,6 +598,7 @@ Example: four stations charge 200
 
 Example: a double rolls again
   Given p0 is on Go
+  And p1 owns Ash Street
   And the next roll is 3 and 3
   And the roll after that is 1 and 2
   When p0 rolls the dice
@@ -559,6 +616,7 @@ Example: you cannot end your turn on a double
 
 Example: a third double sends you to jail
   Given p0 is on Oak Gardens
+  And p1 owns Oak Gardens
   And p0 has rolled 2 doubles this turn
   And the next roll is 6 and 6
   When p0 rolls the dice
@@ -954,3 +1012,155 @@ Example: you cannot build while someone owes
   And Rose Lane has 1 house
   And p0 has 1450 money
   And the bank has 31 houses
+
+Example: declining to buy starts an auction
+  Given p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  Then it is accepted
+  And the phase is auction
+  And it is p1's turn
+  And Rose Lane is up for auction
+  And p0 is bidding
+  And p1 is bidding
+
+Example: you cannot end your turn with the space unbought
+  Given p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 ends their turn
+  Then it is rejected because "it has no price or someone owns it or it is up for auction"
+
+Example: a bid must beat the high bid
+  Given p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  And p1 bids 0
+  Then it is rejected because "the amount is more than the high bid"
+  When p1 bids 50
+  Then it is accepted
+  And the high bid is 50
+  And p1 is the high bidder
+  And it is p0's turn
+
+Example: you cannot bid more than you have
+  Given p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  And p1 bids 1600
+  Then it is rejected because "they have at least the amount in money"
+
+Example: the last bidder wins and pays
+  Given p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  And p1 bids 50
+  And p0 drops out
+  Then it is accepted
+  And p1 owns Rose Lane
+  And p1 has 1450 money
+  And p0 has 1500 money
+  And the phase is playing
+  And it is p0's turn
+  And the high bid is 0
+  And p1 is not the high bidder
+  And Rose Lane is not up for auction
+  When p0 ends their turn
+  Then it is accepted
+  And it is p1's turn
+
+Example: nobody bids
+  Given p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  And p1 drops out
+  And p0 drops out
+  Then it is accepted
+  And no one owns Rose Lane
+  And the phase is playing
+  And it is p0's turn
+  And Rose Lane is up for auction
+  When p0 ends their turn
+  Then it is accepted
+  And it is p1's turn
+  And Rose Lane is not up for auction
+
+Example: you cannot auction a space twice
+  Given p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  And p1 drops out
+  And p0 drops out
+  And p0 auctions the space they are on
+  Then it is rejected because "it is not up for auction"
+
+Example: a double cannot roll past an unbought space
+  Given p0 is on Go
+  And the next roll is 3 and 3
+  And the roll after that is 1 and 2
+  When p0 rolls the dice
+  And p0 rolls the dice
+  Then it is rejected because "they have not rolled this turn or it has no price or someone owns it or it is up for auction"
+  When p0 buys the space they are on
+  And p0 rolls the dice
+  Then it is accepted
+  And p0 owns Ash Street
+  And p0 is on Cedar Avenue
+
+Example: the lander's turn resumes as it was
+  Given p0 is on Go
+  And the next roll is 3 and 3
+  And the roll after that is 1 and 2
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  And p1 bids 50
+  And p0 drops out
+  Then p1 owns Ash Street
+  And it is p0's turn
+  When p0 rolls the dice
+  Then it is accepted
+  And p0 is on Cedar Avenue
+
+Example: the high bidder cannot drop out
+  Given the phase is auction
+  And p0 is bidding
+  And p1 is bidding
+  And p1 is the high bidder
+  And it is p1's turn
+  When p1 drops out
+  Then it is rejected because "they are not the high bidder"
+
+Example: the turn in an auction skips a player who dropped out
+  Given 3 players
+  And p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  And p1 drops out
+  And p2 bids 50
+  And p0 bids 60
+  Then it is accepted
+  And it is p2's turn
+  And the high bid is 60
+  And p1 is not bidding
+
+Example: the last one bidding wins with their own bid
+  Given 3 players
+  And p0 is on Cedar Avenue
+  And the next roll is 3 and 4
+  When p0 rolls the dice
+  And p0 auctions the space they are on
+  And p1 drops out
+  And p2 drops out
+  And p0 bids 10
+  Then it is accepted
+  And p0 owns Rose Lane
+  And p0 has 1490 money
+  And the phase is playing
+  And it is p0's turn

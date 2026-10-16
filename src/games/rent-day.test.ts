@@ -5,8 +5,8 @@ import { createDefaultLibrary } from '@/engine/core/lang/library';
 import { runExamples } from '@/engine/core/lang/examples';
 import { createEngine, initialState, seatsFor } from '@/engine/core/lang/build';
 import {
-  bankOf, counterOf, isOut, LAST_DRAWN_KEY, lastDrawn, latestRoll, owedTo, ownerOf, pieceAt, playerFact, playersIn, queueRoll, rollsThisTurn,
-  setBank, setCounter, setOwner, setRoll, setSpaceFact, spaceFact, TURN_KEY, TURN_ROLLS_KEY, withBoardData,
+  bankOf, counterOf, gameNumber, isOut, LAST_DRAWN_KEY, lastDrawn, latestRoll, nextIn, owedTo, ownerOf, pieceAt, playerFact, playersIn, queueRoll,
+  rollsThisTurn, setBank, setCounter, setOwner, setRoll, setSpaceFact, spaceFact, TURN_KEY, TURN_ROLLS_KEY, withBoardData,
 } from '@/engine/core/lang/board-state';
 import { deckOf } from '@/engine/core/lang/cards';
 import { targetCandidates } from '@/engine/core/lang/declared-actions';
@@ -17,6 +17,7 @@ import type { GameEngine } from '@/engine/core/game-engine';
 import { zoneCards, type GameState } from '@/engine/core/game-state';
 import type { Move } from '@/engine/core/moves';
 import type { PlayerId } from '@/engine/core/scene';
+import type { Json } from '@/engine/core/table-def';
 
 const lib = createDefaultLibrary();
 const { game, diagnostics } = compileGame(RENT_DAY, lib);
@@ -29,8 +30,21 @@ const END = 'end their turn';
 const PAY = 'pay to leave jail';
 const ROLL_FOR_DOUBLE = 'roll for a double';
 const USE = 'use a get out of jail free';
+const AUCTION = 'auction the space they are on';
 /** The buttons that pick no space and only work on the player's own turn; building, the one that picks a street, is asked apart. */
-const TURN_BUTTONS = [ROLL, PAY, ROLL_FOR_DOUBLE, USE, BUY, END];
+const TURN_BUTTONS = [ROLL, PAY, ROLL_FOR_DOUBLE, USE, BUY, AUCTION, END];
+// The auction's own buttons, pressed only in the auction phase by the player whose turn in it it is. A bid carries its amount.
+const BID = 'bid an amount';
+const DROP = 'drop out';
+/** The phase an auction is played in, the flags it sets on a space and on players, and the game's number for the bid to beat. */
+const AUCTION_PHASE = 'auction';
+const UP = 'up for auction';
+const BIDDING = 'bidding';
+const HIGH_BIDDER = 'the high bidder';
+const HIGH_BID = 'high bid';
+/** How much more than the high bid the auto-player bids, and the money it keeps back when it does. */
+const RAISE = 10;
+const KEEP = 200;
 // The buttons any player may press at any time, to raise money or to settle a debt by going out.
 const SELL = 'sell a house on a street they own';
 const MORTGAGE = 'take a mortgage on a space they own';
@@ -76,6 +90,23 @@ const debtors = (state: GameState, seats: PlayerId[]): PlayerId[] => playersIn(s
 const half = (n: number) => Math.floor((n * 50) / 100);
 const payOff = (n: number) => Math.floor((n * 55) / 100);
 const isEven = (seat: PlayerId): boolean => Number(seat.slice(1)) % 2 === 0;
+const isUp = (state: GameState, space: number): boolean => spaceFact(state, space, UP) === true;
+const isBidding = (state: GameState, seat: PlayerId): boolean => playerFact(state, seat, BIDDING) === true;
+const isHighBidder = (state: GameState, seat: PlayerId): boolean => playerFact(state, seat, HIGH_BIDDER) === true;
+/** The bid to beat; 0 whenever no auction is open. */
+const highBid = (state: GameState): number => gameNumber(state, game!, HIGH_BID);
+/** The spaces up for auction, in board order: the one being auctioned, or one nobody won until the lander rolls or ends their turn. */
+const upForAuction = (state: GameState): number[] => Array.from({ length: SPACES }, (_, at) => at).filter((at) => isUp(state, at));
+
+/** The first seat left of `from`, going round, that is still in and bidding; `from` itself when there is none. */
+function nextBidder(state: GameState, from: PlayerId, seats: PlayerId[]): PlayerId {
+  const i = seats.indexOf(from);
+  for (let step = 1; step < seats.length; step++) {
+    const seat = seats[(i + step) % seats.length];
+    if (!isOut(state, seat) && isBidding(state, seat)) return seat;
+  }
+  return from;
+}
 
 /** The spaces the button may pick for `by` that the move itself accepts now, in board order. */
 function accepted({ engine, runtime }: Table, by: PlayerId, words: string): number[] {
@@ -99,8 +130,15 @@ function firstBest(candidates: number[], value: (space: number) => number, beats
  * it keeps `PAY_OFF_RESERVE` money after each, so that spaces handed over mortgaged charge rent again. In jail, a player
  * holding a Get Out Of Jail Free uses it first. Otherwise an even seat pays to leave whenever it may; an odd seat never does,
  * so it rolls for a double and sometimes reaches the third failed roll, and every way out of jail comes up even with two
- * players. Then it rolls while it may (a double rolls again, until the third sends it to jail), buying after each roll if it
- * may, builds on the first street it may until it can't, and ends its turn.
+ * players. Then it rolls while it may (a double rolls again, until the third sends it to jail), builds on the first street it
+ * may until it can't, and ends its turn.
+ *
+ * After each roll it buys the space it landed on if it may, and otherwise auctions it if it may. The auction is played out
+ * there and then, inside the lander's turn, so a turn is still one call: each player whose turn in the auction it is bids
+ * `RAISE` more than the high bid while that is below the space's price and it would keep `KEEP` money, and otherwise drops
+ * out. Every bid raises the high bid by `RAISE` up to the price (each price is a multiple of it) and every drop-out takes away
+ * a bidder, so the auction always ends. The turn is then the lander's again as it stood: a double rolls again through the same
+ * loop, and the turn ends as before.
  *
  * After every move, whoever's turn it is, the players in debt settle up, the first in seat order first, since nothing else can
  * happen until they do: before each of their presses, the engine must refuse the player whose turn it is every turn button.
@@ -146,9 +184,23 @@ function playTurn(table: Table, watch: Watch = () => {}): void {
   };
   const stillTheirs = () => engine.getState().result === undefined && engine.getState().turn!.current === by;
   const may = (type: string) => stillTheirs() && engine.canDispatch({ type, by }) === true;
+  // Every move here is the current seat's in the auction, so the lander's turn comes back once nobody is left bidding.
+  const playAuction = () => {
+    for (let state = engine.getState(); state.result === undefined && state.turn!.phase === AUCTION_PHASE; state = engine.getState()) {
+      const bidder = state.turn!.current;
+      const price = attr(upForAuction(state)[0], 'price');
+      const next = highBid(state) + RAISE;
+      const bids = highBid(state) < price && counterOf(state, 'money', bidder) - next >= KEEP;
+      make(bids ? { type: BID, by: bidder, amount: next } : { type: DROP, by: bidder });
+    }
+  };
   const rollWith = (type: string) => {
     make({ type, by });
     if (may(BUY)) make({ type: BUY, by });
+    else if (may(AUCTION)) {
+      make({ type: AUCTION, by });
+      playAuction();
+    }
   };
   const evenSeat = isEven(by);
   for (let at = accepted(table, by, PAY_OFF)[0]; at !== undefined; at = accepted(table, by, PAY_OFF)[0]) {
@@ -184,11 +236,21 @@ const totalMoney = (state: GameState, seats: PlayerId[]) => seats.reduce((sum, s
  * rolled this turn is forgotten as the turn passes, so only the player whose turn it is has any. No card is ever lost or
  * made: each lies face down in its own deck's pile, or face up in the kept cards of a player still in when it is a Get Out
  * Of Jail Free, so each pile and the kept cards between them always hold their deck exactly.
+ *
+ * An auction is only started on a space for sale that nobody owns and that was not auctioned already, and every player still
+ * in bids in it, starting on the lander's left. Only a bidder whose turn in it it is acts, a bid beats the high bid with money
+ * they have, and the high bidder never drops out. The winner pays exactly their bid and owns the space; with no winner nobody
+ * pays and it stays up for auction, unowned. Either way the turn goes back to the lander as it stood, with what they did and
+ * rolled in it. The phase is the auction exactly while someone is bidding, one space at most is up for auction, and outside
+ * an auction the high bid is 0.
  */
 function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
   const { game } = runtime;
   const { spaces } = game.board!;
   const keptBy = (state: GameState, seat: PlayerId) => zoneCards(state, zoneIdFor(KEPT, seat)).length;
+  const highBidders = (state: GameState) => seats.filter((seat) => isHighBidder(state, seat));
+  /** The auction under way: who landed, on which space, and their turn as it stood, to check it comes back exactly. */
+  let open: { lander: PlayerId; at: number; log: Json; rolls: Json | null } | null = null;
 
   /** Each seat's money changed by what `moved` says for it, and nobody else's changed at all. */
   const moneyMoves = (before: GameState, after: GameState, moved: Record<PlayerId, number>, why: string) => {
@@ -234,6 +296,9 @@ function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
   return (before, move, after) => {
     const by = move.by as PlayerId;
     const change = totalMoney(after, seats) - totalMoney(before, seats);
+    // The auction this move was made in, if any; a move that ends it closes `open` below, and the turn check still needs it.
+    const opened = open;
+    const inAuction = (state: GameState) => state.turn!.phase === AUCTION_PHASE;
     if (move.type === ROLL || move.type === ROLL_FOR_DOUBLE) {
       const roll = latestRoll(after)!;
       expect(roll).toHaveLength(2);
@@ -316,18 +381,83 @@ function keepsTheRules(runtime: LangRuntime, seats: PlayerId[]): Watch {
       if (heir !== null) {
         expect(keptBy(after, heir), `${heir}'s kept cards after ${by} gave up to them`).toBe(keptBy(before, by) + keptBy(before, heir));
       }
+    } else if (move.type === AUCTION) {
+      const at = pieceAt(before, by)!;
+      const name = spaces[at].name;
+      expect([spaces[at].attrs.price !== undefined, ownerOf(before, at), isUp(before, at), before.turn!.phase], `${name} when ${by} auctioned it`)
+        .toEqual([true, null, false, 'playing']);
+      expect(after.turn!.phase, `the phase once ${by} auctioned ${name}`).toBe(AUCTION_PHASE);
+      expect(upForAuction(after), `spaces up for auction once ${by} auctioned ${name}`).toEqual([at]);
+      expect(playersIn(after, seats).filter((seat) => !isBidding(after, seat)), `players not bidding for ${name}`).toEqual([]);
+      expect([highBidders(after), highBid(after)], `the high bidder and the high bid as ${name} goes up for auction`).toEqual([[], 0]);
+      expect(after.turn!.current, `whose turn it is in the auction ${by} started`).toBe(nextIn(before, by, seats));
+      moneyMoves(before, after, {}, `${by} auctioned ${name}`);
+      // The press is noted before its lines run, so the turn kept to go back to has it as done.
+      const log = [...((before.data[TURN_KEY] as Record<string, string[]> | undefined)?.[by] ?? []), AUCTION];
+      open = { lander: by, at, log, rolls: before.data[TURN_ROLLS_KEY] ?? null };
+    } else if (move.type === BID) {
+      const amount = move.amount as number;
+      const standing = [inAuction(before), before.turn!.current, isBidding(before, by)];
+      expect(standing, `${by} bid ${amount} in the phase ${before.turn!.phase}, in ${before.turn!.current}'s turn`).toEqual([true, by, true]);
+      expect(Number.isInteger(amount) && amount > highBid(before), `${by} bid ${amount} over ${highBid(before)}`).toBe(true);
+      expect(amount, `${by}'s bid of ${amount}`).toBeLessThanOrEqual(counterOf(before, 'money', by));
+      if (inAuction(after)) {
+        expect([highBid(after), highBidders(after)], `the high bid and the high bidder after ${by} bid ${amount}`).toEqual([amount, [by]]);
+        moneyMoves(before, after, {}, `${by} bid ${amount}`);
+      } else {
+        // The last one bidding wins with their own bid.
+        expect(ownerOf(after, opened!.at), `who owns ${spaces[opened!.at].name} after ${by} won it with ${amount}`).toBe(by);
+        moneyMoves(before, after, { [by]: -amount }, `${by} won ${spaces[opened!.at].name} with ${amount}`);
+      }
+    } else if (move.type === DROP) {
+      const standing = [inAuction(before), before.turn!.current, isBidding(before, by), isHighBidder(before, by)];
+      expect(standing, `${by} dropped out in the phase ${before.turn!.phase}, in ${before.turn!.current}'s turn`).toEqual([true, by, true, false]);
+      if (inAuction(after)) {
+        expect(isBidding(after, by), `${by} still bidding after dropping out`).toBe(false);
+        moneyMoves(before, after, {}, `${by} dropped out`);
+      } else {
+        const name = spaces[opened!.at].name;
+        const winner = highBidders(before)[0] ?? null;
+        expect(ownerOf(after, opened!.at), `who owns ${name} once ${by} dropped out, leaving ${winner} the high bidder`).toBe(winner);
+        if (winner === null) {
+          moneyMoves(before, after, {}, `nobody bid for ${name}`);
+          expect(isUp(after, opened!.at), `${name} still up for auction when nobody bid`).toBe(true);
+        } else {
+          moneyMoves(before, after, { [winner]: -highBid(before) }, `${winner} won ${name} with ${highBid(before)}`);
+        }
+      }
     } else {
       expect(change).toBe(0);
     }
 
+    if (inAuction(before) && !inAuction(after)) {
+      // The auction is over: the lander's turn is back exactly as it stood, and nothing of the auction is left but the space.
+      const { lander, at, log, rolls } = opened!;
+      expect(after.turn!.current, `whose turn it is after the auction of ${spaces[at].name}`).toBe(lander);
+      expect(after.data[TURN_KEY], `${lander}'s turn log after the auction of ${spaces[at].name}`).toEqual({ [lander]: log });
+      expect(after.data[TURN_ROLLS_KEY] ?? null, `${lander}'s rolls after the auction of ${spaces[at].name}`).toEqual(rolls);
+      const left = [highBid(after), seats.filter((seat) => isBidding(after, seat)), highBidders(after)];
+      expect(left, `the high bid, the bidders and the high bidder after the auction of ${spaces[at].name}`).toEqual([0, [], []]);
+      expect(isUp(after, at), `${spaces[at].name} up for auction, with owner ${ownerOf(after, at)}`).toBe(ownerOf(after, at) === null);
+      open = null;
+    }
+    const bidding = playersIn(after, seats).filter((seat) => isBidding(after, seat));
+    expect(inAuction(after), `the phase is ${after.turn!.phase} with ${bidding.join(', ') || 'nobody'} bidding`).toBe(bidding.length > 0);
+    expect(upForAuction(after).length, `spaces up for auction after ${by} ${move.type}`).toBeLessThanOrEqual(1);
+    if (!inAuction(after)) expect(highBid(after), `the high bid outside an auction, after ${by} ${move.type}`).toBe(0);
+
     // Nobody goes below 0 without owing someone, so giving up always has someone to give to.
     for (const seat of debtors(after, seats)) expect(owedTo(after, seat, 'money'), `whom ${seat} owes after ${by} ${move.type}`).not.toBeNull();
 
-    // The turn moves on only when its player gives up, or ends it once nobody owes anything.
+    // The turn moves on only when its player gives up, or ends it once nobody owes anything; an auction hands it round the
+    // bidders from the lander's left, and back to the lander when it ends.
     if (after.turn!.current !== before.turn!.current) {
       const gaveUp = move.type === GIVE_UP && by === before.turn!.current;
       const ended = move.type === END && debtors(before, seats).length === 0;
-      expect(gaveUp || ended, `the turn passed from ${before.turn!.current} on ${by} ${move.type}`).toBe(true);
+      const auctioned = move.type === AUCTION && after.turn!.current === nextIn(before, by, seats);
+      const bidOn = inAuction(after) ? nextBidder(after, by, seats) : opened?.lander;
+      const bidded = (move.type === BID || move.type === DROP) && inAuction(before) && after.turn!.current === bidOn;
+      expect(gaveUp || ended || auctioned || bidded, `the turn passed from ${before.turn!.current} on ${by} ${move.type}`).toBe(true);
     }
 
     let houses = 0;
@@ -433,7 +563,7 @@ describe('Rent Day (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(70);
+    expect(results).toHaveLength(82);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -466,12 +596,17 @@ describe('Rent Day (designer language)', () => {
       'gave up to a player': 0,
       'gave up to the bank': 0,
     };
+    // And how many auctions ended with a winner, and with everyone dropping out.
+    const auctions = { won: 0, 'nobody bid': 0 };
     for (let seed = 1; seed <= 10; seed++) {
       const table = createEngine(game!, lib, 2, initialState(game!, seed));
       const rules = keepsTheRules(table.runtime, seats);
       playUpTo(table, 3000, (before, move, after) => {
         rules(before, move, after);
         const by = move.by as PlayerId;
+        if (before.turn!.phase === AUCTION_PHASE && after.turn!.phase !== AUCTION_PHASE) {
+          auctions[ownerOf(after, upForAuction(before)[0]) === null ? 'nobody bid' : 'won']++;
+        }
         if (move.type === ROLL && !inJail(before, by) && inJail(after, by)) {
           // A roll that ends neither on a third double nor on Go To Jail sent them there by the card it drew.
           const [a, b] = latestRoll(after)!;
@@ -506,6 +641,7 @@ describe('Rent Day (designer language)', () => {
     expect(unfinished.length, `seeds with no winner after 3000 turns: ${unfinished.join(', ')}`).toBeLessThanOrEqual(1);
     for (const [way, times] of Object.entries(jail)) expect(times, `times a player was ${way}`).toBeGreaterThan(0);
     for (const [way, times] of Object.entries(raising)) expect(times, `times a player ${way}: ${JSON.stringify(raising)}`).toBeGreaterThan(0);
+    for (const [end, times] of Object.entries(auctions)) expect(times, `auctions that ${end}: ${JSON.stringify(auctions)}`).toBeGreaterThan(0);
   }, 60_000);
 
   it.each([[4, 1], [4, 2], [4, 3], [8, 1], [8, 2], [8, 3]])(

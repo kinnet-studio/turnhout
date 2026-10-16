@@ -358,7 +358,8 @@ describe('Playtest: building by picking a street', () => {
   });
 
   it('stops picking when the button can no longer be pressed, and does not start again by itself', () => {
-    const brown = ['Mill Lane', 'Ferry Row'].reduce((state, name) => setOwner(state, nameAt(name), 'p1'), ownsOrange);
+    // p0's first roll is 4 and 2, onto Ash Street: p1 owns it too, or p0 could not end the turn without buying or auctioning it.
+    const brown = ['Mill Lane', 'Ferry Row', 'Ash Street'].reduce((state, name) => setOwner(state, nameAt(name), 'p1'), ownsOrange);
     mountRentDay({ players: 2, initial: brown });
     fireEvent.click(rollButtons()[0]);
     fireEvent.click(screen.getAllByRole('button', { name: 'End your turn' })[0]);
