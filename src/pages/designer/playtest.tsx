@@ -5,7 +5,7 @@ import type { GameState } from '@/engine/core/game-state';
 import { seatExtras, readSeatExtras, type ActionView } from '@/engine/core/lang/board-view';
 import { createEngine, initialState } from '@/engine/core/lang/build';
 import { moveForDrop } from '@/engine/core/lang/drops';
-import { fitsTable, fittedLayout } from '@/engine/core/lang/fit-layout';
+import { fitsTable, fittedLayout, stackOnHolders } from '@/engine/core/lang/fit-layout';
 import { friendlyError, friendlyReason } from '@/engine/core/lang/friendly';
 import type { PhraseLibrary } from '@/engine/core/lang/phrases';
 import type { CompiledGame } from '@/engine/core/lang/types';
@@ -21,6 +21,7 @@ import { designerFaceRenderer } from '@/engine/pixi/text-faces';
 import { makeInitApp } from '@/utils/init-app';
 import { ActionButtons, BANNER_SLOT, BANNER_STYLE, BUTTON_ROW, MoneyLine, PlayerPicker } from './board-controls';
 import { BoardGrid } from './board-grid';
+import { boardCaptions } from './board-text';
 import { cardDetail } from './card-detail';
 import { CardPicker } from './card-picker';
 import { seatStatus, seatToAct } from './seat-status';
@@ -151,9 +152,20 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
   }, [stale]);
   const option = useMemo(() => ({ fullScreen: false, limitEntireViewPort: false }), []);
   const drawn = useMemo(() => new Set(tableDef.zones.map((zone) => zone.id)), [tableDef]);
-  const cards = view?.scene.cards ?? [];
   // A fitted table leaves the other players' zones off, so their cards have nowhere to stand: they are counted in the tableaux.
-  const placement: Placement = { cards: fitted ? cards.filter((card) => drawn.has(card.zoneId)) : cards };
+  // The cards on a card hang under it, placed once for each view rather than on every hover.
+  const placed = useMemo(() => {
+    const cards = view?.scene.cards ?? [];
+    return fitted ? stackOnHolders(tableDef.zones, cards.filter((card) => drawn.has(card.zoneId))) : cards;
+  }, [view, fitted, tableDef, drawn]);
+  const placement: Placement = { cards: placed };
+  // Only a game whose buttons pick cards puts anything on its cards, so every other game's table draws as it always has. A card
+  // on a seat's Board is captioned with its counts, which change only with the view.
+  const picksCards = game.phases.some((phase) => phase.actions.some((a) => a.pick !== undefined));
+  const decor = useMemo(() => {
+    if (!picksCards || view === null) return undefined;
+    return Object.fromEntries(Object.entries(boardCaptions(game, placed)).map(([id, caption]) => [id, { caption }]));
+  }, [picksCards, view, game, placed]);
   // A card's face has room for only some of its columns, so a fitted table shows the card under the pointer in full below it.
   const [hovered, setHovered] = useState<string | null>(null);
   const hoveredCard = placement.cards.find((card) => card.id === hovered);
@@ -176,7 +188,14 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
       || game.phases.some((phase) => phase.moves.length > 0 || phase.rearrange.length > 0));
   const canvas = showsCards && (
     <Wrapper option={option} initFunction={fitted ? initFittedApp : initAppWithFaces}>
-      <CardTable tableDef={tableDef} placement={placement} viewer={undefined} onDrop={submit} onHover={fitted ? setHovered : undefined} />
+      <CardTable
+        tableDef={tableDef}
+        placement={placement}
+        viewer={undefined}
+        onDrop={submit}
+        onHover={fitted ? setHovered : undefined}
+        decor={decor}
+      />
     </Wrapper>
   );
   // The panel is for a game that has a board, or buttons to press, and for every fitted table, whose panel lists the tableaux;

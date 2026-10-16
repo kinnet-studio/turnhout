@@ -19,6 +19,11 @@ import { unreachableZones } from '@/engine/core/lang/testing';
 import { CARD_HEIGHT, TABLE_BOUNDS, type CardState } from '@/engine/core/scene';
 import type { ZoneDef } from '@/engine/core/table-def';
 import { placeZone } from '@/engine/core/zone-geometry';
+import type { GameState } from '@/engine/core/game-state';
+import { putOn } from '@/engine/core/lang/attach';
+import { changeCard } from '@/engine/core/lang/card-facts';
+import { computeZoneLayout } from '@/engine/core/layout';
+import { deriveScene } from '@/engine/core/derive-scene';
 
 // The canvas a seat is drawn on: keep what its app was last made with.
 let canvasMadeWith: unknown = null;
@@ -388,5 +393,104 @@ describe("the Board's place on the table", () => {
     const placed = fittedLayout(game.zones, viewer);
     expect(misfits(placed)).toEqual([]);
     expect(unreachableZones(placed, 7)).toEqual([]);
+  });
+});
+
+// Shared by the tests that arrange a Board: a 3-player game after Setup, a card found by name, and the seats around the start player.
+const setUp = (): GameState => createEngine(game, lib, 3, initialState(game, SEED)).engine.getState();
+/** The id of the first card with this name, in this zone if one is given. */
+const idOf = (state: GameState, name: string, zoneId?: string): string =>
+  state.cards.find((c) => c.data?.name === name && (zoneId === undefined || c.zoneId === zoneId))!.id;
+const S = startOf(3);
+const N = after(S, 3);
+const O = seatsOf(3).find((seat) => seat !== S)!;
+
+describe('the Board on the page', () => {
+  const tab = (name: string) => screen.getByRole('tab', { name });
+  const boardOf = (seat: string) => screen.getByTestId(`board-${seat}`).textContent;
+  /** S's Board: a Dating App with blue cubes 4 and two staff on it, a To-Do List in operations and a QA Engineer in the ops team. */
+  const build = (): GameState => {
+    let state = setUp();
+    const dating = idOf(state, 'Dating App');
+    state = relocate(state, [dating], `development-${S}`, game);
+    state = putOn(state, [idOf(state, 'Junior Software Dev', `bench-${S}`), idOf(state, 'Architect')], `development-team-${S}`, dating, game);
+    state = changeCard(state, dating, { 'blue cubes': 4 }, game);
+    state = relocate(state, [idOf(state, 'To-Do List')], `operations-${S}`, game);
+    return relocate(state, [idOf(state, 'QA Engineer')], `ops-team-${S}`, game);
+  };
+  const BUILT = build();
+  const dating = idOf(BUILT, 'Dating App');
+  const todo = idOf(BUILT, 'To-Do List');
+  const junior = idOf(BUILT, 'Junior Software Dev', `development-team-${S}`);
+  const architect = idOf(BUILT, 'Architect');
+  const BOARD = `development: Dating App [Blue 4/6, Red 0/0] with Junior Software Dev and Architect · operations: To-Do List [Blue 0/4, Red 0/0] · ops team: QA Engineer`;
+
+  it('hangs the staff under their card on the canvas, and captions each card with its counts', () => {
+    mount({ initial: BUILT });
+    expect(cardsIn(`development-team-${S}`).map((c) => c.id).sort()).toEqual([junior, architect].sort());
+    const def = table!.tableDef.zones.find((z) => z.id === `development-${S}`)!;
+    const at = computeZoneLayout(def, cardsIn(`development-${S}`)).get(dating)!;
+    const placed = (id: string) => cardsIn(`development-team-${S}`).find((c) => c.id === id)!.data!;
+    expect(placed(junior).x).toBe(at.x);
+    expect(placed(architect).x).toBe(at.x);
+    expect(placed(junior).y).toBe(at.y + 176);
+    expect(placed(architect).y).toBe(at.y + 210);
+    expect(table!.decor).toEqual({ [dating]: { caption: 'Blue 4/6\nRed 0/0' }, [todo]: { caption: 'Blue 0/4\nRed 0/0' } });
+  });
+
+  it("lists every seat's Board as text, whichever seat is looked at", () => {
+    mount({ initial: BUILT });
+    expect(boardOf(S)).toBe(BOARD);
+    expect(screen.queryByTestId(`board-${O}`)).toBeNull();
+    fireEvent.click(tab(O));
+    expect(cardsIn(`development-${S}`)).toEqual([]);
+    expect(boardOf(S)).toBe(BOARD);
+  });
+
+  it('counts the Board on the tableau line and leaves the naming to the Board line', () => {
+    mount({ initial: BUILT });
+    expect(lineOf(S)?.startsWith(`${S} 7 capital, 3 actions, 0 market share · `)).toBe(true);
+    expect(lineOf(S)).toContain('development 1 · operations 1 · development team 2 · ops team 1 · scouting 0');
+    expect(lineOf(S)).not.toContain('Dating App');
+  });
+
+  it('shows the flags set on a card', () => {
+    mount({ initial: changeCard(BUILT, architect, { onboarding: true }, game) });
+    expect(boardOf(S)).toContain('Architect (onboarding)');
+  });
+
+  it('counts market share among the numbers after Income, and shows the cubes Generate adds on the canvas', () => {
+    mount({ initial: relocate(BUILT, [idOf(BUILT, 'Trading Bot')], `operations-${N}`, game) });
+    press('End your actions');
+    expect(tab(`${N} — to act`).getAttribute('aria-selected')).toBe('true');
+    expect(lineOf(N)?.startsWith(`${N} 11 capital, 3 actions, 1 market share · `)).toBe(true);
+    fireEvent.click(tab(S));
+    // The Junior's 1 and the Architect's 3 are capped at the 6 the card needs.
+    expect(table!.decor![dating].caption).toBe('Blue 6/6\nRed 0/0');
+  });
+
+  it("keeps a card a seat can't see, and its counts, out of that seat's scene, captions and text", () => {
+    const set = setUp();
+    const hidden = set.cards.find((c) => c.zoneId === `backlog-${O}`)!;
+    const state = changeCard(set, hidden.id, { 'blue cubes': 3 }, game);
+    const engineTableDef = createEngine(game, lib, 3, state).tableDef;
+    const projected = deriveScene(engineTableDef, { cards: state.cards }, S).cards.find((c) => c.id === hidden.id)!;
+    expect(projected.faceKey).toBe('back');
+    expect(Object.keys(projected.data ?? {}).filter((key) => key !== 'x' && key !== 'y')).toEqual([]);
+
+    mount({ initial: state });
+    expect(status()).toMatch(new RegExp(`^seat: ${S} `));
+    expect(table!.placement.cards.filter((c) => c.zoneId === `backlog-${O}`)).toEqual([]);
+    expect(table!.decor).toBeDefined();
+    expect(Object.keys(table!.decor!)).not.toContain(hidden.id);
+    expect(document.body.textContent).not.toContain(String(hidden.data!.name));
+    expect(document.body.textContent).not.toContain('3/');
+  });
+
+  // A guard: this passes before the change, and pins that a game whose buttons pick no cards gets no decor.
+  it('puts nothing on the cards of a game whose buttons pick none', () => {
+    mount({ game: compileGame(COLOR_MATCH, lib).game! });
+    expect(table).not.toBeNull();
+    expect(table!.decor).toBeUndefined();
   });
 });

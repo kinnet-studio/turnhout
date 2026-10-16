@@ -17,9 +17,10 @@ function seatsOf(board: BoardView): string[] {
 /**
  * One text for the seat: "p0 -4 money · owes p1 · asleep · 2 naps · Free Pass (lent)", its numbers, whom it owes if anyone, then
  * its facts, then the names of the cards it keeps, each with the flags set on it in brackets; "p1 ? money" where the number is
- * hidden from this viewer, or "p2 out" with nothing after it: what is true of a player who is out no longer matters.
+ * hidden from this viewer, or "p2 out" with nothing after it: what is true of a player who is out no longer matters. Without
+ * `withCards` the cards are left off, for a page that lists them on a line of their own.
  */
-export function entryFor(board: BoardView, seat: string): string {
+export function entryFor(board: BoardView, seat: string, withCards = true): string {
   if (board.out.includes(seat)) return `${seat} out`;
   const numbers = board.counters.map(({ name, values }) => {
     const value = values[seat];
@@ -31,7 +32,8 @@ export function entryFor(board: BoardView, seat: string): string {
   const creditor = board.owes[seat];
   const debt = creditor === undefined ? [] : [`owes ${creditor === 'bank' ? 'the bank' : creditor}`];
   const flags = board.playerCardFlags[seat] ?? [];
-  const cards = (board.playerCards[seat] ?? []).map((name, i) => (flags[i]?.length ? `${name} (${flags[i].join(', ')})` : name));
+  const kept = withCards ? (board.playerCards[seat] ?? []) : [];
+  const cards = kept.map((name, i) => (flags[i]?.length ? `${name} (${flags[i].join(', ')})` : name));
   return [base, ...debt, ...factWords(board.playerFacts[seat] ?? {}), ...cards].join(' · ');
 }
 

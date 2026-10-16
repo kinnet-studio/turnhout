@@ -190,3 +190,19 @@ describe('a zone with a name to draw', () => {
     expect('label' in zoneOf(deriveScene(named, none, 'p0'), 'stash')).toBe(false);
   });
 });
+
+describe('a card on a card in a zone only its owner sees', () => {
+  // A guard: this passes before the change, and pins that the holder key and a count are scrubbed with the rest of the data.
+  const table: TableDef = { players: ['p0', 'p1'], zones: [zone({ id: 'den-p0', visibility: 'owner', owner: 'p0' })] };
+  const data = { name: 'Goblin', 'lang:on': 'c1', charges: 3 };
+  const placed: Placement = { cards: [card({ id: 'c2', zoneId: 'den-p0', faceKey: 'k', data })] };
+  const seen = (viewer: string) => deriveScene(table, placed, viewer).cards[0];
+
+  it('is a back with no data to another seat', () => {
+    expect(seen('p1').faceKey).toBe(HIDDEN_FACE_KEY);
+    expect(seen('p1').data).toEqual({});
+  });
+  it('keeps its name, its holder and its count for its owner', () => {
+    expect(seen('p0').data).toEqual(data);
+  });
+});
