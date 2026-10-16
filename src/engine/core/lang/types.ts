@@ -49,6 +49,8 @@ export type BoardPart =
   | { kind: 'bank'; bank: BankSpec[] };
 /** A group of spaces named by one of their attributes, like every space whose kind is go. */
 export type SpaceClass = { attribute: string; values: Json[] };
+/** What a button costs: `counter` is the plural name the game declares, of a number each player has each turn; `line` is the cost line's. */
+export type ActionCost = { amount: number; counter: string; line: number };
 /**
  * `words` is the lowercase text after "a player may" ('roll the dice'); `label` is the button text in the second person,
  * with the designer's capitals ('Roll the dice', 'Go to Rose Lane'). `words` is also the button's move type, so that
@@ -63,10 +65,11 @@ export type SpaceClass = { attribute: string; values: Json[] };
  * may challenge another player.”): its press picks a player. `base` leaves “ another player” out ('challenge'), `words` keeps it,
  * as the move type, and `label` is the whole wording in the second person, since the page shows the players to pick only after
  * the press.
+ * `cost` is there only for a button with an “It costs 1 action.” line: it is judged before any `Only if` and spent before the `Then:` lines.
  */
 export type DeclaredAction = {
   verb: string; words: string; base: string; label: string; target: PhraseRef | null; anyone: boolean; amount: boolean; picksPlayer: boolean;
-  conditions: CondGroup[]; effects: PhraseRef[]; line: number;
+  conditions: CondGroup[]; effects: PhraseRef[]; line: number; cost?: ActionCost;
 };
 export type CompiledMoment = { line: number; text: string; when: PhraseRef; conditions: CondGroup[]; effects: PhraseRef[] };
 export type CompiledTrigger = { line: number; text: string; when: PhraseRef; conditions: CondGroup[]; effects: PhraseRef[] };
@@ -113,6 +116,8 @@ export type Vocab = {
   /** The text cells of the board's table, not the numbers. */
   spaceValues: { attribute: string; value: string }[];
   counters: string[]; payWith: string | null;
+  /** The counters each player has each turn: the only ones a button may cost. */
+  budgets: string[];
   /**
    * Every button the phases declare, one for each wording; `targeted` ones pick a space, so an example names it after their `base`,
    * and `anyone` ones may be pressed by any seat at any time, so they are never part of a turn. An `amount` one carries a number

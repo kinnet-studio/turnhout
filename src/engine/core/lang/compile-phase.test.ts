@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { canPlay, compileGame } from './compile';
 import { actionLabel, compilePhase } from './compile-phase';
+import { hasCost } from './declared-actions';
 import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { parseOutline } from './outline';
@@ -1402,5 +1403,74 @@ describe('“they” in a phase where players take turns', () => {
       [at(atOnce, '    They get 1 coin.'), NEEDS_PLAYER('They get 1 coin')],
       [at(atOnce, '  When their list has fewer than 2 cards:'), '“their list has fewer than 2 cards” only makes sense in a rule about a player\'s move.'],
     ]);
+  });
+});
+
+describe('a button that costs part of the turn budget', () => {
+  const WORK = '  A player may work.\n    Only if they have at least 1 move.\n    Then:\n      They spend 1 move.\n';
+  const COSTED = TURN_GAME.replace(WORK, '  A player may work.\n    It costs 1 move.\n    Then:\n');
+  /** The 1-based number of `line` in `text`. */
+  const at = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+  const actionsOf = (text: string) => compileGame(text, lib).game!.phases.find((p) => p.id === 'working')!.actions;
+  const workOf = (text: string) => actionsOf(text).find((a) => a.words === 'work')!;
+  const notABudget = (counter: string) =>
+    `A button can only cost a number each player has each turn, like “Each player has 3 actions each turn.”; ${counter} isn't one.`;
+  const COST_SHAPE = 'Write a cost as “It costs 1 action.”: a whole number, then a number each player has each turn.';
+  const TWO_COSTS = 'A button can have only one “It costs …” line.';
+
+  it('is read from the fixture the tests change', () => expect(TURN_GAME).toContain(WORK));
+  it('reads the cost, and leaves it off a button without one', () => {
+    expect(compileGame(COSTED, lib).diagnostics).toEqual([]);
+    const work = workOf(COSTED);
+    const stop = actionsOf(COSTED).find((a) => a.words === 'stop')!;
+    expect(work.cost).toEqual({ amount: 1, counter: 'moves', line: at(COSTED, '    It costs 1 move.') });
+    expect('cost' in stop).toBe(false);
+    expect([hasCost(work), hasCost(stop)]).toEqual([true, false]);
+  });
+  it('reads the cost anywhere under the button', () => {
+    const below = COSTED.replace('    It costs 1 move.\n    Then:\n      They get 1 coin.\n', '    Then:\n      They get 1 coin.\n    It costs 1 move.\n');
+    expect(below).not.toBe(COSTED);
+    expect(compileGame(below, lib).diagnostics).toEqual([]);
+    expect(workOf(below).cost).toMatchObject({ amount: 1, counter: 'moves', line: at(below, '    It costs 1 move.') });
+  });
+  it('reads any whole number, and a cost of 0 still makes the button an action', () => {
+    expect(workOf(COSTED.replace('It costs 1 move.', 'It costs 2 moves.')).cost).toMatchObject({ amount: 2, counter: 'moves' });
+    const free = workOf(COSTED.replace('It costs 1 move.', 'It costs 0 moves.'));
+    expect(free.cost).toMatchObject({ amount: 0, counter: 'moves' });
+    expect(hasCost(free)).toBe(true);
+  });
+
+  describe('problems', () => {
+    /** COSTED with the cost line said another way: one error, on that line, and no game. */
+    const refused = (cost: string) => {
+      const text = COSTED.replace('    It costs 1 move.', cost);
+      expect(text).not.toBe(COSTED);
+      return { errors: messages(text), game: compileGame(text, lib).game, line: at(text, cost) };
+    };
+    it('refuses a counter that is no number each player has each turn', () => {
+      const { errors, game, line } = refused('    It costs 1 coin.');
+      expect(errors).toEqual([[line, notABudget('coins')]]);
+      expect(game).toBeUndefined();
+    });
+    it('explains a counter the game never declared, with the closest names', () => {
+      const { errors, game, line } = refused('    It costs 1 mvoe.');
+      expect(errors).toEqual([[line, 'There is no counter called “mvoe”.']]);
+      expect(compileGame(COSTED.replace('    It costs 1 move.', '    It costs 1 mvoe.'), lib).diagnostics[0].suggestions).toContain('moves');
+      expect(game).toBeUndefined();
+    });
+    it('refuses a cost that is not a whole number and a counter', () => {
+      const { errors, game, line } = refused('    It costs one move.');
+      expect(errors).toEqual([[line, COST_SHAPE]]);
+      expect(game).toBeUndefined();
+      expect(refused('    It costs move.').errors).toEqual([[expect.any(Number), COST_SHAPE]]);
+      expect(refused('    It costs 1.5 moves.').errors).toEqual([[expect.any(Number), COST_SHAPE]]);
+    });
+    it('refuses a second cost line, on the second line', () => {
+      const text = COSTED.replace('    It costs 1 move.', '    It costs 1 move.\n    It costs 1 move.');
+      const second = text.split('\n').lastIndexOf('    It costs 1 move.') + 1;
+      expect(second).toBe(at(text, '    It costs 1 move.') + 1);
+      expect(messages(text)).toEqual([[second, TWO_COSTS]]);
+      expect(compileGame(text, lib).game).toBeUndefined();
+    });
   });
 });

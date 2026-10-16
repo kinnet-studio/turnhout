@@ -134,7 +134,7 @@ export const STATIC_TYPES: ParamType[] = [
 export function emptyVocab(): Vocab {
   return {
     sharedZones: [], playerZones: [], maxPlayers: 0, phases: [], verbs: [], attributes: [], cardValues: [], standardDeck: false,
-    spaces: [], spaceAttributes: [], spaceValues: [], counters: [], payWith: null, actions: [], dice: false, diceCount: 0,
+    spaces: [], spaceAttributes: [], spaceValues: [], counters: [], budgets: [], payWith: null, actions: [], dice: false, diceCount: 0,
     facts: [], bank: [],
   };
 }
@@ -190,6 +190,7 @@ export function vocabFrom(game: {
     spaceAttributes: [...spaceAttributes],
     spaceValues,
     counters: (board?.counters ?? []).map((c) => c.name),
+    budgets: (board?.counters ?? []).filter((c) => c.perTurn).map((c) => c.name),
     payWith: board?.payWith ?? null,
     actions: game.actions ?? [],
     dice: (board?.dice ?? null) !== null,

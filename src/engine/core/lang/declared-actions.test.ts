@@ -10,11 +10,14 @@ import {
 import { createEngine, flowDefFor, initialState, seatsFor } from './build';
 import { compileGame } from './compile';
 import { amountPrompt, amountReady, declaredActionHandler, pickPlayerPrompt, playerCandidates, targetCandidates } from './declared-actions';
+import { costRefusal, hasCost, payCost } from './declared-actions';
 import { friendlyError } from './friendly';
 import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { MAX_MOMENT_DEPTH } from './runtime';
+import type { DeclaredAction } from './types';
 import { AMOUNT_BOARD, ANY_PLAYER_BOARD, INTERRUPT_BOARD, MARK_BOARD, PICK_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD } from './testing';
+import { TURN_GAME } from './testing';
 
 const lib = createDefaultLibrary();
 const game = compileGame(TINY_BOARD, lib).game!;
@@ -693,6 +696,120 @@ describe('buttons that pick another player', () => {
     ].join('\n');
     it('runs on the engine and passes', () => {
       const { game: withExample, diagnostics } = compileGame(`${PICK_BOARD}\n\n${EXAMPLE}`, lib);
+      expect(diagnostics).toEqual([]);
+      const results = runExamples(withExample!, lib);
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({ status: 'pass', message: null });
+    });
+  });
+});
+
+describe('buttons that cost part of the turn budget', () => {
+  const WORK = '  A player may work.\n    Only if they have at least 1 move.\n    Then:\n      They spend 1 move.\n';
+  const COSTED = TURN_GAME.replace(WORK, '  A player may work.\n    It costs 1 move.\n    Then:\n');
+  const COST2 = COSTED.replace('    It costs 1 move.', '    It costs 2 moves.\n    Only if they have at least 5 coins.');
+  /** A started turn: p0 to act in working, everyone at their 2 moves. */
+  const base = (text: string): GameState => {
+    const g = compileGame(text, lib).game!;
+    return createEngine(g, lib, 2, { ...initialState(g, 1), turn: { current: 'p0', phase: 'working' } }).engine.getState();
+  };
+  /** A new engine on the started turn of `text`, arranged by `arrange`. */
+  const engineAt = (text: string, arrange: (s: GameState) => GameState = (s) => s) => {
+    const g = compileGame(text, lib).game!;
+    return createEngine(g, lib, 2, arrange(base(text))).engine;
+  };
+  const WORKS = { type: 'work', by: 'p0' };
+
+  it('compiles the fixtures with no diagnostics', () => {
+    expect(TURN_GAME).toContain(WORK);
+    for (const text of [COSTED, COST2]) expect(compileGame(text, lib).diagnostics).toEqual([]);
+  });
+  it('starts the turn with p0 at 2 moves', () => expect(counterOf(base(COSTED), 'moves', 'p0')).toBe(2));
+  it('spends the cost when the press is accepted', () => {
+    const engine = engineAt(COSTED);
+    expect(engine.dispatch(WORKS).ok).toBe(true);
+    expect([counterOf(engine.getState(), 'moves', 'p0'), counterOf(engine.getState(), 'coins', 'p0')]).toEqual([1, 1]);
+  });
+  it('spends the cost before the Then lines, so they see what is left', () => {
+    const text = COSTED.replace('      They get 1 coin.\n', '      They get 1 coin.\n      If they have at least 2 moves, they get 10 coins.\n');
+    expect(text).not.toBe(COSTED);
+    expect(compileGame(text, lib).diagnostics).toEqual([]);
+    const engine = engineAt(text);
+    expect(engine.dispatch(WORKS).ok).toBe(true);
+    expect(counterOf(engine.getState(), 'coins', 'p0')).toBe(1);
+  });
+  it('refuses in order (R5): the turn, then the cost, then each Only if', () => {
+    const turnOf = (moves: number, coins: number) => engineAt(COST2, (s) => setCounter(setCounter(s, 'moves', 'p0', moves), 'coins', 'p0', coins));
+    expect(turnOf(2, 0).canDispatch({ type: 'work', by: 'p1' })).toBe("not p1's turn");
+    // The cost comes before the Only if, though both would refuse.
+    expect(turnOf(1, 0).canDispatch(WORKS)).toBe('they have at least 2 moves');
+    expect(turnOf(2, 0).canDispatch(WORKS)).toBe('they have at least 5 coins');
+    expect(turnOf(2, 5).canDispatch(WORKS)).toBe(true);
+  });
+  it('Review Focus: spends nothing on a refusal, and undo gives back what an accepted press spent', () => {
+    const engine = engineAt(COST2, (s) => setCounter(s, 'moves', 'p0', 1));
+    expect(engine.dispatch(WORKS)).toMatchObject({ ok: false, reason: 'they have at least 2 moves' });
+    expect(counterOf(engine.getState(), 'moves', 'p0')).toBe(1);
+
+    const paid = engineAt(COSTED);
+    expect(paid.dispatch(WORKS).ok).toBe(true);
+    expect([counterOf(paid.getState(), 'moves', 'p0'), counterOf(paid.getState(), 'coins', 'p0')]).toEqual([1, 1]);
+    paid.undo();
+    expect([counterOf(paid.getState(), 'moves', 'p0'), counterOf(paid.getState(), 'coins', 'p0')]).toEqual([2, 0]);
+  });
+  it('can cost nothing, and is still a button with a cost', () => {
+    const free = COSTED.replace('It costs 1 move.', 'It costs 0 moves.');
+    expect(hasCost(compileGame(free, lib).game!.phases[0].actions[0])).toBe(true);
+    const engine = engineAt(free);
+    expect(engine.dispatch(WORKS).ok).toBe(true);
+    expect([counterOf(engine.getState(), 'moves', 'p0'), counterOf(engine.getState(), 'coins', 'p0')]).toEqual([2, 1]);
+  });
+
+  describe('costRefusal and payCost', () => {
+    const [work, stop]: DeclaredAction[] = compileGame(COST2, lib).game!.phases[0].actions;
+    const state = base(COST2);
+    it('refuse and spend nothing without a cost', () => {
+      expect(hasCost(stop)).toBe(false);
+      expect(costRefusal(stop, setCounter(state, 'moves', 'p0', 0), 'p0')).toBeNull();
+      expect(payCost(stop, state, 'p0')).toBe(state);
+    });
+    it('refuse a seat that has less than the cost, in the words of the budget', () => {
+      expect(hasCost(work)).toBe(true);
+      expect(costRefusal(work, state, 'p0')).toBeNull();
+      expect(costRefusal(work, setCounter(state, 'moves', 'p0', 1), 'p0')).toBe('they have at least 2 moves');
+      expect(costRefusal(work, setCounter(state, 'moves', 'p0', 1), 'p1')).toBeNull();
+    });
+    it('spend the cost from the seat that pays it', () => {
+      const paid = payCost(work, state, 'p1');
+      expect([counterOf(paid, 'moves', 'p1'), counterOf(paid, 'moves', 'p0')]).toEqual([0, 2]);
+    });
+  });
+
+  describe('on a button that carries an amount', () => {
+    const POT = AMOUNT_BOARD.replace('  The game has a pot of 0.', '  The game has a pot of 0.\n  Each player has 2 moves each turn.')
+      .replace('  A player may raise an amount.', '  A player may raise an amount.\n    It costs 1 move.');
+    const g = compileGame(POT, lib).game!;
+    const { engine, runtime } = createEngine(g, lib, 2, initialState(g, 1));
+    const state = engine.getState();
+    const raise = g.phases[0].actions.find((a) => a.words === 'raise an amount')!;
+    it('compiles', () => expect(compileGame(POT, lib).diagnostics).toEqual([]));
+    it('asks for the cost before the lines that do not read the amount', () => {
+      expect(amountReady(runtime, raise, setCounter(state, 'moves', 'p0', 0), 'p0')).toBe('they have at least 1 move');
+      // With the budget left, the line about having rolled speaks.
+      expect(amountReady(runtime, raise, state, 'p0')).toBe('they have rolled this turn');
+    });
+  });
+
+  describe('as an example', () => {
+    const EXAMPLE = [
+      "Example: a press that can't pay costs nothing",
+      '  Given p0 has 1 move',
+      '  When p0 works',
+      '  Then it is rejected because "they have at least 2 moves"',
+      '  And p0 has 1 move',
+    ].join('\n');
+    it('runs on the engine and passes', () => {
+      const { game: withExample, diagnostics } = compileGame(`${COSTED.replace('It costs 1 move.', 'It costs 2 moves.')}\n\n${EXAMPLE}\n`, lib);
       expect(diagnostics).toEqual([]);
       const results = runExamples(withExample!, lib);
       expect(results).toHaveLength(1);

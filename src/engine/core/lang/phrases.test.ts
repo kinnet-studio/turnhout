@@ -349,6 +349,20 @@ describe('vocabFrom', () => {
     expect(vocabFrom({ maxPlayers: 2 }).facts).toEqual([]);
   });
 
+  it('lists as its budgets the counters each player has each turn, and no others', () => {
+    const board = {
+      ...fixtureBoardGame().board!,
+      counters: [
+        { name: 'coins', start: 0, visibility: 'public' as const, perTurn: false },
+        { name: 'moves', start: 2, visibility: 'public' as const, perTurn: true },
+      ],
+    };
+    expect(vocabFrom({ maxPlayers: 2, board }).counters).toEqual(['coins', 'moves']);
+    expect(vocabFrom({ maxPlayers: 2, board }).budgets).toEqual(['moves']);
+    expect(vocabFrom({ maxPlayers: 2 }).budgets).toEqual([]);
+    expect(emptyVocab().budgets).toEqual([]);
+  });
+
   it('makes a new object each time and defaults to an empty game', () => {
     expect(vocabFrom({ maxPlayers: 2 })).toEqual({ ...emptyVocab(), maxPlayers: 2 });
     expect(vocabFrom({ maxPlayers: 2 })).not.toBe(vocabFrom({ maxPlayers: 2 }));

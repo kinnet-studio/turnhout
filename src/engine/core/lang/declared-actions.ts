@@ -1,8 +1,8 @@
 import type { GameState } from '../game-state';
 import type { Move, MoveHandler } from '../moves';
 import type { PlayerId } from '../scene';
-import { clearTurnLog, endsTurn, isOut, playersIn, recordAction } from './board-state';
-import { secondPersonWords } from './refs';
+import { addToCounter, clearTurnLog, counterOf, endsTurn, isOut, playersIn, recordAction } from './board-state';
+import { counted, secondPersonWords } from './refs';
 import type { LangRuntime } from './runtime';
 import type { CompiledPhase, DeclaredAction, Subject } from './types';
 
@@ -75,6 +75,24 @@ function aboutPress(action: DeclaredAction, runtime: LangRuntime, state: GameSta
   return runtime.allowsTarget(action.target, state, subject, space) ? subject : `That isn't ${secondPersonWords(action.target.text.toLowerCase())}.`;
 }
 
+/** Whether the button costs part of the turn budget: it is “an action”, the kind a veto may answer. */
+export function hasCost(action: DeclaredAction): boolean {
+  return action.cost !== undefined;
+}
+
+/** Why `by` can't pay the button's cost, in the words of an `Only if` line; null when they can, or when it costs nothing. */
+export function costRefusal(action: DeclaredAction, state: GameState, by: PlayerId): string | null {
+  const { cost } = action;
+  if (!cost || counterOf(state, cost.counter, by) >= cost.amount) return null;
+  return `they have at least ${counted(cost.amount, cost.counter)}`;
+}
+
+/** The state once `by` has paid the button's cost; the state itself for a button that costs nothing. */
+export function payCost(action: DeclaredAction, state: GameState, by: PlayerId): GameState {
+  const { cost } = action;
+  return cost ? addToCounter(state, cost.counter, by, -cost.amount) : state;
+}
+
 /** The current phase's button whose move type is `move` and that allows it, with who it is about; else why not. */
 function choose(
   move: string, runtime: LangRuntime, state: GameState, m: Move,
@@ -88,7 +106,8 @@ function choose(
   if (isOut(state, by)) return OUT;
   const subject = aboutPress(action, runtime, state, m, by);
   if (typeof subject === 'string') return subject;
-  return runtime.failedGroup(action.conditions, state, undefined, subject) ?? { phase, action, by, subject };
+  // The cost comes before every Only if, so that a button that can't be paid for says so whatever else it asks.
+  return costRefusal(action, state, by) ?? runtime.failedGroup(action.conditions, state, undefined, subject) ?? { phase, action, by, subject };
 }
 
 /**
@@ -102,7 +121,8 @@ function choose(
  * board, and its lines are about that space. A button that carries an amount (“A player may raise an amount.”) takes it from the
  * move's `amount`, a whole number of 0 or more, and is refused before any `Only if` line is read when there is none. A button that
  * picks another player (“A player may challenge another player.”) takes it from the move's `player`, a seat other than the one
- * pressing that is still in, and is refused the same way when there is none.
+ * pressing that is still in, and is refused the same way when there is none. A button with a cost (“It costs 1 action.”) is refused,
+ * after its pick and before any `Only if` line, when the player has less than it costs, and spends it before its Then lines.
  */
 export function declaredActionHandler(move: string, runtime: LangRuntime): MoveHandler {
   return {
@@ -116,7 +136,9 @@ export function declaredActionHandler(move: string, runtime: LangRuntime): MoveH
       const { phase, action, by, subject } = choice;
       // A press anyone may make is no part of anyone's turn, so it is not noted among what the player did in it.
       const recorded = action.anyone ? state : recordAction(state, by, move);
-      const done = action.effects.reduce((s, ref) => runtime.run(ref, s, undefined, undefined, subject), recorded);
+      // Spent first, so that the Then lines see what is left.
+      const paid = payCost(action, recorded, by);
+      const done = action.effects.reduce((s, ref) => runtime.run(ref, s, undefined, undefined, subject), paid);
       // Only a turn of this phase passes: lines that went back to an interrupted turn leave that turn's log as it was.
       return endsTurn(phase, move) && done.turn?.phase === phase.id ? clearTurnLog(done) : done;
     },
@@ -141,12 +163,12 @@ export function playerCandidates(runtime: LangRuntime, state: GameState, seat: P
 }
 
 /**
- * Whether `seat` could press the button once it says how much: true, or why not. It asks every `Only if` line that does not
- * read the amount, about the seat alone, and leaves the others, which can only be answered with an amount. A seat that is out
+ * Whether `seat` could press the button once it says how much: true, or why not. It asks the cost first, then every `Only if` line
+ * that does not read the amount, about the seat alone, and leaves the others, which can only be answered with an amount. A seat that is out
  * can press nothing. It asks nothing of the turn or the flow, which the engine's own gate decides.
  */
 export function amountReady(runtime: LangRuntime, action: DeclaredAction, state: GameState, seat: PlayerId): true | string {
   if (isOut(state, seat)) return OUT;
   const waiting = action.conditions.filter((group) => !runtime.readsAmount(group));
-  return runtime.failedGroup(waiting, state, undefined, { player: seat, space: null, card: null }) ?? true;
+  return costRefusal(action, state, seat) ?? runtime.failedGroup(waiting, state, undefined, { player: seat, space: null, card: null }) ?? true;
 }

@@ -1,9 +1,9 @@
 import { addProblem, canRead, isMissing, libraryHasSayOn, matchEffectLine, matchLine, phaseId, rejectChildren, type LineCtx } from './compile-util';
 import type { OutlineNode } from './outline';
 import { normalizeLine, suggestNames } from './phrases';
-import { joinOr, parseParam, secondPersonWords, thirdPerson, thirdPersonWords, VOCAB_TYPES } from './refs';
+import { joinOr, misnamedParam, parseParam, secondPersonWords, thirdPerson, thirdPersonWords, VOCAB_TYPES } from './refs';
 import type {
-  CompiledMoment, CompiledPhase, CompiledTrigger, CondGroup, DeclaredAction, DeclaredMove, ParamType, PhraseKind, PhraseRef, SpaceClass, Vocab,
+  ActionCost, CompiledMoment, CompiledPhase, CompiledTrigger, CondGroup, DeclaredAction, DeclaredMove, ParamType, PhraseKind, PhraseRef, SpaceClass, Vocab,
   ZoneRef,
 } from './types';
 
@@ -21,6 +21,10 @@ const TRIGGER = /^when (.+):$/i;
 const ONLY_IF_ONE_OF = /^only if one of:?$/i;
 const ONLY_IF = /^only if (.+)$/i;
 const THEN = /^then:?$/i;
+/** group 1 = what a button costs, to be read as a whole number and a counter */
+const COST_LINE = /^it costs (.+)$/i;
+/** group 1 = the whole number, group 2 = the counter, singular or plural */
+const COST_AMOUNT = /^(\d+) (.+)$/;
 /** After a player <names>, <turn phrase>: the names may hold commas themselves, so where they end is found by trying each comma. */
 const AFTER = /^after a player (.+)$/i;
 const VERB_SEPARATOR = /, or |, | or /i;
@@ -60,6 +64,11 @@ const ONE_ZONE = 'A move goes from one zone to one zone.';
 const ONE_GO_TO = 'A phase can have only one “go to” rule for now.';
 const ONE_AFTER = 'A phase can have only one “After a player …” rule.';
 const EMPTY_ONE_OF = 'Add the conditions under “Only if one of:”, one on each line.';
+const COST_SHAPE = 'Write a cost as “It costs 1 action.”: a whole number, then a number each player has each turn.';
+const TWO_COSTS = 'A button can have only one “It costs …” line.';
+/** Only a number each player has each turn can be a cost, so that “costs an action” and “has a cost” are one thing. */
+const notABudget = (counter: string) =>
+  `A button can only cost a number each player has each turn, like “Each player has 3 actions each turn.”; ${counter} isn't one.`;
 
 const MAX_SUGGESTIONS = 3;
 /** A card move and a button that start alike would share a name in an After line, and a one-word button a move type, so one gives way. */
@@ -153,10 +162,44 @@ function readCondition(node: OutlineNode, clean: string, ctx: LineCtx): CondGrou
   return { mode: 'all', refs: [ref], text: ref.text, line: node.line };
 }
 
-/** The `Only if` groups and the `Then:` effects under a card move or an action; any other line is reported. */
-function readRuleBody(node: OutlineNode, ctx: LineCtx): { conditions: CondGroup[]; effects: PhraseRef[] } {
+/**
+ * An `It costs 1 action.` line read as what it costs: the whole number and the counter, which must be one each player has each turn.
+ * Null, with the reason given, when it can't be.
+ */
+function readCost(node: OutlineNode, clean: string, ctx: LineCtx): ActionCost | null {
+  const text = COST_LINE.exec(clean)?.[1] ?? '';
+  const shape = COST_AMOUNT.exec(text);
+  // A number past what can be told apart exactly is no cost a player could pay.
+  if (!shape || !Number.isSafeInteger(Number(shape[1]))) {
+    addProblem(ctx.diagnostics, node.line, COST_SHAPE, { text: clean });
+    return null;
+  }
+  const parsed = parseParam('counter', shape[2], ctx.vocab);
+  if (parsed === null || 'error' in parsed) {
+    // The counter's own explanation, with the closest names; text that only holds a counter among other words is no counter's mistake.
+    const misnamed = misnamedParam('counter', shape[2], ctx.vocab);
+    if (misnamed) addProblem(ctx.diagnostics, node.line, misnamed.message, { kind: 'invalid', text: shape[2], suggestions: misnamed.suggestions });
+    else addProblem(ctx.diagnostics, node.line, COST_SHAPE, { text: clean });
+    return null;
+  }
+  const counter = parsed.value as string;
+  if (!ctx.vocab.budgets.includes(counter)) {
+    addProblem(ctx.diagnostics, node.line, notABudget(counter), { text: clean });
+    return null;
+  }
+  return { amount: Number(shape[1]), counter, line: node.line };
+}
+
+/**
+ * The `Only if` groups, the `Then:` effects and the cost under a card move or an action; any other line is reported. A second cost
+ * line is reported too. A cost line that can't be read, or a second one, sets `badCost`, which leaves a button out.
+ */
+function readRuleBody(node: OutlineNode, ctx: LineCtx): { conditions: CondGroup[]; effects: PhraseRef[]; cost: ActionCost | null; badCost: boolean } {
   const conditions: CondGroup[] = [];
   const effects: PhraseRef[] = [];
+  let cost: ActionCost | null = null;
+  let badCost = false;
+  let sawCost = false;
   for (const child of node.children) {
     const clean = normalizeLine(child.text);
     const group = readCondition(child, clean, ctx);
@@ -167,11 +210,17 @@ function readRuleBody(node: OutlineNode, ctx: LineCtx): { conditions: CondGroup[
         rejectChildren(line, ctx.diagnostics);
         effects.push(matchEffectLine(line.text, line.line, ctx));
       }
+    } else if (COST_LINE.test(clean)) {
+      rejectChildren(child, ctx.diagnostics);
+      if (sawCost) addProblem(ctx.diagnostics, child.line, TWO_COSTS, { text: clean });
+      else cost = readCost(child, clean, ctx);
+      badCost ||= sawCost || cost === null;
+      sawCost = true;
     } else {
       addProblem(ctx.diagnostics, child.line, NOT_UNDERSTOOD_IN_MOVE, { text: clean });
     }
   }
-  return { conditions, effects };
+  return { conditions, effects, cost, badCost };
 }
 
 /** One declared move with its `Only if` conditions and `Then:` effects; null when the move line itself is wrong. */
@@ -181,6 +230,7 @@ function compileMove(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx): D
   const reserved = verb === RESERVED_VERB;
   if (reserved) addProblem(ctx.diagnostics, node.line, `“${RESERVED_VERB}” is reserved; pick another word.`, { text: found[1] });
   const zones = moveZones(node, found, ctx);
+  // Its cost is dropped: a card move has none, and a line that costs something is a button.
   const { conditions, effects } = readRuleBody(node, inMove);
   if (reserved || !zones) return null;
   return { verb, ...zones, fromText: found[2], conditions, effects, line: node.line };
@@ -331,9 +381,9 @@ function compileAction(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx):
   if (both) addProblem(ctx.diagnostics, node.line, pickAndAmount(written.slice(baseWritten.length).trim()), { kind: 'invalid', text: normalizeLine(node.text) });
   // An action is about the player who presses it and the space it picks, else the space their piece is on; a button that carries an amount has it,
   // and one that picks a player has that player.
-  const { conditions, effects } = readRuleBody(node, { ...ctx, player: true, space: true, amount: amount || both, picked: picksPlayer });
-  if (reserved || pick !== null || both || (target !== null && isMissing(target))) return null;
-  return { verb, words, base, label, target, anyone, amount, picksPlayer, conditions, effects, line: node.line };
+  const { conditions, effects, cost, badCost } = readRuleBody(node, { ...ctx, player: true, space: true, amount: amount || both, picked: picksPlayer });
+  if (reserved || pick !== null || both || badCost || (target !== null && isMissing(target))) return null;
+  return { verb, words, base, label, target, anyone, amount, picksPlayer, conditions, effects, line: node.line, ...(cost ? { cost } : {}) };
 }
 
 /** The `Only if` groups and the effects under a `When …:` rule; every line that is not an `Only if` is an effect. */
