@@ -21,6 +21,7 @@ const board = (over: Partial<BoardView> = {}): BoardView => ({
   playerCards: {},
   owes: {},
   gameNumbers: [],
+  interrupted: false,
   ...over,
 });
 
@@ -360,5 +361,77 @@ describe('ActionButtons', () => {
       expect(onRefused).toHaveBeenCalledWith('There is no street you own.');
       expect(onPick).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("game numbers and buttons that carry an amount", () => {
+  const raise = { move: 'raise an amount', label: 'Raise', allowed: true as const, target: null, amount: true };
+  it('puts the game numbers that are set after the bank, and alone when there is no bank', () => {
+    render(<MoneyLine board={board({ bank: [{ name: 'houses', count: 32 }], gameNumbers: [{ name: 'pot', value: 1200 }] })} />);
+    expect(screen.getByText('bank: 32 houses · pot 1,200')).toBeTruthy();
+    render(<MoneyLine board={board({ gameNumbers: [{ name: 'tally', value: 5 }] })} />);
+    expect(screen.getByText('tally 5')).toBeTruthy();
+  });
+  it('joins several game numbers, and says nothing when there is neither a bank nor a number', () => {
+    const { rerender } = render(<MoneyLine board={board({ gameNumbers: [{ name: 'pot', value: 5 }, { name: 'cap', value: -3 }] })} />);
+    expect(screen.getByText('pot 5 · cap -3')).toBeTruthy();
+    rerender(<MoneyLine board={board()} />);
+    expect(screen.queryByText(/pot|cap|bank/)).toBeNull();
+    // The seats' own line is all that is left, so nothing else follows it.
+    expect(screen.getByText('p0 1,500 money').parentElement!.parentElement!.children).toHaveLength(1);
+  });
+  it('gives an amount button a number box and sends the number typed in it', () => {
+    const onPress = vi.fn();
+    render(<ActionButtons actions={[raise]} onPress={onPress} onPick={vi.fn()} onRefused={vi.fn()} />);
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Raise amount' }), { target: { value: '50' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Raise' }));
+    expect(onPress).toHaveBeenLastCalledWith('raise an amount', 50);
+  });
+  it('Review Focus: sends no amount from an empty box', () => {
+    const onPress = vi.fn();
+    render(<ActionButtons actions={[raise]} onPress={onPress} onPick={vi.fn()} onRefused={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Raise' }));
+    expect(onPress).toHaveBeenLastCalledWith('raise an amount', null);
+  });
+  it('is a whole-number box of 0 or more, right before its button, that keeps what was typed after the button is pressed', () => {
+    render(<ActionButtons actions={[raise]} onPress={vi.fn()} onPick={vi.fn()} onRefused={vi.fn()} />);
+    const box = screen.getByRole('spinbutton', { name: 'Raise amount' }) as HTMLInputElement;
+    expect([box.type, box.min, box.step]).toEqual(['number', '0', '1']);
+    expect(box.nextElementSibling).toBe(screen.getByRole('button', { name: 'Raise' }));
+    fireEvent.change(box, { target: { value: '50' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Raise' }));
+    expect(box.value).toBe('50');
+  });
+  it('sends 0 from a box holding 0, which is an amount and not a blank', () => {
+    const onPress = vi.fn();
+    render(<ActionButtons actions={[raise]} onPress={onPress} onPick={vi.fn()} onRefused={vi.fn()} />);
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Raise amount' }), { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Raise' }));
+    expect(onPress).toHaveBeenLastCalledWith('raise an amount', 0);
+  });
+  it('greys the box with its button, and explains instead of sending', () => {
+    const onPress = vi.fn();
+    const onRefused = vi.fn();
+    render(<ActionButtons actions={[{ ...raise, allowed: 'they have rolled this turn' }]} onPress={onPress} onPick={vi.fn()} onRefused={onRefused} />);
+    expect((screen.getByRole('spinbutton', { name: 'Raise amount' }) as HTMLInputElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Raise' }));
+    expect(onRefused).toHaveBeenCalledWith('they have rolled this turn');
+    expect(onPress).not.toHaveBeenCalled();
+  });
+  it('gives a button that carries no amount no box, and sends only its move', () => {
+    const onPress = vi.fn();
+    render(<ActionButtons actions={[{ ...raise, amount: false }]} onPress={onPress} onPick={vi.fn()} onRefused={vi.fn()} />);
+    expect(screen.queryByRole('spinbutton')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Raise' }));
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(onPress.mock.calls[0]).toEqual(['raise an amount']);
+  });
+  it('keeps each amount button its own box', () => {
+    const onPress = vi.fn();
+    const lower = { ...raise, move: 'lower an amount', label: 'Lower' };
+    render(<ActionButtons actions={[raise, lower]} onPress={onPress} onPick={vi.fn()} onRefused={vi.fn()} />);
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Raise amount' }), { target: { value: '7' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Lower' }));
+    expect(onPress).toHaveBeenLastCalledWith('lower an amount', null);
   });
 });

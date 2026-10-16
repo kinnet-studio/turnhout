@@ -136,10 +136,11 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError }: {
     </Wrapper>
   );
   if (extras?.board) {
-    const press = (move: string) => {
+    // A blank box sends no amount at all; the rules answer that with what is missing, and it flashes like any other refusal.
+    const press = (move: string, amount?: number | null) => {
       onError(null);
       setPicking(null);
-      send({ type: move });
+      send(typeof amount === 'number' ? { type: move, amount } : { type: move });
     };
     const startPicking = ({ move }: ActionView) => {
       onError(null);

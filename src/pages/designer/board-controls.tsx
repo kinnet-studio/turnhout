@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { ActionView, BoardView } from '@/engine/core/lang/board-view';
 import { counted } from '@/engine/core/lang/refs';
 import { factWords } from './board-grid';
@@ -30,15 +31,75 @@ function entryFor(board: BoardView, seat: string): string {
   return [base, ...debt, ...factWords(board.playerFacts[seat] ?? {}), ...(board.playerCards[seat] ?? [])].join(' · ');
 }
 
-/** Everyone's numbers on one line, each in its seat's color, and under it what the bank has left: "bank: 31 houses, 12 hotels". */
+/**
+ * What the bank has left and then the game's own numbers that are not 0, joined with " · " ("bank: 31 tokens · pot 120"); a
+ * game with no bank starts at the numbers, and one with neither has nothing to say.
+ */
+function bankLine(board: BoardView): string {
+  const bank = board.bank.length > 0 ? [`bank: ${board.bank.map(({ name, count }) => counted(count, name)).join(', ')}`] : [];
+  return [...bank, ...board.gameNumbers.map(({ name, value }) => `${name} ${value.toLocaleString('en-US')}`)].join(' · ');
+}
+
+/** Everyone's numbers on one line, each in its seat's color, and under it what the bank has left and the game's numbers. */
 export function MoneyLine({ board }: { board: BoardView }) {
+  const bank = bankLine(board);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, font: 'bold 14px sans-serif' }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px' }}>
         {seatsOf(board).map((seat) => <span key={seat} style={{ color: seatColor(seat) }}>{entryFor(board, seat)}</span>)}
       </div>
-      {board.bank.length > 0 && <div style={{ color: '#d1d5db' }}>bank: {board.bank.map(({ name, count }) => counted(count, name)).join(', ')}</div>}
+      {bank !== '' && <div style={{ color: '#d1d5db' }}>{bank}</div>}
     </div>
+  );
+}
+
+const BUTTON_STYLE = { padding: '6px 12px', font: '14px sans-serif' } as const;
+
+/**
+ * One button. One that carries an amount has a number box right before it, greyed with it, which keeps what was typed so the next
+ * press starts from the last amount; a blank box sends no amount, and the rules say what is missing.
+ */
+function ActionButton({ action, onPress, onPick, onRefused }: {
+  action: ActionView;
+  onPress(move: string, amount?: number | null): void;
+  onPick(action: ActionView): void;
+  onRefused(reason: string): void;
+}) {
+  const { move, label, allowed, target, amount } = action;
+  const [typed, setTyped] = useState('');
+  const live = allowed === true;
+  const press = () => {
+    if (target !== null) onPick(action);
+    else if (amount) onPress(move, typed.trim() === '' ? null : Number(typed));
+    else onPress(move);
+  };
+  const button = (
+    <button
+      type="button"
+      aria-disabled={!live}
+      title={live ? undefined : allowed}
+      onClick={() => (live ? press() : onRefused(allowed))}
+      style={{ ...BUTTON_STYLE, opacity: live ? 1 : 0.5, cursor: live ? 'pointer' : 'not-allowed' }}
+    >
+      {label}
+    </button>
+  );
+  if (!amount) return button;
+  // The box and its button stay together when the row wraps.
+  return (
+    <span style={{ display: 'inline-flex', gap: 4 }}>
+      <input
+        type="number"
+        min="0"
+        step="1"
+        aria-label={`${label} amount`}
+        value={typed}
+        disabled={!live}
+        onChange={(e) => setTyped(e.target.value)}
+        style={{ ...BUTTON_STYLE, width: 84, boxSizing: 'border-box' }}
+      />
+      {button}
+    </span>
   );
 }
 
@@ -49,28 +110,13 @@ export function MoneyLine({ board }: { board: BoardView }) {
  */
 export function ActionButtons({ actions, onPress, onPick, onRefused }: {
   actions: ActionView[];
-  onPress(move: string): void;
+  onPress(move: string, amount?: number | null): void;
   onPick(action: ActionView): void;
   onRefused(reason: string): void;
 }) {
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-      {actions.map((action, i) => {
-        const { move, label, allowed, target } = action;
-        const press = () => (target !== null ? onPick(action) : onPress(move));
-        return (
-          <button
-            key={`${i}-${move}`}
-            type="button"
-            aria-disabled={allowed !== true}
-            title={allowed === true ? undefined : allowed}
-            onClick={() => (allowed === true ? press() : onRefused(allowed))}
-            style={{ padding: '6px 12px', font: '14px sans-serif', opacity: allowed === true ? 1 : 0.5, cursor: allowed === true ? 'pointer' : 'not-allowed' }}
-          >
-            {label}
-          </button>
-        );
-      })}
+      {actions.map((action, i) => <ActionButton key={`${i}-${action.move}`} action={action} onPress={onPress} onPick={onPick} onRefused={onRefused} />)}
     </div>
   );
 }

@@ -458,3 +458,52 @@ describe('Playtest: raising money', () => {
     expect(named('End your turn')[0].getAttribute('aria-disabled')).toBe('false');
   });
 });
+
+describe('Playtest: an auction', () => {
+  const start = { ...withBoardData(initialState(rentDay, SEED), rentDay, ['p0', 'p1', 'p2']), turn: { current: 'p0', phase: 'playing' } };
+  // p0 on Cedar Avenue rolls 3 and 4 onto Rose Lane, which nobody owns.
+  const landing = queueRoll(placePiece(start, 'p0', 9), [3, 4]);
+  const named = (name: string) => screen.getAllByRole('button', { name });
+  const boxes = () => screen.getAllByRole('spinbutton', { name: 'Bid amount' });
+  const HINT = 'Bid more than the high bid, or drop out.';
+  const auction = () => {
+    mountRentDay({ initial: landing });
+    fireEvent.click(rollButtons()[0]);
+    fireEvent.click(named('Auction the space you are on')[0]);
+  };
+
+  it('gives every seat the box, names the auction and whose turn it is, and shows the high bid on every bank line', () => {
+    auction();
+    expect(screen.getByText(`seat: p1 — auction — Your turn — ${HINT}`)).toBeTruthy();
+    expect(screen.getByText(`seat: p0 — auction — ${HINT} — waiting for p1`)).toBeTruthy();
+    expect(boxes()).toHaveLength(3);
+    expect(named('Bid')[1].getAttribute('aria-disabled')).toBe('false');
+    expect(named('Bid')[0].getAttribute('title')).toBe("It's p1's turn.");
+    fireEvent.change(boxes()[1], { target: { value: '120' } });
+    fireEvent.click(named('Bid')[1]);
+    expect(screen.getAllByText('bank: 32 houses, 12 hotels · high bid 120')).toHaveLength(3);
+    expect(screen.getByText(`seat: p2 — auction — Your turn — ${HINT}`)).toBeTruthy();
+  });
+  it('Review Focus: sends no amount from an empty box, and flashes why an amount is refused', () => {
+    auction();
+    const sent = vi.spyOn(GameServer.prototype, 'submit');
+    fireEvent.click(named('Bid')[1]);
+    expect(sent).toHaveBeenLastCalledWith('p1', { type: 'bid an amount' });
+    expect(screen.getByText('Say how much to bid.')).toBeTruthy();
+    fireEvent.change(boxes()[1], { target: { value: '0' } });
+    fireEvent.click(named('Bid')[1]);
+    expect(sent).toHaveBeenLastCalledWith('p1', { type: 'bid an amount', amount: 0 });
+    expect(screen.getByText('the amount is more than the high bid')).toBeTruthy();
+  });
+  it("goes back to the lander's turn once someone wins, and the high bid leaves the bank line", () => {
+    auction();
+    fireEvent.change(boxes()[1], { target: { value: '50' } });
+    fireEvent.click(named('Bid')[1]);
+    fireEvent.click(named('Drop out')[2]);
+    fireEvent.click(named('Drop out')[0]);
+    expect(screen.getAllByText('p1 1,450 money')).toHaveLength(3);
+    expect(screen.getAllByText('bank: 32 houses, 12 hotels')).toHaveLength(3);
+    expect(screen.getByText('seat: p0 — Your turn — Roll the dice, then buy, build, or end your turn. A double rolls again.')).toBeTruthy();
+    expect(named('End your turn')[0].getAttribute('aria-disabled')).toBe('false');
+  });
+});

@@ -6,7 +6,7 @@ import type { PlayerId } from '../scene';
 import type { Json } from '../table-def';
 import { bankItemOf } from './board';
 import {
-  bankOf, counterOf, gameNumber, isOut, lastDrawn, latestRoll, owedTo, ownerOf, pieceAt, playerFact, spaceFact, type Creditor, type LastDrawn,
+  bankOf, counterOf, gameNumber, interruptedTurn, isOut, lastDrawn, latestRoll, owedTo, ownerOf, pieceAt, playerFact, spaceFact, type Creditor, type LastDrawn,
 } from './board-state';
 import { cardName } from './card-facts';
 import { amountPrompt, amountReady, targetCandidates } from './declared-actions';
@@ -41,12 +41,14 @@ type FactsView = { [fact: string]: number | boolean };
  * counter to pay with. Whom a player owes is public, so every seat sees the same.
  * `gameNumbers` lists the numbers that belong to the game itself and are not 0, in the order the game declares them; they are
  * public too, so every seat sees the same.
+ * `interrupted` is true while another phase holds a turn that will be gone back to, which the page says in a seat's status so a
+ * phase that is not the first is not mistaken for the game's ordinary turns.
  */
 export type BoardView = {
   spaces: SpaceView[]; pieces: { [seat: string]: number }; roll: number[] | null; counters: CounterView[]; out: PlayerId[]; bank: BankView[];
   playerFacts: { [seat: string]: FactsView }; lastDrawn: LastDrawn | null; playerCards: { [seat: string]: string[] };
   owes: { [seat: string]: Creditor };
-  gameNumbers: { name: string; value: number }[];
+  gameNumbers: { name: string; value: number }[]; interrupted: boolean;
 };
 /**
  * For a button that picks a space: what to ask the player, and every space its target phrase allows, by the space's place on
@@ -146,7 +148,7 @@ function boardView(runtime: LangRuntime, state: GameState, seat: PlayerId): Boar
   return {
     spaces, pieces, roll: latestRoll(state), counters, out: runtime.seats.filter((s) => isOut(state, s)), bank, playerFacts,
     lastDrawn: lastDrawn(state), playerCards: cardsInView(runtime, state), owes: debtsIn(runtime, state),
-    gameNumbers: gameNumbersIn(runtime, state),
+    gameNumbers: gameNumbersIn(runtime, state), interrupted: interruptedTurn(state) !== null,
   };
 }
 
@@ -248,7 +250,7 @@ const isBoard = (v: unknown): boolean =>
   isRecord(v) && isList(v.spaces, isSpace) && isMap(v.pieces, isNumber) && (v.roll === null || isList(v.roll, isNumber))
   && isList(v.counters, isCounter) && isList(v.out, isText) && isList(v.bank, isBankLine) && isMap(v.playerFacts, (facts) => isMap(facts, isFact))
   && (v.lastDrawn === null || isDrawn(v.lastDrawn)) && isMap(v.playerCards, (names) => isList(names, isText))
-  && isMap(v.owes, isText) && isList(v.gameNumbers, isGameNumber);
+  && isMap(v.owes, isText) && isList(v.gameNumbers, isGameNumber) && typeof v.interrupted === 'boolean';
 const isVerdict = (v: unknown): boolean => v === true || isText(v);
 const isTarget = (v: unknown): boolean => isRecord(v) && isText(v.prompt) && isMap(v.spaces, isVerdict);
 const isAction = (v: unknown): boolean =>
