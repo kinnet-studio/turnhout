@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, useMemo } from 'react';
 import type { BoardView } from '@/engine/core/lang/board-view';
 import type { CompiledGame } from '@/engine/core/lang/types';
 import { zoneIdFor } from '@/engine/core/lang/zones';
@@ -37,10 +37,12 @@ export function Tableaux({ game, seats, board, cards }: {
   cards: CardState[];
 }) {
   const bank = board ? bankLine(board) : '';
+  // The list is drawn again with the seat's panel, on every hover, but a seat's Board changes only with the cards.
+  const texts = useMemo(() => new Map(seats.map((seat) => [seat, boardText(game, cards, seat)])), [game, seats, cards]);
   return (
     <div data-testid="tableaux" style={{ display: 'flex', flexDirection: 'column', gap: 4, font: 'bold 14px sans-serif' }}>
       {seats.map((seat) => {
-        const text = boardText(game, cards, seat);
+        const text = texts.get(seat)!;
         return (
           <Fragment key={seat}>
             <div style={{ color: seatColor(seat) }}>{tableauLine(game, board, cards, seat)}</div>

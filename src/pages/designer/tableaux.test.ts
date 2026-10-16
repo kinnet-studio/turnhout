@@ -8,6 +8,11 @@ import { createEngine, initialState } from '@/engine/core/lang/build';
 import { compileGame } from '@/engine/core/lang/compile';
 import { createDefaultLibrary } from '@/engine/core/lang/library';
 import { tableauLine } from './tableaux';
+import { render } from '@testing-library/react';
+import { createElement } from 'react';
+import { vi } from 'vitest';
+import * as boardTexts from './board-text';
+import { Tableaux } from './tableaux';
 
 const lib = createDefaultLibrary();
 const startup = compileGame(STARTUP_SIMULATOR, lib).game!;
@@ -44,5 +49,23 @@ describe('tableauLine', () => {
   it('starts with the bare seat in a game with no board', () => {
     const state = createEngine(colorMatch, lib, 3, initialState(colorMatch, SEED)).engine.getState();
     expect(tableauLine(colorMatch, null, state.cards, 'p0')).toBe('p0 · hand 7');
+  });
+});
+
+describe('Tableaux', () => {
+  // A hover draws the seat's panel again, and this list with it; a seat's Board changes only with the cards.
+  it("reads each seat's Board once for the cards it is given, however often the list is drawn", () => {
+    const text = vi.spyOn(boardTexts, 'boardText');
+    try {
+      const { board } = seatExtras(engine, runtime, start, 'p0');
+      const props = { game: startup, seats: SEATS, board, cards: start.cards };
+      const { rerender } = render(createElement(Tableaux, props));
+      rerender(createElement(Tableaux, { ...props, board: board && { ...board } }));
+      expect(text).toHaveBeenCalledTimes(SEATS.length);
+      rerender(createElement(Tableaux, { ...props, cards: [...start.cards] }));
+      expect(text).toHaveBeenCalledTimes(2 * SEATS.length);
+    } finally {
+      text.mockRestore();
+    }
   });
 });
