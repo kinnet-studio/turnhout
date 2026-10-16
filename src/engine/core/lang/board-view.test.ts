@@ -8,9 +8,11 @@ import { createEngine, initialState, seatsFor } from './build';
 import { compileGame } from './compile';
 import { RuleError } from './diagnostics';
 import { createDefaultLibrary } from './library';
-import { AMOUNT_BOARD, ANY_PLAYER_BOARD, COUNTER_GAME, deckGameText, HOLDING_BOARD, INTERRUPT_BOARD, PICK_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD } from './testing';
+import { AMOUNT_BOARD, ANY_PLAYER_BOARD, COUNTER_GAME, deckGameText, HOLDING_BOARD, INTERRUPT_BOARD, PICK_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD, TURN_GAME } from './testing';
+import { START_PLAYER_KEY } from './turns';
 import type { CompiledGame } from './types';
 import { relocate, zoneIdFor } from './zones';
+import RENT_DAY from '@/games/rent-day.rules?raw';
 
 const lib = createDefaultLibrary();
 const game = compileGame(TINY_BOARD, lib).game!;
@@ -771,6 +773,31 @@ describe('seat views while a turn is interrupted', () => {
   });
 });
 
+describe('seat views of who started the game', () => {
+  it('names the start player to every seat', () => {
+    const chores = compileGame(TURN_GAME, lib).game!;
+    const { engine, runtime } = createEngine(chores, lib, 3, initialState(chores, 1));
+    const state = engine.getState();
+    expect(typeof state.data[START_PLAYER_KEY]).toBe('string');
+    for (const seat of ['p0', 'p1', 'p2']) expect(seatExtras(engine, runtime, state, seat).board!.startPlayer, seat).toBe(state.data[START_PLAYER_KEY]);
+  });
+  it('names no one in a game that never chose one', () => {
+    const rentDay = compileGame(RENT_DAY, lib).game!;
+    const { engine, runtime } = createEngine(rentDay, lib, 2, initialState(rentDay, 1));
+    expect(seatExtras(engine, runtime, engine.getState(), 'p0').board!.startPlayer).toBeNull();
+  });
+  it('is plain data, and readSeatExtras refuses a start player that is neither a seat nor null', () => {
+    const counting = compileGame(COUNTER_GAME, lib).game!;
+    const { engine, runtime } = createEngine(counting, lib, 2, initialState(counting, 1));
+    const extras = JSON.parse(JSON.stringify(seatExtras(engine, runtime, engine.getState(), 'p0')));
+    const { startPlayer: _gone, ...without } = extras.board;
+    expect(readSeatExtras(extras)).not.toBeNull();
+    expect(readSeatExtras({ ...extras, board: { ...extras.board, startPlayer: 'p1' } })).not.toBeNull();
+    expect(readSeatExtras({ ...extras, board: { ...extras.board, startPlayer: 3 } })).toBeNull();
+    expect(readSeatExtras({ ...extras, board: without })).toBeNull();
+  });
+});
+
 describe('readSeatExtras', () => {
   it('reads extras back, and nothing else', () => {
     expect(readSeatExtras(undefined)).toBeNull();
@@ -785,7 +812,7 @@ describe('readSeatExtras', () => {
 
   const space = { name: 'Go', color: null, details: {}, facts: {}, stripes: [], owner: null };
   const board = (over: { [k: string]: Json } = {}) => ({
-    spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {}, lastDrawn: null, playerCards: {}, playerCardFlags: {}, owes: {}, gameNumbers: [], interrupted: false, ...over,
+    spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {}, lastDrawn: null, playerCards: {}, playerCardFlags: {}, owes: {}, gameNumbers: [], interrupted: false, startPlayer: null, ...over,
   });
   const action = (over: { [k: string]: Json } = {}) => ({ move: 'roll the dice', label: 'Roll', allowed: true, target: null, amount: false, players: null, ...over });
   const picking = (over: { [k: string]: Json } = {}) => action({ target: { prompt: 'Pick a street you own', spaces: { 3: true }, ...over } });
@@ -828,19 +855,19 @@ describe('readSeatExtras', () => {
     ['a target space that is neither true nor a reason', { board: null, actions: [picking({ spaces: { 3: false } })] }],
     ['a target space that is a number', { board: null, actions: [picking({ spaces: { 3: 1 } })] }],
     ['a board that is not an object', { board: 3, actions: [] }],
-    ['a board with no spaces', { board: { pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {}, lastDrawn: null, playerCards: {}, playerCardFlags: {}, owes: {}, gameNumbers: [], interrupted: false }, actions: [] }],
+    ['a board with no spaces', { board: { pieces: {}, roll: null, counters: [], out: [], bank: [], playerFacts: {}, lastDrawn: null, playerCards: {}, playerCardFlags: {}, owes: {}, gameNumbers: [], interrupted: false, startPlayer: null }, actions: [] }],
     ['a space with no name', { board: board({ spaces: [{ color: null, details: {}, facts: {}, stripes: [], owner: null }] }), actions: [] }],
     ['a space with no facts', { board: board({ spaces: [{ name: 'Go', color: null, details: {}, stripes: [], owner: null }] }), actions: [] }],
     ['a fact that is text', { board: board({ spaces: [{ ...space, facts: { houses: 'two' } }] }), actions: [] }],
     ['a fact that is null', { board: board({ spaces: [{ ...space, facts: { houses: null } }] }), actions: [] }],
-    ['a board with no bank', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [], playerFacts: {}, lastDrawn: null, playerCards: {}, playerCardFlags: {}, owes: {}, gameNumbers: [], interrupted: false }, actions: [] }],
+    ['a board with no bank', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [], playerFacts: {}, lastDrawn: null, playerCards: {}, playerCardFlags: {}, owes: {}, gameNumbers: [], interrupted: false, startPlayer: null }, actions: [] }],
     ['a bank that is not a list', { board: board({ bank: {} }), actions: [] }],
     ['a bank entry with no count', { board: board({ bank: [{ name: 'houses' }] }), actions: [] }],
     ['a bank entry with no name', { board: board({ bank: [{ count: 3 }] }), actions: [] }],
     ['a piece that is not a number', { board: board({ pieces: { p0: 'x' } }), actions: [] }],
     ['a roll of text', { board: board({ roll: 'six' }), actions: [] }],
     ['a counter value that is text', { board: board({ counters: [{ name: 'm', values: { p0: 'x' } }] }), actions: [] }],
-    ['a board with no player facts', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [], lastDrawn: null, playerCards: {}, playerCardFlags: {}, owes: {}, gameNumbers: [], interrupted: false }, actions: [] }],
+    ['a board with no player facts', { board: { spaces: [], pieces: {}, roll: null, counters: [], out: [], bank: [], lastDrawn: null, playerCards: {}, playerCardFlags: {}, owes: {}, gameNumbers: [], interrupted: false, startPlayer: null }, actions: [] }],
     ['player facts that are not a map', { board: board({ playerFacts: [] }), actions: [] }],
     ['a seat whose facts are not a map', { board: board({ playerFacts: { p0: true } }), actions: [] }],
     ['a player fact that is text', { board: board({ playerFacts: { p0: { 'in jail': 'yes' } } }), actions: [] }],

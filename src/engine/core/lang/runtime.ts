@@ -7,6 +7,7 @@ import { holderOf } from './board-state';
 import { isMissing } from './compile-util';
 import { MissingPhraseError, RuleError } from './diagnostics';
 import type { PhraseLibrary } from './phrases';
+import { phaseTakesTurns } from './turns';
 import type {
   ActionFn, ColumnFn, CompiledGame, CompiledMoment, CompiledTrigger, CondGroup, ConditionFn, EffectFn, ExampleEnv, ExpectFn, MomentFn, Moment, MoveInfo,
   PhraseEnv, PhraseKind, PhraseRef, ScoreFn, Subject, TargetFn, TurnFn, WhichFn, WhoFn, WinnerFn,
@@ -142,9 +143,27 @@ export class LangRuntime {
   }
 
   /**
+   * Who the lines of phase `phaseId` that are about no one else are about: the player whose turn it is where players take turns,
+   * else no one.
+   */
+  turnSubject(phaseId: string, state: GameState): Subject {
+    return { player: phaseTakesTurns(this.game, phaseId) ? (state.turn?.current ?? null) : null, space: null, card: null };
+  }
+
+  /** Tests a line of phase `phaseId`, such as its `go to` condition, about whoever the phase's lines are about now. */
+  testInPhase(phaseId: string, ref: PhraseRef, state: GameState): boolean {
+    return this.test(ref, state, undefined, undefined, this.turnSubject(phaseId, state));
+  }
+
+  /** Runs a line of phase `phaseId`, such as one of its start lines, about whoever the phase's lines are about now. */
+  runInPhase(phaseId: string, ref: PhraseRef, state: GameState): GameState {
+    return this.run(ref, state, undefined, undefined, this.turnSubject(phaseId, state));
+  }
+
+  /**
    * Who a `When …:` rule of `phaseId` is about if it fires now, or null when it does not. A rule about a player is
    * about the first one it picks out whose `Only if` lines hold, and a rule about a card the first such card; any other
-   * rule is about no one in particular.
+   * rule is about the player whose turn it is where players take turns, and about no one in particular elsewhere.
    */
   triggerSubject(phaseId: string, trigger: CompiledTrigger, state: GameState): Subject | null {
     if (state.turn?.phase !== phaseId) return null;
@@ -157,8 +176,8 @@ export class LangRuntime {
       const card = this.which(trigger.when, state).find((id) => holdsFor({ player: null, space: null, card: id }));
       return card === undefined ? null : { player: null, space: null, card };
     }
-    const nobody: Subject = { player: null, space: null, card: null };
-    return this.test(trigger.when, state, undefined, undefined, nobody) && holdsFor(nobody) ? nobody : null;
+    const about = this.turnSubject(phaseId, state);
+    return this.test(trigger.when, state, undefined, undefined, about) && holdsFor(about) ? about : null;
   }
 
   /** Runs a `When …:` rule's lines about whoever or whichever card it is about now. The flow only fires a rule that holds. */

@@ -13,6 +13,7 @@ import { amountPrompt, amountReady, playerCandidates, targetCandidates } from '.
 import { friendlyError, friendlyReason } from './friendly';
 import { secondPersonWords } from './refs';
 import type { LangRuntime } from './runtime';
+import { START_PLAYER_KEY } from './turns';
 import type { DeclaredAction } from './types';
 import { zoneIdFor } from './zones';
 
@@ -44,12 +45,13 @@ type FactsView = { [fact: string]: number | boolean };
  * public too, so every seat sees the same.
  * `interrupted` is true while another phase holds a turn that will be gone back to, which the page says in a seat's status so a
  * phase that is not the first is not mistaken for the game's ordinary turns.
+ * `startPlayer` is the seat that took the game's first turn, null in a game that never chose one; every seat sees the same.
  */
 export type BoardView = {
   spaces: SpaceView[]; pieces: { [seat: string]: number }; roll: number[] | null; counters: CounterView[]; out: PlayerId[]; bank: BankView[];
   playerFacts: { [seat: string]: FactsView }; lastDrawn: LastDrawn | null; playerCards: { [seat: string]: string[] };
   playerCardFlags: { [seat: string]: string[][] }; owes: { [seat: string]: Creditor };
-  gameNumbers: { name: string; value: number }[]; interrupted: boolean;
+  gameNumbers: { name: string; value: number }[]; interrupted: boolean; startPlayer: PlayerId | null;
 };
 /**
  * For a button that picks a space: what to ask the player, and every space its target phrase allows, by the space's place on
@@ -131,6 +133,12 @@ function gameNumbersIn(runtime: LangRuntime, state: GameState): { name: string; 
     .filter(({ value }) => value !== 0);
 }
 
+/** The seat kept as the one that took the first turn, or null when the game never chose one. */
+function startPlayerIn(state: GameState): PlayerId | null {
+  const kept = state.data[START_PLAYER_KEY];
+  return typeof kept === 'string' ? kept : null;
+}
+
 function boardView(runtime: LangRuntime, state: GameState, seat: PlayerId): BoardView | null {
   const { board } = runtime.game;
   if (!board) return null;
@@ -159,7 +167,7 @@ function boardView(runtime: LangRuntime, state: GameState, seat: PlayerId): Boar
     lastDrawn: lastDrawn(state), owes: debtsIn(runtime, state),
     playerCards: Object.fromEntries(kept.map(([s, cards]) => [s, cards.map((card) => cardName(card, runtime.game))])),
     playerCardFlags: Object.fromEntries(kept.map(([s, cards]) => [s, cards.map((card) => flagsOnCard(runtime, card))])),
-    gameNumbers: gameNumbersIn(runtime, state), interrupted: interruptedTurn(state) !== null,
+    gameNumbers: gameNumbersIn(runtime, state), interrupted: interruptedTurn(state) !== null, startPlayer: startPlayerIn(state),
   };
 }
 
@@ -289,7 +297,8 @@ const isBoard = (v: unknown): boolean =>
   && isList(v.counters, isCounter) && isList(v.out, isText) && isList(v.bank, isBankLine) && isMap(v.playerFacts, (facts) => isMap(facts, isFact))
   && (v.lastDrawn === null || isDrawn(v.lastDrawn)) && isMap(v.playerCards, (names) => isList(names, isText))
   && isMap(v.playerCardFlags, (cards) => isList(cards, (flags) => isList(flags, isText)))
-  && isMap(v.owes, isText) && isList(v.gameNumbers, isGameNumber) && typeof v.interrupted === 'boolean';
+  && isMap(v.owes, isText) && isList(v.gameNumbers, isGameNumber) && typeof v.interrupted === 'boolean'
+  && (v.startPlayer === null || isText(v.startPlayer));
 const isVerdict = (v: unknown): boolean => v === true || isText(v);
 const isTarget = (v: unknown): boolean => isRecord(v) && isText(v.prompt) && isMap(v.spaces, isVerdict);
 const isAction = (v: unknown): boolean =>

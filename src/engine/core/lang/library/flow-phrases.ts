@@ -4,6 +4,7 @@ import type { PlayerId } from '../../scene';
 import { interruptTurn, isOut, nextIn, playerFact, resumeTurn } from '../board-state';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
+import { phaseTakesTurns } from '../turns';
 import type { CardMatch, ConditionFn, EffectFn, PhraseEnv, ScoreFn, Subject, TurnFn, WinnerFn, ZoneRef } from '../types';
 import { chooseNext, leftOf, matchesCard, relocate, resolveSeat, resolveZoneIds, topCard, zoneIdFor, zoneInfo } from '../zones';
 import { describeZone, soleZone, theyOf } from './support';
@@ -113,8 +114,8 @@ const holderGoesFirst: EffectFn = (env, args) => {
 // ---- interrupting a turn ---------------------------------------------------------------------
 
 /**
- * Interrupts the turn for another phase, which starts with `next`. The phase's start lines then run, as `go to` runs them, about no
- * one in particular.
+ * Interrupts the turn for another phase, which starts with `next`. The phase's start lines then run, as `go to` runs them: about
+ * `next` where players take turns, and about no one in particular where everyone acts at once.
  *
  * Meant for a button's lines. Started by a `When` rule after a press the After line names, it swallows that pass: the flow runs
  * `When` rules before it passes the turn, and by then the phase is the new one, whose After line does not name the press. The
@@ -126,8 +127,8 @@ function startPhase(env: PhraseEnv, phase: string, next: PlayerId): GameState {
   if (startLines.length === 0) return started;
   const { runLine } = env;
   if (!runLine) throw new Error('This phrase needs to run the start lines of a phase, but nothing is listening.');
-  const nobody: Subject = { player: null, space: null, card: null };
-  return startLines.reduce((state, ref) => runLine(state, ref, nobody), started);
+  const about: Subject = { player: phaseTakesTurns(env.game, phase) ? next : null, space: null, card: null };
+  return startLines.reduce((state, ref) => runLine(state, ref, about), started);
 }
 
 /** The phase starts with the next player still in on their left: a player who is out could not act in it. */

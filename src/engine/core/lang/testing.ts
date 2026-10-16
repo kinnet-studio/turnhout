@@ -311,6 +311,29 @@ export const COUNTER_GAME = [
   'End:', '  The game ends when the pile is empty.', '  The highest score wins.',
 ].join('\n');
 
+/**
+ * A card game whose turn is a run of steps, written the way a designer would. Each player has 2 moves each turn, and a start player
+ * is chosen at random. Working and taking a card each spend a move; once a player has none left the turn goes to tidying, whose
+ * start line gives them a coin, and once their list has fewer than 2 cards the turn passes to the left with no press.
+ */
+export const TURN_GAME = [
+  'Game: Chores', 'Players: 2 to 4', '  Each player has 0 coins that everyone can see.', '  Each player has 2 moves each turn.',
+  '  Players pay with coins.', '',
+  'Cards:', '  A deck called chores, starting in the pile:', '    | name  | copies |', '    | Sweep | 6      |', '    | Dust  | 6      |', '',
+  'Table:', '  The pile is a pile in the center that no one can see.', '  The done pile is a pile in the center that everyone can see.',
+  '  Each player has a list row that only they can see.', '',
+  'Setup:', '  The start player is chosen at random.', '',
+  'Phase: working', '  Players take turns.',
+  '  A player may work.', '    Only if they have at least 1 move.', '    Then:', '      They spend 1 move.', '      They get 1 coin.',
+  '  A player may take a card from the pile to their list.', '    Only if they have at least 1 move.', '    Then:', '      They spend 1 move.',
+  '  A player may stop.', '    Then:', '      Their moves go back to 0.',
+  '  When they have less than 1 move, go to tidying.', '',
+  'Phase: tidying', '  When this phase starts:', '    They get 1 coin.',
+  '  A player may finish a card from their list to the done pile.', '    Only if their list has more than 1 card.',
+  '  When their list has fewer than 2 cards:', '    The turn passes to the left.', '',
+  'End:', '  The game ends when the pile is empty.', '  The highest score wins.',
+].join('\n');
+
 /** The loop of the board fixtures: a start, two streets, a tax, a station, a utility and two chance spaces. */
 export const FIXTURE_SPACES: SpaceSpec[] = [
   { name: 'Go', attrs: { kind: 'go' } },

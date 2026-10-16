@@ -8,6 +8,8 @@ import type {
 } from './types';
 
 const HINT = /^hint:\s*(.*)$/i;
+const TAKE_TURNS = 'players take turns';
+const AT_ONCE = 'everyone acts at once';
 const REARRANGE = /^players may rearrange their (.+) at any time$/i;
 const STARTS = /^when this phase starts:?$/i;
 const GO_TO = /^when (.+), go to ([^:]+)$/i;
@@ -354,19 +356,26 @@ const ruleText = (clean: string) => clean.slice(0, -1).trimEnd();
 /** A line placeholder or phrase of this kind: a rule's first line asks who or which card it is about. */
 const isPhraseOf = (ref: PhraseRef, kind: PhraseKind) => ref.kind === kind || (ref.phrase === 'missing' && ref.args[0] === kind);
 
-/** What a rule's lines are about, from the kind of phrase its `When` line is: each player it picks out, each card, or no one. */
-function aboutOf(when: PhraseRef, ctx: LineCtx): LineCtx {
+/**
+ * What a rule's lines are about, from the kind of phrase its `When` line is: each player it picks out, each card, or else what
+ * `otherwise` says.
+ */
+function aboutOf(when: PhraseRef, ctx: LineCtx, otherwise: LineCtx = ctx): LineCtx {
   if (isPhraseOf(when, 'who')) return { ...ctx, player: true };
-  return isPhraseOf(when, 'which') ? { ...ctx, card: true } : ctx;
+  return isPhraseOf(when, 'which') ? { ...ctx, card: true } : otherwise;
 }
 
 /**
  * A `When <condition>:` rule, `When a player <who>:` (the rule is then about each player it picks out) or `When a card
- * <which>:` (about each card it picks out).
+ * <which>:` (about each card it picks out). With `aboutTurn`, a rule of the first kind is about the player whose turn it is, its
+ * `When` line too.
  */
-function compileTrigger(node: OutlineNode, clean: string, whenText: string, ctx: LineCtx): CompiledTrigger {
-  const when = matchLine('condition', whenText, node.line, ctx, ['who', 'which']);
-  return { line: node.line, text: ruleText(clean), when, ...readWhenBody(node, aboutOf(when, ctx)) };
+function compileTrigger(node: OutlineNode, clean: string, whenText: string, ctx: LineCtx, aboutTurn: boolean): CompiledTrigger {
+  const turnCtx: LineCtx = aboutTurn ? { ...ctx, player: true } : ctx;
+  // Only a line a condition reads is a rule about no one in particular, and only a line a phrase reads can need a player, so the
+  // `When` line of a rule about each player or each card is never read as about the turn's player too.
+  const when = matchLine('condition', whenText, node.line, canRead('condition', whenText, ctx) ? turnCtx : ctx, ['who', 'which']);
+  return { line: node.line, text: ruleText(clean), when, ...readWhenBody(node, aboutOf(when, ctx, turnCtx)) };
 }
 
 /** A `When a piece passes …:` or `When a player lands on …:` rule, about the player whose piece it is and the space. */
@@ -463,9 +472,20 @@ function readAfter(node: OutlineNode, cuts: AfterCut[], { names, shared, anyone 
 }
 
 /**
+ * Whether the player whose turn it is acts in the phase: they do unless the last line that says who acts says everyone does at
+ * once. It is known before any line is read, since “they” in the phase's own lines may come before the line that says so.
+ */
+function takesTurns(node: OutlineNode): boolean {
+  const said = node.children.map((child) => normalizeLine(child.text).toLowerCase());
+  return said.filter((words) => words === TAKE_TURNS || words === AT_ONCE).at(-1) !== AT_ONCE;
+}
+
+/**
  * One `Phase:` block: its hint and who acts, the moves and actions players may make with their conditions and effects,
  * what happens when it starts, the rules that fire while it lasts, where it goes next, and when the turn passes.
  * `uses` holds the verbs of the phases above; this phase's are added to it.
+ * Where players take turns, “they” in the start lines, the `go to` condition and a rule about no one in particular is the player
+ * whose turn it is.
  */
 export function compilePhase(node: OutlineNode, ctx: LineCtx, uses: VerbUses = { moves: new Set(), actions: new Set() }): CompiledPhase {
   const phase: CompiledPhase = {
@@ -482,6 +502,8 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx, uses: VerbUses = {
   /** What each button reads, lowercase: two that read alike could not be told apart on the page. */
   const labels = new Set<string>();
   const target = targetWords(ctx);
+  const turnTaking = takesTurns(node);
+  const turnCtx: LineCtx = turnTaking ? { ...ctx, player: true } : ctx;
   let hinted = false;
   let sawGoTo = false;
 
@@ -503,9 +525,9 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx, uses: VerbUses = {
       if (hinted) addProblem(ctx.diagnostics, child.line, 'A phase can have only one Hint.');
       hinted = true;
       phase.hint = hint[1].trim() || null;
-    } else if (words === 'players take turns') {
+    } else if (words === TAKE_TURNS) {
       phase.actor = 'current';
-    } else if (words === 'everyone acts at once') {
+    } else if (words === AT_ONCE) {
       phase.actor = 'any';
     } else if (rearrange) {
       const zone = parseParam('perzone', rearrange[1], ctx.vocab);
@@ -553,7 +575,7 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx, uses: VerbUses = {
     } else if (STARTS.test(clean)) {
       for (const line of child.children) {
         rejectChildren(line, ctx.diagnostics);
-        phase.onEnter.push(matchEffectLine(line.text, line.line, ctx));
+        phase.onEnter.push(matchEffectLine(line.text, line.line, turnCtx));
       }
       continue;
     } else if (goTo) {
@@ -561,7 +583,7 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx, uses: VerbUses = {
         addProblem(ctx.diagnostics, child.line, ONE_GO_TO, { text: clean });
       } else {
         const to = targetPhase(goTo[2], child.line, ctx);
-        const when = matchLine('condition', goTo[1], child.line, ctx);
+        const when = matchLine('condition', goTo[1], child.line, turnCtx);
         if (to !== null) phase.goTo = { when, to, line: child.line };
       }
       sawGoTo = true;
@@ -569,7 +591,7 @@ export function compilePhase(node: OutlineNode, ctx: LineCtx, uses: VerbUses = {
       phase.moments.push(compileMoment(child, clean, moment[1], ctx));
       continue;
     } else if (trigger) {
-      phase.triggers.push(compileTrigger(child, clean, trigger[1], ctx));
+      phase.triggers.push(compileTrigger(child, clean, trigger[1], ctx, turnTaking));
       continue;
     } else if (after && cuts.length > 0) {
       afters.push({ node: child, cuts });

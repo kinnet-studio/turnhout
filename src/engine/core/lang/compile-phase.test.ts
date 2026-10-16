@@ -5,7 +5,7 @@ import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { parseOutline } from './outline';
 import { vocabFrom } from './phrases';
-import { AMOUNT_BOARD, ANY_PLAYER_BOARD, MARK_BOARD, PICK_BOARD, TINY_BOARD_HEAD, fixtureBoardGame } from './testing';
+import { AMOUNT_BOARD, ANY_PLAYER_BOARD, MARK_BOARD, PICK_BOARD, TINY_BOARD_HEAD, TURN_GAME, fixtureBoardGame } from './testing';
 
 const lib = createDefaultLibrary();
 const BASE = [
@@ -41,6 +41,8 @@ const PHASE = [
 
 /** The phase's own lines, under `Phase: main` and `Players take turns.`; the first of them is line 17. */
 const rules = (...lines: string[]) => withPhase(['Phase: main', '  Players take turns.', ...lines].join('\n'));
+/** The same in a phase where everyone acts at once, whose rules about no one in particular have no player (R1.1). */
+const atOnceRules = (...lines: string[]) => withPhase(['Phase: main', '  Everyone acts at once.', ...lines].join('\n'));
 
 describe('compilePhase', () => {
   it('compiles a declared move with conditions and effects', () => {
@@ -164,17 +166,17 @@ describe('compilePhase', () => {
   });
 
   it('rejects “their” outside a move', () => {
-    expect(messages(rules('  When their hand is empty:', '    Shuffle the deck.'))).toEqual([
+    expect(messages(atOnceRules('  When their hand is empty:', '    Shuffle the deck.'))).toEqual([
       [17, '“their hand is empty” only makes sense in a rule about a player\'s move.'],
     ]);
-    expect(messages(rules('  When this phase starts:', '    Shuffle their hand.'))).toEqual([
+    expect(messages(atOnceRules('  When this phase starts:', '    Shuffle their hand.'))).toEqual([
       [18, '“Shuffle their hand” only makes sense in a rule about a player\'s move.'],
     ]);
-    expect(messages(rules('  When their hand is empty, go to main.'))).toEqual([
+    expect(messages(atOnceRules('  When their hand is empty, go to main.'))).toEqual([
       [17, '“their hand is empty” only makes sense in a rule about a player\'s move.'],
     ]);
-    expect(messages(rules('  A player may play a card from their hand to the deck.', '    Only if their hand is empty.', '    Then:', '      Shuffle their hand.'))).toEqual([]);
-    expect(messages(rules('  When the deck is empty:', '    Only if their hand is empty.', '    Shuffle the deck.'))).toEqual([
+    expect(messages(atOnceRules('  A player may play a card from their hand to the deck.', '    Only if their hand is empty.', '    Then:', '      Shuffle their hand.'))).toEqual([]);
+    expect(messages(atOnceRules('  When the deck is empty:', '    Only if their hand is empty.', '    Shuffle the deck.'))).toEqual([
       [18, '“their hand is empty” only makes sense in a rule about a player\'s move.'],
     ]);
   });
@@ -435,8 +437,11 @@ describe('compilePhase on its own', () => {
 
 describe('actions, moments and player rules on a board', () => {
   /** The board head, then `lines` as the phase's own lines; the first of them is line 18. */
-  const phase = (lines: string[]) => compileGame(`${TINY_BOARD_HEAD}\n${lines.map((l) => `  ${l}`).join('\n')}`, lib);
-  const errorsOf = (lines: string[]) => phase(lines).diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message]);
+  const phase = (lines: string[], head = TINY_BOARD_HEAD) => compileGame(`${head}\n${lines.map((l) => `  ${l}`).join('\n')}`, lib);
+  const errorsOf = (lines: string[], head = TINY_BOARD_HEAD) =>
+    phase(lines, head).diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message]);
+  /** The board head with a phase where everyone acts at once, whose rules about no one in particular have no player (R1.1). */
+  const AT_ONCE_HEAD = TINY_BOARD_HEAD.replace('  Players take turns.', '  Everyone acts at once.');
   const TURN_ACTIONS = ['A player may roll the dice.', 'A player may end their turn.'];
   const NOT_UNDERSTOOD = "I don't understand this line in a phase. Phase lines start with Hint:, A player may…, Any player may…, When…, After a player…, Players take turns or Everyone acts at once.";
   const NEEDS_PLAYER = (line: string) => `“${line}” only makes sense in a rule about a player, such as a move, an action or a “When a player …” rule.`;
@@ -682,15 +687,15 @@ describe('actions, moments and player rules on a board', () => {
     expect(withDice('  There are two six-sided dice.', lines)).toEqual([]);
   });
   it('reports a line that lacks several things once, naming the first: a player, then a space, then something to pay with', () => {
-    expect(errorsOf(['When one player is left:', '  They pay its price.'])).toEqual([[19, NEEDS_PLAYER('They pay its price')]]);
+    expect(errorsOf(['When one player is left:', '  They pay its price.'], AT_ONCE_HEAD)).toEqual([[19, NEEDS_PLAYER('They pay its price')]]);
     expect(errorsOf(['When a player has less than 0 money:', '  They pay its price.'])).toEqual([[19, NEEDS_SPACE('They pay its price')]]);
-    expect(phase(['When one player is left:', '  They pay its price.']).game).toBeUndefined();
+    expect(phase(['When one player is left:', '  They pay its price.'], AT_ONCE_HEAD).game).toBeUndefined();
   });
   it('gives conditions the player and the space of the rule they are in', () => {
     expect(errorsOf(['A player may buy the space they are on.', '  Only if no one owns it.'])).toEqual([]);
     expect(errorsOf(['When a player has less than 0 money:', '  Only if they have at least 10 money.'])).toEqual([]);
     expect(errorsOf(['When a player has less than 0 money:', '  Only if no one owns it.'])).toEqual([[19, NEEDS_SPACE('no one owns it')]]);
-    expect(errorsOf(['When one player is left:', '  Only if they have at least 10 money.'])).toEqual([[19, NEEDS_PLAYER('they have at least 10 money')]]);
+    expect(errorsOf(['When one player is left:', '  Only if they have at least 10 money.'], AT_ONCE_HEAD)).toEqual([[19, NEEDS_PLAYER('they have at least 10 money')]]);
     expect(errorsOf(['Only if they have at least 10 money.'])).toEqual([[18, NOT_UNDERSTOOD]]);
   });
   it('does not blame the lines of a player rule for a player rule it could not read', () => {
@@ -1150,14 +1155,17 @@ describe('a pick without “on” whose words read no target', () => {
 });
 
 describe('rules about a card, and the other player', () => {
-  /** A two-player game of creatures with the phase's own lines below `Players take turns.` (line 18), so the first of them is line 19. */
-  const creatures = (phase: string[], { players = '2', setup = [] as string[] } = {}) => [
+  /**
+   * A two-player game of creatures with the phase's own lines below `Players take turns.` (line 18), or `Everyone acts at once.` with
+   * `atOnce`, so the first of them is line 19.
+   */
+  const creatures = (phase: string[], { players = '2', setup = [] as string[], atOnce = false } = {}) => [
     'Game: Creatures', `Players: ${players}`, '', 'Cards:', '  A deck called creatures, starting in the deck:', '    | name   | health | copies |',
     '    | Knight | 3      | 2      |', '    | Viper  | 1      | 2      |', '  Cards can be poisoned.', '',
     'Table:', '  The deck is a pile in the center that no one can see.', '  The discard pile is a pile in the center that everyone can see.',
     '  Each player has a hand that only they can see.', '  Each player has a camp that everyone can see.', '',
     ...(setup.length > 0 ? ['Setup:', ...setup.map((l) => `  ${l}`), ''] : []),
-    'Phase: playing', '  Players take turns.', ...phase.map((l) => `  ${l}`),
+    'Phase: playing', atOnce ? '  Everyone acts at once.' : '  Players take turns.', ...phase.map((l) => `  ${l}`),
   ].join('\n');
   const built = (phase: string[], over: Parameters<typeof creatures>[1] = {}) => compileGame(creatures(phase, over), lib);
   const errorsOf = (phase: string[], over: Parameters<typeof creatures>[1] = {}) =>
@@ -1220,7 +1228,8 @@ describe('rules about a card, and the other player', () => {
     expect(errorsOf([PLAY, '  Then:', '    Every card in the other player\'s camp is poisoned.'], { players: '1' })).toEqual([[21, NEEDS_TWO]]);
   });
   it('says “their” and “the other player\'s” only in a rule about a player', () => {
-    expect(errorsOf(['When the deck is empty:', '  Every card in the other player\'s camp is poisoned.'])).toEqual([
+    // Where players take turns the rule is about the player whose turn it is (R1.1); where everyone acts at once it is about no one.
+    expect(errorsOf(['When the deck is empty:', '  Every card in the other player\'s camp is poisoned.'], { atOnce: true })).toEqual([
       [20, '“Every card in the other player\'s camp is poisoned” only makes sense in a rule about a player\'s move.'],
     ]);
   });
@@ -1370,5 +1379,28 @@ describe('buttons that pick another player', () => {
   it('keeps two buttons that read alike apart, as it does for any other', () => {
     const twice = PICK_BOARD.replace('  A player may end their turn.', '  A player may challenge another player.\n  A player may end their turn.');
     expect(compileGame(twice, lib).diagnostics.map((d) => d.message)).toContain('Two rules in this phase say “A player may challenge another player”.');
+  });
+});
+
+describe('“they” in a phase where players take turns', () => {
+  const { game, diagnostics } = compileGame(TURN_GAME, lib);
+  const phaseOf = (id: string) => game!.phases.find((p) => p.id === id)!;
+  /** The 1-based number of `line` in `text`. */
+  const at = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+  const NEEDS_PLAYER = (line: string) => `“${line}” only makes sense in a rule about a player, such as a move, an action or a “When a player …” rule.`;
+
+  it('reads the start lines, the “go to” condition and a rule about no one in particular as about the player whose turn it is', () => {
+    expect(diagnostics).toEqual([]);
+    expect(phaseOf('working').goTo!.when).toMatchObject({ kind: 'condition', phrase: 'they have less than {int} {counter}', args: [1, 'moves'] });
+    expect(phaseOf('tidying').onEnter).toEqual([expect.objectContaining({ kind: 'effect', args: [1, 'coins'] })]);
+    expect(phaseOf('tidying').triggers[0].when).toMatchObject({ kind: 'condition', phrase: '{zone} has fewer than {int} cards' });
+  });
+  it('reads them about no one in a phase where everyone acts at once', () => {
+    const atOnce = TURN_GAME.replace('Phase: tidying\n', 'Phase: tidying\n  Everyone acts at once.\n');
+    expect(atOnce).not.toBe(TURN_GAME);
+    expect(messages(atOnce)).toEqual([
+      [at(atOnce, '    They get 1 coin.'), NEEDS_PLAYER('They get 1 coin')],
+      [at(atOnce, '  When their list has fewer than 2 cards:'), '“their list has fewer than 2 cards” only makes sense in a rule about a player\'s move.'],
+    ]);
   });
 });

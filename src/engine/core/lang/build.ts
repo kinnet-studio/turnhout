@@ -41,6 +41,10 @@ export function initialState(game: CompiledGame, seed: number): GameState {
 
 const cond = (ref: PhraseRef): NamedRef => ({ name: 'lang:cond', params: ref });
 const effect = (ref: PhraseRef): NamedRef => ({ name: 'lang:effect', params: ref });
+/** A line of a phase and the phase it is written under, so that the runtime knows who it is about: see `LangRuntime.turnSubject`. */
+type PhaseLineParams = { phase: string; ref: PhraseRef };
+const phaseCond = (phase: string, ref: PhraseRef): NamedRef => ({ name: 'lang:phase-cond', params: { phase, ref } satisfies PhaseLineParams });
+const phaseEffect = (phase: string, ref: PhraseRef): NamedRef => ({ name: 'lang:phase-effect', params: { phase, ref } satisfies PhaseLineParams });
 /** A `When …:` rule and the phase it is written under, as the flow hands it back to the runtime. */
 type TriggerParams = { phase: string; trigger: CompiledTrigger };
 /** The End condition and the rules about a card that it waits for. */
@@ -62,8 +66,8 @@ export function flowDefFor(game: CompiledGame, seats: PlayerId[]): FlowDef {
       allow: rearranging ? [...moveTypes, 'reorder'] : moveTypes,
       actor: phase.actor,
       ...(anyActor.length > 0 ? { anyActor } : {}),
-      onEnter: phase.onEnter.map(effect),
-      ...(goTo ? { advance: { when: cond(goTo.when), to: goTo.to } } : {}),
+      onEnter: phase.onEnter.map((ref) => phaseEffect(phase.id, ref)),
+      ...(goTo ? { advance: { when: phaseCond(phase.id, goTo.when), to: goTo.to } } : {}),
       ...(after ? { endTurn: { when: 'lang:always', after: after.moves, next: { name: 'lang:turn', params: after.next } } } : {}),
     };
   });
@@ -95,10 +99,19 @@ function flowRegistryFor(runtime: LangRuntime): FlowRegistry {
   const ref = (params: Json | undefined) => params as PhraseRef;
   const rule = (params: Json | undefined) => params as TriggerParams;
   const ending = (params: Json | undefined) => params as EndParams;
+  const phaseLine = (params: Json | undefined) => params as PhaseLineParams;
   return new FlowRegistry()
     .registerPredicate('lang:always', () => true)
     .registerPredicate('lang:cond', (state, _ctx, params) => runtime.test(ref(params), state))
     .registerEffect('lang:effect', (state, _ctx, params) => runtime.run(ref(params), state))
+    .registerPredicate('lang:phase-cond', (state, _ctx, params) => {
+      const { phase, ref: line } = phaseLine(params);
+      return runtime.testInPhase(phase, line, state);
+    })
+    .registerEffect('lang:phase-effect', (state, _ctx, params) => {
+      const { phase, ref: line } = phaseLine(params);
+      return runtime.runInPhase(phase, line, state);
+    })
     .registerPredicate('lang:end-when', (state, _ctx, params) => {
       const { when, rules } = ending(params);
       return runtime.test(when, state) && rules.every(({ phase, trigger }) => runtime.triggerSubject(phase, trigger, state) === null);

@@ -22,7 +22,7 @@ const view = (turn: ClientView['turn'], result?: ClientView['result'], extras?: 
 });
 
 const boardExtras = (out: string[], interrupted = false) => ({
-  board: { spaces: [], pieces: {}, roll: null, counters: [], out, bank: [], playerFacts: {}, lastDrawn: null, playerCards: {}, playerCardFlags: {}, owes: {}, gameNumbers: [], interrupted },
+  board: { spaces: [], pieces: {}, roll: null, counters: [], out, bank: [], playerFacts: {}, lastDrawn: null, playerCards: {}, playerCardFlags: {}, owes: {}, gameNumbers: [], interrupted, startPlayer: null },
   actions: [],
 });
 

@@ -23,6 +23,7 @@ const board = (over: Partial<BoardView> = {}): BoardView => ({
   owes: {},
   gameNumbers: [],
   interrupted: false,
+  startPlayer: null,
   ...over,
 });
 

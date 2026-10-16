@@ -355,6 +355,16 @@ describe('a phase that interrupts the turn', () => {
   it('needs the player it starts with, and enters the phase it names', () => {
     expect(lib.get('effect', 'the {phase} phase starts with them')).toMatchObject({ needsPlayer: true, entersPhase: true });
   });
+  it('runs its start lines about the player it starts with', () => {
+    const { game: they, diagnostics } = compileGame(INTERRUPT_BOARD.replace('    Every player is voting.', '    They are voting.'), lib);
+    expect(diagnostics).toEqual([]);
+    const engine = voting(3, (s) => queueRoll(s, [1, 2]), they);
+    press(engine, 'roll the dice', 'p0');
+    press(engine, 'call a vote', 'p0');
+    const s = engine.getState();
+    expect(s.turn).toEqual({ current: 'p1', phase: 'vote' });
+    expect(['p0', 'p1', 'p2'].map((seat) => playerFact(s, seat, 'voting') === true)).toEqual([false, true, false]);
+  });
   it('cannot run start lines with nothing to run them', () => {
     const state = fixtureBoardState(vote, ['p0', 'p1']);
     const env = fixtureEnv(state, { game: vote, seats: ['p0', 'p1'], subject: { player: 'p0', space: null, card: null } });

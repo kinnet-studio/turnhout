@@ -10,7 +10,7 @@ import { MissingPhraseError, RuleError } from './diagnostics';
 import { friendlyError } from './friendly';
 import { createDefaultLibrary } from './library';
 import { LangRuntime } from './runtime';
-import { HOLDING_BOARD, PICK_BOARD, TEST_DUEL, TINY_BOARD } from './testing';
+import { HOLDING_BOARD, PICK_BOARD, TEST_DUEL, TINY_BOARD, TURN_GAME } from './testing';
 import type { CompiledGame, ExampleEnv, MoveInfo, PhraseRef } from './types';
 import { matchesCard, relocate, zoneIdFor } from './zones';
 import RENT_DAY from '@/games/rent-day.rules?raw';
@@ -340,11 +340,11 @@ describe('LangRuntime on a board', () => {
     expect(choosy.triggerSubject('playing', rule, recordAction(broke(start, 'p0'), 'p0', 'roll the dice'))).toBeNull();
   });
 
-  it('runs a rule about no one in particular with no player', () => {
+  it('runs a rule about no one in particular, in a phase where players take turns, about the player whose turn it is', () => {
     const duel = new LangRuntime(game, lib, ['p0', 'p1']);
     const [full] = game.phases[0].triggers;
     const twoInMiddle = arrange('p0', {}, [['5C', 'p1'], ['7C', 'p0']]);
-    expect(duel.triggerSubject('play', full, twoInMiddle)).toEqual({ player: null, space: null, card: null });
+    expect(duel.triggerSubject('play', full, twoInMiddle)).toEqual({ player: 'p0', space: null, card: null });
     expect(duel.triggerSubject('play', full, arrange('p0', {}, [['5C', 'p1']]))).toBeNull();
     expect(duel.triggerSubject('elsewhere', full, twoInMiddle)).toBeNull();
   });
@@ -640,5 +640,59 @@ describe('LangRuntime.columnValue', () => {
   });
   it('is what a phrase sees as its own way of reading a space’s details', () => {
     expect(runtime.env(start(rules)).columnValue?.(start(rules), 2, 'tax')).toBe((200 + 5) * 2 + 2);
+  });
+});
+
+describe('turn steps', () => {
+  const chores = compiled(TURN_GAME);
+  /** A game of TURN_GAME at `players` seats, set up from `seed`. */
+  const engineAt = (seed: number, players = 3) => createEngine(chores, lib, players, initialState(chores, seed)).engine;
+  const startOf = (engine: ReturnType<typeof engineAt>) => engine.getState().data['lang:start-player'] as string;
+  const SEATS = seatsFor(3);
+  /** The seat on the left of `seat` at a table of three. */
+  const next = (seat: string) => SEATS[(SEATS.indexOf(seat) + 1) % SEATS.length];
+
+  it('starts with the start player, chosen at random from the seed', () => {
+    const engine = engineAt(1);
+    const s = startOf(engine);
+    expect(SEATS).toContain(s);
+    expect(engine.getState().turn).toEqual({ current: s, phase: 'working' });
+    const starts = new Set(Array.from({ length: 12 }, (_, i) => startOf(engineAt(i + 1))));
+    expect(starts.size).toBeGreaterThanOrEqual(2);
+    expect(startOf(engineAt(7))).toBe(startOf(engineAt(7)));
+  });
+
+  it('runs the turn as steps with no press: on to tidying once the moves are spent, its start line, then the turn passes', () => {
+    const engine = engineAt(1);
+    const s = startOf(engine);
+    for (let i = 0; i < 2; i++) expect(engine.dispatch({ type: 'work', by: s }).reason).toBeUndefined();
+    const state = engine.getState();
+    expect(state.turn).toEqual({ current: next(s), phase: 'working' });
+    // 2 from working, and 1 from tidying's start line.
+    expect(counterOf(state, 'coins', s)).toBe(3);
+    expect([counterOf(state, 'coins', next(s)), counterOf(state, 'moves', next(s))]).toEqual([0, 2]);
+  });
+
+  it('is about the player whose turn it is in a phase where players take turns, and about no one elsewhere', () => {
+    const runtime = new LangRuntime(chores, lib, SEATS);
+    const state: GameState = { ...withBoardData(initialState(chores, 1), chores, SEATS), turn: { current: 'p1', phase: 'working' } };
+    expect(runtime.turnSubject('working', state)).toEqual({ player: 'p1', space: null, card: null });
+    expect(runtime.turnSubject('__setup', state)).toEqual({ player: null, space: null, card: null });
+    expect(runtime.turnSubject('working', { ...state, turn: undefined })).toEqual({ player: null, space: null, card: null });
+    const atOnce: CompiledGame = { ...chores, phases: chores.phases.map((p) => ({ ...p, actor: 'any' })) };
+    expect(new LangRuntime(atOnce, lib, SEATS).turnSubject('working', state)).toEqual({ player: null, space: null, card: null });
+    const working = chores.phases[0];
+    expect(runtime.testInPhase('working', working.goTo!.when, setCounter(state, 'moves', 'p1', 0))).toBe(true);
+    expect(runtime.testInPhase('working', working.goTo!.when, setCounter(state, 'moves', 'p0', 0))).toBe(false);
+    const tidying = chores.phases[1];
+    expect(counterOf(runtime.runInPhase('tidying', tidying.onEnter[0], state), 'coins', 'p1')).toBe(1);
+  });
+
+  it('hands the flow the phase a “go to” condition and a start line belong to; Setup runs as before', () => {
+    const flow = flowDefFor(chores, SEATS);
+    const [setup, working, tidying] = flow.phases;
+    expect(setup.onEnter).toEqual([{ name: 'lang:effect', params: chores.setup[0] }]);
+    expect(working.advance).toEqual({ when: { name: 'lang:phase-cond', params: { phase: 'working', ref: chores.phases[0].goTo!.when } }, to: 'tidying' });
+    expect(tidying.onEnter).toEqual([{ name: 'lang:phase-effect', params: { phase: 'tidying', ref: chores.phases[1].onEnter[0] } }]);
   });
 });
