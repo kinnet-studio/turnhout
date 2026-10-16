@@ -59,6 +59,29 @@
 
 ## Global Constraints
 
+- **Controller amendment (pre-flight, after plan 1b-2 was built).** The scan is in the plan's SDD workspace
+  (`preflight.md` §3, rulings P1–P21); each task's brief carries its rulings. In short:
+  - **P1 (Task 3).** A player choice's clause is judged with the candidate as the move's player
+    (`{ ...info, by: seat }`, subject player = seat); the effect runs with the press's own move and subject.
+  - **P2 (Task 6).** Before Task 6, probe plan 1b-3's `countParts` on a product with the cut counts; if it shows a second
+    `Blue …/…` part, the counts are named `cut blue cubes`/`cut red cubes` so the page shows `Blue 3/6 +2 cut`.
+  - **P3.** The rules hold 55 examples; Task 6 ends at 72 and Task 7 at 84 (`startup-simulator.test.ts`,
+    `designer-page.test.tsx`'s name and text, README).
+  - **P4, P5, P19 (Task 2).** Reshaping `CardGroup` changes five existing test lines (`refs.test.ts` 994, 996, 1000, 1003;
+    `compile-util.test.ts` 174) and `library/flow-phrases.ts`; the filter's `above` reads `numberIfAny` (an absent number
+    fails the filter; a present non-number throws).
+  - **P6, P7 (Task 1).** A Potter's `red left` reads 0 through the runtime (not a throw); the compile check uses `red cut`.
+  - **P8, P9, P12, P13, P14, P21 (Tasks 3–4).** An `If` line holding a choice gets the "can't sit inside If" message; a
+    choice named with a value outside its options is refused with its prompt (only absent/null is filled in); choices are
+    allowed on one-card picks and on buttons that pick nothing; the hidden-card message lands on the choice line and its
+    guard; the prompt strips `they ` and ` to that player`; an `Only if` after an option is refused.
+  - **P10 (Task 7).** The money check reads the worked salary, so `keepsTheRules` gets a runtime.
+  - **P11, P16, P20 (Tasks 6, 8).** The auto-player judges complete by the need, not the cost; a refused Launch doesn't
+    drop the turn's action; choices go on the move before the view check.
+  - **P15.** Task 7 deletes the README's "until Tier 2/3, growth cards are drafted but can't be greenlit"; re-read the
+    README after plan 1b-3's edits.
+  - **P17, P18.** `GUILD_GAME`'s Tower has 2 copies; `TIPPING`'s button goes before `A player may stop.`
+
 - **Hard constraints (verbatim):**
   - Protected files must not change: `src/engine/core/game-state.ts`, `src/engine/core/flow.ts`, `src/engine/core/game-engine.ts`, and anything under `src/pages/hearts-demo/**`.
   - The core is pure: no pixi/react/DOM imports in `src/engine/core/**`, no `Math.random` or `Date.now`.
