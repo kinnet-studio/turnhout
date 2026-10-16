@@ -129,12 +129,19 @@ describe('Playtest of a game too big for one table', () => {
   });
 
   it('gives five players five tabs and five tableau lines', () => {
-    mount({ players: 5 });
+    const first = mount({ players: 5 });
     expect(screen.getAllByRole('tab')).toHaveLength(5);
     expect(within(screen.getByTestId('tableaux')).getAllByText(/^p\d /)).toHaveLength(5);
-    // Seed 1 starts 5 players on a seat other than p0, so the page opens by moving to it.
-    expect(startOf(5)).not.toBe('p0');
     expect(tab(`${startOf(5)} — to act`).getAttribute('aria-selected')).toBe('true');
+    first.unmount();
+
+    // The page opens on the first tab and moves to the start seat once its view arrives; a start seat other than p0 shows the move.
+    const startAt = (seed: number) => createEngine(game, lib, 5, initialState(game, seed)).engine.getState().data['lang:start-player'] as string;
+    const seed = Array.from({ length: 30 }, (_, i) => i + 1).find((s) => startAt(s) !== 'p0');
+    expect(seed, 'a seed in 1..30 starts 5 players on a seat other than p0').toBeDefined();
+    mount({ players: 5, seed });
+    expect(tab(`${startAt(seed!)} — to act`).getAttribute('aria-selected')).toBe('true');
+    expect(tab('p0').getAttribute('aria-selected')).toBe('false');
   });
 
   it('keeps a panel per seat for a game that fits', () => {
