@@ -41,6 +41,9 @@ const NO_LOOP = 'Add a line like “The board is a loop of spaces, starting at G
 const NO_BOARD_FOR_PLAYER_FACTS = 'Facts about players need a Board: section for now.';
 const NO_BOARD_FOR_GAME_NUMBERS = 'Numbers that belong to the game need a Board: section for now.';
 const GAME_NUMBER_IS_A_COUNTER = (name: string) => `“${name}” is already a number each player has; give the game's number another name.`;
+/** What the lines of a button that carries a number call that number, so a number of the game may not be called it too. */
+const THE_AMOUNT = 'amount';
+const GAME_NUMBER_IS_THE_AMOUNT = `“${THE_AMOUNT}” already means the number a button's press carries; give the game's number another name.`;
 const HOLD_BACK = (line: number) => `Some lines below can't be checked until line ${line} is fixed.`;
 const HOLD_BACK_SAYS = (line: number) => `Some card lines can't be checked until line ${line} is fixed.`;
 // The example uses one of the game's own counters, so the compiler needs no word of its own for a thing players have.
@@ -215,7 +218,9 @@ function declareFacts(ref: PhraseRef, ctx: LineCtx, declared: Declared[]): void 
  * about players is neither a counter of the board nor “out”, for players already have something under those names, and
  * only a board shows them to the seats, so a game with no Board: section may not declare one. The same goes for a number of
  * the game: only a board shows it, and named like a counter it would be read in place of each player's own number of that
- * name. A declaration with any of these problems is reported on its own line and left out.
+ * name. Nor may it be called “amount”: the lines of a button that carries a number read that number by the name, and the two
+ * readings could only be told apart by a developer. A declaration with any of these problems is reported on its own line and
+ * left out.
  */
 function acceptFacts(declared: Declared[], board: BoardSpec | null, hasBoardSection: boolean, cards: CardSetSpec[], diagnostics: Diagnostic[]): FactSpec[] {
   const columns = new Set(
@@ -232,6 +237,7 @@ function acceptFacts(declared: Declared[], board: BoardSpec | null, hasBoardSect
     else if (fact.on === 'game' && !hasBoardSection) addProblem(diagnostics, line, NO_BOARD_FOR_GAME_NUMBERS);
     else if (fact.on === 'player' && counters.has(fact.name)) addProblem(diagnostics, line, `“${fact.name}” is already a number each player has.`);
     else if (fact.on === 'game' && counters.has(fact.name)) addProblem(diagnostics, line, GAME_NUMBER_IS_A_COUNTER(fact.name));
+    else if (fact.on === 'game' && fact.name === THE_AMOUNT) addProblem(diagnostics, line, GAME_NUMBER_IS_THE_AMOUNT);
     else if (fact.on === 'player' && fact.name === LEAVES_THE_GAME) addProblem(diagnostics, line, `“${fact.name}” is already how a player leaves the game.`);
     else if (columns.has(fact.name)) addProblem(diagnostics, line, `“${fact.name}” is already a column of the table; give the fact another name.`);
     else if (facts.some((other) => other.name === fact.name)) addProblem(diagnostics, line, `There are two facts called “${fact.name}”.`);

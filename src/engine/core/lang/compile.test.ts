@@ -740,6 +740,17 @@ describe('declaring facts and the bank', () => {
     // A number of the game that names no counter is fine beside one that does.
     expect(errors(withFacts('  The game has a money of 0.', '  The game has a pot of 0.'))).toEqual([[15, '“money” is already a number each player has; give the game\'s number another name.']]);
   });
+  it('refuses a number of the game called “amount”, which the lines of a button that carries a number already read as its own', () => {
+    const AMOUNT = '“amount” already means the number a button\'s press carries; give the game\'s number another name.';
+    expect(errors(withFacts('  The game has an amount of 0.'))).toEqual([[15, AMOUNT]]);
+    expect(errors(withFacts('  The game has an Amount of 0.'))).toEqual([[15, AMOUNT]]);
+    // Without it, a line that reads the amount a press carries would read the game's number too, and only a developer could tell them apart.
+    const raising = (...extra: string[]) => errors(withFacts(...extra).replace(
+      '  Players take turns.', '  Players take turns.\n  A player may raise an amount.\n    Only if they have at least the amount in money.',
+    ));
+    expect(raising('  The game has an amount of 0.')).toEqual([[15, AMOUNT]]);
+    expect(raising('  The game has an amount of 0.', '  The game has a pot of 0.')).toEqual([[15, AMOUNT]]);
+  });
 
   it('declares facts about players, with names of several words', () => {
     const { game, diagnostics } = compiled(withFacts('  Players can be in jail.', '  Players can have jail turns and a crown.'));
