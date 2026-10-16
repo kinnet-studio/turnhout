@@ -8,6 +8,7 @@ import { parseTextFaceKey } from '@/engine/core/lang/cards';
 import { compileGame } from '@/engine/core/lang/compile';
 import { fitsTable, fittedLayout } from '@/engine/core/lang/fit-layout';
 import { createDefaultLibrary } from '@/engine/core/lang/library';
+import { relocate } from '@/engine/core/lang/zones';
 import type { CardTableProps } from '@/engine/react';
 import { cardDetail } from './card-detail';
 import { Playtest } from './playtest';
@@ -186,5 +187,79 @@ describe('the whole card on hover', () => {
     mount({ game: compileGame(COLOR_MATCH, lib).game! });
     expect(table!.onHover).toBeUndefined();
     expect(screen.queryByTestId('card-detail')).toBeNull();
+  });
+});
+
+describe('a round played through the page', () => {
+  const S = startOf(3);
+  const N = after(S, 3);
+  const T = after(N, 3);
+  const tab = (name: string) => screen.getByRole('tab', { name });
+  const selected = (name: string) => expect(tab(name).getAttribute('aria-selected'), `${name} is selected`).toBe('true');
+  // A tableau line goes on to zones a step doesn't touch: compare the part that matters, so a failure shows both lines.
+  const begins = (seat: string, expected: string) => expect(lineOf(seat)?.slice(0, expected.length)).toBe(expected);
+
+  it('recruits from every source, drafts, researches, discards and passes the turn', () => {
+    mount();
+    for (let i = 0; i < 3; i++) press('Recruit a junior software dev');
+    expect(lineOf(S)).toBe(`${S} 1 capital, 0 actions · bench 6 · backlog 1 · research 0 · start player`);
+    expect(status()).toBe(`seat: ${S} — Your turn — ${hint('bench cleanup')}`);
+
+    const [spare] = cardsIn(`bench-${S}`);
+    drop(spare.id, `bench-${S}`, 'open-job-market');
+    selected(`${N} — to act`);
+    expect(cardsIn('open-job-market')).toHaveLength(1);
+    expect(lineOf(S)).toContain('bench 5');
+
+    drop(spare.id, 'open-job-market', `bench-${N}`);
+    begins(N, `${N} 6 capital, 2 actions · bench 4`);
+
+    const hire = cardsIn('agency-row').find((c) => Number(parseTextFaceKey(c.faceKey)!.cost) <= 6);
+    expect(hire, 'seed 1 deals an agency card that 6 capital buys').toBeDefined();
+    const cost = Number(parseTextFaceKey(hire!.faceKey)!.cost);
+    drop(hire!.id, 'agency-row', `bench-${N}`);
+    begins(N, `${N} ${6 - cost} capital, 1 action · bench 5`);
+
+    press('Research the seed deck');
+    const drawn = cardsIn(`research-${N}`);
+    expect(drawn).toHaveLength(3);
+    expect(drawn.every((c) => c.faceUp)).toBe(true);
+
+    fireEvent.click(tab(S));
+    expect(cardsIn(`research-${N}`)).toHaveLength(0);
+    expect(lineOf(N)).toContain('research 3');
+    fireEvent.click(tab(`${N} — to act`));
+
+    drop(drawn[0].id, `research-${N}`, `backlog-${N}`);
+    selected(`${T} — to act`);
+    expect(cardsIn('open-idea-pool')).toHaveLength(2);
+    expect(lineOf(N)).toContain('0 actions · bench 5 · backlog 2 · research 0');
+
+    const [idea] = cardsIn('seed-market');
+    drop(idea.id, 'seed-market', `backlog-${T}`);
+    begins(T, `${T} 7 capital, 2 actions · bench 3 · backlog 2`);
+    expect(cardsIn('seed-market')).toHaveLength(2);
+
+    press('End your actions');
+    selected(`${S} — to act`);
+    begins(S, `${S} 1 capital, 3 actions · bench 5`);
+  });
+
+  it('ends once the round is finished after the Market Crash, in a tie', () => {
+    const set = createEngine(game, lib, 3, initialState(game, SEED)).engine.getState();
+    // Found by name: the Crash's id is shuffled with the growth cards and says nothing about which card it is.
+    const crash = set.cards.find((c) => c.data?.name === 'Market Crash');
+    expect(crash, 'the growth deck holds the Market Crash').toBeDefined();
+    mount({ initial: relocate(set, [crash!.id], 'crash-pile', game) });
+    const pile = cardsIn('crash-pile');
+    expect(pile).toHaveLength(1);
+    expect(pile[0].faceUp).toBe(true);
+    expect(parseTextFaceKey(pile[0].faceKey)!.name).toBe('Market Crash');
+
+    for (let i = 0; i < 3; i++) press('End your actions');
+    // Each player keeps 7 capital, 1 point, and a Tier 1 card in the backlog, -2.
+    expect(status()).toBe(`seat: ${T} — Game over — p0, p1 and p2 win (p0 -1, p1 -1, p2 -1)`);
+    expect(screen.getAllByRole('tab').filter((t) => t.textContent!.endsWith('— to act'))).toEqual([]);
+    selected(T);
   });
 });
