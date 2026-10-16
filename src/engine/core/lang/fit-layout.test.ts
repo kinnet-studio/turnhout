@@ -91,19 +91,32 @@ describe('fittedLayout', () => {
     }
   });
 
-  it('names every zone, and gives a row a slot of five cards that squeezes the rest', () => {
+  it('names every zone, and gives a row a 400-wide slot that squeezes its cards to stay inside', () => {
     const defs = fittedLayout(MARKET, 'p0');
     const get = (id: string) => defs.find((d) => d.id === id)!;
     expect(get('lost-and-found').label).toBe('lost and found');
     expect(get('stash-p0').label).toBe('stash');
     for (const id of ['stash-p0', 'stall', 'pool']) {
-      expect(get(id).layoutOptions).toEqual({ spacing: 75, maxWidth: 400 });
+      expect(get(id).layoutOptions).toEqual({ spacing: 105, maxWidth: 400 });
       expect(get(id).bounds).toEqual({ width: 400, height: 140 });
     }
     for (const id of ['stock', 'red-pile', 'box']) {
       expect(get(id).layoutOptions).toBeUndefined();
       expect(get(id).bounds).toBeUndefined();
     }
+  });
+
+  // A face shows the card's name and first columns, so no card of a row may cover the next while the slot has room.
+  it('stands up to four cards of a row side by side, and squeezes five or more into its slot', () => {
+    const row = fittedLayout(MARKET, 'p0').find((d) => d.id === 'stall')!;
+    const steps = (n: number) => {
+      const xs = [...computeZoneLayout(row, cardsFor(row, n)).values()].map((pose) => pose.x);
+      return xs.slice(1).map((x, i) => x - xs[i]);
+    };
+    expect(steps(2)).toEqual([105]);
+    expect(steps(3)).toEqual([105, 105]);
+    expect(steps(4)).toEqual([100, 100, 100]);
+    expect(steps(5)).toEqual([75, 75, 75, 75]);
   });
 
   it('is one table for every viewer: the same shared zones, and each viewer\'s own in the same places', () => {

@@ -8,11 +8,14 @@ import { autoLayout, HAND_BOUNDS, zoneDef } from './auto-layout';
 import type { ZoneSpec } from './types';
 import { zoneIdFor } from './zones';
 
-/** A row's slot holds five cards at 75; more than that squeeze together inside it. */
+/**
+ * A row's slot. A face shows the card's name and first columns, so its cards stand apart while the slot has room: up to three
+ * a little apart, four side by side, and five or more squeezed together inside it.
+ */
 const ROW_SLOT = 400;
-const ROW_SPACING = 75;
-/** Between the slots of a line. */
-const GAP = 20;
+const ROW_SPACING = CARD_WIDTH + 5;
+/** Between the slots of a line: a zone's name may spread over it, half on each side, and still not meet its neighbour's. */
+export const GAP = 20;
 /** Between the world's edge and the nearest zone. */
 const MARGIN = 20;
 /** Above each line, for the names of its zones. */
