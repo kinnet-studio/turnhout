@@ -70,6 +70,24 @@ The inputs are:
 
 ## Global Constraints
 
+- **Controller amendment (pre-flight).** The scan is in the plan's SDD workspace (`preflight.md` §3, P1–P13 and F1–F2);
+  each task's brief carries its rulings. In short:
+  - **P1 (Task 2).** The badge's lines and back are sized with `boldTextWidth`; a `Text` is never measured (it throws under
+    happy-dom).
+  - **P2, P7 (Task 4).** The browser rules insert the six `Move` lines after the Market Crash line (every seed sets up);
+    screenshot 06 clicks `rowCard(dev, 0, 2, BOARD)`.
+  - **P3 (Task 1, hidden information).** A worked value is shown only when its lines read just the card and the cards on
+    it; a card with cards on it in a non-public zone is left out.
+  - **P4 (Task 1).** Plan 3-1's fix wave adds `Only if it is in a development.` to `Stalled:`; Task 1's example is a guard
+    (or skipped if the fix wave added one); N₁ is read from the committed test.
+  - **P5 (Task 2).** `board-text.ts`'s `lead`/`leadingWords` are renamed (slice 3's banned word).
+  - **P6, P9, P10 (Task 3).** A question closes once nothing is left to ask, its picker and rings derived in render; the
+    card comes from `view.scene.cards`; a dropped move closes an open question.
+  - **P8, P11 (Task 1).** Each card's worked entry is computed in `try`/`catch` (a throwing value leaves the card out);
+    a `WorkedCard` always has both keys, and `worked` is left out when empty.
+  - **P12.** Plan 3-2 runs before 4-1.
+  - **P13.** `license 3` stays on the bank line; "the press asks for 0 players" wording goes to plan 3-1's final review.
+
 - **Hard constraints (verbatim):**
   - Protected files must not change: `src/engine/core/game-state.ts`, `src/engine/core/flow.ts`, `src/engine/core/game-engine.ts`, and anything under `src/pages/hearts-demo/**`.
   - The core is pure: no pixi/react/DOM imports in `src/engine/core/**`, no `Math.random` or `Date.now`.
