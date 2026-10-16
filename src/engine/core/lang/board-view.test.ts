@@ -11,6 +11,7 @@ import { createDefaultLibrary } from './library';
 import {
   AMOUNT_BOARD, ANY_PLAYER_BOARD, CARD_PICK_GAME, COUNTER_GAME, deckGameText, HOLDING_BOARD, INTERRUPT_BOARD, PICK_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD,
   TURN_GAME,
+  GUILD_GAME,
 } from './testing';
 import { START_PLAYER_KEY } from './turns';
 import type { CompiledGame } from './types';
@@ -1106,5 +1107,164 @@ describe('buttons that pick a card', () => {
       const withOnto = (onto: Json) => ({ board: null, actions: [{ ...show, cards: { ...show.cards!, onto } }] });
       expect(readSeatExtras(withOnto({ prompt: 'x', targets: { [r2]: [{ id: o3, name: 'Opal', allowed: 3 }] } }))).toBeNull();
     });
+  });
+});
+
+describe('choices in the view', () => {
+  const OPEN = 'open a card in their stash';
+  const TRIM = 'trim a card in their workshop';
+  const TWO_PROVIDERS = 'Pick who to pay the fee to: p1 or p2.';
+  const PAY_CLAY = '      They pay the fee to another player of their choice who has a card in their workshop whose mark is clay.';
+  /** GUILD_GAME with `lines` put in before the stop button (P18). */
+  const beforeStop = (...lines: string[]) => GUILD_GAME.replace('  A player may stop.\n', `${lines.join('\n')}\n  A player may stop.\n`);
+  /** GUILD_GAME with a button that picks nothing and pays the fee to a player of the presser's choice who makes clay. */
+  const TIPPING = beforeStop('  A player may tip.', '    Then:', PAY_CLAY);
+
+  const guild = compileGame(GUILD_GAME, lib).game!;
+  /** Setup for three deals p0 a Statue and a Bowl, p1 a Vase and a Statue, and p2 a Bowl and a Tower; a Vase and a Tower stay in the pile. */
+  const setUp = createEngine(guild, lib, 3, initialState(guild, 1)).engine.getState();
+  const dealt = (name: string, zone: string) => setUp.cards.find((c) => c.data?.name === name && c.zoneId === zone)!.id;
+  const statue = dealt('Statue', 'stash-p0');
+  const ownBowl = dealt('Bowl', 'stash-p0');
+  const pileVase = dealt('Vase', 'pile');
+  /** The table with the cards put where each pair says, in order. */
+  const arranged = (...places: [string[], string][]) => places.reduce((s: GameState, [ids, zone]) => relocate(s, ids, zone, guild), setUp);
+  /**
+   * p1's workshop holds a Vase and p2's a Bowl, which both make clay; p0's stash holds the Statue, which wants clay, and a Vase, which
+   * wants nothing.
+   */
+  const twoProviders = arranged(
+    [[dealt('Vase', 'stash-p1')], 'workshop-p1'], [[dealt('Bowl', 'stash-p2')], 'workshop-p2'], [[ownBowl], 'scrap'], [[pileVase], 'stash-p0'],
+  );
+  /** An engine for three on `state`, playing GUILD_GAME or `text`, which must compile with no problems. */
+  const built = (state: GameState, text?: string) => {
+    const compiled = text === undefined ? { game: guild, diagnostics: [] } : compileGame(text, lib);
+    expect(compiled.diagnostics).toEqual([]);
+    return createEngine(compiled.game!, lib, 3, state);
+  };
+  const button = (b: ReturnType<typeof built>, move: string, seat = 'p0') =>
+    seatExtras(b.engine, b.runtime, b.engine.getState(), seat).actions.find((a) => a.move === move)!;
+  /** The choice of a payee among p1 and p2, each of whom the engine takes. */
+  const payees = () => [{ at: 0, prompt: TWO_PROVIDERS, options: [{ value: 'p1', allowed: true }, { value: 'p2', allowed: true }] }];
+
+  it('lists the payee a card asks for, with a verdict for each, and allows a card whose only missing piece is the choice (R1)', () => {
+    const open = button(built(twoProviders), OPEN);
+    expect(open.allowed).toBe(true);
+    expect(open.cards!.cards).toEqual([
+      { id: statue, name: 'Statue', allowed: true, choices: payees() }, { id: pileVase, name: 'Vase', allowed: true },
+    ]);
+    // The Vase wants nothing, so its press asks no one: it has no choices at all.
+    expect('choices' in open.cards!.cards[1]).toBe(false);
+  });
+
+  it('Review Focus: agrees with the engine, which refuses the card with no choice and takes it with the first option', () => {
+    const b = built(twoProviders);
+    const open = button(b, OPEN);
+    const press = { type: OPEN, by: 'p0', cardId: statue };
+    expect(b.engine.canDispatch(press)).toBe(TWO_PROVIDERS);
+    expect(b.engine.canDispatch({ ...press, choices: ['p1'] })).toBe(true);
+    expect(open.allowed).toBe(true);
+    const first = open.cards!.cards[0].choices![0].options[0].value;
+    expect(b.engine.dispatch({ ...press, choices: [first] }).ok).toBe(true);
+  });
+
+  it('asks the engine about each answer with every other choice at its first option', () => {
+    // Two payees chosen in one press, each among p1 and p2.
+    const b = built(twoProviders, beforeStop('  A player may tip twice.', '    Then:', PAY_CLAY, PAY_CLAY));
+    const asked = vi.spyOn(b.engine, 'canDispatch');
+    const twice = button(b, 'tip twice');
+    expect(twice).toMatchObject({ allowed: true, choices: [{ ...payees()[0], at: 0 }, { ...payees()[0], at: 1 }] });
+    expect(asked.mock.calls.filter(([move]) => move.type === 'tip twice').map(([move]) => move.choices)).toEqual([
+      ['p1', 'p1'], ['p2', 'p1'], ['p1', 'p2'],
+    ]);
+  });
+
+  it('gives a card an Only if line refuses that line, and no choices', () => {
+    // No workshop holds anything yet, so no one makes the clay the Statue wants.
+    const b = built(setUp);
+    const card = button(b, OPEN).cards!.cards.find((c) => c.id === statue)!;
+    // An “Only if one of:” refusal keeps its lines' upper-case first letters as written, so the words are compared in lower case.
+    const refusal = "the card has no wants or some player has a card in their workshop whose mark is the card's wants";
+    expect(String(card.allowed).toLowerCase()).toBe(refusal);
+    expect(card.allowed).toBe(b.engine.canDispatch({ type: OPEN, by: 'p0', cardId: statue }));
+    expect('choices' in card).toBe(false);
+  });
+
+  it('lists each trim that fits a card as an option, each allowed, one that fits alone too, and none for a card that is never trimmed', () => {
+    const trims = [{ value: 'Trim 2 red', allowed: true }, { value: 'Trim 2 gold', allowed: true }, { value: 'Trim 1 of each', allowed: true }];
+    const prompt = 'Choose one: Trim 2 red, Trim 2 gold or Trim 1 of each.';
+    expect(button(built(arranged([[statue], 'workshop-p0'])), TRIM).cards!.cards).toEqual([
+      { id: statue, name: 'Statue', allowed: true, choices: [{ at: 0, prompt, options: trims }] },
+    ]);
+    // A Vase is red alone, and the guard asks nothing of a Tower.
+    const tower = dealt('Tower', 'stash-p2');
+    expect(button(built(arranged([[pileVase, tower], 'workshop-p0'])), TRIM).cards!.cards).toEqual([
+      {
+        id: pileVase, name: 'Vase', allowed: true,
+        choices: [{ at: 0, prompt: 'Choose one: Trim 2 red.', options: [{ value: 'Trim 2 red', allowed: true }] }],
+      },
+      { id: tower, name: 'Tower', allowed: true },
+    ]);
+  });
+
+  it('gives a button that picks nothing the choices of its bare press, and none when no one qualifies or the seat is out', () => {
+    expect(button(built(twoProviders, TIPPING), 'tip')).toEqual({
+      move: 'tip', label: 'Tip', allowed: true, target: null, amount: false, players: null, choices: payees(),
+    });
+    // A choice no one can answer is not asked, and its line does nothing: the button works without it.
+    expect(button(built(setUp, TIPPING), 'tip')).toEqual({ move: 'tip', label: 'Tip', allowed: true, target: null, amount: false, players: null });
+    const out = built(markOut(twoProviders, 'p2'), TIPPING);
+    expect(button(out, 'tip', 'p2')).toEqual({
+      move: 'tip', label: 'Tip', allowed: "You're out of the game.", target: null, amount: false, players: null,
+    });
+    expect(button(out, 'tip').choices).toEqual([
+      { at: 0, prompt: 'Pick who to pay the fee to: p1.', options: [{ value: 'p1', allowed: true }] },
+    ]);
+  });
+
+  it('lists the choices of a card with each card it may go to, and none on the card alone', () => {
+    const FUND = 'fund a card from the hall to a card in their workshop';
+    const text = beforeStop(`  A player may ${FUND}.`, '    Then:', PAY_CLAY, '      It goes to their crew, on the target card.');
+    const state = relocate(twoProviders, [statue], 'workshop-p0', guild);
+    const fund = button(built(state, text), FUND);
+    const hall = zoneCards(state, 'hall').map((c) => c.id);
+    expect(fund.allowed).toBe(true);
+    expect(fund.cards!.cards.map((c) => c.id)).toEqual(hall);
+    expect(fund.cards!.cards.some((c) => 'choices' in c)).toBe(false);
+    const onStatue = [{ id: statue, name: 'Statue', allowed: true, choices: payees() }];
+    expect(fund.cards!.onto!.targets).toEqual(Object.fromEntries(hall.map((id) => [id, onStatue])));
+  });
+
+  it('Review Focus: lists no choices for a card the seat can not see, and judges it as any face-down card', () => {
+    const PEEK = 'peek a card in the pile';
+    const b = built(twoProviders, beforeStop(`  A player may ${PEEK}.`, '    Then:', PAY_CLAY));
+    const top = zoneCards(twoProviders, 'pile').at(-1)!.id;
+    const asked = vi.spyOn(b.engine, 'canDispatch');
+    expect(button(b, PEEK).cards!.cards).toEqual([{ id: top, name: 'a face-down card', allowed: true }]);
+    // The engine is never asked about the hidden card itself, so nothing of it reaches the view.
+    expect(asked.mock.calls.filter(([move]) => move.type === PEEK && 'cardId' in move)).toEqual([]);
+    expect(b.engine.canDispatch({ type: PEEK, by: 'p0', cardId: top })).toBe(TWO_PROVIDERS);
+    expect(b.engine.canDispatch({ type: PEEK, by: 'p0', cardId: top, choices: ['p2'] })).toBe(true);
+  });
+
+  it('is plain data, and readSeatExtras reads it back, and nothing else for a choice', () => {
+    const b = built(twoProviders, TIPPING);
+    const extras = seatExtras(b.engine, b.runtime, b.engine.getState(), 'p0');
+    expect(readSeatExtras(JSON.parse(JSON.stringify(extras)))).toEqual(extras);
+    const tip = extras.actions.find((a) => a.move === 'tip')!;
+    const open = extras.actions.find((a) => a.move === OPEN)!;
+    const [card, ...others] = open.cards!.cards;
+    const onButton = (choices: Json) => ({ board: null, actions: [{ ...tip, choices }] });
+    const onCard = (choices: Json) => ({ board: null, actions: [{ ...open, cards: { ...open.cards!, cards: [{ ...card, choices }, ...others] } }] });
+    const [choice] = tip.choices!;
+    for (const shaped of [onButton, onCard]) {
+      expect(readSeatExtras(shaped([choice]))).not.toBeNull();
+      expect(readSeatExtras(shaped([{ ...choice, at: '0' }]))).toBeNull();
+      expect(readSeatExtras(shaped([{ at: 0, options: choice.options }]))).toBeNull();
+      expect(readSeatExtras(shaped([{ ...choice, options: [{ value: 'p1' }] }]))).toBeNull();
+      expect(readSeatExtras(shaped([{ ...choice, options: [{ allowed: true }] }]))).toBeNull();
+      expect(readSeatExtras(shaped([{ ...choice, options: [{ value: 'p1', allowed: false }] }]))).toBeNull();
+      expect(readSeatExtras(shaped(choice))).toBeNull();
+    }
   });
 });

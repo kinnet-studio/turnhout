@@ -4,7 +4,8 @@ import type { CardState, PlayerId } from '../scene';
 import { addToCounter, clearTurnLog, counterOf, endsTurn, isOut, playersIn, recordAction } from './board-state';
 import { askChoices, choicesOf, fillChoices, type AskedChoice } from './choices';
 import { isPile, isTakeable, moveZoneId, yours } from './declared-moves';
-import { counted, secondPersonWords } from './refs';
+import { RuleError } from './diagnostics';
+import { canon, counted, joinOr, secondPersonWords } from './refs';
 import type { LangRuntime } from './runtime';
 import type { CardPick, CompiledPhase, DeclaredAction, MoveInfo, Subject, ZoneRef } from './types';
 import { relocate } from './zones';
@@ -255,6 +256,35 @@ function choose(move: string, runtime: LangRuntime, state: GameState, m: Move): 
 export function pressChoices(runtime: LangRuntime, state: GameState, move: Move): AskedChoice[] | string {
   const press = pressUpToChoices(move.type, runtime, state, move);
   return typeof press === 'string' ? press : askChoices(runtime, press.action, state, press.info, press.subject);
+}
+
+/**
+ * The `choices` of a press an example makes (“…, paying p1 and p2, choosing trim 2 gold”), from what it names: `players` fill the
+ * choices of a player the press asks, in order, and `option` the first block it asks that offers that option, whatever its case. A choice
+ * named nothing is left null, to be filled in or asked for as the press would be, and a player is sent as named, so that one who doesn't
+ * qualify is refused with the prompt. Null when nothing is named, and when the button refuses the press before its choices are asked:
+ * the move is then sent as it is, for the game to say why. An example that names more players than the press asks for, or an option
+ * no block it asks offers, is told so.
+ */
+export function namedChoices(runtime: LangRuntime, state: GameState, move: Move, players: string[], option: string | null): (string | null)[] | null {
+  if (players.length === 0 && option === null) return null;
+  const press = pressUpToChoices(move.type, runtime, state, move);
+  if (typeof press === 'string') return null;
+  const asked = askChoices(runtime, press.action, state, press.info, press.subject);
+  const choices: (string | null)[] = Array.from({ length: choicesOf(press.action).length }, () => null);
+  const payees = asked.filter((choice) => choice.kind === 'player');
+  if (players.length > payees.length) {
+    throw new RuleError(`The press asks for ${counted(payees.length, 'players')}, but the example names ${players.length}.`);
+  }
+  players.forEach((seat, i) => { choices[payees[i].at] = seat; });
+  if (option === null) return choices;
+  const blocks = asked.filter((choice) => choice.kind === 'option');
+  if (blocks.length === 0) throw new RuleError(`“${option}” isn't a choice here: this press chooses nothing.`);
+  const offers = (label: string) => canon(label) === canon(option);
+  const block = blocks.find((choice) => choice.options.some(offers));
+  if (!block) throw new RuleError(`“${option}” isn't a choice here. The choices are: ${joinOr(blocks.flatMap((choice) => choice.options))}.`);
+  choices[block.at] = block.options.find(offers)!;
+  return choices;
 }
 
 /**

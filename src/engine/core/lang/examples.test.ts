@@ -5,6 +5,10 @@ import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import type { PhraseLibrary } from './phrases';
 import { COUNTER_GAME, ROUNDS_GAME, TEST_DUEL, TINY_BOARD, deckGameText } from './testing';
+import { GUILD_GAME } from './testing';
+import { createEngine, initialState } from './build';
+import { namedChoices } from './declared-actions';
+import { relocate } from './zones';
 import type { CompiledGame } from './types';
 
 const lib = createDefaultLibrary();
@@ -504,5 +508,100 @@ describe('examples with a stack that never runs out', () => {
     const example = STASH_EXAMPLE.replace('a Coupon, a Coupon and a Ruby', 'a Ruby, a Ruby, a Ruby, a Ruby and a Ruby');
     const { game } = compileGame(`${STOCKED}\n${example}`, lib);
     expect(runExamples(game!, lib)[0]).toMatchObject({ status: 'fail', message: expect.stringContaining('No card matches “a Ruby”.') });
+  });
+});
+
+describe('examples that name choices', () => {
+  const OPENER = [
+    '',
+    'Example: the opener pays a provider of their choice',
+    '  Given 3 players',
+    "  And p1's workshop has a Vase",
+    "  And p2's workshop has a Bowl",
+    "  And p0's stash has a Statue",
+    '  When p0 opens the Statue',
+    '  Then it is rejected because "Pick who to pay the fee to: p1 or p2."',
+    '  When p0 opens the Statue, paying p2',
+    '  Then it is accepted',
+    '  And p2 has 11 coins',
+    '  And p1 has 9 coins',
+  ];
+  const TRIMMER = [
+    '',
+    'Example: a trim is chosen when more than one fits',
+    "  Given p0's workshop has a Statue",
+    '  When p0 trims the Statue, choosing trim 1 of each',
+    "  Then the Statue in p0's workshop has 1 gold trim",
+  ];
+  /** GUILD_GAME (2 to 4 players) with `lines` appended, and what running its examples gives. */
+  const run = (...lines: string[]) => {
+    const text = [GUILD_GAME, ...lines].join('\n');
+    return { text, results: runExamples(compiled(text), lib) };
+  };
+  /** OPENER with its last When line naming `named` instead, and nothing after it. */
+  const naming = (named: string) => [...OPENER.slice(0, 8), `  When p0 opens the Statue, ${named}`, '  Then it is accepted'];
+
+  it('presses with the payee and the option an example names', () => {
+    expect(run(...OPENER, ...TRIMMER).results.map((r) => [r.name, r.status, r.message])).toEqual([
+      ['the opener pays a provider of their choice', 'pass', null],
+      ['a trim is chosen when more than one fits', 'pass', null],
+    ]);
+  });
+
+  it('sends a named payee who does not qualify, to be refused with the prompt', () => {
+    const lines = [...naming('paying p0').slice(0, -1), '  Then it is rejected because "Pick who to pay the fee to: p1 or p2."'];
+    expect(run(...lines).results[0]).toMatchObject({ status: 'pass' });
+  });
+
+  it('fails an example that names more players than the press asks for, on its When line', () => {
+    const { text, results } = run(...naming('paying p1 and p2'));
+    expect(results[0]).toMatchObject({
+      status: 'fail', message: 'The press asks for 1 player, but the example names 2.',
+      atLine: lineOf(text, 'When p0 opens the Statue, paying p1 and p2', true),
+    });
+  });
+
+  it('fails an example that names an option the press does not offer, listing those it does', () => {
+    const { results } = run(...TRIMMER.slice(0, 3), '  When p0 trims the Statue, choosing trim 3');
+    expect(results[0]).toMatchObject({
+      status: 'fail', message: '“trim 3” isn\'t a choice here. The choices are: Trim 2 red, Trim 2 gold or Trim 1 of each.',
+    });
+  });
+
+  it('fails an example that names an option for a press that chooses none', () => {
+    expect(run(...naming('choosing trim 2 gold')).results[0]).toMatchObject({
+      status: 'fail', message: '“trim 2 gold” isn\'t a choice here: this press chooses nothing.',
+    });
+  });
+
+  it('sends the press as it is when the button refuses it before its choices, for the game to say why', () => {
+    const lines = [
+      '', 'Example: no one makes clay', "  Given p0's stash has a Statue", '  When p0 opens the Statue, paying p1 and p2',
+      '  Then it is rejected because "the card has no wants or some player has a card in their workshop whose mark is the card\'s wants"',
+    ];
+    expect(run(...lines).results[0]).toMatchObject({ status: 'pass' });
+  });
+
+  it('names one entry for each choice of the button, the option as the block has it, and none for a press refused before its choices', () => {
+    const guild = compiled(GUILD_GAME);
+    const { runtime, engine } = createEngine(guild, lib, 3, initialState(guild, 1));
+    const setUp = engine.getState();
+    const statue = setUp.cards.find((c) => c.data?.name === 'Statue' && c.zoneId === 'stash-p0')!.id;
+    const press = (type: string) => ({ type, by: 'p0', cardId: statue });
+    const OPEN = press('open a card in their stash');
+    // No workshop holds anything yet: the open button refuses the Statue before it asks whom to pay.
+    expect(namedChoices(runtime, setUp, OPEN, ['p1'], null)).toBeNull();
+    expect(namedChoices(runtime, setUp, OPEN, [], null)).toBeNull();
+    const vase = setUp.cards.find((c) => c.data?.name === 'Vase' && c.zoneId === 'stash-p1')!.id;
+    const bowl = setUp.cards.find((c) => c.data?.name === 'Bowl' && c.zoneId === 'stash-p2')!.id;
+    const providing = relocate(relocate(setUp, [vase], 'workshop-p1', guild), [bowl], 'workshop-p2', guild);
+    expect(namedChoices(runtime, providing, OPEN, ['p0'], null)).toEqual(['p0']);
+    const trimming = relocate(setUp, [statue], 'workshop-p0', guild);
+    expect(namedChoices(runtime, trimming, press('trim a card in their workshop'), [], 'TRIM 1 OF EACH')).toEqual(['Trim 1 of each']);
+  });
+
+  it('is blocked by a press no phrase reads yet, on its line', () => {
+    const { text, results } = run('', 'Example: dancing', '  When p0 dances, paying p2');
+    expect(results[0]).toMatchObject({ status: 'blocked', atLine: lineOf(text, 'When p0 dances, paying p2', true) });
   });
 });

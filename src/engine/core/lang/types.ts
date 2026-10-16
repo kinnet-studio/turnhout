@@ -6,7 +6,7 @@ import type { Json } from '../table-def';
 export type PhraseKind =
   | 'cards' | 'zone' | 'board' | 'declare' | 'column' | 'condition' | 'effect' | 'turn' | 'who' | 'which' | 'score' | 'winner' | 'moment' | 'given'
   | 'action' | 'target' | 'expect' | 'value';
-/** kind 'lang' = compiler built-ins: all | any | phase | always | if | for | for each | round | missing | choose player | choose one */
+/** kind 'lang' = compiler built-ins: all | any | phase | always | if | for | for each | round | missing | choose player | choose one | choosing */
 export type PhraseRef = { kind: PhraseKind | 'lang'; phrase: string; args: Json[]; line: number; text: string };
 /** `other` is the one player who is not the actor, in a game for two. */
 export type SeatRef = { seat: string } | { who: 'actor' | 'winner' | 'other' };

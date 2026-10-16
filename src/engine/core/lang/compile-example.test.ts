@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { canPlay, compileGame } from './compile';
 import { createDefaultLibrary } from './library';
+import { GUILD_GAME } from './testing';
 
 const lib = createDefaultLibrary();
 const BASE = [
@@ -138,5 +139,71 @@ describe('compileExample', () => {
 
   it('reports a player outside the table in the library\'s own words', () => {
     expect(messages(withExamples('Example: x', '  When p9 plays a card'))).toEqual([[23, 'This game only has players p0 to p2.']]);
+  });
+});
+
+describe('examples that name choices', () => {
+  /** GUILD_GAME (2 to 4 players) with one example of `steps`. */
+  const guild = (...steps: string[]) => [GUILD_GAME, '', 'Example: choosing', ...steps.map((step) => `  ${step}`)].join('\n');
+  const lineOf = (text: string, step: string) => text.split('\n').indexOf(`  ${step}`) + 1;
+  /** The ref of the example's When step, from rules that compile with no problems. */
+  const whenRef = (step: string) => {
+    const { game, diagnostics } = compileGame(guild("Given p0's workshop has a Statue", step), lib);
+    expect(diagnostics).toEqual([]);
+    return game!.examples[0].steps[1].ref;
+  };
+  const OPEN_STATUE = {
+    kind: 'action', phrase: '{player} {cardaction} {cardlist}', args: ['p0', 'open', [{ name: 'Statue' }]], text: 'p0 opens the Statue',
+  };
+
+  it('reads “…, paying p2” as the press before it and the players it names', () => {
+    const step = 'When p0 opens the Statue, paying p2';
+    const ref = whenRef(step);
+    const line = lineOf(guild("Given p0's workshop has a Statue", step), step);
+    expect(ref).toMatchObject({ kind: 'lang', phrase: 'choosing', line, text: 'p0 opens the Statue, paying p2' });
+    expect(ref.args).toEqual([{ ...OPEN_STATUE, line }, ['p2'], null]);
+  });
+
+  it('reads “…, choosing …” as the press and the option, as written', () => {
+    const ref = whenRef('When p0 trims the Statue, choosing trim 2 gold');
+    expect(ref.phrase).toBe('choosing');
+    expect(ref.args.slice(1)).toEqual([[], 'trim 2 gold']);
+    expect(ref.args[0]).toMatchObject({ kind: 'action', args: ['p0', 'trim', [{ name: 'Statue' }]], text: 'p0 trims the Statue' });
+  });
+
+  it('reads both, the players first', () => {
+    const ref = whenRef('When p0 trims the Statue, paying p1 and p2, choosing trim 2 gold');
+    expect(ref.args.slice(1)).toEqual([['p1', 'p2'], 'trim 2 gold']);
+    expect(ref.args[0]).toMatchObject({ text: 'p0 trims the Statue' });
+  });
+
+  it('reads the words that name choices in any case', () => {
+    expect(whenRef('When p0 trims the Statue, Paying P1, CHOOSING Trim 2 Gold').args.slice(1)).toEqual([['p1'], 'Trim 2 Gold']);
+  });
+
+  it('reads any other When line as before', () => {
+    expect(whenRef('When p0 opens the Statue')).toMatchObject({ ...OPEN_STATUE, kind: 'action' });
+  });
+
+  it('reports a player the game does not have on the line, in the players type\'s words', () => {
+    const text = guild('When p0 opens the Statue, paying p9');
+    expect(messages(text)).toEqual([[lineOf(text, 'When p0 opens the Statue, paying p9'), 'This game only has players p0 to p3.']]);
+  });
+
+  it('reports a misspelt player on the line, and reads words after “, paying” that name no players as part of the press', () => {
+    const misspelt = guild('When p0 opens the Statue, paying player 2');
+    expect(compileGame(misspelt, lib).diagnostics).toMatchObject([{
+      line: lineOf(misspelt, 'When p0 opens the Statue, paying player 2'), kind: 'invalid',
+      message: expect.stringMatching(/^There is no player called “player 2”\./),
+    }]);
+    expect(compileGame(guild('When p0 opens the Statue, paying the rival'), lib).diagnostics).toMatchObject([
+      { kind: 'unknown-phrase', text: 'p0 opens the Statue, paying the rival' },
+    ]);
+  });
+
+  it('reports what is wrong with the press as it would be without the choices', () => {
+    const named = compileGame(guild('When p0 opns the Statue, paying p2'), lib).diagnostics;
+    expect(named).not.toEqual([]);
+    expect(named).toEqual(compileGame(guild('When p0 opns the Statue'), lib).diagnostics);
   });
 });

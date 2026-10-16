@@ -4,13 +4,15 @@ import type { GameState } from '../game-state';
 import { withBoardData } from './board-state';
 import { checkPlayers, createEngine, initialState, seatsFor } from './build';
 import { makeCard } from './cards';
+import { CHOOSING } from './compile-example';
+import { namedChoices } from './declared-actions';
 import { MissingPhraseError, RuleError } from './diagnostics';
 import { friendlyError, friendlyReason } from './friendly';
 import { byCardId } from './library/example-phrases';
 import type { PhraseLibrary } from './phrases';
 import { LangRuntime } from './runtime';
 import { clearTurnMarkers, markTurnStarted, usesTurns } from './turns';
-import type { CompiledExample, CompiledGame, ExampleEnv } from './types';
+import type { CompiledExample, CompiledGame, ExampleEnv, PhraseRef } from './types';
 import { BOX_ZONE, matchesCard } from './zones';
 
 export type ExampleResult = {
@@ -23,6 +25,9 @@ export type ExampleResult = {
 
 /** Every example is played from the same cards, so a run is the same every time. */
 const SEED = 1;
+
+/** Whether a When step names the choices of its press (“…, paying p2”). */
+const isChoosing = (ref: PhraseRef): boolean => ref.kind === 'lang' && ref.phrase === CHOOSING;
 
 /**
  * Hands out each card at most once, the lowest-numbered one that matches first (c3 before c12). A card the table lacks is made
@@ -87,8 +92,11 @@ function runExample(game: CompiledGame, library: PhraseLibrary, example: Compile
       const { engine, runtime } = built;
       if (keyword === 'when') {
         const before = engine.getState();
-        const { by, move } = runtime.act(ref, before, env);
-        const outcome = engine.dispatch({ ...move, by });
+        // A step that names the choices of its press acts its press, then adds the choices.
+        const [action, players, option] = isChoosing(ref) ? ref.args as [PhraseRef, string[], string | null] : [ref, [], null];
+        const { by, move } = runtime.act(action, before, env);
+        const choices = namedChoices(runtime, before, { ...move, by }, players, option);
+        const outcome = engine.dispatch({ ...move, by, ...(choices === null ? {} : { choices }) });
         env.last = {
           ok: outcome.ok,
           reason: outcome.reason === undefined ? undefined : friendlyReason(outcome.reason, before.turn?.current),
