@@ -66,6 +66,13 @@ const PHASE_NAME = /^phase\s*:\s*(.*)$/i;
 export const CHOICE_LINE = /^(.+) to another player of their choice who (.+)$/i;
 /** A line that asks the presser to choose one of the options under it. */
 export const CHOOSE_ONE_LINE = /^they choose one:?$/i;
+/** A line framed by “If …,” or “For …,”: whatever it holds is that frame's, so it is never a choice of its own. */
+const FRAMED = /^(?:if|for) /i;
+/**
+ * Whether a line asks a choice of its own: a block of options, or a choice of a player that no “If …,” or “For …,” frames (the frame's
+ * own message says what is wrong with a choice inside it).
+ */
+export const asksChoice = (clean: string): boolean => CHOOSE_ONE_LINE.test(clean) || (!FRAMED.test(clean) && CHOICE_LINE.test(clean));
 /** Where a choice was written that no press could ask: only a button's own `Then:` lines may, and not of every button. */
 const MISPLACED_CHOICE = 'Only the Then: lines of a button that picks a card, or nothing, can ask for a choice.';
 /**
@@ -78,8 +85,11 @@ const ONCE = 'a press asks each choice once, so write it on a line of its own.';
 const CHOICE_IN_FOR_EACH = CHOICE_IN_FRAME('For each card …,', ONCE);
 const CHOICE_IN_FOR = CHOICE_IN_FRAME('For …,', ONCE);
 
-/** Whether the words of a frame hold a choice after one of their commas, where the frame's effect may start. */
-const holdsChoice = (body: string): boolean => [...body.matchAll(COMMA)].some((m) => CHOICE_LINE.test(body.slice(m.index + 2)));
+/**
+ * Whether the words of a frame hold a choice after one of their commas, where the frame's effect may start: a choice of a player or a
+ * block of options, or a frame of its own that holds one after a later comma.
+ */
+const holdsChoice = (body: string): boolean => [...body.matchAll(COMMA)].some((m) => asksChoice(body.slice(m.index + 2)));
 
 /** Records a problem found while reading the rules. Structure errors unless `extra` says otherwise. */
 export function addProblem(diagnostics: Diagnostic[], line: number, message: string, extra: Partial<Diagnostic> = {}): void {
@@ -412,7 +422,7 @@ export function matchEffectLine(text: string, line: number, ctx: LineCtx): Phras
   if (holding) return holdsChoice(holding[1]) ? refuse(CHOICE_IN_FOR) : matchForLine(holding[1], clean, line, ctx);
   const frame = IF_FRAME.exec(clean);
   if (!frame) {
-    if (CHOICE_LINE.test(clean) || CHOOSE_ONE_LINE.test(clean)) return refuse(MISPLACED_CHOICE);
+    if (asksChoice(clean)) return refuse(MISPLACED_CHOICE);
     return matchLine('effect', clean, line, ctx);
   }
 

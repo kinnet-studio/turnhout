@@ -44,6 +44,9 @@ const ONE_OF = "    Only if one of:\n      The card has no wants.\n      Some pl
 const ONE_PROVIDER = 'Pick who to pay the fee to: p1.';
 const TWO_PROVIDERS = 'Pick who to pay the fee to: p1 or p2.';
 const MISPLACED = 'Only the Then: lines of a button that picks a card, or nothing, can ask for a choice.';
+/** What a line under a pick from the pile is told when it would say what the picked card is. */
+const HIDDEN_IN_PILE = 'This line would tell the player what the card is, though they can\'t see the cards in the pile.'
+  + ' Check it in the Then: lines, after a reveal.';
 
 const game = compiled(GUILD_GAME);
 /** The state once Setup has run for three, from `initialState(game, 1)`: two jobs in each stash, the rest in the pile, the hands in the hall; p0 to act. */
@@ -307,10 +310,9 @@ describe('a choice line with a mistake in it', () => {
     expect(messages(text)).toEqual([[lineOf(text, MISSPELT), 'There is no zone called “workshp”.']]);
   });
   it('Review Focus: would tell the presser a card they can\'t see, on the choice line and on its guard', () => {
-    const hidden = 'This line would tell the player what the card is, though they can\'t see the cards in the pile. Check it in the Then: lines, after a reveal.';
     const text = beforeStop(['  A player may peek a card in the pile.', '    Then:', CHOICE, GUARD, '      Move it to their workshop.']);
     const lines = text.split('\n');
-    expect(messages(text)).toEqual([[lines.lastIndexOf(CHOICE) + 1, hidden], [lines.lastIndexOf(GUARD) + 1, hidden]]);
+    expect(messages(text)).toEqual([[lines.lastIndexOf(CHOICE) + 1, HIDDEN_IN_PILE], [lines.lastIndexOf(GUARD) + 1, HIDDEN_IN_PILE]]);
     expect(compileGame(text, lib).game).toBeUndefined();
   });
 });
@@ -491,17 +493,37 @@ describe('a block of options with a mistake in it', () => {
     const text = edited(GUILD_GAME, `${TRIM_BLOCK[1]}\n`, `${TRIM_BLOCK[1]}\n${PAY}\n`);
     expect(messages(text)).toEqual([[lineOf(text, PAY), CHOICE_IN_CHOICE]]);
   });
+  it('takes no option with nothing under it, on its line', () => {
+    const EMPTY = '        Do nothing:';
+    const text = beforeStop([EMPTY]);
+    expect(messages(text)).toEqual([[lineOf(text, EMPTY), 'Give the option “Do nothing” its lines under it.']]);
+  });
+  it('P8: is refused inside “If …,”, “For …,” and “For each card …,”, with the frame\'s message, as a choice of a player is', () => {
+    const ONCE = 'a press asks each choice once, so write it on a line of its own.';
+    const rival = edited(GUILD_GAME, '  The game has a fee of 2.\n', '  The game has a fee of 2.\n  Players can be the rival.\n');
+    const frames: [string, string, string][] = [
+      ['If it is a Statue card', GUILD_GAME, 'A choice can\'t sit inside “If …,”: write its condition under it as an “Only if …” line.'],
+      ['For the player who is the rival', rival, `A choice can't sit inside “For …,”: ${ONCE}`],
+      ['For each card in their workshop', GUILD_GAME, `A choice can't sit inside “For each card …,”: ${ONCE}`],
+    ];
+    for (const [frame, rules, message] of frames) {
+      const head = `      ${frame}, they choose one:`;
+      const text = edited(rules, `${GUARD}\n`, `${GUARD}\n${[head, ...TRIM_BLOCK.slice(2)].join('\n')}\n`);
+      // A framed line is no block, so each option under it is also told it shouldn't be indented; the frame's message is what is tested.
+      const told = messages(text).filter(([, said]) => said !== 'This line shouldn\'t be indented under the line above.');
+      expect(told).toEqual([[lineOf(text, head), message]]);
+    }
+  });
   it('is refused under a When rule, on its line', () => {
     const under = TRIM_BLOCK.map((line) => line.slice(2));
     const text = edited(GUILD_GAME, '  When they have less than 1 move:\n', `  When they have less than 1 move:\n${under.join('\n')}\n`);
     expect(messages(text)).toContainEqual([lineOf(text, under[0]), MISPLACED]);
   });
   it('Review Focus: would tell the presser a card they can\'t see, on its guard and on each option\'s Only if lines', () => {
-    const hidden = 'This line would tell the player what the card is, though they can\'t see the cards in the pile. Check it in the Then: lines, after a reveal.';
     const text = beforeStop(['  A player may peek a card in the pile.', '    Then:', ...TRIM_BLOCK]);
     const onlyIfs = TRIM_BLOCK.filter((line) => line.trim().startsWith('Only if'));
     expect(onlyIfs).toHaveLength(5);
-    expect(messages(text)).toEqual(onlyIfs.map((line) => [lastLineOf(text, line), hidden]));
+    expect(messages(text)).toEqual(onlyIfs.map((line) => [lastLineOf(text, line), HIDDEN_IN_PILE]));
     expect(compileGame(text, lib).game).toBeUndefined();
   });
 });

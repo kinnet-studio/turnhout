@@ -1,9 +1,8 @@
 import { CHOOSE_ONE, choicesOf, type ChoiceOption } from './choices';
-// Each module uses what the other exports only while compiling, never while it loads, so the two may import each other.
-import { readChoiceBlock, readChoiceLine } from './compile-choice';
+// Each module uses the other's functions only while compiling, never while it loads, so the two may import each other.
+import { readChoice } from './compile-choice';
 import {
-  addProblem, canRead, CHOICE_LINE, CHOOSE_ONE_LINE, isMissing, libraryHasSayOn, matchEffectLine, matchLine, phaseId, readsPressCard, rejectChildren,
-  type LineCtx,
+  addProblem, asksChoice, canRead, isMissing, libraryHasSayOn, matchEffectLine, matchLine, phaseId, readsPressCard, rejectChildren, type LineCtx,
 } from './compile-util';
 import type { OutlineNode } from './outline';
 import { normalizeLine, suggestNames } from './phrases';
@@ -27,8 +26,6 @@ const TRIGGER = /^when (.+):$/i;
 const ONLY_IF_ONE_OF = /^only if one of:?$/i;
 const ONLY_IF = /^only if (.+)$/i;
 const THEN = /^then:?$/i;
-/** A line framed by “If …,” or “For …,”: whatever it holds is that frame's, so it is never a choice of the button's own. */
-export const FRAMED = /^(?:if|for) /i;
 /** group 1 = what a button costs, to be read as a whole number and a counter */
 const COST_LINE = /^it costs (.+)$/i;
 /** group 1 = the whole number, group 2 = the counter, singular or plural */
@@ -247,13 +244,8 @@ function readRuleBody(node: OutlineNode, ctx: LineCtx): { conditions: CondGroup[
     } else if (THEN.test(clean)) {
       for (const line of child.children) {
         const text = normalizeLine(line.text);
-        const choice = ctx.choices && !FRAMED.test(text) ? CHOICE_LINE.exec(text) : null;
-        if (choice) {
-          effects.push(readChoiceLine(line, choice, choices++, ctx));
-          continue;
-        }
-        if (ctx.choices && CHOOSE_ONE_LINE.test(text)) {
-          effects.push(readChoiceBlock(line, choices++, ctx));
+        if (ctx.choices && asksChoice(text)) {
+          effects.push(readChoice(line, text, choices++, ctx));
           continue;
         }
         rejectChildren(line, ctx.diagnostics);
