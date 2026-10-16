@@ -8,7 +8,7 @@ import { createEngine, initialState, seatsFor } from './build';
 import { compileGame } from './compile';
 import { RuleError } from './diagnostics';
 import { createDefaultLibrary } from './library';
-import { AMOUNT_BOARD, ANY_PLAYER_BOARD, deckGameText, HOLDING_BOARD, INTERRUPT_BOARD, PICK_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD } from './testing';
+import { AMOUNT_BOARD, ANY_PLAYER_BOARD, COUNTER_GAME, deckGameText, HOLDING_BOARD, INTERRUPT_BOARD, PICK_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD } from './testing';
 import type { CompiledGame } from './types';
 import { relocate, zoneIdFor } from './zones';
 
@@ -37,6 +37,21 @@ const JAILING = TINY_BOARD.replace(
   '  There are two six-sided dice.',
   '  There are two six-sided dice.\n  Players can be in jail.\n  Players can have jail turns and a crown.',
 );
+
+describe('a board with no spaces', () => {
+  const counting = compileGame(COUNTER_GAME, lib).game!;
+  const { engine, runtime } = createEngine(counting, lib, 2, initialState(counting, 1));
+
+  it('shows the numbers each player has, with no spaces and no pieces', () => {
+    const { board } = seatExtras(engine, runtime, engine.getState(), 'p0');
+    expect(board).toMatchObject({ spaces: [], pieces: {}, counters: [{ name: 'coins', values: { p0: 7, p1: 7 } }] });
+  });
+
+  it('is a view the page can read', () => {
+    const sent: Json = JSON.parse(JSON.stringify(seatExtras(engine, runtime, engine.getState(), 'p0')));
+    expect(readSeatExtras(sent)).not.toBeNull();
+  });
+});
 
 describe('seat views of a board game', () => {
   it('shows the board and the buttons from each seat', () => {

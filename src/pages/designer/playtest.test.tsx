@@ -7,6 +7,7 @@ import { markOut, placePiece, playerFact, queueRoll, setCounter, setOwner, setPl
 import { createEngine, initialState } from '@/engine/core/lang/build';
 import { compileGame } from '@/engine/core/lang/compile';
 import { createDefaultLibrary } from '@/engine/core/lang/library';
+import { COUNTER_GAME } from '@/engine/core/lang/testing';
 import { relocate, zoneIdFor } from '@/engine/core/lang/zones';
 import type { DropIntent } from '@/engine/input/table-input-context';
 import { GameServer } from '@/engine/net/game-server';
@@ -147,9 +148,30 @@ describe('Playtest', () => {
   });
 });
 
+describe('Playtest of a game with counters and no board', () => {
+  const gemShop = compileGame(COUNTER_GAME, lib).game!;
+
+  it('draws the money line, the buttons and the card table, and no board', () => {
+    mount({ game: gemShop, players: 2 });
+    expect(screen.queryAllByTestId('board-grid')).toHaveLength(0);
+    expect(screen.getAllByText('p0 7 coins')).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Pass' })).toHaveLength(2);
+    expect(rendered).toBeGreaterThan(0);
+  });
+
+  it('draws buttons for a card game with no numbers at all, and no money line', () => {
+    const plain = compileGame(COUNTER_GAME.replace('  Each player has 7 coins that everyone can see.\n  Players pay with coins.\n', '').replace('    Then:\n      They pay 1.\n', ''), lib);
+    expect(plain.diagnostics).toEqual([]);
+    mount({ game: plain.game!, players: 2 });
+    expect(screen.getAllByRole('button', { name: 'Pass' })).toHaveLength(2);
+    expect(screen.queryByText(/coins/)).toBeNull();
+  });
+});
+
 describe('Playtest of a board game', () => {
   it('gives each seat its board, money line and buttons, greyed with the reason', () => {
     mountRentDay();
+    expect(screen.getAllByTestId('board-grid')).toHaveLength(3);
     expect(screen.getAllByRole('button', { name: 'Roll the dice' })).toHaveLength(3);
     const [p0Roll, p1Roll] = rollButtons();
     expect(p0Roll.getAttribute('aria-disabled')).toBe('false');

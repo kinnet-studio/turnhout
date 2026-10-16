@@ -256,6 +256,7 @@ export function BoardGrid({ board, picking }: { board: BoardView; picking?: Pick
   const bySpace = piecesBySpace(board.pieces);
   return (
     <div
+      data-testid="board-grid"
       style={{
         display: 'grid', gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${size}, minmax(0, 1fr))`,
         width: '100%', maxWidth: 560, aspectRatio: '1 / 1', background: '#6b7280', gap: 1, border: '1px solid #6b7280', boxSizing: 'border-box',

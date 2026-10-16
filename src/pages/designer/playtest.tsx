@@ -136,7 +136,11 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError }: {
       <CardTable tableDef={tableDef} placement={placement} viewer={undefined} onDrop={submit} />
     </Wrapper>
   );
-  if (extras?.board) {
+  // The panel is for a game that has a board, or buttons to press; each part of it is drawn only when the game has what it shows,
+  // so a card game with a number each player has gets its money line and buttons without a board.
+  const hasButtons = game.phases.some((phase) => phase.actions.length > 0);
+  if (extras && (extras.board !== null || hasButtons)) {
+    const { board } = extras;
     // A blank box sends no amount at all; the rules answer that with what is missing, and it flashes like any other refusal.
     const press = (move: string, amount?: number | null) => {
       onError(null);
@@ -183,9 +187,9 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError }: {
           {playerPicker}
           <span style={{ color: '#ff8a65' }}>{notice}</span>
         </div>
-        <BoardGrid board={extras.board} picking={picker} />
-        <MoneyLine board={extras.board} />
-        <ActionButtons actions={extras.actions} onPress={press} onPick={startPicking} onRefused={flash} />
+        {board && board.spaces.length > 0 && <BoardGrid board={board} picking={picker} />}
+        {board && (board.counters.length > 0 || game.facts.length > 0) && <MoneyLine board={board} />}
+        {hasButtons && <ActionButtons actions={extras.actions} onPress={press} onPick={startPicking} onRefused={flash} />}
         {canvas && <div style={{ position: 'relative', height: SEAT_HEIGHT }}>{canvas}</div>}
       </div>
     );

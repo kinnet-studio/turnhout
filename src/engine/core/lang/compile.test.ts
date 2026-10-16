@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import COLOR_MATCH_TEXT from '@/games/color-match.rules?raw';
 import VENOM_TEXT from '@/games/venom.rules?raw';
+import { counterOf } from './board-state';
+import { createEngine, initialState } from './build';
 import { canPlay, compileGame } from './compile';
 import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
-import { HOLDING_BOARD, INTERRUPT_BOARD, PICK_BOARD, TINY_BOARD_HEAD, deckGameText } from './testing';
+import { COUNTER_GAME, HOLDING_BOARD, INTERRUPT_BOARD, PICK_BOARD, TINY_BOARD_HEAD, deckGameText } from './testing';
 import type { ParamType } from './types';
 
 const lib = createDefaultLibrary();
@@ -723,7 +725,7 @@ describe('declaring facts and the bank', () => {
   it('refuses a fact about players in a game with no board, on its own line', () => {
     const text = VENOM_TEXT.replace('  Cards can be poisoned.', '  Cards can be poisoned.\n  Players can be stung.');
     const line = text.split('\n').findIndex((l) => l.includes('Players can be stung.')) + 1;
-    expect(errors(text)).toEqual([[line, 'Facts about players need a Board: section for now.']]);
+    expect(errors(text)).toEqual([[line, 'Facts about players need a Board: section or lines under Players:.']]);
     // The card fact beside it is still fine, and so is a board game's fact about players.
     expect(compiled(text).diagnostics.filter((d) => d.line !== line)).toEqual([]);
     expect(errors(withFacts('  Players can be stung.'))).toEqual([]);
@@ -731,7 +733,7 @@ describe('declaring facts and the bank', () => {
   it('refuses a number of the game in a game with no board, on its own line, as it does a fact about players', () => {
     const text = VENOM_TEXT.replace('  Cards can be poisoned.', '  Cards can be poisoned.\n  The game has a pot of 3.');
     const line = text.split('\n').findIndex((l) => l.includes('The game has a pot of 3.')) + 1;
-    expect(errors(text)).toEqual([[line, 'Numbers that belong to the game need a Board: section for now.']]);
+    expect(errors(text)).toEqual([[line, 'Numbers that belong to the game need a Board: section or lines under Players:.']]);
     expect(compiled(text).diagnostics.filter((d) => d.line !== line)).toEqual([]);
     expect(errors(withFacts('  The game has a pot of 3.'))).toEqual([]);
   });
@@ -884,6 +886,67 @@ describe('declaring facts and the bank', () => {
   });
   it('does not make a declaration of a line that is some other board sentence', () => {
     expect(errors(withFacts('  Players pay with gold.'))).toEqual([[15, 'There is no counter called “gold”.']]);
+  });
+});
+
+describe('counters and facts under Players:', () => {
+  const compiled = (text: string) => compileGame(text, lib);
+  const errors = (text: string) => compiled(text).diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message]);
+  /** COUNTER_GAME with `extra` lines (already indented) put in after line 4, the last line under Players:. */
+  const withLines = (...extra: string[]) => COUNTER_GAME.replace('  Players pay with coins.', ['  Players pay with coins.', ...extra].join('\n'));
+
+  it('reads the lines as a board with no spaces', () => {
+    const { game, diagnostics } = compiled(COUNTER_GAME);
+    expect(diagnostics).toEqual([]);
+    expect(game!.board).toMatchObject({ spaces: [], pieces: null, dice: null, payWith: 'coins', bank: [] });
+    expect(game!.board!.counters).toMatchObject([{ name: 'coins', start: 7, visibility: 'public' }]);
+  });
+
+  it('plays: a button that pays takes the coins from the player who pressed it', () => {
+    const { game } = compiled(COUNTER_GAME);
+    const { engine } = createEngine(game!, lib, 2, initialState(game!, 1));
+    expect(counterOf(engine.getState(), 'coins', 'p0')).toBe(7);
+    const cardId = engine.getState().cards.find((card) => card.zoneId === 'shop')!.id;
+    expect(engine.dispatch({ type: 'buy', by: 'p0', cardId }).ok).toBe(true);
+    expect(counterOf(engine.getState(), 'coins', 'p0')).toBe(6);
+    expect(counterOf(engine.getState(), 'coins', 'p1')).toBe(7);
+  });
+
+  it('declares facts about players and numbers of the game', () => {
+    const { game, diagnostics } = compiled(withLines('  Players can be lucky.', '  The game has a pot of 0.'));
+    expect(diagnostics).toEqual([]);
+    expect(game!.facts).toEqual([{ name: 'lucky', on: 'player', kind: 'flag' }, { name: 'pot', on: 'game', kind: 'number', start: 0 }]);
+  });
+
+  it('keeps the board out of Players:', () => {
+    const loop = [
+      '  The board is a loop of spaces, starting at Go:',
+      '    | space      | kind   |',
+      '    | Go         | go     |',
+      '    | Mill Lane  | street |',
+      '    | Income Tax | tax    |',
+      '    | Rose Lane  | street |',
+    ];
+    const text = COUNTER_GAME.replace('Players: 2 to 3', ['Players: 2 to 3', ...loop].join('\n'));
+    expect(errors(text)).toContainEqual([3, 'The board goes under a Board: section, not under Players:.']);
+  });
+
+  it('reads only the lines under the first Players: line, and rejects those under a second', () => {
+    expect(errors(withLines('Players: 2', '  Each player has 3 lives that everyone can see.'))).toEqual([
+      [5, 'There is already a Players: line above.'], [6, "This line shouldn't be indented under the line above."],
+    ]);
+  });
+
+  it('reads the lines under Players: beside a Board: section', () => {
+    const text = TINY_BOARD_HEAD.replace('Players: 2 to 4', 'Players: 2 to 4\n  Each player has 3 lives that everyone can see.');
+    const { game, diagnostics } = compiled(text);
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    expect(game!.board!.counters.map((counter) => counter.name)).toEqual(['lives', 'money']);
+  });
+
+  it('still refuses a phrase that needs a board', () => {
+    const text = COUNTER_GAME.replace('      They pay 1.', '      They pay 1.\n      They own it.');
+    expect(errors(text)).toEqual([[25, '“They own it” needs a board. Add a Board: section with a line like “The board is a loop of spaces, starting at Go:”.']]);
   });
 });
 

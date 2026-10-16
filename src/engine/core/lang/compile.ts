@@ -38,8 +38,10 @@ const BAD_PLAYERS = 'Say how many players, like “Players: 4” or “Players: 
 const TOO_MANY_PLAYERS = `This game can have at most ${MAX_PLAYERS} players.`;
 const UNKNOWN_SECTION = `I don't understand this section. Sections are ${SECTION_NAMES.slice(0, -1).join(', ')} and ${SECTION_NAMES.at(-1)}, or a column of the board's table.`;
 const NO_LOOP = 'Add a line like “The board is a loop of spaces, starting at Go:” under Board:.';
-const NO_BOARD_FOR_PLAYER_FACTS = 'Facts about players need a Board: section for now.';
-const NO_BOARD_FOR_GAME_NUMBERS = 'Numbers that belong to the game need a Board: section for now.';
+const NO_BOARD_FOR_PLAYER_FACTS = 'Facts about players need a Board: section or lines under Players:.';
+const NO_BOARD_FOR_GAME_NUMBERS = 'Numbers that belong to the game need a Board: section or lines under Players:.';
+/** The loop of spaces is the board itself, and a game that has one says so under Board:, where its table and pieces are. */
+const LOOP_UNDER_PLAYERS = 'The board goes under a Board: section, not under Players:.';
 const GAME_NUMBER_IS_A_COUNTER = (name: string) => `“${name}” is already a number each player has; give the game's number another name.`;
 /** What the lines of a button that carries a number call that number, so a number of the game may not be called it too. */
 const THE_AMOUNT = 'amount';
@@ -168,16 +170,22 @@ function readGameName(games: Section[], diagnostics: Diagnostic[]): string | nul
   return name;
 }
 
-function readPlayers(lines: Section[], diagnostics: Diagnostic[]): { min: number; max: number } | null {
+/**
+ * The player count, and the lines indented under the first `Players:` line: numbers each player has and facts, which a game
+ * with no board declares there. A second `Players:` line is reported and its lines are rejected, as they were before.
+ */
+function readPlayers(lines: Section[], diagnostics: Diagnostic[]): { players: { min: number; max: number } | null; lines: OutlineNode[] } {
   let players: { min: number; max: number } | null = null;
+  let kept: OutlineNode[] = [];
   let seen = false;
   for (const { node, rest } of lines) {
-    rejectChildren(node, diagnostics);
     if (seen) {
+      rejectChildren(node, diagnostics);
       addProblem(diagnostics, node.line, 'There is already a Players: line above.');
       continue;
     }
     seen = true;
+    kept = node.children;
     const found = PLAYERS.exec(rest);
     const min = found ? Number(found[1]) : 0;
     const max = found?.[2] === undefined ? min : Number(found[2]);
@@ -186,7 +194,7 @@ function readPlayers(lines: Section[], diagnostics: Diagnostic[]): { min: number
     else addProblem(diagnostics, node.line, BAD_PLAYERS);
   }
   if (!seen) addProblem(diagnostics, 1, BAD_PLAYERS);
-  return players;
+  return { players, lines: kept };
 }
 
 function compileTable(lines: OutlineNode[], ctx: LineCtx): ZoneSpec[] {
@@ -216,13 +224,13 @@ function declareFacts(ref: PhraseRef, ctx: LineCtx, declared: Declared[]): void 
  * The facts the game declares, in the order written. A fact's name is its own in the whole game, and is not a column of the
  * board's table or of a set of cards: a space's details and a card's face already say something under that name. A fact
  * about players is neither a counter of the board nor “out”, for players already have something under those names, and
- * only a board shows them to the seats, so a game with no Board: section may not declare one. The same goes for a number of
- * the game: only a board shows it, and named like a counter it would be read in place of each player's own number of that
- * name. Nor may it be called “amount”: the lines of a button that carries a number read that number by the name, and the two
- * readings could only be told apart by a developer. A declaration with any of these problems is reported on its own line and
- * left out.
+ * only a board shows them to the seats, so a game with neither a Board: section nor lines under Players: (`hasBoard` says
+ * whether it has either) may not declare one. The same goes for a number of the game: only a board shows it, and named like a
+ * counter it would be read in place of each player's own number of that name. Nor may it be called “amount”: the lines of a
+ * button that carries a number read that number by the name, and the two readings could only be told apart by a developer. A
+ * declaration with any of these problems is reported on its own line and left out.
  */
-function acceptFacts(declared: Declared[], board: BoardSpec | null, hasBoardSection: boolean, cards: CardSetSpec[], diagnostics: Diagnostic[]): FactSpec[] {
+function acceptFacts(declared: Declared[], board: BoardSpec | null, hasBoard: boolean, cards: CardSetSpec[], diagnostics: Diagnostic[]): FactSpec[] {
   const columns = new Set(
     [
       ...(board ? ['space', ...columnsOf(board)] : []),
@@ -233,8 +241,8 @@ function acceptFacts(declared: Declared[], board: BoardSpec | null, hasBoardSect
   const facts: FactSpec[] = [];
   for (const { line, ...fact } of [...declared].sort((a, b) => a.line - b.line)) {
     // A Board: section that failed has said what is wrong already; this is for a game that never had one.
-    if (fact.on === 'player' && !hasBoardSection) addProblem(diagnostics, line, NO_BOARD_FOR_PLAYER_FACTS);
-    else if (fact.on === 'game' && !hasBoardSection) addProblem(diagnostics, line, NO_BOARD_FOR_GAME_NUMBERS);
+    if (fact.on === 'player' && !hasBoard) addProblem(diagnostics, line, NO_BOARD_FOR_PLAYER_FACTS);
+    else if (fact.on === 'game' && !hasBoard) addProblem(diagnostics, line, NO_BOARD_FOR_GAME_NUMBERS);
     else if (fact.on === 'player' && counters.has(fact.name)) addProblem(diagnostics, line, `“${fact.name}” is already a number each player has.`);
     else if (fact.on === 'game' && counters.has(fact.name)) addProblem(diagnostics, line, GAME_NUMBER_IS_A_COUNTER(fact.name));
     else if (fact.on === 'game' && fact.name === THE_AMOUNT) addProblem(diagnostics, line, GAME_NUMBER_IS_THE_AMOUNT);
@@ -314,18 +322,30 @@ type BoardParts = {
 const boardOf = (parts: BoardParts): BoardSpec => ({ ...parts, spaces: parts.spaces ?? [], bank: parts.bank ?? [] });
 
 /**
- * Reads the Board: lines in the order written. Every line is read with the words of the lines above it (a piece
- * starts on a space the table already named), so each gets a vocabulary of its own. A line that repeats one above
- * is reported and the first one stands. A line that declares facts goes to `declared`. Null when there is no Board:
- * section, or no loop of spaces in it.
+ * Reads the lines under Players: and then the Board: lines, in the order written, with the same vocabulary for both. Every line
+ * is read with the words of the lines above it (a piece starts on a space the table already named), so each gets a vocabulary of
+ * its own. A line that repeats one above is reported and the first one stands. A line that declares facts goes to `declared`.
+ * A loop of spaces under Players: is reported and left out: the board has a section of its own.
+ *
+ * With lines under Players: and no Board: section the game has a board with no spaces, which is where its numbers are kept and
+ * shown from; phrases that need a space stay refused, since none is named. Null when there are neither lines under Players: nor
+ * a Board: section, and when the Board: section has no loop of spaces in it.
  */
-function compileBoard(sections: Section[], maxPlayers: number, stage: (vocab: Vocab) => LineCtx, declared: Declared[]): BoardSpec | null {
-  if (sections.length === 0) return null;
+function compileBoard(
+  sections: Section[], playerLines: OutlineNode[], maxPlayers: number, stage: (vocab: Vocab) => LineCtx, declared: Declared[],
+): BoardSpec | null {
+  if (sections.length === 0 && playerLines.length === 0) return null;
   const parts: BoardParts = { spaces: null, pieces: null, counters: [], dice: null, payWith: null, bank: null };
   const ctxFor = () => stage(vocabFrom({ maxPlayers, board: boardOf(parts) }));
   const { diagnostics } = ctxFor();
-  for (const node of linesOf(sections)) {
+  const underBoard = linesOf(sections);
+  const underPlayers = new Set(playerLines);
+  for (const node of [...playerLines, ...underBoard]) {
     const ctx = ctxFor();
+    if (underPlayers.has(node) && LOOP_LINE.test(node.text)) {
+      addProblem(diagnostics, node.line, LOOP_UNDER_PLAYERS);
+      continue;
+    }
     rejectChildren(node, diagnostics);
     const ref = matchLine('board', node.text.replace(/:$/, ''), node.line, ctx, 'declare');
     if (ref.kind === 'declare') {
@@ -363,9 +383,9 @@ function compileBoard(sections: Section[], maxPlayers: number, stage: (vocab: Vo
         break;
     }
   }
-  if (parts.spaces) return boardOf(parts);
+  if (parts.spaces || sections.length === 0) return boardOf(parts);
   // A loop line with a problem has said so already; this is for a Board: that never had one.
-  if (!linesOf(sections).some((node) => LOOP_LINE.test(node.text))) addProblem(diagnostics, sections[0].node.line, NO_LOOP);
+  if (!underBoard.some((node) => LOOP_LINE.test(node.text))) addProblem(diagnostics, sections[0].node.line, NO_LOOP);
   return null;
 }
 
@@ -464,7 +484,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   const of = (keyword: string) => sections.filter((s) => s.keyword === keyword);
 
   const name = readGameName(of('game'), diagnostics);
-  const players = readPlayers(of('players'), diagnostics);
+  const { players, lines: playerLines } = readPlayers(of('players'), diagnostics);
   const maxPlayers = players?.max ?? 0;
   const stage = (vocab: Vocab): LineCtx => ({ library, vocab, gameName: name ?? 'Untitled', inMove: false, player: false, space: false, card: false, drawn: false, amount: false, picked: false, diagnostics });
 
@@ -474,7 +494,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
     if (of('table').length === 0) addProblem(diagnostics, 1, 'Add a Table: section.');
   }
   const declared: Declared[] = [];
-  const board = compileBoard(of('board'), maxPlayers, stage, declared);
+  const board = compileBoard(of('board'), playerLines, maxPlayers, stage, declared);
   const zones = compileTable(linesOf(of('table')), stage(vocabFrom({ maxPlayers })));
 
   // Phases and move verbs are read ahead, so a rule may name a phase that comes later in the text.
@@ -490,7 +510,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
     linesOf(of('cards')), stage(vocabFrom({ maxPlayers, zones, phases: phaseIds, verbs })), declared,
   );
   // Facts are checked once both tables are read, since a fact may be named like a column of either.
-  const facts = acceptFacts(declared, board, of('board').length > 0, cards, diagnostics);
+  const facts = acceptFacts(declared, board, of('board').length > 0 || playerLines.length > 0, cards, diagnostics);
   // Buttons are read ahead too: “they have not rolled this turn” may come before the action that rolls. They wait for the facts,
   // since the words a button picks a space with may name one, and no card or declare line reads a button.
   const actions = readActions(named, stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board, facts })));

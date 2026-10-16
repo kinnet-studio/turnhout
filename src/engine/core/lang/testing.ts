@@ -295,6 +295,22 @@ export const HOLDING_BOARD = deckGameText(
   ],
 ).replace('  The bank has 32 houses and 12 hotels.', '  The bank has 32 houses and 12 hotels.\n  Cards can be lent.\n  Players can be leading.\n  Players can be the rival.');
 
+/**
+ * A card game with a number each player has and no board, its lines indented under Players:. Players buy gems from a shop row
+ * for 1 coin, or pass. `Players: 2 to 3` is line 2, `A player may buy a card from the shop to their stash.` line 22, `They pay 1.`
+ * line 24 and `A player may pass.` line 25.
+ */
+export const COUNTER_GAME = [
+  'Game: Gem Shop', 'Players: 2 to 3', '  Each player has 7 coins that everyone can see.', '  Players pay with coins.', '',
+  'Cards:', '  A deck called gems, starting in the pile:', '    | name | cost | copies |', '    | Ruby | 3    | 4      |', '    | Opal | 1    | 4      |', '',
+  'Table:', '  The pile is a pile in the center that no one can see.', '  The shop is a row in the center that everyone can see.',
+  '  Each player has a stash row that only they can see.', '',
+  'Setup:', '  Deal 2 cards from the pile to the shop.', '',
+  'Phase: shopping', '  Players take turns.', '  A player may buy a card from the shop to their stash.', '    Then:', '      They pay 1.',
+  '  A player may pass.', '  After a player buys or passes, the turn passes to the left.', '',
+  'End:', '  The game ends when the pile is empty.', '  The highest score wins.',
+].join('\n');
+
 /** The loop of the board fixtures: a start, two streets, a tax, a station, a utility and two chance spaces. */
 export const FIXTURE_SPACES: SpaceSpec[] = [
   { name: 'Go', attrs: { kind: 'go' } },
