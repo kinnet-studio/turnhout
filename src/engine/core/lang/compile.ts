@@ -3,7 +3,9 @@ import { compileExample } from './compile-example';
 import {
   actionLine, actionOf, cardMoveVerb, compilePhase, compileTrigger, startsLineOf, targetWords, TURN_STARTS, type VerbUses,
 } from './compile-phase';
-import { addProblem, attempt, innerEffect, matchEffectLine, matchLine, phaseId, phraseFn, rejectChildren, type LineCtx } from './compile-util';
+import {
+  addProblem, attempt, FOR_EVERY_AT_LEAST_ONE, innerEffect, matchEffectLine, matchLine, phaseId, phraseFn, POINTS_FOR_EVERY, rejectChildren, type LineCtx,
+} from './compile-util';
 import type { Diagnostic } from './diagnostics';
 import { parseOutline, type OutlineNode } from './outline';
 import { normalizeLine, suggestNames, vocabFrom, type PhraseLibrary } from './phrases';
@@ -517,6 +519,10 @@ function compileEnd(sections: Section[], ctx: LineCtx): CompiledEnd | null {
       if (winner) addProblem(ctx.diagnostics, node.line, 'There is already a line saying who wins.');
       else winner = ref;
     } else {
+      // Said now, so the designer need not play a game to its end to hear it.
+      if (ref.phrase === POINTS_FOR_EVERY && (ref.args[1] as number) < 1) {
+        addProblem(ctx.diagnostics, node.line, FOR_EVERY_AT_LEAST_ONE, { kind: 'invalid', text: ref.text });
+      }
       scores.push(ref);
     }
   }

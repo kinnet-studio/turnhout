@@ -21,6 +21,10 @@ const MAX_SUGGESTIONS = 3;
 const NOT_INDENTED = "This line shouldn't be indented under the line above.";
 /** What a game with nothing to pay with is told, by the compiler and by a phrase that finds out only when it runs. */
 export const NEEDS_PAYMENT = 'Say what players pay with, like “Players pay with coins.” under Board:.';
+/** The score that gives points for each whole few of a counter. A few of 0 or less counts nothing, so it is refused. */
+export const POINTS_FOR_EVERY = 'each player scores {int} point(s) for every {int} {counter}';
+/** What a few of less than 1 is told, by the compiler and by the score should a game reach its end anyway. */
+export const FOR_EVERY_AT_LEAST_ONE = 'Say a number of 1 or more after “for every”.';
 const NEEDS_BOARD = (clean: string) => `“${clean}” needs a board. Add a Board: section with a line like “The board is a loop of spaces, starting at Go:”.`;
 const NEEDS_DICE = (clean: string) => `“${clean}” needs dice. Add a line like “There are two six-sided dice.” under Board:.`;
 const NEEDS_TWO_DICE = 'A double needs exactly two dice.';

@@ -1022,6 +1022,15 @@ describe('an End that waits for the round', () => {
     expect(game!.end!.winner).toMatchObject({ kind: 'winner', phrase: 'the highest score wins, and tied players share the win' });
   });
 
+  it('asks for a number of 1 or more after “for every” as it compiles, not only once the game ends', () => {
+    for (const every of ['0', '-2']) {
+      const { diagnostics } = compileGame(ENDING.replace('for every 2 coins', `for every ${every} coins`), lib);
+      expect(diagnostics, every).toEqual([expect.objectContaining({
+        line: 55, severity: 'error', message: 'Say a number of 1 or more after “for every”.', text: `Each player scores 1 point for every ${every} coins`,
+      })]);
+    }
+  });
+
   it('reports a misnamed zone in the condition on its line', () => {
     const text = ENDING.replace('the done pile is not empty and', 'the done pil is not empty and');
     expect(compileGame(text, lib).diagnostics).toEqual([expect.objectContaining({ line: 54, message: 'There is no zone called “done pil”.' })]);

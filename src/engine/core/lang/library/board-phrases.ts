@@ -7,7 +7,7 @@ import {
   addToCounter, counterOf, didThisTurn, isOut, latestRoll, markOut, nextIn, ownerOf, pieceAt, placePiece, playersIn, queueRoll, recordAction,
   recordDebt, recordRoll, rollsThisTurn, setCounter, setOwner, setRoll, setRollsThisTurn, takeQueuedRoll,
 } from '../board-state';
-import { innerEffect } from '../compile-util';
+import { FOR_EVERY_AT_LEAST_ONE, innerEffect, POINTS_FOR_EVERY } from '../compile-util';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import { canon, counted, joinOr, participle, pastWording } from '../refs';
@@ -386,7 +386,7 @@ const returnToBank: EffectFn = (env) => {
 
 /** The points for each whole few of the player's counter; what is left over scores nothing. */
 const pointsForEvery: ScoreFn = (env, [points, every, counter], seat) => {
-  if ((every as number) < 1) throw new RuleError('Say a number of 1 or more after “for every”.');
+  if ((every as number) < 1) throw new RuleError(FOR_EVERY_AT_LEAST_ONE);
   return Math.floor(counterOf(env.state, counter as string, seat) / (every as number)) * (points as number);
 };
 
@@ -573,7 +573,7 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('they own it', owns, { needsPlayer: true, needsSpace: true, needsBoard: true })
     .effect('they are out', goesOut, { needsPlayer: true })
     .effect('their spaces go back to the bank', returnToBank, { needsPlayer: true, needsBoard: true })
-    .score('each player scores {int} point(s) for every {int} {counter}', pointsForEvery)
+    .score(POINTS_FOR_EVERY, pointsForEvery)
     .winner('that player wins', lastOneStanding)
     .given('{player} is on {space}', isOnGiven)
     .given('{player} owns {space}', ownsGiven)
