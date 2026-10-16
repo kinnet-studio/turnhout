@@ -41,6 +41,8 @@ const IF_FRAME = /^if\s+(.+)$/i;
 const FOR_FRAME = /^for\s+(.+)$/i;
 /** group 1 = the words after “For each card ”, which say which cards and then, after a comma, what happens to each */
 const FOR_EACH_FRAME = /^for each card (.+)$/i;
+/** “For each card” naming no cards: nothing after it, or a comma straight after it. group 1 = those three words as written */
+const EACH_CARD_ALONE = /^(for each card)(?:,.*)?$/i;
 /** What “For each card ” and the words after it are read as: the group of cards those words name. */
 const THE_CARDS = 'the cards ';
 /** A button's cost line, which is no effect: under a rule or in `Then:` it is in the wrong place, not a phrase nobody has written. */
@@ -159,8 +161,9 @@ const readsPickedCards = (groups: CardGroup[]): boolean => groups.some((group) =
 
 /**
  * Whether a line of the group reads a card a press is about: the card a move makes, or “it”, the picked cards of a set, or the
- * target card, by itself or through “the cards on it” or “the picked cards” (P8). Only such phrases may, so a group without one says the
- * same of every card. A ref nobody wrote a phrase for reads nothing.
+ * target card. It may read one through a group of cards too: a total of “the cards on it” or of “the picked cards” changes with the cards
+ * pressed as surely as “it” does, so it can't be judged before they are known, nor read from a zone the presser can't see. Only such
+ * phrases may, so a group without one says the same of every card. A ref nobody wrote a phrase for reads nothing.
  */
 export function readsPressCard(library: PhraseLibrary, group: CondGroup): boolean {
   return group.refs.some((ref) => {
@@ -340,9 +343,14 @@ export function matchEffectLine(text: string, line: number, ctx: LineCtx): Phras
     addProblem(ctx.diagnostics, line, MISPLACED_COST, { text: clean });
     return missingRef('effect', clean, line);
   }
-  // Tried before the holder frame, whose “For …” it starts like.
+  // Tried before the holder frame, whose “For …” they start like: there, “each card” would be told it names no player.
   const each = FOR_EACH_FRAME.exec(clean);
   if (each) return matchForEachLine(each[1], clean, line, ctx);
+  const alone = EACH_CARD_ALONE.exec(clean);
+  if (alone) {
+    addProblem(ctx.diagnostics, line, NO_GROUP_NAMED(alone[1]), { kind: 'invalid', text: clean });
+    return missingRef('effect', clean, line);
+  }
   const holding = FOR_FRAME.exec(clean);
   if (holding) return matchForLine(holding[1], clean, line, ctx);
   const frame = IF_FRAME.exec(clean);

@@ -22,7 +22,7 @@ const valueIsTheTotal: ValueFn = (env, [, attribute, group]) => totalOf(env, att
 /**
  * The sentences that add up a number over a group of cards (R6): the cards in some zones, maybe only those whose number is more than
  * some, the cards on “it”, or the picked cards. Each card's number is read as every phrase reads it, through the values worked out for
- * cards, and a card without it is the rule's mistake. What a group needs (a player for their zones, a card for “it”, a button that picks
+ * cards, and a card without it counts as 0, since a group may well hold cards of several kinds. What a group needs (a player for their zones, a card for “it”, a button that picks
  * some cards) the compiler asks of the group itself; a value's line is about the card it works the value out for, as every such line is.
  */
 export function registerTotalPhrases(lib: PhraseLibrary): PhraseLibrary {

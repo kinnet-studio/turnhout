@@ -156,13 +156,14 @@ describe('the effect a line runs', () => {
   });
 });
 
+const defaultLibrary = createDefaultLibrary();
+const totals = compileGame(TOTALS_GAME, defaultLibrary).game!;
+/** The context of a line of TOTALS_GAME, read with the default library, in a rule about what `about` says. */
+const totalsCtx = (about: Partial<LineCtx> = {}): LineCtx & { diagnostics: Diagnostic[] } => ({
+  ...ctx(), library: defaultLibrary, vocab: vocabFor(totals), gameName: 'Crew', ...about, diagnostics: [],
+});
+
 describe('a line run for each card of a group', () => {
-  const lib = createDefaultLibrary();
-  const totals = compileGame(TOTALS_GAME, lib).game!;
-  /** The context of a line of TOTALS_GAME, in a rule about what `about` says. */
-  const totalsCtx = (about: Partial<LineCtx> = {}): LineCtx & { diagnostics: Diagnostic[] } => ({
-    ...ctx(), library: lib, vocab: vocabFor(totals), gameName: 'Crew', ...about, diagnostics: [],
-  });
   const NEEDS_CARD = (head: string) => `“${head}” only makes sense in a rule about a card, such as “When a card …”.`;
 
   it('reads the rest of the line about each card, and “they” as whoever the line is about', () => {
@@ -217,6 +218,13 @@ describe('a line run for each card of a group', () => {
     matchEffectLine('For each card in the hall whose skil is more than 1, it is tired.', 5, button);
     expect(button.diagnostics).toEqual([expect.objectContaining({ line: 5, message: 'There is no card attribute called “skil”.', suggestions: ['skill'] })]);
   });
+  it('says “which cards” for a line that names none before its comma', () => {
+    const button = totalsCtx({ player: true });
+    expect(matchEffectLine('For each card, it is tired.', 5, button)).toMatchObject({ kind: 'lang', phrase: 'missing' });
+    matchEffectLine('For each card.', 6, button);
+    const WHICH = '“For each card” doesn\'t say which cards. Write “For each card in their hand, …” or “For each card on it, …”.';
+    expect(button.diagnostics.map((d) => [d.line, d.message])).toEqual([[5, WHICH], [6, WHICH]]);
+  });
   it('says “which cards” for words that are no group', () => {
     const button = totalsCtx({ player: true });
     matchEffectLine('For each card picked, it is tired.', 5, button);
@@ -246,12 +254,6 @@ describe('a line run for each card of a group', () => {
 });
 
 describe('a group of cards a phrase reads', () => {
-  const lib = createDefaultLibrary();
-  const totals = compileGame(TOTALS_GAME, lib).game!;
-  const totalsCtx = (about: Partial<LineCtx> = {}): LineCtx & { diagnostics: Diagnostic[] } => ({
-    ...ctx(), library: lib, vocab: vocabFor(totals), gameName: 'Crew', ...about, diagnostics: [],
-  });
-
   it('needs a card for the cards on it', () => {
     const none = totalsCtx();
     expect(matchLine('condition', 'the total wage of the cards on it is 0', 4, none)).toMatchObject({ kind: 'lang', phrase: 'missing' });

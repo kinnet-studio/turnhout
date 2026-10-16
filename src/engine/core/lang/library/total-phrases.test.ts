@@ -90,8 +90,24 @@ describe('a value made of a total', () => {
 });
 
 describe('a card that lacks the number', () => {
-  it('is the rule’s mistake', () => {
-    expect(() => effect('they pay the total pay of the cards in their crew')).toThrow('This card has no pay.');
+  // The Vase's crew is a Potter and a Tinker, which have a wage and no pay, and the second Vase, which has a pay of 1 and no wage.
+  const mixed = putOn(table, [secondVase], 'crew-p0', vase, game);
+
+  it('counts as 0 in a total, which adds up the others', () => {
+    expect(coins(effect('they pay the total pay of the cards in their crew', mixed))).toBe(8);
+    expect(coins(effect('they pay the total wage of the cards in their crew', mixed))).toBe(7);
+  });
+  it('counts as 0 in a total a value is worked out from', () => {
+    const rules = compiled(`${TOTALS_GAME}\n\nCrew wage:\n  A card's crew wage is the total wage of the cards on it.`);
+    const reading = createEngine(rules, lib, 2, initialState(rules, 1)).runtime;
+    expect(reading.workedValue(mixed, vase, 'crew wage')).toBe(2);
+  });
+  it('is not one of the cards whose number is more than some', () => {
+    expect(condition('the total wage of the cards in their crew whose wage is more than 0 is 2', mixed)).toBe(true);
+  });
+  it('(guard: passes before and after) is still the rule’s mistake in a line about that one card', () => {
+    const aboutPotter = runtime.env(mixed, undefined, undefined, { player: 'p0', space: null, card: potter });
+    expect(() => runPhrase(lib, 'condition', 'its pay is more than 0', aboutPotter)).toThrow('This card has no pay.');
   });
 });
 
@@ -103,7 +119,7 @@ describe('the picked cards', () => {
   const counting = (n: number) => createEngine(rules, lib, 2, withCoins(n, setUp));
   const count = { type: 'count some cards from the hall', by: 'p0', cardIds: smiths };
 
-  it('adds up the cards of the press, in the press’s order', () => {
+  it('adds up the cards of the press', () => {
     // The two Smiths have a wage of 2 each.
     expect(counting(4).engine.dispatch(count)).toMatchObject({ ok: true });
     expect(counting(3).engine.dispatch(count)).toMatchObject({ ok: false, reason: 'they have at least the total wage of the picked cards in coins' });
@@ -124,12 +140,36 @@ describe('for each card', () => {
   it('runs only for the cards whose number is more than the one given, about whoever the line is about', () => {
     expect(coins(pressWith('For each card in their workshop whose pay is more than 1, they get 1 coin.', table))).toBe(10);
   });
-  it('says so on its line when a card it keeps by a number lacks that number', () => {
-    const rules = tallying('For each card in their workshop whose skill is more than 0, they get 1 coin.');
+  it('passes over a card without the number its cards are kept by', () => {
+    // Only the Potter, of the Vase, the Statue and the Potter, has a skill.
+    const withPotter = relocate(table, [secondPotter], 'workshop-p0', game);
+    expect(coins(pressWith('For each card in their workshop whose skill is more than 0, they get 1 coin.', withPotter))).toBe(10);
+  });
+  it('says so on its line when the number its cards are kept by is no number', () => {
+    const rules = tallying('For each card in their crew whose craft is more than 0, they get 1 coin.');
     const [line] = rules.phases[0].actions.find((action) => action.words === 'tally')!.effects;
     const built = createEngine(rules, lib, 2, table).runtime;
     expect(() => built.run(line, table, undefined, undefined, aboutP0))
-      .toThrow(expect.objectContaining({ message: 'This card has no skill.', line: line.line }));
+      .toThrow(expect.objectContaining({ message: 'This card\'s craft isn\'t a number.', line: line.line }));
+  });
+  it('is about the player who makes a card move, in a card move\'s lines', () => {
+    const rules = compiled(TOTALS_GAME.replace(
+      '  A player may stop.',
+      '  A player may place a card from their stash to their workshop.\n    Then:\n      For each card in their workshop, they get 1 coin.\n  A player may stop.',
+    ));
+    const built = createEngine(rules, lib, 2, relocate(table, [secondVase], 'stash-p0', game)).engine;
+    expect(built.dispatch({ type: 'place', by: 'p0', cardId: secondVase })).toMatchObject({ ok: true });
+    // The Vase, the Statue and the second Vase: a coin each.
+    expect([coins(built.getState()), counterOf(built.getState(), 'coins', 'p1')]).toEqual([12, 9]);
+  });
+  it('is about no one in Setup', () => {
+    const rules = compiled(TOTALS_GAME.replace(
+      '  Deal 2 cards from the pile to each stash.', '  Deal 2 cards from the pile to each stash.\n  For each card in each stash, it is tired.',
+    ));
+    const started = createEngine(rules, lib, 2, initialState(rules, 1)).engine.getState();
+    const tired = (zoneId: string) => zoneCards(started, zoneId).map((card) => card.data?.tired === true);
+    expect([...tired('stash-p0'), ...tired('stash-p1')]).toEqual([true, true, true, true]);
+    expect(tired('hall').some((flag) => flag)).toBe(false);
   });
 });
 

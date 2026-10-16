@@ -116,13 +116,23 @@ export function mustBeKept(env: PhraseEnv, name: string): void {
 
 /**
  * The number a card has under a name, as `cardValueOf` reads it, else the sentence that says why it has none. Every phrase that does
- * arithmetic on a card's numbers reads them here. A card with no such number says so with `noSuchNumber`, which a value worked out for
- * cards takes as a line not about that card; anywhere else it is the rule's mistake, like any RuleError.
+ * arithmetic on the numbers of the one card it is about reads them here; a rule about a group of cards reads them as `numberIfAny` does.
+ * A card with no such number says so with `noSuchNumber`, which a value worked out for cards takes as a line not about that card;
+ * anywhere else it is the rule's mistake, like any RuleError.
  */
 export function cardNumber(env: PhraseEnv, card: CardState, name: string): number {
-  const value = cardValueOf(env, card, name);
+  const value = numberIfAny(env, card, name);
   if (value === null) throw noSuchNumber(`This card has no ${name}.`);
-  if (typeof value !== 'number') throw new RuleError(`This card's ${name} isn't a number.`);
+  return value;
+}
+
+/**
+ * The number a card has under a name, as `cardNumber` reads it, or null when it has none: what a rule about many cards reads, since a
+ * blank cell is no number and a group may well hold cards of several kinds. A value that is no number is still the rule's mistake.
+ */
+function numberIfAny(env: PhraseEnv, card: CardState, name: string): number | null {
+  const value = cardValueOf(env, card, name);
+  if (value !== null && typeof value !== 'number') throw new RuleError(`This card's ${name} isn't a number.`);
   return value;
 }
 
@@ -131,8 +141,8 @@ export const cardsInZones = (env: PhraseEnv, ref: ZoneRef): CardState[] => resol
 
 /**
  * The cards of a group, as a rule that adds them up or walks through them reads them: those in its zones, zone by zone and slot by slot,
- * keeping only a card whose number is more than the group says when it says one; those on the card the rule is about; or the set the
- * button's press picked, in the order it gave them. A card a group keeps by its number must have that number.
+ * keeping only a card whose number is more than the group says when it says one (a card without that number is not kept); those on the
+ * card the rule is about; or the set the button's press picked, in the order it gave them.
  */
 export function cardsIn(env: PhraseEnv, group: CardGroup): CardState[] {
   if (group.kind === 'on it') return cardsOn(env.state, cardOf(env));
@@ -145,12 +155,19 @@ export function cardsIn(env: PhraseEnv, group: CardGroup): CardState[] {
   }
   const { zones, whose } = group;
   const cards = zones.flatMap((ref) => cardsInZones(env, ref));
-  return whose === null ? cards : cards.filter((card) => cardNumber(env, card, whose.attribute) > whose.above);
+  if (whose === null) return cards;
+  return cards.filter((card) => {
+    const have = numberIfAny(env, card, whose.attribute);
+    return have !== null && have > whose.above;
+  });
 }
 
-/** A number added up over the cards of a group, each read as `cardNumber` reads it: 0 over no cards. */
+/**
+ * A number added up over the cards of a group, each read as `cardNumber` reads it, a card without it counting as 0, in a value worked out
+ * for cards as anywhere else: a crew of hands and jobs adds up the pay of its jobs. 0 over no cards.
+ */
 export function totalOf(env: PhraseEnv, attribute: string, group: CardGroup): number {
-  return cardsIn(env, group).reduce((sum, card) => sum + cardNumber(env, card, attribute), 0);
+  return cardsIn(env, group).reduce((sum, card) => sum + (numberIfAny(env, card, attribute) ?? 0), 0);
 }
 
 /** The seat an example line names; it has to be sitting at the table. */
