@@ -62,11 +62,9 @@ Cards:
     | Meditation App | Tier 1 | 4 | 0 | 1 | 2 | 1 | 0 | Life Sci |  |  | Data | 1 |
     | VPN Service | Tier 1 | 4 | 0 | 2 | 2 | 1 | 0 | Infra |  |  | Platform | 1 |
     | Dev Tools | Tier 1 | 6 | 0 | 3 | 2 | 1 | 0 | Infra |  |  | Platform | 1 |
-  A deck called the market crash, starting in the growth deck:
-    | name         |
-    | Market Crash |
   A deck called growth products, starting in the growth deck:
     | name | tier | blue cost | red cost | rev | val | blue maint | red maint | sector | requires | also requires | tag | copies |
+    | Market Crash |  |  |  |  |  |  |  |  |  |  |  | 1 |
     | Streaming Service | Tier 2 | 10 | 0 | 6 | 6 | 2 | 0 | Consumer | Social |  | Media | 1 |
     | Esports League | Tier 2 | 10 | 0 | 5 | 8 | 2 | 0 | Consumer | Social |  | Media | 1 |
     | Social VR Space | Tier 2 | 12 | 0 | 4 | 8 | 2 | 0 | Consumer | Social |  | Media | 1 |
@@ -402,7 +400,43 @@ Example: research draws 3 and keeps 1 (ruling 18)
   And p0's research is empty
   And the phase is actions
 
-Example: the cards not kept enter the open idea pool in the order they were drawn (ruling 12)
+Example: research with the last action keeps a card, then the turn goes on through cleanup to the next player (ruling 18)
+  Given p0 has 1 action
+  And the seed market has a To-Do List and a Flashlight App
+  And the seed deck has a Smart Lock, a Dating App and a Mobile Wallet
+  When p0 researches the seed deck
+  Then it is accepted
+  And the phase is research
+  And it is p0's turn
+  And p0 has 0 actions
+  When p0 keeps the Dating App
+  Then it is accepted
+  And p0's backlog has a Dating App
+  And the open idea pool has a Smart Lock and a Mobile Wallet, in that order
+  And p0's research is empty
+  And it is p1's turn
+  And the phase is actions
+  And p1 has 3 actions
+
+Example: research on a seed deck of 1 card shows that card, and keeping it leaves the open idea pool as it was (ruling 18)
+  Given the seed market has a To-Do List and a Flashlight App
+  And the seed deck has a Smart Lock
+  And the open idea pool has a Basic Website and a USB Gadget
+  When p0 researches the seed deck
+  Then it is accepted
+  And the phase is research
+  And p0's research has 1 card
+  And p0's research has a Smart Lock
+  And the seed deck is empty
+  When p0 keeps the Smart Lock
+  Then it is accepted
+  And p0's backlog has a Smart Lock
+  And the open idea pool has a Basic Website and a USB Gadget, in that order
+  And p0's research is empty
+  And the phase is actions
+  And p0 has 2 actions
+
+Example: the cards not kept enter the open idea pool in the order they sat, and the oldest leaves first (ruling 12)
   Given the seed market has a Smart Lock and a Mobile Wallet
   And the open idea pool has a To-Do List, a Flashlight App, a Basic Website and a USB Gadget
   And the seed deck has a Dating App, a Viral Video App and a Messaging App
@@ -469,6 +503,24 @@ Example: research that finds only the market crash keeps nothing, and the turn g
   And p0 has 2 actions
   And p0's research is empty
   And p0's backlog is empty
+
+Example: the market crash drawn on the round's last turn ends the game when that turn ends (section 12)
+  Given p0 is the start player
+  And it is p1's turn
+  And the growth market has a Streaming Service and an Esports League
+  And the growth deck has a Smart Grid, a Neobank, the Market Crash and a Search Engine
+  When p1 researches the growth deck
+  Then it is accepted
+  And the crash pile has the Market Crash
+  And p1's research has a Neobank, a Search Engine and a Smart Grid
+  And the game is not over
+  When p1 keeps the Search Engine
+  Then it is accepted
+  And the phase is actions
+  And it is p1's turn
+  And the game is not over
+  When p1 ends their actions
+  Then the game is over
 
 Example: the game ends only once the round is finished (rulings 13 and 25)
   Given 3 players

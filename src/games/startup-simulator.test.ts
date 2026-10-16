@@ -5,7 +5,7 @@ import { createDefaultLibrary } from '@/engine/core/lang/library';
 import { runExamples } from '@/engine/core/lang/examples';
 import { createEngine, initialState, seatsFor, tableDefFor } from '@/engine/core/lang/build';
 import { counterOf } from '@/engine/core/lang/board-state';
-import { NEXT_CARD_KEY } from '@/engine/core/lang/cards';
+import { deckOf, NEXT_CARD_KEY } from '@/engine/core/lang/cards';
 import { markTurnStarted, ROUND_KEY, START_PLAYER_KEY, startPlayerOf, TURN_OF_KEY } from '@/engine/core/lang/turns';
 import { relocate, zoneIdFor, zoneInfo } from '@/engine/core/lang/zones';
 import { HIDDEN_FACE_KEY, deriveScene } from '@/engine/core/derive-scene';
@@ -339,7 +339,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(21);
+    expect(results).toHaveLength(24);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -388,8 +388,24 @@ describe('Startup Simulator (designer language)', () => {
       expect(sums(products)).toEqual({ 'blue cost': 315, 'red cost': 170, rev: 188, val: 369, 'blue maint': 45, 'red maint': 30 });
     });
 
+    it('deals the Market Crash as one of the growth products, so its id is one of theirs', () => {
+      const growthSets = game!.cards.filter((set) => set.start === 'growth deck');
+      expect(growthSets.map((set) => set.identities.length)).toEqual([35]);
+      expect(growthSets[0].identities.filter(({ attrs }) => attrs.name === 'Market Crash').map(({ attrs }) => attrs)).toEqual([{ name: 'Market Crash' }]);
+    });
+
+    it('gives the Market Crash an id that changes with the seed, so no seat can follow it through the growth deck by its id', () => {
+      const crashIds = Array.from({ length: 10 }, (_, i) => fresh(i + 1).cards.find((card) => nameOf(card) === 'Market Crash')!.id);
+      expect(new Set(crashIds).size, crashIds.join(', ')).toBeGreaterThanOrEqual(2);
+      // c52 is the id a set of the Crash alone, listed first, would always give it.
+      expect(crashIds, crashIds.join(', ')).not.toContain('c52');
+      const growthSet = game!.cards.find((set) => set.start === 'growth deck');
+      for (const id of crashIds) expect(deckOf(game!.cards, id), id).toBe(growthSet);
+    });
+
     it('gives every product a number for each cost and maintenance, 0 where it needs none of that color (C4)', () => {
-      const products = fresh().cards.filter((card) => card.data?.tier !== undefined);
+      const { cards } = fresh();
+      const products = [...inZone(cards, 'seed-deck'), ...inZone(cards, 'growth-deck')].filter((card) => nameOf(card) !== 'Market Crash');
       expect(products).toHaveLength(64);
       for (const card of products) {
         for (const column of CUBES) expect(typeof card.data?.[column], `${nameOf(card)}'s ${column}`).toBe('number');
