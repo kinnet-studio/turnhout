@@ -176,7 +176,7 @@ function moveZones(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx): { f
  * An `Only if …` line, or an `Only if one of:` block; null for any other line. Several `Only if` lines must all
  * hold, so each is a group of its own; a block holds when any one of its lines does.
  */
-function readCondition(node: OutlineNode, clean: string, ctx: LineCtx): CondGroup | null {
+export function readCondition(node: OutlineNode, clean: string, ctx: LineCtx): CondGroup | null {
   if (ONLY_IF_ONE_OF.test(clean)) {
     const refs = node.children.map((line) => {
       rejectChildren(line, ctx.diagnostics);

@@ -12,6 +12,10 @@ export function cardFact(card: CardState, fact: string): Json | null {
   return (card.data?.[fact] ?? null) as Json | null;
 }
 
+/** Whether the game declares a count on cards under this name (“Cards can have charges.”): the only number on a card a rule may change. */
+export const isCardCount = (game: CompiledGame, name: string): boolean =>
+  game.facts.some((fact) => fact.on === 'card' && fact.kind === 'number' && fact.name === name);
+
 /**
  * What a card has under a name a rule reads as one of its numbers: a column of its table, or a count the game declares on
  * cards. A declared count starts at 0, so a card nothing has changed it on has 0 of it; null when the card has no such thing.
@@ -19,7 +23,7 @@ export function cardFact(card: CardState, fact: string): Json | null {
 export function cardAttribute(card: CardState, name: string, game: CompiledGame): Json | null {
   const value = cardFact(card, name);
   if (value !== null) return value;
-  return game.facts.some((fact) => fact.on === 'card' && fact.kind === 'number' && fact.name === name) ? 0 : null;
+  return isCardCount(game, name) ? 0 : null;
 }
 
 /** The columns of the game's tables in table order, found the way a card's identity names them; a standard deck has none. */

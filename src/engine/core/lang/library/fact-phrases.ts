@@ -2,7 +2,7 @@ import { cardById, zoneCards, type GameState } from '../../game-state';
 import type { CardState, PlayerId } from '../../scene';
 import { bankItemOf } from '../board';
 import { bankOf, holderOf, ownerOf, setBank, setOwner, setSpaceFact, spaceFact } from '../board-state';
-import { cardAttribute, cardFact, changeCard } from '../card-facts';
+import { changeCard } from '../card-facts';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import { counted, joinAnd, singularForms } from '../refs';
@@ -13,7 +13,7 @@ import type {
 import { matchesCard, relocate, resolveZoneIds, zoneIdFor } from '../zones';
 import { transfer } from './board-phrases';
 import { describeCard } from './example-phrases';
-import { cardOf, describeZone, itOf, movedCard, soleZone, theyOf } from './support';
+import { cardHasFlag, cardOf, cardValueOf, describeZone, itOf, movedCard, mustBeKept, soleZone, theyOf } from './support';
 
 /** Every fact in the list, told what it is on. */
 const declares = (on: ThingFact['on']): DeclareFn => ([facts]) => (facts as FactItem[]).map((fact) => ({ ...fact, on }));
@@ -103,15 +103,12 @@ export function itCard(env: PhraseEnv): CardState {
   return card;
 }
 
-/** A flag on a card is so only when it was set: a card never given it, or given it as no, is not. */
-const isFlagged = (card: CardState, fact: string): boolean => cardFact(card, fact) === true;
+const itIsFlagged: ConditionFn = (env, [fact]) => cardHasFlag(env, itCard(env), fact as string);
 
-const itIsFlagged: ConditionFn = (env, [fact]) => isFlagged(itCard(env), fact as string);
+const theCardIsFlagged: ConditionFn = (env, [fact]) => cardHasFlag(env, movedCard(env), fact as string);
 
-const theCardIsFlagged: ConditionFn = (env, [fact]) => isFlagged(movedCard(env), fact as string);
-
-/** At least one card, wherever it is, has the flag set. */
-const someCardIs: ConditionFn = (env, [fact]) => env.state.cards.some((card) => isFlagged(card, fact as string));
+/** At least one card, wherever it is, is so. */
+const someCardIs: ConditionFn = (env, [fact]) => env.state.cards.some((card) => cardHasFlag(env, card, fact as string));
 
 // ---- which: the cards a rule is about ---------------------------------------------------------
 
@@ -122,7 +119,7 @@ const someCardIs: ConditionFn = (env, [fact]) => env.state.cards.some((card) => 
 const cardsWithNumber: WhichFn = (env, [zone, n, attribute]) =>
   env.seats
     .flatMap((seat) => zoneCards(env.state, zoneIdFor(zone as string, seat)))
-    .filter((card) => cardAttribute(card, attribute as string, env.game) === n)
+    .filter((card) => cardValueOf(env, card, attribute as string) === n)
     .map((card) => card.id);
 
 export const isOfKind = (space: SpaceSpec, kind: SpaceClass): boolean => kind.values.includes(space.attrs[kind.attribute]);
@@ -292,46 +289,59 @@ const cardsInZones = (env: PhraseEnv, ref: ZoneRef): CardState[] => resolveZoneI
 const moveItTo: EffectFn = (env, [zone]) => relocate(env.state, [cardOf(env)], soleZone(zone as ZoneRef, env), env.game);
 
 /**
- * Every card with the flag set, wherever it is, goes to the zone in the order the table holds them; the flag goes with it. The
+ * Every card that is so, wherever it is, goes to the zone in the order the table holds them; a flag it keeps goes with it. The
  * zone is worked out first, so that a rule naming no single zone is a mistake whether or not a card has the flag.
  */
 const everyFlaggedCardGoesTo: EffectFn = (env, [fact, zone]) => {
   const to = soleZone(zone as ZoneRef, env);
-  const ids = env.state.cards.filter((card) => isFlagged(card, fact as string)).map((card) => card.id);
+  const ids = env.state.cards.filter((card) => cardHasFlag(env, card, fact as string)).map((card) => card.id);
   return ids.length === 0 ? env.state : relocate(env.state, ids, to, env.game);
 };
 
 /**
  * Takes the flag off every card that has it, whether it was set or set to no, so that each card is as one that never had it. A
- * card's face goes back to how it was.
+ * card's face goes back to how it was. A flag worked out from lines is refused first, whether or not a card keeps one of that name.
  */
-const noCardIs: EffectFn = (env, [fact]) =>
-  env.state.cards
+const noCardIs: EffectFn = (env, [fact]) => {
+  mustBeKept(env, fact as string);
+  return env.state.cards
     .filter((card) => Object.hasOwn(card.data ?? {}, fact as string))
     .reduce((state, card) => changeCard(state, card.id, { [fact as string]: null }, env.game), env.state);
+};
 
-const everyCardIsFlagged: EffectFn = (env, [zone, fact]) =>
-  cardsInZones(env, zone as ZoneRef)
-    .filter((card) => !isFlagged(card, fact as string))
+const everyCardIsFlagged: EffectFn = (env, [zone, fact]) => {
+  mustBeKept(env, fact as string);
+  return cardsInZones(env, zone as ZoneRef)
+    .filter((card) => !cardHasFlag(env, card, fact as string))
     .reduce((state, card) => changeCard(state, card.id, { [fact as string]: true }, env.game), env.state);
+};
 
 /**
  * Changes a number a card has, from what it has now, and refreshes the face with it. A card that has no such number, or whose
- * value is no number, is left as it is; a declared count it was never given is 0 to change from.
+ * value is no number, is left as it is; a declared count it was never given is 0 to change from. Each rule that calls it refuses a
+ * value worked out from lines first, before it reads any card.
  */
 function changeNumber(env: PhraseEnv, state: GameState, card: CardState, attribute: string, next: (have: number) => number): GameState {
-  const have = cardAttribute(card, attribute, env.game);
+  const have = cardValueOf(env, card, attribute);
   return typeof have === 'number' ? changeCard(state, card.id, { [attribute]: next(have) }, env.game) : state;
 }
 
 /** The card the rule is about gains that much of a number it has. */
-const itGains: EffectFn = (env, [n, attribute]) => changeNumber(env, env.state, itCard(env), attribute as string, (have) => have + (n as number));
+const itGains: EffectFn = (env, [n, attribute]) => {
+  mustBeKept(env, attribute as string);
+  return changeNumber(env, env.state, itCard(env), attribute as string, (have) => have + (n as number));
+};
 
-/** Each card with the flag has a number it has changed, whichever way `change` says. */
-const eachFlaggedChanges = (change: (have: number, n: number) => number): EffectFn => (env, [fact, zone, n, attribute]) =>
-  cardsInZones(env, zone as ZoneRef)
-    .filter((card) => isFlagged(card, fact as string))
+/**
+ * Each card that is so has a number it has changed, whichever way `change` says. A rule that names a worked-out number is refused even
+ * over no card.
+ */
+const eachFlaggedChanges = (change: (have: number, n: number) => number): EffectFn => (env, [fact, zone, n, attribute]) => {
+  mustBeKept(env, attribute as string);
+  return cardsInZones(env, zone as ZoneRef)
+    .filter((card) => cardHasFlag(env, card, fact as string))
     .reduce((state, card) => changeNumber(env, state, card, attribute as string, (have) => change(have, n as number)), env.state);
+};
 
 const eachFlaggedGains = eachFlaggedChanges((have, n) => have + n);
 
@@ -367,7 +377,9 @@ export const namedCardIn = (env: PhraseEnv, match: CardMatch, ref: ZoneRef): Car
 /** What an example found instead of the card: “no Viper in p0's camp”. */
 export const noCardIn = (match: CardMatch, ref: ZoneRef): string => `no ${describeCard(match).replace(/^(?:an?|the) /, '')} in ${describeZone(ref)}`;
 
+// An example arranges what a card keeps; a value worked out from lines follows from that and is never arranged itself.
 const cardInZoneIsGiven: EffectFn = (env, [match, zone, fact]) => {
+  mustBeKept(env, fact as string);
   const card = namedCardIn(env, match as CardMatch, zone as ZoneRef);
   if (!card) throw new RuleError(`There is ${noCardIn(match as CardMatch, zone as ZoneRef)}.`);
   return changeCard(env.state, card.id, { [fact as string]: true }, env.game);
@@ -375,6 +387,7 @@ const cardInZoneIsGiven: EffectFn = (env, [match, zone, fact]) => {
 
 /** Sets the number the first card of the zone that is the named one has, whatever it had. */
 const cardInZoneHasGiven: EffectFn = (env, [match, zone, n, attribute]) => {
+  mustBeKept(env, attribute as string);
   const card = namedCardIn(env, match as CardMatch, zone as ZoneRef);
   if (!card) throw new RuleError(`There is ${noCardIn(match as CardMatch, zone as ZoneRef)}.`);
   return changeCard(env.state, card.id, { [attribute as string]: n as number }, env.game);
@@ -388,7 +401,7 @@ const cardInZoneIsExpected = (wanted: boolean): ExpectFn => (env, [match, zone, 
   const card = namedCardIn(env, named, where);
   const expected = `Expected ${theCard(named)} in ${describeZone(where)} ${wanted ? 'to be' : 'not to be'} ${fact}`;
   if (!card) return `${expected}, but there is ${noCardIn(named, where)}.`;
-  return isFlagged(card, fact as string) === wanted ? true : `${expected}, but ${wanted ? "it isn't" : 'it is'}.`;
+  return cardHasFlag(env, card, fact as string) === wanted ? true : `${expected}, but ${wanted ? "it isn't" : 'it is'}.`;
 };
 
 const cardInZoneHasExpected: ExpectFn = (env, [match, zone, n, attribute]) => {
@@ -396,7 +409,7 @@ const cardInZoneHasExpected: ExpectFn = (env, [match, zone, n, attribute]) => {
   const card = namedCardIn(env, named, where);
   const expected = `Expected ${theCard(named)} in ${describeZone(where)} to have ${counted(n as number, attribute as string)}`;
   if (!card) return `${expected}, but there is ${noCardIn(named, where)}.`;
-  const have = cardAttribute(card, attribute as string, env.game);
+  const have = cardValueOf(env, card, attribute as string);
   if (have === n) return true;
   return `${expected}, but it has ${typeof have === 'number' ? have : `no ${attribute}`}.`;
 };

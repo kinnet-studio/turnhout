@@ -2,7 +2,7 @@ import type { Json } from '../table-def';
 import { isSaysColumn } from './cards';
 import type {
   ActionFn, BoardFn, BoardSpec, CardSetSpec, CardsFn, ColumnFn, ConditionFn, DeclareFn, EffectFn, ExpectFn, FactItem, FactSpec, MomentFn,
-  NameProblem, ParamType, PhraseKind, ScoreFn, TargetFn, TurnFn, Vocab, WhichFn, WhoFn, WinnerFn, ZoneFn, ZoneSpec,
+  NameProblem, ParamType, PhraseKind, ScoreFn, TargetFn, TurnFn, ValueFn, Vocab, WhichFn, WhoFn, WinnerFn, ZoneFn, ZoneSpec,
 } from './types';
 
 const VISIBILITY: Record<string, string> = {
@@ -141,15 +141,15 @@ export function emptyVocab(): Vocab {
 
 /**
  * The words a designer may use about a game: its zones, card attributes and values, phases and move verbs, and for a
- * board game its spaces, the words of their table, its counters, the actions a player may take, the facts it declares
- * and what its bank holds.
+ * board game its spaces, the words of their table, its counters, the actions a player may take, the facts it declares,
+ * what its bank holds and the values it works out for cards.
  * Always make a new one per compile stage: the library caches what it builds from a Vocab by object.
  */
 export function vocabFrom(game: {
   maxPlayers: number; zones?: ZoneSpec[]; cards?: CardSetSpec[]; phases?: string[]; verbs?: string[];
-  board?: BoardSpec | null; actions?: Vocab['actions']; facts?: FactSpec[];
+  board?: BoardSpec | null; actions?: Vocab['actions']; facts?: FactSpec[]; worked?: { name: string; kind: 'number' | 'flag' }[];
 }): Vocab {
-  const { zones = [], cards = [], board = null, facts = [] } = game;
+  const { zones = [], cards = [], board = null, facts = [], worked = [] } = game;
   const attributes = new Set<string>();
   const cardValues: Vocab['cardValues'] = [];
   for (const set of cards) {
@@ -166,6 +166,9 @@ export function vocabFrom(game: {
   }
   // A count declared on cards is a number a card has, read and changed in the same words as a number of its table.
   for (const fact of facts) if (fact.on === 'card' && fact.kind === 'number') attributes.add(fact.name);
+  // A value worked out for cards is read in the same words as one a card keeps: a number as one of its numbers, a flag as one of its facts.
+  for (const { name, kind } of worked) if (kind === 'number') attributes.add(name);
+  const workedFlags = worked.filter(({ kind }) => kind === 'flag').map(({ name }): FactSpec => ({ name, on: 'card', kind: 'flag' }));
   const spaceAttributes = new Set<string>();
   const spaceValues: Vocab['spaceValues'] = [];
   for (const { attrs } of board?.spaces ?? []) {
@@ -195,7 +198,7 @@ export function vocabFrom(game: {
     actions: game.actions ?? [],
     dice: (board?.dice ?? null) !== null,
     diceCount: board?.dice?.count ?? 0,
-    facts,
+    facts: [...facts, ...workedFlags],
     bank: (board?.bank ?? []).map((b) => b.name),
   };
 }
@@ -354,6 +357,7 @@ export class PhraseLibrary {
   board(p: string, fn: BoardFn): this { return this.add('board', p, fn); }
   declare(p: string, fn: DeclareFn): this { return this.add('declare', p, fn); }
   column(p: string, fn: ColumnFn, opts?: PhraseOpts): this { return this.add('column', p, fn, opts); }
+  value(p: string, fn: ValueFn, opts?: PhraseOpts): this { return this.add('value', p, fn, opts); }
   condition(p: string, fn: ConditionFn, opts?: PhraseOpts): this { return this.add('condition', p, fn, opts); }
   effect(p: string, fn: EffectFn, opts?: PhraseOpts): this { return this.add('effect', p, fn, opts); }
   turn(p: string, fn: TurnFn): this { return this.add('turn', p, fn); }
@@ -561,7 +565,8 @@ function stubParams(kind: PhraseKind, argNames: string[]): string {
     case 'board': return `${args}, table`;
     case 'declare': return args;
     case 'zone': return argNames.length > 0 ? args : '';
-    case 'column': return `env, ${args}, value`;
+    case 'column':
+    case 'value': return `env, ${args}, value`;
     case 'score': return `env, ${args}, seat`;
     case 'winner': return `env, ${args}, scores`;
     case 'moment': return `env, ${args}, moment`;

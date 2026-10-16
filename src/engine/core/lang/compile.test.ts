@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import COLOR_MATCH_TEXT from '@/games/color-match.rules?raw';
+import RENT_DAY_TEXT from '@/games/rent-day.rules?raw';
 import VENOM_TEXT from '@/games/venom.rules?raw';
 import { counterOf } from './board-state';
 import { createEngine, initialState } from './build';
@@ -7,9 +8,9 @@ import { canPlay, compileGame } from './compile';
 import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
-import { VOCAB_TYPES } from './refs';
+import { parseParam, VOCAB_TYPES } from './refs';
 import {
-  COUNTER_GAME, CREW_GAME, HOLDING_BOARD, INTERRUPT_BOARD, PICK_BOARD, ROUNDS_GAME, TINY_BOARD_HEAD, TURN_GAME, deckGameText,
+  COUNTER_GAME, CREW_GAME, HOLDING_BOARD, INTERRUPT_BOARD, PICK_BOARD, ROUNDS_GAME, TINY_BOARD_HEAD, TURN_GAME, WORKED_GAME, deckGameText, vocabFor,
 } from './testing';
 import type { ParamType } from './types';
 
@@ -1247,5 +1248,83 @@ describe('zones whose cards sit on cards', () => {
     const line = '  The hall is a row in the center that everyone can see, where every card is on a card.';
     const text = CREW_GAME.replace('  The hall is a row in the center that everyone can see.', line);
     expect(messages(text)).toContainEqual([at(text, line), 'Only a zone each player has can hold cards on cards.']);
+  });
+});
+
+describe('values worked out for cards', () => {
+  /** The 1-based number of `line` in `text`. */
+  const at = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+  const worked = compileGame(WORKED_GAME, lib).game!;
+  const refs = (n: number) => Array.from({ length: n }, () => expect.objectContaining({ kind: 'value' }));
+  const group = expect.objectContaining({ mode: 'all', refs: [expect.objectContaining({ kind: 'condition' })] });
+  /** The worked game with `lines` after the line `after`. */
+  const addAfter = (after: string, ...lines: string[]) => WORKED_GAME.replace(after, [after, ...lines].join('\n'));
+  const problems = (text: string) => {
+    const result = compileGame(text, lib);
+    expect(result.game).toBeUndefined();
+    return result.diagnostics.map((d) => [d.line, d.message]);
+  };
+
+  it('compiles the worked game with no problems', () => expect(compileGame(WORKED_GAME, lib).diagnostics).toEqual([]));
+  it('keeps a value for each section, by name: its kind, its lines and where it is written', () => {
+    expect(worked.worked).toEqual({
+      'red work': { kind: 'number', refines: false, refs: refs(3), line: at(WORKED_GAME, 'Red work:') },
+      'gold work': { kind: 'number', refines: false, refs: refs(3), line: at(WORKED_GAME, 'Gold work:') },
+      wage: { kind: 'number', refines: true, refs: refs(1), line: at(WORKED_GAME, 'Wage:') },
+      done: { kind: 'flag', conditions: [group, group], line: at(WORKED_GAME, 'Done:') },
+    });
+    expect(worked.worked!.wage).toMatchObject({ refs: [{ phrase: "{cardclass}'s {attribute} is {int}", args: [{ name: 'Tinker' }, 'wage', 1] }] });
+  });
+  it('leaves a game with no such section without worked values', () => {
+    expect(compileGame(CREW_GAME, lib).game!).not.toHaveProperty('worked');
+  });
+  it('gives the lines of the game the names it works out: a number as a card attribute and a flag as a card fact', () => {
+    const vocab = vocabFor(worked);
+    expect(vocab.attributes).toContain('red work');
+    expect(parseParam('cardflag', 'done', vocab)).toEqual({ value: 'done' });
+    expect(parseParam('attribute', 'done', vocab)).toBeNull();
+  });
+  it('lets a button read a worked value of the card it picks', () => {
+    const text = addAfter('  A player may finish a card in their workshop.', '    Only if it is done.');
+    expect(compileGame(text, lib).diagnostics).toEqual([]);
+  });
+
+  describe('problems', () => {
+    it('refuses an Only if among the lines of a number, on its line', () => {
+      const line = '  Only if its pay is more than 0.';
+      const text = addAfter("  A tired card's red work is 0.", line);
+      expect(problems(text)).toEqual([
+        [at(text, line), "Write a worked-out value's lines all as “Only if …” (it holds when they all do) or all as “A … card's … is …”, not both."],
+      ]);
+    });
+    it('refuses a name the game already keeps on cards', () => {
+      const text = `${WORKED_GAME}\n\nTired:\n  Only if its pay is more than 1.`;
+      expect(problems(text)).toEqual([[at(text, 'Tired:'), '“tired” is already a fact cards keep; a value worked out from lines needs a name of its own.']]);
+    });
+    it('refuses a flag named after a column of the card table', () => {
+      const text = `${WORKED_GAME}\n\nPay:\n  Only if its red need is more than 1.`;
+      expect(problems(text)).toEqual([
+        [at(text, 'Pay:'), '“pay” is a column of the card table, so it is a number; work it out with lines like “A … card\'s pay is …”.'],
+      ]);
+    });
+    it('refuses a line about another value than its section’s', () => {
+      const line = "  A red card's gold work is 1.";
+      const text = addAfter("  A tired card's red work is 0.", line);
+      expect(problems(text)).toEqual([[at(text, line), 'This line is about “gold work”, but it is under Red work:.']]);
+    });
+  });
+
+  it('(guard) still calls a header unknown when it is no section of any kind', () => {
+    const text = `${WORKED_GAME}\n\nSetpu:\n  Deal 2 cards from the pile to each stash.`;
+    const line = at(text, 'Setpu:');
+    expect(compileGame(text, lib).diagnostics.filter((d) => d.line >= line)).toEqual([
+      expect.objectContaining({ line, message: expect.stringMatching(/^I don't understand this section\./), suggestions: ['Setup'] }),
+    ]);
+  });
+  it('(guard) leaves a board game alone: Rent Day compiles as before, and its Rent: is a column of the board', () => {
+    const { game, diagnostics } = compileGame(RENT_DAY_TEXT, lib);
+    expect(diagnostics).toEqual([]);
+    expect(game!).not.toHaveProperty('worked');
+    expect(game!.columns.rent).toHaveLength(5);
   });
 });

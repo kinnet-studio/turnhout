@@ -1,18 +1,19 @@
 import { MAX_FLOW_ITERATIONS } from '../flow';
-import type { GameState } from '../game-state';
+import { cardById, type GameState } from '../game-state';
 import type { Move } from '../moves';
-import type { PlayerId } from '../scene';
+import type { CardState, PlayerId } from '../scene';
 import type { Json } from '../table-def';
 import { attachmentProblem } from './attach';
 import { numberIn } from './board';
 import { holderOf, interruptedTurn, setCounter } from './board-state';
+import { cardAttribute, cardFact } from './card-facts';
 import { isMissing, readsPressCard } from './compile-util';
 import { MissingPhraseError, RuleError } from './diagnostics';
 import type { PhraseLibrary } from './phrases';
 import { phaseTakesTurns, ROUND_FRAME, ROUND_KEY, roundFinished, roundOf, startPlayerOf, TURN_OF_KEY } from './turns';
 import type {
   ActionFn, ColumnFn, CompiledGame, CompiledMoment, CompiledTrigger, CondGroup, ConditionFn, EffectFn, ExampleEnv, ExpectFn, MomentFn, Moment, MoveInfo,
-  PhraseEnv, PhraseKind, PhraseRef, ScoreFn, Subject, TargetFn, TurnFn, WhichFn, WhoFn, WinnerFn,
+  PhraseEnv, PhraseKind, PhraseRef, ScoreFn, Subject, TargetFn, TurnFn, ValueFn, WhichFn, WhoFn, WinnerFn, WorkedValue,
 } from './types';
 
 type Checker = (state: GameState, move: Move) => true | string;
@@ -21,6 +22,7 @@ const DEPEND_ON_EACH_OTHER = 'Two moves depend on each other through “they hav
 const KEEPS_MOVING = 'It keeps moving pieces without stopping.';
 const KEEPS_DRAWING = 'Cards keep drawing cards without stopping.';
 const NO_WINNER = 'No player won.';
+const WORKED_FROM_ITSELF = (name: string) => `“${name}” is worked out from itself.`;
 
 /** Who a line about no one in particular is about. */
 const NO_ONE: Subject = { player: null, space: null, card: null };
@@ -53,6 +55,11 @@ export class LangRuntime {
   private readonly runningMoments: CompiledMoment[] = [];
   /** How many card lines are running inside one another: a card that draws a card runs that card's lines in its own. */
   private cardDepth = 0;
+  /**
+   * The values being worked out right now, each for a card, by card and name: a number or a flag whose lines ask it again, directly or
+   * through another value, would never end.
+   */
+  private readonly workingOut = new Set<string>();
 
   constructor(
     readonly game: CompiledGame,
@@ -70,7 +77,7 @@ export class LangRuntime {
     const about = subject ?? (move ? { player: move.by, space: null, card: null } : undefined);
     return {
       state, game: this.game, seats: this.seats, move, check: this.check, example, subject: about, announce: this.announce, runLine: this.runLine,
-      columnValue: this.columnValue,
+      columnValue: this.columnValue, workedValue: this.workedValue, workedFlag: this.workedFlag,
     };
   }
 
@@ -303,6 +310,63 @@ export class LangRuntime {
       numberIn(spec, column),
     );
   };
+
+  /**
+   * `env.workedValue`: what a card has under a name. For a number a section works out, it starts from the card's own number when the
+   * section is named after a column of a card table (nothing when the card has none), else from 0, and each line then has its say in the
+   * order written, about that card and no player, seeing what the line before made of it. Any other name is what the card keeps.
+   */
+  readonly workedValue = (state: GameState, cardId: string, name: string): Json | null => {
+    const card = this.cardIn(state, cardId);
+    const worked = this.workedOf(name);
+    if (worked?.kind !== 'number') return cardAttribute(card, name, this.game);
+    const own = cardFact(card, name);
+    const subject: Subject = { player: null, space: null, card: cardId };
+    return this.workOut(cardId, name, () => worked.refs.reduce(
+      (value, ref) => this.call<ValueFn, number | null>(ref, ['value'], (fn) => fn(this.env(state, undefined, undefined, subject), ref.args, value)),
+      worked.refines ? (typeof own === 'number' ? own : null) : 0,
+    ));
+  };
+
+  /**
+   * `env.workedFlag`: whether a card is so. A flag a section works out holds when each of its `Only if` groups does, about that card and
+   * no player; any other is so when the card has it set, and not set to no.
+   */
+  readonly workedFlag = (state: GameState, cardId: string, flag: string): boolean => {
+    const card = this.cardIn(state, cardId);
+    const worked = this.workedOf(flag);
+    if (worked?.kind !== 'flag') return cardFact(card, flag) === true;
+    const subject: Subject = { player: null, space: null, card: cardId };
+    return this.workOut(cardId, flag, () => this.failedGroup(worked.conditions, state, undefined, subject) === null);
+  };
+
+  /** The value a section works out under this name, if one does. */
+  private workedOf(name: string): WorkedValue | undefined {
+    return this.game.worked !== undefined && Object.hasOwn(this.game.worked, name) ? this.game.worked[name] : undefined;
+  }
+
+  /** The card a value is worked out for. Phrases ask only about cards the state holds, so a missing one is a bug. */
+  private cardIn(state: GameState, cardId: string): CardState {
+    const card = cardById(state, cardId);
+    if (!card) throw new Error(`No card ${cardId} to work a value out for.`);
+    return card;
+  }
+
+  /**
+   * Works out the value `name` of a card, which must not be asked again for the same card until it is known. The line that asks it again
+   * is the one blamed (the error takes that line's number on its way out), never a stack overflow.
+   */
+  private workOut<T>(cardId: string, name: string, work: () => T): T {
+    const key = JSON.stringify([cardId, name]);
+    if (this.workingOut.has(key)) throw new RuleError(WORKED_FROM_ITSELF(name));
+    this.workingOut.add(key);
+    try {
+      return work();
+    } finally {
+      // A value that throws must not leave the runtime thinking it is still being worked out.
+      this.workingOut.delete(key);
+    }
+  }
 
   /**
    * The state, when every card that must sit on a card does, on one still with it; else a RuleError that names the card left behind.

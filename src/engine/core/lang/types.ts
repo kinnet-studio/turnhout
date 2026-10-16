@@ -5,7 +5,7 @@ import type { Json } from '../table-def';
 
 export type PhraseKind =
   | 'cards' | 'zone' | 'board' | 'declare' | 'column' | 'condition' | 'effect' | 'turn' | 'who' | 'which' | 'score' | 'winner' | 'moment' | 'given'
-  | 'action' | 'target' | 'expect';
+  | 'action' | 'target' | 'expect' | 'value';
 /** kind 'lang' = compiler built-ins: all | any | phase | always | if | for | round | missing */
 export type PhraseRef = { kind: PhraseKind | 'lang'; phrase: string; args: Json[]; line: number; text: string };
 /** `other` is the one player who is not the actor, in a game for two. */
@@ -105,6 +105,12 @@ export type EveryPhase = { triggers: CompiledTrigger[]; roundStarts: PhraseRef[]
 export type CompiledEnd = { line: number; when: PhraseRef; scores: PhraseRef[]; winner: PhraseRef };
 export type ExampleStep = { keyword: 'given' | 'when' | 'then'; ref: PhraseRef };
 export type CompiledExample = { name: string; line: number; players: number | null; steps: ExampleStep[] };
+/**
+ * A value a top-level section works out for each card, from the lines under it (R4). A number starts from the card's own number when
+ * `refines` says it is named after a column of a card table, else from 0, and each line has its say in the order written. A flag holds
+ * when each of its `Only if` groups does. `line` is the section's own.
+ */
+export type WorkedValue = { kind: 'number'; refines: boolean; refs: PhraseRef[]; line: number } | { kind: 'flag'; conditions: CondGroup[]; line: number };
 export type CompiledGame = {
   name: string; players: { min: number; max: number }; zones: ZoneSpec[]; cards: CardSetSpec[];
   setup: PhraseRef[]; phases: CompiledPhase[]; end: CompiledEnd | null; examples: CompiledExample[];
@@ -121,6 +127,8 @@ export type CompiledGame = {
   says: { [cell: string]: PhraseRef[] };
   /** The rules for every phase; empty lists when the game has no `In every phase:` section. */
   everyPhase: EveryPhase;
+  /** The values worked out for cards, by name; there only when the game has a section that works one out. */
+  worked?: { [name: string]: WorkedValue };
 };
 export type Vocab = {
   sharedZones: string[]; playerZones: string[]; maxPlayers: number; phases: string[]; verbs: string[];
@@ -143,7 +151,10 @@ export type Vocab = {
   dice: boolean;
   /** How many dice the board rolls: 0 without dice. */
   diceCount: number;
-  /** The facts the game keeps, and the names of the bank's numbers. */
+  /**
+   * The facts the game keeps, a flag worked out for cards among them (it is read like a flag cards keep), and the names of the bank's
+   * numbers.
+   */
   facts: FactSpec[]; bank: string[];
 };
 /**
@@ -179,6 +190,13 @@ export interface PhraseEnv {
    * supplies it. Null for a blank cell no line fills. Without it a phrase reads the table's cell as it stands.
    */
   columnValue?: (state: GameState, space: number, column: string) => number | null;
+  /**
+   * What a card has under a name once the lines of the section that works it out have had their say, or what it keeps under any other
+   * name; the runtime supplies it. Without it a phrase reads what the card keeps.
+   */
+  workedValue?: (state: GameState, cardId: string, name: string) => Json | null;
+  /** Whether a card is something a section works out from `Only if` lines, or else has the flag set; the runtime supplies it. */
+  workedFlag?: (state: GameState, cardId: string, flag: string) => boolean;
 }
 export type ConditionFn = (env: PhraseEnv, args: Json[]) => boolean;
 export type EffectFn = (env: PhraseEnv, args: Json[]) => GameState;   // also 'given'
@@ -204,6 +222,11 @@ export type DeclareFn = (args: Json[]) => FactSpec[];
  * so far (the table's cell for the first line, what the line before made of it for the next); null for nothing.
  */
 export type ColumnFn = (env: PhraseEnv, args: Json[], value: number | null) => number | null;
+/**
+ * A line of a section that works out a number for cards: what it comes to for the card in `env.subject.card`, given what the lines
+ * before made of it; null for nothing.
+ */
+export type ValueFn = (env: PhraseEnv, args: Json[], value: number | null) => number | null;
 /** A name in a line that the game never defined, said for the designer, with the closest names it did define. */
 export type NameProblem = { message: string; suggestions: string[] };
 export interface ParamType {

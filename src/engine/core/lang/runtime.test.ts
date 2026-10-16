@@ -6,7 +6,7 @@ import {
   counterOf, gameNumber, interruptTurn, isOut, markOut, ownerOf, playerFact, recordAction, setCounter, setOwner, setPlayerFact, withBoardData,
 } from './board-state';
 import { createEngine, flowDefFor, initialState, seatsFor, tableDefFor } from './build';
-import { cardFact } from './card-facts';
+import { cardAttribute, cardFact } from './card-facts';
 import { compileGame } from './compile';
 import { MissingPhraseError, RuleError } from './diagnostics';
 import { friendlyError } from './friendly';
@@ -908,5 +908,24 @@ describe('an End that waits for the round', () => {
     const error = thrown(() => new LangRuntime(nobody, library, SEATS).result(state));
     expect(error).toBeInstanceOf(RuleError);
     expect(error).toMatchObject({ message: 'No player won.', line: 56 });
+  });
+});
+
+describe('LangRuntime.workedValue and workedFlag in a game that works nothing out', () => {
+  const runtime = new LangRuntime(game, lib, ['p0', 'p1']);
+  const state = arrange('p0', { 'hand-p0': ['QS'] });
+  const queen = cardById(state, idOf(state, 'QS'))!;
+
+  it('reads a card’s number as the card has it', () => {
+    expect(runtime.workedValue(state, queen.id, 'rank')).toBe(cardAttribute(queen, 'rank', game));
+    expect(runtime.workedValue(state, queen.id, 'rank')).toBe(12);
+    expect(runtime.workedValue(state, queen.id, 'colour')).toBeNull();
+  });
+  it('reads a flag as set only when the card has it set', () => {
+    expect(runtime.workedFlag(state, queen.id, 'tired')).toBe(false);
+  });
+  it('is what a phrase sees', () => {
+    expect(runtime.env(state).workedValue?.(state, queen.id, 'rank')).toBe(12);
+    expect(runtime.env(state).workedFlag?.(state, queen.id, 'tired')).toBe(false);
   });
 });

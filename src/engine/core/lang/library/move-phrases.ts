@@ -1,12 +1,11 @@
 import { zoneCards } from '../../game-state';
 import type { CardState } from '../../scene';
 import { counterOf } from '../board-state';
-import { cardAttribute } from '../card-facts';
 import type { PhraseLibrary } from '../phrases';
 import type { CardMatch, ConditionFn, EffectFn, PhraseEnv, ZoneRef } from '../types';
 import { handZoneOf, matchesCard, resolveZoneIds, topCard, zoneInfo } from '../zones';
 import { transfer } from './board-phrases';
-import { cardNumber, currentMove, movedCard, soleZone, theyOf } from './support';
+import { cardNumber, cardValueOf, currentMove, movedCard, soleZone, theyOf } from './support';
 
 const cardIs = (wanted: boolean): ConditionFn => (env, args) => matchesCard(movedCard(env), args[0] as CardMatch) === wanted;
 
@@ -15,8 +14,8 @@ const sameAsTop: ConditionFn = (env, args) => {
   const [attribute, ref] = args as [string, ZoneRef];
   const top = topCard(env.state, soleZone(ref, env));
   if (!top) return true;
-  const mine = cardAttribute(movedCard(env), attribute, env.game);
-  return mine !== null && mine === cardAttribute(top, attribute, env.game);
+  const mine = cardValueOf(env, movedCard(env), attribute);
+  return mine !== null && mine === cardValueOf(env, top, attribute);
 };
 
 const holdsOnly: ConditionFn = (env, args) =>

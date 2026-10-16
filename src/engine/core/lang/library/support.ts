@@ -2,7 +2,7 @@ import { cardById } from '../../game-state';
 import type { CardState, PlayerId } from '../../scene';
 import type { Json } from '../../table-def';
 import { pieceAt } from '../board-state';
-import { cardAttribute } from '../card-facts';
+import { cardAttribute, cardFact } from '../card-facts';
 import { RuleError } from '../diagnostics';
 import type { MoveInfo, PhraseEnv, ZoneRef } from '../types';
 import { resolveSeat, resolveZoneIds } from '../zones';
@@ -88,11 +88,31 @@ export function thePickedCards(env: PhraseEnv): string[] {
 }
 
 /**
- * The number a card shows under a name: a column of its table or a count the game keeps on cards (0 until it changes), else the sentence
- * that says why it shows none. Every phrase that does arithmetic on a card's numbers reads them here.
+ * What a card has under a name, as every phrase reads it: a value the game works out for cards once its lines have had their say, else a
+ * column of the card's table or a count the game keeps on cards (0 until it changes); null when it has no such thing.
+ */
+export function cardValueOf(env: PhraseEnv, card: CardState, name: string): Json | null {
+  return env.workedValue ? env.workedValue(env.state, card.id, name) : cardAttribute(card, name, env.game);
+}
+
+/** Whether a card is so, as every phrase reads a flag on a card: a flag worked out from its lines, else one set on the card and not set to no. */
+export function cardHasFlag(env: PhraseEnv, card: CardState, flag: string): boolean {
+  return env.workedFlag ? env.workedFlag(env.state, card.id, flag) : cardFact(card, flag) === true;
+}
+
+/** A value worked out from lines is what they say, so a rule that would change one under that name is a mistake in the rule. */
+export function mustBeKept(env: PhraseEnv, name: string): void {
+  if (env.game.worked !== undefined && Object.hasOwn(env.game.worked, name)) {
+    throw new RuleError(`“${name}” is worked out from its lines, so no rule can change it.`);
+  }
+}
+
+/**
+ * The number a card has under a name, as `cardValueOf` reads it, else the sentence that says why it has none. Every phrase that does
+ * arithmetic on a card's numbers reads them here.
  */
 export function cardNumber(env: PhraseEnv, card: CardState, name: string): number {
-  const value = cardAttribute(card, name, env.game);
+  const value = cardValueOf(env, card, name);
   if (value === null) throw new RuleError(`This card has no ${name}.`);
   if (typeof value !== 'number') throw new RuleError(`This card's ${name} isn't a number.`);
   return value;

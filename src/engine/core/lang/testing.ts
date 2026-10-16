@@ -411,6 +411,18 @@ export const CREW_GAME = [
   'End:', '  The game ends when the scrap has more than 3 cards.', '  The highest score wins.',
 ].join('\n');
 
+/**
+ * CREW_GAME with the numbers a job's crew works up to, and values worked out for cards from them: what a hand puts into red and gold
+ * work, a Tinker's wage, and whether a job is done.
+ */
+export const WORKED_GAME = [
+  CREW_GAME.replace('  Cards can be tired.', '  Cards can be tired.\n  Cards can have red done, gold done, new red and new gold.'), '',
+  'Red work:', "  A red card's red work is its skill.", "  A mixed card's red work is its skill.", "  A tired card's red work is 0.", '',
+  'Gold work:', "  A gold card's gold work is its skill.", "  A mixed card's gold work is its skill.", "  A tired card's gold work is 0.", '',
+  'Wage:', "  A Tinker card's wage is 1.", '',
+  'Done:', '  Only if its red done are at least its red need.', '  Only if its gold done are at least its gold need.',
+].join('\n');
+
 /** The loop of the board fixtures: a start, two streets, a tax, a station, a utility and two chance spaces. */
 export const FIXTURE_SPACES: SpaceSpec[] = [
   { name: 'Go', attrs: { kind: 'go' } },
@@ -450,7 +462,8 @@ export function fixtureEnv(
   state: GameState,
   opts: {
     game?: CompiledGame; seats?: PlayerId[]; move?: MoveInfo; check?: PhraseEnv['check']; subject?: Subject; announce?: PhraseEnv['announce'];
-    columnValue?: PhraseEnv['columnValue']; runLine?: PhraseEnv['runLine'];
+    columnValue?: PhraseEnv['columnValue']; runLine?: PhraseEnv['runLine']; workedValue?: PhraseEnv['workedValue'];
+    workedFlag?: PhraseEnv['workedFlag'];
   } = {},
 ): PhraseEnv {
   return {
@@ -463,6 +476,8 @@ export function fixtureEnv(
     announce: opts.announce,
     columnValue: opts.columnValue,
     runLine: opts.runLine,
+    workedValue: opts.workedValue,
+    workedFlag: opts.workedFlag,
   };
 }
 
@@ -487,7 +502,7 @@ export function fixturePhase(id: string, moves: DeclaredMove[], over: Partial<Co
   };
 }
 
-/** The words a designer could use about this game: its zones, move verbs, card attributes and values, and its facts. */
+/** The words a designer could use about this game: its zones, move verbs, card attributes and values, its facts and what it works out for cards. */
 export function vocabFor(game: CompiledGame, players: number = game.players.max): Vocab {
   return vocabFrom({
     maxPlayers: players,
@@ -501,6 +516,7 @@ export function vocabFor(game: CompiledGame, players: number = game.players.max)
       ...(a.pick ? { picksCard: true } : {}),
     }))),
     facts: game.facts,
+    worked: Object.entries(game.worked ?? {}).map(([name, value]) => ({ name, kind: value.kind })),
   });
 }
 

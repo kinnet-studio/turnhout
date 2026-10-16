@@ -7,7 +7,7 @@ import type { CardMatch, ConditionFn, EffectFn, ExpectFn, PhraseEnv, ZoneRef } f
 import { relocate, zoneInfo } from '../zones';
 import { claimCards, coversExactly, describeCard, describeCards } from './example-phrases';
 import { itCard, namedCardIn, noCardIn, theCard } from './fact-phrases';
-import { cardOf, describeZone, soleZone, theTargetCard, thePickedCards } from './support';
+import { cardOf, describeZone, mustBeKept, soleZone, theTargetCard, thePickedCards } from './support';
 
 // ---- the lines of a rule ----------------------------------------------------------------------
 
@@ -39,8 +39,11 @@ const everyCardOnItGoesTo: EffectFn = (env, [zone]) => {
   return ids.length === 0 ? env.state : relocate(env.state, ids, to, env.game);
 };
 
-const everyCardOnItIs: EffectFn = (env, [fact]) =>
-  cardsOn(env.state, cardOf(env)).reduce((state, card) => changeCard(state, card.id, { [fact as string]: true }, env.game), env.state);
+/** A flag worked out from lines is refused first, whether or not a card is on it. */
+const everyCardOnItIs: EffectFn = (env, [fact]) => {
+  mustBeKept(env, fact as string);
+  return cardsOn(env.state, cardOf(env)).reduce((state, card) => changeCard(state, card.id, { [fact as string]: true }, env.game), env.state);
+};
 
 // ---- examples ----------------------------------------------------------------------------------
 

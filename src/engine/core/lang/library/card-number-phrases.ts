@@ -1,17 +1,19 @@
 import type { GameState } from '../../game-state';
-import { changeCard } from '../card-facts';
+import { changeCard, isCardCount } from '../card-facts';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import type { ConditionFn, EffectFn, PhraseEnv } from '../types';
 import { itCard } from './fact-phrases';
-import { cardNumber } from './support';
+import { cardNumber, mustBeKept } from './support';
 
 /**
  * The count a rule changes on the card it is about. Only a count the game declares on cards can change, since a column of a card's table
- * is part of what the card is, so naming any other number is a mistake in the rule.
+ * is part of what the card is, so naming any other number is a mistake in the rule. A value worked out from lines is said to be one
+ * first, though it may be named after a column: that is what the designer can do something about.
  */
 function changeable(env: PhraseEnv, name: string): string {
-  if (!env.game.facts.some((fact) => fact.on === 'card' && fact.kind === 'number' && fact.name === name)) {
+  mustBeKept(env, name);
+  if (!isCardCount(env.game, name)) {
     throw new RuleError(`Only a number the game keeps on cards can change, like “Cards can have charges.”; ${name} isn't one.`);
   }
   return name;
@@ -34,9 +36,11 @@ const itsGoUp: EffectFn = (env, [name, by]) => goUp(env, name as string, by as s
 
 const itsGoUpToCap: EffectFn = (env, [name, by, cap]) => goUp(env, name as string, by as string, cap as string);
 
-/** A flag a card is not is a flag it never had, as “No card is …” leaves it. */
-const itIs = (wanted: boolean): EffectFn => (env, [flag]) =>
-  changeCard(env.state, itCard(env).id, { [flag as string]: wanted ? true : null }, env.game);
+/** A flag a card is not is a flag it never had, as “No card is …” leaves it. A flag worked out from lines is never set. */
+const itIs = (wanted: boolean): EffectFn => (env, [flag]) => {
+  mustBeKept(env, flag as string);
+  return changeCard(env.state, itCard(env).id, { [flag as string]: wanted ? true : null }, env.game);
+};
 
 const atLeast: ConditionFn = (env, [name, other]) => {
   const card = itCard(env);

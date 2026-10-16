@@ -1,8 +1,8 @@
 import { MAX_CARDS, TOO_MANY_CARDS, isSaysColumn } from './cards';
 import { compileExample } from './compile-example';
 import {
-  actionLine, actionOf, cardMoveVerb, compilePhase, compileTrigger, pickLine, reportHiddenCardReads, startsLineOf, targetWords, TURN_STARTS, type TargetWords,
-  type VerbUses,
+  actionLine, actionOf, cardMoveVerb, compilePhase, compileTrigger, pickLine, readCondition, reportHiddenCardReads, startsLineOf, targetWords,
+  TURN_STARTS, type TargetWords, type VerbUses,
 } from './compile-phase';
 import {
   addProblem, attempt, FOR_EVERY_AT_LEAST_ONE, innerEffect, matchEffectLine, matchLine, phaseId, phraseFn, POINTS_FOR_EVERY, rejectChildren, type LineCtx,
@@ -10,11 +10,11 @@ import {
 import type { Diagnostic } from './diagnostics';
 import { parseOutline, type OutlineNode } from './outline';
 import { normalizeLine, suggestNames, vocabFrom, type PhraseLibrary } from './phrases';
-import { canon } from './refs';
+import { canon, parseParam } from './refs';
 import { ROUND_FRAME, usesTurns } from './turns';
 import type {
   BankSpec, BoardFn, BoardSpec, CardSetSpec, CardsFn, CardTable, CompiledEnd, CompiledGame, CompiledPhase, DeclareFn, EveryPhase, FactSpec, PhraseRef,
-  SpaceSpec, Vocab, ZoneFn, ZoneSpec,
+  SpaceSpec, Vocab, WorkedValue, ZoneFn, ZoneSpec,
 } from './types';
 
 export type CompileResult = { game?: CompiledGame; diagnostics: Diagnostic[] };
@@ -67,8 +67,21 @@ const ONLY_WHEN_RULES = 'Only “When …:” rules go under In every phase:, li
 /** The first phase starts once, as the game does: each turn after the first goes back to it without starting it again. */
 const FIRST_PHASE_STARTS =
   'This phase comes first, so its “When this phase starts:” lines run only on the game\'s first turn. Put what starts each turn under “When a player\'s turn starts:”.';
+/** A line of a section that works out a flag for cards. */
+const ONLY_IF_LINE = /^only if /i;
+/** A line of a section that works out a number for cards: “A red card's …”, “A card's …”. */
+const ABOUT_A_CARD = /^an? (?:.+ )?card['‘’]s /i;
+/** What a line of a number section says it is about: group 1 is the name between “card's” and the first “is” or “are”. */
+const LINE_ABOUT = /card['‘’]s (.+?) (?:is|are) /i;
+const MIXED_LINES = "Write a worked-out value's lines all as “Only if …” (it holds when they all do) or all as “A … card's … is …”, not both.";
+const WORKED_IS_A_FACT = (name: string) => `“${name}” is already a fact cards keep; a value worked out from lines needs a name of its own.`;
+const FLAG_IS_A_COLUMN = (name: string) =>
+  `“${name}” is a column of the card table, so it is a number; work it out with lines like “A … card's ${name} is …”.`;
+const LINE_UNDER_OTHER = (said: string, header: string) => `This line is about “${said}”, but it is under ${header}:.`;
 
 type Section = { keyword: string; rest: string; node: OutlineNode };
+/** A section that works out a value for cards: `keyword` is the value's name, and `refines` says it is a column of a card table. */
+type CardSection = Section & { refines: boolean };
 
 /**
  * The top-level lines that start one of the fixed sections, and the other top-level lines, which are left for later: a line
@@ -120,6 +133,91 @@ function readColumnSections(others: OutlineNode[], board: BoardSpec | null, boar
     }
   }
   return found;
+}
+
+/** A value worked out for cards is a flag when every line of its sections is an `Only if`, and a number otherwise. */
+function workedKind(sections: Section[], name: string): WorkedValue['kind'] {
+  const lines = sections.filter((s) => s.keyword === name).flatMap((s) => s.node.children);
+  return lines.length > 0 && lines.every((line) => ONLY_IF_LINE.test(normalizeLine(line.text))) ? 'flag' : 'number';
+}
+
+/** The values the sections work out for cards, each once, in the order first written: the words the game's lines may read them by. */
+const workedNames = (sections: Section[]): { name: string; kind: WorkedValue['kind'] }[] =>
+  [...new Set(sections.map((s) => s.keyword))].map((name) => ({ name, kind: workedKind(sections, name) }));
+
+/**
+ * The sections that work out a value for cards (R4), and the other top-level lines, left for `readColumnSections`. Only a game
+ * with a card table has them. A header is one when it is no column of the board's table, and it names a column of a card table (which
+ * the value refines) or its first line reads as one of a value's lines: “Only if …” for a flag, “A … card's …” for a number. A value
+ * may not be named after a fact cards keep, and a flag not after a column, whose cells are numbers: such a header is reported, and its
+ * section left out.
+ */
+function readCardSections(
+  others: OutlineNode[], board: BoardSpec | null, cards: CardSetSpec[], facts: FactSpec[], diagnostics: Diagnostic[],
+): { sections: CardSection[]; rest: OutlineNode[] } {
+  const tables = cards.filter((set) => set.kind !== 'standard');
+  if (tables.length === 0) return { sections: [], rest: others };
+  const boardColumns = board ? columnsOf(board) : [];
+  // What a card says is a rule for its player, not a number, so its column is never one to work out.
+  const cardColumns = [...new Set(tables.flatMap((set) => set.identities.flatMap((identity) => Object.keys(identity.attrs))))]
+    .filter((column) => !isSaysColumn(column));
+  const found: CardSection[] = [];
+  const rest: OutlineNode[] = [];
+  for (const node of others) {
+    const header = HEADER.exec(node.text)?.[1].replace(/\s+/g, ' ');
+    const named = (names: string[]) => (header === undefined ? undefined : names.find((name) => canon(name) === canon(header)));
+    const column = named(cardColumns);
+    const first = normalizeLine(node.children[0]?.text ?? '');
+    const isCardSection = header !== undefined && named(boardColumns) === undefined
+      && (column !== undefined || ONLY_IF_LINE.test(first) || ABOUT_A_CARD.test(first));
+    if (isCardSection) found.push({ keyword: column ?? canon(header), rest: '', node, refines: column !== undefined });
+    else rest.push(node);
+  }
+  const sections = found.filter(({ keyword, node, refines }) => {
+    const problem = facts.some((fact) => fact.on === 'card' && fact.name === keyword) ? WORKED_IS_A_FACT(keyword)
+      : refines && workedKind(found, keyword) === 'flag' ? FLAG_IS_A_COLUMN(keyword) : null;
+    if (problem !== null) addProblem(diagnostics, node.line, problem, { text: node.text });
+    return problem === null;
+  });
+  return { sections, rest };
+}
+
+/**
+ * What the sections that work out values for cards say, by value, the lines of its sections in the order written; each line is about a
+ * card. A flag's lines are its `Only if` groups. A number's are lines of kind `value`, each about the value its section works out: an
+ * `Only if` among them, or a line about another value, is reported on its line and left out.
+ */
+function compileWorked(sections: CardSection[], ctx: LineCtx): { [name: string]: WorkedValue } {
+  const about: LineCtx = { ...ctx, card: true };
+  const worked = new Map<string, WorkedValue>();
+  for (const { keyword: name, node, refines } of sections) {
+    const kind = workedKind(sections, name);
+    const value = worked.get(name) ?? (kind === 'flag' ? { kind, conditions: [], line: node.line } : { kind, refines, refs: [], line: node.line });
+    worked.set(name, value);
+    const header = (HEADER.exec(node.text)?.[1] ?? name).replace(/\s+/g, ' ');
+    for (const line of node.children) {
+      const clean = normalizeLine(line.text);
+      if (value.kind === 'flag') {
+        const group = readCondition(line, clean, about);
+        if (group) value.conditions.push(group);
+        continue;
+      }
+      if (ONLY_IF_LINE.test(clean)) {
+        addProblem(ctx.diagnostics, line.line, MIXED_LINES, { text: clean });
+        continue;
+      }
+      rejectChildren(line, ctx.diagnostics);
+      // A name that is no value at all is left to the line's phrase, which says so with the names closest to it.
+      const said = LINE_ABOUT.exec(clean)?.[1];
+      const other = said === undefined ? null : parseParam('attribute', said, ctx.vocab);
+      if (said !== undefined && other !== null && 'value' in other && other.value !== name) {
+        addProblem(ctx.diagnostics, line.line, LINE_UNDER_OTHER(said, header), { text: clean });
+        continue;
+      }
+      value.refs.push(matchLine('value', clean, line.line, about));
+    }
+  }
+  return Object.fromEntries(worked);
 }
 
 /** Every line a section takes up: its own, the lines under it and the rows of their tables. */
@@ -577,18 +675,23 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   );
   // Facts are checked once both tables are read, since a fact may be named like a column of either.
   const facts = acceptFacts(declared, board, of('board').length > 0 || playerLines.length > 0, cards, diagnostics);
+  // The values worked out for cards are named once the facts are known, since a value may not take a fact's name, and every line from
+  // here on may read them.
+  const { sections: cardSections, rest } = readCardSections(others, board, cards, facts, diagnostics);
+  const worked = workedNames(cardSections);
   // Buttons are read ahead too: “they have not rolled this turn” may come before the action that rolls. They wait for the facts,
   // since the words a button picks a space with may name one, and no card or declare line reads a button.
-  const actions = readActions(named, stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board, facts })));
+  const actions = readActions(named, stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board, facts, worked })));
 
-  const ctx = stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board, actions, facts }));
+  const ctx = stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board, actions, facts, worked }));
   const setup = linesOf(of('setup')).map((node) => {
     rejectChildren(node, diagnostics);
     return matchEffectLine(node.text, node.line, ctx);
   });
   // Which headers name a column is only known now that the board is, wherever in the text they stand.
   const boardFailed = board === null && of('board').length > 0;
-  const columns = compileColumns(readColumnSections(others, board, boardFailed, diagnostics), ctx);
+  const columns = compileColumns(readColumnSections(rest, board, boardFailed, diagnostics), ctx);
+  const values = compileWorked(cardSections, ctx);
   const { says, diagnostics: saysDiagnostics } = compileSays(saysCells, ctx);
   const everyPhase = compileEveryPhase(of('in every phase'), ctx);
 
@@ -626,7 +729,9 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
     addProblem(diagnostics, Math.min(...saysDiagnostics.map((d) => d.line)), HOLD_BACK_SAYS(brokenAt), { severity: 'warning' });
   }
   if (name === null || players === null || phases.length === 0 || !onlyUnknownPhrases) return undefined;
-  return { name, players, zones, cards, setup, phases, end, examples, board, facts, columns, says, everyPhase };
+  const game: CompiledGame = { name, players, zones, cards, setup, phases, end, examples, board, facts, columns, says, everyPhase };
+  // Left out, never undefined, for a game that works nothing out: such a game is the same as before there were worked values.
+  return cardSections.length > 0 ? { ...game, worked: values } : game;
 }
 
 /**
