@@ -3,7 +3,7 @@ import type { CardState, PlayerId } from '../../scene';
 import type { Json } from '../../table-def';
 import { pieceAt } from '../board-state';
 import { cardAttribute, cardFact } from '../card-facts';
-import { RuleError } from '../diagnostics';
+import { noSuchNumber, RuleError } from '../diagnostics';
 import type { MoveInfo, PhraseEnv, ZoneRef } from '../types';
 import { resolveSeat, resolveZoneIds } from '../zones';
 
@@ -87,33 +87,40 @@ export function thePickedCards(env: PhraseEnv): string[] {
   return cards;
 }
 
+/** Whether a section of the game works out a value for cards under this name. */
+const isWorked = (env: PhraseEnv, name: string): boolean => env.game.worked !== undefined && Object.hasOwn(env.game.worked, name);
+
 /**
  * What a card has under a name, as every phrase reads it: a value the game works out for cards once its lines have had their say, else a
- * column of the card's table or a count the game keeps on cards (0 until it changes); null when it has no such thing.
+ * column of the card's table or a count the game keeps on cards (0 until it changes); null when it has no such thing. Only a worked
+ * value is asked of the runtime, which finds the card by its id: any other name is read off the card at hand, as a phrase that reads every
+ * card on the table needs.
  */
 export function cardValueOf(env: PhraseEnv, card: CardState, name: string): Json | null {
-  return env.workedValue ? env.workedValue(env.state, card.id, name) : cardAttribute(card, name, env.game);
+  return env.workedValue && isWorked(env, name) ? env.workedValue(env.state, card.id, name) : cardAttribute(card, name, env.game);
 }
 
-/** Whether a card is so, as every phrase reads a flag on a card: a flag worked out from its lines, else one set on the card and not set to no. */
+/**
+ * Whether a card is so, as every phrase reads a flag on a card: a flag worked out from its lines, else one set on the card and not set to
+ * no. Like a number, only a worked flag is asked of the runtime.
+ */
 export function cardHasFlag(env: PhraseEnv, card: CardState, flag: string): boolean {
-  return env.workedFlag ? env.workedFlag(env.state, card.id, flag) : cardFact(card, flag) === true;
+  return env.workedFlag && isWorked(env, flag) ? env.workedFlag(env.state, card.id, flag) : cardFact(card, flag) === true;
 }
 
 /** A value worked out from lines is what they say, so a rule that would change one under that name is a mistake in the rule. */
 export function mustBeKept(env: PhraseEnv, name: string): void {
-  if (env.game.worked !== undefined && Object.hasOwn(env.game.worked, name)) {
-    throw new RuleError(`“${name}” is worked out from its lines, so no rule can change it.`);
-  }
+  if (isWorked(env, name)) throw new RuleError(`“${name}” is worked out from its lines, so no rule can change it.`);
 }
 
 /**
  * The number a card has under a name, as `cardValueOf` reads it, else the sentence that says why it has none. Every phrase that does
- * arithmetic on a card's numbers reads them here.
+ * arithmetic on a card's numbers reads them here. A card with no such number says so with `noSuchNumber`, which a value worked out for
+ * cards takes as a line not about that card; anywhere else it is the rule's mistake, like any RuleError.
  */
 export function cardNumber(env: PhraseEnv, card: CardState, name: string): number {
   const value = cardValueOf(env, card, name);
-  if (value === null) throw new RuleError(`This card has no ${name}.`);
+  if (value === null) throw noSuchNumber(`This card has no ${name}.`);
   if (typeof value !== 'number') throw new RuleError(`This card's ${name} isn't a number.`);
   return value;
 }

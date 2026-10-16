@@ -110,6 +110,9 @@ function readSections(roots: OutlineNode[], diagnostics: Diagnostic[]): { sectio
 
 const capitalised = (name: string) => name.charAt(0).toUpperCase() + name.slice(1);
 
+/** The name a top-level line that holds lines gives itself, its spaces tidied; undefined for a line that is not one. */
+const headerOf = (node: OutlineNode): string | undefined => HEADER.exec(node.text)?.[1].replace(/\s+/g, ' ');
+
 /** Every column of a board's table that holds something for some space, as the designer's table spells it; the `space` column only names them. */
 const columnsOf = (board: BoardSpec): string[] => [...new Set(board.spaces.flatMap((space) => Object.keys(space.attrs)))];
 
@@ -123,7 +126,7 @@ function readColumnSections(others: OutlineNode[], board: BoardSpec | null, boar
   const columns = board ? columnsOf(board) : [];
   const found: Section[] = [];
   for (const node of others) {
-    const header = HEADER.exec(node.text)?.[1].replace(/\s+/g, ' ');
+    const header = headerOf(node);
     const column = header === undefined ? undefined : columns.find((name) => canon(name) === canon(header));
     if (column !== undefined) {
       found.push({ keyword: column, rest: '', node });
@@ -164,7 +167,7 @@ function readCardSections(
   const found: CardSection[] = [];
   const rest: OutlineNode[] = [];
   for (const node of others) {
-    const header = HEADER.exec(node.text)?.[1].replace(/\s+/g, ' ');
+    const header = headerOf(node);
     const named = (names: string[]) => (header === undefined ? undefined : names.find((name) => canon(name) === canon(header)));
     const column = named(cardColumns);
     const first = normalizeLine(node.children[0]?.text ?? '');
@@ -194,7 +197,7 @@ function compileWorked(sections: CardSection[], ctx: LineCtx): { [name: string]:
     const kind = workedKind(sections, name);
     const value = worked.get(name) ?? (kind === 'flag' ? { kind, conditions: [], line: node.line } : { kind, refines, refs: [], line: node.line });
     worked.set(name, value);
-    const header = (HEADER.exec(node.text)?.[1] ?? name).replace(/\s+/g, ' ');
+    const header = headerOf(node) ?? name;
     for (const line of node.children) {
       const clean = normalizeLine(line.text);
       if (value.kind === 'flag') {

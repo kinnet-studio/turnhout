@@ -8,7 +8,7 @@ import { numberIn } from './board';
 import { holderOf, interruptedTurn, setCounter } from './board-state';
 import { cardAttribute, cardFact } from './card-facts';
 import { isMissing, readsPressCard } from './compile-util';
-import { MissingPhraseError, RuleError } from './diagnostics';
+import { isNoSuchNumber, MissingPhraseError, RuleError } from './diagnostics';
 import type { PhraseLibrary } from './phrases';
 import { phaseTakesTurns, ROUND_FRAME, ROUND_KEY, roundFinished, roundOf, startPlayerOf, TURN_OF_KEY } from './turns';
 import type {
@@ -37,10 +37,30 @@ export const MAX_MOMENT_DEPTH = MAX_FLOW_ITERATIONS;
 
 const notImplemented = (ref: PhraseRef) => new MissingPhraseError(`“${ref.text}” isn't implemented yet.`, ref.line, ref.text);
 
-/** What a phrase threw, as a RuleError that says which line of the rules it came from. */
+/**
+ * What a phrase threw, as a RuleError that says which line of the rules it came from. A RuleError is given the line itself rather than
+ * copied, so that what it is (one `noSuchNumber` made, say) is still known to whatever catches it; one that already has a line keeps it.
+ */
 function located(error: unknown, ref: PhraseRef): RuleError {
-  if (error instanceof RuleError) return error.line === undefined ? new RuleError(error.message, ref.line, ref.text) : error;
-  return new RuleError(error instanceof Error ? error.message : String(error), ref.line, ref.text);
+  if (!(error instanceof RuleError)) return new RuleError(error instanceof Error ? error.message : String(error), ref.line, ref.text);
+  if (error.line === undefined) {
+    error.line = ref.line;
+    error.text = ref.text;
+  }
+  return error;
+}
+
+/**
+ * Runs a line of a value worked out for cards, which reads a number the card has no column or count for as a line not about it:
+ * `otherwise` is what the line comes to then. Any other error, a value that reads itself among them, is still the rule's.
+ */
+function unlessNoSuchNumber<T>(line: () => T, otherwise: T): T {
+  try {
+    return line();
+  } catch (error) {
+    if (isNoSuchNumber(error)) return otherwise;
+    throw error;
+  }
 }
 
 /**
@@ -314,30 +334,35 @@ export class LangRuntime {
   /**
    * `env.workedValue`: what a card has under a name. For a number a section works out, it starts from the card's own number when the
    * section is named after a column of a card table (nothing when the card has none), else from 0, and each line then has its say in the
-   * order written, about that card and no player, seeing what the line before made of it. Any other name is what the card keeps.
+   * order written, about that card and no player, seeing what the line before made of it. A line that reads a number the card lacks
+   * leaves the value as it was. Any other name is what the card keeps.
    */
   readonly workedValue = (state: GameState, cardId: string, name: string): Json | null => {
     const card = this.cardIn(state, cardId);
     const worked = this.workedOf(name);
     if (worked?.kind !== 'number') return cardAttribute(card, name, this.game);
     const own = cardFact(card, name);
-    const subject: Subject = { player: null, space: null, card: cardId };
+    const env = this.env(state, undefined, undefined, { player: null, space: null, card: cardId });
     return this.workOut(cardId, name, () => worked.refs.reduce(
-      (value, ref) => this.call<ValueFn, number | null>(ref, ['value'], (fn) => fn(this.env(state, undefined, undefined, subject), ref.args, value)),
+      (value, ref) => unlessNoSuchNumber(() => this.call<ValueFn, number | null>(ref, ['value'], (fn) => fn(env, ref.args, value)), value),
       worked.refines ? (typeof own === 'number' ? own : null) : 0,
     ));
   };
 
   /**
    * `env.workedFlag`: whether a card is so. A flag a section works out holds when each of its `Only if` groups does, about that card and
-   * no player; any other is so when the card has it set, and not set to no.
+   * no player; a line that reads a number the card lacks does not hold, so the card is not so unless another line of its `Only if one of:`
+   * does. It is judged here and not by `failedGroup`, for which such a line is the rule's mistake. Any other flag is so when the card has
+   * it set, and not set to no.
    */
   readonly workedFlag = (state: GameState, cardId: string, flag: string): boolean => {
     const card = this.cardIn(state, cardId);
     const worked = this.workedOf(flag);
     if (worked?.kind !== 'flag') return cardFact(card, flag) === true;
     const subject: Subject = { player: null, space: null, card: cardId };
-    return this.workOut(cardId, flag, () => this.failedGroup(worked.conditions, state, undefined, subject) === null);
+    const holds = (ref: PhraseRef) => unlessNoSuchNumber(() => this.test(ref, state, undefined, undefined, subject), false);
+    const groupHolds = (group: CondGroup) => (group.mode === 'all' ? group.refs.every(holds) : group.refs.some(holds));
+    return this.workOut(cardId, flag, () => worked.conditions.every(groupHolds));
   };
 
   /** The value a section works out under this name, if one does. */

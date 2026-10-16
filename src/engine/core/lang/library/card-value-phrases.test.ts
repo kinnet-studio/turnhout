@@ -6,10 +6,11 @@ import { changeCard } from '../card-facts';
 import { compileGame } from '../compile';
 import { RuleError } from '../diagnostics';
 import { runExamples } from '../examples';
-import { WORKED_GAME, runPhrase } from '../testing';
+import { CREW_GAME, WORKED_GAME, fixtureEnv, runPhrase } from '../testing';
 import type { CompiledGame, MoveInfo, Subject } from '../types';
 import { relocate } from '../zones';
 import { createDefaultLibrary } from './index';
+import { cardHasFlag, cardValueOf } from './support';
 
 const lib = createDefaultLibrary();
 
@@ -161,6 +162,16 @@ describe('Review Focus: a value that reads itself', () => {
     expect(() => looping.workedFlag(given(potter, { tired: true }), potter, 'loop')).toThrow(itself('loop'));
     expect(looping.workedFlag(setUp, potter, 'loop')).toBe(false);
   });
+  it('(guard) says so for a loop through another value, a number and a flag that read each other, on the line that asked', () => {
+    // Loop reads busy and busy reads loop: whichever is asked first is the one the other asks again.
+    const rules = compiled(`${WORKED_GAME}\n\nLoop:\n  A busy card's loop is 1.\n\nBusy:\n  Only if its loop is more than 0.`);
+    const looping = createEngine(rules, lib, 2, initialState(rules, 1)).runtime;
+    expect(() => looping.workedValue(setUp, potter, 'loop')).toThrow(itself('loop'));
+    expect(() => looping.workedValue(setUp, potter, 'loop'))
+      .toThrow(expect.objectContaining({ line: rules.worked!.busy.line + 1, text: 'its loop is more than 0' }));
+    expect(() => looping.workedFlag(setUp, potter, 'busy')).toThrow(itself('busy'));
+    expect(() => looping.workedFlag(setUp, potter, 'busy')).toThrow(expect.objectContaining({ line: rules.worked!.loop.line + 1, text: "A busy card's loop is 1" }));
+  });
   it('reads one value inside another, which is no loop', () => {
     // Worth reads the worked flag done, which reads the numbers the Vase keeps.
     const rules = compiled(`${WORKED_GAME}\n\nWorth:\n  A done card's worth is 0.`);
@@ -175,5 +186,65 @@ describe('what the lines need', () => {
     for (const pattern of ["{cardclass}'s {attribute} is its {attribute}", "{cardclass}'s {attribute} is {int}", "a {cardflag} card's {attribute} is {int}", "an {cardflag} card's {attribute} is {int}"]) {
       expect([pattern, lib.get('value', pattern)?.needsCard]).toEqual([pattern, true]);
     }
+  });
+});
+
+describe('a card without a number the lines of a value read', () => {
+  it('is not so, for a flag: a hand card has no red need, so it is not done', () => {
+    const someDone = (state: GameState) => runPhrase<boolean>(lib, 'condition', 'some card is done', runtime.env(state));
+    expect(someDone(setUp)).toBe(false);
+    expect(someDone(given(vase, { 'red done': 2 }))).toBe(true);
+    expect(workedFlag(setUp, potter, 'done')).toBe(false);
+  });
+  it('fails only the line that reads it, so another line of an Only if one of: still holds', () => {
+    const rules = compiled(`${WORKED_GAME}\n\nKeen:\n  Only if one of:\n    its skill is more than 1\n    its pay is more than 1`);
+    const reading = createEngine(rules, lib, 2, initialState(rules, 1)).runtime;
+    // The Smith has skill 2 and no pay, the Statue pay 2 and no skill; the Potter and the Vase have 1 of one and none of the other.
+    expect([smith, statue, potter, vase].map((id) => reading.workedFlag(setUp, id, 'keen'))).toEqual([true, true, false, false]);
+  });
+  it('leaves a number as the lines before made it, for a line that reads one the card lacks', () => {
+    const rules = compiled(`${WORKED_GAME}\n\nReach:\n  A Vase card's reach is 2.\n  A Vase card's reach is its skill.`);
+    const reading = createEngine(rules, lib, 2, initialState(rules, 1)).runtime;
+    expect(reading.workedValue(setUp, vase, 'reach')).toBe(2);
+  });
+  it('lets a line read a worked flag that cards without its numbers are not (P4)', () => {
+    const rules = compiled(WORKED_GAME.replace("  A Tinker card's wage is 1.", "  A Tinker card's wage is 1.\n  A done card's wage is 0."));
+    const reading = createEngine(rules, lib, 2, initialState(rules, 1)).runtime;
+    expect([potter, smith, tinker].map((id) => reading.workedValue(setUp, id, 'wage'))).toEqual([1, 2, 1]);
+    expect(reading.workedValue(given(vase, { 'red done': 2 }), vase, 'wage')).toBe(0);
+    expect(reading.workedValue(setUp, vase, 'wage')).toBeNull();
+  });
+  it('(guard) is still a mistake outside a worked value: a button that reads it says so, on its line', () => {
+    const line = '    Only if its skill is more than 0.';
+    const text = WORKED_GAME.replace('  A player may finish a card in their workshop.', `  A player may finish a card in their workshop.\n${line}`);
+    const built = createEngine(compiled(text), lib, 2, relocate(setUp, [vase], 'workshop-p0', game)).engine;
+    const press = () => built.dispatch({ type: 'finish a card in their workshop', by: 'p0', cardId: vase });
+    expect(press).toThrow('This card has no skill.');
+    expect(press).toThrow(expect.objectContaining({ line: text.split('\n').indexOf(line) + 1 }));
+    expect(() => runPhrase(lib, 'condition', 'its skill is more than 0', runtime.env(setUp, undefined, undefined, aboutCard(vase))))
+      .toThrow('This card has no skill.');
+  });
+});
+
+describe('a game that works nothing out', () => {
+  const crew = compiled(CREW_GAME);
+  const crewState = createEngine(crew, lib, 2, initialState(crew, 1)).engine.getState();
+  const card = crewState.cards.find((c) => c.data?.name === 'Smith')!;
+  // A runtime that is asked would say so: a name nothing works out is read from the card itself, with no look-up by id.
+  const asked = () => {
+    throw new Error('asked the runtime');
+  };
+  const env = fixtureEnv(crewState, { game: crew, workedValue: asked, workedFlag: asked });
+
+  it('reads a number and a flag from the card itself', () => {
+    expect(cardValueOf(env, card, 'skill')).toBe(2);
+    expect(cardHasFlag(env, card, 'tired')).toBe(false);
+  });
+  it('reads a name the game does not work out from the card itself, in a game that works some out', () => {
+    const workedEnv = fixtureEnv(setUp, { game, workedValue: asked, workedFlag: asked });
+    const smithCard = setUp.cards.find((c) => c.id === smith)!;
+    expect(cardValueOf(workedEnv, smithCard, 'skill')).toBe(2);
+    expect(cardHasFlag(workedEnv, smithCard, 'tired')).toBe(false);
+    expect(() => cardValueOf(workedEnv, smithCard, 'red work')).toThrow('asked the runtime');
   });
 });
