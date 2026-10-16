@@ -179,6 +179,25 @@ describe('decor', () => {
     expect(kids(made[1], 'card-ring')).toHaveLength(1);
   });
 
+  it('leaves no ring or caption behind when a card leaves the table', () => {
+    const { table, made } = madeBy();
+    table.setScene(scene(['a', 'b']));
+    table.setDecor({ a: { ring: 'choice', caption: 'x' }, b: { ring: 'chosen', caption: 'y' } });
+    const [ring, caption] = [kids(made[1], 'card-ring')[0], kids(made[1], 'card-caption')[0]];
+    expect(ring).toBeDefined();
+    expect(caption).toBeDefined();
+
+    table.setScene(scene(['a']));
+    expect(table.spriteCount).toBe(1);
+    expect(ring.destroyed).toBe(true);
+    expect(caption.destroyed).toBe(true);
+    // What is left on the table is the one card's own ring and caption.
+    expect(descendants(table).filter((c) => c.label === 'card-ring' || c.label === 'card-caption')).toEqual([
+      kids(made[0], 'card-ring')[0],
+      kids(made[0], 'card-caption')[0],
+    ]);
+  });
+
   it('never touches a sprite\'s decor for a table that is given none', () => {
     const calls: unknown[] = [];
     const table = new PixiTable({

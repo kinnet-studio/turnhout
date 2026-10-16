@@ -1,7 +1,6 @@
 import type { Placement, TableDef } from '../core/table-def';
-import type { PlayerId } from '../core/scene';
+import type { CardDecor, PlayerId } from '../core/scene';
 import type { DropIntent } from '../input/table-input-context';
-import type { CardDecor } from '../core/scene';
 
 export interface CardTableHandle {
   deal(staggerMs?: number): void;

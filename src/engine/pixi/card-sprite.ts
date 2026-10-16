@@ -1,9 +1,7 @@
-import { Container, Sprite, type Texture } from 'pixi.js';
-import { CARD_HEIGHT, CARD_WIDTH } from '../core/scene';
+import { Container, Graphics, Sprite, Text, type Texture } from 'pixi.js';
+import { CARD_HEIGHT, CARD_WIDTH, type CardDecor } from '../core/scene';
 import type { CardRenderState } from '../core/table-model';
 import { resolveFlipVisual } from '../core/tween';
-import { Graphics, Text } from 'pixi.js';
-import type { CardDecor } from '../core/scene';
 
 export class CardSprite extends Container {
   private faceUpSprite = new Sprite();
@@ -61,7 +59,8 @@ export class CardSprite extends Container {
   }
 
   private setCaption(text: string | undefined): void {
-    if (text === undefined) {
+    // An empty caption is no caption: a Text with nothing to say would still hold a canvas.
+    if (text === undefined || text === '') {
       if (this.caption) this.dropChild(this.caption);
       this.caption = null;
       return;

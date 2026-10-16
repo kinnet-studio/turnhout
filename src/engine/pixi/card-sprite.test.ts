@@ -96,6 +96,19 @@ describe('decor', () => {
     expect(parts.map((p) => p.destroyed)).toEqual([true, true]);
   });
 
+  it('draws no caption for an empty one, and takes off the one it had', () => {
+    const s = new CardSprite();
+    s.setDecor({ caption: '' });
+    expect(kids(s, 'card-caption')).toHaveLength(0);
+    expect(s.children).toHaveLength(2);
+    s.setDecor({ ring: 'choice', caption: 'x' });
+    const [caption] = kids(s, 'card-caption') as Text[];
+    s.setDecor({ ring: 'choice', caption: '' });
+    expect(kids(s, 'card-caption')).toHaveLength(0);
+    expect(caption.destroyed).toBe(true);
+    expect(kids(s, 'card-ring')).toHaveLength(1);
+  });
+
   it('keeps one of each however often the same decor is set', () => {
     const s = new CardSprite();
     for (let i = 0; i < 2; i++) s.setDecor({ ring: 'chosen', caption: 'x' });

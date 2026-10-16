@@ -1,6 +1,5 @@
 import type { BaseAppComponents } from '@ue-too/board-pixi-integration';
-import type { PlayerId, Vec2 } from '@/engine/core/scene';
-import type { CardDecor } from '@/engine/core/scene';
+import type { CardDecor, PlayerId, Vec2 } from '@/engine/core/scene';
 import type { Placement, TableDef } from '@/engine/core/table-def';
 import type { RuleRegistry } from '@/engine/core/rules';
 import type { TableIntents } from '@/engine/input/table-input-context';

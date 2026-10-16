@@ -1,11 +1,10 @@
 import { Container, Graphics, Text } from 'pixi.js';
 import { GAP } from '../core/lang/fit-layout';
-import { CARD_HEIGHT, CARD_WIDTH, cardsByZone, type PlacedCard, type Scene, type Vec2 } from '../core/scene';
+import { CARD_HEIGHT, CARD_WIDTH, cardsByZone, type CardDecor, type PlacedCard, type Scene, type Vec2 } from '../core/scene';
 import { TableModel } from '../core/table-model';
 import { placeZone } from '../core/zone-geometry';
 import { CardSprite } from './card-sprite';
 import type { FaceTextureCache } from './face-texture-cache';
-import type { CardDecor } from '../core/scene';
 
 export interface PixiTableDeps {
   faces: FaceTextureCache;
