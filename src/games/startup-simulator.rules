@@ -165,6 +165,7 @@ Leading hardware:
   Only if it is not onboarding.
 
 Stalled:
+  Only if it is in a development.
   Only if it is not a Tier 1 card.
   Only if one of:
     Its blue need is 0.
@@ -1440,6 +1441,13 @@ Example: Greenlighting without a lead is allowed, and the project is Stalled (se
   When p0 greenlights the Neobank
   Then it is accepted
   And the Neobank in p0's development is stalled
+
+Example: only a project is Stalled, never a Senior in the ops team or a Launched Tier 2 product (section 3, section 14)
+  Given the phase is actions
+  And p0's operations has a Search Engine
+  And p0's ops team has the Engineer
+  Then the Engineer in p0's ops team is not stalled
+  And the Search Engine in p0's operations is not stalled
 
 Example: the type follows the cut: Smart Grid cut by 2 blue is pure Hardware (section 19, this slice's call)
   Given the phase is actions
