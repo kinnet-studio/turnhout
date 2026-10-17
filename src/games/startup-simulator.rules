@@ -1231,6 +1231,21 @@ Example: two missing Tags cost a License each, to a provider of each, and a riva
   And p2 has 10 capital
   And the Global Currency in p0's development has 18 blue need
 
+Example: of two Licenses, the player names whom to pay only for the Tag several provide, and the only provider of the other is paid without asking (section 6, ruling 25)
+  Given 4 players
+  And p1's operations has a Neobank
+  And p2's operations has a Server Farm
+  And p3's operations has a Cybersecurity Firm
+  And p0's backlog has a Global Currency
+  When p0 greenlights the Global Currency
+  Then it is rejected because "Pick who to pay the license to: p2 or p3."
+  When p0 greenlights the Global Currency, paying p3
+  Then it is accepted
+  And p0 has 1 capital
+  And p1 has 10 capital
+  And p2 has 7 capital
+  And p3 has 10 capital
+
 Example: with no one providing the Tag the card can't be Greenlit (section 14)
   Given p0's backlog has a Server Farm
   When p0 greenlights the Server Farm

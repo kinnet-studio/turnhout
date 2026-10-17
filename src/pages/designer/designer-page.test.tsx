@@ -160,12 +160,12 @@ describe('DesignerPage', () => {
     expect(screen.getByText('playtest 4')).toBeTruthy();
   });
 
-  it('loads Startup Simulator with no problems, all 100 examples passing, 2 to 5 players and Play on', () => {
+  it('loads Startup Simulator with no problems, all 101 examples passing, 2 to 5 players and Play on', () => {
     render(<DesignerPage />);
     loadSample('Startup Simulator');
     expect(rules().value).toBe(SAMPLES.find((s) => s.name === 'Startup Simulator')!.text);
     expect(screen.getByText('No problems found.')).toBeTruthy();
-    expect(screen.getByText('100 of 100 examples pass')).toBeTruthy();
+    expect(screen.getByText('101 of 101 examples pass')).toBeTruthy();
     const select = screen.getByLabelText('Players') as HTMLSelectElement;
     expect([...select.options].map((o) => o.value)).toEqual(['2', '3', '4', '5']);
     expect(playButton().disabled).toBe(false);

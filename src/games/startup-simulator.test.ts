@@ -1040,7 +1040,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(100);
+    expect(results).toHaveLength(101);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
