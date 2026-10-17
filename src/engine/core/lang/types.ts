@@ -32,11 +32,14 @@ export type CardGroup =
   | { kind: 'on it'; whose?: CardFilter[] }
   | { kind: 'picked'; whose?: CardFilter[] };
 /**
- * `onCards` is there only for a zone each player has whose line ends “, where every card is on a card”: every card in it must sit on
- * a card, and only such a zone may hold a card that sits on one.
+ * `onCards` is there only for a zone each player has whose line says its cards sit on cards, and only such a zone may hold a card that
+ * sits on one: `'every'` when the line ends “, where every card is on a card”, so every card in it must sit on a card, and `'some'` when it
+ * ends “, where some cards are on cards”, so a card in it may sit on one or on none. `holders` is there only when the line goes on
+ * “… in their <zone>”: the zone each player has that the cards they sit on must be in, of the same player's.
  */
 export type ZoneSpec = {
-  name: string; perPlayer: boolean; layout: 'pile' | 'row' | 'hand'; visibility: 'secret' | 'owner' | 'public'; onCards?: 'every';
+  name: string; perPlayer: boolean; layout: 'pile' | 'row' | 'hand'; visibility: 'secret' | 'owner' | 'public'; onCards?: 'every' | 'some';
+  holders?: string;
 };
 export type CardIdentity = { attrs: { [k: string]: Json }; faceKey: string };
 /**

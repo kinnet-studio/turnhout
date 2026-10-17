@@ -21,8 +21,9 @@ const PARAM = /\{([^{}]+)\}/g;
 
 const isWorked = (game: CompiledGame, name: string): boolean => game.worked !== undefined && Object.hasOwn(game.worked, name);
 /**
- * Whether everyone sees every card that sits on a card: only a zone where every card is on a card may hold one, so it is so when each such
- * zone is public. Then the cards on a card are seen wherever the card is, and the cards on those too.
+ * Whether everyone sees every card that sits on a card: only a zone marked for cards on cards may hold one, whether every card in it sits
+ * on a card or only some do, so it is so when each such zone is public. Then the cards on a card are seen wherever the card is, and the
+ * cards on those too.
  */
 const cardsOnCardsArePublic = (game: CompiledGame): boolean => game.zones.every((zone) => zone.onCards === undefined || zone.visibility === 'public');
 const cardsOnIt: readonly string[] = CARDS_ON_IT;

@@ -453,6 +453,28 @@ export const JOIN_GAME = CREW_GAME
   .replace('Phase: working', ['In every phase:', '  When a Smith card joins a card in a workshop:', '    The card it joins gains 1 dent.', '',
     'Phase: working'].join('\n'));
 
+/**
+ * CREW_GAME with a shelf of finished jobs and a yard where some hands sit on a job on the shelf: a Smith clings to its job. Posting hands
+ * to a shelved job puts a clinging one on it and the rest in the yard; shipping a job to the shelf takes its clinging crew along, on it,
+ * and the rest to the yard; a clinging hand transfers to another shelved job.
+ */
+export const YARD_GAME = CREW_GAME
+  .replace('  Each player has an idle row that everyone can see.', ['  Each player has an idle row that everyone can see.',
+    '  Each player has a shelf row that everyone can see.',
+    '  Each player has a yard row that everyone can see, where some cards are on cards in their shelf.'].join('\n'))
+  .replace('  A player may stop.', [
+    '  A player may post some cards from the hall to a card in their shelf.', '    Then:',
+    '      The picked cards that are clinging go to their yard, on the target card.',
+    '      The picked cards that are not clinging go to their yard.',
+    '  A player may post some cards from the hall to their yard.', '    Only if no picked card is clinging.',
+    '  A player may ship a card from their workshop to their shelf.', '    It costs 1 move.', '    Then:',
+    '      Every card on it that is clinging goes to their yard, staying on it.',
+    '      Every card on it that is not clinging goes to their yard.',
+    '  A player may transfer a card from their yard to a card in their shelf.', '    Only if it is on a card.',
+    '    Only if it is not on the target card.', '    Then:', '      It goes to their yard, on the target card.',
+    '  A player may stop.'].join('\n'))
+  + '\n\nClinging:\n  Only if it is a Smith card.';
+
 /** WORKED_GAME with a job's crew red: the red work of the cards on it, added up. */
 export const TOTALS_GAME = [WORKED_GAME, '', 'Crew red:', "  A card's crew red is the total red work of the cards on it."].join('\n');
 

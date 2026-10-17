@@ -7,6 +7,8 @@ import { RuleError } from './diagnostics';
 import { createDefaultLibrary } from './library';
 import { COUNTER_GAME, CREW_GAME, TEST_DUEL } from './testing';
 import { BOX_ZONE, HOLDER_KEY, relocate } from './zones';
+import { YARD_GAME } from './testing';
+import type { ZoneSpec } from './types';
 
 const lib = createDefaultLibrary();
 const game = compileGame(CREW_GAME, lib).game!;
@@ -84,5 +86,83 @@ describe('the table is broken', () => {
       ({ ...broken, cards: [...broken.cards.filter((card) => card.id === id), ...broken.cards.filter((card) => card.id !== id)] });
     expect(attachmentProblem(game, leading(potter1))).toBe("The Potter in p0's crew is on a card that is no longer on the table.");
     expect(attachmentProblem(game, leading(potter2))).toBe("The Potter in p0's idle is on a card, but cards there don't sit on cards.");
+  });
+});
+
+describe('a zone where some cards sit on cards in a zone it names', () => {
+  const yard = compileGame(YARD_GAME, lib).game!;
+  const begun = initialState(yard, 1);
+  const [smith] = zoneCards(begun, 'hall').filter((card) => card.data?.name === 'Smith').map((card) => card.id);
+  const firstVase = begun.cards.find((card) => card.data?.name === 'Vase')!.id;
+  /** The Vase in `zoneId`, with the Smith on it in p0's yard. */
+  const smithOnVaseIn = (zoneId: string) => putOn(relocate(begun, [firstVase], zoneId, yard), [smith], 'yard-p0', firstVase, yard);
+  const YARD_LINE = '  Each player has a yard row that everyone can see, where some cards are on cards in their shelf.';
+  const lineOf = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+
+  describe('compiled', () => {
+    it('compiles with no problems', () => expect(compileGame(YARD_GAME, lib).diagnostics).toEqual([]));
+    it('refuses a zone named for the cards they sit on that no player has, on its line, with the closest such zones', () => {
+      const text = YARD_GAME.replace(YARD_LINE, YARD_LINE.replace('their shelf.', 'their shelff.'));
+      expect(compileGame(text, lib).diagnostics).toEqual([expect.objectContaining({
+        line: lineOf(text, YARD_LINE.replace('their shelf.', 'their shelff.')), severity: 'error',
+        message: 'There is no zone each player has called “shelff”.', suggestions: ['shelf'],
+      })]);
+    });
+    it('refuses one in the center as no zone each player has', () => {
+      const text = YARD_GAME.replace(YARD_LINE, YARD_LINE.replace('their shelf.', 'their hall.'));
+      expect(compileGame(text, lib).diagnostics.map((d) => [d.line, d.message]))
+        .toEqual([[lineOf(text, YARD_LINE.replace('their shelf.', 'their hall.')), 'There is no zone each player has called “hall”.']]);
+    });
+    it('Review Focus: refuses a zone named for the cards they sit on that not everyone can see', () => {
+      const text = YARD_GAME.replace(YARD_LINE, YARD_LINE.replace('their shelf.', 'their stash.'));
+      expect(compileGame(text, lib).diagnostics.map((d) => [d.line, d.message])).toEqual([[
+        lineOf(text, YARD_LINE.replace('their shelf.', 'their stash.')),
+        'Cards sit only on cards everyone can see, and not everyone can see their stash.',
+      ]]);
+    });
+  });
+
+  describe('the yard', () => {
+    it('holds a card on nothing', () => expect(attachmentProblem(yard, relocate(begun, [smith], 'yard-p0', yard))).toBeNull());
+    it('holds a card on a card in the same player\'s shelf', () => expect(attachmentProblem(yard, smithOnVaseIn('shelf-p0'))).toBeNull());
+  });
+
+  describe('the yard, refused', () => {
+    const LEFT = (where: string) => `The Smith in p0's yard is on the Vase, which is now in ${where}. Move the cards on a card along with it.`;
+    it('when the card it sits on is in another zone of the same player\'s, everyone can see', () =>
+      expect(attachmentProblem(yard, smithOnVaseIn('workshop-p0'))).toBe(LEFT("p0's workshop")));
+    it('when the card it sits on is in another player\'s shelf', () =>
+      expect(attachmentProblem(yard, smithOnVaseIn('shelf-p1'))).toBe(LEFT("p1's shelf")));
+  });
+
+  describe('M1: a zone where every card sits on a card in a zone it names', () => {
+    const CREW_LINE = '  Each player has a crew row that everyone can see, where every card is on a card.';
+    const potter = zoneCards(begun, 'hall').find((card) => card.data?.name === 'Potter')!.id;
+    /** The Vase in p0's shelf, with a Potter on it in p0's crew. */
+    const onShelvedVase = (game: typeof yard) => putOn(relocate(begun, [firstVase], 'shelf-p0', game), [potter], 'crew-p0', firstVase, game);
+
+    it('holds its cards to that zone', () => {
+      const text = YARD_GAME.replace(CREW_LINE, CREW_LINE.replace('on a card.', 'on a card in their workshop.'));
+      const marked = compileGame(text, lib);
+      expect(marked.diagnostics).toEqual([]);
+      expect(attachmentProblem(marked.game!, onShelvedVase(marked.game!)))
+        .toBe("The Potter in p0's crew is on the Vase, which is now in p0's shelf. Move the cards on a card along with it.");
+    });
+    it('(guard) holds them to no zone in particular when it names none', () => expect(attachmentProblem(yard, onShelvedVase(yard))).toBeNull());
+  });
+
+  describe('onCardsZoneOf', () => {
+    it('picks the zone named for the holder\'s zone, else the first zone where every card sits on a card and that names none', () => {
+      expect(onCardsZoneOf(yard, 'p0', 'shelf')).toBe('yard-p0');
+      expect(onCardsZoneOf(yard, 'p0', 'workshop')).toBe('crew-p0');
+      expect(onCardsZoneOf(yard, 'p0')).toBe('crew-p0');
+    });
+    it('says no zone holds cards on cards in the holder\'s zone, when none does', () => {
+      const unmarked = ({ onCards: _mark, ...zone }: ZoneSpec): ZoneSpec => zone;
+      const onlyYard = { ...yard, zones: yard.zones.map((zone) => (zone.name === 'crew' ? unmarked(zone) : zone)) };
+      expect(onlyYard.zones.filter((zone) => zone.onCards !== undefined).map((zone) => zone.name)).toEqual(['yard']);
+      expect(() => onCardsZoneOf(onlyYard, 'p0', 'workshop'))
+        .toThrow(new RuleError('No zone each player has holds cards on cards in their workshop.'));
+    });
   });
 });

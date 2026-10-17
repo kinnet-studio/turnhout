@@ -397,8 +397,28 @@ function readPlayers(lines: Section[], diagnostics: Diagnostic[]): { players: { 
   return { players, lines: kept };
 }
 
+/**
+ * What is wrong with the zone a zone line names for the cards its cards sit on (“…, where some cards are on cards in their shelf”), with
+ * the names to suggest; null when nothing is. It is a zone each player has, written anywhere in the Table, and one everyone can see: a
+ * card's holder is shown to every seat, so a holder in a hidden zone would tell them which hidden card it is.
+ */
+function holdersProblem(holders: string, zones: ZoneSpec[]): { message: string; suggestions?: string[] } | null {
+  const theirs = zones.filter((zone) => zone.perPlayer);
+  const named = theirs.find((zone) => zone.name === holders);
+  if (!named) {
+    const suggestions = suggestNames(holders, theirs.map((zone) => zone.name));
+    return { message: `There is no zone each player has called “${holders}”.`, suggestions };
+  }
+  return named.visibility === 'public' ? null : { message: `Cards sit only on cards everyone can see, and not everyone can see their ${holders}.` };
+}
+
+/**
+ * The zones the Table's lines declare, in order. A zone named twice is reported and kept once; a zone whose cards sit on cards in a zone
+ * it names is checked once every zone is read, on its own line, and kept either way, so that the lines naming it read as they should.
+ */
 function compileTable(lines: OutlineNode[], ctx: LineCtx): ZoneSpec[] {
   const zones: ZoneSpec[] = [];
+  const naming: { holders: string; line: number; text: string }[] = [];
   for (const node of lines) {
     rejectChildren(node, ctx.diagnostics);
     const ref = matchLine('zone', node.text, node.line, ctx);
@@ -407,6 +427,13 @@ function compileTable(lines: OutlineNode[], ctx: LineCtx): ZoneSpec[] {
     if (!zone) continue;
     if (zones.some((z) => z.name === zone.name)) addProblem(ctx.diagnostics, node.line, `There are two zones called “${zone.name}”.`);
     else zones.push(zone);
+    if (zone.holders !== undefined) naming.push({ holders: zone.holders, line: node.line, text: ref.text });
+  }
+  for (const { holders, line, text } of naming) {
+    const problem = holdersProblem(holders, zones);
+    if (!problem) continue;
+    const { message, suggestions } = problem;
+    addProblem(ctx.diagnostics, line, message, { kind: 'invalid', text, ...(suggestions && { suggestions }) });
   }
   return zones;
 }

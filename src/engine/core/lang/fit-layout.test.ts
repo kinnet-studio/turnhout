@@ -322,3 +322,17 @@ describe('cards stacked under the card they sit on', () => {
     expect(two[1].data!.y! - two[0].data!.y!).toBe(34);
   });
 });
+
+describe('(guard) a zone where some cards sit on cards, and zones that name the zone of the cards they sit on', () => {
+  // The idle row is marked so that some of its cards sit on cards in the workshop, and the crew names the workshop as well.
+  const marked = BOARD.map((zone): ZoneSpec => {
+    if (zone.name === 'idle') return { ...zone, onCards: 'some', holders: 'workshop' };
+    return zone.name === 'crew' ? { ...zone, holders: 'workshop' } : zone;
+  });
+  const defs = fittedLayout(marked, 'p1');
+
+  it('keeps a zone where only some cards sit on cards a board row', () =>
+    expect(defs.find((d) => d.id === 'idle-p1')).toMatchObject({ layout: 'row', bounds: { height: 776 } }));
+  it('keeps a zone where every card sits on a card free, whatever zone it names', () =>
+    expect(defs.find((d) => d.id === 'crew-p1')).toMatchObject({ layout: 'free' }));
+});

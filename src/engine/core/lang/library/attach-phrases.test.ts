@@ -11,6 +11,7 @@ import { runExamples } from '../examples';
 import { friendlyError } from '../friendly';
 import { CREW_GAME, fixtureEnv, runPhrase } from '../testing';
 import { JOIN_GAME } from '../testing';
+import { YARD_GAME } from '../testing';
 import { relocate } from '../zones';
 import { createDefaultLibrary } from './index';
 
@@ -418,6 +419,98 @@ describe('a card that joins a card', () => {
         '“The card it joins gains 1 dent” only makes sense in a button that picks a card and the card it goes to, like '
           + '“A player may stack a card from their hand to a card in the row.”',
       ]]);
+    });
+  });
+});
+
+describe('a yard where some hands sit on a job in the shelf', () => {
+  const yardGame = compileGame(YARD_GAME, lib).game!;
+  const begun = createEngine(yardGame, lib, 2, initialState(yardGame, 1)).engine.getState();
+  const all = (name: string) => begun.cards.filter((card) => card.data?.name === name).map((card) => card.id);
+  const [[shelvedVase, shippedVase], [shelvedStatue], [smith], [potterA, potterB]] = ['Vase', 'Statue', 'Smith', 'Potter'].map(all);
+  /** A 2-player engine of `text`, p0 to act, with a Vase and a Statue in p0's shelf and the state as `arrange` then leaves it. */
+  const yard = (arrange = (state: GameState) => state, text = YARD_GAME) => {
+    const compiled = compileGame(text, lib);
+    expect(compiled.diagnostics).toEqual([]);
+    return createEngine(compiled.game!, lib, 2, arrange(relocate(begun, [shelvedVase, shelvedStatue], 'shelf-p0', yardGame))).engine;
+  };
+  const postOnto = (onto: string, ...cardIds: string[]): Move =>
+    ({ type: 'post some cards from the hall to a card in their shelf', by: 'p0', cardIds, onto });
+  const postToYard = (...cardIds: string[]): Move => ({ type: 'post some cards from the hall to their yard', by: 'p0', cardIds });
+  const SHIP: Move = { type: 'ship a card from their workshop to their shelf', by: 'p0', cardId: shippedVase };
+  const transfer = (cardId: string, onto: string): Move =>
+    ({ type: 'transfer a card from their yard to a card in their shelf', by: 'p0', cardId, onto });
+  /** The second Vase in p0's workshop, with the Smith and a Potter on it in p0's crew. */
+  const atWorkWithCrew = (state: GameState) =>
+    putOn(relocate(state, [shippedVase], 'workshop-p0', yardGame), [smith, potterA], 'crew-p0', shippedVase, yardGame);
+  /** The Smith on the shelved Vase in p0's yard, and a Potter on nothing beside it. */
+  const inTheYard = (state: GameState) => relocate(putOn(state, [smith], 'yard-p0', shelvedVase, yardGame), [potterA], 'yard-p0', yardGame);
+  const where = (state: GameState, id: string) => [cardById(state, id)?.zoneId, holderOf(state, id)];
+
+  it('posts hands onto a shelved job: a clinging one on it, the rest in the yard on nothing', () => {
+    const engine = yard();
+    expect(engine.dispatch(postOnto(shelvedVase, smith, potterA))).toMatchObject({ ok: true });
+    expect(where(engine.getState(), smith)).toEqual(['yard-p0', shelvedVase]);
+    expect(where(engine.getState(), potterA)).toEqual(['yard-p0', undefined]);
+  });
+
+  it('posts hands to the yard only when none of the picked cards is clinging', () => {
+    expect(yard().dispatch(postToYard(smith))).toMatchObject({ ok: false, reason: 'no picked card is clinging' });
+    const engine = yard();
+    expect(engine.dispatch(postToYard(potterA, potterB))).toMatchObject({ ok: true });
+    for (const id of [potterA, potterB]) expect(where(engine.getState(), id)).toEqual(['yard-p0', undefined]);
+  });
+
+  it('ships a job to the shelf with its clinging crew still on it, in the yard, and the rest of its crew in the yard on nothing', () => {
+    const engine = yard(atWorkWithCrew);
+    expect(engine.dispatch(SHIP)).toMatchObject({ ok: true });
+    const state = engine.getState();
+    expect(cardById(state, shippedVase)?.zoneId).toBe('shelf-p0');
+    expect(where(state, smith)).toEqual(['yard-p0', shippedVase]);
+    expect(where(state, potterA)).toEqual(['yard-p0', undefined]);
+    expect(zoneCards(state, 'crew-p0')).toEqual([]);
+  });
+
+  describe('transferring', () => {
+    it('puts a hand on another shelved job', () => {
+      const engine = yard(inTheYard);
+      expect(engine.dispatch(transfer(smith, shelvedStatue))).toMatchObject({ ok: true });
+      expect(where(engine.getState(), smith)).toEqual(['yard-p0', shelvedStatue]);
+    });
+    it('refuses a hand on nothing, and the job it is on', () => {
+      expect(yard(inTheYard).dispatch(transfer(potterA, shelvedStatue))).toMatchObject({ ok: false, reason: 'it is on a card' });
+      expect(yard(inTheYard).dispatch(transfer(smith, shelvedVase))).toMatchObject({ ok: false, reason: 'it is not on the target card' });
+    });
+  });
+
+  it('puts the cards of an example\'s Given in the zone named for the zone of the card they sit on, else in the crew', () => {
+    const example = [
+      'Example: hands already on jobs', "  Given p0's shelf has a Vase", "  And p0's workshop has a Vase",
+      "  And the Vase in p0's shelf has a Smith on it", "  And the Vase in p0's workshop has a Potter on it",
+      "  Then p0's yard has a Smith", "  And p0's crew has a Potter",
+    ].join('\n');
+    const { game: withExample, diagnostics } = compileGame(`${YARD_GAME}\n\n${example}\n`, lib);
+    expect(diagnostics).toEqual([]);
+    expect(runExamples(withExample!, lib)).toEqual([expect.objectContaining({ status: 'pass', message: null })]);
+  });
+
+  describe('joins', () => {
+    const DENTS = YARD_GAME
+      .replace('  Cards can be tired.', '  Cards can be tired.\n  Cards can have dents.')
+      .replace('Phase: working', ['In every phase:', '  When a Smith card joins a card in a shelf:', '    The card it joins gains 1 dent.', '',
+        'Phase: working'].join('\n'));
+    const dentsOf = (state: GameState, id: string) => cardById(state, id)?.data?.dents;
+
+    it('tells one for a clinging hand posted onto a shelved job', () => {
+      const engine = yard((state) => state, DENTS);
+      expect(engine.dispatch(postOnto(shelvedVase, smith, potterA))).toMatchObject({ ok: true });
+      expect(dentsOf(engine.getState(), shelvedVase)).toBe(1);
+    });
+    it('tells none for a hand that stays on a job shipped to the shelf', () => {
+      const engine = yard(atWorkWithCrew, DENTS);
+      expect(engine.dispatch(SHIP)).toMatchObject({ ok: true });
+      expect(holderOf(engine.getState(), smith)).toBe(shippedVase);
+      expect(dentsOf(engine.getState(), shippedVase)).toBeUndefined();
     });
   });
 });

@@ -63,3 +63,41 @@ describe('zone phrases', () => {
     expect(declare).toThrow('Only a player\'s own zone can be “only they can see”.');
   });
 });
+
+describe('zones where some cards sit on cards, and the zone they sit in', () => {
+  const YARD = { name: 'yard', perPlayer: true, layout: 'row', visibility: 'public', onCards: 'some' };
+
+  it('marks a row each player has where some cards are on cards, in the “a” form and the “an” form', () => {
+    expect(zone('Each player has a yard row that everyone can see, where some cards are on cards.')()).toEqual(YARD);
+    expect(zone('Each player has an inbox row that everyone can see, where some cards are on cards.')()).toEqual({ ...YARD, name: 'inbox' });
+  });
+  it('names the zone of the cards they sit on, after either mark', () => {
+    expect(zone('Each player has a yard row that everyone can see, where some cards are on cards in their shelf.')())
+      .toEqual({ ...YARD, holders: 'shelf' });
+    expect(zone('Each player has an inbox row that everyone can see, where some cards are on cards in their shelf.')())
+      .toEqual({ ...YARD, name: 'inbox', holders: 'shelf' });
+    expect(zone('Each player has a crew row that everyone can see, where every card is on a card in their workshop.')())
+      .toEqual({ name: 'crew', perPlayer: true, layout: 'row', visibility: 'public', onCards: 'every', holders: 'workshop' });
+    expect(zone('Each player has an aisle row that everyone can see, where every card is on a card in their workshop.')())
+      .toMatchObject({ name: 'aisle', onCards: 'every', holders: 'workshop' });
+  });
+  it('refuses the new marks on a zone in the center', () => {
+    for (const mark of ['some cards are on cards', 'every card is on a card in their shelf', 'some cards are on cards in their shelf']) {
+      const declare = zone(`The yard is a row in the center that everyone can see, where ${mark}.`);
+      expect(declare, mark).toThrow(RuleError);
+      expect(declare, mark).toThrow('Only a zone each player has can hold cards on cards.');
+    }
+  });
+  it('refuses the new marks on a zone not everyone can see, and keeps the old one there', () => {
+    for (const mark of ['some cards are on cards', 'every card is on a card in their shelf', 'some cards are on cards in their shelf']) {
+      for (const visibility of ['only they can see', 'no one can see']) {
+        const declare = zone(`Each player has a yard row that ${visibility}, where ${mark}.`);
+        expect(declare, `${visibility}: ${mark}`).toThrow(new RuleError(
+          'Only a zone everyone can see can hold some cards on cards, or name the zone of the cards they sit on.',
+        ));
+      }
+    }
+    expect(zone('Each player has a pocket row that only they can see, where every card is on a card.')())
+      .toEqual({ name: 'pocket', perPlayer: true, layout: 'row', visibility: 'owner', onCards: 'every' });
+  });
+});

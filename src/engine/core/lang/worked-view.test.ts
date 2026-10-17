@@ -13,6 +13,7 @@ import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
 import { CREW_GAME, SHOWN, SUBJECT, WORKED_GAME } from './testing';
 import type { CompiledGame } from './types';
+import type { ZoneSpec } from './types';
 import { shownFlags, standIns } from './worked-view';
 import { relocate } from './zones';
 import COLOR_MATCH from '@/games/color-match.rules?raw';
@@ -291,5 +292,18 @@ describe('a flag that turns a value on to another number, and a value that goes 
     expect(shownFlags(compiled(plain('the cards in the hall')))).toEqual(['busy']);
     // With crews only their owner sees, plain would tell every seat the hidden crew's skill total.
     expect(shownFlags(compiled(plain().replace(CREW_ROW, CREW_ROW.replace('everyone can see', 'only they can see'))))).toEqual([]);
+  });
+});
+
+describe('(guard) a zone where some cards sit on cards', () => {
+  /** SHOWN with a pocket each player has where some cards sit on cards, as `visibility` says who sees it. */
+  const withPocket = (visibility: ZoneSpec['visibility']): CompiledGame => ({
+    ...shown, zones: [...shown.zones, { name: 'pocket', perPlayer: true, layout: 'row', visibility, onCards: 'some' }],
+  });
+
+  it('turns off every flag read through the cards on a card when it is hidden, and leaves them on when everyone sees it', () => {
+    expect(shownFlags(withPocket('owner'))).toEqual([]);
+    expect(shownFlags(withPocket('secret'))).toEqual([]);
+    expect(shownFlags(withPocket('public'))).toEqual(['busy']);
   });
 });
