@@ -21,6 +21,8 @@ import { cardById, zoneCards, type GameState } from '@/engine/core/game-state';
 import type { GameEngine } from '@/engine/core/game-engine';
 import type { Move } from '@/engine/core/moves';
 import type { CardState, PlayerId } from '@/engine/core/scene';
+import { changeCard } from '@/engine/core/lang/card-facts';
+import { shownFlags, standIns } from '@/engine/core/lang/worked-view';
 
 const lib = createDefaultLibrary();
 const { game, diagnostics } = compileGame(STARTUP_SIMULATOR, lib);
@@ -1752,5 +1754,34 @@ describe('Startup Simulator (designer language)', () => {
       // Some Greenlight paid a License, some chose among several answers, and some had every answer filled in.
       expect(Object.entries(seen).filter(([, times]) => times === 0), JSON.stringify(seen)).toEqual([]);
     }, 120_000);
+  });
+});
+
+describe('what the view says the rules work out', () => {
+  it('stands each need in for its cost, and shows Stalled and Efficient in ops, the flags that change a value', () => {
+    expect(standIns(game!)).toEqual({ 'blue cost': 'blue need', 'red cost': 'red need' });
+    // Every line of each reads only the card and the cards on it: its Tier, its need, the leads on it, its trait and its zone.
+    expect(shownFlags(game!)).toEqual(['stalled', 'efficient in ops']);
+  });
+
+  it('gives a seat the needs and the flags of the cards on a Board, and nothing of a backlog (Review Focus: 3 players, seed 1)', () => {
+    const start = setUp(3, 1);
+    const seats = seatsFor(3);
+    const S = startPlayerOf(start, seats);
+    const O = seats.find((seat) => seat !== S)!;
+    const [neobank, viral, search, engineer, streaming] = ['Neobank', 'Viral Video App', 'Search Engine', 'Engineer', 'Streaming Service'].map(idOf);
+    let state = relocate(start, [neobank, viral], `development-${S}`, game!);
+    state = changeCard(state, viral, { 'cut blue cubes': 2 }, game!);
+    state = relocate(state, [search], `operations-${S}`, game!);
+    state = relocate(state, [engineer], `ops-team-${S}`, game!);
+    state = relocate(state, [streaming], `backlog-${O}`, game!);
+    const { engine, runtime } = createEngine(game!, lib, 3, state);
+    expect(seatExtras(engine, runtime, engine.getState(), O).worked).toEqual({
+      [neobank]: { columns: { 'blue cost': 10, 'red cost': 0 }, flags: ['stalled'] },
+      [viral]: { columns: { 'blue cost': 4, 'red cost': 0 }, flags: [] },
+      // A Launched product, so never Stalled: before Stalled's zone line it read ['stalled'].
+      [search]: { columns: { 'blue cost': 12, 'red cost': 0 }, flags: [] },
+      [engineer]: { columns: {}, flags: ['efficient in ops'] },
+    });
   });
 });

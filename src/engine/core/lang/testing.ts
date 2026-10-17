@@ -439,6 +439,18 @@ export const SUBJECT = [
 ].join('\n');
 
 /**
+ * CREW_GAME with a count of red done read against a job's red need, and what the rules work out from them: a job's red left (its red
+ * need less its cut red done), whether a hand is working and a job busy, and a red pay that a busy job's flag turns on.
+ */
+export const SHOWN = [
+  CREW_GAME.replace('  Cards can be tired.', '  Cards can be tired.\n  Cards can have red done and cut red done.'), '',
+  'Red left:', "  A card's red left is its red need.", "  A card's red left goes down by its cut red done.", '',
+  'Working:', '  Only if it is a red card.', '  Only if it is not tired.', '',
+  'Busy:', '  Only if some card on it is working.', '',
+  'Red pay:', "  A busy card's red pay is 1.",
+].join('\n');
+
+/**
  * A card game of jobs that want a mark another job makes. Players start jobs from their stash in their workshop, hire hands from the
  * hall onto a job, and finish a job, which sends a grumpy hand to the scrap and the rest back to the hall. A job opened from the stash
  * needs the mark it wants made in some workshop, and a player who makes none pays the fee to a player of their choice who does. A Vase

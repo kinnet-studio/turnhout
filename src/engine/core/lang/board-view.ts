@@ -22,6 +22,8 @@ import type { LangRuntime } from './runtime';
 import { startPlayerOf, usesTurns } from './turns';
 import type { CompiledGame, DeclaredAction } from './types';
 import { zoneIdFor, zoneInfo } from './zones';
+import { cardsOn } from './attach';
+import { shownFlags, standIns } from './worked-view';
 
 /**
  * `color` is the space's color when it is written as text; `details` is every other thing the table says about it. `facts` is
@@ -99,7 +101,15 @@ export type ActionView = {
   move: string; label: string; allowed: true | string; target: TargetView | null; amount: boolean; players: { [seat: string]: true | string } | null;
   cards?: CardPickView; choices?: ChoiceView[];
 };
-export type SeatExtras = { board: BoardView | null; actions: ActionView[] };
+/**
+ * What the rules work out for a card on a Board, the same for every seat: the number worked out in place of each of its columns, by
+ * column, and the shown flags that hold for it, in the order the game works them out.
+ */
+export type WorkedCard = { columns: { [column: string]: number }; flags: string[] };
+/** Each card on a Board with something worked out to show, by id. */
+export type WorkedView = { [cardId: string]: WorkedCard };
+/** `worked` is there only when some card on a Board has something worked out to show (see `workedView`). */
+export type SeatExtras = { board: BoardView | null; actions: ActionView[]; worked?: WorkedView };
 
 const OUT_OF_GAME = "You're out of the game.";
 
@@ -445,9 +455,52 @@ function actionViews(engine: GameEngine, runtime: LangRuntime, state: GameState,
   });
 }
 
-/** The board and buttons as `seat` sees them in `state`, which is the engine's current state; the board is null for a game without one. */
+/**
+ * A card's numbers worked out in place of the columns it holds as numbers (`columns`, a `standIns` entry each), and the shown flags that
+ * hold for it, in order; null when it has neither.
+ */
+function workedCard(runtime: LangRuntime, state: GameState, card: CardState, columns: [string, string][], flags: string[]): WorkedCard | null {
+  const worked: WorkedCard = { columns: {}, flags: flags.filter((flag) => runtime.workedFlag(state, card.id, flag)) };
+  for (const [column, name] of columns) {
+    if (typeof cardFact(card, column) !== 'number') continue;
+    const value = runtime.workedValue(state, card.id, name);
+    if (typeof value === 'number') worked.columns[column] = value;
+  }
+  return Object.keys(worked.columns).length === 0 && worked.flags.length === 0 ? null : worked;
+}
+
+/**
+ * What the rules work out for each card on a Board whose face `seat` sees (a per-player zone everyone can see, cards on cards too), by id;
+ * null when no card has anything to show. Every seat gets the same values, since `standIns` and `shownFlags` keep only values read from the
+ * card and the cards on it. A card with a card on it that not everyone can see is left out, for what is on it may count; so is a card the
+ * runtime throws at (a value worked out from itself is found only when asked), so that one card's mistake leaves every view whole.
+ */
+function workedView(runtime: LangRuntime, state: GameState, seat: PlayerId): WorkedView | null {
+  const { game } = runtime;
+  const columns = Object.entries(standIns(game));
+  const flags = shownFlags(game);
+  if (columns.length === 0 && flags.length === 0) return null;
+  const isPublic = (card: CardState) => zoneInfo(game, card.zoneId)?.spec.visibility === 'public';
+  const view: WorkedView = {};
+  for (const card of Object.values(cardsKept(runtime, state)).flat()) {
+    if (!seesFace(game, card, seat) || !cardsOn(state, card.id).every(isPublic)) continue;
+    try {
+      const worked = workedCard(runtime, state, card, columns, flags);
+      if (worked !== null) view[card.id] = worked;
+    } catch {
+      // Left out, as said above.
+    }
+  }
+  return Object.keys(view).length === 0 ? null : view;
+}
+
+/**
+ * The board and buttons as `seat` sees them in `state`, which is the engine's current state; the board is null for a game without one.
+ * `worked` is left out when there is nothing worked out to show.
+ */
 export function seatExtras(engine: GameEngine, runtime: LangRuntime, state: GameState, seat: PlayerId): SeatExtras {
-  return { board: boardView(runtime, state, seat), actions: actionViews(engine, runtime, state, seat) };
+  const worked = workedView(runtime, state, seat);
+  return { board: boardView(runtime, state, seat), actions: actionViews(engine, runtime, state, seat), ...(worked === null ? {} : { worked }) };
 }
 
 const isRecord = (v: unknown): v is { [k: string]: Json } => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -486,10 +539,12 @@ const isAction = (v: unknown): boolean =>
   isRecord(v) && isText(v.move) && isText(v.label) && isVerdict(v.allowed) && (v.target === null || isTarget(v.target))
   && typeof v.amount === 'boolean' && (v.players === null || isMap(v.players, isVerdict)) && (v.cards === undefined || isCardPick(v.cards))
   && isChoices(v.choices);
+const isWorkedCard = (v: unknown): boolean => isRecord(v) && isMap(v.columns, isNumber) && isList(v.flags, isText);
 
 /** For the page: the extras of a view when they have the shape `seatExtras` makes, null for anything else. */
 export function readSeatExtras(extras: Json | undefined): SeatExtras | null {
   if (!isRecord(extras) || !isList(extras.actions, isAction)) return null;
   if (extras.board !== null && !isBoard(extras.board)) return null;
+  if (extras.worked !== undefined && !isMap(extras.worked, isWorkedCard)) return null;
   return extras as SeatExtras;
 }

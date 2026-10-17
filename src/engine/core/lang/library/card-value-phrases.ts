@@ -15,6 +15,9 @@ const kindHasIts: ValueFn = (env, [match, , other], value) => {
 
 const kindHas: ValueFn = (env, [match, , n], value) => (matchesCard(itCard(env), match as CardMatch) ? (n as number) : value);
 
+/** The lines that turn a value on by a flag: the page shows such a flag, since it changes what a card makes or costs. */
+export const FLAGGED_VALUES = ["a {cardflag} card's {attribute} is {int}", "an {cardflag} card's {attribute} is {int}"] as const;
+
 /** A card that is so has the number; a flag worked out from lines is read like any other. */
 const flaggedHas: ValueFn = (env, [flag, , n], value) => (cardHasFlag(env, itCard(env), flag as string) ? (n as number) : value);
 
@@ -26,6 +29,6 @@ export function registerCardValuePhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
     .value("{cardclass}'s {attribute} is its {attribute}", kindHasIts, { needsCard: true })
     .value("{cardclass}'s {attribute} is {int}", kindHas, { needsCard: true })
-    .value("a {cardflag} card's {attribute} is {int}", flaggedHas, { needsCard: true })
-    .value("an {cardflag} card's {attribute} is {int}", flaggedHas, { needsCard: true });
+    .value(FLAGGED_VALUES[0], flaggedHas, { needsCard: true })
+    .value(FLAGGED_VALUES[1], flaggedHas, { needsCard: true });
 }

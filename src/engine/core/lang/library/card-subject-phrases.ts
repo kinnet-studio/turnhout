@@ -27,6 +27,9 @@ const someCardOnItIs = (wanted: boolean): ConditionFn => (env, [flag]) =>
 
 // ---- values ----------------------------------------------------------------------------------
 
+/** The line a number worked out from one of the card's own numbers starts with: the page shows such a number in place of that column. */
+export const FROM_COLUMN = "a card's {attribute} is its {attribute}";
+
 // The first {attribute} of each line is the value its section works out; the compiler checks it names that one, so the lines here
 // need only say what the value comes to.
 
@@ -55,6 +58,6 @@ export function registerCardSubjectPhrases(lib: PhraseLibrary): PhraseLibrary {
     .condition('it is in an {perzone}', itIsIn, { needsCard: true })
     .condition('some card on it is {cardflag}', someCardOnItIs(true), { needsCard: true })
     .condition('no card on it is {cardflag}', someCardOnItIs(false), { needsCard: true })
-    .value("a card's {attribute} is its {attribute}", isIts, { needsCard: true })
+    .value(FROM_COLUMN, isIts, { needsCard: true })
     .value("a card's {attribute} goes down by its {attribute}", goesDownByIts, { needsCard: true });
 }
