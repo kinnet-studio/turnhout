@@ -11,7 +11,7 @@ import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { parseParam, VOCAB_TYPES } from './refs';
 import {
   COUNTER_GAME, CREW_GAME, HOLDING_BOARD, INTERRUPT_BOARD, PICK_BOARD, ROUNDS_GAME, TINY_BOARD_HEAD, TURN_GAME, WORKED_GAME, deckGameText, vocabFor,
-  SUBJECT,
+  SUBJECT, FORCE_GAME,
 } from './testing';
 import type { ParamType } from './types';
 
@@ -1351,5 +1351,74 @@ describe('values worked out from the card a line is about', () => {
     const line = "  A card's red cut goes down by its red need.";
     const text = SUBJECT.replace("  A card's red left goes down by its red cut.", `  A card's red left goes down by its red cut.\n${line}`);
     expect(messages(text)).toEqual([[at(text, line), 'This line is about “red cut”, but it is under Red left:.']]);
+  });
+});
+
+describe('values about a player', () => {
+  /** The 1-based number of `line` in `text`. */
+  const at = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+  const TOTAL = "a player's {playervalue} is the total {attribute} of {cardgroup}";
+  const FORCE = "  A player's red force is the total red work of the cards in their crew.";
+  const LOAD = "  A player's red load is the total red need of the cards in their workshop.";
+  const STOP = '  A player may stop.';
+  const game = compileGame(FORCE_GAME, lib).game!;
+  /** FORCE_GAME with `lines` after the line `after`. */
+  const addAfter = (after: string, ...lines: string[]) => FORCE_GAME.replace(after, [after, ...lines].join('\n'));
+
+  it('compiles FORCE_GAME with no problems', () => expect(compileGame(FORCE_GAME, lib).diagnostics).toEqual([]));
+  it('keeps a value for each section, by name: its lines and where it is written', () => {
+    expect(game.playerValues).toEqual({
+      'red force': { refs: [expect.objectContaining({ kind: 'value', phrase: TOTAL })], line: at(FORCE_GAME, 'Red force:') },
+      'red load': { refs: [expect.objectContaining({ kind: 'value', phrase: TOTAL })], line: at(FORCE_GAME, 'Red load:') },
+    });
+  });
+  it('gives the lines of the game the names it works out for players', () => {
+    expect(vocabFor(game).playerValues).toEqual(['red force', 'red load']);
+  });
+  it('leaves a game with no such section without values about players', () => {
+    expect(compileGame(WORKED_GAME, lib).game!).not.toHaveProperty('playerValues');
+  });
+
+  describe('problems', () => {
+    it('refuses a line about another value than its section’s', () => {
+      const text = addAfter(LOAD, FORCE);
+      // The second of the two lines, the one under Red load:.
+      const line = text.split('\n').lastIndexOf(FORCE) + 1;
+      expect(messages(text)).toEqual([[line, 'This line is about “red force”, but it is under Red load:.']]);
+    });
+    it('refuses a name each player already has a number under, and leaves its section out', () => {
+      const text = `${FORCE_GAME}\n\nCoins:\n  A player's coins is the total pay of the cards in their workshop.`;
+      expect(messages(text)).toEqual([
+        [at(text, 'Coins:'), '“coins” is already a number each player has; a value worked out for players needs a name of its own.'],
+      ]);
+      // Were “coins” a value about players, this line would read it.
+      const probe = '    Only if their coins is 1.';
+      const probed = text.replace(STOP, `${STOP}\n${probe}`);
+      expect(messages(probed)).toContainEqual([at(probed, probe), 'There is no player value called “coins”.']);
+    });
+    it('refuses a line that is not about a player, after the first', () => {
+      const line = '  Only if they have at least 1 coin.';
+      const text = addAfter(FORCE, line);
+      expect(messages(text)).toEqual([[at(text, line), 'Write each line of a value about players as “A player\'s … is …”.']]);
+    });
+    it('refuses a line that reads a card, for a value about players has none', () => {
+      const line = "  A player's red force is the total red work of the cards on it.";
+      const text = FORCE_GAME.replace(FORCE, line);
+      expect(messages(text)).toEqual([
+        [at(text, line), '“A player\'s red force is the total red work of the cards on it” only makes sense in a rule about a card, such as “When a card …”.'],
+      ]);
+    });
+    it('names a misspelt value in a condition', () => {
+      const line = '    Only if their red forse is at least their red load.';
+      const text = addAfter(STOP, line);
+      expect(messages(text)).toEqual([[at(text, line), 'There is no player value called “red forse”.']]);
+    });
+  });
+
+  it('reads a section named after a column of a card table as a value about players when its first line is about one', () => {
+    const { game: worth, diagnostics } = compileGame(`${FORCE_GAME}\n\nWorth:\n  A player's worth is the total worth of the cards in their workshop.`, lib);
+    expect(diagnostics).toEqual([]);
+    expect(worth!.playerValues).toHaveProperty('worth');
+    expect(worth!.worked).not.toHaveProperty('worth');
   });
 });

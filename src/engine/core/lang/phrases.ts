@@ -135,19 +135,20 @@ export function emptyVocab(): Vocab {
   return {
     sharedZones: [], playerZones: [], maxPlayers: 0, phases: [], verbs: [], attributes: [], cardValues: [], standardDeck: false,
     spaces: [], spaceAttributes: [], spaceValues: [], counters: [], budgets: [], payWith: null, actions: [], dice: false, diceCount: 0,
-    facts: [], bank: [],
+    facts: [], bank: [], playerValues: [],
   };
 }
 
 /**
  * The words a designer may use about a game: its zones, card attributes and values, phases and move verbs, and for a
  * board game its spaces, the words of their table, its counters, the actions a player may take, the facts it declares,
- * what its bank holds and the values it works out for cards.
+ * what its bank holds and the values it works out for cards and for players.
  * Always make a new one per compile stage: the library caches what it builds from a Vocab by object.
  */
 export function vocabFrom(game: {
   maxPlayers: number; zones?: ZoneSpec[]; cards?: CardSetSpec[]; phases?: string[]; verbs?: string[];
   board?: BoardSpec | null; actions?: Vocab['actions']; facts?: FactSpec[]; worked?: { name: string; kind: 'number' | 'flag' }[];
+  playerValues?: string[];
 }): Vocab {
   const { zones = [], cards = [], board = null, facts = [], worked = [] } = game;
   const attributes = new Set<string>();
@@ -200,6 +201,7 @@ export function vocabFrom(game: {
     diceCount: board?.dice?.count ?? 0,
     facts: [...facts, ...workedFlags],
     bank: (board?.bank ?? []).map((b) => b.name),
+    playerValues: game.playerValues ?? [],
   };
 }
 

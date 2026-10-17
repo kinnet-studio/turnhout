@@ -141,6 +141,15 @@ function numberIfAny(env: PhraseEnv, card: CardState, name: string): number | nu
   return value;
 }
 
+/**
+ * What a value the game works out for each player comes to for a seat, as every phrase reads one: through the runtime, which works it out
+ * from its lines. The compiler lets such a name only into a game that works it out, so a missing runtime is a mistake in the code.
+ */
+export function playerValueOf(env: PhraseEnv, seat: PlayerId, name: string): number {
+  if (!env.playerValue) throw new Error(`This phrase needs “${name}” worked out for ${seat}, but nothing works it out.`);
+  return env.playerValue(env.state, seat, name);
+}
+
 /** Every card in the zones a reference names, zone by zone and slot by slot. `actor` is who “their” means. */
 export const cardsInZones = (env: PhraseEnv, ref: ZoneRef, actor?: PlayerId): CardState[] =>
   resolveZoneIds(ref, env, actor).flatMap((id) => zoneCards(env.state, id));

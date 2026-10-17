@@ -799,6 +799,8 @@ const PLAYERFLAG = declaredWord('playerflag', '[player fact]', 'player fact', fa
 const PLAYERNUMBER = declaredWord('playernumber', '[player fact]', 'player fact', factNames('player', 'number'), true);
 const GAMENUMBER = declaredWord('gamenumber', '[game number]', 'game number', factNames('game', 'number'), false);
 const BANKED = declaredWord('banked', '[bank item]', 'bank item', (vocab) => vocab.bank, true);
+/** A value the game works out for each player from the lines of its section (“red force”), read only by the phrases about one. */
+const PLAYERVALUE = declaredWord('playervalue', '[player value]', 'player value', (v) => v.playerValues, false);
 
 /**
  * The player who holds a flag players can have, standing for the flag: “the player who is leading”. A flag whose name starts with
@@ -930,7 +932,7 @@ const DONE: ParamType = {
 export const VOCAB_TYPES: ParamType[] = [
   ZONE, ZONES, PERZONE, SHAREDZONE, PLAYER, PLAYERS, PHASE, MOVE, ATTRIBUTE, CARD, CARDLIST, CARDCLASS, SPACE, SPACECLASS, SPACEATTR, COUNTER, ACTION,
   TARGETACTION, AMOUNTACTION, PICKACTION, CARDACTION, DONE, SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, PLAYERFLAG, PLAYERNUMBER, GAMENUMBER, BANKED,
-  HOLDER, CARDGROUP, CARDFILTER,
+  HOLDER, CARDGROUP, CARDFILTER, PLAYERVALUE,
 ];
 
 const TYPES_BY_NAME = new Map(VOCAB_TYPES.map((t) => [t.name, t] as const));

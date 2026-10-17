@@ -14,7 +14,7 @@ import { canon, parseParam } from './refs';
 import { ROUND_FRAME, usesTurns } from './turns';
 import type {
   BankSpec, BoardFn, BoardSpec, CardSetSpec, CardsFn, CardTable, CompiledEnd, CompiledGame, CompiledPhase, DeclareFn, EveryPhase, FactSpec, PhraseRef,
-  SpaceSpec, Vocab, WorkedValue, ZoneFn, ZoneSpec,
+  PlayerValue, SpaceSpec, Vocab, WorkedValue, ZoneFn, ZoneSpec,
 } from './types';
 
 export type CompileResult = { game?: CompiledGame; diagnostics: Diagnostic[] };
@@ -81,6 +81,17 @@ const WORKED_IS_A_FACT = (name: string) => `“${name}” is already a fact card
 const FLAG_IS_A_COLUMN = (name: string) =>
   `“${name}” is a column of the card table, so it is a number; work it out with lines like “A … card's ${name} is …”.`;
 const LINE_UNDER_OTHER = (said: string, header: string) => `This line is about “${said}”, but it is under ${header}:.`;
+/** A line of a section that works out a value for players: “A player's …”. */
+const ABOUT_A_PLAYER = /^a player['‘’]s /i;
+/**
+ * What a line of a value about players says it is about: group 1 is the name between “player's” and the first “is”, “are”, “goes up by”
+ * or “goes down by”, as `LINE_ABOUT` reads a card's, so that a line of any of those shapes is checked alike.
+ */
+const PLAYER_LINE_ABOUT = /player['‘’]s (.+?) (?:is|are|goes up by|goes down by) /i;
+/** A counter or a fact about players already goes by its name in the lines about a player, so a value about players may not take it too. */
+const PLAYER_VALUE_IS_TAKEN = (name: string) =>
+  `“${name}” is already a number each player has; a value worked out for players needs a name of its own.`;
+const PLAYER_VALUE_LINES = 'Write each line of a value about players as “A player\'s … is …”.';
 
 type Section = { keyword: string; rest: string; node: OutlineNode };
 /** A section that works out a value for cards: `keyword` is the value's name, and `refines` says it is a column of a card table. */
@@ -224,6 +235,63 @@ function compileWorked(sections: CardSection[], ctx: LineCtx): { [name: string]:
     }
   }
   return Object.fromEntries(worked);
+}
+
+/**
+ * The sections that work out a value for each player, and the other top-level lines, left for `readCardSections`. A header is one when its
+ * first line is about a player (“A player's …”), even when it names a column of a card table: that line says whose value it is. Its name
+ * is the header's. A name that is already a counter or a fact about players is reported on the header's line, and its section left out.
+ */
+function readPlayerSections(
+  others: OutlineNode[], board: BoardSpec | null, facts: FactSpec[], diagnostics: Diagnostic[],
+): { sections: Section[]; rest: OutlineNode[] } {
+  const taken = new Set([
+    ...(board?.counters ?? []).map((counter) => counter.name), ...facts.filter((fact) => fact.on === 'player').map((fact) => fact.name),
+  ].map(canon));
+  const sections: Section[] = [];
+  const rest: OutlineNode[] = [];
+  for (const node of others) {
+    const header = headerOf(node);
+    if (header === undefined || !ABOUT_A_PLAYER.test(normalizeLine(node.children[0]?.text ?? ''))) {
+      rest.push(node);
+      continue;
+    }
+    const name = canon(header);
+    if (taken.has(name)) addProblem(diagnostics, node.line, PLAYER_VALUE_IS_TAKEN(name), { text: node.text });
+    else sections.push({ keyword: name, rest: '', node });
+  }
+  return { sections, rest };
+}
+
+/**
+ * What the sections that work out values for players say, by value, the lines of its sections in the order written. Each line is of kind
+ * `value` and about a player. A line that is not about a player, or one about another value, is reported on its line and left out.
+ */
+function compilePlayerValues(sections: Section[], ctx: LineCtx): { [name: string]: PlayerValue } {
+  const about: LineCtx = { ...ctx, player: true };
+  const values = new Map<string, PlayerValue>();
+  for (const { keyword: name, node } of sections) {
+    const value = values.get(name) ?? { refs: [], line: node.line };
+    values.set(name, value);
+    const header = headerOf(node) ?? name;
+    for (const line of node.children) {
+      const clean = normalizeLine(line.text);
+      if (!ABOUT_A_PLAYER.test(clean)) {
+        addProblem(ctx.diagnostics, line.line, PLAYER_VALUE_LINES, { text: clean });
+        continue;
+      }
+      rejectChildren(line, ctx.diagnostics);
+      // A name that is no value at all is left to the line's phrase, which says so with the names closest to it.
+      const said = PLAYER_LINE_ABOUT.exec(clean)?.[1];
+      const other = said === undefined ? null : parseParam('playervalue', said, ctx.vocab);
+      if (said !== undefined && other !== null && 'value' in other && other.value !== name) {
+        addProblem(ctx.diagnostics, line.line, LINE_UNDER_OTHER(said, header), { text: clean });
+        continue;
+      }
+      value.refs.push(matchLine('value', clean, line.line, about));
+    }
+  }
+  return Object.fromEntries(values);
 }
 
 /** Every line a section takes up: its own, the lines under it and the rows of their tables. */
@@ -681,17 +749,19 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   );
   // Facts are checked once both tables are read, since a fact may be named like a column of either.
   const facts = acceptFacts(declared, board, of('board').length > 0 || playerLines.length > 0, cards, diagnostics);
-  // The values worked out for cards are named once the facts are known, since a value may not take a fact's name, and every line from
-  // here on may read them.
-  const { sections: cardSections, rest } = readCardSections(others, board, cards, facts, diagnostics);
+  // The values worked out for players and for cards are named once the facts are known, since a value may not take a fact's name, and
+  // every line from here on may read them. A section about players is told by its first line, so it is taken first, whatever its name.
+  const { sections: playerSections, rest: notAboutPlayers } = readPlayerSections(others, board, facts, diagnostics);
+  const playerValues = [...new Set(playerSections.map((s) => s.keyword))];
+  const { sections: cardSections, rest } = readCardSections(notAboutPlayers, board, cards, facts, diagnostics);
   const worked = workedNames(cardSections);
   // Buttons are read ahead too: “they have not rolled this turn” may come before the action that rolls. They wait for the facts,
   // since the words a button picks a space with may name one, and no card or declare line reads a button.
-  const actions = readActions(named, stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board, facts, worked })));
+  const actions = readActions(named, stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board, facts, worked, playerValues })));
 
   // A line may read a value worked out for cards, but never change one: the compiler refuses it on that line.
   const ctx: LineCtx = {
-    ...stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board, actions, facts, worked })),
+    ...stage(vocabFrom({ maxPlayers, zones, cards, phases: phaseIds, verbs, board, actions, facts, worked, playerValues })),
     ...(worked.length > 0 ? { worked: worked.map(({ name }) => name) } : {}),
   };
   const setup = linesOf(of('setup')).map((node) => {
@@ -702,6 +772,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   const boardFailed = board === null && of('board').length > 0;
   const columns = compileColumns(readColumnSections(rest, board, boardFailed, diagnostics), ctx);
   const values = compileWorked(cardSections, ctx);
+  const valuesAboutPlayers = compilePlayerValues(playerSections, ctx);
   const { says, diagnostics: saysDiagnostics } = compileSays(saysCells, ctx);
   const everyPhase = compileEveryPhase(of('in every phase'), ctx);
 
@@ -741,7 +812,9 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   if (name === null || players === null || phases.length === 0 || !onlyUnknownPhrases) return undefined;
   const game: CompiledGame = { name, players, zones, cards, setup, phases, end, examples, board, facts, columns, says, everyPhase };
   // Left out, never undefined, for a game that works nothing out: such a game is the same as before there were worked values.
-  return cardSections.length > 0 ? { ...game, worked: values } : game;
+  return {
+    ...game, ...(cardSections.length > 0 ? { worked: values } : {}), ...(playerSections.length > 0 ? { playerValues: valuesAboutPlayers } : {}),
+  };
 }
 
 /**

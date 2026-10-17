@@ -51,7 +51,7 @@ describe('vocabulary types', () => {
       ['action', '[action]'], ['targetaction', '[action]'], ['amountaction', '[action]'], ['pickaction', '[action]'], ['cardaction', '[action]'], ['done', '[action done]'],
       ['spacekind', '[kind of space]'], ['spaceflag', '[space fact]'], ['spacenumber', '[space fact]'], ['cardflag', '[card fact]'],
       ['playerflag', '[player fact]'], ['playernumber', '[player fact]'], ['gamenumber', '[game number]'], ['banked', '[bank item]'],
-      ['holder', '[the player who is …]'], ['cardgroup', '[cards]'], ['cardfilter', '[test]'],
+      ['holder', '[the player who is …]'], ['cardgroup', '[cards]'], ['cardfilter', '[test]'], ['playervalue', '[player value]'],
     ]);
     const order = Object.fromEntries(VOCAB_TYPES.filter((t) => t.stubOrder !== undefined).map((t) => [t.name, t.stubOrder]));
     // A stub never turns words into a space: a name like "Go To Jail" would swallow the words of an ordinary sentence.

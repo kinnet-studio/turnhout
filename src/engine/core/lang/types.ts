@@ -127,6 +127,8 @@ export type CompiledExample = { name: string; line: number; players: number | nu
  * when each of its `Only if` groups does. `line` is the section's own.
  */
 export type WorkedValue = { kind: 'number'; refines: boolean; refs: PhraseRef[]; line: number } | { kind: 'flag'; conditions: CondGroup[]; line: number };
+/** A value a section works out for each player: from 0, each line has its say in the order written. `line` is the section's own. */
+export type PlayerValue = { refs: PhraseRef[]; line: number };
 export type CompiledGame = {
   name: string; players: { min: number; max: number }; zones: ZoneSpec[]; cards: CardSetSpec[];
   setup: PhraseRef[]; phases: CompiledPhase[]; end: CompiledEnd | null; examples: CompiledExample[];
@@ -145,6 +147,8 @@ export type CompiledGame = {
   everyPhase: EveryPhase;
   /** The values worked out for cards, by name; there only when the game has a section that works one out. */
   worked?: { [name: string]: WorkedValue };
+  /** The values worked out for each player, by name; there only when the game has a section that works one out. */
+  playerValues?: { [name: string]: PlayerValue };
 };
 export type Vocab = {
   sharedZones: string[]; playerZones: string[]; maxPlayers: number; phases: string[]; verbs: string[];
@@ -172,6 +176,8 @@ export type Vocab = {
    * numbers.
    */
   facts: FactSpec[]; bank: string[];
+  /** The values the game works out for each player, in the order first written. */
+  playerValues: string[];
 };
 /**
  * Who, which space and which card a phrase is about, when a rule is about a player's piece, a space or a card. `amount` is the
@@ -215,6 +221,8 @@ export interface PhraseEnv {
   workedValue?: (state: GameState, cardId: string, name: string) => Json | null;
   /** Whether a card is something a section works out from `Only if` lines, or else has the flag set; the runtime supplies it. */
   workedFlag?: (state: GameState, cardId: string, flag: string) => boolean;
+  /** What a value the game works out for each player comes to for a seat, once the lines of its section have had their say; the runtime gives it. */
+  playerValue?: (state: GameState, seat: PlayerId, name: string) => number;
 }
 export type ConditionFn = (env: PhraseEnv, args: Json[]) => boolean;
 export type EffectFn = (env: PhraseEnv, args: Json[]) => GameState;   // also 'given'

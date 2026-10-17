@@ -423,6 +423,13 @@ export const WORKED_GAME = [
   'Done:', '  Only if its red done are at least its red need.', '  Only if its gold done are at least its gold need.',
 ].join('\n');
 
+/** WORKED_GAME with two values about each player: the red work of the hands in their crew, and the red need of the jobs in their workshop. */
+export const FORCE_GAME = [
+  WORKED_GAME, '',
+  'Red force:', "  A player's red force is the total red work of the cards in their crew.", '',
+  'Red load:', "  A player's red load is the total red need of the cards in their workshop.",
+].join('\n');
+
 /** WORKED_GAME with a job's crew red: the red work of the cards on it, added up. */
 export const TOTALS_GAME = [WORKED_GAME, '', 'Crew red:', "  A card's crew red is the total red work of the cards on it."].join('\n');
 
@@ -531,7 +538,7 @@ export function fixtureEnv(
   opts: {
     game?: CompiledGame; seats?: PlayerId[]; move?: MoveInfo; check?: PhraseEnv['check']; subject?: Subject; announce?: PhraseEnv['announce'];
     columnValue?: PhraseEnv['columnValue']; runLine?: PhraseEnv['runLine']; workedValue?: PhraseEnv['workedValue'];
-    workedFlag?: PhraseEnv['workedFlag'];
+    workedFlag?: PhraseEnv['workedFlag']; playerValue?: PhraseEnv['playerValue'];
   } = {},
 ): PhraseEnv {
   return {
@@ -546,6 +553,7 @@ export function fixtureEnv(
     runLine: opts.runLine,
     workedValue: opts.workedValue,
     workedFlag: opts.workedFlag,
+    playerValue: opts.playerValue,
   };
 }
 
@@ -570,7 +578,10 @@ export function fixturePhase(id: string, moves: DeclaredMove[], over: Partial<Co
   };
 }
 
-/** The words a designer could use about this game: its zones, move verbs, card attributes and values, its facts and what it works out for cards. */
+/**
+ * The words a designer could use about this game: its zones, move verbs, card attributes and values, its facts and what it works out for
+ * cards and for players.
+ */
 export function vocabFor(game: CompiledGame, players: number = game.players.max): Vocab {
   return vocabFrom({
     maxPlayers: players,
@@ -585,6 +596,7 @@ export function vocabFor(game: CompiledGame, players: number = game.players.max)
     }))),
     facts: game.facts,
     worked: Object.entries(game.worked ?? {}).map(([name, value]) => ({ name, kind: value.kind })),
+    playerValues: Object.keys(game.playerValues ?? {}),
   });
 }
 

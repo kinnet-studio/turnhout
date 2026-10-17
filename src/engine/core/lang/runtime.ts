@@ -78,8 +78,8 @@ export class LangRuntime {
   /** How many card lines are running inside one another: a card that draws a card runs that card's lines in its own. */
   private cardDepth = 0;
   /**
-   * The values being worked out right now, each for a card, by card and name: a number or a flag whose lines ask it again, directly or
-   * through another value, would never end.
+   * The values being worked out right now, each for a card or a player, by a key of its own: a number or a flag whose lines ask it again,
+   * directly or through another value, would never end.
    */
   private readonly workingOut = new Set<string>();
 
@@ -99,7 +99,7 @@ export class LangRuntime {
     const about = subject ?? (move ? { player: move.by, space: null, card: null } : undefined);
     return {
       state, game: this.game, seats: this.seats, move, check: this.check, example, subject: about, announce: this.announce, runLine: this.runLine,
-      columnValue: this.columnValue, workedValue: this.workedValue, workedFlag: this.workedFlag,
+      columnValue: this.columnValue, workedValue: this.workedValue, workedFlag: this.workedFlag, playerValue: this.playerValue,
     };
   }
 
@@ -388,7 +388,7 @@ export class LangRuntime {
     if (worked?.kind !== 'number') return cardAttribute(card, name, this.game);
     const own = cardFact(card, name);
     const env = this.env(state, undefined, undefined, { player: null, space: null, card: cardId });
-    return this.workOut(cardId, name, () => worked.refs.reduce(
+    return this.workOut([cardId, name], name, () => worked.refs.reduce(
       (value, ref) => unlessNoSuchNumber(() => this.call<ValueFn, number | null>(ref, ['value'], (fn) => fn(env, ref.args, value)), value),
       worked.refines ? (typeof own === 'number' ? own : null) : 0,
     ));
@@ -407,7 +407,22 @@ export class LangRuntime {
     const subject: Subject = { player: null, space: null, card: cardId };
     const holds = (ref: PhraseRef) => unlessNoSuchNumber(() => this.test(ref, state, undefined, undefined, subject), false);
     const groupHolds = (group: CondGroup) => (group.mode === 'all' ? group.refs.every(holds) : group.refs.some(holds));
-    return this.workOut(cardId, flag, () => worked.conditions.every(groupHolds));
+    return this.workOut([cardId, flag], flag, () => worked.conditions.every(groupHolds));
+  };
+
+  /**
+   * `env.playerValue`: what a value the game works out for each player comes to for a seat. It starts from 0 and each line of its sections
+   * then has its say in the order written, about that player, seeing what the line before made of it. A line that comes to nothing, or
+   * reads a number a card lacks, leaves the value as it was. The compiler lets only the names it works out into the lines, so any other is
+   * a mistake in the code.
+   */
+  readonly playerValue = (state: GameState, seat: PlayerId, name: string): number => {
+    const values = this.game.playerValues;
+    const value = values !== undefined && Object.hasOwn(values, name) ? values[name] : undefined;
+    if (value === undefined) throw new Error(`No value called “${name}” is worked out for players.`);
+    const env = this.env(state, undefined, undefined, { player: seat, space: null, card: null });
+    const line = (sum: number, ref: PhraseRef) => this.call<ValueFn, number | null>(ref, ['value'], (fn) => fn(env, ref.args, sum)) ?? sum;
+    return this.workOut(['player', seat, name], name, () => value.refs.reduce((sum, ref) => unlessNoSuchNumber(() => line(sum, ref), sum), 0));
   };
 
   /** The value a section works out under this name, if one does. */
@@ -423,18 +438,19 @@ export class LangRuntime {
   }
 
   /**
-   * Works out the value `name` of a card, which must not be asked again for the same card until it is known. The line that asks it again
-   * is the one blamed (the error takes that line's number on its way out), never a stack overflow.
+   * Works out the value `name` of a card (`[cardId, name]`) or of a player (`['player', seat, name]`), which must not be asked again under
+   * the same key until it is known. The line that asks it again is the one blamed (the error takes that line's number on its way out),
+   * never a stack overflow.
    */
-  private workOut<T>(cardId: string, name: string, work: () => T): T {
-    const key = JSON.stringify([cardId, name]);
-    if (this.workingOut.has(key)) throw new RuleError(WORKED_FROM_ITSELF(name));
-    this.workingOut.add(key);
+  private workOut<T>(key: string[], name: string, work: () => T): T {
+    const id = JSON.stringify(key);
+    if (this.workingOut.has(id)) throw new RuleError(WORKED_FROM_ITSELF(name));
+    this.workingOut.add(id);
     try {
       return work();
     } finally {
       // A value that throws must not leave the runtime thinking it is still being worked out.
-      this.workingOut.delete(key);
+      this.workingOut.delete(id);
     }
   }
 
