@@ -11,9 +11,10 @@ import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { parseParam, VOCAB_TYPES } from './refs';
 import {
   COUNTER_GAME, CREW_GAME, HOLDING_BOARD, INTERRUPT_BOARD, PICK_BOARD, ROUNDS_GAME, TINY_BOARD_HEAD, TURN_GAME, WORKED_GAME, deckGameText, vocabFor,
-  SUBJECT, FORCE_GAME,
+  SUBJECT,
 } from './testing';
 import type { ParamType } from './types';
+import { FORCE_GAME } from './testing';
 import { MEND_GAME } from './testing';
 import { JOIN_GAME } from './testing';
 
