@@ -229,7 +229,11 @@ Phase: playing
   - `Every card on it whose trait is Ego goes to the open job market.` moves only the cards on it that pass.
 - **The card a rule is about.** A section that works out a value, or a button's `Only if` lines, can ask `it is a Senior Developer card`, `it is not a Tier 1 card`, `it is in an ops team`, `its blue need is 0`, `some card on it is leading software` and `no card on it is leading hardware`. A number can go down by another: `A card's blue need goes down by its cut blue cubes.`
 - **Examples** name a press's choices after it: `When p0 greenlights the Server Farm, paying p2` names the players the press asks for among several, in line order, and `…, choosing cut 2 red` names an option. A player who alone qualifies is filled in and needs no name, though an example may name a player for every choice instead.
-- **In the playtest,** a choice with one answer is filled in. A press with several answers is refused with the prompt for now; a picker for choices comes later.
+- **In the playtest,** a choice with one answer is filled in. A press whose choice has several answers opens it under the buttons, one question at a time:
+  - `Pick who to pay the license to (requires Commerce)` with a button for each player;
+  - `Choose one` with a button for each option.
+
+  The press goes once the last is answered. A greyed answer says why on hover. Cancel, another button or another tab sends nothing.
 - **Startup Simulator** plays slice 3 this way: the Greenlight's License to a provider of each missing Tag and the cut Domain Expertise gives, which a hybrid's owner chooses; the sections that work out Matching Leads, Stalled and Fully led; and the Pivot that fires the Diva.
 
 **A table too big for one screen.** When a game's zones don't fit the table, the playtest shows one seat at a time, with a tab for each seat:
@@ -237,12 +241,16 @@ Phase: playing
 - **The tabs.** A tab reads `p1`, or `p1 — to act` for the seat that must act. The tabs jump to the seat that must act when the turn moves on, Undo included; in between, any seat's tab can be opened to look at its table.
 - **The table.** The shared zones wrap onto lines across the top, each named above it. The seat's own zones that only it can see run along the bottom, its public zones in the band between those and the shared zones, and the other seats' zones are left off. A row's cards stand side by side, so every face can be read; a longer row squeezes them to stay in its place.
 - **The other seats.** Every player's line shows their numbers, how many cards each of their zones holds, and the start player: `p0 7 capital, 3 actions, 0 market share · bench 3 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0 · start player`.
-- **Faces.** A card face shows its name and its first three columns, so a card table puts its key columns first. Pointing at a card shows all of it under the table: `Architect — cost 7 · skill software · output 3 · salary 2 · role Senior Developer · trait Clean Code`.
+- **Faces.** A card face shows its name and its first three columns, so a card table puts its key columns first: Startup Simulator's product tables put tier, tag and requires first. Pointing at a card shows all of it under the table: `Architect — cost 7 · skill software · output 3 · salary 2 · role Senior Developer · trait Clean Code`.
 - **The Board.**
   - The seat's cards that everyone can see sit in a band between the shared zones and the seat's own strip.
   - A card that sits on a card hangs under it.
   - A number kept on cards shows under a card against the column whose name starts with the same words: `blue cubes` against `blue cost` reads `Blue 3/6`. One named with words before another's shows beside it when it isn't 0: `Blue 3/6 +4 new`.
-  - Under each seat's line, its public cards are listed by zone, with what sits on each: `development: Dating App [Blue 4/6, Red 0/0] with Junior Software Dev and Architect (onboarding) · operations: To-Do List [Blue 4/4, Red 0/0] · ops team: QA Engineer`.
+  - A value a section works out from a column (`A card's blue need is its blue cost.`) is read in that column's place: `Blue 3/4 +2 cut`.
+  - A card read against columns also names its words: `Neobank (tier Tier 2, tag Crypto, requires Commerce, sector FinTech, stalled)`.
+  - A worked yes-or-no that a value line turns on (`A stalled card's blue team output is 0.`) shows in a red label on the card's corner and in its brackets, where it holds.
+  - Under each seat's line, its public cards are listed by zone, with what sits on each: `development: Dating App (tier Tier 1, tag Social, sector Consumer) [Blue 4/6, Red 0/0] with Junior Software Dev and Architect · operations: To-Do List (tier Tier 1, tag App, sector Concept) [Blue 0/4, Red 0/0] · ops team: QA Engineer`.
+  - The bank line under the seats' lines shows the game's own numbers: Startup Simulator's `license 3` is the License price.
 - **Startup Simulator** plays this way.
 
 **Saying a button was pressed.** `they have rolled this turn` means any roll button was pressed, so a game with `A player may roll the dice.` and `A player may roll for a double.` reads "rolled" as either. To name one, write its whole wording in the past: `they have rolled for a double this turn`.
