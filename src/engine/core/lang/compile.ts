@@ -1,10 +1,9 @@
 import { MAX_CARDS, TOO_MANY_CARDS, isSaysColumn } from './cards';
 import { compileExample } from './compile-example';
 import {
-  actionLine, actionOf, cardMoveVerb, compilePhase, compileTrigger, pickLine, readCondition, reportHiddenCardReads, startsLineOf, targetWords,
-  TURN_STARTS, type TargetWords, type VerbUses,
+  actionLine, actionOf, cardMoveVerb, compileMoment, compilePhase, compileTrigger, JOIN_MOMENT, pickLine, readCondition, reportHiddenCardReads,
+  startsLineOf, targetWords, TURN_STARTS, type TargetWords, type VerbUses,
 } from './compile-phase';
-import { compileMoment, JOIN_MOMENT } from './compile-phase';
 import {
   addProblem, attempt, FOR_EVERY_AT_LEAST_ONE, innerEffect, matchEffectLine, matchLine, phaseId, phraseFn, POINTS_FOR_EVERY, rejectChildren, type LineCtx,
 } from './compile-util';
@@ -12,14 +11,12 @@ import type { Diagnostic } from './diagnostics';
 import { parseOutline, type OutlineNode } from './outline';
 import { normalizeLine, suggestNames, vocabFrom, type PhraseLibrary } from './phrases';
 import { canon, parseParam } from './refs';
-import { ROUND_FRAME, usesTurns } from './turns';
+import { ROUND_FRAME, STEP_PASSES_PHRASE, usesTurns } from './turns';
 import type {
-  BankSpec, BoardFn, BoardSpec, CardSetSpec, CardsFn, CardTable, CompiledEnd, CompiledGame, CompiledPhase, DeclareFn, EveryPhase, FactSpec, PhraseRef,
-  PlayerValue, SpaceSpec, Vocab, WorkedValue, ZoneFn, ZoneSpec,
+  BankSpec, BoardFn, BoardSpec, CardSetSpec, CardsFn, CardTable, CompiledEnd, CompiledGame, CompiledMoment, CompiledPhase, DeclareFn, EveryPhase, FactSpec,
+  PhraseRef, PlayerValue, SpaceSpec, Vocab, WorkedValue, ZoneFn, ZoneSpec,
 } from './types';
-import type { CompiledMoment } from './types';
 import { CHOOSE_ONE, CHOOSE_PLAYER, type ChoiceOption } from './choices';
-import { STEP_PASSES_PHRASE } from './turns';
 
 export type CompileResult = { game?: CompiledGame; diagnostics: Diagnostic[] };
 

@@ -1,11 +1,10 @@
+import { cardById } from '../../game-state';
 import { addToCounter, counterOf } from '../board-state';
 import type { PhraseLibrary } from '../phrases';
 import type { CardGroup, ConditionFn, EffectFn, ValueFn } from '../types';
 import { payCounter, transfer } from './board-phrases';
-import { theyOf, totalOf } from './support';
-import { cardNumber, cardsIn, playerValueOf } from './support';
 import { changeable, loseCount } from './card-number-phrases';
-import { cardById } from '../../game-state';
+import { cardNumber, cardsIn, playerValueOf, theyOf, totalOf } from './support';
 
 const totalIs: ConditionFn = (env, [attribute, group, n]) => totalOf(env, attribute as string, group as CardGroup) === n;
 
@@ -22,8 +21,11 @@ const payTheTotal: EffectFn = (env, [attribute, group]) => transfer(env, theyOf(
 /** The line of a value worked out for a card that adds up a group: the page shows it only when the group is the cards on it. */
 export const FROM_CARDS_TOTAL = "a card's {attribute} is the total {attribute} of {cardgroup}";
 
-/** The first {attribute} is the value its section works out, which the compiler checks; the line says what it comes to. */
-const valueIsTheTotal: ValueFn = (env, [, attribute, group]) => totalOf(env, attribute as string, group as CardGroup);
+/**
+ * The first {attribute} (or {playervalue}) is the value its section works out, which the compiler checks; the line says what it comes
+ * to: the total of the group. A value worked out for a card and one worked out for a player read it alike.
+ */
+export const valueIsTheTotal: ValueFn = (env, [, attribute, group]) => totalOf(env, attribute as string, group as CardGroup);
 
 /** The line of a value worked out for a card that adds a group's total to it: the page shows it as it shows `FROM_CARDS_TOTAL`. */
 export const GOES_UP_BY_TOTAL = "a card's {attribute} goes up by the total {attribute} of {cardgroup}";

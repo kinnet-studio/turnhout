@@ -1,11 +1,7 @@
 import type { PhraseLibrary } from '../phrases';
-import type { CardGroup, ConditionFn, PhraseEnv, ValueFn } from '../types';
-import { playerValueOf, theyOf, totalOf } from './support';
-import type { ExpectFn } from '../types';
-import { seatOf } from './support';
-
-/** The first {playervalue} is the value its section works out, which the compiler checks; the line says what it comes to. */
-const valueIsTheTotal: ValueFn = (env, [, attribute, group]) => totalOf(env, attribute as string, group as CardGroup);
+import type { ConditionFn, ExpectFn, PhraseEnv } from '../types';
+import { playerValueOf, seatOf, theyOf } from './support';
+import { valueIsTheTotal } from './total-phrases';
 
 /** What one of their values comes to, as the lines of its section work it out. */
 const theirs = (env: PhraseEnv, name: string): number => playerValueOf(env, theyOf(env), name);

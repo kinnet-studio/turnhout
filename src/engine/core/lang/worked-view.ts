@@ -5,12 +5,10 @@
 // values read, however deep the cards on cards go, and whether a value is shown hangs on the rules alone, never on where cards are.
 import { CARDS_ON_IT, FROM_COLUMN, registerCardSubjectPhrases } from './library/card-subject-phrases';
 import { FLAGGED_VALUES, registerCardValuePhrases } from './library/card-value-phrases';
-import { FROM_CARDS_TOTAL } from './library/total-phrases';
-import { GOES_UP_BY_TOTAL } from './library/total-phrases';
+import { FROM_CARDS_TOTAL, GOES_UP_BY_TOTAL } from './library/total-phrases';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
-import type { CardGroup, CompiledGame, PhraseRef } from './types';
-import type { CardFilter } from './types';
+import type { CardFilter, CardGroup, CompiledGame, PhraseRef } from './types';
 
 /**
  * The phrases about the card a value is worked out for and the cards on it: what kind of card it is, its own numbers and flags, its zone

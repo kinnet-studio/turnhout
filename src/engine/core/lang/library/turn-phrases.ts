@@ -1,17 +1,13 @@
+import type { GameState } from '../../game-state';
 import { nextInt } from '../../rng';
-import { nextIn } from '../board-state';
+import type { PlayerId } from '../../scene';
+import { nextIn, playersIn } from '../board-state';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
-import { START_PLAYER_KEY, START_PLAYER_PHRASE, clearTurnOf } from '../turns';
-import type { EffectFn } from '../types';
+import { END_STEPS_KEY, START_PLAYER_KEY, START_PLAYER_PHRASE, STEP_PASSES_PHRASE, clearTurnOf } from '../turns';
+import type { EffectFn, Subject } from '../types';
 import { chooseNext } from '../zones';
 import { seatOf } from './support';
-import type { GameState } from '../../game-state';
-import type { PlayerId } from '../../scene';
-import { playersIn } from '../board-state';
-import { END_STEPS_KEY } from '../turns';
-import { STEP_PASSES_PHRASE } from '../turns';
-import type { Subject } from '../types';
 
 const TURN_IN_THE_STEPS = (phase: string) =>
   `The turn does not pass while the players take the ${phase} before the score: write “The ${phase} passes to the left.” instead.`;

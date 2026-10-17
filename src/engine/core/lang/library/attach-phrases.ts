@@ -5,16 +5,12 @@ import { changeCard } from '../card-facts';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import { joinAnd } from '../refs';
-import type { CardMatch, ConditionFn, EffectFn, ExpectFn, PhraseEnv, ZoneRef } from '../types';
-import type { MomentFn } from '../types';
-import { relocate, zoneInfo } from '../zones';
-import { matchesCard } from '../zones';
+import type { CardMatch, ConditionFn, EffectFn, ExpectFn, MomentFn, PhraseEnv, ZoneRef } from '../types';
+import { matchesCard, relocate, zoneInfo } from '../zones';
 import { changeable } from './card-number-phrases';
 import { claimCards, coversExactly, describeCard, describeCards } from './example-phrases';
 import { itCard, namedCardIn, noCardIn, theCard } from './fact-phrases';
-import { cardOf, describeZone, mustBeKept, soleZone, theTargetCard, thePickedCards } from './support';
-import { cardNumber } from './support';
-import { cardHasFlag } from './support';
+import { cardHasFlag, cardNumber, cardOf, describeZone, mustBeKept, soleZone, theTargetCard, thePickedCards } from './support';
 
 // ---- the lines of a rule ----------------------------------------------------------------------
 

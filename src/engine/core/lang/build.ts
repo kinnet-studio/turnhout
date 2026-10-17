@@ -21,8 +21,7 @@ import { RuleError } from './diagnostics';
 import type { PhraseLibrary } from './phrases';
 import { LangRuntime } from './runtime';
 import { usesTurns } from './turns';
-import type { CompiledGame, CompiledTrigger, PhraseRef } from './types';
-import type { CompiledEnd } from './types';
+import type { CompiledEnd, CompiledGame, CompiledTrigger, PhraseRef } from './types';
 
 /** The phase the engine starts in: it runs the Setup lines, then goes straight to the game's first phase. */
 export const SETUP_PHASE = '__setup';

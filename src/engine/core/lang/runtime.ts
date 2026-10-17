@@ -1,25 +1,22 @@
 import { MAX_FLOW_ITERATIONS } from '../flow';
-import { cardById, type GameState } from '../game-state';
+import { cardById, setPhase, type GameState } from '../game-state';
 import type { Move } from '../moves';
 import type { CardState, PlayerId } from '../scene';
 import type { Json } from '../table-def';
 import { attachmentProblem } from './attach';
 import { numberIn } from './board';
-import { holderOf, interruptedTurn, setCounter } from './board-state';
+import { holderOf, interruptedTurn, isOut, nextIn, playersIn, setCounter } from './board-state';
 import { cardAttribute, cardFact } from './card-facts';
 import { CHOOSE_ONE, CHOOSE_PLAYER, type ChoiceOption } from './choices';
 import { isMissing, readsPressCard } from './compile-util';
 import { isNoSuchNumber, MissingPhraseError, RuleError } from './diagnostics';
 import { cardsIn } from './library/support';
 import type { PhraseLibrary } from './phrases';
-import { phaseTakesTurns, ROUND_FRAME, ROUND_KEY, roundFinished, roundOf, startPlayerOf, TURN_OF_KEY } from './turns';
+import { END_STEPS_KEY, phaseTakesTurns, ROUND_FRAME, ROUND_KEY, roundFinished, roundOf, startPlayerOf, TURN_OF_KEY } from './turns';
 import type {
   ActionFn, CardGroup, ColumnFn, CompiledGame, CompiledMoment, CompiledTrigger, CondGroup, ConditionFn, EffectFn, ExampleEnv, ExpectFn, MomentFn, Moment, MoveInfo,
   PhraseEnv, PhraseKind, PhraseRef, ScoreFn, Subject, TargetFn, TurnFn, ValueFn, WhichFn, WhoFn, WinnerFn, WorkedValue,
 } from './types';
-import { setPhase } from '../game-state';
-import { isOut, nextIn, playersIn } from './board-state';
-import { END_STEPS_KEY } from './turns';
 import { chooseNext } from './zones';
 
 type Checker = (state: GameState, move: Move) => true | string;
