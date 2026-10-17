@@ -165,7 +165,7 @@ Phase: playing
   - it refuses with "they have at least 1 action" before every `Only if`;
   - it spends before the `Then:` lines;
   - only a number each player has each turn can be a cost.
-- **Examples** name the card: `When p0 buys the Ruby`, `When p0 shows the Opal to the Ruby` and `When p0 trades the Ruby and the Opal`. When two buttons could take the card, the example says where it goes (`When p0 buys the Ruby to p0's case`) or where it comes from (`When p0 hires a Sales Rep from the open job market`), and the error says which would tell them apart.
+- **Examples** name the card: `When p0 buys the Ruby`, `When p0 shows the Opal to the Ruby` and `When p0 trades the Ruby and the Opal`. When two buttons could take the card, the example says where it goes (`When p0 buys the Ruby to p0's case`) or where it comes from (`When p0 hires a Sales Rep from the open job market`), or which zone holds the card it goes to (`When p0 hires a Potter to the Vase in p0's shelf`), and the error says which would tell them apart.
 - **In the playtest,** pressing the button lists the cards it may pick under the buttons, a refused one greyed with the reason on hover. A set ends with Confirm, and Cancel closes the list.
 - **Clicking.**
   - Click a card on the table to see the buttons that take it.
