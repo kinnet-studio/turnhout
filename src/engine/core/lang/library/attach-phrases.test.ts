@@ -513,14 +513,21 @@ describe('a yard where some hands sit on a job in the shelf', () => {
   describe('joins', () => {
     const DENTS = YARD_GAME
       .replace('  Cards can be tired.', '  Cards can be tired.\n  Cards can have dents.')
-      .replace('Phase: working', ['In every phase:', '  When a Smith card joins a card in a shelf:', '    The card it joins gains 1 dent.', '',
-        'Phase: working'].join('\n'));
+      // A rule for the Potter too, which the posts put in the yard on nothing: only a card that was placed on a card joins it.
+      .replace('Phase: working', ['In every phase:', '  When a Smith card joins a card in a shelf:', '    The card it joins gains 1 dent.',
+        '  When a Potter card joins a card in a shelf:', '    The card it joins gains 1 dent.', '', 'Phase: working'].join('\n'));
     const dentsOf = (state: GameState, id: string) => cardById(state, id)?.data?.dents;
 
     it('tells one for a clinging hand posted onto a shelved job', () => {
       const engine = yard((state) => state, DENTS);
       expect(engine.dispatch(postOnto(shelvedVase, smith, potterA))).toMatchObject({ ok: true });
       expect(dentsOf(engine.getState(), shelvedVase)).toBe(1);
+    });
+    it('tells none for a hand posted onto a shelved job that goes to the yard on nothing', () => {
+      const engine = yard((state) => state, DENTS);
+      expect(engine.dispatch(postOnto(shelvedVase, potterA, potterB))).toMatchObject({ ok: true });
+      expect(where(engine.getState(), potterA)).toEqual(['yard-p0', undefined]);
+      expect(dentsOf(engine.getState(), shelvedVase)).toBeUndefined();
     });
     it('tells none for a hand that stays on a job shipped to the shelf', () => {
       const engine = yard(atWorkWithCrew, DENTS);
