@@ -7,6 +7,8 @@ import { compileGame } from '../compile';
 import { RuleError } from '../diagnostics';
 import { runExamples } from '../examples';
 import { CREW_GAME, WORKED_GAME, fixtureEnv, runPhrase } from '../testing';
+import { MEND_GAME } from '../testing';
+import { putOn } from '../attach';
 import type { CompiledGame, MoveInfo, Subject } from '../types';
 import { relocate } from '../zones';
 import { createDefaultLibrary } from './index';
@@ -299,5 +301,59 @@ describe('a game that works nothing out', () => {
     expect(cardValueOf(workedEnv, smithCard, 'skill')).toBe(2);
     expect(cardHasFlag(workedEnv, smithCard, 'tired')).toBe(false);
     expect(() => cardValueOf(workedEnv, smithCard, 'red work')).toThrow('asked the runtime');
+  });
+});
+
+describe('worth and rest work, in MEND_GAME', () => {
+  const mend = compiled(MEND_GAME);
+  // Setup deals 2 jobs to each stash, more than the pile holds for three: a state with p0's turn set skips it.
+  const built = createEngine(mend, lib, 3, { ...initialState(mend, 1), turn: { current: 'p0', phase: 'working' } });
+  /** The state as p0's turn starts, from seed 1: the jobs in the pile, the hands in the hall. */
+  const start = built.engine.getState();
+  const first = (name: string) => start.cards.find((card) => card.data?.name === name)!.id;
+  const [jar, bust, potterHand, smithHand] = ['Vase', 'Statue', 'Potter', 'Smith'].map(first);
+  /** p0's workshop holding the Vase (worth 3), with the Potter (skill 1) and the Smith (skill 2) on it. */
+  const crewed = putOn(relocate(start, [jar], 'workshop-p0', mend), [potterHand, smithHand], 'crew-p0', jar, mend);
+  const value = (state: GameState, id: string, name: string) => built.runtime.workedValue(state, id, name);
+  const mended = (id: string, facts: Record<string, number | boolean>, state: GameState = start) => changeCard(state, id, facts, mend);
+
+  describe('worth', () => {
+    it('goes up by the skill of the hands on the job', () => {
+      expect(value(crewed, jar, 'worth')).toBe(6);
+    });
+    it('goes down by its cracks, never below 0', () => {
+      expect(value(mended(jar, { cracks: 2 }, crewed), jar, 'worth')).toBe(4);
+      expect(value(mended(jar, { cracks: 9 }, crewed), jar, 'worth')).toBe(0);
+    });
+    it('is nothing on a card with no worth, whatever its lines add', () => {
+      expect(value(crewed, potterHand, 'worth')).toBeNull();
+    });
+  });
+
+  describe('rest work', () => {
+    it('is the skill of a tired hand, and 0 for one that is not tired', () => {
+      expect(value(mended(smithHand, { tired: true }), smithHand, 'rest work')).toBe(2);
+      expect(value(start, smithHand, 'rest work')).toBe(0);
+      expect(value(mended(potterHand, { tired: true }), potterHand, 'rest work')).toBe(1);
+    });
+    it('is 0 for a tired job: it has no skill, so the line is not about it', () => {
+      expect(value(mended(jar, { tired: true }), jar, 'rest work')).toBe(0);
+    });
+    it('reads the same after “an”', () => {
+      const eager = compiled(`${MEND_GAME.replace('  Cards can be tired.', '  Cards can be tired.\n  Cards can be eager.')}\n  An eager card's rest work is its pay.`);
+      const reading = createEngine(eager, lib, 3, start).runtime;
+      // The Statue's pay is 2.
+      expect(reading.workedValue(changeCard(start, bust, { eager: true }, eager), bust, 'rest work')).toBe(2);
+      expect(reading.workedValue(start, bust, 'rest work')).toBe(0);
+    });
+  });
+
+  it('marks each new line as about a card', () => {
+    for (const pattern of [
+      "a {cardflag} card's {attribute} is its {attribute}", "an {cardflag} card's {attribute} is its {attribute}",
+      "a card's {attribute} is at least {int}", "a card's {attribute} goes up by the total {attribute} of {cardgroup}",
+    ]) {
+      expect([pattern, lib.get('value', pattern)?.needsCard]).toEqual([pattern, true]);
+    }
   });
 });

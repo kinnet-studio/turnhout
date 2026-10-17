@@ -1,4 +1,5 @@
 import type { GameState } from '../../game-state';
+import type { CardState } from '../../scene';
 import { changeCard, isCardCount } from '../card-facts';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
@@ -11,7 +12,7 @@ import { cardNumber, mustBeKept } from './support';
  * is part of what the card is, so naming any other number is a mistake in the rule. A value worked out from lines is said to be one
  * first, though it may be named after a column: that is what the designer can do something about.
  */
-function changeable(env: PhraseEnv, name: string): string {
+export function changeable(env: PhraseEnv, name: string): string {
   mustBeKept(env, name);
   if (!isCardCount(env.game, name)) {
     throw new RuleError(`Only a number the game keeps on cards can change, like “Cards can have charges.”; ${name} isn't one.`);
@@ -21,6 +22,21 @@ function changeable(env: PhraseEnv, name: string): string {
 
 /** A count that goes back to 0 has its key removed, as a count never changed does, so that the face shows nothing. */
 const itLoses: EffectFn = (env, [name]) => changeCard(env.state, itCard(env).id, { [changeable(env, name as string)]: null }, env.game);
+
+/**
+ * The card with `lost` taken off a count `changeable` let through: never below 0, and at 0 with its key removed, as “It loses its …”
+ * leaves it. The count is read off `card`, as the rule found it.
+ */
+export function loseCount(env: PhraseEnv, state: GameState, card: CardState, count: string, lost: number): GameState {
+  const left = Math.max(0, cardNumber(env, card, count) - lost);
+  return changeCard(state, card.id, { [count]: left === 0 ? null : left }, env.game);
+}
+
+/** The count less the other number, as `loseCount` takes it off: never below 0, and with no key at 0. */
+const itsGoDown: EffectFn = (env, [name, by]) => {
+  const card = itCard(env);
+  return loseCount(env, env.state, card, changeable(env, name as string), cardNumber(env, card, by as string));
+};
 
 /** The count gains the second number, up to the cap when there is one. A count already past the cap is never lowered. */
 function goUp(env: PhraseEnv, name: string, by: string, cap?: string): GameState {
@@ -51,8 +67,8 @@ const moreThan: ConditionFn = (env, [name, n]) => cardNumber(env, itCard(env), n
 
 /**
  * The sentences about the numbers on the card a rule is about. A count reads plural (“its red done are at least its red need”) and a
- * column of the card's table singular (“its pay is more than 1”), so each comparison reads both ways, as “go up” and “goes up” do.
- * Every one is about “it”, so each needs a card.
+ * column of the card's table singular (“its pay is more than 1”), so each comparison reads both ways, as “go up” and “goes up” do, and
+ * “go down” and “goes down”. Every one is about “it”, so each needs a card.
  */
 export function registerCardNumberPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
@@ -61,6 +77,8 @@ export function registerCardNumberPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('its {attribute} goes up by its {attribute}', itsGoUp, { needsCard: true, writes: 0 })
     .effect('its {attribute} go up by its {attribute}, up to its {attribute}', itsGoUpToCap, { needsCard: true, writes: 0 })
     .effect('its {attribute} goes up by its {attribute}, up to its {attribute}', itsGoUpToCap, { needsCard: true, writes: 0 })
+    .effect('its {attribute} go down by its {attribute}', itsGoDown, { needsCard: true, writes: 0 })
+    .effect('its {attribute} goes down by its {attribute}', itsGoDown, { needsCard: true, writes: 0 })
     .effect('it is {cardflag}', itIs(true), { needsCard: true, writes: 0 })
     .effect('it is not {cardflag}', itIs(false), { needsCard: true, writes: 0 })
     .condition('its {attribute} is at least its {attribute}', atLeast, { needsCard: true })

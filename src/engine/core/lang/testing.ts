@@ -435,6 +435,18 @@ export const RESTING_GAME = FORCE_GAME
   .replace('  Cards can be tired.', '  Cards can be tired.\n  Cards can be resting.')
   .replace('red need of the cards in their workshop.', 'red need of the cards in their workshop that are not resting.');
 
+/**
+ * FORCE_GAME where jobs gather cracks, a player's mend is the skill of the hands in their idle, and a job's worth goes up with the skill
+ * of the hands on it and down with its cracks, never below 0. A tired hand's rest work is its skill.
+ */
+export const MEND_GAME = [
+  FORCE_GAME.replace('new red and new gold.', 'new red, new gold and cracks.'), '',
+  'Mend:', "  A player's mend is the total skill of the cards in their idle.", '',
+  'Worth:', "  A card's worth goes up by the total skill of the cards on it.", "  A card's worth goes down by its cracks.",
+  "  A card's worth is at least 0.", '',
+  'Rest work:', "  A tired card's rest work is its skill.",
+].join('\n');
+
 /** WORKED_GAME with a job's crew red: the red work of the cards on it, added up. */
 export const TOTALS_GAME = [WORKED_GAME, '', 'Crew red:', "  A card's crew red is the total red work of the cards on it."].join('\n');
 

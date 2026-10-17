@@ -14,6 +14,7 @@ import {
   SUBJECT, FORCE_GAME,
 } from './testing';
 import type { ParamType } from './types';
+import { MEND_GAME } from './testing';
 
 const lib = createDefaultLibrary();
 const BASE = [
@@ -1420,5 +1421,29 @@ describe('values about a player', () => {
     expect(diagnostics).toEqual([]);
     expect(worth!.playerValues).toHaveProperty('worth');
     expect(worth!.worked).not.toHaveProperty('worth');
+  });
+});
+
+describe('a value that goes up by a total', () => {
+  /** The 1-based number of `line` in `text`. */
+  const at = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+  const FLOOR = "  A card's worth is at least 0.";
+
+  it('compiles MEND_GAME with no problems', () => expect(compileGame(MEND_GAME, lib).diagnostics).toEqual([]));
+  it('keeps every line of a value that goes up by a total, goes down and keeps a floor', () => {
+    expect(compileGame(MEND_GAME, lib).game!.worked!.worth).toMatchObject({
+      kind: 'number',
+      refines: true,
+      refs: [
+        { kind: 'value', phrase: "a card's {attribute} goes up by the total {attribute} of {cardgroup}", args: ['worth', 'skill', { kind: 'on it' }] },
+        { kind: 'value', phrase: "a card's {attribute} goes down by its {attribute}", args: ['worth', 'cracks'] },
+        { kind: 'value', phrase: "a card's {attribute} is at least {int}", args: ['worth', 0] },
+      ],
+    });
+  });
+  it('refuses a line that adds a total to another value, on its line', () => {
+    const line = "  A card's red work goes up by the total skill of the cards on it.";
+    const text = MEND_GAME.replace(FLOOR, `${FLOOR}\n${line}`);
+    expect(messages(text)).toEqual([[at(text, line), 'This line is about “red work”, but it is under Worth:.']]);
   });
 });

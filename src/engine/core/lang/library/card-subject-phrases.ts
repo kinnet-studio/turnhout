@@ -46,10 +46,16 @@ const isIts: ValueFn = (env, [, other]) => cardNumber(env, itCard(env), other as
 const goesDownByIts: ValueFn = (env, [, other], value) => (value === null ? null : value - cardNumber(env, itCard(env), other as string));
 
 /**
- * The sentences about the card a rule is about: what kind of card it is, a flag it does not have, a number it has, the zone it is in
- * (that zone of any player's), and whether some card, or no card, on it is so. Then two lines of a value worked out for cards: any
- * card's is one of its numbers, and it goes down by another. Every one reads “it”, so each needs a card: a face-down view and a hidden
- * pick are judged by that.
+ * The value so far, raised to the whole number when it is less: a floor, which the rule says where it wants one, since a line that takes a
+ * value down has none. Nothing so far stays nothing, as there is nothing to raise.
+ */
+const isAtLeast: ValueFn = (_env, [, n], value) => (value === null ? null : Math.max(value, n as number));
+
+/**
+ * The sentences about the card a rule is about: what kind of card it is, a flag it does not have, a number it has (a count reads plural:
+ * “its cracks are 0”), the zone it is in (that zone of any player's), and whether some card, or no card, on it is so. Then three lines of
+ * a value worked out for cards: any card's is one of its numbers, it goes down by another, and it is at least a whole number. Every one
+ * reads “it”, so each needs a card: a face-down view and a hidden pick are judged by that.
  */
 export function registerCardSubjectPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
@@ -57,10 +63,12 @@ export function registerCardSubjectPhrases(lib: PhraseLibrary): PhraseLibrary {
     .condition('it is not {cardclass}', itIsOfKind(false), { needsCard: true })
     .condition('it is not {cardflag}', itIsNotFlagged, { needsCard: true })
     .condition('its {attribute} is {int}', itsNumberIs, { needsCard: true })
+    .condition('its {attribute} are {int}', itsNumberIs, { needsCard: true })
     .condition('it is in a {perzone}', itIsIn, { needsCard: true })
     .condition('it is in an {perzone}', itIsIn, { needsCard: true })
     .condition(CARDS_ON_IT[0], someCardOnItIs(true), { needsCard: true })
     .condition(CARDS_ON_IT[1], someCardOnItIs(false), { needsCard: true })
     .value(FROM_COLUMN, isIts, { needsCard: true })
-    .value("a card's {attribute} goes down by its {attribute}", goesDownByIts, { needsCard: true });
+    .value("a card's {attribute} goes down by its {attribute}", goesDownByIts, { needsCard: true })
+    .value("a card's {attribute} is at least {int}", isAtLeast, { needsCard: true });
 }

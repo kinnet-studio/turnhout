@@ -15,20 +15,35 @@ const kindHasIts: ValueFn = (env, [match, , other], value) => {
 
 const kindHas: ValueFn = (env, [match, , n], value) => (matchesCard(itCard(env), match as CardMatch) ? (n as number) : value);
 
-/** The lines that turn a value on by a flag: the page shows such a flag, since it changes what a card makes or costs. */
-export const FLAGGED_VALUES = ["a {cardflag} card's {attribute} is {int}", "an {cardflag} card's {attribute} is {int}"] as const;
+/**
+ * The lines that turn a value on by a flag, to a whole number or to another of the card's numbers: the page shows such a flag, since it
+ * changes what a card makes or costs. Each line's first argument is the flag.
+ */
+export const FLAGGED_VALUES = [
+  "a {cardflag} card's {attribute} is {int}", "an {cardflag} card's {attribute} is {int}",
+  "a {cardflag} card's {attribute} is its {attribute}", "an {cardflag} card's {attribute} is its {attribute}",
+] as const;
 
 /** A card that is so has the number; a flag worked out from lines is read like any other. */
 const flaggedHas: ValueFn = (env, [flag, , n], value) => (cardHasFlag(env, itCard(env), flag as string) ? (n as number) : value);
 
+/** A card that is so has its other number, read only for such a card, so another card need not have one. */
+const flaggedHasIts: ValueFn = (env, [flag, , other], value) => {
+  const card = itCard(env);
+  return cardHasFlag(env, card, flag as string) ? cardNumber(env, card, other as string) : value;
+};
+
 /**
- * The lines of a section that works out a number for cards (R4): each says what a card of a kind, or a card that is so, has, and any
- * other card keeps what the lines before made of it. Every line is about the card the value is worked out for, so each needs a card.
+ * The lines of a section that works out a number for cards (R4): each says what a card of a kind, or a card that is so, has (a whole
+ * number, or another of its numbers), and any other card keeps what the lines before made of it. Every line is about the card the value
+ * is worked out for, so each needs a card.
  */
 export function registerCardValuePhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
     .value("{cardclass}'s {attribute} is its {attribute}", kindHasIts, { needsCard: true })
     .value("{cardclass}'s {attribute} is {int}", kindHas, { needsCard: true })
     .value(FLAGGED_VALUES[0], flaggedHas, { needsCard: true })
-    .value(FLAGGED_VALUES[1], flaggedHas, { needsCard: true });
+    .value(FLAGGED_VALUES[1], flaggedHas, { needsCard: true })
+    .value(FLAGGED_VALUES[2], flaggedHasIts, { needsCard: true })
+    .value(FLAGGED_VALUES[3], flaggedHasIts, { needsCard: true });
 }

@@ -7,6 +7,8 @@ import { changeCard } from '../card-facts';
 import { compileGame } from '../compile';
 import { faceDownReady } from '../declared-actions';
 import { TOTALS_GAME, runPhrase } from '../testing';
+import { MEND_GAME } from '../testing';
+import { RuleError } from '../diagnostics';
 import type { CompiledGame, Subject } from '../types';
 import { relocate } from '../zones';
 import { createDefaultLibrary } from './index';
@@ -185,5 +187,85 @@ describe('Review Focus: a walk whose line moves its cards', () => {
     const after = pressWith('For each card in their workshop, move the top card of the pile to their workshop.', before);
     expect(ids(after, 'workshop-p0')).toEqual([vase, statue, thirdPotter, secondPotter]);
     expect(ids(after, 'pile')).toEqual([potter]);
+  });
+});
+
+describe('a total shared among cards', () => {
+  const mend = compiled(MEND_GAME);
+  // Setup deals 2 jobs to each stash, more than the pile holds for three: a state with p0's turn set skips it.
+  const built = createEngine(mend, lib, 3, { ...initialState(mend, 1), turn: { current: 'p0', phase: 'working' } });
+  /** The state as p0's turn starts, from seed 1: the jobs in the pile, the hands in the hall. */
+  const start = built.engine.getState();
+  const every = (name: string) => start.cards.filter((card) => card.data?.name === name).map((card) => card.id);
+  const [[jar, otherJar], [bust], [potterHand], [smithHand, otherSmith]] = ['Vase', 'Statue', 'Potter', 'Smith'].map(every);
+  const SHARE = 'the cards in their workshop lose cracks between them, up to their mend, first card first';
+
+  /**
+   * p0's workshop holding the Vase with `vase` cracks, then the Statue with `statue`; p0's idle holding `idle` (the Potter and the Smith,
+   * so a mend of 3, unless said); and p1's workshop the other Vase, with 2 cracks. 0 cracks is no key, as a count never changed has.
+   */
+  function table(vase: number, statue: number, idle: string[] = [potterHand, smithHand]): GameState {
+    const cracks = (state: GameState, id: string, n: number) => changeCard(state, id, { cracks: n === 0 ? null : n }, mend);
+    let state = relocate(relocate(start, [jar, bust], 'workshop-p0', mend), [otherJar], 'workshop-p1', mend);
+    state = cracks(cracks(cracks(state, jar, vase), bust, statue), otherJar, 2);
+    return relocate(state, idle, 'idle-p0', mend);
+  }
+  const share = (state: GameState, text = SHARE) => runPhrase<GameState>(lib, 'effect', text, built.runtime.env(state, undefined, undefined, aboutP0));
+  const dataOf = (state: GameState, id: string) => state.cards.find((card) => card.id === id)!.data;
+
+  it('takes what the first card has, then gives the rest to the next', () => {
+    const before = table(2, 3);
+    expect(built.runtime.playerValue(before, 'p0', 'mend')).toBe(3);
+    const after = share(before);
+    expect(dataOf(after, jar)).not.toHaveProperty('cracks');
+    expect(dataOf(after, bust)).toMatchObject({ cracks: 2 });
+  });
+  it('Review Focus: takes all of every card when there is more than enough', () => {
+    // A second Smith in the idle: a mend of 5, as many as the two jobs have.
+    const after = share(table(2, 3, [potterHand, smithHand, otherSmith]));
+    expect(dataOf(after, jar)).not.toHaveProperty('cracks');
+    expect(dataOf(after, bust)).not.toHaveProperty('cracks');
+  });
+  it('Review Focus: changes nothing when there is none to share', () => {
+    const before = table(2, 3, []);
+    expect(built.runtime.playerValue(before, 'p0', 'mend')).toBe(0);
+    expect(share(before).cards).toEqual(before.cards);
+  });
+  it('Review Focus: passes over a card at 0, which uses none of it', () => {
+    // The Smith alone: a mend of 2.
+    const after = share(table(0, 3, [smithHand]));
+    expect(dataOf(after, jar)).not.toHaveProperty('cracks');
+    expect(dataOf(after, bust)).toMatchObject({ cracks: 1 });
+  });
+  it('leaves the cards of other players as they are', () => {
+    expect(dataOf(share(table(2, 3)), otherJar)).toMatchObject({ cracks: 2 });
+  });
+  it('is read, and does what it says, in a button', () => {
+    const line = '      The cards in their workshop lose cracks between them, up to their mend, first card first.';
+    const text = MEND_GAME.replace('  A player may stop.', `  A player may patch.\n    Then:\n${line}\n  A player may stop.`);
+    const { engine: playing } = createEngine(compiled(text), lib, 3, table(2, 3));
+    expect(playing.dispatch({ type: 'patch', by: 'p0' })).toMatchObject({ ok: true });
+    expect(dataOf(playing.getState(), jar)).not.toHaveProperty('cracks');
+    expect(dataOf(playing.getState(), bust)).toMatchObject({ cracks: 2 });
+  });
+
+  describe('refused', () => {
+    it('says a worked value can\'t be lost, on its line, when the rules are read', () => {
+      const line = '      The cards in their workshop lose red work between them, up to their mend, first card first.';
+      const text = MEND_GAME.replace('      Their moves go back to 0.', `      Their moves go back to 0.\n${line}`);
+      const at = (rules: string, wanted: string) => rules.split('\n').indexOf(wanted) + 1;
+      const { diagnostics } = compileGame(text, lib);
+      expect(diagnostics.map((d) => [d.line, d.message])).toEqual([[at(text, line), '“red work” is worked out from its lines, so no rule can change it.']]);
+    });
+    it('changes only a number the game keeps on cards', () => {
+      expect(() => share(table(2, 3), SHARE.replace('lose cracks', 'lose pay'))).toThrow(
+        new RuleError('Only a number the game keeps on cards can change, like “Cards can have charges.”; pay isn\'t one.'),
+      );
+    });
+  });
+
+  it('marks the line as about a player, and the name of what it changes', () => {
+    expect(lib.get('effect', '{cardgroup} lose {attribute} between them, up to their {playervalue}, first card first'))
+      .toMatchObject({ needsPlayer: true, writes: 1 });
   });
 });

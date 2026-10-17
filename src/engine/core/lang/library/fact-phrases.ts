@@ -13,6 +13,7 @@ import type {
 } from '../types';
 import { matchesCard, relocate, zoneIdFor } from '../zones';
 import { transfer } from './board-phrases';
+import { changeable, loseCount } from './card-number-phrases';
 import { describeCard } from './example-phrases';
 import { cardHasFlag, cardOf, cardsInZones, cardValueOf, describeZone, itOf, movedCard, mustBeKept, soleZone, theyOf } from './support';
 
@@ -357,6 +358,15 @@ const itGains: EffectFn = (env, [n, attribute]) => {
 };
 
 /**
+ * The card the rule is about loses that much of a count, down to 0 and no lower, with its key removed at 0, as “It loses its …” leaves
+ * it. Only a count the game keeps on cards can go down, as only one can go up by another.
+ */
+const itLosesSome: EffectFn = (env, [n, attribute]) => {
+  const card = itCard(env);
+  return loseCount(env, env.state, card, changeable(env, attribute as string), n as number);
+};
+
+/**
  * Each card that is so has a number it has changed, whichever way `change` says. A rule that names a worked-out number is refused even
  * over no card.
  */
@@ -533,6 +543,7 @@ export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('every card that is {cardflag} goes to {zone}', everyFlaggedCardGoesTo)
     .effect('no card is {cardflag}', noCardIs, { writes: 0 })
     .effect('it gains {int} {attribute}', itGains, { needsCard: true, writes: 1 })
+    .effect('it loses {int} {attribute}', itLosesSome, { needsCard: true, writes: 1 })
     .effect('each {cardflag} card in {zone} gains {int} {attribute}', eachFlaggedGains, { writes: 3 })
     .effect('each {cardflag} card in {zone} loses {int} {attribute}', eachFlaggedLoses, { writes: 3 })
     .winner('the player with the most cards in their {perzone} wins', mostCardsWins)

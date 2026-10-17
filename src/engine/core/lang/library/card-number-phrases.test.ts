@@ -7,6 +7,7 @@ import { parseTextFaceKey } from '../cards';
 import { compileGame } from '../compile';
 import { RuleError } from '../diagnostics';
 import { CREW_GAME, fixtureEnv, runPhrase } from '../testing';
+import { MEND_GAME } from '../testing';
 import type { PhraseKind } from '../types';
 import { relocate } from '../zones';
 import { createDefaultLibrary } from './index';
@@ -202,5 +203,80 @@ describe('the sentences in a rule', () => {
     const finished = card(engine.getState(), vase);
     expect(finished).toMatchObject({ zoneId: 'scrap', data: { 'red done': 2, 'gold done': 1, tired: true } });
     expect(finished.data).not.toHaveProperty('new red');
+  });
+});
+
+describe('numbers that go down, in MEND_GAME', () => {
+  const mend = compileGame(MEND_GAME, lib);
+  const mendGame = mend.game!;
+  // Setup deals 2 jobs to each stash, more than the pile holds for three: a state with p0's turn set skips it.
+  const built = createEngine(mendGame, lib, 3, { ...initialState(mendGame, 1), turn: { current: 'p0', phase: 'working' } });
+  /** The state as p0's turn starts, from seed 1: the jobs in the pile, the hands in the hall. */
+  const start = built.engine.getState();
+  const first = (name: string) => start.cards.find((c) => c.data?.name === name)!.id;
+  // The Vase's pay is 1 and the Statue's 2.
+  const [jar, bust] = [first('Vase'), first('Statue')];
+  /** The start with `cracks` on the card `id`. */
+  const cracked = (id: string, cracks: number): GameState => changeCard(start, id, { cracks }, mendGame);
+  /** A line about the card `id`, as a button or a rule about that card reads it, with the values the runtime works out. */
+  const env = (state: GameState, id: string) => built.runtime.env(state, undefined, undefined, { player: 'p0', space: null, card: id });
+  const run = (text: string, state: GameState, id: string) => runPhrase<GameState>(lib, 'effect', text, env(state, id));
+  const holds = (text: string, state: GameState, id: string) => runPhrase<boolean>(lib, 'condition', text, env(state, id));
+  const dataOf = (state: GameState, id: string) => card(state, id).data;
+  const onlyKept = new RuleError('Only a number the game keeps on cards can change, like “Cards can have charges.”; pay isn\'t one.');
+
+  it('compiles with no problems', () => expect(mend.diagnostics).toEqual([]));
+
+  describe('going down by another number', () => {
+    it('takes the other number off the count', () => {
+      expect(dataOf(run('its cracks go down by its pay', cracked(jar, 3), jar), jar)).toMatchObject({ cracks: 2 });
+    });
+    it('stops at 0, with its key removed so the face shows nothing, in the singular too', () => {
+      const state = run('its cracks goes down by its pay', cracked(bust, 1), bust);
+      expect(dataOf(state, bust)).not.toHaveProperty('cracks');
+      expect(parseTextFaceKey(card(state, bust).faceKey)).not.toHaveProperty('cracks');
+    });
+    it('changes only a number the game keeps on cards', () => {
+      expect(() => run('its pay goes down by its cracks', cracked(jar, 3), jar)).toThrow(onlyKept);
+    });
+  });
+
+  describe('losing a number', () => {
+    it('takes that many off the count', () => {
+      expect(dataOf(run('it loses 1 crack', cracked(jar, 2), jar), jar)).toMatchObject({ cracks: 1 });
+    });
+    it('takes the last one off with its key, and leaves a card at 0 without one', () => {
+      expect(dataOf(run('it loses 1 crack', cracked(jar, 1), jar), jar)).not.toHaveProperty('cracks');
+      expect(dataOf(run('it loses 1 crack', start, jar), jar)).not.toHaveProperty('cracks');
+    });
+    it('never goes below 0', () => {
+      expect(dataOf(run('it loses 3 cracks', cracked(jar, 2), jar), jar)).not.toHaveProperty('cracks');
+    });
+  });
+
+  describe('refused', () => {
+    it('changes only a number the game keeps on cards', () => {
+      expect(() => run('it loses 1 pay', cracked(jar, 2), jar)).toThrow(onlyKept);
+    });
+    it('says a worked value can\'t go down, on its line, when the rules are read', () => {
+      const line = '      Its worth goes down by its pay.';
+      const text = MEND_GAME.replace('      Every card on it is tired.', `      Every card on it is tired.\n${line}`);
+      expect(messages(text)).toEqual([[at(text, line), '“worth” is worked out from its lines, so no rule can change it.']]);
+    });
+  });
+
+  describe('the plural', () => {
+    it('reads a count as “its … are …”', () => {
+      expect(holds('its cracks are 0', start, jar)).toBe(true);
+      expect(holds('its cracks are 2', cracked(jar, 2), jar)).toBe(true);
+      expect(holds('its cracks are 1', cracked(jar, 2), jar)).toBe(false);
+    });
+  });
+
+  it('marks each new line as about a card, and the name of what it changes', () => {
+    expect(lib.get('effect', 'its {attribute} go down by its {attribute}')).toMatchObject({ needsCard: true, writes: 0 });
+    expect(lib.get('effect', 'its {attribute} goes down by its {attribute}')).toMatchObject({ needsCard: true, writes: 0 });
+    expect(lib.get('effect', 'it loses {int} {attribute}')).toMatchObject({ needsCard: true, writes: 1 });
+    expect(lib.get('condition', 'its {attribute} are {int}')).toMatchObject({ needsCard: true });
   });
 });

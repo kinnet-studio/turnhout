@@ -130,7 +130,7 @@ describe('what the game says the view may show', () => {
 });
 
 describe('the phrases the view counts as reading only the card', () => {
-  it('are these 14: decide whether a new one reads beyond the card, and add it to CARDS_ON_IT if it reads the cards on it', () => {
+  it('are these 18: decide whether a new one reads beyond the card, and add it to CARDS_ON_IT if it reads the cards on it', () => {
     // Everything these two registrars register is card-only to `worked-view.ts`, but for CARDS_ON_IT, which counts only where every card
     // on a card is public: a new phrase that reads the cards on it and is missing there would show hidden cards to every seat, and one that
     // reads anything else of the table (a zone's cards, a player's numbers) belongs in another registrar.
@@ -151,11 +151,14 @@ describe('the phrases the view counts as reading only the card', () => {
     }
     expect(registered).toEqual([
       'condition: it is {cardclass}', 'condition: it is not {cardclass}', 'condition: it is not {cardflag}', 'condition: its {attribute} is {int}',
+      'condition: its {attribute} are {int}',
       'condition: it is in a {perzone}', 'condition: it is in an {perzone}', 'condition: some card on it is {cardflag}',
       'condition: no card on it is {cardflag}',
       "value: a card's {attribute} is its {attribute}", "value: a card's {attribute} goes down by its {attribute}",
+      "value: a card's {attribute} is at least {int}",
       "value: {cardclass}'s {attribute} is its {attribute}", "value: {cardclass}'s {attribute} is {int}",
       "value: a {cardflag} card's {attribute} is {int}", "value: an {cardflag} card's {attribute} is {int}",
+      "value: a {cardflag} card's {attribute} is its {attribute}", "value: an {cardflag} card's {attribute} is its {attribute}",
     ]);
     const onIt = CARDS_ON_IT.map((pattern) => `condition: ${pattern}`);
     expect(registered.filter((entry) => entry.includes(' on it '))).toEqual(onIt);
@@ -264,5 +267,29 @@ describe('a flag the cards on it are tested by', () => {
     // Working: a red hand that is not tired.
     expect(shownFlags(compiled(testedBy('working')))).toEqual(['busy', 'bare']);
     expect(shownFlags(compiled(testedBy('not working')))).toEqual(['busy', 'bare']);
+  });
+});
+
+describe('a flag that turns a value on to another number, and a value that goes up by a total', () => {
+  /**
+   * SHOWN with a job's worth refined by the skill of the hands on it, and a red pay that a plain job gets: a Vase no skill is on, worth 3
+   * still. With `group` the worth adds up the skill of another group than the cards on it.
+   */
+  const plain = (group = 'the cards on it') => withPay(
+    ["  A plain card's red pay is 2."],
+    'Worth:', `  A card's worth goes up by the total skill of ${group}.`, '',
+    'Plain:', '  Only if its worth is 3.',
+  );
+
+  it('shows a flag read only by a line that gives a card that is so another of its numbers', () => {
+    // Working turns no value on in SHOWN but by this line.
+    expect(shownFlags(compiled(withPay(["  A working card's red pay is its skill."])))).toEqual(['working', 'busy']);
+  });
+
+  it('shows a flag that names a value that goes up by a total of the cards on it, and not one of a zone, or where crews are hidden', () => {
+    expect(shownFlags(compiled(plain()))).toEqual(['busy', 'plain']);
+    expect(shownFlags(compiled(plain('the cards in the hall')))).toEqual(['busy']);
+    // With crews only their owner sees, plain would tell every seat the hidden crew's skill total.
+    expect(shownFlags(compiled(plain().replace(CREW_ROW, CREW_ROW.replace('everyone can see', 'only they can see'))))).toEqual([]);
   });
 });

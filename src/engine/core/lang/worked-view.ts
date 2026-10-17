@@ -6,6 +6,7 @@
 import { CARDS_ON_IT, FROM_COLUMN, registerCardSubjectPhrases } from './library/card-subject-phrases';
 import { FLAGGED_VALUES, registerCardValuePhrases } from './library/card-value-phrases';
 import { FROM_CARDS_TOTAL } from './library/total-phrases';
+import { GOES_UP_BY_TOTAL } from './library/total-phrases';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
 import type { CardGroup, CompiledGame, PhraseRef } from './types';
@@ -37,7 +38,8 @@ const testNames = (filter: CardFilter): string[] =>
  * tested by (“the cards on it that are hoarded”) may read beyond the card as surely as a line of the value does.
  */
 function cardOnlyNames(game: CompiledGame, ref: PhraseRef): string[] | null {
-  const total = ref.kind === 'value' && ref.phrase === FROM_CARDS_TOTAL;
+  // A value that is a total, or goes up by one, reads only the card when its group is the cards on it.
+  const total = ref.kind === 'value' && (ref.phrase === FROM_CARDS_TOTAL || ref.phrase === GOES_UP_BY_TOTAL);
   if (!total && (ref.kind === 'lang' || CARD_ONLY.get(ref.kind, ref.phrase) === undefined)) return null;
   if ((total || cardsOnIt.includes(ref.phrase)) && !cardsOnCardsArePublic(game)) return null;
   const names: string[] = [];
