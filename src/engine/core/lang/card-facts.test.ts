@@ -73,6 +73,26 @@ describe('card facts', () => {
     const s = changeCard(stateWith(knight()), 'c0', { name: 'Paladin' }, creatures);
     expect(cardOf(s, 'c0').faceKey).toBe(textFaceKey({ name: 'Paladin', health: 3 }));
   });
+  it('keeps a card\'s own row order when another table, or a row with a blank cell, has the same columns in another order', () => {
+    // The Knight's row comes first and has no cost, so the columns of every table together run name, health, cost. The Golem
+    // below it, with a cost, and the Heal of another table both read cost first.
+    const golem = { name: 'Golem', cost: 4, health: 6 };
+    const heal = { name: 'Heal', cost: 2, health: 5 };
+    const tables: CompiledGame = {
+      ...creatures,
+      cards: [
+        { kind: 'table', start: 'draw pile', acesHigh: false, identities: [
+          { attrs: { name: 'Knight', health: 3 }, faceKey: knightFace },
+          { attrs: golem, faceKey: textFaceKey(golem) },
+        ] },
+        { kind: 'table', start: 'spell pile', acesHigh: false, identities: [{ attrs: heal, faceKey: textFaceKey(heal) }] },
+      ],
+    };
+    const cards: CardState[] = [golem, heal].map((attrs, i) => ({ id: `c${i}`, zoneId: 'draw pile', faceUp: true, faceKey: textFaceKey(attrs), data: { ...attrs } }));
+    const s = changeCard(changeCard(stateWith(...cards), 'c0', { poisoned: true }, tables), 'c1', { armor: 1 }, tables);
+    expect(cardOf(s, 'c0').faceKey).toBe(textFaceKey({ name: 'Golem', cost: 4, health: 6, poisoned: 'yes' }));
+    expect(cardOf(s, 'c1').faceKey).toBe(textFaceKey({ name: 'Heal', cost: 2, health: 5, armor: 1 }));
+  });
   it('leaves out a column the card no longer has', () => {
     const s = changeCard(stateWith(knight()), 'c0', { health: null }, creatures);
     expect(cardOf(s, 'c0').faceKey).toBe(textFaceKey({ name: 'Knight' }));

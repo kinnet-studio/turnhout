@@ -66,16 +66,18 @@ function shownFact(kind: 'number' | 'flag', value: Json | undefined): Json | nul
 }
 
 /**
- * The face key the card should have now. A text card shows its table columns, as they are now and in table order, then
- * the card facts that are set in the order the game declares them. Any other card (a standard deck's) keeps its face
+ * The face key the card should have now. A text card shows its table columns, as they are now and in its own row's order,
+ * then the card facts that are set in the order the game declares them. Any other card (a standard deck's) keeps its face
  * key. Whatever else is in `data` (who moved the card, a position) is bookkeeping and is never on a face.
  */
 export function faceKeyOf(card: CardState, game: CompiledGame): string {
   if (parseTextFaceKey(card.faceKey) === null) return card.faceKey;
   const face: { [k: string]: Json } = {};
-  for (const column of tableColumns(game)) {
-    const value = card.data?.[column] as Json | undefined;
-    if (value !== undefined) face[column] = value;
+  // The card's data starts as its row, in its table's order, and `changeCard` keeps each key where it is. The columns of every
+  // table together would put a column that an earlier row leaves blank, or another table lacks, after the rest.
+  const columns = new Set(tableColumns(game));
+  for (const [column, value] of Object.entries(card.data ?? {})) {
+    if (columns.has(column)) face[column] = value as Json;
   }
   for (const { name, on, kind } of game.facts) {
     const shown = on === 'card' ? shownFact(kind, card.data?.[name] as Json | undefined) : null;

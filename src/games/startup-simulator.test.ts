@@ -23,6 +23,7 @@ import type { Move } from '@/engine/core/moves';
 import type { CardState, PlayerId } from '@/engine/core/scene';
 import { changeCard } from '@/engine/core/lang/card-facts';
 import { shownFlags, standIns } from '@/engine/core/lang/worked-view';
+import { parseTextFaceKey } from '@/engine/core/lang/cards';
 
 const lib = createDefaultLibrary();
 const { game, diagnostics } = compileGame(STARTUP_SIMULATOR, lib);
@@ -1226,6 +1227,19 @@ describe('Startup Simulator (designer language)', () => {
       expect(first('Neobank', 4)).toEqual(['name', 'tier', 'tag', 'requires']);
       expect(first('Fusion Reactor', 5)).toEqual(['name', 'tier', 'tag', 'requires', 'also requires']);
       expect(first('Smart Lock', 4)).toEqual(['name', 'tier', 'tag', 'sector']);
+    });
+
+    // A rule that changes a card writes its face key again. The seed deck's rows have no requires, so the columns of every
+    // table together put requires last: the face must follow the card's own row.
+    it('keeps a product’s tier, tag and requirements first on its face once a rule changes the card', () => {
+      const onFace = (card: CardState) => Object.keys(parseTextFaceKey(card.faceKey)!).slice(1, 4);
+      const engine = arrange({ 'backlog-p0': [idOf('Neobank')], 'operations-p1': [idOf('Mobile Wallet')] });
+      expect(engine.dispatch({ type: GREENLIGHT, by: 'p0', cardId: idOf('Neobank') }).ok).toBe(true);
+      const neobank = cardById(engine.getState(), idOf('Neobank'))!;
+      expect(neobank.zoneId).toBe('development-p0');
+      expect(onFace(neobank)).toEqual(['tier', 'tag', 'requires']);
+      const dao = cardById(changeCard(fresh(), idOf('DAO Nation'), { 'cut blue cubes': 1 }, game!), idOf('DAO Nation'))!;
+      expect(onFace(dao)).toEqual(['tier', 'requires', 'also requires']);
     });
 
     it('has the three University stacks, which never run out (§20.B.2)', () => {
