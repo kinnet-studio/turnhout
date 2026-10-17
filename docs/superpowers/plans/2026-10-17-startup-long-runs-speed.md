@@ -68,6 +68,7 @@ git commit -m "perf(lang): the rules read zones and cards through an index kept 
 
 - [ ] **Step 1: Switch the test's `zoneCards`/`cardById` import** to `@/engine/core/lang/zone-index` (one import line; name it in the report).
 - [ ] **Step 2: Guard the per-move assertions** in `play`, `viewedCards`, `accepts`, `keepsTheRules` and `keepsTheBudget` (and any per-move helper plans since `a9dbedd` added): each `expect(x, msg).toEqual/toBe/toBeLessThanOrEqual/toContain/toBeDefined` becomes a fast check exactly as strict as the matcher (Object.is element by element plus equal length for lists of plain values), and the same `expect` with the same message runs only when the fast check fails; messages are built lazily. Helpers `sameList`/`noneOf`/`sameAs` in the test file.
+- [ ] **Step 2b: The three "asks an example which … it means" tests** (plan 4-2's final review: each runs every example twice, about 14% of the file's time) share one example run per compiled text where the result is the same (e.g. run the examples once and assert on that one result), keeping each test's assertions exactly.
 - [ ] **Step 3: Mutation check:** break two invariants on purpose (e.g. `atMost('agency-row', …)` and `ACTIONS_EACH_TURN`) and confirm the failure text is identical with and without the guards; restore.
 - [ ] **Step 4: Verify:** the full suite and typecheck pass; Startup's example count and every tally are unchanged; time the Startup test file (best of 3, alternating with BASE).
 - [ ] **Step 5: Commit**
