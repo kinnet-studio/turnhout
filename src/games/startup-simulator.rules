@@ -2265,7 +2265,7 @@ Example: ops QA cleans an offline product too (section 5, ruling 19)
   And the Dating App in p0's operations has 0 bugs
   And the Mobile Wallet in p0's operations has 0 bugs
 
-Example: when ops QA can't clean every Bug, the owner picks which, one Bug a press, here the online product's before the offline one's (section 5, ruling 25)
+Example: when ops QA can't clean every Bug, the owner picks which, one Bug a press, here the online product's before the offline one's (section 5, this slice's call)
   Given the phase is actions
   And p0's operations has a Dating App and a Payment Gateway
   And the Dating App in p0's operations is offline
@@ -2294,7 +2294,7 @@ Example: a Junior QA Tester reassigned onto a project is onboarding, so it remov
   Then it is p1's turn
   And the Dating App in p0's development has 1 bug
 
-Example: while ops QA waits on the owner, a press on a product with no Bug is refused, and the Engine waits on until a press cleans a Bug (section 5, ruling 25)
+Example: while ops QA waits on the owner, a press on a product with no Bug is refused, and the Engine waits on until a press cleans a Bug (section 5, this slice's call)
   Given the phase is actions
   And p0's operations has a Dating App, a Mobile Wallet and a To-Do List
   And the Dating App in p0's operations has 1 bug
