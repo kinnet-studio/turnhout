@@ -248,6 +248,35 @@ describe('a total shared among cards', () => {
     expect(dataOf(playing.getState(), jar)).not.toHaveProperty('cracks');
     expect(dataOf(playing.getState(), bust)).toMatchObject({ cracks: 2 });
   });
+  it('never gives a count back to a card a zone named twice visits twice', () => {
+    // A second Smith in the idle: a mend of 5. The first visit takes all 3 of the Vase's cracks; the second finds none left to take.
+    const twice = SHARE.replace('their workshop', 'their workshop and their workshop');
+    expect(dataOf(share(table(3, 0, [potterHand, smithHand, otherSmith]), twice), jar)).not.toHaveProperty('cracks');
+  });
+  it('(guard) each card that is so loses a count down to 0 and keeps it as a 0, as it always has', () => {
+    const tired = changeCard(table(1, 3), jar, { tired: true }, mend);
+    expect(dataOf(runPhrase<GameState>(lib, 'effect', 'each tired card in their workshop loses 1 crack', built.runtime.env(tired, undefined, undefined, aboutP0)), jar))
+      .toMatchObject({ cracks: 0 });
+  });
+  it('drops the key of a count a card has at 0, as every line that takes a count down does', () => {
+    // The Vase kept at 0, as “each … loses …” leaves it; the Smith alone, a mend of 2.
+    const after = share(changeCard(table(0, 3, [smithHand]), jar, { cracks: 0 }, mend));
+    expect(dataOf(after, jar)).not.toHaveProperty('cracks');
+    expect(dataOf(after, bust)).toMatchObject({ cracks: 1 });
+  });
+  it('reads how much there is once, before any card loses some, though the value reads the very cards that lose it', () => {
+    // A player's shop worth adds up the worth of the jobs in their workshop, and a job's worth goes down by its cracks: with fewer cracks
+    // it would be more. The Vase (worth 3) with 2 cracks is worth 1, and the Statue (worth 4) with 3 cracks is worth 1 too.
+    const shop = compiled(`${MEND_GAME}\n\nShop worth:\n  A player's shop worth is the total worth of the cards in their workshop.`);
+    const before = table(2, 3);
+    const reading = createEngine(shop, lib, 3, before).runtime;
+    expect(reading.playerValue(before, 'p0', 'shop worth')).toBe(2);
+    const after = runPhrase<GameState>(lib, 'effect', SHARE.replace('their mend', 'their shop worth'), reading.env(before, undefined, undefined, aboutP0));
+    // 2 cracks taken, all from the Vase: the shop worth as it was before any card changed, not the 4 it comes to after.
+    expect(dataOf(after, jar)).not.toHaveProperty('cracks');
+    expect(dataOf(after, bust)).toMatchObject({ cracks: 3 });
+    expect(reading.playerValue(after, 'p0', 'shop worth')).toBe(4);
+  });
 
   describe('refused', () => {
     it('says a worked value can\'t be lost, on its line, when the rules are read', () => {

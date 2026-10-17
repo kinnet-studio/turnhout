@@ -25,7 +25,7 @@ const itLoses: EffectFn = (env, [name]) => changeCard(env.state, itCard(env).id,
 
 /**
  * The card with `lost` taken off a count `changeable` let through: never below 0, and at 0 with its key removed, as “It loses its …”
- * leaves it. The count is read off `card`, as the rule found it.
+ * leaves it. The count is read off `card`, which is the card as `state` holds it.
  */
 export function loseCount(env: PhraseEnv, state: GameState, card: CardState, count: string, lost: number): GameState {
   const left = Math.max(0, cardNumber(env, card, count) - lost);

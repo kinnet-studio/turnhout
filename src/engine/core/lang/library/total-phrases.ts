@@ -5,6 +5,7 @@ import { payCounter, transfer } from './board-phrases';
 import { theyOf, totalOf } from './support';
 import { cardNumber, cardsIn, playerValueOf } from './support';
 import { changeable, loseCount } from './card-number-phrases';
+import { cardById } from '../../game-state';
 
 const totalIs: ConditionFn = (env, [attribute, group, n]) => totalOf(env, attribute as string, group as CardGroup) === n;
 
@@ -32,17 +33,22 @@ const goesUpByTheTotal: ValueFn = (env, [, attribute, group], value) =>
   (value === null ? null : value + totalOf(env, attribute as string, group as CardGroup));
 
 /**
- * One amount shared among the cards of a group: as much as one of their values comes to, which the cards use up in the group's order.
- * Each loses what it has of the count, up to what is left, and the rest goes on to the next card; a card at 0 uses none of it. A count
- * that reaches 0 has its key removed, as “It loses its …” leaves it. Only a count the game keeps on cards can go down, even over no card.
+ * One amount shared among the cards of a group: as much as one of their values comes to before any card changes, which the cards use up
+ * in the group's order. Each loses what it has of the count, up to what is left, and the rest goes on to the next card; a card at 0 uses
+ * none of it. Each card's count is read as the walk has left it, so a card a zone named twice visits twice never gets any back. A count at
+ * 0 has no key, as “It loses its …” leaves it, even one a card kept at 0 before. Only a count the game keeps on cards can go down, even
+ * over no card.
  */
 const loseBetweenThem: EffectFn = (env, [group, name, shared]) => {
   const count = changeable(env, name as string);
   let left = Math.max(0, playerValueOf(env, theyOf(env), shared as string));
   let state = env.state;
-  for (const card of cardsIn(env, group as CardGroup)) {
-    const used = Math.min(cardNumber(env, card, count), left);
-    if (used <= 0) continue;
+  for (const found of cardsIn(env, group as CardGroup)) {
+    const card = cardById(state, found.id) ?? found;
+    const have = cardNumber(env, card, count);
+    const used = Math.max(0, Math.min(have, left));
+    // A card with some left that uses none is left as it is.
+    if (used === 0 && have > 0) continue;
     state = loseCount(env, state, card, count, used);
     left -= used;
   }
