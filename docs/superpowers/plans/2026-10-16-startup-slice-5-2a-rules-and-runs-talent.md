@@ -31,7 +31,7 @@
 - **Names.**
   - Kept on cards: counts `blue xp`, `red xp`, `green xp`, `training xp`, `blue skill`, `red skill`, `green skill`, `pending blue`, `pending red`, `pending green`; flags `badged`, `blue mode`, `fired`, `graduated`. Kept on players: the number `mentoring`.
   - Worked numbers: `xp`, `skills`, `badge points`, `human capital`, `pending tokens`, `bug decay`, `pm count`, `blue workers`, `red workers`, `qa workers`; refined: `blue output`, `red output`, `qa output`, `blue team output`, `red team output`, `qa team output`, `rev`, `rev bonus`, `salary`.
-  - Worked flags: `experienced`, `blue learner`, `red learner`, `green learner`, `coaching`, `up for promotion`, `maxed out`, `due to graduate`, `choosing a token`, `mentorable`, `practised`, `waiving decay`, `stopping decay`, `decaying`, `managing`, `agile`.
+  - Worked flags: `experienced`, `blue learner`, `red learner`, `green learner`, `coaching`, `pending badge`, `maxed out`, `due to graduate`, `choosing a token`, `mentorable`, `practised`, `waiving decay`, `stopping decay`, `decaying`, `managing`, `agile`.
 
 **Tech Stack:** TypeScript (strict), Bun, Vitest + happy-dom.
 
@@ -786,7 +786,7 @@ EOF
 
 **Interfaces:**
 - Consumes: Tasks 1–3; plan 5-1's `the card it is on is not {cardclass}`, `every card on it that is {cardflag} is {cardflag}` and its Task 7 step.
-- Produces (rules): the player number `mentoring`; the flag `graduated`; worked `pending tokens`, `coaching`, `up for promotion`, `maxed out`, `due to graduate`, `choosing a token`, `mentorable`; phase `graduation` with buttons `keep blue on a card in their ops team`, `keep red on …`, `keep green on …`, `mentor a card in their ops team`.
+- Produces (rules): the player number `mentoring`; the flag `graduated`; worked `pending tokens`, `coaching`, `pending badge`, `maxed out`, `due to graduate`, `choosing a token`, `mentorable`; phase `graduation` with buttons `keep blue on a card in their ops team`, `keep red on …`, `keep green on …`, `mentor a card in their ops team`.
 - Produces (test file):
 
 ```ts
@@ -798,7 +798,7 @@ const MENTOR = 'mentor a card in their ops team';
 
 - [ ] **Step 1: Change the tests.**
   - **Pins.** `results` is N₄ + 32; the designer page's count too. `PHASES` gains `'graduation'` right after `'sourcing'`; `BEFORE_THE_ENGINE` gains `'graduation'`.
-  - **The values test** adds `pending tokens` (number) and `coaching`, `up for promotion`, `maxed out`, `due to graduate`, `choosing a token`, `mentorable` (flags).
+  - **The values test** adds `pending tokens` (number) and `coaching`, `pending badge`, `maxed out`, `due to graduate`, `choosing a token`, `mentorable` (flags).
   - **Invariants (Review Focus 3)**, replacing Task 3's second:
     - a card holds a `PENDING` count only in a development team, or in the ops team of the seat whose turn is in `graduation`;
     - a card is `graduated` only in that ops team, while that seat is in `graduation`;
@@ -825,7 +825,7 @@ Coaching:
   Only if it is a Mentor card.
   Only if it is not onboarding.
 
-Up for promotion:
+Pending badge:
   Only if it is a Synergy card.
   Only if it is not badged.
   Only if the card it is on is not a Tier 1 card.
@@ -853,7 +853,7 @@ Mentorable:
 
 ```text
       If some card on it is coaching, they gain 1 mentoring.
-      Every card on it that is up for promotion is badged.
+      Every card on it that is pending badge is badged.
       The graduation phase starts with them.
 ```
 
@@ -1108,22 +1108,22 @@ Example: a Junior PM on a Tier 2 team carries a pending Badge, made Permanent wh
   And p0's development has a Neobank and a Server Farm
   And the Neobank in p0's development has 10 blue cubes
   And the Neobank in p0's development has the Architect, a Junior PM and a Junior Software Dev on it
-  Then the Junior PM in p0's development team is up for promotion
-  And the Junior Software Dev in p0's development team is not up for promotion
+  Then the Junior PM in p0's development team is pending badge
+  And the Junior Software Dev in p0's development team is not pending badge
   When p0 launches the Neobank
   Then the Junior PM in p0's ops team is badged
   And the Junior Software Dev in p0's ops team is not badged
   When p0 reassigns the Junior PM to the Server Farm
-  Then the Junior PM in p0's development team is not up for promotion
+  Then the Junior PM in p0's development team is not pending badge
 
 Example: a Junior PM Reassigned from a Tier 2 to a Tier 1 project loses its pending Badge, so that Launch promotes nobody (section 11, the slice's R8)
   Given the phase is actions
   And p0's development has a Neobank and a Dating App
   And the Dating App in p0's development has 6 blue cubes
   And the Neobank in p0's development has a Junior PM on it
-  Then the Junior PM in p0's development team is up for promotion
+  Then the Junior PM in p0's development team is pending badge
   When p0 reassigns the Junior PM to the Dating App
-  Then the Junior PM in p0's development team is not up for promotion
+  Then the Junior PM in p0's development team is not pending badge
   When p0 launches the Dating App
   Then the Junior PM in p0's ops team is not badged
 
@@ -1132,7 +1132,7 @@ Example: a Pivot loses a Junior PM's pending Badge (section 11)
   And p0's development has a Neobank
   And the Neobank in p0's development has a Junior PM on it
   When p0 pivots the Neobank
-  Then the Junior PM in p0's bench is not up for promotion
+  Then the Junior PM in p0's bench is not pending badge
 
 Example: a QA Engineer on a Launching team gains no XP, since Specialists learn only from Training cards (ruling 14)
   Given the phase is actions
@@ -1149,7 +1149,7 @@ Example: a QA Engineer on a Launching team gains no XP, since Specialists learn 
   - **Tracks:** Dating App 6 Blue, Smart Lock 1/5, Cloud Storage 4/4, all Tier 1; the Neobank 10 Blue, Tier 2 Software, led by the Architect; the Server Farm Tier 2.
   - **Graduation:** exactly one token each (§11.B.2); the Mentor a second, different one (§20.B, ruling 25); none at 4 Permanent XP (§11.B.2, the cap of §11.A.2); 3 + 1 = 4 leaves nothing for the Mentor.
   - **Actions:** a Launch is 1 AP (ruling 7): 3 − 1 = 2; the step's presses cost nothing.
-  - **Lines each example pins:** 1 `Due to graduate` and its rule's six lines (without a loss line the Junior would stay mentorable), the finishing rule's `mentoring` reset; 2 the Blue and Green keeps' token tests, the mentor's `they have 1 mentoring`, Coaching's Mentor line and the finishing rule's Blue loss; 3 Launch's `mentoring` line, the Blue keep's three effects, the Red keep's token test, the Green keep's `choosing a token`, the Mentor's Green option and its reset; 4 Mentorable's `graduated`, the Red keep's three effects, the Blue keep's `choosing a token`, the Mentor's Blue option and `Due to graduate`'s `not graduated`; 5 the Green keep's three effects, the Red keep's `choosing a token`, the Mentor's Red option and `Choosing a token`'s `not graduated`; 6 Coaching's onboarding line; 7 Mentorable's `not maxed out` and Maxed out; 8 the two `not maxed out` lines and the finishing rule's Red and Green losses; 9 Up for promotion's Synergy and Badge lines and Launch's badge line; 10 its Tier 1 line. 11 and 12 are guards (§11.E.2, ruling 14).
+  - **Lines each example pins:** 1 `Due to graduate` and its rule's six lines (without a loss line the Junior would stay mentorable), the finishing rule's `mentoring` reset; 2 the Blue and Green keeps' token tests, the mentor's `they have 1 mentoring`, Coaching's Mentor line and the finishing rule's Blue loss; 3 Launch's `mentoring` line, the Blue keep's three effects, the Red keep's token test, the Green keep's `choosing a token`, the Mentor's Green option and its reset; 4 Mentorable's `graduated`, the Red keep's three effects, the Blue keep's `choosing a token`, the Mentor's Blue option and `Due to graduate`'s `not graduated`; 5 the Green keep's three effects, the Red keep's `choosing a token`, the Mentor's Red option and `Choosing a token`'s `not graduated`; 6 Coaching's onboarding line; 7 Mentorable's `not maxed out` and Maxed out; 8 the two `not maxed out` lines and the finishing rule's Red and Green losses; 9 Pending badge's Synergy and Badge lines and Launch's badge line; 10 its Tier 1 line. 11 and 12 are guards (§11.E.2, ruling 14).
 - [ ] **Step 4: Run** `bunx vitest run src/games src/pages/designer`, then `bun run test` and `bun run typecheck`, then the removal probe. The long runs pass: every Launch now enters and leaves `graduation`.
 - [ ] **Step 5: Commit**
 
@@ -1628,11 +1628,11 @@ EOF
 
 - **Plan 5-2b** requires the keys counted here (`a token kept by choice`, `the Mentor's second token`) once Training gives Juniors Skill tokens, and adds the Training-dependent talent tallies (a Junior working in a trained colour, a badged Junior leading, the QA Engineer's and the Sales Rep's XP, the VP of Sales).
 - **Plan 5-3 (the page).**
-  - `shownFlags` gains `experienced` and `practised`, both read only through the card. `up for promotion` reads `the card it is on` and `decaying` its owner's ops team, so neither is shown (plan 5-1 keeps both out of the card-only set); 5-3 decides how to show the pending Badge.
+  - `shownFlags` gains `experienced` and `practised`, both read only through the card. `pending badge` reads `the card it is on` and `decaying` its owner's ops team, so neither is shown (plan 5-1 keeps both out of the card-only set); 5-3 decides how to show the pending Badge.
   - No new stand-in: the XP, Skills and Human Capital sections start from a kind of card, not from `A card's X is its Y.`
   - Faces need XP by colour, Skill tokens, Pending tokens marked as pending, Badges, and the graduation buttons in the strip.
 - **Slice 6** adds Online Course Boom, Workaholic on PMs and Sales Reps, Burnout on a PM (one more `Managing` line), Toxic Personality on a Synergy team (one more team-output line), Regulation Audit on 2-XP Juniors (it reads `experienced`), Crunch Time's cube (no Pending token: it is no team output) and TechCrunch at $2 with a Sales Rep on the product (R12).
-- **Slice 8** sets `fired` on a Market Sale's or a poach's departures only where §18.B says they are fired, keeps a poached Junior's Pending tokens, and reads `up for promotion` for a poached Junior PM (§16.D.3).
+- **Slice 8** sets `fired` on a Market Sale's or a poach's departures only where §18.B says they are fired, keeps a poached Junior's Pending tokens, and reads `pending badge` for a poached Junior PM (§16.D.3).
 
 ## Gaps against plan 5-1
 

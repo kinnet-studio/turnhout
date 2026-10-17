@@ -37,6 +37,8 @@
 
 ## Global Constraints
 
+- **Sequencing (controller ruling).** Plan 5-3's Task 1 (a fitted table that needs more room grows taller) runs before this plan: this plan's new zones don't fit today's fitted table (the development team's hanging cards overlap the private strip after Task 1; the four board rows are 98 tall after Task 3, so `misfits` fails). Take the fitted Startup pins from the committed tests when each task starts.
+
 - **Branch and commits.** Develop on `claude/peaceful-curie-rdfkow`. Commit by pathspec, never `git add -A`. Every commit message ends with these two lines and contains no model identifiers:
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`
   `Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC`
