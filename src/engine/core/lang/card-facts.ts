@@ -75,6 +75,8 @@ export function faceKeyOf(card: CardState, game: CompiledGame): string {
   const face: { [k: string]: Json } = {};
   // The card's data starts as its row, in its table's order, and `changeCard` keeps each key where it is. The columns of every
   // table together would put a column that an earlier row leaves blank, or another table lacks, after the rest.
+  // The limit: a column deleted and later set again, or one an example's Given sets on a card whose row left it blank, is a new
+  // key of the data, so it goes after the row's other columns.
   const columns = new Set(tableColumns(game));
   for (const [column, value] of Object.entries(card.data ?? {})) {
     if (columns.has(column)) face[column] = value as Json;

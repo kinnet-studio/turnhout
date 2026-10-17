@@ -67,7 +67,7 @@ export class PixiTable extends Container {
     this.drawZoneNames(scene);
   }
 
-  /** The ring and caption each card wears, by card id. A card the map lacks goes bare, and so does one that arrives later. */
+  /** The ring, caption and badge each card wears, by card id. A card the map lacks goes bare, and so does one that arrives later. */
   setDecor(decor: { [cardId: string]: CardDecor }): void {
     this.decor = decor;
     for (const [id, sprite] of this.sprites) sprite.setDecor(decor[id] ?? null);

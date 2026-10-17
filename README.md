@@ -230,7 +230,7 @@ Phase: playing
 - **The card a rule is about.** A section that works out a value, or a button's `Only if` lines, can ask `it is a Senior Developer card`, `it is not a Tier 1 card`, `it is in an ops team`, `its blue need is 0`, `some card on it is leading software` and `no card on it is leading hardware`. A number can go down by another: `A card's blue need goes down by its cut blue cubes.`
 - **Examples** name a press's choices after it: `When p0 greenlights the Server Farm, paying p2` names the players the press asks for among several, in line order, and `…, choosing cut 2 red` names an option. A player who alone qualifies is filled in and needs no name, though an example may name a player for every choice instead.
 - **In the playtest,** a choice with one answer is filled in. A press whose choice has several answers opens it under the buttons, one question at a time:
-  - `Pick who to pay the license to (requires Commerce)` with a button for each player;
+  - `Pick who to pay the license to (requires Commerce)` with a button for each player; the bracket names the column of the picked card that the choice compares, and its value;
   - `Choose one` with a button for each option.
 
   The press goes once the last is answered. A greyed answer says why on hover. Cancel, another button or another tab sends nothing.
@@ -247,8 +247,8 @@ Phase: playing
   - A card that sits on a card hangs under it.
   - A number kept on cards shows under a card against the column whose name starts with the same words: `blue cubes` against `blue cost` reads `Blue 3/6`. One named with words before another's shows beside it when it isn't 0: `Blue 3/6 +4 new`.
   - A value a section works out from a column (`A card's blue need is its blue cost.`) is read in that column's place: `Blue 3/4 +2 cut`.
-  - A card read against columns also names its words: `Neobank (tier Tier 2, tag Crypto, requires Commerce, sector FinTech, stalled)`.
-  - A worked yes-or-no that a value line turns on (`A stalled card's blue team output is 0.`) shows in a red label on the card's corner and in its brackets, where it holds.
+  - A card read against columns also names its words, then its flags: `Neobank (tier Tier 2, tag Crypto, requires Commerce, sector FinTech, stalled)`.
+  - A worked yes-or-no that a value line turns on (`A stalled card's blue team output is 0.`) shows in a red label on the card's corner and in the round brackets after its name, where it holds.
   - Under each seat's line, its public cards are listed by zone, with what sits on each: `development: Dating App (tier Tier 1, tag Social, sector Consumer) [Blue 4/6, Red 0/0] with Junior Software Dev and Architect · operations: To-Do List (tier Tier 1, tag App, sector Concept) [Blue 0/4, Red 0/0] · ops team: QA Engineer`.
   - The bank line under the seats' lines shows the game's own numbers: Startup Simulator's `license 3` is the License price.
 - **Startup Simulator** plays this way.
