@@ -56,6 +56,18 @@
 
 ## Global Constraints
 
+- **Controller amendment (pre-flight at `a31d8ec`).** The scan is in the plan's SDD workspace (`preflight.md`, probes in the scratchpad's `pf42/`); every task compiled with 0 diagnostics and every example passed in the probe. Each task's brief carries its rulings. In short:
+  - **P1 (Task 3).** 3-2's `shownFlags` pin stays `['stalled', 'efficient in ops']`; `bugged` is never shown (`its bugs are more than 0` isn't card-only). The forward note to 4-3 says no badge comes from 4-2.
+  - **P2 (Task 2).** `playtest-fitted.test.tsx`'s "counts market share among the numbers after Income…" mounts an App Store in N's operations and N's bench Junior Software Dev in N's ops team (N would otherwise stop in its ops check); the expected line stays. The file joins Task 2's Files and commit.
+  - **P3 (Task 4).** "keeps the picks of a set the rules refuse as a whole" uses `choose(HIRES[3])` (the development form moves to index 3).
+  - **P4 (Task 4).** "offers another seat its buttons greyed…" pins what the page shows for the new operations button ("There is no card in your operations."); forward note to 4-3: an off-turn seat's greyed button may show a reason other than whose turn it is.
+  - **P5 (Tasks 2, 4).** In the "which hire" test, `And the phase is actions` goes after the generated `Given` line, not after the `Example:` title.
+  - **P6 (all tasks).** Checks and tallies read counts as numbers (missing = 0) and flags as `=== true`, never by whether the key exists (bugs, fixed bugs, new cubes, red mode, qa mode, offline).
+  - **P7 (all tasks).** No `For each … that is/are <flag>` line; if one is needed, write `that are`.
+  - **P8 (Tasks 2, 6).** The Files constraint and Task 6's check 4 also list P2's mount line, P3's `HIRES[3]` line, P4's pinned list and the `ASSIGN_TO_PRODUCT_LABEL` constant.
+  - **P9 (Task 1).** All six cut examples (the text says "five") get `Given the phase is actions`.
+  - Plan 4-1's final fix wave may land before Task 1: re-run `pf42/run.sh` on `rules-t1` … `rules-t5` first.
+
 - **Branch and commits.** Develop on `claude/peaceful-curie-rdfkow`. Commit by pathspec, never `git add -A`. Every commit message ends with these two lines and contains no model identifiers:
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`
   `Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC`
