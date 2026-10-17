@@ -50,7 +50,7 @@
 
 ## Global Constraints
 
-- **Controller amendment (pre-flight).** The scan is in the plan's SDD workspace (`preflight.md` §3, P1–P15); each
+- **Controller amendment (pre-flight).** The scan is in the plan's SDD workspace (`preflight.md` §3, P1–P15; P16 below is a later controller ruling); each
   task's brief carries its rulings. In short:
   - **P1, P4, P6 (Task 6).** With steps before the score, End needs only that the steps are done (R1: "End holds"); a
     go-to, an After line or "the turn passes to the left" is refused in the step phase; the step walk ends once the next
