@@ -6,6 +6,7 @@ import { addToCounter, counterOf, markOut, setCounter } from './board-state';
 import { createEngine, initialState } from './build';
 import { fillChoices } from './choices';
 import type { ChoiceOption } from './choices';
+import { comparedColumn } from './choices';
 import { compileGame } from './compile';
 import { pressChoices } from './declared-actions';
 import { createDefaultLibrary } from './library/index';
@@ -535,5 +536,24 @@ describe('filling in an option', () => {
     expect(fillChoices(asked, 1, ['TRIM 1 OF EACH'])).toEqual(['Trim 1 of each']);
     expect(fillChoices(asked, 1, ['Trim 3'])).toBe(asked[0].prompt);
     expect(fillChoices(asked, 1, [])).toBe(asked[0].prompt);
+  });
+});
+
+describe('comparedColumn', () => {
+  /** GUILD_GAME with a button that picks nothing and pays the fee to a player of the presser's choice who makes clay. */
+  const TIPPING = GUILD_GAME.replace('  A player may stop.',
+    '  A player may tip.\n    Then:\n      They pay the fee to another player of their choice who has a card in their workshop whose mark is clay.\n  A player may stop.');
+  const buttonOf = (rules: CompiledGame, words: string) => rules.phases.flatMap((phase) => phase.actions).find((action) => action.words === words)!;
+
+  it("names the column of the press's card a player choice compares, and nothing at a place with no choice", () => {
+    expect(comparedColumn(buttonOf(game, OPEN), 0)).toBe('wants');
+    expect(comparedColumn(buttonOf(game, OPEN), 1)).toBeNull();
+  });
+  it('names nothing for a block of options', () => {
+    expect(comparedColumn(buttonOf(game, TRIM), 0)).toBeNull();
+  });
+  it('names nothing for a clause that compares a value, not a column of the card', () => {
+    expect(TIPPING).not.toBe(GUILD_GAME);
+    expect(comparedColumn(buttonOf(compiled(TIPPING), 'tip'), 0)).toBeNull();
   });
 });

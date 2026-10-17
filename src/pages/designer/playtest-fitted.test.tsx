@@ -1015,3 +1015,99 @@ describe('what the rules work out, on the Board', () => {
     expect(document.body.textContent).not.toContain('Streaming Service');
   });
 });
+
+describe('choosing whom to pay and how to cut', () => {
+  const tab = (name: string) => screen.getByRole('tab', { name });
+  const boardOf = (seat: string) => screen.getByTestId(`board-${seat}`).textContent;
+  const R1 = after(S, 3);
+  const R2 = after(R1, 3);
+  const choices = () => screen.getByRole('group', { name: 'Choices' });
+  const answer = (value: string) => fireEvent.click(within(choices()).getByRole('button', { name: value }));
+  const options = () => within(choices()).getAllByRole('button').map((b) => b.textContent);
+  const noChoices = () => expect(screen.queryByRole('group', { name: 'Choices' })).toBeNull();
+  /** The table after Setup with each named card put in its zone, in order. */
+  const arranged = (...places: [string, string][]): GameState =>
+    places.reduce((state, [name, zoneId]) => relocate(state, [idOf(state, name)], zoneId, game), setUp());
+  const capitalOf = (seat: string, capital: number) => expect(lineOf(seat)?.startsWith(`${seat} ${capital} capital`), lineOf(seat)!).toBe(true);
+  /** S's Neobank needs Commerce, which R1's Mobile Wallet and R2's Payment Gateway both provide. */
+  const NEOBANK = (): GameState => arranged(['Neobank', `backlog-${S}`], ['Mobile Wallet', `operations-${R1}`], ['Payment Gateway', `operations-${R2}`]);
+  const greenlight = (name: string) => {
+    press('Greenlight a card in your backlog');
+    pickNamed(name);
+  };
+
+  it('asks whom to pay the License, naming the Tag the card requires, and pays the one picked', () => {
+    const state = NEOBANK();
+    const neobank = idOf(state, 'Neobank');
+    mount({ initial: state });
+    greenlight('Neobank');
+    expect(within(choices()).getByText('Pick who to pay the license to (requires Commerce)')).toBeTruthy();
+    expect(options()).toEqual([...[R1, R2].sort(), 'Cancel']);
+    expect(screen.queryByRole('group', { name: 'Pick cards' })).toBeNull();
+    answer(R2);
+    capitalOf(R2, 10);
+    capitalOf(R1, 7);
+    capitalOf(S, 4);
+    expect(table!.decor![neobank]).toEqual({ caption: 'Blue 0/10\nRed 0/0', badge: 'stalled' });
+    noChoices();
+  });
+
+  it('asks how to cut a hybrid clicked on the table, and cuts as answered', () => {
+    const state = arranged(['Sleep Monitor', `backlog-${S}`], ['Health Tracker', `operations-${S}`]);
+    const sleep = idOf(state, 'Sleep Monitor');
+    mount({ initial: state });
+    click(sleep);
+    choose('Greenlight a card in your backlog');
+    expect(within(choices()).getByText('Choose one')).toBeTruthy();
+    expect(options()).toEqual(['Cut 2 blue', 'Cut 2 red', 'Cut 1 of each', 'Cancel']);
+    expect(ring(sleep)).toBe('chosen');
+    answer('Cut 1 of each');
+    expect(table!.decor![sleep].caption).toBe('Blue 0/1 +1 cut\nRed 0/3 +1 cut');
+    expect(boardOf(S)).toContain('Sleep Monitor (tier Tier 1, tag Data, sector Life Sci) [Blue 0/1 +1 cut, Red 0/3 +1 cut]');
+    noChoices();
+  });
+
+  it('asks the two Licenses of a Tier 3 one after the other, each naming its own requirement', () => {
+    mount({
+      initial: arranged(
+        ['Fusion Reactor', `backlog-${S}`], ['Drone Delivery', `operations-${R1}`], ['Search Engine', `operations-${R1}`],
+        ['Auto Warehouse', `operations-${R2}`], ['Quantum Prototype', `operations-${R2}`],
+      ),
+    });
+    greenlight('Fusion Reactor');
+    expect(within(choices()).getByText('Pick who to pay the license to (requires Robotics)')).toBeTruthy();
+    answer(R1);
+    expect(within(choices()).getByText('Pick who to pay the license to (also requires AI)')).toBeTruthy();
+    answer(R2);
+    noChoices();
+    capitalOf(R1, 10);
+    capitalOf(R2, 10);
+    capitalOf(S, 1);
+  });
+
+  it('Review Focus: asks only the License several provide, and pays the only provider of the other without asking', () => {
+    mount({
+      initial: arranged(
+        ['Fusion Reactor', `backlog-${S}`], ['Drone Delivery', `operations-${R1}`], ['Search Engine', `operations-${R1}`],
+        ['Auto Warehouse', `operations-${R2}`],
+      ),
+    });
+    greenlight('Fusion Reactor');
+    expect(within(choices()).getByText('Pick who to pay the license to (requires Robotics)')).toBeTruthy();
+    answer(R2);
+    noChoices();
+    capitalOf(R1, 10);
+    capitalOf(R2, 10);
+    capitalOf(S, 1);
+  });
+
+  it('Review Focus: drops the question, sending nothing, when another tab is looked at', () => {
+    mount({ initial: NEOBANK() });
+    greenlight('Neobank');
+    expect(choices()).toBeTruthy();
+    fireEvent.click(tab(O));
+    fireEvent.click(tab(`${S} — to act`));
+    noChoices();
+    capitalOf(S, 7);
+  });
+});

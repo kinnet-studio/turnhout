@@ -1,4 +1,5 @@
 import type { GameState } from '../game-state';
+import type { Json } from '../table-def';
 import { playersIn } from './board-state';
 import { canon, joinOr, secondPersonWords } from './refs';
 import type { LangRuntime } from './runtime';
@@ -28,6 +29,34 @@ const isChoice = (ref: PhraseRef): boolean => ref.kind === 'lang' && (ref.phrase
 export function choicesOf(action: DeclaredAction): PhraseRef[] {
   // The compiler numbers them in the order the lines are written, and a choice is never inside another line.
   return action.effects.filter(isChoice);
+}
+
+/** The column of the press's card a test in `value` compares with, the first found: “whose mark is the card's wants” compares `wants`. */
+function columnCompared(value: Json): string | null {
+  if (Array.isArray(value)) {
+    for (const part of value) {
+      const found = columnCompared(part);
+      if (found !== null) return found;
+    }
+    return null;
+  }
+  if (value === null || typeof value !== 'object') return null;
+  const { sameAs } = value;
+  const ofTheCard = sameAs !== null && typeof sameAs === 'object' && !Array.isArray(sameAs) && sameAs.of === 'the card';
+  if (ofTheCard && typeof sameAs.attribute === 'string') return sameAs.attribute;
+  return columnCompared(Object.values(value));
+}
+
+/**
+ * The column of the press's card that the player choice at `at` compares, so a page can say which value the choice is about: the
+ * first test in its clause that compares with “the card's” value, wherever the clause holds it. Null for a block of options, for a
+ * clause that compares a value written out or no column of the card, and for a place with no choice.
+ */
+export function comparedColumn(action: DeclaredAction, at: number): string | null {
+  const ref = choicesOf(action).find((choice) => choice.args[0] === at);
+  if (ref === undefined || ref.phrase !== CHOOSE_PLAYER) return null;
+  const [, , who] = ref.args as [number, CondGroup[], PhraseRef, PhraseRef];
+  return columnCompared(who.args);
 }
 
 const THEY = /^they /i;
