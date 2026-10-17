@@ -66,6 +66,33 @@
   - **P7–P13, P15.** As written in `preflight.md` (the named helper Task 5 consumes; test-text fixes; forward notes for
     slices 6–8; 3-2's `comparedColumn` still narrowing after `CardFilter` gains `{ flag, wanted }`).
   - **Line numbers** in files plan 3-2 touches are re-checked after 3-2.
+  - **P16 (Task 7; a controller ruling after the pre-flight).** An example's press that names a target card keeps only
+    the buttons whose target zone holds that card.
+    - **What.** The press is `… to the Search Engine`, or the new `… to the Search Engine in p0's operations`. After
+      today's narrowing by base, source zone and phase, only the buttons whose target zone holds a card that matches
+      are kept: in the named zone, when the press names one.
+      - One button left is pressed.
+      - Several left keep today's error, naming only those buttons.
+      - None left keeps today's fall-through: the first button that fits is pressed, so the game refuses in its own
+        words.
+    - **Where.** `src/engine/core/lang/library/card-pick-phrases.ts`:
+      - `Press` gains the target card, and its zone when one is named;
+      - the narrowing sits in `buttonsFor`, which `pressesCardButton` and `tellApart` both call;
+      - `pressesCardButton` takes `move.onto` from the named zone;
+      - two new action patterns, `{player} {cardaction} {cardlist} to {card} in {zone}` and
+        `{player} {cardaction} {cardlist} from {zone} to {card} in {zone}`.
+    - **Tests** (`library/card-pick-phrases.test.ts`). They use a fixture `TWO_HIRES_GAME` in `testing.ts`:
+      `YARD_GAME` plus `A player may hire some cards from the hall to a card in their shelf.`, with `It costs 1 move.`
+      and `Then: The picked cards go to their yard, on the target card.` Through `runExamples`:
+      - with a Vase in p0's workshop and a Statue on p0's shelf, `When p0 hires a Potter to the Vase` puts the Potter
+        in `crew-p0`, and `When p0 hires a Smith to the Statue` puts the Smith in `yard-p0`, each on its card;
+      - with a Vase in both, `When p0 hires a Potter to the Vase` fails with a message that starts
+        `p0 could hire a Potter with more than one button:` (today's error);
+      - with a Vase in both, `When p0 hires a Potter to the Vase in p0's shelf` puts it in `yard-p0`.
+    - **Guards.** Startup Simulator's three "asks an example which … it means" tests pass unchanged.
+    - **Why.** Spec R5 gives the assign, the agency hire, the Source hire and the §6 Reassign a "… to a card in their
+      operations" form. Each shares its verb and source zone with the development form, and plan 4-2 writes them that
+      way. Without this narrowing, every existing example of the development forms would become ambiguous.
 
 - **Hard constraints (verbatim from plan 3-1, with slice 4's words added):**
   - Protected files must not change: `src/engine/core/game-state.ts`, `src/engine/core/flow.ts`, `src/engine/core/game-engine.ts`, and anything under `src/pages/hearts-demo/**`.
@@ -907,6 +934,7 @@ git commit -m "feat(lang): steps each player takes in turn from the start player
 **Interfaces:**
 - Consumes: every fixture above, and `runExamples`.
 - Produces: expect `{player}'s {playervalue} is {int}`. A miss says `` `Expected ${seat}'s ${name} to be ${n}, but it is ${have}.` ``
+- Produces (P16, in this task's TDD cycle, staged with its commit): an example's press narrowed by its target card's zone, with the two `… to {card} in {zone}` patterns, in `library/card-pick-phrases.ts`; the fixture `TWO_HIRES_GAME` in `testing.ts`; its tests in `library/card-pick-phrases.test.ts`. See the Controller amendment's P16.
 
 - [ ] **Step 1: Write the failing tests.**
 
