@@ -358,7 +358,7 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
     );
     // The money line's place on a fitted table goes to every player's tableau, which counts the cards their zones hold.
     const numbers = fitted
-      ? view && <Tableaux game={game} seats={seats} board={board} cards={view.scene.cards} worked={worked} />
+      ? view && <Tableaux game={game} seats={seats} board={board} cards={view.scene.cards} worked={worked} playerValues={extras?.playerValues} />
       : board && (board.counters.length > 0 || game.facts.length > 0 || board.bank.length > 0) && <MoneyLine board={board} />;
     const buttons = hasButtons && extras && <ActionButtons actions={extras.actions} onPress={press} onPick={startPicking} onRefused={flash} />;
     // A button chosen for a card clicked on the table takes the card as a click in its picker would: one card with nowhere else to

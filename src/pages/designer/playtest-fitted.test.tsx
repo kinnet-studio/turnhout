@@ -1263,3 +1263,77 @@ describe('modes, Offline and Bugs on the Board', () => {
     expect(document.body.textContent).not.toContain('3 bugs');
   });
 });
+
+/**
+ * How the numbers come (§20.B, §20.C, §12):
+ * - The Firmware Specialist is flex with output 2, so 2 Blue until declared Red. The Dating App needs 1 Blue, the Smart Lock 1 Red.
+ * - At Income: 7 + 2 = 9, the Smart Lock's rev, the Dating App off and earning nothing.
+ * - A Junior Software Dev gives 1 Blue; the Dating App and the Mobile Wallet each need 1 Blue.
+ * - The round at two is S2 then L2. After it, the final check runs from S2, and L2, with nothing to run, passes at once.
+ */
+describe('the gauges, the ops check and the final check', () => {
+  const tab = (name: string) => screen.getByRole('tab', { name });
+  const gauges = (seat: string) => screen.getByTestId(`gauges-${seat}`).textContent;
+  const CONFIRM = 'Confirm the products online';
+
+  it("draws every seat's gauges, short in a color its ops team can't cover, whichever tab is looked at", () => {
+    mount({ initial: modesBoard() });
+    expect(gauges(N)).toBe('Blue supply 2 / demand 1 · Red supply 0 / demand 1 (short)');
+    expect(gauges(S)).toBe('Blue supply 0 / demand 0 · Red supply 0 / demand 0');
+    fireEvent.click(tab(O));
+    expect(gauges(N)).toBe('Blue supply 2 / demand 1 · Red supply 0 / demand 1 (short)');
+  });
+
+  it('follows a declared mode and a product switched off through the ops check, to the confirm it waits on', () => {
+    mount({ initial: modesBoard() });
+    press('End your actions');
+    press('Declare a card in your ops team');
+    pickNamed('Firmware Specialist');
+    answerAsked('Red');
+    expect(gauges(N)).toBe('Blue supply 0 / demand 1 (short) · Red supply 2 / demand 1');
+
+    press('Confirm your modes');
+    const confirm = () => screen.getByRole('button', { name: CONFIRM });
+    expect([confirm().getAttribute('aria-disabled'), confirm().getAttribute('title')])
+      .toEqual(['true', 'their blue supply is at least their blue demand']);
+
+    press('Switch off a card in your operations');
+    pickNamed('Dating App');
+    expect(gauges(N)).toBe('Blue supply 0 / demand 0 · Red supply 2 / demand 1');
+    expect(confirm().getAttribute('aria-disabled')).toBe('false');
+
+    press(CONFIRM);
+    expect(lineOf(N)!.startsWith(`${N} 9 capital`), lineOf(N)!).toBe(true);
+  });
+
+  it('runs the final check from the gauges after the last round, and ends the game once they fit', () => {
+    const begun = createEngine(game, lib, 2, initialState(game, SEED)).engine.getState();
+    const S2 = begun.data['lang:start-player'] as string;
+    const L2 = seatsOf(2).find((seat) => seat !== S2)!;
+    let state = relocate(begun, [idOf(begun, 'Market Crash')], 'crash-pile', game);
+    const [dating, wallet] = ['Dating App', 'Mobile Wallet'].map((name) => idOf(state, name));
+    state = relocate(state, [dating, wallet], `operations-${S2}`, game);
+    state = relocate(state, [idOf(state, 'Junior Software Dev', `bench-${S2}`)], `ops-team-${S2}`, game);
+    mount({ initial: state, players: 2 });
+    expect(gauges(S2)).toBe('Blue supply 1 / demand 2 (short) · Red supply 0 / demand 0');
+
+    press('End your actions');
+    fireEvent.click(tab(`${L2} — to act`));
+    press('End your actions');
+    expect(tab(`${S2} — to act`).getAttribute('aria-selected')).toBe('true');
+    expect(status()).toBe(`seat: ${S2} — Your turn — ${hint('final check')}`);
+    expect(seatButtons()).toEqual(['Switch off a card in your operations', 'Switch on a card in your operations']);
+
+    press('Switch off a card in your operations');
+    pickNamed('Mobile Wallet');
+    expect(status()).toMatch(/Game over/);
+    expect(table!.decor![wallet].dim).toBe(true);
+    expect(gauges(S2)).toBe('Blue supply 1 / demand 1 · Red supply 0 / demand 0');
+    expect(screen.getByTestId(`board-${S2}`).textContent).toContain('Mobile Wallet (tier Tier 1, tag Commerce, sector FinTech, offline)');
+  });
+
+  it('Review Focus: draws no gauges for a game whose buttons wait on no pair of values', () => {
+    mount({ game: compileGame(COLOR_MATCH, lib).game! });
+    expect(screen.queryByTestId(/^gauges-/)).toBeNull();
+  });
+});
