@@ -4,16 +4,13 @@ import { compileGame } from '@/engine/core/lang/compile';
 import { createDefaultLibrary } from '@/engine/core/lang/library';
 import { runExamples } from '@/engine/core/lang/examples';
 import { createEngine, initialState, seatsFor, tableDefFor } from '@/engine/core/lang/build';
-import { COUNTERS_KEY, counterOf, setCounter } from '@/engine/core/lang/board-state';
-import { gameNumber } from '@/engine/core/lang/board-state';
+import { COUNTERS_KEY, counterOf, gameNumber, setCounter } from '@/engine/core/lang/board-state';
 import { seatExtras, type CardPickView, type SeatExtras } from '@/engine/core/lang/board-view';
 import { attachmentProblem, cardsOn, putOn } from '@/engine/core/lang/attach';
 import { deckOf, NEXT_CARD_KEY } from '@/engine/core/lang/cards';
-import { cardCandidates, hasCost, ontoCandidates } from '@/engine/core/lang/declared-actions';
+import { cardCandidates, hasCost, ontoCandidates, pressChoices } from '@/engine/core/lang/declared-actions';
 import { moveZoneId } from '@/engine/core/lang/declared-moves';
-import { CHOOSE_ONE, CHOOSE_PLAYER, choicesOf, type ChoiceOption } from '@/engine/core/lang/choices';
-import { pressChoices } from '@/engine/core/lang/declared-actions';
-import type { AskedChoice } from '@/engine/core/lang/choices';
+import { CHOOSE_ONE, CHOOSE_PLAYER, choicesOf, type AskedChoice, type ChoiceOption } from '@/engine/core/lang/choices';
 import { RuleError } from '@/engine/core/lang/diagnostics';
 import { LangRuntime } from '@/engine/core/lang/runtime';
 import type { ZoneRef } from '@/engine/core/lang/types';
@@ -169,7 +166,11 @@ const GROWTH_LAUNCHED = 'a Tier 2 or 3 card launched';
 const CUT_LAUNCHED = 'a project launched with a cut';
 const STALLED_AT_THE_ENGINE = 'a stalled project at the engine';
 const DIVA_PIVOTED = 'the Diva fired by a pivot';
-const DIVA_REFUSED = 'the Diva refused a reassign';
+/** What the tally calls the Diva's Ego refusing a reassign, by the button: from a project or from the ops team (§6, §20.B.1). */
+const DIVA_REFUSED: Record<string, string> = {
+  [REASSIGN_FROM_PROJECT]: 'the Diva refused a reassign from a project',
+  [REASSIGN_FROM_OPS]: 'the Diva refused a reassign from the ops team',
+};
 const ENGINEER_IN_OPS = 'the Engineer paid 1 in the ops team';
 
 /** The button of the phase `state` is in whose move type is `type`, as the game declares it. */
@@ -312,11 +313,13 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *   drafting from the growth market, researching the seed deck and drafting from the seed market, in that order, and with none
  *   allowed it recruits instead.
  * - **Each later action** first tries to reassign the Diva while she works for the seat, which her Ego refuses at no cost
- *   (§20.B.1), then pivots the project she is on, which fires her (ruling 9). Otherwise it launches the first project the engine
- *   takes, which a Tier 2 or 3 project needs to be fully led for as well as complete (P11). With none, it finds a lead for its first
- *   Stalled project (§3): the bench's first Senior Developer who would lead a colour it needs, assigned to it, else the agency row's
- *   first such Senior it can pay for, hired onto it, else the open job market's first, hired, else a Layoff of the bench's first card,
- *   which digs the talent deck for one. With no Stalled project, it is one by `(t + a) % 9`:
+ *   (§20.B.1). Then it launches the first project the engine takes, which a Tier 2 or 3 project needs to be fully led for as well as
+ *   complete (P11), so that the Diva may go to the ops team with her team. Else it pivots the project she is on, which fires her
+ *   (ruling 9), and on an even `t` it assigns her from the bench to the ops team, where her Ego refuses a reassign too. With none of
+ *   those, it finds a lead for its first Stalled project (§3): the bench's first Senior Developer who would lead a colour it needs,
+ *   assigned to it, else the agency row's first such Senior it can pay for, hired onto it, else the open job market's first, hired when
+ *   it has the $1 the hire costs, else a Layoff of the bench's first card, which digs the talent deck for one. With no Stalled project,
+ *   it is one by `(t + a) % 9`:
  *   0. recruit the Junior of kind `(t + a) % 3`;
  *   1. hire the first agency Senior Developer it can pay for, else the first agency card it can pay for, to its bench, its first
  *      project or its ops team, by `(t + ⌊t / 9⌋) % 3`;
@@ -348,8 +351,8 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  * and a seat seldom has the capital for one, so it looks for a lead before anything but a Launch, takes Seniors first wherever it
  * hires, and recruits Juniors who make what its projects lack. Cuts come only from ideas Domain Expertise cuts, so it keeps and
  * builds those first, which lets hybrids ask their cut often enough to be answered each way. The Diva and the Engineer are single
- * cards: it tries the Diva's reassign whenever she works for it and then pivots her project, and keeps the Engineer for the ops team,
- * where his trait makes him cheaper.
+ * cards: it tries the Diva's reassign whenever she works for it, from a project and from the ops team, launches her project if it can
+ * and else pivots it, and keeps the Engineer for the ops team, where his trait makes him cheaper.
  *
  * Without `throughView` it finds the cards a button picks in the zones. With it, it finds them as a player at the page would: among
  * the cards the page's view of the seat offers for the button and the cards each may go on (both checked by `viewedCards`). The
@@ -545,8 +548,8 @@ function playTurn(
     engine.canDispatch({ type: LAUNCH, by, cardId: project.id }) === true));
   /**
    * A lead for the seat's first Stalled project (§3): the bench's first Senior Developer who would lead a color it needs, assigned to
-   * it, else the agency row's first such Senior the seat can pay for, hired onto it, else the open job market's first, hired, else a
-   * Layoff of the bench's first card, which digs the talent deck for one. Null with no project Stalled.
+   * it, else the agency row's first such Senior the seat can pay for, hired onto it, else the open job market's first, hired when the
+   * seat has the $1 it costs, else a Layoff of the bench's first card, which digs the talent deck for one. Null with no project Stalled.
    */
   const leadForStalled = (): Move | null => {
     const stalled = cards(own('development')).find((project) => runtime.workedFlag(engine.getState(), project.id, 'stalled'));
@@ -556,7 +559,7 @@ function playTurn(
     const onIt = onProject((targets) => targets.find((target) => target.id === stalled.id));
     return pickSome(ASSIGN_TO_PROJECT, own('bench'), (bench) => bench.filter(leads).slice(0, 1), onIt)
       ?? pick(HIRE_AGENCY_TO_PROJECT, 'agency-row', (row) => row.find((card) => leads(card) && canPay(card)), onIt)
-      ?? pick(HIRE_MARKET, 'open-job-market', (row) => row.find(leads))
+      ?? pick(HIRE_MARKET, 'open-job-market', (row) => (capital() >= 1 ? row.find(leads) : undefined))
       ?? pickSome(LAY_OFF, own('bench'), (bench) => bench.slice(0, 1));
   };
   /**
@@ -568,6 +571,8 @@ function playTurn(
       onProject((targets, card) => targets.find((project) => project.id !== card.data?.[HOLDER_KEY]) ?? targets[0]));
   /** A Pivot of the project the Diva is on, which fires her, since no reassign will move her (ruling 9). */
   const pivotDiva = () => pick(PIVOT, own('development'), (row) => row.find(divaOn));
+  /** The Diva's assign from the bench to the ops team, where her Ego refuses a reassign as well (§6, §20.B.1). */
+  const divaToOps = () => pickSome(ASSIGN_TO_OPS, own('bench'), (bench) => bench.filter(isDiva));
   /** The move the action numbered `action` makes as the turn's action `a`, or null when it has nothing to pick (see above). */
   const boardAction = (action: number, a: number): Move | null => {
     const projects = cards(own('development'));
@@ -645,8 +650,8 @@ function playTurn(
         continue;
       }
       const action = (t + a) % 9;
-      const board = () => [launch() ?? leadForStalled() ?? boardAction(action, a), ...boardMovesAfter(action).map((next) => boardAction(next, a))];
-      const planned = a === 0 ? ideation() : [reassignDiva(), pivotDiva(), ...board()];
+      const board = () => [leadForStalled() ?? boardAction(action, a), ...boardMovesAfter(action).map((next) => boardAction(next, a))];
+      const planned = a === 0 ? ideation() : [reassignDiva(), launch(), pivotDiva(), t % 2 === 0 ? divaToOps() : null, ...board()];
       play(engine, choose([...planned, recruitMaker(a), press(END_ACTIONS)]), watch);
       a++;
     } else if (phase === 'research') {
@@ -1496,7 +1501,7 @@ describe('Startup Simulator (designer language)', () => {
         const count = (key: string) => { tally[key] = (tally[key] ?? 0) + 1; };
         // The Diva's Ego refuses her reassign, which the rules say in that line's words (§6, §20.B.1).
         const refused: Refused = (_state, move, reason) => {
-          if (REASSIGNS.includes(move.type) && reason === EGO_REFUSAL) count(DIVA_REFUSED);
+          if (REASSIGNS.includes(move.type) && reason === EGO_REFUSAL) count(DIVA_REFUSED[move.type]);
         };
         const engine = playGame(players, seed, (before, move, after) => {
           rules(before, move, after);
@@ -1557,11 +1562,11 @@ describe('Startup Simulator (designer language)', () => {
       expect(Object.keys(played).filter((what) => !(played[what as keyof typeof played] > 0)), JSON.stringify(played)).toEqual([]);
     });
 
-    it('played slice 3 in those runs: Tier 2 and 3 greenlit and launched, Licenses paid to the only provider and to a chosen one, the cut filled in and chosen three ways and launched, Stalled projects at the Engine, the Diva refused a reassign and fired by a pivot, and the Engineer paid $1 in the ops team', () => {
+    it('played slice 3 in those runs: Tier 2 and 3 greenlit and launched, Licenses paid to the only provider and to a chosen one, the cut filled in and chosen three ways and launched, Stalled projects at the Engine, the Diva refused a reassign from a project and from the ops team and fired by a pivot, and the Engineer paid $1 in the ops team', () => {
       const paths = [
         GROWTH_GREENLIT, GROWTH_LAUNCHED, LICENSE_TO_THE_ONLY_PROVIDER, LICENSE_TO_A_CHOSEN_PROVIDER,
         CUT_FILLED_IN, CUT_CHOSEN, 'the cut: Cut 2 blue', 'the cut: Cut 2 red', 'the cut: Cut 1 of each', CUT_LAUNCHED,
-        STALLED_AT_THE_ENGINE, DIVA_REFUSED, DIVA_PIVOTED, ENGINEER_IN_OPS,
+        STALLED_AT_THE_ENGINE, ...Object.values(DIVA_REFUSED), DIVA_PIVOTED, ENGINEER_IN_OPS,
       ];
       // Two Licenses in one Greenlight takes a Tier 3 card whose both Tags the mover lacks; it is counted, but not required.
       expect(paths.filter((key) => !(tally[key] > 0)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
@@ -1709,15 +1714,17 @@ describe('Startup Simulator (designer language)', () => {
         const states: GameState[] = [];
         const engine = playGame(4, seed, (before) => states.push(before), { until: (log) => log.some(answered) });
         const log = [...engine.getLog()];
-        // A game whose seats never greenlight a card that asks a choice ends without one.
+        // The run stops at the first such Greenlight, so one that stops short of it is a game whose seats never made one: it ended.
         if (!answered(log.at(-1)!)) {
-          expect(log.some(answered), where).toBe(false);
+          expect(engine.getState().result, `${where}: the game with no Greenlight that asked a choice`).toBeDefined();
           continue;
         }
         const [before, after, greenlight] = [states.at(-1)!, engine.getState(), log.at(-1)!];
-        // Each payee gained a License for each Tag it was paid for, and the mover paid them all (§6, §14.B.2).
+        // Each payee gained a License for each Tag it was paid for, and the mover paid them all (§6, §14.B.2). The payees answer the
+        // choices of a player the press asked; one only a single player qualifies for is that player, named or filled in.
         const license = gameNumber(before, game!, 'license');
-        const payees = answersOf(greenlight).slice(0, 2).filter((seat): seat is string => seat !== null);
+        const asked = pressChoices(runtime, before, greenlight) as AskedChoice[];
+        const payees = asked.filter(({ kind }) => kind === 'player').map(({ at, options }) => answersOf(greenlight)[at] ?? options[0]);
         const gained = (state: GameState) => seats.map((seat) => counterOf(state, 'capital', seat) - counterOf(before, 'capital', seat));
         const paid = seats.map((seat) => license * (payees.filter((payee) => payee === seat).length - (seat === greenlight.by ? payees.length : 0)));
         expect(gained(after), `${where}: capital gained by ${seats.join(', ')}`).toEqual(paid);
@@ -1727,7 +1734,6 @@ describe('Startup Simulator (designer language)', () => {
         replayed.loadLog(log);
         expect(replayed.getState(), `${where}: the game rebuilt from its log`).toEqual(after);
         // A press whose every choice has one answer is filled in the same when the move names none, as the page sends it until 3-2.
-        const asked = pressChoices(runtime, before, greenlight) as AskedChoice[];
         const among = asked.some(({ options }) => options.length > 1);
         if (!among) {
           const { choices: _named, ...unnamed } = greenlight;
