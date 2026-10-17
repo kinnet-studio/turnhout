@@ -66,6 +66,9 @@
   - **P7 (all tasks).** No `For each … that is/are <flag>` line; if one is needed, write `that are`.
   - **P8 (Tasks 2, 6).** The Files constraint and Task 6's check 4 also list P2's mount line, P3's `HIRES[3]` line, P4's pinned list and the `ASSIGN_TO_PRODUCT_LABEL` constant.
   - **P9 (Task 1).** All six cut examples (the text says "five") get `Given the phase is actions`.
+  - **P10 (Task 1's review; every later task's count).** Task 1 gains three examples from its review (verified in the scratchpad's `rv42t1/proposed.rules`): only a flex Senior or the Fixer takes a mode, and a flex Senior declared Blue leaves Red; the Fixer in the ops team switches between Red and QA, never Blue, and gives no Red bandwidth in QA; a mode stays on staff reassigned from the ops team to a project. Task 1 ends at 111 examples, and every later task's pinned count is 3 higher than its text says (Task 2 119, Task 3 130, Task 4 138, Task 5 143); take each count from the committed test when a task starts.
+  - **P11 (Task 6).** The tallies require `a mode forgotten on a bench` (through the recall or pivot cadence) and count `a mode carried between teams`.
+  - **P12 (Task 1).** The Smart Toy example cites §20.F.1, not §20.C. Forward note to 4-3: the actions Hint says "Bugs for the Fixer" while the option reads `QA`.
   - Plan 4-1's final fix wave may land before Task 1: re-run `pf42/run.sh` on `rules-t1` … `rules-t5` first.
 
 - **Branch and commits.** Develop on `claude/peaceful-curie-rdfkow`. Commit by pathspec, never `git add -A`. Every commit message ends with these two lines and contains no model identifiers:
