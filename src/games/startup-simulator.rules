@@ -1757,7 +1757,7 @@ Example: a flex Senior hired onto a project after the declaration works in Blue 
   Then the Smart Lock in p0's development has 1 blue cube
   And the Smart Lock in p0's development has 0 red cubes
 
-Example: staff recalled to the bench forget their declared modes, so a flex Senior assigned again works in Blue (section 11, ruling 24)
+Example: staff recalled to the bench forget their declared modes, so a flex Senior assigned again works in Blue (section 11, section 20.F.1, ruling 24)
   Given the phase is actions
   And p0's operations has a Smart Lock
   And p0's ops team has a Firmware Specialist and the Fixer
@@ -1799,3 +1799,60 @@ Example: staff dismissed from the Board forget their declared modes in the open 
   Then the open job market has a Firmware Specialist and the Fixer
   And the Firmware Specialist in the open job market is not red mode
   And the Fixer in the open job market is not qa mode
+
+Example: only a flex Senior or the Fixer takes a mode, and a flex Senior on a project declared Blue leaves Red (section 11, section 20)
+  Given p1's development has a Smart Lock
+  And the Smart Lock in p1's development has a Firmware Specialist, the Fixer and a Junior Hardware Eng on it
+  And the Firmware Specialist in p1's development team is red mode
+  And the Fixer in p1's development team is red mode
+  And the turn passes to the left
+  Then the phase is modes
+  When p1 declares the Junior Hardware Eng
+  Then it is rejected because "it is declarable"
+  When p1 declares the Fixer
+  Then it is rejected because "Choose one: red or qa."
+  When p1 declares the Firmware Specialist
+  Then it is rejected because "Choose one: blue or red."
+  When p1 declares the Firmware Specialist, choosing blue
+  Then the Firmware Specialist in p1's development team is not red mode
+  When p1 declares the Fixer, choosing qa
+  Then the Fixer in p1's development team is qa mode
+  And the Fixer in p1's development team is not red mode
+  When p1 declares the Fixer, choosing red
+  Then the Fixer in p1's development team is red mode
+  And the Fixer in p1's development team is not qa mode
+
+Example: the Fixer in the ops team switches between Red and QA, never Blue, and gives no Red bandwidth in QA (section 11, section 20)
+  Given p1's operations has a Smart Lock
+  And p1's ops team has the Fixer, a Firmware Specialist and a Junior Hardware Eng
+  And the Fixer in p1's ops team is red mode
+  And the Firmware Specialist in p1's ops team is red mode
+  And the turn passes to the left
+  Then the phase is modes
+  And p1's red supply is 6
+  When p1 declares the Junior Hardware Eng
+  Then it is rejected because "it is declarable"
+  When p1 declares the Fixer
+  Then it is rejected because "Choose one: red or qa."
+  When p1 declares the Fixer, choosing qa
+  Then the Fixer in p1's ops team is qa mode
+  And the Fixer in p1's ops team is not red mode
+  And p1's red supply is 3
+  When p1 declares the Fixer, choosing red
+  Then the Fixer in p1's ops team is not qa mode
+  And p1's red supply is 6
+  When p1 declares the Firmware Specialist
+  Then it is rejected because "Choose one: blue or red."
+  When p1 declares the Firmware Specialist, choosing blue
+  Then p1's blue supply is 2
+  And p1's red supply is 4
+
+Example: a mode stays on staff reassigned from the ops team to a project (section 11, ruling 24)
+  Given the phase is actions
+  And p0's operations has a Smart Lock
+  And p0's ops team has the Fixer
+  And the Fixer in p0's ops team is qa mode
+  And p0's development has a Smart Toy
+  When p0 reassigns the Fixer to the Smart Toy
+  Then it is accepted
+  And the Fixer in p0's development team is qa mode
