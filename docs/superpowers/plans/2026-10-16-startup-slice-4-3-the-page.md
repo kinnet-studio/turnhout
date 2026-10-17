@@ -73,6 +73,18 @@ It sits under `docs/superpowers/specs/2026-10-16-startup-simulator-overview-desi
 
 ## Global Constraints
 
+- **Controller amendment (pre-flight at `f021e63`).** The scan is in the plan's SDD workspace (`preflight.md`; probes in the scratchpad's `pf43/`); 0 of 109 assumed items differ, and every pin of Tasks 1–4 passes in the probe with P1–P2 applied. Each task's brief carries its rulings. In short:
+  - **P1 (Task 2).** Task 2's mode test also checks `seatButtons()` after `End your actions` is `['Declare a card in your development team', 'Declare a card in your ops team', 'Confirm your modes']`, so the helper is used where it is declared (typecheck rejects unused declarations).
+  - **P2 (Tasks 1, 3).** A 3-player `GAUGED_GAME` starts from `{ ...initialState(game, 1), turn: { current: 'p0', phase: 'working' } }` (Setup can't deal 6 jobs from a pile of 4).
+  - **P3 (all).** Task 1 starts after the speed-up plan is complete; BASE is recorded then.
+  - **P4 (Tasks 1–2).** No `bugged` flag is shown; Bugs show as the count label `1 bug`.
+  - **P5 (Task 2).** An offline product shows its printed Val (the hover line reads `val 5 · … · offline yes`); add the guard that hovering the switched-off Dating App shows `val 5`. Forward note: worked values in the hover line must never read `val` through `portfolio points`.
+  - **P6 (parked).** An off-turn seat's greyed product button keeps the shared view's first reason ("There is no card in your operations."); changing the order would break two pinned lines. Owner's list.
+  - **P7 (forwarded to 5-2a).** The modes Hint's "or Bugs for the Fixer" should say `QA`; 4-3 changes no rules text.
+  - **P8 (Task 5).** The README step lists four bullets (the text says three); add all four.
+  - **P9 (Tasks 4–5).** Task 5's changed-test-lines check prints exactly Task 2's two `boardBadges` lines.
+  - **P10 (Task 1).** Every seat keeps an entry in `playerValues` (`{}` when all its values throw); `playerValues` itself is left out only when the game shows no value.
+
 - **Branch and commits.** Develop on `claude/peaceful-curie-rdfkow`. Commit by pathspec, never `git add -A`. Every commit message ends with these two lines and contains no model identifiers:
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`
   `Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC`
