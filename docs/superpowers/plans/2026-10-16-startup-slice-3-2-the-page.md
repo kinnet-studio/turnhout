@@ -76,8 +76,9 @@ The inputs are:
     happy-dom).
   - **P2, P7 (Task 4).** The browser rules insert the six `Move` lines after the Market Crash line (every seed sets up);
     screenshot 06 clicks `rowCard(dev, 0, 2, BOARD)`.
-  - **P3 (Task 1, hidden information).** A worked value is shown only when its lines read just the card and the cards on
-    it; a card with cards on it in a non-public zone is left out.
+  - **P3 (Task 1, hidden information; amended in Task 1's review).** A worked value is shown only when its lines read
+    just the card and the cards on it, and a line that reads the cards on it counts only when every cards-on-cards zone
+    in the game is public. The decision depends on the rules alone, never on the state.
   - **P4 (Task 1).** Plan 3-1's fix wave adds `Only if it is in a development.` to `Stalled:`; Task 1's example is a guard
     (or skipped if the fix wave added one); N₁ is read from the committed test.
   - **P5 (Task 2).** `board-text.ts`'s `lead`/`leadingWords` are renamed (slice 3's banned word).

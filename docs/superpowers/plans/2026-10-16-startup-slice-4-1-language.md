@@ -59,7 +59,9 @@
   - **P2 (Task 5, hidden information).** A mark's named holder zone must be public, and rule 4 keeps its public test.
   - **P3 (Tasks 2–3, with plan 3-2's P12).** Task 3's `a/an {cardflag} card's {attribute} is its {attribute}` joins plan
     3-2's `FLAGGED_VALUES` (each pattern with its own function); Task 3's "goes up by the total … of the cards on it"
-    counts as card-only in `worked-view`; Task 2's flag tests inside a group get 3-2's hidden-zone scan.
+    counts as card-only in `worked-view` (joining `CARDS_ON_IT`'s all-public rule, as `FROM_CARDS_TOTAL` does); Task 2's
+    flag tests inside a group get 3-2's hidden-zone scan, and its `{ flag, wanted }` filter adds `filter.flag` to the
+    names `cardOnlyNames` traces. 3-2's phrase-set test then fails loudly until each new card phrase is decided.
   - **P5, P14.** The plan records its calls: Ops QA is one Bug per press with the QA used kept as a count on the cleaned
     product; R1's "every product fits" is a `When …:` rule with `Only if` lines that stops holding and comes before the
     pass-on rule; M1 closes only if plan 4-2 re-marks the development team as well as the ops team.
