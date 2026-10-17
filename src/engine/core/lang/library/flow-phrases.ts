@@ -4,7 +4,7 @@ import type { PlayerId } from '../../scene';
 import { interruptTurn, isOut, nextIn, playerFact, resumeTurn } from '../board-state';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
-import { phaseTakesTurns } from '../turns';
+import { END_STEPS_KEY, phaseTakesTurns } from '../turns';
 import type { CardMatch, ConditionFn, EffectFn, PhraseEnv, ScoreFn, Subject, TurnFn, WinnerFn, ZoneRef } from '../types';
 import { chooseNext, leftOf, matchesCard, relocate, resolveSeat, resolveZoneIds, topCard, zoneIdFor, zoneInfo } from '../zones';
 import { describeZone, soleZone, theyOf, totalOf } from './support';
@@ -138,6 +138,9 @@ function startPhase(env: PhraseEnv, phase: string, next: PlayerId): GameState {
   return runStartLines(env, interruptTurn(env.state, phase, next), phase, next);
 }
 
+const GO_TO_IN_THE_STEPS = (phase: string) =>
+  `The players take the ${phase} in turn before the score, so no line can go to another phase until they have all taken it.`;
+
 /**
  * The phases the chain of “go to” effects now running has gone to, outermost first, for each game. The lines of a phase gone to may
  * themselves go to another, so a chain is the effects now running inside one another, and it is forgotten as each one finishes.
@@ -155,6 +158,10 @@ const wentThrough = new WeakMap<object, string[]>();
  */
 const goToPhase: EffectFn = (env, [phase]) => {
   if (!env.state.turn) throw new RuleError('There is no turn to move on.');
+  // The steps before the score are left only by passing them on. A line outside that phase, such as a rule for every phase or a
+  // card's says, is refused here, on its own line, rather than by whatever line meets the game in the wrong phase.
+  const steps = env.game.end?.steps;
+  if (steps && typeof env.state.data[END_STEPS_KEY] === 'string') throw new RuleError(GO_TO_IN_THE_STEPS(steps.phase));
   const name = phase as string;
   const chain = wentThrough.get(env.game) ?? [];
   if (chain.includes(name)) {

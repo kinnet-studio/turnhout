@@ -297,6 +297,29 @@ describe('the steps before the score', () => {
     expect(engine.getState()).toBe(before);
   });
 
+  it('refuse a “Go to …” from a rule for every phase, on that line, and still end once passed on (I1)', () => {
+    const GO_TO = '    Go to working.';
+    const EVERY = '  When the done pile has more than 2 cards:\n    Move the done pile to the pile.';
+    // A rule for every phase that goes to working whenever the done pile has two cards, and a final count button that adds one.
+    const text = STEPS_GAME.replace(EVERY, `${EVERY}\n  When the done pile has more than 1 card:\n    Move the done pile to the pile.\n${GO_TO}`)
+      .replace('  A player may count.', '  A player may tally.\n    Then:\n      Move the top card of the pile to the done pile.\n  A player may count.');
+    expect(errorsOf(text)).toEqual([]);
+    const engine = table(compiled(text));
+    round(engine);
+    const before = engine.getState();
+    expect(before.turn).toEqual({ current: 'p0', phase: 'final count' });
+    const error = thrown(() => engine.dispatch({ type: 'tally', by: 'p0' }));
+    expect(error).toBeInstanceOf(RuleError);
+    expect(error).toMatchObject({
+      message: 'The players take the final count in turn before the score, so no line can go to another phase until they have all taken it.',
+      line: lineOf(text, GO_TO),
+    });
+    expect(engine.getState()).toBe(before);
+    // The press was refused and nothing changed, so the steps go on and the game ends.
+    press(engine, 'count', 'p0', 'p1', 'p2');
+    expect(engine.getState().result).toEqual({ scores: { p0: 2, p1: 2, p2: 2 }, winner: 'p0', winners: ['p0', 'p1', 'p2'] });
+  });
+
   it('are passed on only while they run', () => {
     const PASS = '      The final count passes to the left.';
     const text = STEPS_GAME.replace(
