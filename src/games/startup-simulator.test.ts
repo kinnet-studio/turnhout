@@ -141,6 +141,11 @@ const PRE_INCOME = ['modes', 'ops check'];
 const SWITCH_OFF = 'switch off a card in their operations';
 const SWITCH_ON = 'switch on a card in their operations';
 const CONFIRM_ONLINE = 'confirm the products online';
+/**
+ * The Engine's button (§5 Phase D, R3): clean one Bug off a product in operation, when the ops team's QA can't clean every Bug and the
+ * owner picks which, one Bug a press.
+ */
+const CLEAN = 'clean a card in their operations';
 // The Board's other buttons in the actions phase (§6, rulings 7, 20 and 25).
 const HIRE_AGENCY_TO_PROJECT = 'hire a card from the agency row to a card in their development';
 const HIRE_AGENCY_TO_OPS = 'hire a card from the agency row to their ops team';
@@ -213,6 +218,8 @@ const buttonOf = (state: GameState, type: string) =>
 
 /** How many of a kind of cube a card has: a count the game declares on cards, 0 until a rule changes it. */
 const cubesOn = (card: CardState, kind: string) => (card.data?.[kind] as number | undefined) ?? 0;
+/** How many Bugs a card has: a count read as a number, like the cubes, since a count back at 0 has no key (P6). */
+const bugsOn = (card: CardState) => cubesOn(card, 'bugs');
 /** `seat`'s products in operation. */
 const operationsOf = (state: GameState, seat: PlayerId) => zoneCards(state, zoneIdFor('operations', seat));
 /** The rev `product` earns at Income, as the rules work it out in `state` (§5). */
@@ -349,7 +356,8 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  * `stop` says the log holds enough. `a` counts the actions taken so far in this turn. An idea Domain Expertise cuts is a product
  * whose sector an online product in the seat's operations shares, other than Infra and Concept (§19.A, ruling 5); a hybrid is an
  * idea that costs cubes of both colors. Staff the seat can spare from its ops team are those whose leaving keeps the team's Blue and
- * Red bandwidth at its products' load, so that every product stays online at its next Income (see `spare`).
+ * Red bandwidth at its products' load, in each color they give, so that every product stays online at its next Income unless a
+ * declaration changes a mode (see `spare`).
  *
  * - **Modes.** When `t % 4 === 3` it confirms its modes at once. Otherwise it declares each card of its Board the rules call
  *   declarable, once each, the development team's first and then the ops team's, in slot order, and then confirms. Each declaration's
@@ -372,12 +380,13 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *   order, and with none allowed it recruits instead.
  * - **Each later action** first tries to reassign the Diva while she works for the seat, which her Ego refuses at no cost
  *   (§20.B.1). Then it launches the first project the engine takes, which a Tier 2 or 3 project needs to be fully led for as well as
- *   complete (P11), so that the Diva may go to the ops team with her team. Else it pivots the project she is on, which fires her
- *   (ruling 9), and on an even `t` it assigns her from the bench to the ops team, where her Ego refuses a reassign too. With none of
- *   those, it finds a lead for its first Stalled project (§3): the bench's first Senior Developer who would lead a colour it needs,
- *   assigned to it, else the agency row's first such Senior it can pay for, hired onto it, else the open job market's first, hired when
- *   it has the $1 the hire costs, else a Layoff of the bench's first card, which digs the talent deck for one. With no Stalled project,
- *   it is one by `(t + a) % 9`:
+ *   complete (P11), so that the Diva may go to the ops team with her team. Else it puts QA on its first project with Bugs that no QA
+ *   on it cleans, since a project with Bugs can't Launch (§6): the bench's first card that would clean them (see `qaForBugs`). Else
+ *   it pivots the project she is on, which fires her (ruling 9), and on an even `t` it assigns her from the bench to the ops team,
+ *   where her Ego refuses a reassign too. With none of those, it finds a lead for its first Stalled project (§3): the bench's first
+ *   Senior Developer who would lead a colour it needs, assigned to it, else the agency row's first such Senior it can pay for, hired
+ *   onto it, else the open job market's first, hired when it has the $1 the hire costs, else a Layoff of the bench's first card, which
+ *   digs the talent deck for one. With no Stalled project, it is one by `(t + a) % 9`:
  *   0. recruit the Junior of kind `(t + a) % 3`;
  *   1. hire the first agency Senior Developer it can pay for, else the first agency card it can pay for, to its bench, its first
  *      project or its ops team, by `(t + ⌊t / 9⌋) % 3`;
@@ -393,8 +402,11 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *   8. lay off the bench's first card, or its first two on an odd `t`.
  *
  *   When the rules refuse that, or it has nothing to pick, it makes the first of the Board moves 3 to 7 after it in the cycle that
- *   it can (see `boardMovesAfter`); with none, it recruits a Junior who makes a color the first unfinished project lacks, or with
- *   none lacking the Junior of kind `(t + a) % 3`, else ends its actions.
+ *   it can (see `boardMovesAfter`); with none, it recruits a Junior QA Tester while a project has Bugs no QA on it cleans and the
+ *   bench has no card that would, else a Junior who makes a color the first unfinished project lacks, or with none lacking the Junior
+ *   of kind `(t + a) % 3`, else ends its actions.
+ * - **Engine.** While the Engine waits on it, its ops team's QA short of the Bugs on its products in operation, it cleans the
+ *   product at `t % n` among its n products in operation with Bugs, in slot order (§5 Phase D, R3).
  * - **Sourcing.** It hires the first card in its scouting it can pay for, to its bench, its ops team or its first project, by
  *   `(t + ⌊t / 9⌋) % 3`; when it can pay for none, or the rules refuse the hire, it passes on the rest.
  * - In research it keeps a hybrid Domain Expertise cuts, else an idea it cuts, else the research row's card at `t` (mod the row's
@@ -593,8 +605,9 @@ function playTurn(
   };
   /**
    * The cards of `team`, the seat's ops team, it can spare, in slot order: each one whose leaving, with those before it, keeps the
-   * team's Blue and Red bandwidth at the maintenance of every product in its operations, offline ones too, since the next Income
-   * switches them all back on (§5 Phase B).
+   * team's bandwidth in each color the card gives at the maintenance of every product in its operations, offline ones too, since the
+   * next Income switches them all back on (§5 Phase B). A card that gives no bandwidth, such as a QA Tester, changes nothing by
+   * leaving, so it is spare even from a team already short.
    */
   const spare = (team: CardState[]): CardState[] => {
     const state = engine.getState();
@@ -603,7 +616,7 @@ function playTurn(
     const load = colors.map((color) => runtime.playerValue(state, by, `${color} load`));
     return team.filter((card) => {
       const bandwidth = colors.map((color) => runtime.workedValue(state, card.id, `${color} bandwidth`) as number);
-      if (colors.some((_, i) => left[i] - bandwidth[i] < load[i])) return false;
+      if (colors.some((_, i) => bandwidth[i] > 0 && left[i] - bandwidth[i] < load[i])) return false;
       colors.forEach((_, i) => { left[i] -= bandwidth[i]; });
       return true;
     });
@@ -652,8 +665,18 @@ function playTurn(
     return [planned[t % 4], press(RESEARCH_GROWTH), draft(DRAFT_GROWTH, 'growth-market'), press(RESEARCH_SEED), draft(DRAFT_SEED, 'seed-market')];
   };
   const recruit = (a: number) => press(RECRUITS[(t + a) % 3]);
-  /** The Junior who makes a color the first unfinished project lacks: a Software Dev for blue, a Hardware Eng for red; else as `recruit`. */
+  /** The seat's first project with Bugs that no QA on it cleans: its qa team output, as the rules work it out, is 0 (§5 Phase D). */
+  const uncleaned = () => cards(own('development')).find((project) =>
+    bugsOn(project) > 0 && runtime.workedValue(engine.getState(), project.id, 'qa team output') === 0);
+  /** Whether `card` would clean Bugs on a project: its qa output, as the rules work it out, is above 0. */
+  const cleans = (card: CardState) => (runtime.workedValue(engine.getState(), card.id, 'qa output') as number) > 0;
+  /**
+   * The Junior QA Tester while a project has Bugs no QA on it cleans and the bench has no one who would (§6: a project with Bugs can't
+   * Launch); else the Junior who makes a color the first unfinished project lacks: a Software Dev for blue, a Hardware Eng for red;
+   * else as `recruit`.
+   */
   const recruitMaker = (a: number) => {
+    if (uncleaned() !== undefined && !cards(own('bench')).some(cleans)) return press(RECRUITS[2]);
     const unfinished = cards(own('development')).find((project) => lacks(project).length > 0);
     const color = unfinished === undefined ? undefined : lacks(unfinished)[(t + a) % lacks(unfinished).length];
     return color === undefined ? recruit(a) : press(RECRUITS[color === 'blue' ? 0 : 1]);
@@ -673,6 +696,16 @@ function playTurn(
   // A Tier 2 or 3 project Launches only fully led, so the first project the engine takes is launched, not the first one complete (P11).
   const launch = () => pick(LAUNCH, own('development'), (projects) => projects.find((project) =>
     engine.canDispatch({ type: LAUNCH, by, cardId: project.id }) === true));
+  /**
+   * QA for the seat's first project with Bugs that no QA on it cleans: the bench's first card that would clean them, assigned to it,
+   * since the project can't Launch until its Bugs are gone (§5 Phase D, §6). Null with no such project or card.
+   */
+  const qaForBugs = (): Move | null => {
+    const project = uncleaned();
+    if (project === undefined) return null;
+    return pickSome(ASSIGN_TO_PROJECT, own('bench'), (bench) => bench.filter(cleans).slice(0, 1),
+      onProject((targets) => targets.find((target) => target.id === project.id)));
+  };
   /**
    * A lead for the seat's first Stalled project (§3): the bench's first Senior Developer who would lead a color it needs, assigned to
    * it, else the agency row's first such Senior the seat can pay for, hired onto it, else the open job market's first, hired when the
@@ -784,13 +817,17 @@ function playTurn(
       }
       const action = (t + a) % 9;
       const board = () => [leadForStalled() ?? boardAction(action, a), ...boardMovesAfter(action).map((next) => boardAction(next, a))];
-      const planned = a === 0 ? ideation() : [reassignDiva(), launch(), pivotDiva(), t % 2 === 0 ? divaToOps() : null, ...board()];
+      const planned = a === 0 ? ideation() : [reassignDiva(), launch(), qaForBugs(), pivotDiva(), t % 2 === 0 ? divaToOps() : null, ...board()];
       play(engine, choose([...planned, recruitMaker(a), press(END_ACTIONS)]), watch);
       a++;
     } else if (phase === 'research') {
       play(engine, choose([pick(KEEP, own('research'), (row) => cutIdea(row) ?? row[t % row.length])]), watch);
     } else if (phase === 'sourcing') {
       play(engine, choose([sourcing(), press(PASS_ON_THE_REST)]), watch);
+    } else if (phase === 'engine') {
+      // The Engine waits on the seat only while its ops QA can't clean every Bug on its products, so some product has Bugs (R3).
+      const bugged = (row: CardState[]) => row.filter((product) => bugsOn(product) > 0);
+      play(engine, choose([pick(CLEAN, own('operations'), (row) => bugged(row)[t % bugged(row).length])]), watch);
     } else {
       const cleanup = CLEANUPS[phase!];
       if (cleanup === undefined) throw new Error(`The long runs don't play the ${phase} phase.`);
@@ -970,7 +1007,10 @@ function scoreOf(state: GameState, seat: PlayerId): number {
  *   backlog and 3 in their research, which has cards only in the research phase.
  * - The Board: no development holds more than 3 projects; every card that sits on a card is in a development team, on a project
  *   in the same seat's development, and every card in a development team sits on one; no card has more blue or red cubes than its
- *   blue or red need, and none keeps new cubes, which the Engine commits in the move that generates them.
+ *   blue or red need. New cubes, and the Bugs ops QA cleaned by a press (fixed bugs), sit on a card only while its owner's turn is in
+ *   the Engine, which commits the one and clears the other as it ends (§5 Phase D, R3).
+ * - Bugs: only a project or a product in operation has Bugs, no Launch the rules take moves a project that had Bugs (§6), and every
+ *   product in operation earns a rev of 0 or more once its Bugs are taken off (§5 Phase B).
  * - The cut: a project's cut is at most its cost in each colour, and leaves it a need of 1 cube or more; no card but a project or a
  *   product in operation keeps a cut (§19.A).
  * - No project gains cubes while it is Stalled, as it was when the Engine generated them (see `atTheEngine`) (§3).
@@ -1083,8 +1123,14 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     // The Board: staff sit on their own seat's projects, and the tracks hold at most their need, the cost less the cut (§19.A).
     const projectsOf = new Map(seats.map((seat) => [zoneIdFor('development team', seat), zoneIdFor('development', seat)]));
     const developments = new Set(seats.map((seat) => zoneIdFor('development', seat)));
-    /** The rows a product with a cut may be in: a project keeps it once Launched, and only a Pivot clears it (R3). */
-    const built = new Set([...developments, ...seats.map((seat) => zoneIdFor('operations', seat))]);
+    const operations = new Set(seats.map((seat) => zoneIdFor('operations', seat)));
+    /**
+     * The rows a product with a cut or Bugs may be in: a project keeps its cut once Launched, and only a Pivot clears it (R3); its
+     * Bugs only a Pivot or QA clears, and a Launch takes none.
+     */
+    const built = new Set([...developments, ...operations]);
+    /** The seat whose development or operations each of those rows is. */
+    const ownerOf = new Map(seats.flatMap((seat) => [[zoneIdFor('development', seat), seat], [zoneIdFor('operations', seat), seat]] as const));
     let generating: GameState | null = null;
     /** The state the Engine generated in, made once a project is found to have gained cubes. */
     const atGenerate = () => (generating ??= atTheEngine(before, move, after));
@@ -1104,10 +1150,19 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
         if ((cubes > 0 || built.has(c.zoneId)) && cubes > need(color)) {
           board.push(`${which} has ${cubes} ${color} cubes for a need of ${need(color)}`);
         }
-        if (cubesOn(c, `new ${color} cubes`) !== 0) board.push(`${which} keeps ${cubesOn(c, `new ${color} cubes`)} new ${color} cubes`);
         const cut = c.data?.[`cut ${color} cubes`];
         if (cut !== undefined && !built.has(c.zoneId)) board.push(`${which} keeps a cut of ${cut} ${color} cubes`);
       }
+      // The Engine's counts wait on a card only while its owner's turn is in the Engine: the cubes it generated until it commits them,
+      // and the Bugs ops QA cleaned by a press until the step ends (§5 Phase D, R3).
+      const owner = ownerOf.get(c.zoneId);
+      const inTheEngine = owner !== undefined && current === owner && phase === 'engine';
+      for (const kind of ['new blue cubes', 'new red cubes', 'fixed bugs']) {
+        if (cubesOn(c, kind) !== 0 && !inTheEngine) board.push(`${which} keeps ${cubesOn(c, kind)} ${kind}`);
+      }
+      if (bugsOn(c) !== 0 && !built.has(c.zoneId)) board.push(`${which} has ${bugsOn(c)} bugs`);
+      // A Bug costs its product $1 of revenue, and a product earns at least $0 (§5 Phase B).
+      if (operations.has(c.zoneId) && revOf(runtime, after, c) < 0) board.push(`${which} earns ${revOf(runtime, after, c)}`);
       if (!developments.has(c.zoneId)) continue;
       for (const color of ['blue', 'red']) {
         const [cut, cost] = [cubesOn(c, `cut ${color} cubes`), (c.data?.[`${color} cost`] as number | undefined) ?? 0];
@@ -1122,6 +1177,8 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     expect(board, `the Board ${at}`).toEqual([]);
     // The Diva's Ego keeps her where she works: no reassign the rules take moves her (§6, §20.B.1).
     if (REASSIGNS.includes(move.type)) expect(card!.data?.trait, `the trait of the card ${by} reassigned ${at}`).not.toBe('Ego');
+    // A project Launches only with 0 Bugs (§6).
+    if (move.type === LAUNCH) expect(bugsOn(card!), `the Bugs on the project ${by} launched ${at}`).toBe(0);
     // Modes sit only on the Board, on a card that may take them, and change only by a declaration of that card or as it leaves the
     // Board (§11.C.2, ruling 24). A mode is on only when its flag is true: "It is not red mode." may leave the flag false.
     const declared = Object.values(DECLARE).includes(move.type) ? move.cardId as string : undefined;
@@ -1242,7 +1299,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(122);
+    expect(results).toHaveLength(135);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -1275,9 +1332,19 @@ describe('Startup Simulator (designer language)', () => {
     // An offline product earns nothing and scores nothing (§12, ruling 5): its rev refines the column, its portfolio points are its val.
     expect(worked.rev).toMatchObject({ kind: 'number', refines: true });
     expect(worked['portfolio points']).toMatchObject({ kind: 'number' });
+    // QA cleans Bugs (§5 Phase D): a card's qa output by its skill or mode, a project's qa team output from the staff on it, and a
+    // product's bug mark, 1 while it is bugged, which counts the products that have Bugs (R3).
+    expect(worked['qa output']).toMatchObject({ kind: 'number' });
+    expect(worked['qa team output']).toMatchObject({ kind: 'number' });
+    expect(worked['bug mark']).toMatchObject({ kind: 'number' });
+    expect(worked.bugged).toMatchObject({ kind: 'flag' });
     // A player's supply is the bandwidth of their ops team in each color, set against the maintenance their online products demand;
-    // the load counts every product in operation, offline ones too (§5 Phase B).
-    expect(Object.keys(game!.playerValues!)).toEqual(['blue supply', 'red supply', 'blue demand', 'red demand', 'blue load', 'red load']);
+    // the load counts every product in operation, offline ones too (§5 Phase B). Their ops team's QA is set against the Bugs on
+    // every product in operation and the Bugs it has cleaned by a press this Engine, and the products that have Bugs are counted
+    // (§5 Phase D, R3).
+    expect(Object.keys(game!.playerValues!)).toEqual([
+      'blue supply', 'red supply', 'blue demand', 'red demand', 'blue load', 'red load', 'qa supply', 'bug load', 'qa spent', 'bugged products',
+    ]);
   });
 
   it('asks an example which hire it means when both rows hold the card, in words that each press one button', () => {
@@ -1986,6 +2053,65 @@ describe('Startup Simulator (designer language)', () => {
       // Some Greenlight paid a License, some chose among several answers, and some had every answer filled in.
       expect(Object.entries(seen).filter(([, times]) => times === 0), JSON.stringify(seen)).toEqual([]);
     }, 120_000);
+
+    it('Review Focus: cleans no more Bugs than its QA when one product is left with Bugs partway through the step (R3)', () => {
+      const start = setUp(2, 1);
+      const seats = seatsFor(2);
+      const S = startPlayerOf(start, seats);
+      const O = seats.find((seat) => seat !== S)!;
+      const [dating, wallet] = ['Dating App', 'Mobile Wallet'].map(idOf);
+      const testers = seats.map((seat) => zoneCards(start, `bench-${seat}`).find((card) => nameOf(card) === 'Junior QA Tester')!.id);
+      /** S's products with their Bugs, and both seats' Junior QA Testers in `testersTo`. */
+      const arranged = (testersTo: string) => {
+        let state = relocate(start, [dating, wallet], `operations-${S}`, game!);
+        state = changeCard(state, dating, { bugs: 1 }, game!);
+        state = changeCard(state, wallet, { bugs: 2 }, game!);
+        return createEngine(game!, lib, 2, relocate(state, testers, testersTo, game!)).engine;
+      };
+      const bugs = (engine: GameEngine, id: string, kind = 'bugs') => cubesOn(cardById(engine.getState(), id)!, kind);
+      const keeps = () => keepsTheRules(seats, new LangRuntime(game!, lib, seats));
+
+      // Two QA for three Bugs on two products: the Engine waits for S to say which Bugs go.
+      const engine = arranged(`ops-team-${S}`);
+      const rules = keeps();
+      play(engine, { type: END_ACTIONS, by: S }, rules);
+      expect(engine.getState().turn).toMatchObject({ current: S, phase: 'engine' });
+      // Now one product alone has Bugs, no more than the whole QA, but only as the step starts do the rules clean Bugs on their own:
+      // here that would clean 2 Bugs with 1 QA left.
+      play(engine, { type: CLEAN, by: S, cardId: dating }, rules);
+      expect(engine.getState().turn).toMatchObject({ current: S, phase: 'engine' });
+      expect(bugs(engine, wallet)).toBe(2);
+      expect(bugs(engine, dating, 'fixed bugs')).toBe(1);
+      // The second press spends the QA, and the step ends.
+      play(engine, { type: CLEAN, by: S, cardId: wallet }, rules);
+      expect(engine.getState().turn?.current).toBe(O);
+      expect(bugs(engine, wallet)).toBe(1);
+      expect(engine.getState().cards.filter((card) => cubesOn(card, 'fixed bugs') !== 0)).toEqual([]);
+
+      // With no QA in the ops team and Bugs on two products, the Engine goes straight on.
+      const benched = arranged(`bench-${S}`);
+      play(benched, { type: END_ACTIONS, by: S }, keeps());
+      expect(benched.getState().turn?.current).toBe(O);
+      expect([bugs(benched, dating), bugs(benched, wallet)]).toEqual([1, 2]);
+    });
+
+    it('cleans the Bug the auto-player picks when ops QA can’t clean them all, through the page’s view and without it (R3)', () => {
+      const [dating, gateway, fixer] = ['Dating App', 'Payment Gateway', 'Fixer'].map(idOf);
+      let state = arrange({ 'operations-p0': [dating, gateway], 'ops-team-p0': [fixer] }).getState();
+      state = changeCard(state, dating, { bugs: 1, offline: true }, game!);
+      state = changeCard(state, gateway, { bugs: 1 }, game!);
+      state = setCounter(changeCard(state, fixer, { 'qa mode': true }, game!), 'actions', 'p0', 1);
+      // The Fixer in QA mode cleans 1 of the 2 Bugs: on turn t the seat cleans the product at t % 2 among the two with Bugs.
+      for (const [t, cleaned] of [[0, dating], [1, gateway]] as const) {
+        const logs = [false, true].map((throughView) => {
+          const { engine, runtime } = createEngine(game!, lib, 2, state);
+          playTurn(engine, t, 'researches', () => {}, (log) => log.some((move) => move.type === CLEAN), runtime, throughView);
+          return engine.getLog();
+        });
+        expect(logs[0].at(-1), `turn ${t}`).toEqual({ type: CLEAN, by: 'p0', cardId: cleaned });
+        expect(logs[1], `turn ${t}`).toEqual(logs[0]);
+      }
+    });
   });
 });
 

@@ -107,6 +107,7 @@ Cards:
   Cards can be offline.
   Cards can have blue cubes, red cubes, new blue cubes and new red cubes.
   Cards can have cut blue cubes and cut red cubes.
+  Cards can have bugs and fixed bugs.
 
 Table:
   The talent deck is a pile in the center that no one can see.
@@ -140,6 +141,11 @@ Red output:
   A qa mode card's red output is 0.
   An onboarding card's red output is 0.
 
+QA output:
+  A qa card's qa output is its output.
+  A qa mode card's qa output is 1.
+  An onboarding card's qa output is 0.
+
 Blue team output:
   A card's blue team output is the total blue output of the cards on it.
   A stalled card's blue team output is 0.
@@ -147,6 +153,10 @@ Blue team output:
 Red team output:
   A card's red team output is the total red output of the cards on it.
   A stalled card's red team output is 0.
+
+QA team output:
+  A card's qa team output is the total qa output of the cards on it.
+  A stalled card's qa team output is 0.
 
 Blue bandwidth:
   A card's blue bandwidth is its blue output.
@@ -209,11 +219,19 @@ Declarable:
     It is a QA Skill card.
 
 Rev:
+  A card's rev goes down by its bugs.
+  A card's rev is at least 0.
   An offline card's rev is 0.
 
 Portfolio points:
   A card's portfolio points is its val.
   An offline card's portfolio points is 0.
+
+Bugged:
+  Only if its bugs are more than 0.
+
+Bug mark:
+  A bugged card's bug mark is 1.
 
 Feature complete:
   Only if its blue cubes are at least its blue need.
@@ -236,6 +254,18 @@ Blue load:
 
 Red load:
   A player's red load is the total red maint of the cards in their operations.
+
+QA supply:
+  A player's qa supply is the total qa output of the cards in their ops team.
+
+Bug load:
+  A player's bug load is the total bugs of the cards in their operations.
+
+QA spent:
+  A player's qa spent is the total fixed bugs of the cards in their operations.
+
+Bugged products:
+  A player's bugged products is the total bug mark of the cards in their operations.
 
 Setup:
   Shuffle the talent deck.
@@ -276,6 +306,8 @@ In every phase:
     It is not red mode.
   When a card in the open job market is qa mode:
     It is not qa mode.
+  When a Spaghetti Code card joins a card in a development:
+    The card it joins gains 1 bug.
 
 Phase: modes
   Hint: Choose what each flex Senior and the Fixer work on this turn: Blue or Red, or Bugs for the Fixer. Each keeps its mode until you change it.
@@ -515,6 +547,7 @@ Phase: actions
     It costs 1 action.
     Only if it is feature complete.
     Only if it is fully led.
+    Only if its bugs are 0.
     Then:
       Every card on it goes to their ops team.
   A player may pivot a card in their development.
@@ -527,6 +560,7 @@ Phase: actions
       It loses its red cubes.
       It loses its cut blue cubes.
       It loses its cut red cubes.
+      It loses its bugs.
       Move it to the open idea pool.
   A player may lay off some cards from their bench to the open job market.
     It costs 1 action.
@@ -574,9 +608,27 @@ Phase: sourcing
     Go back to the interrupted turn.
 
 Phase: engine
+  Hint: Your ops team's QA can't fix every Bug on your products. Clean one Bug at a time from the products you choose.
   When this phase starts:
     For each card in their development, its new blue cubes go up by its blue team output.
     For each card in their development, its new red cubes go up by its red team output.
+    For each card in their development, its bugs go down by its qa team output.
+  A player may clean a card in their operations.
+    Only if its bugs are more than 0.
+    Only if their qa supply is more than their qa spent.
+    Then:
+      It loses 1 bug.
+      It gains 1 fixed bug.
+  When their qa supply is at least their bug load:
+    Only if their qa spent is 0.
+    For each card in their operations, it loses its bugs.
+    Go to commit.
+  When their bugged products is 1:
+    Only if their qa spent is 0.
+    The cards in their operations lose bugs between them, up to their qa supply, first card first.
+    Go to commit.
+  When their qa spent is at least their qa supply:
+    For each card in their operations, it loses its fixed bugs.
     Go to commit.
 
 Phase: commit
@@ -2030,3 +2082,154 @@ Example: the ops check comes after the declaration, so a flex Senior declared Bl
   And p1 confirms the products online
   Then the phase is income
   And p1 has 7 capital
+
+Example: the Hacker adds a Bug to a project when assigned to it, and another to the project he is reassigned to, though onboarding (section 20, section 6, ruling 25)
+  Given the phase is actions
+  And p0's development has a Dating App and a To-Do List
+  And p0's bench has the Hacker
+  When p0 assigns the Hacker to the Dating App
+  Then it is accepted
+  And the Dating App in p0's development has 1 bug
+  When p0 reassigns the Hacker to the To-Do List
+  Then it is accepted
+  And the To-Do List in p0's development has 1 bug
+  And the Dating App in p0's development has 1 bug
+  And the Hacker in p0's development team is onboarding
+
+Example: the Hacker hired from the agency row straight onto a project adds a Bug to it (section 20, section 13)
+  Given the phase is actions
+  And the agency row has the Hacker, the Architect, the Veteran and the Diva
+  And p0's development has a Dating App
+  When p0 hires the Hacker to the Dating App
+  Then it is accepted
+  And p0 has 1 capital
+  And the Dating App in p0's development has 1 bug
+
+Example: the Hacker in the ops team adds no Bug to any product (section 20)
+  Given the phase is actions
+  And p0's operations has a To-Do List
+  And p0's bench has the Hacker
+  When p0 assigns the Hacker to p0's ops team
+  Then it is accepted
+  And the To-Do List in p0's operations has 0 bugs
+
+Example: each Bug costs its product $1 of revenue, never below $0, and a product earning $0 gives no market share (section 5, section 9)
+  Given p1's operations has a Mobile Wallet and a Dating App
+  And the Mobile Wallet in p1's operations has 3 bugs
+  And p1's ops team has a Junior Software Dev and a Junior Software Dev
+  And the turn passes to the left
+  Then it is p1's turn
+  And the phase is actions
+  And p1 has 8 capital
+  And p1 has 1 market share
+
+Example: a project with a Bug can't Launch (section 6)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And the Dating App in p0's development has 6 blue cubes
+  And the Dating App in p0's development has 1 bug
+  When p0 launches the Dating App
+  Then it is rejected because "its bugs are 0"
+  And p0 has 3 actions
+
+Example: a pivot scraps the project's Bugs with it (section 6, this slice's call)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And the Dating App in p0's development has 2 bugs
+  When p0 pivots the Dating App
+  Then it is accepted
+  And the Dating App in the open idea pool has 0 bugs
+
+Example: a Junior QA Tester removes a Bug from its own project at the Engine, but not from a Stalled one (section 5, section 3, ruling 14)
+  Given the phase is actions
+  And p0's development has a Dating App and a Neobank
+  And the Dating App in p0's development has 2 bugs
+  And the Dating App in p0's development has a Junior QA Tester on it
+  And the Neobank in p0's development has 2 bugs
+  And the Neobank in p0's development has a Junior QA Tester on it
+  When p0 ends their actions
+  Then it is p1's turn
+  And the Dating App in p0's development has 1 bug
+  And the Neobank in p0's development has 2 bugs
+  And the Neobank in p0's development is stalled
+
+Example: the Fixer in QA mode still leads a Tier 2 Hardware project, so it isn't Stalled; it removes 1 Bug and adds no Red (section 20, section 3, ruling 4)
+  Given p0's development has a Server Farm
+  And the Server Farm in p0's development has 2 bugs
+  And the Server Farm in p0's development has the Fixer and a Junior Hardware Eng on it
+  Then the phase is modes
+  When p0 declares the Fixer, choosing qa
+  And p0 confirms their modes
+  Then the phase is income
+  And the Server Farm in p0's development is not stalled
+  When p0 pays salaries
+  And p0 ends their actions
+  Then the Server Farm in p0's development has 1 bug
+  And the Server Farm in p0's development has 1 red cube
+
+Example: a Junior QA Tester in the ops team removes a Bug from a product at the Engine (section 5, ruling 19)
+  Given the phase is actions
+  And p0's operations has a Dating App
+  And the Dating App in p0's operations has 2 bugs
+  And p0's ops team has a Junior QA Tester
+  When p0 ends their actions
+  Then it is p1's turn
+  And the Dating App in p0's operations has 1 bug
+
+Example: ops QA cleans an offline product too (section 5, ruling 19)
+  Given the phase is actions
+  And p0's operations has a Dating App and a Mobile Wallet
+  And the Dating App in p0's operations is offline
+  And the Dating App in p0's operations has 1 bug
+  And the Mobile Wallet in p0's operations has 1 bug
+  And p0's ops team has a Junior QA Tester and a Junior QA Tester
+  When p0 ends their actions
+  Then it is p1's turn
+  And the Dating App in p0's operations has 0 bugs
+  And the Mobile Wallet in p0's operations has 0 bugs
+
+Example: when ops QA can't clean every Bug, the owner picks which, one Bug a press, here the online product's before the offline one's (section 5, ruling 25)
+  Given the phase is actions
+  And p0's operations has a Dating App and a Payment Gateway
+  And the Dating App in p0's operations is offline
+  And the Dating App in p0's operations has 1 bug
+  And the Payment Gateway in p0's operations has 1 bug
+  And p0's ops team has a Junior QA Tester
+  When p0 ends their actions
+  Then the phase is engine
+  And it is p0's turn
+  When p0 cleans the Payment Gateway
+  Then it is accepted
+  And it is p1's turn
+  And the Payment Gateway in p0's operations has 0 bugs
+  And the Payment Gateway in p0's operations has 0 fixed bugs
+  And the Dating App in p0's operations has 1 bug
+
+Example: a Junior QA Tester reassigned onto a project is onboarding, so it removes no Bug at that turn's Engine (section 6, ruling 8)
+  Given the phase is actions
+  And p0's development has a Dating App and a To-Do List
+  And the Dating App in p0's development has 1 bug
+  And the To-Do List in p0's development has a Junior QA Tester on it
+  When p0 reassigns the Junior QA Tester to the Dating App
+  Then it is accepted
+  And the Junior QA Tester in p0's development team is onboarding
+  When p0 ends their actions
+  Then it is p1's turn
+  And the Dating App in p0's development has 1 bug
+
+Example: while ops QA waits on the owner, a press on a product with no Bug is refused, and the Engine waits on until a press cleans a Bug (section 5, ruling 25)
+  Given the phase is actions
+  And p0's operations has a Dating App, a Mobile Wallet and a To-Do List
+  And the Dating App in p0's operations has 1 bug
+  And the Mobile Wallet in p0's operations has 1 bug
+  And p0's ops team has a Junior QA Tester
+  When p0 ends their actions
+  Then the phase is engine
+  When p0 cleans the To-Do List
+  Then it is rejected because "its bugs are more than 0"
+  And the phase is engine
+  When p0 cleans the Mobile Wallet
+  Then it is accepted
+  And it is p1's turn
+  And the Mobile Wallet in p0's operations has 0 bugs
+  And the Dating App in p0's operations has 1 bug
