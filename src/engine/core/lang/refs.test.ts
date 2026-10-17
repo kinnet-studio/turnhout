@@ -8,6 +8,7 @@ import { createDefaultLibrary } from './library/index';
 import { PhraseLibrary, STATIC_TYPES, emptyVocab, stubFor, vocabFrom } from './phrases';
 import { FIXTURE_SPACES, fixtureBoardGame } from './testing';
 import { GUILD_GAME, vocabFor } from './testing';
+import { RESTING_GAME } from './testing';
 import type { Vocab } from './types';
 
 const V: Vocab = {
@@ -51,7 +52,7 @@ describe('vocabulary types', () => {
       ['action', '[action]'], ['targetaction', '[action]'], ['amountaction', '[action]'], ['pickaction', '[action]'], ['cardaction', '[action]'], ['done', '[action done]'],
       ['spacekind', '[kind of space]'], ['spaceflag', '[space fact]'], ['spacenumber', '[space fact]'], ['cardflag', '[card fact]'],
       ['playerflag', '[player fact]'], ['playernumber', '[player fact]'], ['gamenumber', '[game number]'], ['banked', '[bank item]'],
-      ['holder', '[the player who is …]'], ['cardgroup', '[cards]'], ['cardfilter', '[test]'], ['playervalue', '[player value]'],
+      ['holder', '[the player who is …]'], ['cardgroup', '[cards]'], ['cardfilter', '[test]'], ['playervalue', '[player value]'], ['cardclause', '[that is …]'],
     ]);
     const order = Object.fromEntries(VOCAB_TYPES.filter((t) => t.stubOrder !== undefined).map((t) => [t.name, t.stubOrder]));
     // A stub never turns words into a space: a name like "Go To Jail" would swallow the words of an ordinary sentence.
@@ -1089,5 +1090,58 @@ describe('a clause about one player said of “they”', () => {
   it('gives back the e of a verb that ends in one, and leaves the others whole', () => {
     const verbs = ['uses', 'passes', 'goes', 'pays', 'loses', 'chooses', 'sizes', 'buzzes', 'waltzes', 'fixes', 'catches', 'washes', 'makes'];
     expect(verbs.map(theyForm)).toEqual(['use', 'pass', 'go', 'pay', 'lose', 'choose', 'size', 'buzz', 'waltz', 'fix', 'catch', 'wash', 'make']);
+  });
+});
+
+describe('a group of cards that are or are not so', () => {
+  // The words of a game whose jobs can be resting and whose hands can be tired.
+  const RESTING = vocabFor(compileGame(RESTING_GAME, createDefaultLibrary()).game!);
+  const their = (zone: string) => ({ of: { who: 'actor' }, zone });
+
+  it('reads the cards in a zone that are not so', () => {
+    expect(parseParam('cardgroup', 'the cards in their workshop that are not resting', RESTING)).toEqual({
+      value: { kind: 'in', zones: [their('workshop')], whose: [{ flag: 'resting', wanted: false }] },
+    });
+  });
+  it('reads the cards on it that are so', () => {
+    expect(parseParam('cardgroup', 'the cards on it that are tired', RESTING)).toEqual({ value: { kind: 'on it', whose: [{ flag: 'tired', wanted: true }] } });
+  });
+  it('keeps the flag test first, then the test after “and whose”', () => {
+    expect(parseParam('cardgroup', 'the picked cards that are not tired and whose skill is more than 1', RESTING)).toEqual({
+      value: { kind: 'picked', whose: [{ flag: 'tired', wanted: false }, { attribute: 'skill', above: 1 }] },
+    });
+  });
+  it('(guard: passes before and after) keeps a group with a test after “whose” alone as it was', () => {
+    expect(parseParam('cardgroup', 'the cards on it whose skill is more than 1', RESTING)).toEqual({
+      value: { kind: 'on it', whose: [{ attribute: 'skill', above: 1 }] },
+    });
+  });
+  it('names a misnamed flag as the flag type does', () => {
+    expect(misnamedParam('cardgroup', 'the cards in their workshop that are restng', RESTING)).toMatchObject({
+      message: 'There is no card fact called “restng”.', suggestions: ['resting'],
+    });
+    expect(misnamedParam('cardgroup', 'the cards on it that are not restng', RESTING)).toEqual(misnamedParam('cardflag', 'restng', RESTING));
+    expect(misnamedParam('cardgroup', 'the cards in their workshop that are resting and whose skil is more than 1', RESTING))
+      .toEqual(misnamedParam('attribute', 'skil', RESTING));
+  });
+});
+
+describe('what a card is said to be, with “that is”', () => {
+  const RESTING = vocabFor(compileGame(RESTING_GAME, createDefaultLibrary()).game!);
+  const clause = (text: string) => parseParam('cardclause', text, RESTING);
+
+  it('reads the flag test first, then the test after “and whose”', () => {
+    expect(clause("that is not resting and whose pay is the card's pay")).toEqual({
+      value: [{ flag: 'resting', wanted: false }, { attribute: 'pay', sameAs: { of: 'the card', attribute: 'pay' } }],
+    });
+  });
+  it('reads a flag test alone', () => {
+    expect(clause('that is tired')).toEqual({ value: [{ flag: 'tired', wanted: true }] });
+  });
+  it('names a misnamed flag or test as its own type does', () => {
+    expect(clause('that is restng')).toBeNull();
+    expect(misnamedParam('cardclause', 'that is not restng', RESTING)).toEqual(misnamedParam('cardflag', 'restng', RESTING));
+    expect(misnamedParam('cardclause', 'that is resting and whose pya is 1', RESTING)).toEqual(misnamedParam('attribute', 'pya', RESTING));
+    expect(misnamedParam('cardclause', 'that is resting and whose pay is 1', RESTING)).toBeNull();
   });
 });

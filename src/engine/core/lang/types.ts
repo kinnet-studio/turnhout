@@ -14,15 +14,18 @@ export type ZoneRef = { shared: string } | { each: string } | { of: SeatRef; zon
 export type CardMatch = { [attr: string]: Json };
 /**
  * One test a card of a group passes: a number above a whole number, a value equal to one written, or equal to a value of the card
- * a rule is about ('the card' a press moves, or 'it'). A card without the value never passes an equality.
+ * a rule is about ('the card' a press moves, or 'it'). A card without the value never passes an equality. Or a flag the card is
+ * (`wanted`) or is not, read as every phrase reads a flag on a card.
  */
 export type CardFilter =
   | { attribute: string; above: number }
   | { attribute: string; is: Json }
-  | { attribute: string; sameAs: { of: 'the card' | 'it'; attribute: string } };
+  | { attribute: string; sameAs: { of: 'the card' | 'it'; attribute: string } }
+  | { flag: string; wanted: boolean };
 /**
  * Some cards a rule adds up or walks through: those in the zones, slot by slot; those on “it”, the card the rule is about; or the set a
- * button's press picked. Of any of them, only the cards that pass every test of `whose`, when there are some.
+ * button's press picked. Of any of them, only the cards that pass every test of `whose`, when there are some: a group written “that
+ * are (not) …” has its flag test first, before the test written after “and whose”.
  */
 export type CardGroup =
   | { kind: 'in'; zones: ZoneRef[]; whose?: CardFilter[] }

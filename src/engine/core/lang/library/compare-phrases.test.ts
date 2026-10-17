@@ -5,6 +5,8 @@ import { markOut } from '../board-state';
 import { createEngine, initialState } from '../build';
 import { compileGame } from '../compile';
 import { GUILD_GAME, runPhrase } from '../testing';
+import { RESTING_GAME } from '../testing';
+import { changeCard } from '../card-facts';
 import type { CompiledGame } from '../types';
 import { HOLDER_KEY, relocate } from '../zones';
 import { createDefaultLibrary } from './index';
@@ -132,5 +134,29 @@ describe('finishing a job', () => {
     expect(zoneCards(state, 'scrap').map((card) => card.id)).toEqual([smith, vase]);
     expect(cardById(state, potter)?.zoneId).toBe('hall');
     expect(state.cards.filter((card) => card.data !== undefined && Object.hasOwn(card.data, HOLDER_KEY))).toEqual([]);
+  });
+});
+
+describe('a card of theirs that is or is not so, compared with the card a press moves', () => {
+  const resting = compiled(RESTING_GAME);
+  // Setup deals 2 jobs to each stash, more than the pile holds for three: a state with p0's turn set skips it.
+  const built = createEngine(resting, lib, 3, { ...initialState(resting, 1), turn: { current: 'p0', phase: 'working' } });
+  const start = built.engine.getState();
+  const [working, started] = start.cards.filter((card) => card.data?.name === 'Vase').map((card) => card.id);
+  /** A Vase (pay 1) in p0's workshop, and the other in p0's stash for p0 to start. */
+  const placed = relocate(relocate(start, [working], 'workshop-p0', resting), [started], 'stash-p0', resting);
+  const HAVE_CLAUSE = "they have a card in their workshop that is not resting and whose pay is the card's pay";
+  const HAVE_NO_CLAUSE = "they have no card in their workshop that is not resting and whose pay is the card's pay";
+  /** A condition judged about p0 for their press of the Vase in their stash. */
+  const judged = (text: string, state: GameState) => runPhrase<boolean>(lib, 'condition', text, built.runtime.env(
+    state, { verb: 'start', by: 'p0', cardId: started, from: 'stash-p0', to: 'stash-p0' }, undefined, { player: 'p0', space: null, card: started },
+  ));
+
+  it('finds a card that is not so and whose pay is the pay of the card pressed', () => {
+    expect([judged(HAVE_CLAUSE, placed), judged(HAVE_NO_CLAUSE, placed)]).toEqual([true, false]);
+  });
+  it('finds none once that card is so', () => {
+    const rested = changeCard(placed, working, { resting: true }, resting);
+    expect([judged(HAVE_CLAUSE, rested), judged(HAVE_NO_CLAUSE, rested)]).toEqual([false, true]);
   });
 });

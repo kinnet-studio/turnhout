@@ -11,11 +11,19 @@ import { cardOf, cardsInZones, cardValueOf, movedCard, passes, soleZone, theyOf 
 // ---- a card of theirs, or of anyone's ----------------------------------------------------------
 
 /**
- * Their zones are those of the player the line is about, whoever makes the move: a choice judged about each player who might be picked
- * reads that player's zones, with the card of the press still the one moved.
+ * Whether they have a card in the zones that passes every test. Their zones are those of the player the line is about, whoever makes the
+ * move: a choice judged about each player who might be picked reads that player's zones, with the card of the press still the one moved.
  */
+const theyHave = (env: PhraseEnv, zones: ZoneRef[], filters: CardFilter[]): boolean =>
+  zones.some((ref) => cardsInZones(env, ref, theyOf(env)).some((card) => passes(env, card, filters)));
+
+/** A card that passes the test written after “whose”. */
 const theyHaveACard = (wanted: boolean): ConditionFn => (env, [zones, filter]) =>
-  (zones as ZoneRef[]).some((ref) => cardsInZones(env, ref, theyOf(env)).some((card) => passes(env, card, [filter as CardFilter]))) === wanted;
+  theyHave(env, zones as ZoneRef[], [filter as CardFilter]) === wanted;
+
+/** A card that is, or is not, so, and passes the test written after “and whose” when there is one: the tests of the clause. */
+const theyHaveACardThatIs = (wanted: boolean): ConditionFn => (env, [zones, clause]) =>
+  theyHave(env, zones as ZoneRef[], clause as CardFilter[]) === wanted;
 
 /** Whether a card in that zone of the seat's passes the test. */
 const seatHasACard = (env: PhraseEnv, seat: PlayerId, zone: string, filter: CardFilter): boolean =>
@@ -50,13 +58,16 @@ const everyCardOnItWhoseGoesTo: EffectFn = (env, [filter, zone]) => {
 
 /**
  * The sentences that compare cards by a test (see `passes`): whether they, some player, or another player has a card that passes it in a
- * zone, whether the card a press moves, or “it”, has no value under a name, and moving the cards on it that pass. A test that compares with
- * “the card's” value needs a card move and one that compares with “its” needs a card; the compiler asks that of the test itself.
+ * zone, and whether they have one that is, or is not, so (maybe passing a test as well); whether the card a press moves, or “it”, has no
+ * value under a name; and moving the cards on it that pass. A test that compares with “the card's” value needs a card move and one that
+ * compares with “its” needs a card; the compiler asks that of the test itself, in a clause as well.
  */
 export function registerComparePhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
     .condition('they have a card in {zones} whose {cardfilter}', theyHaveACard(true), { needsPlayer: true })
     .condition('they have no card in {zones} whose {cardfilter}', theyHaveACard(false), { needsPlayer: true })
+    .condition('they have a card in {zones} {cardclause}', theyHaveACardThatIs(true), { needsPlayer: true })
+    .condition('they have no card in {zones} {cardclause}', theyHaveACardThatIs(false), { needsPlayer: true })
     .condition('some player has a card in their {perzone} whose {cardfilter}', somePlayerHasACard)
     .condition('another player has a card in their {perzone} whose {cardfilter}', anotherPlayerHasACard, { needsPlayer: true })
     .condition('the card has no {attribute}', theCardHasNo, { needsMove: true })

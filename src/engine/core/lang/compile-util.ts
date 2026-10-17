@@ -192,13 +192,16 @@ const NO_CARD_ARGS: CardArgs = { groups: [], filters: [] };
 const withTheirTests = (groups: CardGroup[], filters: CardFilter[] = []): CardArgs =>
   ({ groups, filters: [...filters, ...groups.flatMap((group) => group.whose ?? [])] });
 
-/** The groups and tests of cards among a phrase's arguments: those its pattern reads as `{cardgroup}` and `{cardfilter}`. */
+/**
+ * The groups and tests of cards among a phrase's arguments: those its pattern reads as `{cardgroup}` and `{cardfilter}`, and the tests of
+ * each `{cardclause}`, one by one, as if each were written alone.
+ */
 function cardArgsOf(pattern: string, args: Json[]): CardArgs {
-  // Asked of every line read and of every press judged, so the many phrases without either skip the reading of their parameters.
-  if (!pattern.includes('{cardgroup}') && !pattern.includes('{cardfilter}')) return NO_CARD_ARGS;
+  // Asked of every line read and of every press judged, so the many phrases without any skip the reading of their parameters.
+  if (!pattern.includes('{cardgroup}') && !pattern.includes('{cardfilter}') && !pattern.includes('{cardclause}')) return NO_CARD_ARGS;
   const types = [...pattern.matchAll(PARAM)].map((found) => found[1]);
   const ofType = <T>(type: string) => args.filter((_, at) => types[at] === type) as T[];
-  return withTheirTests(ofType<CardGroup>('cardgroup'), ofType<CardFilter>('cardfilter'));
+  return withTheirTests(ofType<CardGroup>('cardgroup'), [...ofType<CardFilter>('cardfilter'), ...ofType<CardFilter[]>('cardclause').flat()]);
 }
 
 /** Whether a test compares a card with the card a press moves (“the card's”) or with the card the rule is about (“its”). */

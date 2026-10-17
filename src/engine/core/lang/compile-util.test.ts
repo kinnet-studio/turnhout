@@ -9,6 +9,7 @@ import { compileGame } from './compile';
 import { createDefaultLibrary } from './library/index';
 import { TOTALS_GAME, vocabFor } from './testing';
 import { GUILD_GAME } from './testing';
+import { RESTING_GAME } from './testing';
 
 const library = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
   .cards('a deck called {name}', () => ({ kind: 'table', identities: [], start: 'deck', acesHigh: false }))
@@ -341,5 +342,29 @@ describe('a test of a card that compares it with another', () => {
     expect(readsCard('the total red size of the cards in their workshop whose mark is the card\'s wants is 4')).toBe(true);
     expect(readsCard('the total red size of the cards in their workshop whose mark is clay is 4')).toBe(false);
     expect(press.diagnostics).toEqual([]);
+  });
+});
+
+describe('a clause that says what a card is, with a test that compares it with another', () => {
+  const CLAUSE = "they have a card in their workshop that is not resting and whose pay is the card's pay";
+  const lineOf = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+  /** RESTING_GAME with `Only if {line}.` as the first line of the button `button`. */
+  const guarded = (button: string, line: string) => RESTING_GAME.replace(`  ${button}\n`, `  ${button}\n    Only if ${line}.\n`);
+  /** The `Only if` lines of the button that starts a card from the stash, with `line` first among them. */
+  const startGuardedBy = (line: string) => {
+    const { game, diagnostics } = compileGame(guarded('A player may start a card in their stash.', line), defaultLibrary);
+    expect(diagnostics).toEqual([]);
+    return game!.phases[0].actions.find((action) => action.words === 'start a card in their stash')!.conditions[0];
+  };
+
+  it('needs a card move for the card it is compared with, on its line', () => {
+    const text = guarded('A player may stop.', CLAUSE);
+    expect(compileGame(text, defaultLibrary).diagnostics.map((d) => [d.line, d.message])).toEqual([
+      [lineOf(text, `    Only if ${CLAUSE}.`), `“${CLAUSE}” only makes sense in a rule about a player's move.`],
+    ]);
+  });
+  it('counts as reading the card of a press when it compares with one, and not when it compares with a value', () => {
+    expect(readsPressCard(defaultLibrary, startGuardedBy(CLAUSE))).toBe(true);
+    expect(readsPressCard(defaultLibrary, startGuardedBy('they have a card in their workshop that is not resting and whose pay is 1'))).toBe(false);
   });
 });

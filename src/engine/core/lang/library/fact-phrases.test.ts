@@ -12,6 +12,10 @@ import {
 } from '../testing';
 import type { CompiledGame, FactSpec, Moment, MoveInfo, SpaceSpec, Subject } from '../types';
 import { createDefaultLibrary } from './index';
+import { putOn } from '../attach';
+import { createEngine, initialState } from '../build';
+import { RESTING_GAME, WORKED_GAME } from '../testing';
+import { relocate } from '../zones';
 
 const lib = createDefaultLibrary();
 
@@ -1282,5 +1286,124 @@ describe('every space with a flag, and whether some space has it', () => {
   it('needs a player and a board to give spaces, and a board to judge them', () => {
     expect(lib.get('effect', 'they own every space that is {spaceflag}')).toMatchObject({ needsPlayer: true, needsBoard: true });
     expect(lib.get('condition', 'some space is {spaceflag}')).toMatchObject({ needsBoard: true });
+  });
+});
+
+describe('cards in a zone that are so', () => {
+  /** Compiles rules that must have no problems at all. */
+  const compiled = (text: string): CompiledGame => {
+    const { game, diagnostics } = compileGame(text, lib);
+    expect(diagnostics).toEqual([]);
+    return game!;
+  };
+  /**
+   * `game` for three, with p0's turn set (Setup deals more jobs than the pile holds for three) and a Vase then a Statue in p0's workshop;
+   * `arrange` has the last say, told the cards of each name.
+   */
+  const playing = (game: CompiledGame, arrange: (state: GameState, named: (name: string) => string[]) => GameState = (state) => state) => {
+    const start = createEngine(game, lib, 3, { ...initialState(game, 1), turn: { current: 'p0', phase: 'working' } }).engine.getState();
+    const named = (name: string) => start.cards.filter((card) => card.data?.name === name).map((card) => card.id);
+    const table = arrange(relocate(start, [named('Vase')[0], named('Statue')[0]], 'workshop-p0', game), named);
+    const { engine, runtime } = createEngine(game, lib, 3, table);
+    const [vase, statue] = [named('Vase')[0], named('Statue')[0]];
+    return { engine, runtime, table, named, vase, statue };
+  };
+  const hasKey = (state: GameState, id: string, key: string) => Object.hasOwn(state.cards.find((card) => card.id === id)!.data ?? {}, key);
+
+  const resting = compiled(RESTING_GAME);
+  const { runtime, table, vase, statue, named } = playing(resting);
+  const aboutP0 = (state: GameState) => runtime.env(state, undefined, undefined, { player: 'p0', space: null, card: null });
+  const restingStatue = changeCard(table, statue, { resting: true }, resting);
+  const load = (state: GameState) => runtime.playerValue(state, 'p0', 'red load');
+
+  describe('the load', () => {
+    it('adds up the red need of only the jobs in their workshop that are not resting', () => {
+      expect(load(table)).toBe(3);
+      expect(load(restingStatue)).toBe(2);
+    });
+    it('Review Focus: counts a job set to not resting as one never set', () => {
+      expect(load(changeCard(table, statue, { resting: false }, resting))).toBe(3);
+    });
+  });
+
+  describe('some and no', () => {
+    const holds = (text: string, state: GameState) => runPhrase<boolean>(lib, 'condition', text, aboutP0(state));
+
+    it('adds up the cards of a group that are so', () => {
+      expect(holds('the total red need of the cards in their workshop that are resting is 1', restingStatue)).toBe(true);
+      expect(holds('the total red need of the cards in their workshop that are resting is 0', table)).toBe(true);
+    });
+    it('says whether some card in a zone is so, and whether none is', () => {
+      const some = 'some card in their workshop is resting';
+      const none = 'no card in their workshop is resting';
+      expect([holds(some, table), holds(none, table)]).toEqual([false, true]);
+      expect([holds(some, restingStatue), holds(none, restingStatue)]).toEqual([true, false]);
+    });
+  });
+
+  describe('clearing', () => {
+    it('takes the flag off every card in the zone that has it, set or set to no', () => {
+      const [, other] = named('Statue');
+      let state = changeCard(changeCard(table, vase, { resting: true }, resting), statue, { resting: false }, resting);
+      state = changeCard(relocate(state, [other], 'workshop-p1', resting), other, { resting: true }, resting);
+      const cleared = runPhrase<GameState>(lib, 'effect', 'every card in their workshop is not resting', aboutP0(state));
+      expect([hasKey(cleared, vase, 'resting'), hasKey(cleared, statue, 'resting')]).toEqual([false, false]);
+      // p1's workshop is not theirs.
+      expect(cardFact(cleared.cards.find((card) => card.id === other)!, 'resting')).toBe(true);
+    });
+  });
+
+  describe('Review Focus: a worked flag', () => {
+    it('reads a flag worked out from its lines in a group', () => {
+      const worked = compiled(WORKED_GAME);
+      const { runtime: workedRuntime, table: workedTable, vase: workedVase } = playing(worked);
+      const total = (n: number, state: GameState) => runPhrase<boolean>(lib, 'condition', `the total pay of the cards in their workshop that are done is ${n}`,
+        workedRuntime.env(state, undefined, undefined, { player: 'p0', space: null, card: null }));
+      // Done's lines: the Vase has the 2 red done its red need asks for, and no gold need; the Statue has none of its own.
+      expect(total(1, changeCard(workedTable, workedVase, { 'red done': 2 }, worked))).toBe(true);
+      expect(total(0, workedTable)).toBe(true);
+    });
+    it('refuses a rule that would take a worked flag off the cards in a zone, on its line', () => {
+      const LINE = '      Every card in their workshop is not done.';
+      const text = WORKED_GAME.replace('      Their moves go back to 0.', `      Their moves go back to 0.\n${LINE}`);
+      expect(compileGame(text, lib).diagnostics.map((d) => [d.line, d.message])).toEqual([
+        [text.split('\n').indexOf(LINE) + 1, '“done” is worked out from its lines, so no rule can change it.'],
+      ]);
+    });
+  });
+
+  describe('the card rule', () => {
+    const RULES = RESTING_GAME.replace('Phase: working', [
+      'In every phase:', '  When a card in an idle is tired:', '    It is not tired.', '  When a card in the hall is tired:', '    It is not tired.', '',
+      'Phase: working',
+    ].join('\n'));
+    const rules = compiled(RULES);
+
+    it('rests each hand that comes to their idle tired, and leaves a tired hand in their crew tired', () => {
+      const { engine, vase: job, named: of } = playing(rules, (state, names) => {
+        const [potter, second] = names('Potter');
+        const crewed = putOn(putOn(state, [potter, names('Smith')[0]], 'crew-p0', names('Vase')[0], rules), [second], 'crew-p0', names('Statue')[0], rules);
+        return changeCard(crewed, second, { tired: true }, rules);
+      });
+      const [potter, second] = of('Potter');
+      const [smith] = of('Smith');
+      expect(engine.dispatch({ type: 'finish a card in their workshop', by: 'p0', cardId: job })).toMatchObject({ ok: true });
+      const state = engine.getState();
+      expect(zoneCards(state, 'idle-p0').map((card) => card.id)).toEqual([potter, smith]);
+      expect(zoneCards(state, 'idle-p0').filter((card) => Object.hasOwn(card.data ?? {}, 'tired'))).toEqual([]);
+      expect(zoneCards(state, 'crew-p0').map((card) => [card.id, cardFact(card, 'tired')])).toEqual([[second, true]]);
+    });
+    it('rests a hand in the hall that is tired as the game starts', () => {
+      const { engine, named: of } = playing(rules, (state, names) => changeCard(state, names('Potter')[0], { tired: true }, rules));
+      expect(hasKey(engine.getState(), of('Potter')[0], 'tired')).toBe(false);
+    });
+    it('is about the cards that are so in each idle, seat by seat and slot by slot', () => {
+      const [first, second, third] = named('Potter');
+      const [smith] = named('Smith');
+      let state = relocate(relocate(table, [third, smith], 'idle-p1', resting), [second, first], 'idle-p0', resting);
+      state = [first, second, third].reduce((s, id) => changeCard(s, id, { tired: true }, resting), state);
+      expect(runPhrase<string[]>(lib, 'which', 'a card in an idle is tired', aboutP0(state))).toEqual([second, first, third]);
+      expect(runPhrase<string[]>(lib, 'which', 'a card in the hall is tired', aboutP0(state))).toEqual([]);
+    });
   });
 });

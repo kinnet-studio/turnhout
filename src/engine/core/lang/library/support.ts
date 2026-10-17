@@ -174,11 +174,13 @@ function sameValue(have: Json | null, wanted: Json | null): boolean {
 }
 
 /**
- * Whether a card passes every test: a number more than a whole number, read as a group reads numbers (a card without that number does not
- * pass); or a value the same as one written, or as a value of the card the test compares it with, each read as every phrase reads one.
+ * Whether a card passes every test: a flag it is or is not, read as `cardHasFlag` reads it (a flag set to no is one it is not); a number
+ * more than a whole number, read as a group reads numbers (a card without that number does not pass); or a value the same as one written,
+ * or as a value of the card the test compares it with, each read as every phrase reads one.
  */
 export function passes(env: PhraseEnv, card: CardState, filters: CardFilter[]): boolean {
   return filters.every((filter) => {
+    if ('flag' in filter) return cardHasFlag(env, card, filter.flag) === filter.wanted;
     if ('above' in filter) {
       const have = numberIfAny(env, card, filter.attribute);
       return have !== null && have > filter.above;

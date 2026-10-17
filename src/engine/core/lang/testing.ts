@@ -430,6 +430,11 @@ export const FORCE_GAME = [
   'Red load:', "  A player's red load is the total red need of the cards in their workshop.",
 ].join('\n');
 
+/** FORCE_GAME where a job can be resting, and a player's red load counts only the jobs in their workshop that are not resting. */
+export const RESTING_GAME = FORCE_GAME
+  .replace('  Cards can be tired.', '  Cards can be tired.\n  Cards can be resting.')
+  .replace('red need of the cards in their workshop.', 'red need of the cards in their workshop that are not resting.');
+
 /** WORKED_GAME with a job's crew red: the red work of the cards on it, added up. */
 export const TOTALS_GAME = [WORKED_GAME, '', 'Crew red:', "  A card's crew red is the total red work of the cards on it."].join('\n');
 

@@ -598,56 +598,120 @@ const CARDFILTER: ParamType = {
 
 // ---- groups of cards -----------------------------------------------------------------------------
 
-/** group 1 = the test after “whose”, here and in PICKED, when there is one */
-const ON_IT = /^the cards on it(?: whose (.+))?$/i;
-const PICKED = /^the picked cards(?: whose (.+))?$/i;
-/** group 1 = the zones, group 2 = the test after “whose”, when there is one */
-const CARDS_IN = /^the cards in (.+?)(?: whose (.+))?$/i;
+/**
+ * The tests a group may have after the cards it names: “whose {cardfilter}”, or “that are {cardflag}” or “that are not {cardflag}”,
+ * maybe followed by “and whose {cardfilter}”. group 1 = the test after a lone “whose”; 2 = “not ”, for “that are not”; 3 = the flag;
+ * 4 = the test after “and whose”. Each is there only when written.
+ */
+const GROUP_TESTS = '(?: whose (.+)| that are (not )?(.+?)(?: and whose (.+))?)?';
+const ON_IT = new RegExp(`^the cards on it${GROUP_TESTS}$`, 'i');
+const PICKED = new RegExp(`^the picked cards${GROUP_TESTS}$`, 'i');
+/** group 1 = the zones, then the tests as in GROUP_TESTS */
+const CARDS_IN = new RegExp(`^the cards in (.+?)${GROUP_TESTS}$`, 'i');
+
+/** What follows “that are” in a group, or “that is” in a clause: maybe “not ”, a flag, and maybe “and whose {cardfilter}”. */
+const flagTestSource = (vocab: Vocab): string => `(?:not )?${CARDFLAG.source(vocab)}(?: and whose ${CARDFILTER.source(vocab)})?`;
 
 const cardGroupSource = (vocab: Vocab): string =>
-  `(?:the cards on it|the picked cards|the cards in ${ZONES.source(vocab)})(?: whose ${CARDFILTER.source(vocab)})?`;
+  `(?:the cards on it|the picked cards|the cards in ${ZONES.source(vocab)})(?: whose ${CARDFILTER.source(vocab)}| that are ${flagTestSource(vocab)})?`;
 
-/** The group with the test written after “whose”, read by its own type, as a one-item `whose`; with none written, it has no `whose`. */
-function withTest(group: { [key: string]: Json }, test: string | undefined, vocab: Vocab): Parsed {
-  if (test === undefined) return { value: group };
-  const filter = parseParam('cardfilter', test, vocab) ?? unknownText(test);
-  return 'error' in filter ? filter : { value: { ...group, whose: [filter.value] } };
+/**
+ * The tests a group or a clause keeps, each read by its own type, so that each says what is wrong with it: the flag test, when a flag is
+ * written (`not` says “not”), then the test after “whose”.
+ */
+function testsOf(not: string | undefined, flag: string | undefined, whose: string | undefined, vocab: Vocab): { value: Json[] } | { error: string } {
+  const tests: Json[] = [];
+  if (flag !== undefined) {
+    const named = parseParam('cardflag', flag, vocab) ?? unknownText(flag);
+    if ('error' in named) return named;
+    tests.push({ flag: named.value, wanted: not === undefined });
+  }
+  if (whose !== undefined) {
+    const filter = parseParam('cardfilter', whose, vocab) ?? unknownText(whose);
+    if ('error' in filter) return filter;
+    tests.push(filter.value);
+  }
+  return { value: tests };
 }
 
-/** The zones and the test of a group, each read by its own type, so that each says what is wrong with it. */
+/** The group with the tests written after it (the parts GROUP_TESTS finds) as its `whose`; with none written, it has no `whose`. */
+function withTests(group: { [key: string]: Json }, [whose, not, flag, andWhose]: (string | undefined)[], vocab: Vocab): Parsed {
+  const tests = testsOf(not, flag, whose ?? andWhose, vocab);
+  if ('error' in tests) return tests;
+  return { value: tests.value.length === 0 ? group : { ...group, whose: tests.value } };
+}
+
+/** The zones and the tests of a group, each read by its own type, so that each says what is wrong with it. */
 function resolveCardGroup(text: string, vocab: Vocab): Parsed {
   const onIt = ON_IT.exec(text);
-  if (onIt) return withTest({ kind: 'on it' }, onIt[1], vocab);
+  if (onIt) return withTests({ kind: 'on it' }, onIt.slice(1), vocab);
   const picked = PICKED.exec(text);
-  if (picked) return withTest({ kind: 'picked' }, picked[1], vocab);
+  if (picked) return withTests({ kind: 'picked' }, picked.slice(1), vocab);
   const found = CARDS_IN.exec(text);
   if (!found) return unknownText(text);
-  const [, zonesText, test] = found;
+  const [, zonesText, ...tests] = found;
   const zones = parseParam('zones', zonesText, vocab) ?? unknownText(zonesText);
   if ('error' in zones) return zones;
-  return withTest({ kind: 'in', zones: zones.value }, test, vocab);
+  return withTests({ kind: 'in', zones: zones.value }, tests, vocab);
 }
 
-/** “the cards in their crwe”: a zone, or an attribute of the test after “whose”, that the game never defined, as its own type says it. */
+/** A flag, or an attribute of the test after “whose”, that the game never defined, as its own type says it; null when there is none. */
+function misnamedTests(flag: string | undefined, whose: string | undefined, vocab: Vocab): NameProblem | null {
+  return (flag === undefined ? null : misnamedParam('cardflag', flag, vocab)) ?? (whose === undefined ? null : misnamedParam('cardfilter', whose, vocab));
+}
+
+/**
+ * “the cards in their crwe”, or “the cards in their workshop that are restng”: a zone, a flag, or an attribute of the test after “whose”,
+ * that the game never defined, as its own type says it.
+ */
 function misnamedCardGroup(text: string, vocab: Vocab): NameProblem | null {
-  const tested = (test: string | undefined) => (test === undefined ? null : misnamedParam('cardfilter', test, vocab));
+  const tested = ([whose, , flag, andWhose]: (string | undefined)[]) => misnamedTests(flag, whose ?? andWhose, vocab);
   const others = ON_IT.exec(text) ?? PICKED.exec(text);
-  if (others) return tested(others[1]);
+  if (others) return tested(others.slice(1));
   const found = CARDS_IN.exec(text);
   if (!found) return null;
-  const [, zones, test] = found;
-  return misnamedParam('zones', zones, vocab) ?? tested(test);
+  const [, zones, ...tests] = found;
+  return misnamedParam('zones', zones, vocab) ?? tested(tests);
 }
 
 /**
  * Some cards a rule adds up or walks through (a `CardGroup`): “the cards in {zones}”, “the cards on it” or “the picked cards”, each
- * maybe with “whose {cardfilter}”.
+ * maybe with “whose {cardfilter}”, or with “that are {cardflag}” or “that are not {cardflag}” and maybe “and whose {cardfilter}” after it.
  */
 const CARDGROUP: ParamType = {
   name: 'cardgroup', label: '[cards]',
   source: (vocab) => bounded(cardGroupSource(vocab)),
   resolve: resolveCardGroup,
-  loose: looseAs(`(?:the cards in ${ANY_TEXT}|the cards on it whose ${ANY_TEXT}|the picked cards whose ${ANY_TEXT})`, misnamedCardGroup),
+  loose: looseAs(
+    `(?:the cards in ${ANY_TEXT}|the cards on it (?:whose|that are) ${ANY_TEXT}|the picked cards (?:whose|that are) ${ANY_TEXT})`, misnamedCardGroup,
+  ),
+};
+
+/** group 1 = “not ”, for “that is not”; 2 = the flag; 3 = the test after “and whose”, when there is one */
+const CLAUSE = /^that is (not )?(.+?)(?: and whose (.+))?$/i;
+
+function resolveCardClause(text: string, vocab: Vocab): Parsed {
+  const found = CLAUSE.exec(text);
+  if (!found) return unknownText(text);
+  const [, not, flag, whose] = found;
+  return testsOf(not, flag, whose, vocab);
+}
+
+/** “that is restng” or “that is resting and whose pya is 1”: a flag or an attribute the game never defined, as its own type says it. */
+function misnamedCardClause(text: string, vocab: Vocab): NameProblem | null {
+  const found = CLAUSE.exec(text);
+  return found ? misnamedTests(found[2], found[3], vocab) : null;
+}
+
+/**
+ * What one card is said to be, after the zones it is in: “that is {cardflag}” or “that is not {cardflag}”, maybe with “and whose
+ * {cardfilter}” after it. Its value is the tests the card passes (a `CardFilter[]`), the flag test first.
+ */
+const CARDCLAUSE: ParamType = {
+  name: 'cardclause', label: '[that is …]',
+  source: (vocab) => bounded(`that is ${flagTestSource(vocab)}`),
+  resolve: resolveCardClause,
+  loose: looseAs(`that is ${ANY_TEXT}`, misnamedCardClause),
 };
 
 // ---- board: spaces, counters and actions -------------------------------------------------------
@@ -932,7 +996,7 @@ const DONE: ParamType = {
 export const VOCAB_TYPES: ParamType[] = [
   ZONE, ZONES, PERZONE, SHAREDZONE, PLAYER, PLAYERS, PHASE, MOVE, ATTRIBUTE, CARD, CARDLIST, CARDCLASS, SPACE, SPACECLASS, SPACEATTR, COUNTER, ACTION,
   TARGETACTION, AMOUNTACTION, PICKACTION, CARDACTION, DONE, SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, PLAYERFLAG, PLAYERNUMBER, GAMENUMBER, BANKED,
-  HOLDER, CARDGROUP, CARDFILTER, PLAYERVALUE,
+  HOLDER, CARDGROUP, CARDFILTER, PLAYERVALUE, CARDCLAUSE,
 ];
 
 const TYPES_BY_NAME = new Map(VOCAB_TYPES.map((t) => [t.name, t] as const));

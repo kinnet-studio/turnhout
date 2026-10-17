@@ -249,3 +249,20 @@ describe('the four games (guard)', () => {
     },
   );
 });
+
+describe('a flag the cards on it are tested by', () => {
+  /** BARE whose crew skill adds up only the hands on a job that are `flag`, then `sections`. */
+  const testedBy = (flag: string, ...sections: string[]) =>
+    [BARE.replace('the total skill of the cards on it.', `the total skill of the cards on it that are ${flag}.`), '', ...sections].join('\n');
+
+  it('Review Focus: shows no flag read through the cards on it that are a flag whose lines read every stash', () => {
+    const hoarded = compiled(testedBy('hoarded', 'Hoarded:', '  Only if some player has a card in their stash whose name is Vase.'));
+    expect(shownFlags(hoarded)).toEqual(['busy']);
+  });
+
+  it('shows one read through the cards on it that are, or are not, a flag whose lines read only the card', () => {
+    // Working: a red hand that is not tired.
+    expect(shownFlags(compiled(testedBy('working')))).toEqual(['busy', 'bare']);
+    expect(shownFlags(compiled(testedBy('not working')))).toEqual(['busy', 'bare']);
+  });
+});

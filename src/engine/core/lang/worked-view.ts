@@ -9,6 +9,7 @@ import { FROM_CARDS_TOTAL } from './library/total-phrases';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
 import type { CardGroup, CompiledGame, PhraseRef } from './types';
+import type { CardFilter } from './types';
 
 /**
  * The phrases about the card a value is worked out for and the cards on it: what kind of card it is, its own numbers and flags, its zone
@@ -25,10 +26,15 @@ const isWorked = (game: CompiledGame, name: string): boolean => game.worked !== 
 const cardsOnCardsArePublic = (game: CompiledGame): boolean => game.zones.every((zone) => zone.onCards === undefined || zone.visibility === 'public');
 const cardsOnIt: readonly string[] = CARDS_ON_IT;
 
+/** The names a test reads a card by: the flag of a flag test, else the number or value it tests and the one it compares that with. */
+const testNames = (filter: CardFilter): string[] =>
+  ('flag' in filter ? [filter.flag] : [filter.attribute, ...('sameAs' in filter ? [filter.sameAs.attribute] : [])]);
+
 /**
  * The names a line reads a card's numbers and flags by, each of which may be a value worked out in turn, when the line reads only the card
  * and the cards on it; null for any other line, and for a line that reads the cards on it in a game that hides some card on a card. A
- * phrase's args follow its parameters in order.
+ * phrase's args follow its parameters in order. The tests of a group of the cards on it, and of a clause, are read too: a flag a group is
+ * tested by (“the cards on it that are hoarded”) may read beyond the card as surely as a line of the value does.
  */
 function cardOnlyNames(game: CompiledGame, ref: PhraseRef): string[] | null {
   const total = ref.kind === 'value' && ref.phrase === FROM_CARDS_TOTAL;
@@ -37,10 +43,12 @@ function cardOnlyNames(game: CompiledGame, ref: PhraseRef): string[] | null {
   const names: string[] = [];
   for (const [i, [, type]] of [...ref.phrase.matchAll(PARAM)].entries()) {
     if (type === 'attribute' || type === 'cardflag') names.push(ref.args[i] as string);
+    // No card-only phrase takes a clause yet; one that does has its tests traced like a group's.
+    if (type === 'cardclause') names.push(...(ref.args[i] as CardFilter[]).flatMap(testNames));
     if (type !== 'cardgroup') continue;
     const group = ref.args[i] as CardGroup;
     if (group.kind !== 'on it') return null;
-    for (const filter of group.whose ?? []) names.push(filter.attribute, ...('sameAs' in filter ? [filter.sameAs.attribute] : []));
+    names.push(...(group.whose ?? []).flatMap(testNames));
   }
   return names;
 }

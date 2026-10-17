@@ -111,6 +111,10 @@ const theCardIsFlagged: ConditionFn = (env, [fact]) => cardHasFlag(env, movedCar
 /** At least one card, wherever it is, is so. */
 const someCardIs: ConditionFn = (env, [fact]) => env.state.cards.some((card) => cardHasFlag(env, card, fact as string));
 
+/** Whether some card in the zones is so, read as `cardHasFlag` reads it; or, with `wanted` false, whether no card there is. */
+const someCardInIs = (wanted: boolean): ConditionFn => (env, [zones, fact]) =>
+  (zones as ZoneRef[]).some((ref) => cardsInZones(env, ref).some((card) => cardHasFlag(env, card, fact as string))) === wanted;
+
 // ---- which: the cards a rule is about ---------------------------------------------------------
 
 /**
@@ -122,6 +126,17 @@ const cardsWithNumber: WhichFn = (env, [zone, n, attribute]) =>
     .flatMap((seat) => zoneCards(env.state, zoneIdFor(zone as string, seat)))
     .filter((card) => cardValueOf(env, card, attribute as string) === n)
     .map((card) => card.id);
+
+/** The cards in every seat's zone of that name that are so, read as `cardHasFlag` reads it: seat by seat, slot by slot. */
+const cardsFlagged: WhichFn = (env, [zone, fact]) =>
+  env.seats
+    .flatMap((seat) => zoneCards(env.state, zoneIdFor(zone as string, seat)))
+    .filter((card) => cardHasFlag(env, card, fact as string))
+    .map((card) => card.id);
+
+/** The cards in a zone everyone shares that are so, slot by slot. */
+const sharedCardsFlagged: WhichFn = (env, [zone, fact]) =>
+  zoneCards(env.state, zoneIdFor(zone as string)).filter((card) => cardHasFlag(env, card, fact as string)).map((card) => card.id);
 
 export const isOfKind = (space: SpaceSpec, kind: SpaceClass): boolean => kind.values.includes(space.attrs[kind.attribute]);
 
@@ -315,6 +330,17 @@ const everyCardIsFlagged: EffectFn = (env, [zone, fact]) => {
 };
 
 /**
+ * Takes the flag off every card in the zone that has it, set or set to no, as “No card is …” does everywhere: each is as a card that never
+ * had it, and its face goes back to how it was. A flag worked out from lines is refused first, whether or not a card there keeps one.
+ */
+const everyCardIsNot: EffectFn = (env, [zone, fact]) => {
+  mustBeKept(env, fact as string);
+  return cardsInZones(env, zone as ZoneRef)
+    .filter((card) => Object.hasOwn(card.data ?? {}, fact as string))
+    .reduce((state, card) => changeCard(state, card.id, { [fact as string]: null }, env.game), env.state);
+};
+
+/**
  * Changes a number a card has, from what it has now, and refreshes the face with it. A card that has no such number, or whose
  * value is no number, is left as it is; a declared count it was never given is 0 to change from. Each rule that calls it refuses a
  * value worked out from lines first, before it reads any card.
@@ -444,9 +470,10 @@ const bankHasExpected: ExpectFn = (env, [n, name]) => {
  * A plural noun is a count (starting at 0) and “a” or “an” and a noun, or an adjective, is a yes/no (starting at no). Then the
  * sentences that read and change what a space has or is, and what the bank holds, that ask whether a player owns a whole set, that
  * say which spaces a button may pick (theirs, or those of the player who holds a flag), and that act on the one space with a flag
- * set, or on every space with it, or ask whether some space has it. And those about cards: which cards a rule is about, whether one
- * has a flag, or some card does, changing every card of a zone, moving every card with a flag to a zone, taking a flag off every
- * card, raising or lowering a number a card has, moving the card a rule is about, and the player with the most cards.
+ * set, or on every space with it, or ask whether some space has it. And those about cards: which cards a rule is about (those of a
+ * number, or those that are so, in a zone), whether one has a flag, or some card does, or some card in a zone, or none there, changing
+ * every card of a zone, moving every card with a flag to a zone, taking a flag off every card, or off every card of a zone, raising or
+ * lowering a number a card has, moving the card a rule is about, and the player with the most cards.
  */
 export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
@@ -467,6 +494,8 @@ export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
     .condition('the card is {cardflag}', theCardIsFlagged, { needsMove: true })
     .condition('some space is {spaceflag}', someSpaceIs, { needsBoard: true })
     .condition('some card is {cardflag}', someCardIs)
+    .condition('some card in {zones} is {cardflag}', someCardInIs(true))
+    .condition('no card in {zones} is {cardflag}', someCardInIs(false))
     .condition('the bank has a {banked}', bankHasOne)
     .condition('the bank has an {banked}', bankHasOne)
     .condition('the bank has at least {int} {banked}', bankHasAtLeast)
@@ -480,6 +509,9 @@ export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
     .target('a space {holder} owns', holderOwns, { needsBoard: true })
     .moment('a player lands on a space someone else owns', landsOnSpaceOwnedByOther)
     .which('a card in a {perzone} has {int} {attribute}', cardsWithNumber)
+    .which('a card in a {perzone} is {cardflag}', cardsFlagged)
+    .which('a card in an {perzone} is {cardflag}', cardsFlagged)
+    .which('a card in {sharedzone} is {cardflag}', sharedCardsFlagged)
     .effect('it gets a {banked} from the bank', getsFromBank, { needsSpace: true })
     .effect('it gets an {banked} from the bank', getsFromBank, { needsSpace: true })
     .effect('it gets {int} {banked} from the bank', getsSeveralFromBank, { needsSpace: true })
@@ -497,6 +529,7 @@ export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('they pay {int} for each of their {banked}', paysForEach, { needsPlayer: true, needsBoard: true, needsPayment: true })
     .effect('move it to {zone}', moveItTo, { needsCard: true })
     .effect('every card in {zone} is {cardflag}', everyCardIsFlagged, { writes: 1 })
+    .effect('every card in {zone} is not {cardflag}', everyCardIsNot, { writes: 1 })
     .effect('every card that is {cardflag} goes to {zone}', everyFlaggedCardGoesTo)
     .effect('no card is {cardflag}', noCardIs, { writes: 0 })
     .effect('it gains {int} {attribute}', itGains, { needsCard: true, writes: 1 })
