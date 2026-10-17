@@ -21,6 +21,9 @@ const itIsIn: ConditionFn = (env, [zone]) => {
   return info !== null && info.seat !== null && info.spec.name === zone;
 };
 
+/** The lines that read the cards on it: the page shows a value read through them only where everyone sees every card on a card. */
+export const CARDS_ON_IT = ['some card on it is {cardflag}', 'no card on it is {cardflag}'] as const;
+
 /** Each card on it is read as every phrase reads a flag, so a flag worked out for those cards may be worked out from another. */
 const someCardOnItIs = (wanted: boolean): ConditionFn => (env, [flag]) =>
   cardsOn(env.state, itCard(env).id).some((card) => cardHasFlag(env, card, flag as string)) === wanted;
@@ -56,8 +59,8 @@ export function registerCardSubjectPhrases(lib: PhraseLibrary): PhraseLibrary {
     .condition('its {attribute} is {int}', itsNumberIs, { needsCard: true })
     .condition('it is in a {perzone}', itIsIn, { needsCard: true })
     .condition('it is in an {perzone}', itIsIn, { needsCard: true })
-    .condition('some card on it is {cardflag}', someCardOnItIs(true), { needsCard: true })
-    .condition('no card on it is {cardflag}', someCardOnItIs(false), { needsCard: true })
+    .condition(CARDS_ON_IT[0], someCardOnItIs(true), { needsCard: true })
+    .condition(CARDS_ON_IT[1], someCardOnItIs(false), { needsCard: true })
     .value(FROM_COLUMN, isIts, { needsCard: true })
     .value("a card's {attribute} goes down by its {attribute}", goesDownByIts, { needsCard: true });
 }

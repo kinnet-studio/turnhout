@@ -16,6 +16,9 @@ const getTheTotal: EffectFn = (env, [attribute, group]) =>
 /** Paid to the bank, like any amount: a total that leaves them below 0 is owed to it. */
 const payTheTotal: EffectFn = (env, [attribute, group]) => transfer(env, theyOf(env), null, totalOf(env, attribute as string, group as CardGroup));
 
+/** The line of a value worked out for a card that adds up a group: the page shows it only when the group is the cards on it. */
+export const FROM_CARDS_TOTAL = "a card's {attribute} is the total {attribute} of {cardgroup}";
+
 /** The first {attribute} is the value its section works out, which the compiler checks; the line says what it comes to. */
 const valueIsTheTotal: ValueFn = (env, [, attribute, group]) => totalOf(env, attribute as string, group as CardGroup);
 
@@ -32,5 +35,5 @@ export function registerTotalPhrases(lib: PhraseLibrary): PhraseLibrary {
     .condition('they have at least the total {attribute} of {cardgroup} in {counter}', haveAtLeastTheTotal, { needsPlayer: true })
     .effect('they get the total {attribute} of {cardgroup}', getTheTotal, { needsPlayer: true, needsPayment: true })
     .effect('they pay the total {attribute} of {cardgroup}', payTheTotal, { needsPlayer: true, needsPayment: true })
-    .value("a card's {attribute} is the total {attribute} of {cardgroup}", valueIsTheTotal, { needsCard: true });
+    .value(FROM_CARDS_TOTAL, valueIsTheTotal, { needsCard: true });
 }

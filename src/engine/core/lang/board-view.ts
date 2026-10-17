@@ -22,7 +22,6 @@ import type { LangRuntime } from './runtime';
 import { startPlayerOf, usesTurns } from './turns';
 import type { CompiledGame, DeclaredAction } from './types';
 import { zoneIdFor, zoneInfo } from './zones';
-import { cardsOn } from './attach';
 import { shownFlags, standIns } from './worked-view';
 
 /**
@@ -471,19 +470,19 @@ function workedCard(runtime: LangRuntime, state: GameState, card: CardState, col
 
 /**
  * What the rules work out for each card on a Board whose face `seat` sees (a per-player zone everyone can see, cards on cards too), by id;
- * null when no card has anything to show. Every seat gets the same values, since `standIns` and `shownFlags` keep only values read from the
- * card and the cards on it. A card with a card on it that not everyone can see is left out, for what is on it may count; so is a card the
- * runtime throws at (a value worked out from itself is found only when asked), so that one card's mistake leaves every view whole.
+ * null when no card has anything to show. Every seat gets the same values, since `standIns` and `shownFlags` keep only values that read the
+ * card and the cards on it, and those only where everyone sees every card on a card; so what sits on a card never decides whether it is
+ * here. A card the runtime throws at is left out (a value worked out from itself is found only when asked), so that one card's mistake
+ * leaves every view whole.
  */
 function workedView(runtime: LangRuntime, state: GameState, seat: PlayerId): WorkedView | null {
   const { game } = runtime;
   const columns = Object.entries(standIns(game));
   const flags = shownFlags(game);
   if (columns.length === 0 && flags.length === 0) return null;
-  const isPublic = (card: CardState) => zoneInfo(game, card.zoneId)?.spec.visibility === 'public';
   const view: WorkedView = {};
   for (const card of Object.values(cardsKept(runtime, state)).flat()) {
-    if (!seesFace(game, card, seat) || !cardsOn(state, card.id).every(isPublic)) continue;
+    if (!seesFace(game, card, seat)) continue;
     try {
       const worked = workedCard(runtime, state, card, columns, flags);
       if (worked !== null) view[card.id] = worked;

@@ -1,30 +1,40 @@
 // Which of the values a game works out for cards (R4) the page may show beside a card on a Board, read from the compiled game alone:
-// a number that stands in for a column of a card table, and a flag that changes a value. A value is shown only when its lines read the
-// card and the cards on it and nothing else, all the way down, so that whatever it says a seat that sees the card sees too.
+// a number that stands in for a column of a card table, and a flag that changes a value. A value is shown only when its lines, and the
+// lines of every value they read, all the way down, read nothing but the card and the cards on it; and a line that reads the cards on a
+// card counts only in a game where everyone sees every card that sits on a card. So a seat that sees a card sees all that its shown
+// values read, however deep the cards on cards go, and whether a value is shown hangs on the rules alone, never on where cards are.
 import { FROM_COLUMN, registerCardSubjectPhrases } from './library/card-subject-phrases';
 import { FLAGGED_VALUES, registerCardValuePhrases } from './library/card-value-phrases';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
 import type { CardGroup, CompiledGame, PhraseRef } from './types';
+import { CARDS_ON_IT } from './library/card-subject-phrases';
+import { FROM_CARDS_TOTAL } from './library/total-phrases';
 
 /**
  * The phrases about the card a value is worked out for and the cards on it: what kind of card it is, its own numbers and flags, its zone
  * and the flags of the cards on it. Asked by kind and pattern, as a line's ref names its phrase.
  */
 const CARD_ONLY = registerCardValuePhrases(registerCardSubjectPhrases(new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])));
-/** `total-phrases.ts`'s line about one card: it reads only the card and the cards on it when its group is the cards on it. */
-const TOTAL_OF = "a card's {attribute} is the total {attribute} of {cardgroup}";
 const PARAM = /\{([^{}]+)\}/g;
 
 const isWorked = (game: CompiledGame, name: string): boolean => game.worked !== undefined && Object.hasOwn(game.worked, name);
+/**
+ * Whether everyone sees every card that sits on a card: only a zone where every card is on a card may hold one, so it is so when each such
+ * zone is public. Then the cards on a card are seen wherever the card is, and the cards on those too.
+ */
+const cardsOnCardsArePublic = (game: CompiledGame): boolean => game.zones.every((zone) => zone.onCards === undefined || zone.visibility === 'public');
+const cardsOnIt: readonly string[] = CARDS_ON_IT;
 
 /**
  * The names a line reads a card's numbers and flags by, each of which may be a value worked out in turn, when the line reads only the card
- * and the cards on it; null for any other line. A phrase's args follow its parameters in order.
+ * and the cards on it; null for any other line, and for a line that reads the cards on it in a game that hides some card on a card. A
+ * phrase's args follow its parameters in order.
  */
-function cardOnlyNames(ref: PhraseRef): string[] | null {
-  const total = ref.kind === 'value' && ref.phrase === TOTAL_OF;
+function cardOnlyNames(game: CompiledGame, ref: PhraseRef): string[] | null {
+  const total = ref.kind === 'value' && ref.phrase === FROM_CARDS_TOTAL;
   if (!total && (ref.kind === 'lang' || CARD_ONLY.get(ref.kind, ref.phrase) === undefined)) return null;
+  if ((total || cardsOnIt.includes(ref.phrase)) && !cardsOnCardsArePublic(game)) return null;
   const names: string[] = [];
   for (const [i, [, type]] of [...ref.phrase.matchAll(PARAM)].entries()) {
     if (type === 'attribute' || type === 'cardflag') names.push(ref.args[i] as string);
@@ -46,7 +56,7 @@ function readsOnlyCards(game: CompiledGame, name: string, seen = new Set<string>
   const value = game.worked![name];
   const refs = value.kind === 'number' ? value.refs : value.conditions.flatMap((group) => group.refs);
   return refs.every((ref) => {
-    const names = cardOnlyNames(ref);
+    const names = cardOnlyNames(game, ref);
     return names !== null && names.filter((read) => isWorked(game, read)).every((read) => readsOnlyCards(game, read, seen));
   });
 }

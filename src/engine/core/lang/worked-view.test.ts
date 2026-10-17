@@ -29,11 +29,26 @@ function compiled(text: string): CompiledGame {
 const withPay = (lines: string[], ...sections: string[]) => [SHOWN, ...lines, '', ...sections].join('\n');
 /** SHOWN with a red pay a hoarded job gets, where hoarded reads every stash, each of which only its owner sees. */
 const HOARDING = withPay(["  A hoarded card's red pay is 2."], 'Hoarded:', '  Only if some player has a card in their stash whose name is Vase.');
+const CREW_ROW = '  Each player has a crew row that everyone can see, where every card is on a card.';
 /** SHOWN whose crews only their owner sees. */
-const PRIVATE_CREW = SHOWN.replace(
-  '  Each player has a crew row that everyone can see, where every card is on a card.',
-  '  Each player has a crew row that only they can see, where every card is on a card.',
+const PRIVATE_CREW = SHOWN.replace(CREW_ROW, CREW_ROW.replace('everyone can see', 'only they can see'));
+const TUCK = 'tuck a card from their stash to a card in their crew';
+/**
+ * SHOWN with a pocket each player has that only they can see, where every card is on a card, a button that tucks a card from the stash
+ * onto a hand in the crew, and a red pay a shady job gets: one with a hand on it that a Statue is tucked on, two cards down.
+ */
+const POCKET = withPay(
+  ["  A shady card's red pay is 2."],
+  'Spied:', '  Only if it is a Statue card.', '',
+  'Hiding:', '  Only if some card on it is spied.', '',
+  'Shady:', '  Only if some card on it is hiding.',
+).replace(CREW_ROW, `${CREW_ROW}\n  Each player has a pocket row that only they can see, where every card is on a card.`).replace(
+  '  A player may stop.', `  A player may ${TUCK}.\n    Then:\n      It goes to their pocket, on the target card.\n  A player may stop.`,
 );
+/** SHOWN with a red due that starts from red need, written before red left; in `HALL_DUE` it also reads the hall. */
+const DUE = SHOWN.replace('Red left:', ['Red due:', "  A card's red due is its red need.", '', 'Red left:'].join('\n'));
+const DUE_LINE = "  A card's red due is its red need.";
+const HALL_DUE = DUE.replace(DUE_LINE, `${DUE_LINE}\n  A card's red due is the total red need of the cards in the hall.`);
 /** SHOWN with a red pay that a job no hand's skill is on gets: bare reads a total of the cards on it, or, in `HALL_BARE`, of the hall. */
 const BARE = withPay(
   ["  A bare card's red pay is 2."],
@@ -49,9 +64,9 @@ const shown = compiled(SHOWN);
 /**
  * `game` (SHOWN unless said) for two at seed 1, with p0's workshop holding the first Vase and the first Statue, the Vase with Potters 1
  * and 2 on it in p0's crew, 1 red done and 1 cut red done; p1's stash holding the second Statue too, and p0's idle row the first Tinker.
- * `arrange` has the last say.
+ * `arrange` has the last say, told the Potters and the second Statue.
  */
-function arranged(game: CompiledGame = shown, arrange: (state: GameState, potters: string[]) => GameState = (state) => state) {
+function arranged(game: CompiledGame = shown, arrange: (state: GameState, potters: string[], stashed: string) => GameState = (state) => state) {
   const start = createEngine(game, lib, 2, initialState(game, 1)).engine.getState();
   const named = (name: string) => start.cards.filter((card) => card.data?.name === name).map((card) => card.id);
   const [[vase], [statue, stashed], [p1, p2], [tinker]] = ['Vase', 'Statue', 'Potter', 'Tinker'].map(named);
@@ -59,9 +74,9 @@ function arranged(game: CompiledGame = shown, arrange: (state: GameState, potter
   state = putOn(state, [p1, p2], 'crew-p0', vase, game);
   state = changeCard(state, vase, { 'red done': 1, 'cut red done': 1 }, game);
   state = relocate(relocate(state, [stashed], 'stash-p1', game), [tinker], 'idle-p0', game);
-  const { engine, runtime } = createEngine(game, lib, 2, arrange(state, [p1, p2]));
+  const { engine, runtime } = createEngine(game, lib, 2, arrange(state, [p1, p2], stashed));
   const view = (seat: string) => seatExtras(engine, runtime, engine.getState(), seat);
-  return { engine, runtime, view, vase, statue, stashed };
+  return { engine, runtime, view, vase, statue, stashed, potters: [p1, p2] };
 }
 
 describe('SHOWN', () => {
@@ -100,6 +115,12 @@ describe('what the game says the view may show', () => {
     expect(shownFlags(compiled(BARE))).toEqual(['busy', 'bare']);
     expect(shownFlags(compiled(HALL_BARE))).toEqual(['busy']);
   });
+
+  it('(guard) stands the first of two numbers that start from one column in for it, and the second when the first reads more than the card', () => {
+    // Both pass before the cards on a card were judged by the rules alone: they pin how standIns picks among sections.
+    expect(standIns(compiled(DUE))).toEqual({ 'red need': 'red due' });
+    expect(standIns(compiled(HALL_DUE))).toEqual({ 'red need': 'red left' });
+  });
 });
 
 describe('SHOWN arranged', () => {
@@ -120,10 +141,31 @@ describe('SHOWN arranged', () => {
     expect(tired.view('p1').worked![tired.vase]).toEqual({ columns: { 'red need': 1 }, flags: [] });
   });
 
-  it('Review Focus: leaves out a job whose crew only its owner sees, for every seat, its owner too', () => {
-    const hidden = arranged(compiled(PRIVATE_CREW));
+  it('Review Focus: shows no flag read through the cards on a card where crews are hidden, and a red left whatever sits on the job', () => {
+    const privateCrew = compiled(PRIVATE_CREW);
+    expect([standIns(privateCrew), shownFlags(privateCrew)]).toEqual([{ 'red need': 'red left' }, []]);
+    // The Vase is in every seat's view, the same with its hidden crew on it as with none: what sits on it tells nothing by omission.
+    const crewed = arranged(privateCrew);
+    const bare = arranged(privateCrew, (state, potters) => relocate(state, potters, 'hall', privateCrew));
+    const worked = { [crewed.vase]: { columns: { 'red need': 1 }, flags: [] }, [crewed.statue]: { columns: { 'red need': 1 }, flags: [] } };
     for (const seat of ['p0', 'p1']) {
-      expect(hidden.view(seat).worked, seat).toEqual({ [hidden.statue]: { columns: { 'red need': 1 }, flags: [] } });
+      expect(crewed.view(seat).worked, seat).toEqual(worked);
+      expect(bare.view(seat).worked, seat).toEqual(worked);
+    }
+  });
+
+  it('Review Focus: shows nothing read through the cards on a card, however far down, where some card on a card is hidden', () => {
+    const pocket = compiled(POCKET);
+    expect(shownFlags(pocket)).toEqual([]);
+    // p0 tucks the second Statue from their stash onto Potter 1, on the Vase: the Vase is shady, which only p0 may know.
+    const toOwnStash = (state: GameState, _potters: string[], statue: string) => relocate(state, [statue], 'stash-p0', pocket);
+    const { engine, runtime, view, vase, stashed, potters } = arranged(pocket, toOwnStash);
+    expect(engine.dispatch({ type: TUCK, by: 'p0', cardId: stashed, onto: potters[0] }).ok).toBe(true);
+    expect(engine.getState().cards.find((card) => card.id === stashed)!.zoneId).toBe('pocket-p0');
+    expect(runtime.workedFlag(engine.getState(), vase, 'shady')).toBe(true);
+    for (const seat of ['p0', 'p1']) {
+      expect(JSON.stringify(view(seat).worked), seat).not.toMatch(/shady/);
+      expect(view(seat).worked![vase], seat).toEqual({ columns: { 'red need': 1 }, flags: [] });
     }
   });
 
