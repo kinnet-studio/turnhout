@@ -63,6 +63,11 @@ describe('nextChoice', () => {
     const onlyP1: ChoiceView = { ...P, prompt: 'Pick who to pay the fee to: p1 or p3.', options: [P.options[0], { value: 'p3', allowed: true }] };
     expect(nextChoice([onlyP1, T], { 0: 'p2', 2: 'Trim 2 red' })).toBe(onlyP1);
   });
+  it('Review Focus: asks again a choice answered with what the view no longer lists, even with one option left, never filling it in', () => {
+    const narrowed: ChoiceView = { ...L, at: 0 };
+    expect(nextChoice([narrowed, T], { 0: 'p2', 2: 'Trim 2 red' })).toBe(narrowed);
+    expect(nextChoice([narrowed, T], { 0: 'p1', 2: 'Trim 2 red' })).toBeNull();
+  });
 });
 
 describe('choicesOfPress', () => {
@@ -70,8 +75,11 @@ describe('choicesOfPress', () => {
     expect(choicesOfPress([P, L, T], { 0: 'p2', 2: 'Trim 2 red' })).toEqual(['p2', 'p1', 'Trim 2 red']);
     expect(choicesOfPress([P, T], { 0: 'p2', 2: 'Trim 2 red' })).toEqual(['p2', null, 'Trim 2 red']);
   });
-  it('fills in the only option of a choice whose answer the view no longer lists', () => {
-    expect(choicesOfPress([{ ...L, at: 0 }, T], { 0: 'p2', 2: 'Trim 2 red' })).toEqual(['p1', null, 'Trim 2 red']);
+  it('never names the only option in place of an answer the player gave: that choice is asked again, and no press carries p1 unasked', () => {
+    const narrowed: ChoiceView = { ...L, at: 0 };
+    const answers = { 0: 'p2', 2: 'Trim 2 red' };
+    expect(nextChoice([narrowed, T], answers)).toBe(narrowed);
+    expect(choicesOfPress([narrowed, T], answers)).not.toContain('p1');
   });
 });
 

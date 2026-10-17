@@ -24,33 +24,34 @@ export function choicesFor(action: ActionView | undefined, chosen: PickChosen | 
   return pick.cards.find((card) => card.id === cardId)?.choices ?? [];
 }
 
-/**
- * The answer given to a choice, while the view still lists it among the choice's options: the view can change under an open question
- * (an Undo), and an answer it no longer lists is no answer, so that choice is asked again, or filled in, rather than sent and refused.
- */
-function answerTo(choice: ChoiceView, answers: Answers): string | undefined {
-  const answer = answers[choice.at];
-  return choice.options.some((option) => option.value === answer) ? answer : undefined;
-}
+/** Whether the view still lists `answer` among the choice's options. */
+const listed = (choice: ChoiceView, answer: string): boolean => choice.options.some((option) => option.value === answer);
 
 /**
- * The first choice still to answer, in `at` order: one with more than one option and no answer. Null when none is left. A choice
- * with one option is never asked: the press sends that option.
+ * The first choice still to answer, in `at` order: one with more than one option and no answer, or one the player answered with what
+ * the view no longer lists (an Undo can change who qualifies), which is asked again whatever its options, so no option the player did
+ * not pick ever goes in place of their answer. Null when none is left. A choice with one option, never answered, is not asked: the
+ * press sends that option.
  */
 export function nextChoice(choices: ChoiceView[], answers: Answers): ChoiceView | null {
   const inOrder = [...choices].sort((a, b) => a.at - b.at);
-  return inOrder.find((choice) => choice.options.length > 1 && answerTo(choice, answers) === undefined) ?? null;
+  const open = (choice: ChoiceView): boolean => {
+    const answer = answers[choice.at];
+    return answer === undefined ? choice.options.length > 1 : !listed(choice, answer);
+  };
+  return inOrder.find(open) ?? null;
 }
 
 /**
  * The press's `choices`: at each listed choice's `at`, its answer or else its only option; null at every other place, which the
- * engine reads as a choice it does not ask.
+ * engine reads as a choice it does not ask. An answer goes as given, never replaced: one the view no longer lists is asked again by
+ * `nextChoice` before the press is sent.
  */
 export function choicesOfPress(choices: ChoiceView[], answers: Answers): (string | null)[] {
   const named: (string | null)[] = Array.from({ length: Math.max(0, ...choices.map((choice) => choice.at + 1)) }, () => null);
   for (const choice of choices) {
     const only = choice.options.length === 1 ? choice.options[0].value : null;
-    named[choice.at] = answerTo(choice, answers) ?? only;
+    named[choice.at] = answers[choice.at] ?? only;
   }
   return named;
 }
