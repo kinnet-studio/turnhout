@@ -561,6 +561,64 @@ describe('examples that name choices', () => {
     });
   });
 
+  it('fails an example that names a player for a press that chooses none here, saying so in the example’s words', () => {
+    // p0 has clay of their own, so the fee's choice is not made at all.
+    const lines = [
+      '', 'Example: the opener makes clay', '  Given 3 players', "  And p0's workshop has a Vase", "  And p1's workshop has a Bowl",
+      "  And p0's stash has a Statue", '  When p0 opens the Statue, paying p1',
+    ];
+    const { text, results } = run(...lines);
+    expect(results[0]).toMatchObject({
+      status: 'fail', message: '“paying p1” isn\'t a choice here: this press chooses no player.',
+      atLine: lineOf(text, 'When p0 opens the Statue, paying p1', true),
+    });
+    // A button whose lines choose no player at all is told the same.
+    const trimmed = run(...TRIMMER.slice(0, 3), '  When p0 trims the Statue, paying p1 and p2').results[0];
+    expect(trimmed).toMatchObject({ status: 'fail', message: '“paying p1 and p2” isn\'t a choice here: this press chooses no player.' });
+  });
+
+  describe('when a press also pays a player who alone qualifies', () => {
+    // The open button pays a stone maker before the maker of what the card wants: p1 alone makes stone, and p1 and p2 make clay.
+    const PAYS_TWICE = GUILD_GAME.replace(
+      "      They pay the fee to another player of their choice who has a card in their workshop whose mark is the card's wants.",
+      "      They pay the fee to another player of their choice who has a card in their workshop whose mark is stone.\n$&",
+    );
+    const opening = (named: string, ...then: string[]) => [
+      '', `Example: opening the Statue, ${named}`, '  Given 3 players', "  And p1's workshop has a Statue and a Vase",
+      "  And p2's workshop has a Bowl", "  And p0's stash has a Statue", `  When p0 opens the Statue, ${named}`, ...then,
+    ];
+    const paid = ['  Then it is accepted', '  And p0 has 5 coins', '  And p1 has 11 coins', '  And p2 has 11 coins'];
+    const runTwice = (...lines: string[]) => {
+      const text = [PAYS_TWICE, ...lines].join('\n');
+      return { text, results: runExamples(compiled(text), lib) };
+    };
+
+    it('is the fixture: the stone maker is filled in, and the press asks only whom to pay for the clay', () => {
+      expect(PAYS_TWICE).not.toBe(GUILD_GAME);
+      const lines = [
+        '', 'Example: asking', '  Given 3 players', "  And p1's workshop has a Statue and a Vase", "  And p2's workshop has a Bowl",
+        "  And p0's stash has a Statue", '  When p0 opens the Statue', '  Then it is rejected because "Pick who to pay the fee to: p1 or p2."',
+      ];
+      expect(runTwice(...lines).results[0]).toMatchObject({ status: 'pass' });
+    });
+
+    it('fills the players an example names into the choices asked among several, leaving the one who alone qualifies filled in', () => {
+      expect(runTwice(...opening('paying p2', ...paid)).results[0]).toMatchObject({ status: 'pass', message: null });
+    });
+
+    it('still takes every player the press pays, named in line order', () => {
+      expect(runTwice(...opening('paying p1 and p2', ...paid)).results[0]).toMatchObject({ status: 'pass', message: null });
+    });
+
+    it('fails an example that names neither one player for each choice asked nor one for every choice, saying which it may name', () => {
+      const { text, results } = runTwice(...opening('paying p1, p2 and p2'));
+      expect(results[0]).toMatchObject({
+        status: 'fail', message: 'The press asks for 1 player and fills in p1, the only one who qualifies, but the example names 3. Name 1, or all 2.',
+        atLine: lineOf(text, 'When p0 opens the Statue, paying p1, p2 and p2', true),
+      });
+    });
+  });
+
   it('fails an example that names an option the press does not offer, listing those it does', () => {
     const { results } = run(...TRIMMER.slice(0, 3), '  When p0 trims the Statue, choosing trim 3');
     expect(results[0]).toMatchObject({

@@ -228,7 +228,7 @@ Phase: playing
   - Rules ask `they have a card in their operations whose …` (the player the line is about), `some player has a card in their operations whose …` (any player still in) and `the card has no also requires` (a blank cell).
   - `Every card on it whose trait is Ego goes to the open job market.` moves only the cards on it that pass.
 - **The card a rule is about.** A section that works out a value, or a button's `Only if` lines, can ask `it is a Senior Developer card`, `it is not a Tier 1 card`, `it is in an ops team`, `its blue need is 0`, `some card on it is leading software` and `no card on it is leading hardware`. A number can go down by another: `A card's blue need goes down by its cut blue cubes.`
-- **Examples** name a press's choices after it: `When p0 greenlights the Server Farm, paying p2` names the players, in line order, and `…, choosing cut 2 red` names an option.
+- **Examples** name a press's choices after it: `When p0 greenlights the Server Farm, paying p2` names the players the press asks for among several, in line order, and `…, choosing cut 2 red` names an option. A player who alone qualifies is filled in and needs no name, though an example may name a player for every choice instead.
 - **In the playtest,** a choice with one answer is filled in. A press with several answers is refused with the prompt for now; a picker for choices comes later.
 - **Startup Simulator** plays slice 3 this way: the Greenlight's License to a provider of each missing Tag and the cut Domain Expertise gives, which a hybrid's owner chooses; the sections that work out Matching Leads, Stalled and Fully led; and the Pivot that fires the Diva.
 
