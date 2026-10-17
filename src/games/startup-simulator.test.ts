@@ -232,6 +232,23 @@ const DIVA_REFUSED: Record<string, string> = {
   [REASSIGN_FROM_OPS]: 'the Diva refused a reassign from the ops team',
 };
 const ENGINEER_IN_OPS = 'the Engineer paid 1 in the ops team';
+// What the tally calls the paths of slice 4 (see `happenings` and the long runs' watch), besides the moves themselves.
+/** A declaration, by the mode its answer names: `a mode declared: Red` (§11.C.2). */
+const MODE_DECLARED = 'a mode declared';
+const MODES_KEPT = 'modes kept by a confirm alone';
+const MODE_FORGOTTEN = 'a mode forgotten on a bench';
+const MODE_CARRIED = 'a mode carried between teams';
+const OFFLINE_AT_INCOME = 'an offline product at Income';
+const EARNING_LESS = 'a product earning less for its Bugs';
+const GROWTH_HACKER_EARNED = "a Growth Hacker's $3 earned";
+const BUG_ON_PROJECT = 'a Bug added to a project';
+const BUG_ON_PRODUCT = 'a Bug added to a product in operation';
+const CLEANED_ON_PROJECT = 'a Bug cleaned on a project';
+const CLEANED_IN_OPS = 'a Bug cleaned in operations by itself';
+const SWITCHED_OFF_AT_THE_END = 'a product switched off at the final check';
+const SWITCHED_ON_AT_THE_END = 'a product switched on at the final check';
+const BACK_ONLINE_AT_THE_END = 'every product back online at the final check';
+const BUG_STOPPED = "a Growth Hacker's Bug stopped by the Architect";
 
 /** The button of the phase `state` is in whose move type is `type`, as the game declares it. */
 const buttonOf = (state: GameState, type: string) =>
@@ -394,7 +411,8 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *   the first backlog card whose press is allowed, Tier 2 and 3 included, but an idea Domain Expertise cuts before any other. It
  *   dismisses the ops team's first card it can spare when `t % 9 === 4` and the development team's first when `t % 9 === 8`. In the
  *   last round, with the Market Crash in the crash pile, it dismisses on an even `t` the ops team's first card that gives Blue or Red
- *   bandwidth, once a turn (see `lastRound`).
+ *   bandwidth, once a turn (see `lastRound`): a path-driver, not play, that sends a seat short so that the final check has a choice
+ *   to make (see below).
  * - **The first action** is an Ideation, by `t % 4`: a growth idea (0 and 2), draft from the growth market (1), or (3) by
  *   `⌊t / 4⌋ % 3` research the seed deck, draft from the seed market or draft the open idea pool's first card. A growth idea
  *   researches the growth deck when the `style` researches, and drafts from the growth market when it drafts. A draft from a market
@@ -406,14 +424,15 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *   complete (P11), so that the Diva may go to the ops team with her team. Else it puts QA on its first project with Bugs that no QA
  *   on it cleans and that isn't Stalled, since a project with Bugs can't Launch (§6): the bench's first card that would clean them
  *   (see `qaForBugs`). Else it hires the agency row's first attaching card it can pay for, the Growth Hacker, onto its first product
- *   in operation (see `hireGrowthHacker`). Else, once a turn when `t % 4 === 1`, it reassigns the first card of its ops team that sits
- *   on a product to its first other product (see `moveGrowthHacker`). Else it pivots the project the Diva is on, which fires her
- *   (ruling 9), and it assigns her from the bench to the ops team, where her Ego refuses a reassign too. With none of those, it
- *   assigns the bench's makers of a color its first Tier 1 project with a cut lacks to that project (see `buildCut`), else it finds a
- *   lead for its first Stalled project (§3): the bench's first Senior Developer who would lead a colour it needs, assigned to it, else
- *   the agency row's first such Senior it can pay for, hired onto it, else the open job market's first, hired when it has the $1 the
- *   hire costs, else a Layoff of the bench's first card, which digs the talent deck for one. With no Stalled project, it is one by
- *   `(t + a) % 9`:
+ *   in operation (see `hireGrowthHacker`). Else it hires the Hacker from the agency row, when it can pay for him, onto its first
+ *   project that needs blue cubes and no red (see `hireHacker`). Else, once a turn when `t % 4 === 1`, it reassigns the first card
+ *   of its ops team that sits on a product to its first other product (see `moveGrowthHacker`). Else it pivots the project the Diva
+ *   is on, which fires her (ruling 9), and it assigns her from the bench to the ops team, where her Ego refuses a reassign too. With
+ *   none of those, it assigns the bench's makers of a color its first Tier 1 project with a cut lacks to that project (see
+ *   `buildCut`), else it finds a lead for its first Stalled project (§3): the bench's first Senior Developer who would lead a colour
+ *   it needs, assigned to it, else the agency row's first such Senior it can pay for, hired onto it, else the open job market's
+ *   first, hired when it has the $1 the hire costs, else a Layoff of the bench's first card, which digs the talent deck for one. With
+ *   no Stalled project, it is one by `(t + a) % 9`:
  *   0. recruit the Junior of kind `(t + a) % 3`;
  *   1. hire the first agency Senior Developer it can pay for, else the first agency card it can pay for, to its bench, its first
  *      project or its ops team, by `(t + ⌊t / 9⌋) % 3`; to the ops team by its first product's button when the card attaches or
@@ -427,7 +446,7 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *      card with another project to go on, to the first such project;
  *   6. recall every ops team card it can spare;
  *   7. pivot the first project with no cubes and no staff, else, when `t % 13 === 0`, the first project the Diva is on, else the
- *      first project;
+ *      first project, and on any other `t` the first project with a card in a mode on it (see `moded`);
  *   8. lay off the bench's first card, or its first two on an odd `t`.
  *
  *   When the rules refuse that, or it has nothing to pick, it makes the first of the Board moves 3 to 7 after it in the cycle that
@@ -466,9 +485,15 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  * check when a Launch brings too few staff for its product or a let go leaves the team short, and again at each Income until staff
  * join the team. The Growth Hacker earns its product $3 and adds a Bug each turn, which ops QA cleans at the Engine (§20.B, §5
  * Phase D), so it stays on its product and QA stays in the ops team while there are Bugs to clean. Kept that way, every seat's
- * products fit at the end and the final check passes every step at once, so in the last round, when no Income comes again, a seat
- * on an even `t` dismisses a card that gives bandwidth: the final check then finds some seats short and they choose what to switch
- * off (§12, ruling 25).
+ * products fit at the end and the final check passes every step at once, so it would never ask a seat to choose. The last round's
+ * dismiss is there to drive that path, not as a player's move: letting go of staff that run its products costs a seat their val, but
+ * it sends the seat short, and the final check then has it choose what to switch off (§12, ruling 25).
+ *
+ * A card in a mode would leave the Board only to the open job market, by a let go or a dismiss, so no bench would ever forget a mode.
+ * The Pivot of a project whose staff work in a mode is there to drive that path: it sends them to the bench, which forgets it
+ * (§11.C.2, ruling 24). And the Hacker adds a Bug to each project he joins (§20.B), but at 2 players a seat seldom has his $6 while
+ * he is in the agency row, and its actions go elsewhere when it does, so no 2-player game would see a project's Bug. A seat that
+ * can pay for him hires him onto a project that needs only the blue cubes his software output makes.
  *
  * Some of slice 3's paths come once or twice in all the long runs, and slice 4's moves change which games reach them. So the Diva
  * goes to the ops team from the bench on any turn, a project with a cut, which Domain Expertise made cheaper to build, gets makers
@@ -818,6 +843,16 @@ function playTurn(
     if (attachingFor(cards('agency-row')) === undefined || cards(own('operations')).length === 0) return null;
     return pick(HIRE_AGENCY_TO_PRODUCT, 'agency-row', attachingFor, onProduct());
   };
+  /**
+   * The Hacker from the agency row onto the seat's first project that needs blue cubes and no red, which his software output builds,
+   * when the seat can pay for him: his Spaghetti Code adds a Bug to each project he joins (§20.B). Null otherwise.
+   */
+  const hireHacker = (): Move | null => {
+    const hacker = (row: CardState[]) => row.find((card) => card.data?.trait === 'Spaghetti Code' && canPay(card));
+    const blueOnly = (project: CardState) => needing(runtime, engine.getState(), project).join() === 'blue';
+    if (hacker(cards('agency-row')) === undefined || !cards(own('development')).some(blueOnly)) return null;
+    return pick(HIRE_AGENCY_TO_PROJECT, 'agency-row', hacker, onProject((projects) => projects.find(blueOnly)));
+  };
   /** Whether this turn has moved a card from one product to another. */
   let movedOnProducts = false;
   /**
@@ -853,6 +888,9 @@ function playTurn(
   const reassignDiva = (): Move | null => pick(REASSIGN_FROM_OPS, own('ops team'), (row) => row.find(isDiva), onProject())
     ?? pick(REASSIGN_FROM_PROJECT, own('development team'), (row) => row.find(isDiva),
       onProject((targets, card) => targets.find((project) => project.id !== card.data?.[HOLDER_KEY]) ?? targets[0]));
+  /** Whether a card on `project` works in a mode: Red or QA, as a declaration left it (§11.C.2). */
+  const moded = (project: CardState) =>
+    cardsOn(engine.getState(), project.id).some((card) => MODES.some((mode) => card.data?.[mode] === true));
   /** A Pivot of the project the Diva is on, which fires her, since no reassign will move her (ruling 9). */
   const pivotDiva = () => pick(PIVOT, own('development'), (row) => row.find(divaOn));
   /** The Diva's assign from the bench to the ops team, where her Ego refuses a reassign as well (§6, §20.B.1). */
@@ -901,7 +939,7 @@ function playTurn(
       case 7: {
         const idle = (project: CardState) =>
           cubesOn(project, 'blue cubes') + cubesOn(project, 'red cubes') === 0 && cardsOn(engine.getState(), project.id).length === 0;
-        return pick(PIVOT, own('development'), (row) => row.find(idle) ?? (t % 13 === 0 ? row.find(divaOn) ?? row[0] : undefined));
+        return pick(PIVOT, own('development'), (row) => row.find(idle) ?? (t % 13 === 0 ? row.find(divaOn) ?? row[0] : row.find(moded)));
       }
       default:
         return pickSome(LAY_OFF, own('bench'), (bench) => bench.slice(0, 1 + (t % 2)));
@@ -962,7 +1000,7 @@ function playTurn(
         buildCut() ?? leadForStalled() ?? boardAction(action, a), ...boardMovesAfter(action).map((next) => boardAction(next, a)),
       ];
       const planned = a === 0 ? ideation() : [
-        reassignDiva(), launch(), qaForBugs(), hireGrowthHacker(), moveGrowthHacker(), pivotDiva(), divaToOps(), ...board(),
+        reassignDiva(), launch(), qaForBugs(), hireGrowthHacker(), hireHacker(), moveGrowthHacker(), pivotDiva(), divaToOps(), ...board(),
       ];
       const move = choose([...planned, recruitMaker(a), press(END_ACTIONS)]);
       if (move.type === REASSIGN_TO_PRODUCT) movedOnProducts = true;
@@ -1089,6 +1127,22 @@ function atTheEngine(before: GameState, move: Move, after: GameState): GameState
  * - **The Engine** running on a stalled project of the mover's (§3).
  * - **The Diva** fired to the open job market by a Pivot of her project (ruling 9), and **the Engineer** paid his $1 salary in the ops
  *   team at Income (§20.B.1).
+ *
+ * Slice 4's paths, read through `runtime` as well (§5 Phase B and D, §11.C.2, §12, §20.B). Counts are read as numbers and flags as
+ * `=== true` (P6):
+ * - **Modes.** A declaration, by the mode its answer names, or the press's only option (`a mode declared: Red`); each card that was in a
+ *   mode and is now in a bench, which forgets it; and each card that moved between a development team and an ops team, keeping its
+ *   mode (ruling 24).
+ * - **Income**, for the seat that reached it: each product of its operations that is offline, and each online one with Bugs, which
+ *   earns $1 less a Bug, or that is viral, which earns the Growth Hacker's $3.
+ * - **Bugs.** Each project and each product in operation whose Bugs rose; each project whose Bugs fell in a move that ran the Engine;
+ *   and each product in operation whose Bugs fell in a move that is no press of the clean button, as ops QA cleans them as the Engine
+ *   starts.
+ * - **The final check.** Each switch off and switch on pressed in it, and each product the rules brought back online in a move into,
+ *   through or out of it, the switched-on card aside.
+ * - **The Architect's shield.** Each viral product of a seat whose turn the move passed with the Architect in its ops team, not
+ *   onboarding, whose Bugs did not rise. The Engine's ops QA may clean in the same move, so a product whose Bugs did not rise without
+ *   the Architect was cleaned, not shielded.
  */
 function happenings(runtime: LangRuntime, before: GameState, move: Move, after: GameState): string[] {
   const boxed = new Set(zoneCards(before, 'box').map((c) => c.id));
@@ -1143,7 +1197,66 @@ function happenings(runtime: LangRuntime, before: GameState, move: Move, after: 
     const engineer = zoneCards(before, zoneIdFor('ops team', by)).find((staff) => nameOf(staff) === 'Engineer');
     if (engineer !== undefined && runtime.workedValue(before, engineer.id, 'salary') === 1) keys.push(ENGINEER_IN_OPS);
   }
+
+  // Slice 4's paths.
+  if (Object.values(DECLARE).includes(move.type)) {
+    const asked = pressChoices(runtime, before, move);
+    keys.push(`${MODE_DECLARED}: ${answersOf(move)[0] ?? (typeof asked === 'string' ? undefined : asked[0]?.options[0])}`);
+  }
+  if (reached !== null) {
+    const products = operationsOf(after, reached);
+    const online = products.filter((product) => product.data?.offline !== true);
+    keys.push(...products.filter((product) => product.data?.offline === true).map(() => OFFLINE_AT_INCOME));
+    keys.push(...online.filter((product) => bugsOn(product) > 0).map(() => EARNING_LESS));
+    keys.push(...online.filter((product) => runtime.workedFlag(after, product.id, 'viral')).map(() => GROWTH_HACKER_EARNED));
+  }
+  const wasById = new Map(before.cards.map((c) => [c.id, c]));
+  const engineRan = ranTheEngine(before, after, by);
+  const inMode = (c: CardState | undefined) => MODES.filter((mode) => c?.data?.[mode] === true);
+  for (const c of after.cards) {
+    const was = wasById.get(c.id);
+    const [row, wasRow] = [zoneInfo(game!, c.zoneId)?.spec.name, was === undefined ? undefined : zoneInfo(game!, was.zoneId)?.spec.name];
+    if (row === 'development' || row === 'operations') {
+      const bugs = bugsOn(c) - (was === undefined ? 0 : bugsOn(was));
+      if (bugs > 0) keys.push(row === 'development' ? BUG_ON_PROJECT : BUG_ON_PRODUCT);
+      if (bugs < 0 && row === 'development' && engineRan) keys.push(CLEANED_ON_PROJECT);
+      if (bugs < 0 && row === 'operations' && move.type !== CLEAN) keys.push(CLEANED_IN_OPS);
+    }
+    if (row === 'bench' && inMode(was).length > 0) keys.push(MODE_FORGOTTEN);
+    const teams = ['development team', 'ops team'];
+    const kept = inMode(was).filter((mode) => inMode(c).includes(mode));
+    if (teams.includes(row!) && teams.includes(wasRow!) && row !== wasRow && kept.length > 0) keys.push(MODE_CARRIED);
+  }
+  if (before.turn!.phase === FINAL_CHECK && move.type === SWITCH_OFF) keys.push(SWITCHED_OFF_AT_THE_END);
+  if (before.turn!.phase === FINAL_CHECK && move.type === SWITCH_ON) keys.push(SWITCHED_ON_AT_THE_END);
+  // The rule that brings every product back online runs as a seat's step starts, which may be in the move that reaches the final check
+  // or in the one that sets the result, whatever phase the game shows after it (§12).
+  const atTheEnd = [before.turn!, after.turn!].some(({ phase }) => phase === FINAL_CHECK)
+    || (before.result === undefined && after.result !== undefined);
+  if (atTheEnd) {
+    const back = after.cards.filter((c) => c.data?.offline !== true && wasById.get(c.id)?.data?.offline === true);
+    keys.push(...back.filter((c) => !(move.type === SWITCH_ON && c.id === move.cardId)).map(() => BACK_ONLINE_AT_THE_END));
+  }
+  if (passedTurn(before, after, by)) {
+    // The turn passes as the step it ran in ends, before the next turn starts and lets every card settle in: so the cards on its
+    // products and in its ops team onboard as they did before the move, as at the Engine.
+    const passing = atTheEngine(before, move, after);
+    const shielded = zoneCards(passing, zoneIdFor('ops team', by))
+      .some((staff) => staff.data?.trait === 'Clean Code' && staff.data?.onboarding !== true);
+    const stopped = operationsOf(passing, by).filter((product) => runtime.workedFlag(passing, product.id, 'viral')
+      && bugsOn(product) <= bugsOn(wasById.get(product.id) ?? product));
+    if (shielded) keys.push(...stopped.map(() => BUG_STOPPED));
+  }
   return keys;
+}
+
+/**
+ * Whether the move from `before` to `after` passed `by`'s turn, as its backlog cleanup ends (§5): the turn was `by`'s before, outside
+ * the final check, and after it the turn is another seat's, the game is in the final check or it is over.
+ */
+function passedTurn(before: GameState, after: GameState, by: PlayerId): boolean {
+  if (before.turn!.current !== by || before.turn!.phase === FINAL_CHECK) return false;
+  return after.result !== undefined || after.turn!.phase === FINAL_CHECK || after.turn!.current !== by;
 }
 
 /**
@@ -1190,7 +1303,8 @@ function scoreOf(state: GameState, seat: PlayerId): number {
  *   leaves its card in the mode its answer names and in no other: Blue in neither.
  * - Ops: the seat that reached its Income in the move runs its online products within its ops team's supply, in Blue and in Red
  *   (§5 Phase B, ruling 19). A product goes offline or back online only in its owner's ops check: by a press there, as the check
- *   starts, or on the way through it to Income (ruling 25); or in the final check before the score (§12).
+ *   starts, or on the way through it to Income (ruling 25). At the end, a product goes back online in any move into, through or out
+ *   of the final check before the score, but offline only by its owner's switch off in it (§12).
  * - Only the seat in the sourcing phase has cards in its scouting row.
  * - Each market refills at once: the agency row holds 4 and each product market 2 while its deck has cards, and the Market
  *   Crash is never anywhere but the growth deck or the crash pile.
@@ -1386,16 +1500,19 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     // Online fits after every Income: the ops team's supply runs the products left online, in each color (§5 Phase B, ruling 19).
     if (income !== null) expect(shortOf(runtime, after, income), `the colors ${income} is short of at Income ${at}`).toEqual([]);
     // A product's Offline changes only in its owner's ops check: by a press there, as the check starts, or on the way through it to
-    // Income (ruling 25); or in the final check before the score, whose steps may each pass on in the move that starts them, up to the
-    // move that sets the result (§12). A product is offline only when its flag is true: "It is not offline." may leave it false.
+    // Income (ruling 25). At the end, each step of the final check may bring its seat's products back online as it starts, and may
+    // pass on in the move that starts it, up to the move that sets the result; but a product goes offline there only by its owner's
+    // switch off (§12). A product is offline only when its flag is true: "It is not offline." may leave it false.
     const offline = (c: CardState | undefined) => c?.data?.offline === true;
     const finalCheck = [before.turn!, after.turn!].some(({ phase }) => phase === FINAL_CHECK)
       || (before.result === undefined && after.result !== undefined);
-    const checking = (seat: PlayerId) => income === seat || finalCheck
+    const switchedOff = before.turn!.phase === FINAL_CHECK && move.type === SWITCH_OFF ? move.cardId : undefined;
+    const checking = (seat: PlayerId) => income === seat
       || [before.turn!, after.turn!].some(({ current, phase }) => current === seat && phase === 'ops check');
     const switched = after.cards.filter((c) => offline(c) !== offline(wasById.get(c.id))).flatMap((c) => {
       const owner = seats.find((seat) => c.zoneId === zoneIdFor('operations', seat));
       if (owner !== undefined && checking(owner)) return [];
+      if (owner !== undefined && finalCheck && (!offline(c) || (owner === by && c.id === switchedOff))) return [];
       return [`${c.id} (${nameOf(c)}) in ${c.zoneId} went ${offline(c) ? 'offline' : 'online'}`];
     });
     expect(switched, `the products switched ${at}`).toEqual([]);
@@ -1997,10 +2114,17 @@ describe('Startup Simulator (designer language)', () => {
           if (REASSIGNS.includes(move.type) && reason === EGO_REFUSAL) count(DIVA_REFUSED[move.type]);
         };
         const finalCheck = new Set<number>();
+        /** The seats that have declared a mode since their turn started (§11.C.2). */
+        const declaring = new Set<PlayerId>();
         const engine = playGame(players, seed, (before, move, after) => {
           rules(before, move, after);
           budget(before, move, after);
           for (const key of [move.type, ...happenings(runtime, before, move, after)]) count(key);
+          const by = move.by as PlayerId;
+          if (Object.values(DECLARE).includes(move.type)) declaring.add(by);
+          if (move.type === CONFIRM_MODES && !declaring.has(by)) count(MODES_KEPT);
+          const started = turnStarted(before, after);
+          if (started !== null) declaring.delete(started);
         }, { throughView: seed === 1, refused, finalCheck });
         if (seed === 1) {
           // The view was checked card by card: the cards each card may go on, and the cards of a set, each judged alone.
@@ -2043,10 +2167,17 @@ describe('Startup Simulator (designer language)', () => {
         REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS, RECALL, DISMISS_FROM_PROJECT, DISMISS_FROM_OPS,
         // Income's, Launch, Pivot, Layoff and Source.
         ...Object.values(LET_GO), PAY_SALARIES, LAUNCH, PIVOT, LAY_OFF, ...SOURCE_HIRES, PASS_ON_THE_REST,
+        // Slice 4's: the declaration of modes, the ops check and the final check's switches, and the buttons that put a card on a
+        // product in operation.
+        ...Object.values(DECLARE), CONFIRM_MODES, SWITCH_OFF, SWITCH_ON, CONFIRM_ONLINE,
+        ASSIGN_TO_PRODUCT, HIRE_AGENCY_TO_PRODUCT, HIRE_SCOUTED_TO_PRODUCT,
         // What the rules make happen on their own.
         'open idea pool lets a card go to the box', 'open job market lets a card go to the box', PUSHED_OUT,
         'the Market Crash reaches the crash pile from the growth market', 'the Market Crash reaches the crash pile from a research row',
       ];
+      // A seat almost never holds two products while its Growth Hacker sits on one, so the reassign from one product to another is
+      // counted but not required; an arranged test below pins the auto-player's press of it. So is the clean button, which the
+      // Engine waits on only when ops QA can't clean every Bug, and only the one Growth Hacker brings Bugs to products in operation.
       expect(every.filter((key) => !(tally[key] > 0)), `never made or seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
@@ -2068,6 +2199,21 @@ describe('Startup Simulator (designer language)', () => {
         STALLED_AT_THE_ENGINE, ...Object.values(DIVA_REFUSED), DIVA_PIVOTED, ENGINEER_IN_OPS,
       ];
       // Two Licenses in one Greenlight takes a Tier 3 card whose both Tags the mover lacks; it is counted, but not required.
+      expect(paths.filter((key) => !(tally[key] > 0)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
+    });
+
+    it('played slice 4 in those runs: modes declared and kept, products offline at Income, Bugs added, costing revenue and cleaned, the Growth Hacker’s $3 and the final check', () => {
+      const paths = [
+        `${MODE_DECLARED}: Blue`, `${MODE_DECLARED}: Red`, `${MODE_DECLARED}: QA`, MODES_KEPT, MODE_FORGOTTEN,
+        OFFLINE_AT_INCOME, EARNING_LESS, GROWTH_HACKER_EARNED,
+        BUG_ON_PROJECT, BUG_ON_PRODUCT, CLEANED_ON_PROJECT, CLEANED_IN_OPS,
+        SWITCHED_OFF_AT_THE_END,
+      ];
+      // Counted, but not required: a mode carried between teams, the clean button, a product switched on or brought back online at the
+      // final check, and the Architect stopping a Growth Hacker's Bug. Only the one Growth Hacker brings Bugs to products in operation,
+      // so two such products with Bugs at once are rare, and he seldom shares an ops team with the one Architect. A seat seldom comes to
+      // the final check holding a product its last ops check switched off, and seldom then short (to switch it on) or able to run every
+      // product (to bring it back). Examples pin each, and the arranged tests below pin the auto-player's clean and final check.
       expect(paths.filter((key) => !(tally[key] > 0)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
@@ -2348,6 +2494,54 @@ describe('Startup Simulator (designer language)', () => {
       const { scores } = end.result as { scores: Record<string, number> };
       expect(scores).toEqual(Object.fromEntries(seats.map((seat) => [seat, scoreOf(end, seat)])));
     });
+
+    it('reassigns the Growth Hacker from its product to the seat’s other product once on a turn when t % 4 is 1, through the page’s view and without it (§6, §20.B)', () => {
+      // The long runs seldom see a seat with two products while its Growth Hacker sits on one, so this arranges it: the Architect
+      // runs both products and stops the Growth Hacker's Bug.
+      const [dating, todo, growthHacker] = ['Dating App', 'To-Do List', 'Growth Hacker'].map(idOf);
+      const arranged = arrange({ 'operations-p0': [dating, todo], 'ops-team-p0': [idOf('Architect')] }).getState();
+      const state = putOn(arranged, [growthHacker], 'ops-team-p0', dating, game!);
+      const seats = seatsFor(2);
+      for (const t of [0, 1, 4, 5]) {
+        const logs = [false, true].map((throughView) => {
+          const { engine, runtime } = createEngine(game!, lib, 2, state);
+          playTurn(engine, t, 'researches', keepsTheRules(seats, runtime), () => false, runtime, throughView);
+          return engine.getLog();
+        });
+        const reassigns = logs[0].filter((move) => move.type === REASSIGN_TO_PRODUCT);
+        const onto = { type: REASSIGN_TO_PRODUCT, by: 'p0', cardId: growthHacker, onto: todo };
+        expect(reassigns, `turn ${t}`).toEqual(t % 4 === 1 ? [onto] : []);
+        expect(logs[1], `turn ${t}`).toEqual(logs[0]);
+      }
+    });
+
+    it('takes back the last move and rebuilds whole games from their logs, through declarations, Bugs and the final check (Review Focus: 2 players, seeds 1 to 5)', () => {
+      const seats = seatsFor(2);
+      const runtime = new LangRuntime(game!, lib, seats);
+      const seen = { declarations: 0, 'switches off': 0, 'Bugs added to a project': 0 };
+      for (let seed = 1; seed <= 5; seed++) {
+        const where = `2 players, seed ${seed}`;
+        const states: GameState[] = [];
+        const engine = playGame(2, seed, (before, move, after) => {
+          states.push(before);
+          if (Object.values(DECLARE).includes(move.type)) seen.declarations += 1;
+          if (move.type === SWITCH_OFF) seen['switches off'] += 1;
+          seen['Bugs added to a project'] += happenings(runtime, before, move, after).filter((key) => key === BUG_ON_PROJECT).length;
+        });
+        const log = [...engine.getLog()];
+        const end = engine.getState();
+        expect(end.result, `${where}: the result`).toBeDefined();
+        expect(states).toHaveLength(log.length);
+
+        const replayed = createEngine(game!, lib, 2, initialState(game!, seed)).engine;
+        replayed.loadLog(log);
+        expect(replayed.getState(), `${where}: the game rebuilt from its log`).toEqual(end);
+        engine.undo();
+        expect(engine.getState(), `${where}: the game with its last move, ${log.at(-1)!.type}, taken back`).toEqual(states.at(-1));
+      }
+      // Some log declared a mode, switched a product off and added a Bug to a project, so the replays rebuilt each of them.
+      expect(Object.entries(seen).filter(([, times]) => times === 0), JSON.stringify(seen)).toEqual([]);
+    }, 120_000);
   });
 });
 
