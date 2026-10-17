@@ -446,7 +446,7 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *      card with another project to go on, to the first such project;
  *   6. recall every ops team card it can spare;
  *   7. pivot the first project with no cubes and no staff, else, when `t % 13 === 0`, the first project the Diva is on, else the
- *      first project, and on any other `t` the first project with a card in a mode on it (see `moded`);
+ *      first project; on any other `t`, the first project with a card in a mode on it (see `moded`);
  *   8. lay off the bench's first card, or its first two on an odd `t`.
  *
  *   When the rules refuse that, or it has nothing to pick, it makes the first of the Board moves 3 to 7 after it in the cycle that
@@ -493,7 +493,9 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  * The Pivot of a project whose staff work in a mode is there to drive that path: it sends them to the bench, which forgets it
  * (§11.C.2, ruling 24). And the Hacker adds a Bug to each project he joins (§20.B), but at 2 players a seat seldom has his $6 while
  * he is in the agency row, and its actions go elsewhere when it does, so no 2-player game would see a project's Bug. A seat that
- * can pay for him hires him onto a project that needs only the blue cubes his software output makes.
+ * can pay for him hires him onto a project that needs only the blue cubes his software output makes. That is a path-driver too, not
+ * play (a seat would avoid a Spaghetti Code hire), and the blue-only gate has a second reason: ungated, the hire moves 4 players
+ * seed 1 off the Greenlight that asks a choice among several, which the Greenlight replay's `among` needs.
  *
  * Some of slice 3's paths come once or twice in all the long runs, and slice 4's moves change which games reach them. So the Diva
  * goes to the ops team from the bench on any turn, a project with a cut, which Domain Expertise made cheaper to build, gets makers
@@ -845,7 +847,9 @@ function playTurn(
   };
   /**
    * The Hacker from the agency row onto the seat's first project that needs blue cubes and no red, which his software output builds,
-   * when the seat can pay for him: his Spaghetti Code adds a Bug to each project he joins (§20.B). Null otherwise.
+   * when the seat can pay for him: his Spaghetti Code adds a Bug to each project he joins (§20.B). Null otherwise. A path-driver, not
+   * play (a seat would avoid a Spaghetti Code hire): it puts a Bug on a project in a 2-player game. The gate has two reasons: he makes
+   * only blue, and ungated the hire moves 4 players seed 1 off the Greenlight that asks a choice among several.
    */
   const hireHacker = (): Move | null => {
     const hacker = (row: CardState[]) => row.find((card) => card.data?.trait === 'Spaghetti Code' && canPay(card));
@@ -2199,6 +2203,9 @@ describe('Startup Simulator (designer language)', () => {
         STALLED_AT_THE_ENGINE, ...Object.values(DIVA_REFUSED), DIVA_PIVOTED, ENGINEER_IN_OPS,
       ];
       // Two Licenses in one Greenlight takes a Tier 3 card whose both Tags the mover lacks; it is counted, but not required.
+      // Held by one game each: Cut 2 red (2 players, seed 4), the Engineer's $1 in the ops team (2 players, seed 1) and the scouting
+      // hire to the bench (5 players, seed 3), to the ops team (2 players, seed 2) and to a product (3 players, seed 2), which the
+      // test of every move requires. A failure here means a cadence moved: retune the auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
@@ -2214,6 +2221,9 @@ describe('Startup Simulator (designer language)', () => {
       // so two such products with Bugs at once are rare, and he seldom shares an ops team with the one Architect. A seat seldom comes to
       // the final check holding a product its last ops check switched off, and seldom then short (to switch it on) or able to run every
       // product (to bring it back). Examples pin each, and the arranged tests below pin the auto-player's clean and final check.
+      // Held by one game each: a mode forgotten on a bench (3 players, seed 2, through the Pivot steer), a Bug cleaned in operations
+      // by itself (5 players, seed 2) and a mode declared QA (2 players, seed 4). A failure here means a cadence moved: retune the
+      // auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
@@ -2546,7 +2556,9 @@ describe('Startup Simulator (designer language)', () => {
         engine.undo();
         expect(engine.getState(), `${where}: the game with its last move, ${log.at(-1)!.type}, taken back`).toEqual(states.at(-1));
       }
-      // Some log declared a mode, switched a product off and added a Bug to a project, so the replays rebuilt each of them.
+      // Some log declared a mode, switched a product off and added a Bug to a project, so the replays rebuilt each of them. The Bug
+      // is in seed 1 only, through `hireHacker`, and a final-check switch-off is the last move taken back in seed 3 only. No log holds
+      // a clean press, so the R3 Review Focus test above replays one.
       expect(Object.entries(seen).filter(([, times]) => times === 0), JSON.stringify(seen)).toEqual([]);
     }, 120_000);
   });
