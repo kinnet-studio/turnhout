@@ -6,6 +6,7 @@
 import { HIDDEN_FACE_KEY } from '@/engine/core/derive-scene';
 import { holderIdOf } from '@/engine/core/lang/attach';
 import { cardAttribute, cardFact, pickName } from '@/engine/core/lang/card-facts';
+import { tableColumns } from '@/engine/core/lang/card-facts';
 import { joinAnd } from '@/engine/core/lang/refs';
 import type { CompiledGame, ZoneSpec } from '@/engine/core/lang/types';
 import type { WorkedCard, WorkedView } from '@/engine/core/lang/board-view';
@@ -66,14 +67,15 @@ export function countParts(card: CardState, game: CompiledGame, worked?: WorkedC
 }
 
 /**
- * A card's words: each column in its data, in order, that holds text and isn't its name ('mark stone'). A card's own facts and the
- * page's bookkeeping (`lang:…`, such as the card it sits on) sit in its data beside its columns, so they are skipped.
+ * A card's words: each of the game's table columns in its data, in the card's own data order, that holds text and isn't its name
+ * ('mark stone'). Whatever else sits in a card's data (its own facts, who moved it, the card it sits on) is bookkeeping, not a
+ * column, so it is never a word.
  */
 function wordsOf(card: CardState, game: CompiledGame): string[] {
   const data = card.data ?? {};
-  const facts = new Set(game.facts.filter((fact) => fact.on === 'card').map((fact) => fact.name));
+  const columns = new Set(tableColumns(game));
   return Object.keys(data)
-    .filter((key) => key !== 'name' && !facts.has(key) && !key.startsWith('lang:') && typeof data[key] === 'string')
+    .filter((key) => key !== 'name' && columns.has(key) && typeof data[key] === 'string')
     .map((key) => `${key} ${data[key]}`);
 }
 

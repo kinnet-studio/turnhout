@@ -188,4 +188,18 @@ describe('what the rules work out, on the Board', () => {
     // The Potter has words of its own, but nothing to count, so it lists none; the card it sits on is bookkeeping, never a word.
     expect(cardOf(arranged, potter).data).toMatchObject({ craft: 'red', mood: 'calm', 'lang:on': statueId });
   });
+
+  // A card moved by a declared drag move carries the engine's `movedBy` in its data, beside its columns: bookkeeping, never a word.
+  it("never lists the engine's note of who moved a card as one of its words", () => {
+    const dragged = compileGame(
+      GUILD_GAME.replace('  A player may stop.', '  A player may play a card from their stash to their workshop.\n  A player may stop.'),
+      lib,
+    ).game!;
+    const { engine } = createEngine(dragged, lib, 2, initialState(dragged, 1));
+    const [stashed] = engine.getState().cards.filter((card) => card.zoneId === 'stash-p0' && card.data?.name === 'Statue');
+    expect(engine.dispatch({ type: 'play', by: 'p0', cardId: stashed.id })).toMatchObject({ ok: true });
+    const after = engine.getState();
+    expect(cardOf(after, stashed.id).data).toMatchObject({ name: 'Statue', movedBy: 'p0' });
+    expect(boardText(dragged, after.cards, 'p0')).toBe('workshop: Statue (mark stone, wants clay) [Red 0/2, Gold 0/4]');
+  });
 });
