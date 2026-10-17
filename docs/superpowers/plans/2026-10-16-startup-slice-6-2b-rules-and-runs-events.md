@@ -40,6 +40,8 @@
 
 ## Global Constraints
 
+- **Sequencing (controller ruling).** Plan 6-3's Task 1 (the view reads the card in play) runs before this plan's Task 2: Event flags inside the output and bandwidth values would otherwise stop the stand-ins, supplies and gauges being shown, and this plan's `standIns` and 4-3's gauge pins would fail.
+
 - **Branch and commits.** Develop on `claude/peaceful-curie-rdfkow`. Commit by pathspec, never `git add -A`. Every commit message ends with these two lines and contains no model identifiers:
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`
   `Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC`
