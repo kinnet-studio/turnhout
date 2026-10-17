@@ -156,16 +156,29 @@ const REASSIGN_FROM_OPS = 'reassign a card from their ops team to a card in thei
 const RECALL = 'recall some cards from their ops team to their bench';
 const DISMISS_FROM_OPS = 'dismiss a card in their ops team';
 const LAUNCH = 'launch a card from their development to their operations';
-/** The two buttons that move staff onto a project from where they work, which the Diva's Ego refuses (§6, §20.B.1). */
-const REASSIGNS = [REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS];
-/** Sourcing's hires (§13.B): the cards a Layoff found, at their printed cost, to the bench, the ops team or a project. */
+/**
+ * The buttons that put a card on a product in operation its owner picks, as the Growth Hacker sits on its product, and send any other
+ * card they move to the ops team (§3, §6, §20.B): a hire from the agency row, an assign from the bench, a hire from the scouting, and a
+ * reassign of a card on one product to another.
+ */
+const HIRE_AGENCY_TO_PRODUCT = 'hire a card from the agency row to a card in their operations';
+const ASSIGN_TO_PRODUCT = 'assign some cards from their bench to a card in their operations';
+const HIRE_SCOUTED_TO_PRODUCT = 'hire some cards from their scouting to a card in their operations';
+const REASSIGN_TO_PRODUCT = 'reassign a card from their ops team to a card in their operations';
+/**
+ * The buttons that reassign staff, each leaving its card onboarding (§6): onto a project from where they work, which the Diva's Ego
+ * refuses (§20.B.1), and from one product in operation to another.
+ */
+const REASSIGNS = [REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS, REASSIGN_TO_PRODUCT];
+/** Sourcing's hires (§13.B): the cards a Layoff found, at their printed cost, to the bench, the ops team, a project or a product. */
 const SOURCE_HIRES = [
   'hire some cards from their scouting to their bench',
   'hire some cards from their scouting to their ops team',
   'hire some cards from their scouting to a card in their development',
+  HIRE_SCOUTED_TO_PRODUCT,
 ];
 /** The hires from the agency row, which cost the card's cost. */
-const AGENCY_HIRES = [HIRE_AGENCY, HIRE_AGENCY_TO_PROJECT, HIRE_AGENCY_TO_OPS];
+const AGENCY_HIRES = [HIRE_AGENCY, HIRE_AGENCY_TO_PROJECT, HIRE_AGENCY_TO_OPS, HIRE_AGENCY_TO_PRODUCT];
 /** Every button that hires: an agency card that reaches the open job market in any other move was pushed out of its row. */
 const HIRES = [...AGENCY_HIRES, HIRE_MARKET, ...SOURCE_HIRES];
 /** What the tally calls a product in operation paying its rev at Income (§5). */
@@ -357,7 +370,7 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  * whose sector an online product in the seat's operations shares, other than Infra and Concept (§19.A, ruling 5); a hybrid is an
  * idea that costs cubes of both colors. Staff the seat can spare from its ops team are those whose leaving keeps the team's Blue and
  * Red bandwidth at its products' load, in each color they give, so that every product stays online at its next Income unless a
- * declaration changes a mode (see `spare`).
+ * declaration changes a mode, but never the Growth Hacker on its product, nor QA while a product has Bugs or is viral (see `spare`).
  *
  * - **Modes.** When `t % 4 === 3` it confirms its modes at once. Otherwise it declares each card of its Board the rules call
  *   declarable, once each, the development team's first and then the ops team's, in slot order, and then confirms. Each declaration's
@@ -381,19 +394,25 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  * - **Each later action** first tries to reassign the Diva while she works for the seat, which her Ego refuses at no cost
  *   (§20.B.1). Then it launches the first project the engine takes, which a Tier 2 or 3 project needs to be fully led for as well as
  *   complete (P11), so that the Diva may go to the ops team with her team. Else it puts QA on its first project with Bugs that no QA
- *   on it cleans, since a project with Bugs can't Launch (§6): the bench's first card that would clean them (see `qaForBugs`). Else
- *   it pivots the project she is on, which fires her (ruling 9), and on an even `t` it assigns her from the bench to the ops team,
- *   where her Ego refuses a reassign too. With none of those, it finds a lead for its first Stalled project (§3): the bench's first
- *   Senior Developer who would lead a colour it needs, assigned to it, else the agency row's first such Senior it can pay for, hired
- *   onto it, else the open job market's first, hired when it has the $1 the hire costs, else a Layoff of the bench's first card, which
- *   digs the talent deck for one. With no Stalled project, it is one by `(t + a) % 9`:
+ *   on it cleans and that isn't Stalled, since a project with Bugs can't Launch (§6): the bench's first card that would clean them
+ *   (see `qaForBugs`). Else it hires the agency row's first attaching card it can pay for, the Growth Hacker, onto its first product
+ *   in operation (see `hireGrowthHacker`). Else, once a turn when `t % 4 === 1`, it reassigns the first card of its ops team that sits
+ *   on a product to its first other product (see `moveGrowthHacker`). Else it pivots the project the Diva is on, which fires her
+ *   (ruling 9), and it assigns her from the bench to the ops team, where her Ego refuses a reassign too. With none of those, it
+ *   assigns the bench's makers of a color its first Tier 1 project with a cut lacks to that project (see `buildCut`), else it finds a
+ *   lead for its first Stalled project (§3): the bench's first Senior Developer who would lead a colour it needs, assigned to it, else
+ *   the agency row's first such Senior it can pay for, hired onto it, else the open job market's first, hired when it has the $1 the
+ *   hire costs, else a Layoff of the bench's first card, which digs the talent deck for one. With no Stalled project, it is one by
+ *   `(t + a) % 9`:
  *   0. recruit the Junior of kind `(t + a) % 3`;
  *   1. hire the first agency Senior Developer it can pay for, else the first agency card it can pay for, to its bench, its first
- *      project or its ops team, by `(t + ⌊t / 9⌋) % 3`;
+ *      project or its ops team, by `(t + ⌊t / 9⌋) % 3`; to the ops team by its first product's button when the card attaches or
+ *      `⌊t / 9⌋` is odd (see `toAProduct`);
  *   2. hire the open job market's first Senior Developer, else its first card;
- *   3. assign the bench cards whose skill makes a color the first unfinished project still lacks (the bench's first card when none
- *      does) to that project, leaving an Efficient card on the bench;
- *   4. assign the bench's first two cards (or its one) to the ops team, an Efficient card first;
+ *   3. assign the bench cards whose skill makes a color its first unfinished project with a cut still lacks, or with none such its
+ *      first unfinished project (the bench's first card when none does), to that project, leaving an Efficient card on the bench;
+ *   4. assign the bench's first two cards (or its one) to the ops team, an Efficient card first, by its first product's button when
+ *      one of them attaches or `⌊t / 9⌋` is odd;
  *   5. reassign the first card but an Efficient one the ops team can spare to the first project, else the first development team
  *      card with another project to go on, to the first such project;
  *   6. recall every ops team card it can spare;
@@ -402,13 +421,15 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *   8. lay off the bench's first card, or its first two on an odd `t`.
  *
  *   When the rules refuse that, or it has nothing to pick, it makes the first of the Board moves 3 to 7 after it in the cycle that
- *   it can (see `boardMovesAfter`); with none, it recruits a Junior QA Tester while a project has Bugs no QA on it cleans and the
- *   bench has no card that would, else a Junior who makes a color the first unfinished project lacks, or with none lacking the Junior
- *   of kind `(t + a) % 3`, else ends its actions.
+ *   it can (see `boardMovesAfter`); with none, it recruits a Junior QA Tester while a project that isn't Stalled has Bugs no QA on it
+ *   cleans and the bench has no card that would, else a Junior who makes a color the first unfinished project lacks, or with none
+ *   lacking the Junior of kind `(t + a) % 3`, else ends its actions.
  * - **Engine.** While the Engine waits on it, its ops team's QA short of the Bugs on its products in operation, it cleans the
  *   product at `t % n` among its n products in operation with Bugs, in slot order (§5 Phase D, R3).
  * - **Sourcing.** It hires the first card in its scouting it can pay for, to its bench, its ops team or its first project, by
- *   `(t + ⌊t / 9⌋) % 3`; when it can pay for none, or the rules refuse the hire, it passes on the rest.
+ *   `(t + ⌊t / 9⌋) % 3`, or to its ops team while it has a product in operation, by its first product's button as action 1 does.
+ *   When the rules refuse that, or it has nothing to pick, it tries the next of those places in that order, and with none it passes
+ *   on the rest (see `sourcing`).
  * - In research it keeps a hybrid Domain Expertise cuts, else an idea it cuts, else the research row's card at `t` (mod the row's
  *   length). In the backlog cleanup it discards the first card Domain Expertise doesn't cut, else the row's first; in the bench
  *   cleanup, the row's first.
@@ -429,7 +450,13 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  * out again would have its products switched off at every Income, short of the capital its Seniors cost and of the Domain Expertise
  * only an online product gives (ruling 5). So it takes out of the ops team only staff it can spare. A seat still stops in its ops
  * check when a Launch brings too few staff for its product or a let go leaves the team short, and again at each Income until staff
- * join the team.
+ * join the team. The Growth Hacker earns its product $3 and adds a Bug each turn, which ops QA cleans at the Engine (§20.B, §5
+ * Phase D), so it stays on its product and QA stays in the ops team while there are Bugs to clean.
+ *
+ * Some of slice 3's paths come once or twice in all the long runs, and slice 4's moves change which games reach them. So the Diva
+ * goes to the ops team from the bench on any turn, a project with a cut, which Domain Expertise made cheaper to build, gets makers
+ * first and a Tier 1 one before a lead is sought for a Stalled project, and a card found by a Layoff goes to the ops team while the
+ * seat has a product, since a seat seldom has a product and the capital for a card it found at once.
  *
  * Without `throughView` it finds the cards a button picks in the zones. With it, it finds them as a player at the page would: among
  * the cards the page's view of the seat offers for the button and the cards each may go on (both checked by `viewedCards`). The
@@ -536,6 +563,15 @@ function playTurn(
   const first = (type: string, zoneId: string) => pick(type, zoneId, (row) => row[0]);
   /** On the project `which` finds in the seat's development, its first by default. */
   const onProject = (which: Onto['which'] = (projects) => projects[0]): Onto => ({ zoneId: own('development'), which });
+  /** On the product `which` finds in the seat's operations, its first by default. */
+  const onProduct = (which: Onto['which'] = (products) => products[0]): Onto => ({ zoneId: own('operations'), which });
+  /** Whether the rules call `card` attaching: it sits on the product it joins the ops team for, as the Growth Hacker does (§20.B). */
+  const attaching = (card: CardState) => runtime.workedFlag(engine.getState(), card.id, 'attaching');
+  /**
+   * Whether a hire or an assign that may go to the ops team goes to a product instead: a card it takes is attaching, which the ops
+   * team's own button refuses, or, so that the products' buttons also send cards that don't attach to the pool, `⌊t / 9⌋` is odd.
+   */
+  const toAProduct = (picked: CardState[]) => picked.some(attaching) || Math.floor(t / 9) % 2 === 1;
   /**
    * Whether the engine accepts `move`. For cards found through the view, the view must say what the engine says of a press of each
    * card alone, on the card it goes on: it allows the cards the seat presses, and greys each one the seat passes over because the
@@ -607,14 +643,18 @@ function playTurn(
    * The cards of `team`, the seat's ops team, it can spare, in slot order: each one whose leaving, with those before it, keeps the
    * team's bandwidth in each color the card gives at the maintenance of every product in its operations, offline ones too, since the
    * next Income switches them all back on (§5 Phase B). A card that gives no bandwidth, such as a QA Tester, changes nothing by
-   * leaving, so it is spare even from a team already short.
+   * leaving, so it is spare even from a team already short. But a card on a product, the Growth Hacker, is never spare, for the $3 it
+   * adds there (§20.B), and nor is a card that cleans Bugs while a product in operation has Bugs or is viral, so that the Engine
+   * cleans them (§5 Phase D).
    */
   const spare = (team: CardState[]): CardState[] => {
     const state = engine.getState();
     const colors = ['blue', 'red'];
     const left = colors.map((color) => runtime.playerValue(state, by, `${color} supply`));
     const load = colors.map((color) => runtime.playerValue(state, by, `${color} load`));
+    const bugsToClean = operationsOf(state, by).some((product) => bugsOn(product) > 0 || runtime.workedFlag(state, product.id, 'viral'));
     return team.filter((card) => {
+      if (typeof card.data?.[HOLDER_KEY] === 'string' || (bugsToClean && cleans(card))) return false;
       const bandwidth = colors.map((color) => runtime.workedValue(state, card.id, `${color} bandwidth`) as number);
       if (colors.some((_, i) => bandwidth[i] > 0 && left[i] - bandwidth[i] < load[i])) return false;
       colors.forEach((_, i) => { left[i] -= bandwidth[i]; });
@@ -665,15 +705,19 @@ function playTurn(
     return [planned[t % 4], press(RESEARCH_GROWTH), draft(DRAFT_GROWTH, 'growth-market'), press(RESEARCH_SEED), draft(DRAFT_SEED, 'seed-market')];
   };
   const recruit = (a: number) => press(RECRUITS[(t + a) % 3]);
-  /** The seat's first project with Bugs that no QA on it cleans: its qa team output, as the rules work it out, is 0 (§5 Phase D). */
+  /**
+   * The seat's first project with Bugs that no QA on it cleans: its qa team output, as the rules work it out, is 0 (§5 Phase D). A
+   * Stalled project is passed over, since QA on it cleans nothing until it has its leads (§3).
+   */
   const uncleaned = () => cards(own('development')).find((project) =>
-    bugsOn(project) > 0 && runtime.workedValue(engine.getState(), project.id, 'qa team output') === 0);
+    bugsOn(project) > 0 && runtime.workedValue(engine.getState(), project.id, 'qa team output') === 0
+    && runtime.workedFlag(engine.getState(), project.id, 'stalled') !== true);
   /** Whether `card` would clean Bugs on a project: its qa output, as the rules work it out, is above 0. */
   const cleans = (card: CardState) => (runtime.workedValue(engine.getState(), card.id, 'qa output') as number) > 0;
   /**
-   * The Junior QA Tester while a project has Bugs no QA on it cleans and the bench has no one who would (§6: a project with Bugs can't
-   * Launch); else the Junior who makes a color the first unfinished project lacks: a Software Dev for blue, a Hardware Eng for red;
-   * else as `recruit`.
+   * The Junior QA Tester while a project that isn't Stalled has Bugs no QA on it cleans and the bench has no one who would (§6: a
+   * project with Bugs can't Launch); else the Junior who makes a color the first unfinished project lacks: a Software Dev for blue, a
+   * Hardware Eng for red; else as `recruit`.
    */
   const recruitMaker = (a: number) => {
     if (uncleaned() !== undefined && !cards(own('bench')).some(cleans)) return press(RECRUITS[2]);
@@ -705,6 +749,42 @@ function playTurn(
     if (project === undefined) return null;
     return pickSome(ASSIGN_TO_PROJECT, own('bench'), (bench) => bench.filter(cleans).slice(0, 1),
       onProject((targets) => targets.find((target) => target.id === project.id)));
+  };
+  /** Whether Domain Expertise cut `project` at its Greenlight (§19.A). */
+  const isCut = (project: CardState) => cubesOn(project, 'cut blue cubes') + cubesOn(project, 'cut red cubes') > 0;
+  /**
+   * The bench's makers of a color the seat's first Tier 1 project with a cut still lacks, but an Efficient card, assigned to it: the
+   * cut leaves it few cubes to build (§19.A), so it is built before a lead is sought for a Stalled project. Null with no such project
+   * or maker.
+   */
+  const buildCut = (): Move | null => {
+    const project = cards(own('development')).find((p) => p.data?.tier === 'Tier 1' && isCut(p) && lacks(p).length > 0);
+    if (project === undefined) return null;
+    const makes = (card: CardState) => !efficient(card) && lacks(project).includes(COLOR_OF_SKILL[card.data?.skill as string]);
+    return pickSome(ASSIGN_TO_PROJECT, own('bench'), (bench) => bench.filter(makes),
+      onProject((targets) => targets.find((target) => target.id === project.id)));
+  };
+  /** The agency row's first attaching card the seat can pay for. */
+  const attachingFor = (row: CardState[]) => row.find((card) => attaching(card) && canPay(card));
+  /**
+   * The Growth Hacker from the agency row onto the seat's first product in operation, when the row holds an attaching card the seat
+   * can pay for and the seat has a product (§3, §20.B). Null otherwise.
+   */
+  const hireGrowthHacker = (): Move | null => {
+    if (attachingFor(cards('agency-row')) === undefined || cards(own('operations')).length === 0) return null;
+    return pick(HIRE_AGENCY_TO_PRODUCT, 'agency-row', attachingFor, onProduct());
+  };
+  /** Whether this turn has moved a card from one product to another. */
+  let movedOnProducts = false;
+  /**
+   * On a `t` with `t % 4 === 1`, once a turn, the ops team's first card that sits on a product reassigned to the seat's first other
+   * product, when it has one (§6, §20.B). Null otherwise.
+   */
+  const moveGrowthHacker = (): Move | null => {
+    const sitting = cards(own('ops team')).find((card) => typeof card.data?.[HOLDER_KEY] === 'string');
+    if (t % 4 !== 1 || movedOnProducts || sitting === undefined || cards(own('operations')).length < 2) return null;
+    return pick(REASSIGN_TO_PRODUCT, own('ops team'), (row) => row.find((card) => card.id === sitting.id),
+      onProduct((products, card) => products.find((product) => product.id !== card.data?.[HOLDER_KEY])));
   };
   /**
    * A lead for the seat's first Stalled project (§3): the bench's first Senior Developer who would lead a color it needs, assigned to
@@ -740,25 +820,33 @@ function playTurn(
     switch (action) {
       case 0:
         return recruit(a);
-      case 1:
+      case 1: {
+        const hired = seniorFirst(cards('agency-row'));
         return [
           () => pick(HIRE_AGENCY, 'agency-row', seniorFirst),
           () => pick(HIRE_AGENCY_TO_PROJECT, 'agency-row', seniorFirst, onProject()),
-          () => pick(HIRE_AGENCY_TO_OPS, 'agency-row', seniorFirst),
+          () => (toAProduct(hired === undefined ? [] : [hired])
+            ? pick(HIRE_AGENCY_TO_PRODUCT, 'agency-row', seniorFirst, onProduct())
+            : pick(HIRE_AGENCY_TO_OPS, 'agency-row', seniorFirst)),
         ][place]();
+      }
       case 2:
         return pick(HIRE_MARKET, 'open-job-market', (row) => row.find(senior) ?? row[0]);
       case 3: {
-        const unfinished = projects.find((project) => lacks(project).length > 0);
+        const unfinished = projects.find((project) => isCut(project) && lacks(project).length > 0)
+          ?? projects.find((project) => lacks(project).length > 0);
         if (unfinished === undefined) return null;
         const makers = (bench: CardState[]) => bench.filter((card) => lacks(unfinished).includes(COLOR_OF_SKILL[card.data?.skill as string]));
         const assigning = (bench: CardState[]) => (makers(bench).length > 0 ? makers(bench) : bench.slice(0, 1));
         return pickSome(ASSIGN_TO_PROJECT, own('bench'), (bench) => assigning(bench.filter((card) => !efficient(card))),
           onProject((targets) => targets.find((project) => project.id === unfinished.id)));
       }
-      case 4:
-        return pickSome(ASSIGN_TO_OPS, own('bench'), (bench) => [...bench.filter(efficient), ...bench.filter((card) => !efficient(card))]
-          .slice(0, 2));
+      case 4: {
+        const pooled = (bench: CardState[]) => [...bench.filter(efficient), ...bench.filter((card) => !efficient(card))].slice(0, 2);
+        return toAProduct(pooled(cards(own('bench'))))
+          ? pickSome(ASSIGN_TO_PRODUCT, own('bench'), pooled, onProduct())
+          : pickSome(ASSIGN_TO_OPS, own('bench'), pooled);
+      }
       case 5:
         return pick(REASSIGN_FROM_OPS, own('ops team'), (row) => spare(row).find((card) => !efficient(card)), onProject())
           ?? pick(REASSIGN_FROM_PROJECT, own('development team'),
@@ -775,17 +863,27 @@ function playTurn(
         return pickSome(LAY_OFF, own('bench'), (bench) => bench.slice(0, 1 + (t % 2)));
     }
   };
-  const sourcing = (): Move | null => {
+  /**
+   * The hires of the first card in the seat's scouting it can pay for to each of its places, in the order it tries them: its bench, its
+   * ops team (by its first product's button, as `toAProduct` says) and its first project, from the place `(t + ⌊t / 9⌋) % 3` names,
+   * or from the ops team while it has a product in operation, since a seat seldom has a product and the capital for a card it found
+   * at once (§13.B).
+   */
+  const sourcing = (): (Move | null)[] => {
     const found = (row: CardState[]) => {
       const card = affordable(row);
       return card ? [card] : [];
     };
-    const [toBench, toOps, toProject] = SOURCE_HIRES;
-    return [
+    const [toBench, toOps, toProject, toProduct] = SOURCE_HIRES;
+    const places = [
       () => pickSome(toBench, own('scouting'), found),
-      () => pickSome(toOps, own('scouting'), found),
+      () => (toAProduct(found(cards(own('scouting'))))
+        ? pickSome(toProduct, own('scouting'), found, onProduct())
+        : pickSome(toOps, own('scouting'), found)),
       () => pickSome(toProject, own('scouting'), found, onProject()),
-    ][place]();
+    ];
+    const start = cards(own('operations')).length > 0 ? 1 : place;
+    return places.map((_, i) => places[(start + i) % places.length]());
   };
 
   const going = () => {
@@ -816,14 +914,20 @@ function playTurn(
         continue;
       }
       const action = (t + a) % 9;
-      const board = () => [leadForStalled() ?? boardAction(action, a), ...boardMovesAfter(action).map((next) => boardAction(next, a))];
-      const planned = a === 0 ? ideation() : [reassignDiva(), launch(), qaForBugs(), pivotDiva(), t % 2 === 0 ? divaToOps() : null, ...board()];
-      play(engine, choose([...planned, recruitMaker(a), press(END_ACTIONS)]), watch);
+      const board = () => [
+        buildCut() ?? leadForStalled() ?? boardAction(action, a), ...boardMovesAfter(action).map((next) => boardAction(next, a)),
+      ];
+      const planned = a === 0 ? ideation() : [
+        reassignDiva(), launch(), qaForBugs(), hireGrowthHacker(), moveGrowthHacker(), pivotDiva(), divaToOps(), ...board(),
+      ];
+      const move = choose([...planned, recruitMaker(a), press(END_ACTIONS)]);
+      if (move.type === REASSIGN_TO_PRODUCT) movedOnProducts = true;
+      play(engine, move, watch);
       a++;
     } else if (phase === 'research') {
       play(engine, choose([pick(KEEP, own('research'), (row) => cutIdea(row) ?? row[t % row.length])]), watch);
     } else if (phase === 'sourcing') {
-      play(engine, choose([sourcing(), press(PASS_ON_THE_REST)]), watch);
+      play(engine, choose([...sourcing(), press(PASS_ON_THE_REST)]), watch);
     } else if (phase === 'engine') {
       // The Engine waits on the seat only while its ops QA can't clean every Bug on its products, so some product has Bugs (R3).
       const bugged = (row: CardState[]) => row.filter((product) => bugsOn(product) > 0);
@@ -1006,9 +1110,10 @@ function scoreOf(state: GameState, seat: PlayerId): number {
  *   whose turn it is not 5, their backlog 3 and their research nothing; the player whose turn it is holds at most 4 in their
  *   backlog and 3 in their research, which has cards only in the research phase.
  * - The Board: no development holds more than 3 projects; every card that sits on a card is in a development team, on a project
- *   in the same seat's development, and every card in a development team sits on one; no card has more blue or red cubes than its
- *   blue or red need. New cubes, and the Bugs ops QA cleaned by a press (fixed bugs), sit on a card only while its owner's turn is in
- *   the Engine, which commits the one and clears the other as it ends (§5 Phase D, R3).
+ *   in the same seat's development, or in an ops team, on a product in the same seat's operations; a card in an ops team sits on one
+ *   only when the rules call it attaching, as the Growth Hacker is (§20.B), and every card in a development team sits on one; no card
+ *   has more blue or red cubes than its blue or red need. New cubes, and the Bugs ops QA cleaned by a press (fixed bugs), sit on a
+ *   card only while its owner's turn is in the Engine, which commits the one and clears the other as it ends (§5 Phase D, R3).
  * - Bugs: only a project or a product in operation has Bugs, no Launch the rules take moves a project that had Bugs (§6), and every
  *   product in operation earns a rev of 0 or more once its Bugs are taken off (§5 Phase B).
  * - The cut: a project's cut is at most its cost in each colour, and leaves it a need of 1 cube or more; no card but a project or a
@@ -1120,8 +1225,13 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       if (seat !== current || phase !== 'sourcing') atMost(own('scouting'), 0);
     }
 
-    // The Board: staff sit on their own seat's projects, and the tracks hold at most their need, the cost less the cut (§19.A).
+    // The Board: staff sit on their own seat's projects, the Growth Hacker on its own seat's products (§20.B), and the tracks hold at
+    // most their need, the cost less the cut (§19.A).
     const projectsOf = new Map(seats.map((seat) => [zoneIdFor('development team', seat), zoneIdFor('development', seat)]));
+    /** The zone of the cards each team's cards may sit on: a development team's on projects, an ops team's on products. */
+    const holdersOf = new Map([
+      ...projectsOf, ...seats.map((seat) => [zoneIdFor('ops team', seat), zoneIdFor('operations', seat)] as const),
+    ]);
     const developments = new Set(seats.map((seat) => zoneIdFor('development', seat)));
     const operations = new Set(seats.map((seat) => zoneIdFor('operations', seat)));
     /**
@@ -1139,8 +1249,11 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       const which = `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
       const holder = c.data?.[HOLDER_KEY];
       const holderZone = typeof holder === 'string' ? cardById(after, holder)?.zoneId : undefined;
-      if (holder !== undefined && (!projectsOf.has(c.zoneId) || holderZone !== projectsOf.get(c.zoneId))) {
+      if (holder !== undefined && (!holdersOf.has(c.zoneId) || holderZone !== holdersOf.get(c.zoneId))) {
         board.push(`${which} is on ${JSON.stringify(holder)}, in ${holderZone}`);
+      }
+      if (holder !== undefined && !projectsOf.has(c.zoneId) && !runtime.workedFlag(after, c.id, 'attaching')) {
+        board.push(`${which} is on ${JSON.stringify(holder)} but is not attaching`);
       }
       if (holder === undefined && projectsOf.has(c.zoneId)) board.push(`${which} is on no card`);
       const need = (color: string) => runtime.workedValue(after, c.id, `${color} need`) as number;
@@ -1299,7 +1412,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(135);
+    expect(results).toHaveLength(146);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -1338,6 +1451,10 @@ describe('Startup Simulator (designer language)', () => {
     expect(worked['qa team output']).toMatchObject({ kind: 'number' });
     expect(worked['bug mark']).toMatchObject({ kind: 'number' });
     expect(worked.bugged).toMatchObject({ kind: 'flag' });
+    // The Growth Hacker (§20.B): its rev bonus adds to the rev of the product it sits on; it attaches, spreading Bugs while it is not
+    // onboarding, and a product with such a card on it is viral.
+    expect(worked['rev bonus']).toMatchObject({ kind: 'number' });
+    for (const flag of ['attaching', 'spreading bugs', 'viral']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
     // A player's supply is the bandwidth of their ops team in each color, set against the maintenance their online products demand;
     // the load counts every product in operation, offline ones too (§5 Phase B). Their ops team's QA is set against the Bugs on
     // every product in operation and the Bugs it has cleaned by a press this Engine, and the products that have Bugs are counted
@@ -1546,9 +1663,10 @@ describe('Startup Simulator (designer language)', () => {
       ['ops-team', true, 'row', 'public'],
       ['scouting', true, 'row', 'owner'],
     ]);
-    // Staff on a project sit on it (§3); the ops team is a pool that runs every product in operation.
-    const marked = game!.zones.filter((zone) => zone.onCards !== undefined).map(({ name, onCards }) => [name, onCards]);
-    expect(marked).toEqual([['development team', 'every']]);
+    // Staff on a project sit on it (§3); the ops team is a pool that runs every product in operation, where only a card that attaches,
+    // the Growth Hacker, sits on a product (§20.B).
+    const marked = game!.zones.filter((zone) => zone.onCards !== undefined).map(({ name, onCards, holders }) => [name, onCards, holders]);
+    expect(marked).toEqual([['development team', 'every', 'development'], ['ops team', 'some', 'operations']]);
   });
 
   describe('where the buttons of the actions phase move staff', () => {
@@ -1753,6 +1871,13 @@ describe('Startup Simulator (designer language)', () => {
     state = putOn(state, [id('Diva')], 'development-team-p0', id('Smart Lock'), game!);
     state = relocate(state, [id('Veteran')], 'ops-team-p0', game!);
     expect(attachmentProblem(game!, state)).toBeNull();
+    // The Growth Hacker sits on a product in operation (§20.B), and a project's staff only on a project.
+    state = putOn(state, [id('Growth Hacker')], 'ops-team-p0', id('To-Do List'), game!);
+    expect(attachmentProblem(game!, state)).toBeNull();
+    const onAProduct = putOn(state, [id('Architect')], 'development-team-p0', id('To-Do List'), game!);
+    expect(attachmentProblem(game!, onAProduct)).toBe(
+      "The Architect in p0's development team is on the To-Do List, which is now in p0's operations. Move the cards on a card along with it.",
+    );
   });
 
   describe('Review Focus: a Pivot that forgets the staff on its project', () => {

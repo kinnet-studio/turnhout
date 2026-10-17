@@ -125,8 +125,8 @@ Table:
   Each player has a research row that only they can see.
   Each player has a development row that everyone can see.
   Each player has an operations row that everyone can see.
-  Each player has a development team row that everyone can see, where every card is on a card.
-  Each player has an ops team row that everyone can see.
+  Each player has a development team row that everyone can see, where every card is on a card in their development.
+  Each player has an ops team row that everyone can see, where some cards are on cards in their operations.
   Each player has a scouting row that only they can see.
 
 Blue output:
@@ -219,9 +219,13 @@ Declarable:
     It is a QA Skill card.
 
 Rev:
+  A card's rev goes up by the total rev bonus of the cards on it.
   A card's rev goes down by its bugs.
   A card's rev is at least 0.
   An offline card's rev is 0.
+
+Rev bonus:
+  A Viral Loop card's rev bonus is 3.
 
 Portfolio points:
   A card's portfolio points is its val.
@@ -232,6 +236,16 @@ Bugged:
 
 Bug mark:
   A bugged card's bug mark is 1.
+
+Attaching:
+  Only if it is a Viral Loop card.
+
+Spreading bugs:
+  Only if it is a Viral Loop card.
+  Only if it is not onboarding.
+
+Viral:
+  Only if some card on it is spreading bugs.
 
 Feature complete:
   Only if its blue cubes are at least its blue need.
@@ -425,9 +439,17 @@ Phase: actions
   A player may hire a card from the agency row to their ops team.
     It costs 1 action.
     Only if their operations is not empty.
+    Only if it is not attaching.
     Only if they have at least the card's cost in capital.
     Then:
       They pay the card's cost.
+  A player may hire a card from the agency row to a card in their operations.
+    It costs 1 action.
+    Only if they have at least the card's cost in capital.
+    Then:
+      They pay the card's cost.
+      If it is attaching, it goes to their ops team, on the target card.
+      If it is not attaching, move it to their ops team.
   A player may greenlight a card in their backlog.
     Only if their development has fewer than 3 cards.
     Only if one of:
@@ -497,6 +519,12 @@ Phase: actions
   A player may assign some cards from their bench to their ops team.
     It costs 1 action.
     Only if their operations is not empty.
+    Only if no picked card is attaching.
+  A player may assign some cards from their bench to a card in their operations.
+    It costs 1 action.
+    Then:
+      The picked cards that are attaching go to their ops team, on the target card.
+      The picked cards that are not attaching go to their ops team.
   A player may reassign a card from their development team to a card in their development.
     It costs 1 action.
     Only if the card is not an Ego card.
@@ -509,6 +537,13 @@ Phase: actions
     Only if the card is not an Ego card.
     Then:
       It goes to their development team, on the target card.
+      It is onboarding.
+  A player may reassign a card from their ops team to a card in their operations.
+    It costs 1 action.
+    Only if it is on a card.
+    Only if it is not on the target card.
+    Then:
+      It goes to their ops team, on the target card.
       It is onboarding.
   A player may recall some cards from their ops team to their bench.
     It costs 1 action.
@@ -549,7 +584,8 @@ Phase: actions
     Only if it is fully led.
     Only if its bugs are 0.
     Then:
-      Every card on it goes to their ops team.
+      Every card on it that is attaching goes to their ops team, staying on it.
+      Every card on it that is not attaching goes to their ops team.
   A player may pivot a card in their development.
     It costs 1 action.
     Then:
@@ -593,9 +629,16 @@ Phase: sourcing
       They pay the total cost of the picked cards.
   A player may hire some cards from their scouting to their ops team.
     Only if their operations is not empty.
+    Only if no picked card is attaching.
     Only if they have at least the total cost of the picked cards in capital.
     Then:
       They pay the total cost of the picked cards.
+  A player may hire some cards from their scouting to a card in their operations.
+    Only if they have at least the total cost of the picked cards in capital.
+    Then:
+      They pay the total cost of the picked cards.
+      The picked cards that are attaching go to their ops team, on the target card.
+      The picked cards that are not attaching go to their ops team.
   A player may hire some cards from their scouting to a card in their development.
     Only if they have at least the total cost of the picked cards in capital.
     Then:
@@ -654,6 +697,7 @@ Phase: backlog cleanup
     Then:
       Move it to the open idea pool.
   When their backlog has fewer than 4 cards:
+    If they have no card in their ops team that is not onboarding and whose trait is Clean Code, each viral card in their operations gains 1 bug.
     The turn passes to the left.
 
 End:
@@ -2233,3 +2277,132 @@ Example: while ops QA waits on the owner, a press on a product with no Bug is re
   And it is p1's turn
   And the Mobile Wallet in p0's operations has 0 bugs
   And the Dating App in p0's operations has 1 bug
+
+Example: the Growth Hacker adds $3 to the revenue of the product it is on (section 20, section 5)
+  Given p1's operations has a Dating App
+  And p1's ops team has a Junior Software Dev
+  And the Dating App in p1's operations has the Growth Hacker on it
+  And the turn passes to the left
+  Then the phase is income
+  And p1 has 11 capital
+  And p1 has 1 market share
+
+Example: the Growth Hacker adds a Bug to its product at the end of its owner's turn, even while the product is offline (section 5, section 20, ruling 25)
+  Given the phase is actions
+  And p0's operations has a Dating App
+  And the Dating App in p0's operations is offline
+  And the Dating App in p0's operations has the Growth Hacker on it
+  When p0 ends their actions
+  Then it is p1's turn
+  And the Dating App in p0's operations has 1 bug
+
+Example: a working Architect in the ops team stops the Growth Hacker's Bug (section 20, ruling 25)
+  Given the phase is actions
+  And p0's operations has a Dating App
+  And p0's ops team has the Architect
+  And the Dating App in p0's operations has the Growth Hacker on it
+  When p0 ends their actions
+  Then it is p1's turn
+  And the Dating App in p0's operations has 0 bugs
+
+Example: an Architect onboarding this turn shields nothing, so the Growth Hacker adds its Bug (ruling 8, section 20)
+  Given the phase is actions
+  And p0's operations has a Dating App
+  And p0's ops team has the Architect
+  And the Architect in p0's ops team is onboarding
+  And the Dating App in p0's operations has the Growth Hacker on it
+  When p0 ends their actions
+  Then the Dating App in p0's operations has 1 bug
+
+Example: the Growth Hacker reassigned to another product is onboarding, so it adds no Bug that turn, and pooled staff can't be reassigned to a product (section 6, ruling 8)
+  Given the phase is actions
+  And p0's operations has a Dating App and a To-Do List
+  And p0's ops team has a Junior Software Dev
+  And the Dating App in p0's operations has the Growth Hacker on it
+  When p0 reassigns the Junior Software Dev to the To-Do List
+  Then it is rejected because "it is on a card"
+  When p0 reassigns the Growth Hacker to the To-Do List
+  Then it is accepted
+  And p0 has 2 actions
+  And the To-Do List in p0's operations has the Growth Hacker on it
+  And the Growth Hacker in p0's ops team is onboarding
+  When p0 ends their actions
+  Then the To-Do List in p0's operations has 0 bugs
+  And the Dating App in p0's operations has 0 bugs
+
+Example: the Growth Hacker assigned to the ops team goes on the product its owner picks, and the staff assigned with it join the pool (section 3, section 20)
+  Given the phase is actions
+  And p0's operations has a Dating App and a To-Do List
+  And p0's bench has the Growth Hacker and a Junior Software Dev
+  When p0 assigns the Growth Hacker and the Junior Software Dev to p0's ops team
+  Then it is rejected because "no picked card is attaching"
+  When p0 assigns the Growth Hacker and the Junior Software Dev to the To-Do List
+  Then it is accepted
+  And p0 has 2 actions
+  And the To-Do List in p0's operations has the Growth Hacker on it
+  And the Dating App in p0's operations has no cards on it
+  And p0's ops team has the Growth Hacker and a Junior Software Dev
+
+Example: the Growth Hacker hired from the agency row goes on a product its owner picks, never into the pool (section 3, section 13)
+  Given the phase is actions
+  And the agency row has the Growth Hacker, the Hacker, the Architect and the Veteran
+  And p0's operations has a Dating App
+  When p0 hires the Growth Hacker to p0's ops team
+  Then it is rejected because "it is not attaching"
+  When p0 hires the Growth Hacker to the Dating App
+  Then it is accepted
+  And p0 has 2 capital
+  And the Dating App in p0's operations has the Growth Hacker on it
+
+Example: a Growth Hacker on a project stays on it when it Launches, and the rest of the team joins the pool (section 6, section 20)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And the Dating App in p0's development has 6 blue cubes
+  And the Dating App in p0's development has the Growth Hacker and a Junior Software Dev on it
+  When p0 launches the Dating App
+  Then it is accepted
+  And the Dating App in p0's operations has the Growth Hacker on it
+  And p0's ops team has the Growth Hacker and a Junior Software Dev
+
+Example: a card hired from the agency row by a product's button joins the pool unless it attaches, for an action and its cost (section 3, section 13)
+  Given the phase is actions
+  And the agency row has the Growth Hacker, the Hacker, the Architect and the Veteran
+  And p0's operations has a Dating App
+  When p0 hires the Hacker to the Dating App
+  Then it is accepted
+  And p0 has 1 capital
+  And p0 has 2 actions
+  And p0's ops team has the Hacker
+  And the Dating App in p0's operations has no cards on it
+  When p0 hires the Growth Hacker to the Dating App
+  Then it is rejected because "they have at least the card's cost in capital"
+
+Example: the Growth Hacker can't be reassigned to the product it is on, and only its Viral Loop adds Bugs to a product (section 6, section 20)
+  Given the phase is actions
+  And p0's operations has a Dating App and a To-Do List
+  And the Dating App in p0's operations has the Growth Hacker on it
+  And the To-Do List in p0's operations has a Junior Software Dev on it
+  When p0 reassigns the Growth Hacker to the Dating App
+  Then it is rejected because "it is not on the target card"
+  When p0 ends their actions
+  Then the Dating App in p0's operations has 1 bug
+  And the To-Do List in p0's operations has 0 bugs
+
+Example: cards a Layoff found go on a product only if they attach, the rest join the pool, and together they need their total cost (section 13, section 20)
+  Given the phase is actions
+  And p0 has 9 capital
+  And p0's operations has a Dating App
+  And p0's bench has a Junior Software Dev, a Junior QA Tester and a Junior Hardware Eng
+  And the agency row has the Hacker, the Architect, the Veteran and the Diva
+  And the talent deck has a QA Engineer, a Sales Rep and the Growth Hacker
+  When p0 lays off the Junior Software Dev, the Junior QA Tester and the Junior Hardware Eng
+  Then p0's scouting has the Growth Hacker, a Sales Rep and a QA Engineer
+  When p0 hires the Growth Hacker and the Sales Rep to p0's ops team
+  Then it is rejected because "no picked card is attaching"
+  When p0 hires the Growth Hacker, the Sales Rep and the QA Engineer to the Dating App
+  Then it is rejected because "they have at least the total cost of the picked cards in capital"
+  When p0 hires the Growth Hacker and the Sales Rep to the Dating App
+  Then it is accepted
+  And p0 has 0 capital
+  And the Dating App in p0's operations has the Growth Hacker on it
+  And p0's ops team has the Growth Hacker and a Sales Rep

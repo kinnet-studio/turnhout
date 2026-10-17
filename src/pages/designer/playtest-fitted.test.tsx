@@ -528,8 +528,9 @@ describe('picking cards by clicking them', () => {
   const confirm = () => fireEvent.click(within(picker()).getByRole('button', { name: 'Confirm' }));
   const pressedIn = (name: string) => within(picker()).getByRole('button', { name: `Pick ${name}` }).getAttribute('aria-pressed');
   const ASSIGN = 'Assign some cards from your bench to a card in your development';
+  const ASSIGN_TO_PRODUCT_LABEL = 'Assign some cards from your bench to a card in your operations';
   const LAY_OFF = 'Lay off some cards from your bench to the open job market';
-  const HIRES = ['to your bench', 'to your ops team', 'to a card in your development'].map((to) => `Hire some cards from your scouting ${to}`);
+  const HIRES = ['to your bench', 'to your ops team', 'to a card in your operations', 'to a card in your development'].map((to) => `Hire some cards from your scouting ${to}`);
 
   /** S greenlights the card in its backlog by clicking it, and gets its id. */
   const greenlight = () => {
@@ -572,6 +573,7 @@ describe('picking cards by clicking them', () => {
     expect(offered()).toEqual([
       [ASSIGN, true],
       ['Assign some cards from your bench to your ops team', 'their operations is not empty'],
+      [ASSIGN_TO_PRODUCT_LABEL, 'There is no card in your operations.'],
       [LAY_OFF, true],
     ]);
     choose(ASSIGN);
@@ -634,7 +636,7 @@ describe('picking cards by clicking them', () => {
     expect([costOf(first) <= 7, costOf(second) <= 7, costOf(first) + costOf(second) > 7], 'seed 1 scouts two cards that 7 capital buys one at a time, not both')
       .toEqual([true, true, true]);
     click(first.id);
-    choose(HIRES[2]);
+    choose(HIRES[3]);
     click(second.id);
     click(dating);
     expect(screen.getByText('they have at least the total cost of the picked cards in capital')).toBeTruthy();
@@ -673,7 +675,10 @@ describe('picking cards by clicking them', () => {
     const before = lineOf(O);
     click(named(`bench-${O}`, 'Junior Software Dev'));
     const turn = `It's ${S}'s turn.`;
-    expect(offered()).toEqual([ASSIGN, 'Assign some cards from your bench to your ops team', LAY_OFF].map((label) => [label, turn]));
+    expect(offered()).toEqual([
+      [ASSIGN, turn], ['Assign some cards from your bench to your ops team', turn],
+      [ASSIGN_TO_PRODUCT_LABEL, 'There is no card in your operations.'], [LAY_OFF, turn],
+    ]);
     choose(ASSIGN);
     expect(screen.getByText(turn)).toBeTruthy();
     expect(lineOf(O)).toBe(before);
@@ -727,9 +732,9 @@ describe('picking cards by clicking them', () => {
     click(hire);
     choose('Hire a card from the agency row to your bench');
     click(hire);
-    expect(offered().map(([label]) => label)).toEqual([ASSIGN, 'Assign some cards from your bench to your ops team', LAY_OFF]);
+    expect(offered().map(([label]) => label)).toEqual([ASSIGN, 'Assign some cards from your bench to your ops team', ASSIGN_TO_PRODUCT_LABEL, LAY_OFF]);
     press('Undo');
-    expect(offered().map(([label]) => label)).toEqual(['to your bench', 'to a card in your development', 'to your ops team'].map((to) => `Hire a card from the agency row ${to}`));
+    expect(offered().map(([label]) => label)).toEqual(['to your bench', 'to a card in your development', 'to your ops team', 'to a card in your operations'].map((to) => `Hire a card from the agency row ${to}`));
     expect(ring(hire)).toBe('chosen');
 
     press('Research the seed deck');
