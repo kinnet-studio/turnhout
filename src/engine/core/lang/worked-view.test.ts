@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { GameState } from '../game-state';
 import type { Json } from '../table-def';
 import { putOn } from './attach';
@@ -7,6 +7,10 @@ import { createEngine, initialState } from './build';
 import { changeCard } from './card-facts';
 import { compileGame } from './compile';
 import { createDefaultLibrary } from './library';
+import { CARDS_ON_IT, registerCardSubjectPhrases } from './library/card-subject-phrases';
+import { registerCardValuePhrases } from './library/card-value-phrases';
+import { PhraseLibrary, STATIC_TYPES } from './phrases';
+import { VOCAB_TYPES } from './refs';
 import { CREW_GAME, SHOWN, SUBJECT, WORKED_GAME } from './testing';
 import type { CompiledGame } from './types';
 import { shownFlags, standIns } from './worked-view';
@@ -111,15 +115,50 @@ describe('what the game says the view may show', () => {
     for (const seat of ['p0', 'p1']) expect(view(seat).worked![vase].flags, seat).toEqual(['busy']);
   });
 
-  it('shows a flag read through a total of the cards on it, and not one read through a total of a zone', () => {
+  it('shows a flag read through a total of the cards on it, and not one read through a total of a zone, or where crews are hidden', () => {
     expect(shownFlags(compiled(BARE))).toEqual(['busy', 'bare']);
     expect(shownFlags(compiled(HALL_BARE))).toEqual(['busy']);
+    // With crews only their owner sees, bare would tell every seat the hidden crew's skill total.
+    expect(shownFlags(compiled(BARE.replace(CREW_ROW, CREW_ROW.replace('everyone can see', 'only they can see'))))).toEqual([]);
   });
 
   it('(guard) stands the first of two numbers that start from one column in for it, and the second when the first reads more than the card', () => {
     // Both pass before the cards on a card were judged by the rules alone: they pin how standIns picks among sections.
     expect(standIns(compiled(DUE))).toEqual({ 'red need': 'red due' });
     expect(standIns(compiled(HALL_DUE))).toEqual({ 'red need': 'red left' });
+  });
+});
+
+describe('the phrases the view counts as reading only the card', () => {
+  it('are these 14: decide whether a new one reads beyond the card, and add it to CARDS_ON_IT if it reads the cards on it', () => {
+    // Everything these two registrars register is card-only to `worked-view.ts`, but for CARDS_ON_IT, which counts only where every card
+    // on a card is public: a new phrase that reads the cards on it and is missing there would show hidden cards to every seat, and one that
+    // reads anything else of the table (a zone's cards, a player's numbers) belongs in another registrar.
+    const registered: string[] = [];
+    const conditions = vi.spyOn(PhraseLibrary.prototype, 'condition').mockImplementation(function (this: PhraseLibrary, pattern: string) {
+      registered.push(`condition: ${pattern}`);
+      return this;
+    });
+    const values = vi.spyOn(PhraseLibrary.prototype, 'value').mockImplementation(function (this: PhraseLibrary, pattern: string) {
+      registered.push(`value: ${pattern}`);
+      return this;
+    });
+    try {
+      registerCardValuePhrases(registerCardSubjectPhrases(new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])));
+    } finally {
+      conditions.mockRestore();
+      values.mockRestore();
+    }
+    expect(registered).toEqual([
+      'condition: it is {cardclass}', 'condition: it is not {cardclass}', 'condition: it is not {cardflag}', 'condition: its {attribute} is {int}',
+      'condition: it is in a {perzone}', 'condition: it is in an {perzone}', 'condition: some card on it is {cardflag}',
+      'condition: no card on it is {cardflag}',
+      "value: a card's {attribute} is its {attribute}", "value: a card's {attribute} goes down by its {attribute}",
+      "value: {cardclass}'s {attribute} is its {attribute}", "value: {cardclass}'s {attribute} is {int}",
+      "value: a {cardflag} card's {attribute} is {int}", "value: an {cardflag} card's {attribute} is {int}",
+    ]);
+    const onIt = CARDS_ON_IT.map((pattern) => `condition: ${pattern}`);
+    expect(registered.filter((entry) => entry.includes(' on it '))).toEqual(onIt);
   });
 });
 
