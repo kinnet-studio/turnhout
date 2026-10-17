@@ -700,8 +700,27 @@ Phase: backlog cleanup
     If they have no card in their ops team that is not onboarding and whose trait is Clean Code, each viral card in their operations gains 1 bug.
     The turn passes to the left.
 
+Phase: final check
+  Hint: After the last round your ops team can't run all your products. Switch products off, or back on, until those still on fit your Blue and Red bandwidth.
+  When their blue supply is at least their blue load:
+    Only if their red supply is at least their red load.
+    Only if some card in their operations is offline.
+    Every card in their operations is not offline.
+  When their blue supply is at least their blue demand:
+    Only if their red supply is at least their red demand.
+    The final check passes to the left.
+  A player may switch off a card in their operations.
+    Only if it is not offline.
+    Then:
+      It is offline.
+  A player may switch on a card in their operations.
+    Only if it is offline.
+    Then:
+      It is not offline.
+
 End:
   The game ends when the crash pile is not empty and the round is finished.
+  Before the score, each player has the final check, in turn from the start player.
   Each player scores 1 point for every 5 capital.
   Each card in a player's operations scores its portfolio points.
   Each player scores 2 points for each market share.
@@ -1372,6 +1391,7 @@ Example: sourcing from an empty talent deck with the last action reveals nothing
 Example: the round ends before the start player's next income (rulings 13 and 25)
   Given the crash pile has the Market Crash
   And p0's operations has a Trading Bot
+  And p0's ops team has the Architect
   And it is p1's turn
   When p1 ends their actions
   Then the game is over
@@ -1382,6 +1402,7 @@ Example: the score adds each product's val in operations and 2 points for each m
   And p0 has 12 capital
   And p0 has 3 market share
   And p0's operations has a Dating App and a Smart Lock
+  And p0's ops team has a Junior Software Dev and a Junior Hardware Eng
   And p0's development has a Mobile Wallet
   And p0's backlog has a To-Do List
   And p1 has 5 capital
@@ -2381,7 +2402,7 @@ Example: the Growth Hacker can't be reassigned to the product it is on, and only
   Given the phase is actions
   And p0's operations has a Dating App and a To-Do List
   And the Dating App in p0's operations has the Growth Hacker on it
-  And the To-Do List in p0's operations has a Junior Software Dev on it
+  And the To-Do List in p0's operations has a Sales Rep on it
   When p0 reassigns the Growth Hacker to the Dating App
   Then it is rejected because "it is not on the target card"
   When p0 ends their actions
@@ -2406,3 +2427,126 @@ Example: cards a Layoff found go on a product only if they attach, the rest join
   And p0 has 0 capital
   And the Dating App in p0's operations has the Growth Hacker on it
   And p0's ops team has the Growth Hacker and a Sales Rep
+
+Example: after the last round, a player whose ops team can run every product has them all back online before the score (section 12, ruling 25)
+  Given the crash pile has the Market Crash
+  And it is p1's turn
+  And p0's operations has a Dating App and a Mobile Wallet
+  And p0's ops team has a Junior Software Dev and a Junior Software Dev
+  And the Mobile Wallet in p0's operations is offline
+  When p1 ends their actions
+  Then the game is over
+  And the Mobile Wallet in p0's operations is not offline
+  And p0 scores 8
+
+Example: after the last round, a player whose online products still fit keeps the others offline (section 12, ruling 25)
+  Given the crash pile has the Market Crash
+  And it is p1's turn
+  And p0's operations has a Dating App and a Mobile Wallet
+  And p0's ops team has a Junior Software Dev
+  And the Mobile Wallet in p0's operations is offline
+  When p1 ends their actions
+  Then the game is over
+  And the Mobile Wallet in p0's operations is offline
+  And p0 scores 6
+
+Example: after the last round each player short of bandwidth switches products off before the score, in turn from the start player (section 12, ruling 25)
+  Given 3 players
+  And p1 is the start player
+  And the crash pile has the Market Crash
+  And the phase is actions
+  And it is p0's turn
+  And p0's operations has a Dating App and a Viral Video App
+  And p0's ops team has a Junior Software Dev
+  And p1's operations has a Mobile Wallet
+  When p0 ends their actions
+  Then the phase is final check
+  And it is p1's turn
+  And the game is not over
+  When p1 switches off the Mobile Wallet
+  Then it is p0's turn
+  When p0 switches off the Viral Video App
+  Then the game is over
+  And p0 scores 6
+  And p1 scores 1
+  And p2 scores 1
+  And p0 wins
+
+Example: after the last round a player may switch an offline product back on, so the one that scores most runs (section 12, ruling 25)
+  Given the crash pile has the Market Crash
+  And it is p1's turn
+  And p0's operations has a Neobank, a Viral Video App and a Mobile Wallet
+  And p0's ops team has a Junior Software Dev
+  And the Neobank in p0's operations is offline
+  When p1 ends their actions
+  Then the phase is final check
+  And it is p0's turn
+  When p0 switches on the Neobank
+  And p0 switches off the Viral Video App
+  Then the game is not over
+  When p0 switches off the Mobile Wallet
+  Then the game is over
+  And the Neobank in p0's operations is not offline
+  And p0 scores 11
+
+Example: at the final check, staff still onboarding from the last turn give no bandwidth (section 12, ruling 8)
+  Given the crash pile has the Market Crash
+  And the phase is actions
+  And it is p1's turn
+  And p1's development has a To-Do List
+  And the To-Do List in p1's development has a Junior Software Dev on it
+  And p1's operations has a Dating App
+  When p1 pivots the To-Do List
+  And p1 assigns the Junior Software Dev to p1's ops team
+  And p1 ends their actions
+  Then the phase is final check
+  And it is p1's turn
+  And p1's blue supply is 0
+
+Example: after the last round, a player whose ops team runs every product online has no step to switch one off, and every product scores (section 12, ruling 25)
+  Given the crash pile has the Market Crash
+  And the phase is actions
+  And it is p1's turn
+  And p0's operations has a Dating App and a Mobile Wallet
+  And p0's ops team has a Junior Software Dev and a Junior Software Dev
+  And p1's operations has a Viral Video App
+  When p1 ends their actions
+  Then the phase is final check
+  And it is p1's turn
+  When p0 switches off the Mobile Wallet
+  Then it is rejected because "It's p1's turn."
+  When p1 switches off the Viral Video App
+  Then the game is over
+  And the Mobile Wallet in p0's operations is not offline
+  And p0 scores 8
+  And p1 scores 1
+
+Example: after the last round a player with the Blue for every product but short of Red still has a step, and switches off a product that needs Red (section 12, ruling 25)
+  Given the crash pile has the Market Crash
+  And it is p1's turn
+  And p0's operations has a Dating App and a Smart Lock
+  And p0's ops team has a Junior Software Dev
+  When p1 ends their actions
+  Then the phase is final check
+  And it is p0's turn
+  When p0 switches off the Smart Lock
+  Then the game is over
+  And p0 scores 6
+
+Example: at the final check a player switches off only a product that is on, and switches on only one that is off (section 12, ruling 25)
+  Given the crash pile has the Market Crash
+  And it is p1's turn
+  And p0's operations has a Neobank, a Viral Video App and a Mobile Wallet
+  And p0's ops team has a Junior Software Dev
+  And the Neobank in p0's operations is offline
+  When p1 ends their actions
+  Then the phase is final check
+  And it is p0's turn
+  When p0 switches off the Neobank
+  Then it is rejected because "it is not offline"
+  When p0 switches on the Viral Video App
+  Then it is rejected because "it is offline"
+  When p0 switches off the Mobile Wallet
+  Then the game is over
+  And the Neobank in p0's operations is offline
+  And p0 scores 4

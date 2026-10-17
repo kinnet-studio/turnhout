@@ -99,11 +99,18 @@ const OWN_ROWS = ['bench', 'backlog', 'research', 'scouting'];
 /** The rows of each player's Board, which everyone can see: projects, products in operation, the staff on projects and the ops staff (§3). */
 const BOARD_ROWS = ['development', 'operations', 'development team', 'ops team'];
 /**
+ * The final check before the score: after the last round each player in turn from the start player switches products off, or back on,
+ * until those still online fit their ops team's bandwidth (§12, ruling 25). Only the End's steps reach it, and its moves are no turn.
+ */
+const FINAL_CHECK = 'final check';
+/**
  * The phases of a turn, in order (§5): the declaration of modes and the ops check that open Income (§5 Phase B, §11.C.2), Income,
- * Actions with its two interrupts, the Engine's Generate and Commit, and Cleanup.
+ * Actions with its two interrupts, the Engine's Generate and Commit, and Cleanup; then the final check, which only the End's steps
+ * reach (§12).
  */
 const PHASES = [
   'modes', 'ops check', 'income', 'actions', 'research', 'sourcing', 'engine', 'commit', 'bench cleanup', 'backlog cleanup',
+  FINAL_CHECK,
 ];
 // The two buttons that pick a card from a project's staff.
 const REASSIGN_FROM_PROJECT = 'reassign a card from their development team to a card in their development';
@@ -136,7 +143,8 @@ const MODES_DECLARED: Record<string, string[]> = { Blue: [], Red: ['red mode'], 
 const PRE_INCOME = ['modes', 'ops check'];
 /**
  * The ops check's buttons (§5 Phase B, ruling 19): switch a product in operation off, or back on, and confirm the ones left online
- * once the ops team's bandwidth runs them.
+ * once the ops team's bandwidth runs them. The final check has the two switches but no confirm: its step passes on as soon as the
+ * products online fit (§12).
  */
 const SWITCH_OFF = 'switch off a card in their operations';
 const SWITCH_ON = 'switch on a card in their operations';
@@ -384,7 +392,9 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *   from the other when that one has none. Then it pays salaries.
  * - **Free moves** come first in the actions phase, each at most once a turn. While its development has fewer than 3, it greenlights
  *   the first backlog card whose press is allowed, Tier 2 and 3 included, but an idea Domain Expertise cuts before any other. It
- *   dismisses the ops team's first card it can spare when `t % 9 === 4` and the development team's first when `t % 9 === 8`.
+ *   dismisses the ops team's first card it can spare when `t % 9 === 4` and the development team's first when `t % 9 === 8`. In the
+ *   last round, with the Market Crash in the crash pile, it dismisses on an even `t` the ops team's first card that gives Blue or Red
+ *   bandwidth, once a turn (see `lastRound`).
  * - **The first action** is an Ideation, by `t % 4`: a growth idea (0 and 2), draft from the growth market (1), or (3) by
  *   `⌊t / 4⌋ % 3` research the seed deck, draft from the seed market or draft the open idea pool's first card. A growth idea
  *   researches the growth deck when the `style` researches, and drafts from the growth market when it drafts. A draft from a market
@@ -426,6 +436,10 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *   lacking the Junior of kind `(t + a) % 3`, else ends its actions.
  * - **Engine.** While the Engine waits on it, its ops team's QA short of the Bugs on its products in operation, it cleans the
  *   product at `t % n` among its n products in operation with Bugs, in slot order (§5 Phase D, R3).
+ * - **Final check**, as the seat whose step it is (§12, ruling 25). When `t % 3 === 0` and it has switched nothing on in this step, it
+ *   switches on its offline product with the highest val, if it has one. Then, while the step is its, it switches off the product
+ *   with the lowest val (the first of those) among its online products with maintenance in a color it is short of (see `shortOf`).
+ *   Each step is a `t` of its own, since the step passes to the next seat as the products online fit.
  * - **Sourcing.** It hires the first card in its scouting it can pay for, to its bench, its ops team or its first project, by
  *   `(t + ⌊t / 9⌋) % 3`, or to its ops team while it has a product in operation, by its first product's button as action 1 does.
  *   When the rules refuse that, or it has nothing to pick, it tries the next of those places in that order, and with none it passes
@@ -451,7 +465,10 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  * only an online product gives (ruling 5). So it takes out of the ops team only staff it can spare. A seat still stops in its ops
  * check when a Launch brings too few staff for its product or a let go leaves the team short, and again at each Income until staff
  * join the team. The Growth Hacker earns its product $3 and adds a Bug each turn, which ops QA cleans at the Engine (§20.B, §5
- * Phase D), so it stays on its product and QA stays in the ops team while there are Bugs to clean.
+ * Phase D), so it stays on its product and QA stays in the ops team while there are Bugs to clean. Kept that way, every seat's
+ * products fit at the end and the final check passes every step at once, so in the last round, when no Income comes again, a seat
+ * on an even `t` dismisses a card that gives bandwidth: the final check then finds some seats short and they choose what to switch
+ * off (§12, ruling 25).
  *
  * Some of slice 3's paths come once or twice in all the long runs, and slice 4's moves change which games reach them. So the Diva
  * goes to the ops team from the bench on any turn, a project with a cut, which Domain Expertise made cheaper to build, gets makers
@@ -639,6 +656,25 @@ function playTurn(
     const runs = (product: CardState) => product.data?.offline !== true && short.some((color) => maint(product, color) > 0);
     return pick(SWITCH_OFF, own('operations'), (row) => row.filter(runs).at(t % 2 === 0 ? 0 : -1));
   };
+  /** Whether this step of the final check has switched a product on (§12). */
+  let switchedOn = false;
+  const isOffline = (product: CardState) => product.data?.offline === true;
+  /** The product of `row` whose val `beats` every other's, the first of those; undefined for an empty row. */
+  const topByVal = (row: CardState[], beats: (val: number, best: number) => boolean) => row.reduce<CardState | undefined>(
+    (best, product) => (best === undefined || beats(product.data?.val as number, best.data?.val as number) ? product : best), undefined);
+  /** The final check's switch on of the seat's offline product with the highest val, the first of those; null with none (§12). */
+  const switchOnBest = (): Move | null =>
+    pick(SWITCH_ON, own('operations'), (row) => topByVal(row.filter(isOffline), (val, best) => val > best));
+  /**
+   * The final check's switch off of the product with the lowest val, the first of those, among the seat's online products with
+   * maintenance in a color it is short of (§12, ruling 25). A seat whose step it is is short of some color, so it has one.
+   */
+  const switchOffLeast = (): Move | null => {
+    const short = shortOf(runtime, engine.getState(), by);
+    const runsShort = (product: CardState) => !isOffline(product)
+      && short.some((color) => ((product.data?.[`${color} maint`] as number | undefined) ?? 0) > 0);
+    return pick(SWITCH_OFF, own('operations'), (row) => topByVal(row.filter(runsShort), (val, best) => val < best));
+  };
   /**
    * The cards of `team`, the seat's ops team, it can spare, in slot order: each one whose leaving, with those before it, keeps the
    * team's bandwidth in each color the card gives at the maintenance of every product in its operations, offline ones too, since the
@@ -678,6 +714,11 @@ function playTurn(
   const divaOn = (project: CardState) => cardsOn(engine.getState(), project.id).some(isDiva);
   /** The free moves this turn has made, each at most once. */
   const made = new Set<string>();
+  /** Whether this is the game's last round: the Market Crash is in the crash pile, so the round's end ends the game (§12). */
+  const lastRound = () => cards('crash-pile').length > 0;
+  /** Whether `card` gives Blue or Red bandwidth, as the rules work it out (§5 Phase B). */
+  const givesBandwidth = (card: CardState) =>
+    ['blue', 'red'].some((color) => (runtime.workedValue(engine.getState(), card.id, `${color} bandwidth`) as number) > 0);
   /** The free move to make now, or null. */
   const freeMove = (): Move | null => {
     const dismiss = t % 9 === 4 ? DISMISS_FROM_OPS : t % 9 === 8 ? DISMISS_FROM_PROJECT : null;
@@ -691,6 +732,9 @@ function playTurn(
       }) : null,
       dismiss !== null && !made.has(dismiss)
         ? pick(dismiss, own(fromOps ? 'ops team' : 'development team'), (row) => (fromOps ? spare(row) : row)[0])
+        : null,
+      lastRound() && t % 2 === 0 && !made.has(DISMISS_FROM_OPS)
+        ? pick(DISMISS_FROM_OPS, own('ops team'), (row) => row.find(givesBandwidth))
         : null,
     ].find((choice) => choice !== null && accepts(choice)) ?? null;
     if (move !== null) made.add(move.type);
@@ -932,6 +976,10 @@ function playTurn(
       // The Engine waits on the seat only while its ops QA can't clean every Bug on its products, so some product has Bugs (R3).
       const bugged = (row: CardState[]) => row.filter((product) => bugsOn(product) > 0);
       play(engine, choose([pick(CLEAN, own('operations'), (row) => bugged(row)[t % bugged(row).length])]), watch);
+    } else if (phase === FINAL_CHECK) {
+      const move = choose([t % 3 === 0 && !switchedOn ? switchOnBest() : null, switchOffLeast()]);
+      if (move.type === SWITCH_ON) switchedOn = true;
+      play(engine, move, watch);
     } else {
       const cleanup = CLEANUPS[phase!];
       if (cleanup === undefined) throw new Error(`The long runs don't play the ${phase} phase.`);
@@ -943,31 +991,45 @@ function playTurn(
 
 /**
  * How a long run plays: until the log holds `moves` moves or `until` says it holds enough, with `throughView` finding each card
- * to pick through the page's view, and telling `refused` of each press the rules refuse.
+ * to pick through the page's view, and telling `refused` of each press the rules refuse. `finalCheck` gains the log index of each
+ * move made in the final check.
  */
-type Run = { moves?: number; throughView?: boolean; until?: (log: readonly Move[]) => boolean; refused?: Refused };
+type Run = {
+  moves?: number; throughView?: boolean; until?: (log: readonly Move[]) => boolean; refused?: Refused; finalCheck?: Set<number>;
+};
 
 /**
  * Plays a game of `players` from Setup at `seed`, turn after turn, until it has a result, `MAX_TURNS` turns are played, the log
  * holds `moves` moves or `until` says it holds enough; the engine as it is then. At an odd seed every seat researches the growth
  * deck for its growth ideas, and at an even seed it drafts them from the growth market, so that the Crash comes out of each. With
- * `throughView` each seat finds the cards it picks through the page's view of it, as `playTurn` says.
+ * `throughView` each seat finds the cards it picks through the page's view of it, as `playTurn` says. Each step of the final check
+ * before the score is played as a turn of its own, and the index of each of its moves goes into `finalCheck`, since they are no turn.
  */
 function playGame(
-  players: number, seed: number, watch: Watch, { moves = Infinity, throughView = false, until = () => false, refused }: Run = {},
+  players: number, seed: number, watch: Watch,
+  { moves = Infinity, throughView = false, until = () => false, refused, finalCheck }: Run = {},
 ): GameEngine {
   const { engine, runtime } = createEngine(game!, lib, players, initialState(game!, seed));
   const style: Style = seed % 2 === 0 ? 'drafts' : 'researches';
   const stop = (log: readonly Move[]) => log.length >= moves || until(log);
+  const watching: Watch = (before, move, after) => {
+    if (before.turn?.phase === FINAL_CHECK) finalCheck?.add(engine.getLog().length - 1);
+    watch(before, move, after);
+  };
   for (let t = 0; t < MAX_TURNS && engine.getState().result === undefined && !stop(engine.getLog()); t++) {
-    playTurn(engine, t, style, watch, stop, runtime, throughView, refused);
+    playTurn(engine, t, style, watching, stop, runtime, throughView, refused);
   }
   return engine;
 }
 
-/** The seat of each turn in the log, in order: a turn is a run of moves by one seat, since no seat has two turns running. */
-const turnsIn = (log: readonly Move[]): PlayerId[] =>
-  log.filter((move, i) => i === 0 || move.by !== log[i - 1].by).map((move) => move.by as PlayerId);
+/**
+ * The seat of each turn in the log, in order, among the moves whose index is not in `skipped`: a turn is a run of moves by one seat,
+ * since no seat has two turns running. The long runs skip the moves of the final check, whose steps are no turns (§12).
+ */
+const turnsIn = (log: readonly Move[], skipped: ReadonlySet<number>): PlayerId[] => {
+  const kept = log.filter((_, i) => !skipped.has(i));
+  return kept.filter((move, i) => i === 0 || move.by !== kept[i - 1].by).map((move) => move.by as PlayerId);
+};
 
 /** The seat whose turn started in the move from `before` to `after`: the turn marker became it, from no seat or from another one. */
 function turnStarted(before: GameState, after: GameState): PlayerId | null {
@@ -978,12 +1040,14 @@ function turnStarted(before: GameState, after: GameState): PlayerId | null {
 /**
  * The seat that reached its Income in the move from `before` to `after`: its turn started in the move or it was in a `PRE_INCOME` phase,
  * and it is now past them with no result. Null for a move that reached none. Income earns as it starts, so this is the move that
- * pays a seat its rev and Market Share (§5 Phase B, R2); a game that ends as the round is finished reaches no Income.
+ * pays a seat its rev and Market Share (§5 Phase B, R2); a game that ends as the round is finished reaches no Income, and nor does
+ * a move that reaches the final check before the score (§12).
  */
 function enteredIncome(before: GameState, after: GameState): PlayerId | null {
   const seat = turnStarted(before, after) ?? (PRE_INCOME.includes(before.turn!.phase!) ? before.turn!.current as PlayerId : null);
   if (seat === null || after.result !== undefined) return null;
   const { current, phase } = after.turn!;
+  if (phase === FINAL_CHECK) return null;
   return current === seat && !PRE_INCOME.includes(phase!) ? seat : null;
 }
 
@@ -1126,7 +1190,7 @@ function scoreOf(state: GameState, seat: PlayerId): number {
  *   leaves its card in the mode its answer names and in no other: Blue in neither.
  * - Ops: the seat that reached its Income in the move runs its online products within its ops team's supply, in Blue and in Red
  *   (§5 Phase B, ruling 19). A product goes offline or back online only in its owner's ops check: by a press there, as the check
- *   starts, or on the way through it to Income (ruling 25).
+ *   starts, or on the way through it to Income (ruling 25); or in the final check before the score (§12).
  * - Only the seat in the sourcing phase has cards in its scouting row.
  * - Each market refills at once: the agency row holds 4 and each product market 2 while its deck has cards, and the Market
  *   Crash is never anywhere but the growth deck or the crash pile.
@@ -1322,9 +1386,12 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     // Online fits after every Income: the ops team's supply runs the products left online, in each color (§5 Phase B, ruling 19).
     if (income !== null) expect(shortOf(runtime, after, income), `the colors ${income} is short of at Income ${at}`).toEqual([]);
     // A product's Offline changes only in its owner's ops check: by a press there, as the check starts, or on the way through it to
-    // Income (ruling 25). A product is offline only when its flag is true: "It is not offline." may leave it false.
+    // Income (ruling 25); or in the final check before the score, whose steps may each pass on in the move that starts them, up to the
+    // move that sets the result (§12). A product is offline only when its flag is true: "It is not offline." may leave it false.
     const offline = (c: CardState | undefined) => c?.data?.offline === true;
-    const checking = (seat: PlayerId) => income === seat
+    const finalCheck = [before.turn!, after.turn!].some(({ phase }) => phase === FINAL_CHECK)
+      || (before.result === undefined && after.result !== undefined);
+    const checking = (seat: PlayerId) => income === seat || finalCheck
       || [before.turn!, after.turn!].some(({ current, phase }) => current === seat && phase === 'ops check');
     const switched = after.cards.filter((c) => offline(c) !== offline(wasById.get(c.id))).flatMap((c) => {
       const owner = seats.find((seat) => c.zoneId === zoneIdFor('operations', seat));
@@ -1412,7 +1479,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(146);
+    expect(results).toHaveLength(154);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -1929,18 +1996,20 @@ describe('Startup Simulator (designer language)', () => {
         const refused: Refused = (_state, move, reason) => {
           if (REASSIGNS.includes(move.type) && reason === EGO_REFUSAL) count(DIVA_REFUSED[move.type]);
         };
+        const finalCheck = new Set<number>();
         const engine = playGame(players, seed, (before, move, after) => {
           rules(before, move, after);
           budget(before, move, after);
           for (const key of [move.type, ...happenings(runtime, before, move, after)]) count(key);
-        }, { throughView: seed === 1, refused });
+        }, { throughView: seed === 1, refused, finalCheck });
         if (seed === 1) {
           // The view was checked card by card: the cards each card may go on, and the cards of a set, each judged alone.
           expect(viewChecks.targets - checked.targets, `${where}: cards whose targets the view was checked for`).toBeGreaterThan(0);
           expect(viewChecks.sets - checked.sets, `${where}: cards of a set the view was checked for`).toBeGreaterThan(0);
         }
         const state = engine.getState();
-        const turns = turnsIn(engine.getLog());
+        // The final check's steps are no turns (§12).
+        const turns = turnsIn(engine.getLog(), finalCheck);
         expect(state.result, `${where}: the result after ${turns.length} turns`).toBeDefined();
         expect(turns.length, where).toBeLessThanOrEqual(MAX_TURNS);
         expect(namesIn(state, 'crash-pile'), where).toEqual(['Market Crash']);
@@ -1952,6 +2021,10 @@ describe('Startup Simulator (designer language)', () => {
         // A round was counted for each one played, and none for the one the Crash keeps from starting.
         expect(state.data[ROUND_KEY], `${where}: rounds after ${turns.length} turns`).toBe(turns.length / players);
 
+        // The final check leaves every seat's online products within its ops team's bandwidth, in Blue and in Red (§12, ruling 25).
+        for (const seat of seats) {
+          expect(shortOf(runtime, state, seat), `${where}: the colors ${seat} is short of at the score`).toEqual([]);
+        }
         const scores = Object.fromEntries(seats.map((seat) => [seat, scoreOf(state, seat)]));
         const top = Math.max(...Object.values(scores));
         const winners = seats.filter((seat) => scores[seat] === top);
@@ -2236,6 +2309,44 @@ describe('Startup Simulator (designer language)', () => {
         expect(logs[0].at(-1), `turn ${t}`).toEqual({ type: CLEAN, by: 'p0', cardId: cleaned });
         expect(logs[1], `turn ${t}`).toEqual(logs[0]);
       }
+    });
+
+    it('plays the final check for a seat short of bandwidth, switching products off until the rest fit, and scores only those online (§12)', () => {
+      const [neobank, dating, viral, wallet, gateway] =
+        ['Neobank', 'Dating App', 'Viral Video App', 'Mobile Wallet', 'Payment Gateway'].map(idOf);
+      let state = arrange({
+        'crash-pile': [idOf('Market Crash')],
+        'operations-p0': [neobank, dating, viral, wallet, gateway],
+        'ops-team-p0': [idOf('Architect')],
+      }).getState();
+      // Each product needs 1 Blue (§20.C) and the Architect gives 3 (§20.B.1). With the Neobank offline the other 4 still need 4, so
+      // the last round ends with p0 short.
+      state = setCounter(changeCard(state, neobank, { offline: true }, game!), 'actions', 'p0', 1);
+      const seats = seatsFor(2);
+      const { engine, runtime } = createEngine(game!, lib, 2, state);
+      const rules = keepsTheRules(seats, runtime);
+      const checked: Move[] = [];
+      const watch: Watch = (before, move, after) => {
+        rules(before, move, after);
+        if (before.turn?.phase === FINAL_CHECK) checked.push(move);
+      };
+      // p0's last turn, p1's, then each step of the final check as a turn of its own: on t = 3, p0's, it first switches on the
+      // offline product with the highest val.
+      for (let t = 1; t < 10 && engine.getState().result === undefined; t++) {
+        playTurn(engine, t, 'researches', watch, () => false, runtime, false);
+      }
+      const end = engine.getState();
+      expect(end.result).toBeDefined();
+      expect(checked).toEqual([
+        { type: SWITCH_ON, by: 'p0', cardId: neobank },
+        { type: SWITCH_OFF, by: 'p0', cardId: wallet },
+        { type: SWITCH_OFF, by: 'p0', cardId: gateway },
+      ]);
+      const offline = (id: string) => cardById(end, id)!.data?.offline === true;
+      expect([neobank, dating, viral].map(offline)).toEqual([false, false, false]);
+      expect([wallet, gateway].map(offline)).toEqual([true, true]);
+      const { scores } = end.result as { scores: Record<string, number> };
+      expect(scores).toEqual(Object.fromEntries(seats.map((seat) => [seat, scoreOf(end, seat)])));
     });
   });
 });
