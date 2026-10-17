@@ -207,7 +207,7 @@ const isOfClass = (env: PhraseEnv, space: number, kind: SpaceClass): boolean =>
 const landsOnClass: MomentFn = (env, [kind], moment) => moment.kind === 'land' && isOfClass(env, moment.space, kind as SpaceClass);
 
 const landsOnClassOwnedByOther: MomentFn = (env, args, moment) => {
-  if (!landsOnClass(env, args, moment)) return false;
+  if (moment.kind !== 'land' || !landsOnClass(env, args, moment)) return false;
   const owner = ownerOf(env.state, moment.space);
   return owner !== null && owner !== moment.seat;
 };

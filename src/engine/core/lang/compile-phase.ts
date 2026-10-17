@@ -20,8 +20,13 @@ const STARTS = /^when this phase starts:?$/i;
 /** The lines that start each turn, under a phase or in every phase; the apostrophe may be straight or curly. */
 export const TURN_STARTS = /^when a player['‘’]s turn starts:?$/i;
 const GO_TO = /^when (.+), go to ([^:]+)$/i;
-/** Moments come before triggers: “When a player lands on …:” is a rule about where a piece goes, not a condition. */
-const MOMENT_LINE = /^when (a piece passes .+|a player lands on .+):$/i;
+/** A rule for when a card of some kind joins a card in a zone: group 1 is what it waits for. Under a phase or in every phase. */
+export const JOIN_MOMENT = /^when (an? .+ joins a card in .+):$/i;
+/**
+ * Moments come before triggers: “When a player lands on …:” is a rule about where a piece goes, and “When a … card joins a card in …:”
+ * one about where a card goes, not a condition.
+ */
+const MOMENT_LINE = /^when (a piece passes .+|a player lands on .+|an? .+ joins a card in .+):$/i;
 const TRIGGER = /^when (.+):$/i;
 const ONLY_IF_ONE_OF = /^only if one of:?$/i;
 const ONLY_IF = /^only if (.+)$/i;
@@ -617,9 +622,13 @@ export function compileTrigger(node: OutlineNode, clean: string, whenText: strin
   return { line: node.line, text: ruleText(clean), when, ...readWhenBody(node, aboutOf(when, ctx, turnCtx)) };
 }
 
-/** A `When a piece passes …:` or `When a player lands on …:` rule, about the player whose piece it is and the space. */
-function compileMoment(node: OutlineNode, clean: string, whenText: string, ctx: LineCtx): CompiledMoment {
-  const about: LineCtx = { ...ctx, player: true, space: true };
+/**
+ * A `When a piece passes …:` or `When a player lands on …:` rule, about the player whose piece it is and the space. Or a `When a … card
+ * joins a card in …:` rule, about the player whose zone the card joined (“they”), the card (“it”) and the card it joined (“the card it
+ * joins”).
+ */
+export function compileMoment(node: OutlineNode, clean: string, whenText: string, ctx: LineCtx): CompiledMoment {
+  const about: LineCtx = JOIN_MOMENT.test(clean) ? { ...ctx, player: true, card: true, onto: true } : { ...ctx, player: true, space: true };
   return { line: node.line, text: ruleText(clean), when: matchLine('moment', whenText, node.line, about), ...readWhenBody(node, about) };
 }
 

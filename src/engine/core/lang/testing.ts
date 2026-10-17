@@ -447,6 +447,12 @@ export const MEND_GAME = [
   'Rest work:', "  A tired card's rest work is its skill.",
 ].join('\n');
 
+/** CREW_GAME where a Smith that joins a job in a workshop leaves a dent in it, whatever the phase. */
+export const JOIN_GAME = CREW_GAME
+  .replace('  Cards can be tired.', '  Cards can be tired.\n  Cards can have dents.')
+  .replace('Phase: working', ['In every phase:', '  When a Smith card joins a card in a workshop:', '    The card it joins gains 1 dent.', '',
+    'Phase: working'].join('\n'));
+
 /** WORKED_GAME with a job's crew red: the red work of the cards on it, added up. */
 export const TOTALS_GAME = [WORKED_GAME, '', 'Crew red:', "  A card's crew red is the total red work of the cards on it."].join('\n');
 

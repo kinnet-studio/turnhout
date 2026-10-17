@@ -118,9 +118,10 @@ export type CompiledPhase = {
 };
 /**
  * The rules of an `In every phase:` section: `When …:` rules that fire whatever the phase, the lines that start each round, about
- * no one, and the lines that start each turn, about the player whose turn it is.
+ * no one, and the lines that start each turn, about the player whose turn it is. `moments` holds its rules for when a card joins a
+ * card, the only moments it may have, and is left out when there are none.
  */
-export type EveryPhase = { triggers: CompiledTrigger[]; roundStarts: PhraseRef[]; turnStarts: PhraseRef[] };
+export type EveryPhase = { triggers: CompiledTrigger[]; roundStarts: PhraseRef[]; turnStarts: PhraseRef[]; moments?: CompiledMoment[] };
 export type CompiledEnd = { line: number; when: PhraseRef; scores: PhraseRef[]; winner: PhraseRef };
 export type ExampleStep = { keyword: 'given' | 'when' | 'then'; ref: PhraseRef };
 export type CompiledExample = { name: string; line: number; players: number | null; steps: ExampleStep[] };
@@ -186,16 +187,22 @@ export type Vocab = {
  * Who, which space and which card a phrase is about, when a rule is about a player's piece, a space or a card. `amount` is the
  * whole number a button that carries one was pressed with; no other rule has it. `picked` is the player a button that picks one
  * was pressed with, or the one a choice of a press filled in, while that choice's line runs; no other rule has it. `onto` is the
- * id of the card a button that picks one for its cards to go to was pressed with, and `cards` the ids of the set a button that
- * picks some cards was pressed with, in the order the press gave them; no other rule has either. `choices` is what the press of a
+ * id of the card a button that picks one for its cards to go to was pressed with, or of the card another card joined, in the lines
+ * of a rule for when a card joins a card (“the card it joins”); no other rule has it. `cards` is the ids of the set a button that
+ * picks some cards was pressed with, in the order the press gave them; no other rule has it. `choices` is what the press of a
  * button whose `Then:` lines ask for choices filled in for each of them, in order, null for one it did not ask; no other rule has it.
  */
 export type Subject = {
   player: PlayerId | null; space: number | null; card: string | null; amount?: number; picked?: PlayerId; onto?: string; cards?: string[];
   choices?: (string | null)[];
 };
-/** A piece passing over or landing on a space. */
-export type Moment = { kind: 'pass' | 'land'; seat: PlayerId; space: number };
+/**
+ * A piece passing over or landing on a space, or a card joining a card: `card` was put on `holder`, and `seat` owns the zone it
+ * joined.
+ */
+export type Moment =
+  | { kind: 'pass' | 'land'; seat: PlayerId; space: number }
+  | { kind: 'join'; seat: PlayerId; card: string; holder: string };
 export interface MoveInfo { verb: string; by: PlayerId; cardId: string; from: string; to: string }
 export interface ExampleEnv {
   last: { ok: boolean; reason?: string } | null;
@@ -208,7 +215,7 @@ export interface PhraseEnv {
   check(state: GameState, move: Move): true | string;
   example?: ExampleEnv;
   subject?: Subject;
-  /** Runs the lands-on and passes rules for a moment; the runtime supplies it. */
+  /** Runs the lands-on, passes and joins rules for a moment; the runtime gives it. */
   announce?: (state: GameState, moment: Moment) => GameState;
   /** Runs one compiled line about a subject, as a rule's line runs, for a phrase that does what a card says; the runtime supplies it. */
   runLine?: (state: GameState, ref: PhraseRef, subject: Subject) => GameState;

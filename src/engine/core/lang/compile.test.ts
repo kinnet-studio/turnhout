@@ -15,6 +15,7 @@ import {
 } from './testing';
 import type { ParamType } from './types';
 import { MEND_GAME } from './testing';
+import { JOIN_GAME } from './testing';
 
 const lib = createDefaultLibrary();
 const BASE = [
@@ -1445,5 +1446,19 @@ describe('a value that goes up by a total', () => {
     const line = "  A card's red work goes up by the total skill of the cards on it.";
     const text = MEND_GAME.replace(FLOOR, `${FLOOR}\n${line}`);
     expect(messages(text)).toEqual([[at(text, line), 'This line is about “red work”, but it is under Worth:.']]);
+  });
+});
+
+describe('a card that joins a card', () => {
+  it('compiles JOIN_GAME with no problems', () => expect(compileGame(JOIN_GAME, lib).diagnostics).toEqual([]));
+  it('keeps a join moment written under In every phase: with the rules for every phase', () => {
+    expect(compileGame(JOIN_GAME, lib).game!.everyPhase.moments).toMatchObject([{
+      when: { kind: 'moment', phrase: '{cardclass} joins a card in a {perzone}', args: [{ name: 'Smith' }, 'workshop'] },
+      conditions: [],
+      effects: [{ kind: 'effect', phrase: 'the card it joins gains {int} {attribute}', args: [1, 'dents'] }],
+    }]);
+  });
+  it('leaves the moments out of the rules for every phase of a game that has none (guard: passes before and after)', () => {
+    expect(compileGame(CREW_GAME, lib).game!.everyPhase).not.toHaveProperty('moments');
   });
 });

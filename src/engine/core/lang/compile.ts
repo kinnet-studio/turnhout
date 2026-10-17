@@ -4,6 +4,7 @@ import {
   actionLine, actionOf, cardMoveVerb, compilePhase, compileTrigger, pickLine, readCondition, reportHiddenCardReads, startsLineOf, targetWords,
   TURN_STARTS, type TargetWords, type VerbUses,
 } from './compile-phase';
+import { compileMoment, JOIN_MOMENT } from './compile-phase';
 import {
   addProblem, attempt, FOR_EVERY_AT_LEAST_ONE, innerEffect, matchEffectLine, matchLine, phaseId, phraseFn, POINTS_FOR_EVERY, rejectChildren, type LineCtx,
 } from './compile-util';
@@ -16,6 +17,7 @@ import type {
   BankSpec, BoardFn, BoardSpec, CardSetSpec, CardsFn, CardTable, CompiledEnd, CompiledGame, CompiledPhase, DeclareFn, EveryPhase, FactSpec, PhraseRef,
   PlayerValue, SpaceSpec, Vocab, WorkedValue, ZoneFn, ZoneSpec,
 } from './types';
+import type { CompiledMoment } from './types';
 
 export type CompileResult = { game?: CompiledGame; diagnostics: Diagnostic[] };
 
@@ -617,30 +619,33 @@ function phaseStartedBy(ref: PhraseRef, library: PhraseLibrary): string | null {
 
 /**
  * The rules of the `In every phase:` sections, in the order written: the lines that start each round, about no one; the lines that
- * start each turn, about the player whose turn it is; and `When …:` rules that fire whatever the phase. Those are read as a phase's
- * rules are, except that one about no one in particular is about no one, for the phase may be one where everyone acts at once. Any
- * other line is reported.
+ * start each turn, about the player whose turn it is; the rules for when a card joins a card, read as a phase's are and left out when
+ * there are none; and `When …:` rules that fire whatever the phase. Those are read as a phase's rules are, except that one about no one
+ * in particular is about no one, for the phase may be one where everyone acts at once. Any other line is reported.
  */
 function compileEveryPhase(sections: Section[], ctx: LineCtx): EveryPhase {
   const everyPhase: EveryPhase = { triggers: [], roundStarts: [], turnStarts: [] };
+  const moments: CompiledMoment[] = [];
   const effects = (node: OutlineNode, about: LineCtx) => node.children.map((line) => {
     rejectChildren(line, ctx.diagnostics);
     return matchEffectLine(line.text, line.line, about);
   });
   for (const node of linesOf(sections)) {
     const clean = normalizeLine(node.text);
+    const join = JOIN_MOMENT.exec(clean);
     const rule = EVERY_PHASE_RULE.exec(clean);
     if (ROUND_STARTS.test(clean)) everyPhase.roundStarts.push(...effects(node, ctx));
     else if (TURN_STARTS.test(clean)) everyPhase.turnStarts.push(...effects(node, { ...ctx, player: true }));
+    else if (join) moments.push(compileMoment(node, clean, join[1], ctx));
     else if (rule) everyPhase.triggers.push(compileTrigger(node, clean, rule[1], ctx, false));
     else addProblem(ctx.diagnostics, node.line, ONLY_WHEN_RULES, { text: clean });
   }
-  return everyPhase;
+  return moments.length > 0 ? { ...everyPhase, moments } : everyPhase;
 }
 
 /** Every line of the `In every phase:` sections that does something. */
-const everyPhaseEffects = ({ triggers, roundStarts, turnStarts }: EveryPhase): PhraseRef[] => [
-  ...roundStarts, ...turnStarts, ...triggers.flatMap((t) => t.effects),
+const everyPhaseEffects = ({ triggers, roundStarts, turnStarts, moments = [] }: EveryPhase): PhraseRef[] => [
+  ...roundStarts, ...turnStarts, ...triggers.flatMap((t) => t.effects), ...moments.flatMap((m) => m.effects),
 ];
 
 /** Every line of a phase that does something: its buttons, card moves, rules, start lines and the lines that start a turn in it. */

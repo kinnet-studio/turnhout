@@ -318,13 +318,16 @@ export class LangRuntime {
   }
 
   /**
-   * `env.announce`: a piece passed or landed on a space. Runs the current phase's passes and lands-on rules in the
-   * order written, each about the piece's player and that space, each seeing what the rules before it did. A rule's
-   * lines may move a piece again and so announce again, inside this one.
+   * `env.announce`: a piece passed or landed on a space, or a card joined a card. Runs the moment rules for every phase, then the
+   * current phase's, in the order written, each seeing what the rules before it did. A pass or a landing is about the piece's player
+   * and that space; a join is about the player whose zone the card joined, the card (“it”) and the card it joined (“the card it
+   * joins”). A rule's lines may move a piece or put a card on a card again and so announce again, inside this one.
    */
   readonly announce = (state: GameState, moment: Moment): GameState => {
-    const rules = this.game.phases.find((p) => p.id === state.turn?.phase)?.moments ?? [];
-    const subject: Subject = { player: moment.seat, space: moment.space, card: null };
+    const rules = [...(this.game.everyPhase.moments ?? []), ...(this.game.phases.find((p) => p.id === state.turn?.phase)?.moments ?? [])];
+    const subject: Subject = moment.kind === 'join'
+      ? { player: moment.seat, space: null, card: moment.card, onto: moment.holder }
+      : { player: moment.seat, space: moment.space, card: null };
     let s = state;
     for (const rule of rules) {
       const env = this.env(s, undefined, undefined, subject);

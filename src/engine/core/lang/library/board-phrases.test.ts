@@ -212,7 +212,7 @@ describe('moving forward to a space, and back', () => {
   /** Where p0's piece ends and every moment on the way, from `from`. */
   const walked = (text: string, from: number) => {
     const seen: string[] = [];
-    const announce = (s: GameState, m: Moment) => { seen.push(`${m.kind} ${m.space}`); return s; };
+    const announce = (s: GameState, m: Moment) => { seen.push(m.kind === 'join' ? m.kind : `${m.kind} ${m.space}`); return s; };
     const s = runPhrase<GameState>(lib, 'effect', text, env(placePiece(fixtureBoardState(), 'p0', from), { ...as('p0'), announce }));
     return { at: pieceAt(s, 'p0'), seen };
   };
@@ -243,7 +243,7 @@ describe('moving forward to a space, and back', () => {
   it('ends the walk where a passes rule moves the piece, and announces no landing', () => {
     const seen: string[] = [];
     const announce = (s: GameState, m: Moment) => {
-      seen.push(`${m.kind} ${m.space}`);
+      seen.push(m.kind === 'join' ? m.kind : `${m.kind} ${m.space}`);
       return seen.length === 1 ? placePiece(s, 'p0', 2) : s;
     };
     const s = runPhrase<GameState>(lib, 'effect', 'their piece moves forward to Go', env(placePiece(fixtureBoardState(), 'p0', 5), { ...as('p0'), announce }));
