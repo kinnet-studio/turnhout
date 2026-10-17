@@ -471,7 +471,7 @@ describe('the Board on the page', () => {
   });
 
   it('counts market share among the numbers after Income, and shows the cubes Generate adds on the canvas', () => {
-    mount({ initial: relocate(BUILT, [idOf(BUILT, 'Trading Bot')], `operations-${N}`, game) });
+    mount({ initial: relocate(relocate(BUILT, [idOf(BUILT, 'App Store')], `operations-${N}`, game), [idOf(BUILT, 'Junior Software Dev', `bench-${N}`)], `ops-team-${N}`, game) });
     press('End your actions');
     expect(tab(`${N} — to act`).getAttribute('aria-selected')).toBe('true');
     expect(lineOf(N)?.startsWith(`${N} 11 capital, 3 actions, 1 market share · `)).toBe(true);

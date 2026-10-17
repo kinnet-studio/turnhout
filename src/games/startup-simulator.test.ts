@@ -99,10 +99,12 @@ const OWN_ROWS = ['bench', 'backlog', 'research', 'scouting'];
 /** The rows of each player's Board, which everyone can see: projects, products in operation, the staff on projects and the ops staff (§3). */
 const BOARD_ROWS = ['development', 'operations', 'development team', 'ops team'];
 /**
- * The phases of a turn, in order (§5): the declaration of modes that opens Income (§5 Phase B, §11.C.2), Income, Actions with its two
- * interrupts, the Engine's Generate and Commit, and Cleanup.
+ * The phases of a turn, in order (§5): the declaration of modes and the ops check that open Income (§5 Phase B, §11.C.2), Income,
+ * Actions with its two interrupts, the Engine's Generate and Commit, and Cleanup.
  */
-const PHASES = ['modes', 'income', 'actions', 'research', 'sourcing', 'engine', 'commit', 'bench cleanup', 'backlog cleanup'];
+const PHASES = [
+  'modes', 'ops check', 'income', 'actions', 'research', 'sourcing', 'engine', 'commit', 'bench cleanup', 'backlog cleanup',
+];
 // The two buttons that pick a card from a project's staff.
 const REASSIGN_FROM_PROJECT = 'reassign a card from their development team to a card in their development';
 const DISMISS_FROM_PROJECT = 'dismiss a card in their development team';
@@ -127,8 +129,18 @@ const CONFIRM_MODES = 'confirm their modes';
 const MODES = ['red mode', 'qa mode'];
 /** The modes each answer of a declaration leaves its card in, and no other: Blue none of them (§11.C.2). */
 const MODES_DECLARED: Record<string, string[]> = { Blue: [], Red: ['red mode'], QA: ['qa mode'] };
-/** The phases a turn passes through before its Income: the declaration of modes comes first (§5 Phase B, §11.C.2). */
-const PRE_INCOME = ['modes'];
+/**
+ * The phases a turn passes through before its Income: the declaration of modes, then the ops check, which Income pays out after
+ * (§5 Phase B, §11.C.2).
+ */
+const PRE_INCOME = ['modes', 'ops check'];
+/**
+ * The ops check's buttons (§5 Phase B, ruling 19): switch a product in operation off, or back on, and confirm the ones left online
+ * once the ops team's bandwidth runs them.
+ */
+const SWITCH_OFF = 'switch off a card in their operations';
+const SWITCH_ON = 'switch on a card in their operations';
+const CONFIRM_ONLINE = 'confirm the products online';
 // The Board's other buttons in the actions phase (§6, rulings 7, 20 and 25).
 const HIRE_AGENCY_TO_PROJECT = 'hire a card from the agency row to a card in their development';
 const HIRE_AGENCY_TO_OPS = 'hire a card from the agency row to their ops team';
@@ -172,8 +184,11 @@ const REQUIREMENTS = ['requires', 'also requires'];
 const LEADS: Record<string, string[]> = { blue: ['software', 'flex'], red: ['hardware', 'flex'] };
 /** Why the rules refuse to reassign the Diva: her Ego (§6, §20.B.1). */
 const EGO_REFUSAL = 'the card is not an Ego card';
-/** The phases of a seat's turn before its Engine runs: the declaration of modes, Income, Actions and the two phases that interrupt Actions. */
-const BEFORE_THE_ENGINE = ['modes', 'income', 'actions', 'research', 'sourcing'];
+/**
+ * The phases of a seat's turn before its Engine runs: the declaration of modes, the ops check, Income, Actions and the two phases that
+ * interrupt Actions.
+ */
+const BEFORE_THE_ENGINE = ['modes', 'ops check', 'income', 'actions', 'research', 'sourcing'];
 // What the tally calls the paths of slice 3 (see `happenings`), besides the moves themselves.
 const LICENSE_TO_THE_ONLY_PROVIDER = 'a license paid to the only provider';
 const LICENSE_TO_A_CHOSEN_PROVIDER = 'a license paid to a chosen provider';
@@ -214,6 +229,13 @@ const earns = (runtime: LangRuntime, state: GameState) => (product: CardState) =
 const payrollOf = (runtime: LangRuntime, state: GameState, seat: PlayerId) =>
   [...zoneCards(state, zoneIdFor('development team', seat)), ...zoneCards(state, zoneIdFor('ops team', seat))]
     .reduce((total, card) => total + (runtime.workedValue(state, card.id, 'salary') as number), 0);
+/**
+ * The colors `seat` is short of in `state`: its ops team's supply of each is below the maintenance its online products demand, as the
+ * rules work both out (§5 Phase B, ruling 19).
+ */
+const shortOf = (runtime: LangRuntime, state: GameState, seat: PlayerId): ('blue' | 'red')[] =>
+  (['blue', 'red'] as const).filter((color) =>
+    runtime.playerValue(state, seat, `${color} supply`) < runtime.playerValue(state, seat, `${color} demand`));
 /**
  * The colors of cube each skill makes as it joins a project from the bench: the bench forgets every mode, so a flex Senior works in Blue
  * until a declaration says otherwise (§11.C.2, ruling 24), and QA and the Specialists make none.
@@ -325,24 +347,29 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
 /**
  * Takes the turn of the seat whose turn it is, the game's turn `t` (counted from 0), until the turn passes, the game ends or
  * `stop` says the log holds enough. `a` counts the actions taken so far in this turn. An idea Domain Expertise cuts is a product
- * whose sector a product in the seat's operations shares, other than Infra and Concept (§19.A).
+ * whose sector an online product in the seat's operations shares, other than Infra and Concept (§19.A, ruling 5); a hybrid is an
+ * idea that costs cubes of both colors. Staff the seat can spare from its ops team are those whose leaving keeps the team's Blue and
+ * Red bandwidth at its products' load, so that every product stays online at its next Income (see `spare`).
  *
  * - **Modes.** When `t % 4 === 3` it confirms its modes at once. Otherwise it declares each card of its Board the rules call
  *   declarable, once each, the development team's first and then the ops team's, in slot order, and then confirms. Each declaration's
  *   choice is answered as any press's is (see below), so a flex Senior is declared Blue on an even `t` and Red on an odd one, and the
  *   Fixer Red or QA.
+ * - **Ops check.** When `t % 3 === 0` its first two presses switch off its first product in operation and switch it on again. Then,
+ *   while the rules refuse to confirm the products online, it switches off a product among its online ones with maintenance in a
+ *   color it is short of (see `shortOf`), the first of those on an even `t` and the last on an odd one. Then it confirms.
  * - **Income.** While the payroll is more than the seat's capital, or once when `t % 6 === 5`, it lets go of its salaried card
  *   with the highest salary (the first of those), from the development team on an even `t` and the ops team on an odd one, or
  *   from the other when that one has none. Then it pays salaries.
  * - **Free moves** come first in the actions phase, each at most once a turn. While its development has fewer than 3, it greenlights
  *   the first backlog card whose press is allowed, Tier 2 and 3 included, but an idea Domain Expertise cuts before any other. It
- *   dismisses the ops team's first card when `t % 9 === 4` and the development team's first when `t % 9 === 8`.
+ *   dismisses the ops team's first card it can spare when `t % 9 === 4` and the development team's first when `t % 9 === 8`.
  * - **The first action** is an Ideation, by `t % 4`: a growth idea (0 and 2), draft from the growth market (1), or (3) by
  *   `⌊t / 4⌋ % 3` research the seed deck, draft from the seed market or draft the open idea pool's first card. A growth idea
  *   researches the growth deck when the `style` researches, and drafts from the growth market when it drafts. A draft from a market
- *   takes the idea Domain Expertise cuts, else the market's first. When the rules refuse that, it tries researching the growth deck,
- *   drafting from the growth market, researching the seed deck and drafting from the seed market, in that order, and with none
- *   allowed it recruits instead.
+ *   takes a hybrid Domain Expertise cuts, else an idea it cuts, else the market's first. When the rules refuse that, it tries
+ *   researching the growth deck, drafting from the growth market, researching the seed deck and drafting from the seed market, in that
+ *   order, and with none allowed it recruits instead.
  * - **Each later action** first tries to reassign the Diva while she works for the seat, which her Ego refuses at no cost
  *   (§20.B.1). Then it launches the first project the engine takes, which a Tier 2 or 3 project needs to be fully led for as well as
  *   complete (P11), so that the Diva may go to the ops team with her team. Else it pivots the project she is on, which fires her
@@ -358,9 +385,9 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *   3. assign the bench cards whose skill makes a color the first unfinished project still lacks (the bench's first card when none
  *      does) to that project, leaving an Efficient card on the bench;
  *   4. assign the bench's first two cards (or its one) to the ops team, an Efficient card first;
- *   5. reassign the ops team's first card but an Efficient one to the first project, else the first development team card with
- *      another project to go on, to the first such project;
- *   6. recall every ops team card;
+ *   5. reassign the first card but an Efficient one the ops team can spare to the first project, else the first development team
+ *      card with another project to go on, to the first such project;
+ *   6. recall every ops team card it can spare;
  *   7. pivot the first project with no cubes and no staff, else, when `t % 13 === 0`, the first project the Diva is on, else the
  *      first project;
  *   8. lay off the bench's first card, or its first two on an odd `t`.
@@ -370,8 +397,9 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *   none lacking the Junior of kind `(t + a) % 3`, else ends its actions.
  * - **Sourcing.** It hires the first card in its scouting it can pay for, to its bench, its ops team or its first project, by
  *   `(t + ⌊t / 9⌋) % 3`; when it can pay for none, or the rules refuse the hire, it passes on the rest.
- * - In research it keeps the idea Domain Expertise cuts, else the research row's card at `t` (mod the row's length). In the backlog
- *   cleanup it discards the first card Domain Expertise doesn't cut, else the row's first; in the bench cleanup, the row's first.
+ * - In research it keeps a hybrid Domain Expertise cuts, else an idea it cuts, else the research row's card at `t` (mod the row's
+ *   length). In the backlog cleanup it discards the first card Domain Expertise doesn't cut, else the row's first; in the bench
+ *   cleanup, the row's first.
  *
  * A hire's place goes by `(t + ⌊t / 9⌋) % 3`, not `t % 3`: the action that hires from the agency row comes only when `t % 9` is 0
  * or 8, and the Layoff before a sourcing only when it is 6 or 7, so `t % 3` would never send either to one of its three places.
@@ -381,9 +409,15 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  * It plays slice 3 this way so that the long runs reach its rare paths. A Tier 2 or 3 project gains no cube until a Senior leads it,
  * and a seat seldom has the capital for one, so it looks for a lead before anything but a Launch, takes Seniors first wherever it
  * hires, and recruits Juniors who make what its projects lack. Cuts come only from ideas Domain Expertise cuts, so it keeps and
- * builds those first, which lets hybrids ask their cut often enough to be answered each way. The Diva and the Engineer are single
- * cards: it tries the Diva's reassign whenever she works for it, from a project and from the ops team, launches her project if it can
- * and else pivots it, and keeps the Engineer for the ops team, where his trait makes him cheaper.
+ * builds those first, hybrids before the rest, which lets hybrids ask their cut often enough to be answered each way. The Diva and the
+ * Engineer are single cards: it tries the Diva's reassign whenever she works for it, from a project and from the ops team, launches her
+ * project if it can and else pivots it, and keeps the Engineer for the ops team, where his trait makes him cheaper.
+ *
+ * It plays slice 4 so that its products earn: a Launch sends the project's staff to the ops team, and a seat that then moved them all
+ * out again would have its products switched off at every Income, short of the capital its Seniors cost and of the Domain Expertise
+ * only an online product gives (ruling 5). So it takes out of the ops team only staff it can spare. A seat still stops in its ops
+ * check when a Launch brings too few staff for its product or a let go leaves the team short, and again at each Income until staff
+ * join the team.
  *
  * Without `throughView` it finds the cards a button picks in the zones. With it, it finds them as a player at the page would: among
  * the cards the page's view of the seat offers for the button and the cards each may go on (both checked by `viewedCards`). The
@@ -539,9 +573,51 @@ function playTurn(
     }
     return null;
   };
-  /** Whether Domain Expertise would cut `card` for the seat: a product in its operations shares its sector, not Infra or Concept (§19.A). */
+  /** The presses this turn has made in its ops check, in order (§5 Phase B). */
+  const checks: Move[] = [];
+  /**
+   * The ops check's press before the confirm, or null once the rules allow the confirm: on a `t` divisible by 3 its first product
+   * switched off and back on, then a product it runs online in a color it is short of, the first on an even `t` and the last on an odd
+   * one (§5 Phase B, ruling 19).
+   */
+  const opsCheck = (): Move | null => {
+    if (t % 3 === 0 && checks.length === 0) return first(SWITCH_OFF, own('operations'));
+    if (t % 3 === 0 && checks.length === 1) {
+      return pick(SWITCH_ON, own('operations'), (row) => row.find((product) => product.id === checks[0].cardId));
+    }
+    if (engine.canDispatch(press(CONFIRM_ONLINE)) === true) return null;
+    const short = shortOf(runtime, engine.getState(), by);
+    const maint = (product: CardState, color: string) => (product.data?.[`${color} maint`] as number | undefined) ?? 0;
+    const runs = (product: CardState) => product.data?.offline !== true && short.some((color) => maint(product, color) > 0);
+    return pick(SWITCH_OFF, own('operations'), (row) => row.filter(runs).at(t % 2 === 0 ? 0 : -1));
+  };
+  /**
+   * The cards of `team`, the seat's ops team, it can spare, in slot order: each one whose leaving, with those before it, keeps the
+   * team's Blue and Red bandwidth at the maintenance of every product in its operations, offline ones too, since the next Income
+   * switches them all back on (§5 Phase B).
+   */
+  const spare = (team: CardState[]): CardState[] => {
+    const state = engine.getState();
+    const colors = ['blue', 'red'];
+    const left = colors.map((color) => runtime.playerValue(state, by, `${color} supply`));
+    const load = colors.map((color) => runtime.playerValue(state, by, `${color} load`));
+    return team.filter((card) => {
+      const bandwidth = colors.map((color) => runtime.workedValue(state, card.id, `${color} bandwidth`) as number);
+      if (colors.some((_, i) => left[i] - bandwidth[i] < load[i])) return false;
+      colors.forEach((_, i) => { left[i] -= bandwidth[i]; });
+      return true;
+    });
+  };
+  /**
+   * Whether Domain Expertise would cut `card` for the seat: an online product in its operations shares its sector, not Infra or
+   * Concept (§19.A, ruling 5).
+   */
   const expertIn = (card: CardState) => !['Infra', 'Concept'].includes(card.data?.sector as string)
-    && cards(own('operations')).some((product) => product.data?.sector === card.data?.sector);
+    && cards(own('operations')).some((product) => product.data?.offline !== true && product.data?.sector === card.data?.sector);
+  /** Whether `card` costs cubes of both colors, so that Domain Expertise may cut it more than one way (§19.A). */
+  const hybrid = (card: CardState) => ['blue cost', 'red cost'].every((column) => ((card.data?.[column] as number | undefined) ?? 0) > 0);
+  /** The idea of a row Domain Expertise cuts, a hybrid before the rest; undefined with none. */
+  const cutIdea = (row: CardState[]) => row.find((card) => expertIn(card) && hybrid(card)) ?? row.find(expertIn);
   /** Whether a choice of the Greenlight's press is the cut Domain Expertise gives: the block of options, not a License's payee. */
   const cutAt = (at: number) => choicesOf(buttonOf(engine.getState(), GREENLIGHT)!)[at].phrase === CHOOSE_ONE;
   const isDiva = (card: CardState) => nameOf(card) === 'Diva';
@@ -552,6 +628,7 @@ function playTurn(
   /** The free move to make now, or null. */
   const freeMove = (): Move | null => {
     const dismiss = t % 9 === 4 ? DISMISS_FROM_OPS : t % 9 === 8 ? DISMISS_FROM_PROJECT : null;
+    const fromOps = dismiss === DISMISS_FROM_OPS;
     const mayGreenlight = !made.has(GREENLIGHT) && cards(own('development')).length < 3;
     const move = [
       mayGreenlight ? pick(GREENLIGHT, own('backlog'), (row, { allows, asks }) => {
@@ -559,14 +636,16 @@ function playTurn(
         const allowed = row.filter(allows);
         return allowed.find((card) => asks(card).some(({ at }) => cutAt(at))) ?? allowed[0];
       }) : null,
-      dismiss !== null && !made.has(dismiss) ? first(dismiss, own(dismiss === DISMISS_FROM_OPS ? 'ops team' : 'development team')) : null,
+      dismiss !== null && !made.has(dismiss)
+        ? pick(dismiss, own(fromOps ? 'ops team' : 'development team'), (row) => (fromOps ? spare(row) : row)[0])
+        : null,
     ].find((choice) => choice !== null && accepts(choice)) ?? null;
     if (move !== null) made.add(move.type);
     return move;
   };
   const ideation = (): (Move | null)[] => {
-    // From a market, the idea Domain Expertise cuts, else its first.
-    const draft = (type: string, zoneId: string) => pick(type, zoneId, (row) => row.find(expertIn) ?? row[0]);
+    // From a market, the idea Domain Expertise cuts, a hybrid first, else its first.
+    const draft = (type: string, zoneId: string) => pick(type, zoneId, (row) => cutIdea(row) ?? row[0]);
     const seedSide = [press(RESEARCH_SEED), draft(DRAFT_SEED, 'seed-market'), first(DRAFT_POOL, 'open-idea-pool')];
     const growth = style === 'drafts' ? draft(DRAFT_GROWTH, 'growth-market') : press(RESEARCH_GROWTH);
     const planned = [growth, draft(DRAFT_GROWTH, 'growth-market'), growth, seedSide[Math.floor(t / 4) % 3]];
@@ -648,12 +727,12 @@ function playTurn(
         return pickSome(ASSIGN_TO_OPS, own('bench'), (bench) => [...bench.filter(efficient), ...bench.filter((card) => !efficient(card))]
           .slice(0, 2));
       case 5:
-        return pick(REASSIGN_FROM_OPS, own('ops team'), (row) => row.find((card) => !efficient(card)), onProject())
+        return pick(REASSIGN_FROM_OPS, own('ops team'), (row) => spare(row).find((card) => !efficient(card)), onProject())
           ?? pick(REASSIGN_FROM_PROJECT, own('development team'),
             (row) => row.find((card) => projects.some((project) => project.id !== holderOf(card))),
             onProject((targets, card) => targets.find((project) => project.id !== holderOf(card))));
       case 6:
-        return pickSome(RECALL, own('ops team'), (row) => row);
+        return pickSome(RECALL, own('ops team'), spare);
       case 7: {
         const idle = (project: CardState) =>
           cubesOn(project, 'blue cubes') + cubesOn(project, 'red cubes') === 0 && cardsOn(engine.getState(), project.id).length === 0;
@@ -686,6 +765,10 @@ function playTurn(
     const { phase } = engine.getState().turn!;
     if (phase === 'modes') {
       play(engine, choose([t % 4 === 3 ? null : declaration(), press(CONFIRM_MODES)]), watch);
+    } else if (phase === 'ops check') {
+      const move = choose([opsCheck(), press(CONFIRM_ONLINE)]);
+      checks.push(move);
+      play(engine, move, watch);
     } else if (phase === 'income') {
       if (payrollOf(runtime, engine.getState(), by) > capital() || (t % 6 === 5 && !letGo)) {
         letGo = true;
@@ -705,7 +788,7 @@ function playTurn(
       play(engine, choose([...planned, recruitMaker(a), press(END_ACTIONS)]), watch);
       a++;
     } else if (phase === 'research') {
-      play(engine, choose([pick(KEEP, own('research'), (row) => row.find(expertIn) ?? row[t % row.length])]), watch);
+      play(engine, choose([pick(KEEP, own('research'), (row) => cutIdea(row) ?? row[t % row.length])]), watch);
     } else if (phase === 'sourcing') {
       play(engine, choose([sourcing(), press(PASS_ON_THE_REST)]), watch);
     } else {
@@ -859,12 +942,12 @@ function happenings(runtime: LangRuntime, before: GameState, move: Move, after: 
 }
 
 /**
- * A score as §12 and rulings 5, 24 and 25 count it: a point for every 5 capital, the val of each product in operation and 2 points
- * for each market share, less the backlog's vaporware.
+ * A score as §12 and rulings 5, 24 and 25 count it: a point for every 5 capital, the val of each product in operation that is not
+ * offline (§12, ruling 5) and 2 points for each market share, less the backlog's vaporware.
  */
 function scoreOf(state: GameState, seat: PlayerId): number {
   const vaporware = zoneCards(state, zoneIdFor('backlog', seat)).reduce((sum, card) => sum + VAPORWARE[card.data?.tier as string], 0);
-  const val = sum(operationsOf(state, seat), 'val');
+  const val = sum(operationsOf(state, seat).filter((product) => product.data?.offline !== true), 'val');
   return Math.floor(counterOf(state, 'capital', seat) / 5) + val + 2 * counterOf(state, 'market share', seat) - vaporware;
 }
 
@@ -896,6 +979,9 @@ function scoreOf(state: GameState, seat: PlayerId): number {
  *   the rules call declarable, and QA mode only on a QA Skill card. A card's mode changes only in a declaration of that card, or as it
  *   leaves the Board, so a mode stays on a card that moves between a project and the ops team (§11.C.2, ruling 24). A declaration
  *   leaves its card in the mode its answer names and in no other: Blue in neither.
+ * - Ops: the seat that reached its Income in the move runs its online products within its ops team's supply, in Blue and in Red
+ *   (§5 Phase B, ruling 19). A product goes offline or back online only in its owner's ops check: by a press there, as the check
+ *   starts, or on the way through it to Income (ruling 25).
  * - Only the seat in the sourcing phase has cards in its scouting row.
  * - Each market refills at once: the agency row holds 4 and each product market 2 while its deck has cards, and the Market
  *   Crash is never anywhere but the growth deck or the crash pile.
@@ -1063,6 +1149,20 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       expect(held, `the modes ${declared} is in once declared ${named} ${at}`).toEqual(MODES_DECLARED[named as string]);
     }
 
+    // Online fits after every Income: the ops team's supply runs the products left online, in each color (§5 Phase B, ruling 19).
+    if (income !== null) expect(shortOf(runtime, after, income), `the colors ${income} is short of at Income ${at}`).toEqual([]);
+    // A product's Offline changes only in its owner's ops check: by a press there, as the check starts, or on the way through it to
+    // Income (ruling 25). A product is offline only when its flag is true: "It is not offline." may leave it false.
+    const offline = (c: CardState | undefined) => c?.data?.offline === true;
+    const checking = (seat: PlayerId) => income === seat
+      || [before.turn!, after.turn!].some(({ current, phase }) => current === seat && phase === 'ops check');
+    const switched = after.cards.filter((c) => offline(c) !== offline(wasById.get(c.id))).flatMap((c) => {
+      const owner = seats.find((seat) => c.zoneId === zoneIdFor('operations', seat));
+      if (owner !== undefined && checking(owner)) return [];
+      return [`${c.id} (${nameOf(c)}) in ${c.zoneId} went ${offline(c) ? 'offline' : 'online'}`];
+    });
+    expect(switched, `the products switched ${at}`).toEqual([]);
+
     // Markets refill at once.
     const refilled = (row: string, deck: string, full: number) => {
       if (size(deck) > 0) expect(size(row), `${row} while ${deck} has cards ${at}`).toBe(full);
@@ -1142,7 +1242,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(111);
+    expect(results).toHaveLength(122);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -1172,8 +1272,12 @@ describe('Startup Simulator (designer language)', () => {
     expect(worked['blue bandwidth']).toMatchObject({ kind: 'number', refines: false });
     expect(worked['red bandwidth']).toMatchObject({ kind: 'number', refines: false });
     expect(worked.declarable).toMatchObject({ kind: 'flag' });
-    // A player's supply is the bandwidth of their ops team in each color, set against their products' maintenance (§5 Phase B).
-    expect(Object.keys(game!.playerValues!)).toEqual(['blue supply', 'red supply']);
+    // An offline product earns nothing and scores nothing (§12, ruling 5): its rev refines the column, its portfolio points are its val.
+    expect(worked.rev).toMatchObject({ kind: 'number', refines: true });
+    expect(worked['portfolio points']).toMatchObject({ kind: 'number' });
+    // A player's supply is the bandwidth of their ops team in each color, set against the maintenance their online products demand;
+    // the load counts every product in operation, offline ones too (§5 Phase B).
+    expect(Object.keys(game!.playerValues!)).toEqual(['blue supply', 'red supply', 'blue demand', 'red demand', 'blue load', 'red load']);
   });
 
   it('asks an example which hire it means when both rows hold the card, in words that each press one button', () => {
@@ -1198,6 +1302,7 @@ describe('Startup Simulator (designer language)', () => {
     expect(wordings.sort()).toEqual(Object.keys(lands).sort());
     const pressing = wordings.map((wording) => [
       `Example: hiring the Sales Rep ${wording}`, '  Given the agency row has the Hacker, the Architect, the Veteran and a Sales Rep',
+      '  And the phase is actions',
       '  And the open job market has a Sales Rep', "  And p0's operations has a To-Do List", `  When p0 hires a Sales Rep ${wording}`,
       ...lands[wording].map((line) => `  ${line}`),
     ].join('\n'));
@@ -1406,8 +1511,8 @@ describe('Startup Simulator (designer language)', () => {
     const seeds = Array.from({ length: 10 }, (_, i) => i + 1);
 
     it.each(counts)('sets up a table of %i players at every seed', (players) => {
-      // A turn starts in modes, skipped with no flex staff on the Board, then income, which has no salary to pay while every Board
-      // is empty, so it goes on to actions.
+      // A turn starts in modes, skipped with no flex staff on the Board, then the ops check, skipped while the ops team runs every
+      // product, then income, which has no salary to pay while every Board is empty, so it goes on to actions.
       expect(game!.phases.map((phase) => phase.id)).toEqual(PHASES);
       for (const seed of seeds) {
         const state = setUp(players, seed);
@@ -1735,13 +1840,13 @@ describe('Startup Simulator (designer language)', () => {
     it('checks the salaries a seat pays at Income as the rules work them out: the Engineer costs $1 in the ops team (§20.B.1)', () => {
       const seats = seatsFor(2);
       const rules = keepsTheRules(seats, new LangRuntime(game!, lib, seats));
-      const engine = arrange({ 'operations-p1': [idOf('USB Gadget')], 'ops-team-p1': [idOf('Engineer')] });
+      const engine = arrange({ 'operations-p1': [idOf('Smart Lock')], 'ops-team-p1': [idOf('Engineer')] });
       play(engine, { type: END_ACTIONS, by: 'p0' }, rules);
-      // The USB Gadget's $1 rev came in as p1's turn started, and the $1 payroll keeps p1 at Income.
+      // The Engineer's Red runs the Smart Lock, so its $2 rev came in as p1 reached Income, and the $1 payroll keeps p1 there.
       expect(engine.getState().turn).toMatchObject({ current: 'p1', phase: 'income' });
-      expect(counterOf(engine.getState(), 'capital', 'p1')).toBe(8);
+      expect(counterOf(engine.getState(), 'capital', 'p1')).toBe(9);
       play(engine, { type: PAY_SALARIES, by: 'p1' }, rules);
-      expect(counterOf(engine.getState(), 'capital', 'p1')).toBe(7);
+      expect(counterOf(engine.getState(), 'capital', 'p1')).toBe(8);
     });
 
     it('lets go of the dearest staff by the salary the rules work out: the Engineer costs $1 in the ops team, so the Architect goes first (§20.B.1)', () => {
@@ -1885,9 +1990,10 @@ describe('Startup Simulator (designer language)', () => {
 });
 
 describe('what the view says the rules work out', () => {
-  it('stands each need in for its cost and each bandwidth for its output, and shows Stalled and Efficient in ops, the flags that change a value', () => {
+  it('stands each need in for its cost, each bandwidth for its output and the portfolio points for the val, and shows Stalled and Efficient in ops, the flags that change a value', () => {
     expect(standIns(game!)).toEqual({
       'blue output': 'blue bandwidth', 'red output': 'red bandwidth', 'blue cost': 'blue need', 'red cost': 'red need',
+      val: 'portfolio points',
     });
     // Every line of each reads only the card and the cards on it: its Tier, its need, the leads on it, its trait and its zone.
     expect(shownFlags(game!)).toEqual(['stalled', 'efficient in ops']);
@@ -1906,10 +2012,10 @@ describe('what the view says the rules work out', () => {
     state = relocate(state, [streaming], `backlog-${O}`, game!);
     const { engine, runtime } = createEngine(game!, lib, 3, state);
     expect(seatExtras(engine, runtime, engine.getState(), O).worked).toEqual({
-      [neobank]: { columns: { 'blue cost': 10, 'red cost': 0 }, flags: ['stalled'] },
-      [viral]: { columns: { 'blue cost': 4, 'red cost': 0 }, flags: [] },
+      [neobank]: { columns: { 'blue cost': 10, 'red cost': 0, val: 10 }, flags: ['stalled'] },
+      [viral]: { columns: { 'blue cost': 4, 'red cost': 0, val: 3 }, flags: [] },
       // A Launched product, so never Stalled: before Stalled's zone line it read ['stalled'].
-      [search]: { columns: { 'blue cost': 12, 'red cost': 0 }, flags: [] },
+      [search]: { columns: { 'blue cost': 12, 'red cost': 0, val: 8 }, flags: [] },
       [engineer]: { columns: {}, flags: ['efficient in ops'] },
     });
   });

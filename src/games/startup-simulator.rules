@@ -104,6 +104,7 @@ Cards:
   Cards can be onboarding.
   Cards can be red mode.
   Cards can be qa mode.
+  Cards can be offline.
   Cards can have blue cubes, red cubes, new blue cubes and new red cubes.
   Cards can have cut blue cubes and cut red cubes.
 
@@ -207,6 +208,13 @@ Declarable:
     It is a flex card.
     It is a QA Skill card.
 
+Rev:
+  An offline card's rev is 0.
+
+Portfolio points:
+  A card's portfolio points is its val.
+  An offline card's portfolio points is 0.
+
 Feature complete:
   Only if its blue cubes are at least its blue need.
   Only if its red cubes are at least its red need.
@@ -216,6 +224,18 @@ Blue supply:
 
 Red supply:
   A player's red supply is the total red bandwidth of the cards in their ops team.
+
+Blue demand:
+  A player's blue demand is the total blue maint of the cards in their operations that are not offline.
+
+Red demand:
+  A player's red demand is the total red maint of the cards in their operations that are not offline.
+
+Blue load:
+  A player's blue load is the total blue maint of the cards in their operations.
+
+Red load:
+  A player's red load is the total red maint of the cards in their operations.
 
 Setup:
   Shuffle the talent deck.
@@ -289,8 +309,29 @@ Phase: modes
           It is not red mode.
   A player may confirm their modes.
     Then:
+      Go to ops check.
+  When no card in their development team and their ops team is declarable, go to ops check.
+
+Phase: ops check
+  Hint: Your ops team can't run all your products. Switch some off until the rest fit your Blue and Red bandwidth, then confirm. A product switched off earns nothing.
+  When this phase starts:
+    Every card in their operations is not offline.
+  A player may switch off a card in their operations.
+    Only if it is not offline.
+    Then:
+      It is offline.
+  A player may switch on a card in their operations.
+    Only if it is offline.
+    Then:
+      It is not offline.
+  A player may confirm the products online.
+    Only if their blue supply is at least their blue demand.
+    Only if their red supply is at least their red demand.
+    Then:
       Go to income.
-  When no card in their development team and their ops team is declarable, go to income.
+  When their blue supply is at least their blue load:
+    Only if their red supply is at least their red load.
+    Go to income.
 
 Phase: income
   Hint: Pay every salary on your board. If you can't, or won't, let go of the staff you won't pay.
@@ -385,7 +426,7 @@ Phase: actions
       It loses its cut blue cubes.
       It loses its cut red cubes.
       They choose one:
-        Only if they have a card in their operations whose sector is the card's sector.
+        Only if they have a card in their operations that is not offline and whose sector is the card's sector.
         Only if the card is not an Infra card.
         Only if the card is not a Concept card.
         Cut 2 blue:
@@ -566,7 +607,7 @@ Phase: backlog cleanup
 End:
   The game ends when the crash pile is not empty and the round is finished.
   Each player scores 1 point for every 5 capital.
-  Each card in a player's operations scores its val.
+  Each card in a player's operations scores its portfolio points.
   Each player scores 2 points for each market share.
   Each Tier 1 card in a player's backlog scores -2 points.
   Each Tier 2 card in a player's backlog scores -5 points.
@@ -1031,17 +1072,18 @@ Example: staff dismissed from the board lose their tokens, so one hired back the
 
 Example: income pays the total rev of the products in operations, and 1 market share for each that earned (section 5, ruling 25)
   Given p1's operations has a Dating App, a Trading Bot and a DAO Nation
+  And p1's ops team has the Architect and the Veteran
   And the turn passes to the left
   Then it is p1's turn
   And p1 has 12 capital
   And p1 has 2 market share
-  And the phase is actions
+  And the phase is income
 
 Example: salaries are paid for every staff member on the board (section 5)
   Given p1's development has a Dating App
   And the Dating App in p1's development has the Architect and a Junior Software Dev on it
   And p1's operations has a To-Do List
-  And p1's ops team has a QA Engineer
+  And p1's ops team has a QA Engineer and a Junior Software Dev
   And the turn passes to the left
   Then the phase is income
   And p1 has 8 capital
@@ -1717,7 +1759,7 @@ Example: the Engineer's salary is $2 on a project (section 20)
 
 Example: the Engineer's salary is $1 in the ops team (section 20)
   Given p1's operations has a USB Gadget
-  And p1's ops team has the Engineer and a Junior QA Tester
+  And p1's ops team has the Engineer and a Junior Software Dev
   And the turn passes to the left
   Then p1 has 8 capital
   When p1 pays salaries
@@ -1856,3 +1898,135 @@ Example: a mode stays on staff reassigned from the ops team to a project (sectio
   When p0 reassigns the Fixer to the Smart Toy
   Then it is accepted
   And the Fixer in p0's development team is qa mode
+
+Example: at Income an ops team with the bandwidth in both colors runs every product, and each earns (section 5, ruling 19)
+  Given p1's operations has a Dating App and a Smart Lock
+  And p1's ops team has a Junior Software Dev and a Junior Hardware Eng
+  And the turn passes to the left
+  Then it is p1's turn
+  And the phase is actions
+  And p1 has 10 capital
+  And p1 has 2 market share
+
+Example: short of Blue at Income, the player switches off a product of their choice, which earns nothing and no market share (section 5, ruling 19, ruling 24)
+  Given p1's operations has a Dating App and a Mobile Wallet
+  And p1's ops team has a Junior Software Dev
+  And the turn passes to the left
+  Then it is p1's turn
+  And the phase is ops check
+  And p1 has 7 capital
+  When p1 confirms the products online
+  Then it is rejected because "their blue supply is at least their blue demand"
+  When p1 switches off the Dating App
+  And p1 confirms the products online
+  Then it is accepted
+  And the phase is actions
+  And the Dating App in p1's operations is offline
+  And p1 has 9 capital
+  And p1 has 1 market share
+
+Example: a product with maintenance in both colors runs only when both fit: Drone Delivery goes offline with only Blue in the ops team (section 5, ruling 19)
+  Given p1's operations has a Drone Delivery and a Dating App
+  And p1's ops team has the Architect
+  And the turn passes to the left
+  Then the phase is ops check
+  When p1 switches off the Dating App
+  And p1 confirms the products online
+  Then it is rejected because "their red supply is at least their red demand"
+  When p1 switches on the Dating App
+  And p1 switches off the Drone Delivery
+  And p1 confirms the products online
+  Then it is accepted
+  And the phase is income
+  And p1 has 8 capital
+
+Example: recalling the ops team takes nothing offline until the next Income (section 5, ruling 25)
+  Given the phase is actions
+  And p0's operations has a Dating App
+  And p0's ops team has a Junior Software Dev
+  When p0 recalls the Junior Software Dev
+  And p0 ends their actions
+  Then it is p1's turn
+  And the Dating App in p0's operations is not offline
+  When p1 ends their actions
+  Then it is p0's turn
+  And the phase is ops check
+
+Example: a product launched mid-turn comes in online, though no one in the ops team runs it (section 5, ruling 25)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And the Dating App in p0's development has 6 blue cubes
+  When p0 launches the Dating App
+  Then it is accepted
+  And p0's ops team is empty
+  And the Dating App in p0's operations is not offline
+
+Example: a product switched off at an earlier Income comes back online when the ops team can run everything (section 5, ruling 19)
+  Given p1's operations has a Dating App
+  And the Dating App in p1's operations is offline
+  And p1's ops team has a Junior Software Dev
+  And the turn passes to the left
+  Then the phase is actions
+  And the Dating App in p1's operations is not offline
+  And p1 has 8 capital
+  And p1 has 1 market share
+
+Example: an offline product still provides its Tag, so a rival pays its owner the License (ruling 5, section 6)
+  Given p0's operations has a Dating App
+  And the Dating App in p0's operations is offline
+  And p1's backlog has a Streaming Service
+  And it is p1's turn
+  When p1 greenlights the Streaming Service
+  Then it is accepted
+  And p1 has 4 capital
+  And p0 has 10 capital
+
+Example: an offline product gives no Domain Expertise, though its Tag still lets its owner Greenlight for free (ruling 5, section 19)
+  Given the phase is actions
+  And p0's operations has a Dating App
+  And the Dating App in p0's operations is offline
+  And p0's backlog has a Streaming Service
+  When p0 greenlights the Streaming Service
+  Then it is accepted
+  And p0 has 7 capital
+  And the Streaming Service in p0's development has 10 blue need
+
+Example: an offline product scores nothing at the end, though it stays in operations (section 12, ruling 5)
+  Given the crash pile has the Market Crash
+  And p0's operations has a Dating App and a Smart Lock
+  And p0's ops team has a Junior Software Dev
+  And the Smart Lock in p0's operations is offline
+  And it is p1's turn
+  When p1 ends their actions
+  Then the game is over
+  And the Smart Lock in p0's operations is offline
+  And p0 scores 6
+
+Example: in the ops check a product switches off only while it is online, and back on only while it is offline (section 5, ruling 19)
+  Given p1's operations has a Dating App and a Mobile Wallet
+  And p1's ops team has a Junior Software Dev
+  And the turn passes to the left
+  Then the phase is ops check
+  When p1 switches on the Dating App
+  Then it is rejected because "it is offline"
+  When p1 switches off the Dating App
+  Then it is accepted
+  When p1 switches off the Dating App
+  Then it is rejected because "it is not offline"
+  When p1 switches on the Dating App
+  Then it is accepted
+  And the Dating App in p1's operations is not offline
+
+Example: the ops check comes after the declaration, so a flex Senior declared Blue leaves a Red product short (section 5, section 11)
+  Given p1's operations has a Smart Lock
+  And p1's ops team has a Firmware Specialist
+  And the Firmware Specialist in p1's ops team is red mode
+  And the turn passes to the left
+  Then the phase is modes
+  When p1 declares the Firmware Specialist, choosing blue
+  And p1 confirms their modes
+  Then the phase is ops check
+  When p1 switches off the Smart Lock
+  And p1 confirms the products online
+  Then the phase is income
+  And p1 has 7 capital
