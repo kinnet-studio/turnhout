@@ -391,6 +391,22 @@ describe('a card that joins a card', () => {
     });
   });
 
+  describe('a rule that keeps joining cards', () => {
+    const LOOP = '    It goes to their crew, on the target card.';
+
+    it('is refused on the line of the rule, in words about cards, and keeps the state from before the press', () => {
+      const text = JOIN_GAME.replace(RULE, LOOP);
+      const WHEN = '  When a Smith card joins a card in a workshop:';
+      const engine = joining(text);
+      const before = engine.getState();
+      const error = thrown(() => engine.dispatch(hire(smith1)));
+      expect(error).toBeInstanceOf(RuleError);
+      expect(error).toMatchObject({ message: 'It keeps putting cards on cards without stopping.', line: at(text, WHEN) });
+      expect(friendlyError(error)).toBe(`Line ${at(text, WHEN)} (“When a Smith card joins a card in a workshop”): It keeps putting cards on cards without stopping.`);
+      expect(engine.getState()).toBe(before);
+    });
+  });
+
   describe('Review Focus: undo and replay', () => {
     it('gives back the state before a hire that dents, and a replayed log rebuilds the same table', () => {
       const engine = joining();

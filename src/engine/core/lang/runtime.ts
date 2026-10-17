@@ -23,6 +23,7 @@ type Checker = (state: GameState, move: Move) => true | string;
 
 const DEPEND_ON_EACH_OTHER = 'Two moves depend on each other through “they have no card they could play”.';
 const KEEPS_MOVING = 'It keeps moving pieces without stopping.';
+const KEEPS_JOINING = 'It keeps putting cards on cards without stopping.';
 const KEEPS_DRAWING = 'Cards keep drawing cards without stopping.';
 const NO_WINNER = 'No player won.';
 const WORKED_FROM_ITSELF = (name: string) => `“${name}” is worked out from itself.`;
@@ -373,7 +374,9 @@ export class LangRuntime {
       if (!happens || this.failedGroup(rule.conditions, s, undefined, subject) !== null) continue;
       // The rule to blame is the one whose lines moved the piece this time, not whichever rule the move set off first.
       const mover = this.runningMoments.at(-1);
-      if (mover && this.runningMoments.length >= MAX_MOMENT_DEPTH) throw new RuleError(KEEPS_MOVING, mover.line, mover.text);
+      if (mover && this.runningMoments.length >= MAX_MOMENT_DEPTH) {
+        throw new RuleError(moment.kind === 'join' ? KEEPS_JOINING : KEEPS_MOVING, mover.line, mover.text);
+      }
       this.runningMoments.push(rule);
       try {
         s = rule.effects.reduce((acc, ref) => this.run(ref, acc, undefined, undefined, subject), s);
