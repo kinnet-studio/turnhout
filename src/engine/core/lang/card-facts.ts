@@ -26,16 +26,16 @@ export function cardAttribute(card: CardState, name: string, game: CompiledGame)
   return isCardCount(game, name) ? 0 : null;
 }
 
-/** The columns of the game's tables in table order, found the way a card's identity names them; a standard deck has none. */
-export function tableColumns(game: CompiledGame): string[] {
-  return [...columnsOf(game)];
-}
-
 /**
  * `tableColumns`, worked out once for each game's card sets: a compiled game never changes, and every change to a card asks it again
  * for the card's new face.
  */
 const columnSets = new WeakMap<CompiledGame['cards'], Set<string>>();
+
+/** The columns of the game's tables in table order, found the way a card's identity names them; a standard deck has none. */
+export function tableColumns(game: CompiledGame): string[] {
+  return [...columnsOf(game)];
+}
 
 function columnsOf(game: CompiledGame): Set<string> {
   let columns = columnSets.get(game.cards);

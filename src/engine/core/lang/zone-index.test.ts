@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import STARTUP_SIMULATOR from '@/games/startup-simulator.rules?raw';
 import { cardById as gameCardById, zoneCards as gameZoneCards, type GameState } from '../game-state';
 import type { Move } from '../moves';
@@ -65,7 +65,10 @@ const zoneIdsIn = (state: GameState) => [...new Set(state.cards.map((card) => ca
 const sameCards = (got: CardState[], want: CardState[]) => got.length === want.length && got.every((card, i) => card === want[i]);
 
 describe('the zone index', () => {
-  const run = startupRun(400);
+  let run: GameState[];
+  beforeAll(() => {
+    run = startupRun(400);
+  });
 
   it('is run on a long game: the cards move through many states and many zones', () => {
     expect(run.length).toBeGreaterThan(100);

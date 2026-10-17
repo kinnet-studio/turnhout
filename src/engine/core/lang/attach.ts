@@ -55,6 +55,12 @@ export function onCardsZoneOf(game: CompiledGame, seat: PlayerId, holderZone?: s
 }
 
 /**
+ * What `attachmentProblem` found, by game and then by cards array: it decides from the cards alone, and a state's cards never change,
+ * while every rule's lines, every turn's start and the view ask it again of cards nothing has moved since.
+ */
+const problems = new WeakMap<CompiledGame, WeakMap<readonly CardState[], string | null>>();
+
+/**
  * What is wrong with how cards sit on cards, for the first card in the state's order that has a problem; null when nothing is, and at
  * once for a game with no zone for them. A card in a zone that every card in must sit on a card sits on none; a card in a zone with no
  * such mark sits on one; or the card it sits on is gone from the table, or has gone where the card can't follow: out of sight, to
@@ -73,12 +79,6 @@ export function attachmentProblem(game: CompiledGame, state: GameState): string 
   known.set(state.cards, problem);
   return problem;
 }
-
-/**
- * What `attachmentProblem` found, by game and then by cards array: it decides from the cards alone, and a state's cards never change,
- * while every rule's lines, every turn's start and the view ask it again of cards nothing has moved since.
- */
-const problems = new WeakMap<CompiledGame, WeakMap<readonly CardState[], string | null>>();
 
 /** `attachmentProblem` worked out from the cards. */
 function findProblem(game: CompiledGame, state: GameState): string | null {
