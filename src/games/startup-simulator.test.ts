@@ -24,6 +24,7 @@ import type { Move } from '@/engine/core/moves';
 import type { CardState, PlayerId } from '@/engine/core/scene';
 import { changeCard } from '@/engine/core/lang/card-facts';
 import { shownFlags, standIns } from '@/engine/core/lang/worked-view';
+import { dimFlags, gaugePairs, shownPlayerValues } from '@/engine/core/lang/worked-view';
 import { parseTextFaceKey } from '@/engine/core/lang/cards';
 
 // The long runs check every rule after every move, thousands of checks a game, and an `expect` costs vitest far more to build than the
@@ -2658,5 +2659,48 @@ describe('what the view says the rules work out', () => {
       [search]: { columns: { 'blue cost': 12, 'red cost': 0, val: 8 }, flags: [] },
       [engineer]: { columns: {}, flags: ['efficient in ops'] },
     });
+  });
+});
+
+describe('what the view says about each player', () => {
+  it('shows the values that add up cards everyone sees, gauges each color’s bandwidth against the maintenance it runs, and fades a product switched off', () => {
+    expect(shownPlayerValues(game!)).toEqual([
+      'blue supply', 'red supply', 'blue demand', 'red demand', 'blue load', 'red load', 'qa supply', 'bug load', 'qa spent',
+    ]);
+    // Bugged products is not there: it reads the bug mark, which reads Bugged, whose “its bugs are more than 0” the view doesn't count as
+    // reading only the card (G1).
+    // The ops check's confirm waits on both colors' supply reaching their demand (§5 Phase B); the phase's “When …” lines press no button.
+    expect(gaugePairs(game!)).toEqual([['blue supply', 'blue demand'], ['red supply', 'red demand']]);
+    // Demand leaves out a product switched off.
+    expect(dimFlags(game!)).toEqual(['offline']);
+  });
+
+  it('gives every seat the same values of each player, which follow a declared mode, a product switched off and its Bugs (3 players, seed 1)', () => {
+    // The Firmware Specialist is flex with output 2, so Blue until declared Red (§20.B); the Dating App's maintenance is 1 Blue and 0
+    // Red, and the Smart Lock's 0 Blue and 1 Red (§20.C).
+    const start = setUp(3, 1);
+    const seats = seatsFor(3);
+    const S = startPlayerOf(start, seats);
+    const N = seats[(seats.indexOf(S) + 1) % seats.length];
+    const [dating, lock, firmware] = ['Dating App', 'Smart Lock', 'Firmware Specialist'].map(idOf);
+    const state = relocate(relocate(start, [dating, lock], `operations-${N}`, game!), [firmware], `ops-team-${N}`, game!);
+    /** What each seat is given of N's values in `table`. */
+    const valuesOfN = (table: GameState) => {
+      const { engine, runtime } = createEngine(game!, lib, 3, table);
+      return seats.map((viewer) => seatExtras(engine, runtime, engine.getState(), viewer).playerValues![N]);
+    };
+    const values = {
+      'blue supply': 2, 'red supply': 0, 'blue demand': 1, 'red demand': 1, 'blue load': 1, 'red load': 1, 'qa supply': 0, 'bug load': 0,
+      'qa spent': 0,
+    };
+    expect(valuesOfN(state)).toEqual(seats.map(() => values));
+    // Declared Red, it runs no Blue; switched off, the Dating App asks for none, though its maintenance stays in the load.
+    const switched = changeCard(changeCard(state, firmware, { 'red mode': true }, game!), dating, { offline: true }, game!);
+    const declared = {
+      'blue supply': 0, 'red supply': 2, 'blue demand': 0, 'red demand': 1, 'blue load': 1, 'red load': 1, 'qa supply': 0, 'bug load': 0,
+      'qa spent': 0,
+    };
+    expect(valuesOfN(switched)).toEqual(seats.map(() => declared));
+    expect(valuesOfN(changeCard(switched, lock, { bugs: 2 }, game!)).map((theirs) => theirs['bug load'])).toEqual([2, 2, 2]);
   });
 });

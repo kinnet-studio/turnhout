@@ -450,6 +450,9 @@ export const RESTING_GAME = FORCE_GAME
   .replace('  Cards can be tired.', '  Cards can be tired.\n  Cards can be resting.')
   .replace('red need of the cards in their workshop.', 'red need of the cards in their workshop that are not resting.');
 
+/** RESTING_GAME where stopping waits on a player's red force reaching their red load. */
+export const GAUGED_GAME = RESTING_GAME.replace('  A player may stop.', '  A player may stop.\n    Only if their red force is at least their red load.');
+
 /**
  * FORCE_GAME where jobs gather cracks, a player's mend is the skill of the hands in their idle, and a job's worth goes up with the skill
  * of the hands on it and down with its cracks, never below 0. A tired hand's rest work is its skill.

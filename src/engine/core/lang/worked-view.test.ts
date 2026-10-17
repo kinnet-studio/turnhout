@@ -9,12 +9,15 @@ import { compileGame } from './compile';
 import { createDefaultLibrary } from './library';
 import { CARDS_ON_IT, registerCardSubjectPhrases } from './library/card-subject-phrases';
 import { registerCardValuePhrases } from './library/card-value-phrases';
+import { PLAYER_TOTAL, registerPlayerValuePhrases } from './library/player-value-phrases';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
 import { CREW_GAME, SHOWN, SUBJECT, WORKED_GAME } from './testing';
+import { FORCE_GAME, GAUGED_GAME, RESTING_GAME } from './testing';
 import type { CompiledGame } from './types';
 import type { ZoneSpec } from './types';
 import { shownFlags, standIns } from './worked-view';
+import { dimFlags, gaugePairs, shownPlayerValues } from './worked-view';
 import { relocate } from './zones';
 import COLOR_MATCH from '@/games/color-match.rules?raw';
 import HEARTS from '@/games/hearts.rules?raw';
@@ -306,4 +309,156 @@ describe('(guard) a zone where some cards sit on cards', () => {
     expect(shownFlags(withPocket('secret'))).toEqual([]);
     expect(shownFlags(withPocket('public'))).toEqual(['busy']);
   });
+});
+
+describe('what the view says about each player', () => {
+  /**
+   * Six values about a player, each a total over a group of cards: the red pay of the jobs in their workshop, the pay of those there that
+   * are not busy, the skill of the hands in the hall, the pay of the jobs in the pile and in their stash, and the skill of their crew.
+   */
+  const VALUES = [
+    'Job pay:', "  A player's job pay is the total red pay of the cards in their workshop.", '',
+    'Spare pay:', "  A player's spare pay is the total pay of the cards in their workshop that are not busy.", '',
+    'Open force:', "  A player's open force is the total skill of the cards in the hall.", '',
+    'Deep pay:', "  A player's deep pay is the total pay of the cards in the pile.", '',
+    'Kept pay:', "  A player's kept pay is the total pay of the cards in their stash.", '',
+    'Team force:', "  A player's team force is the total skill of the cards in their crew.",
+  ].join('\n');
+  /** Rules made of `parts`, a blank line between each. */
+  const plus = (...parts: string[]) => parts.join('\n\n');
+  const KEPT_PAY = "Kept pay:\n  A player's kept pay is the total pay of the cards in their stash.";
+
+  describe('which are shown', () => {
+    it('shows a value that adds up a number read from the card alone over zones everyone sees, by tests read from the card alone', () => {
+      // Deep pay adds up the pile, which no one sees, and kept pay a stash, which only its owner sees.
+      expect(shownPlayerValues(compiled(plus(SHOWN, VALUES)))).toEqual(['job pay', 'spare pay', 'open force', 'team force']);
+      expect(shownPlayerValues(compiled(FORCE_GAME))).toEqual(['red force', 'red load']);
+      expect(shownPlayerValues(compiled(CREW_GAME))).toEqual([]);
+    });
+
+    it('Review Focus: shows no value read through a number or a test whose lines read what a seat may not see, such as every stash', () => {
+      const clean = "Clean pay:\n  A player's clean pay is the total pay of the cards in their workshop that are not hoarded.";
+      const hoarding = compiled(plus(HOARDING, VALUES, clean));
+      // Red pay and hoarded read every stash: job pay and clean pay would tell every seat whether some stash holds a Vase.
+      expect(shownPlayerValues(hoarding)).toEqual(['spare pay', 'open force', 'team force']);
+      const { view } = arranged(hoarding);
+      for (const seat of ['p0', 'p1']) {
+        const values = view(seat).playerValues!;
+        expect(Object.keys(values), seat).toEqual(['p0', 'p1']);
+        for (const [who, theirs] of Object.entries(values)) {
+          expect(Object.keys(theirs), `${seat} sees ${who}`).toEqual(['spare pay', 'open force', 'team force']);
+        }
+      }
+    });
+
+    it('Review Focus: shows no value read through the cards on a card, nor a total of a crew, where crews are hidden', () => {
+      // With crews only their owner sees, busy reads hidden cards, and so do job pay and spare pay through it.
+      expect(shownPlayerValues(compiled(plus(PRIVATE_CREW, VALUES)))).toEqual(['open force']);
+    });
+  });
+
+  describe('gauges', () => {
+    it('pairs two shown values a button waits on the first reaching, once however many buttons wait on them, and none for another test', () => {
+      expect(gaugePairs(compiled(GAUGED_GAME))).toEqual([['red force', 'red load']]);
+      const FINISH = '  A player may finish a card in their workshop.\n    It costs 1 move.';
+      const twice = GAUGED_GAME.replace(FINISH, `${FINISH}\n    Only if their red force is at least their red load.`);
+      expect(twice).not.toBe(GAUGED_GAME);
+      expect(gaugePairs(compiled(twice))).toEqual([['red force', 'red load']]);
+      expect(gaugePairs(compiled(GAUGED_GAME.replace('is at least their red load', 'is more than their red load')))).toEqual([]);
+    });
+
+    it('Review Focus: pairs no value the view does not show', () => {
+      const kept = GAUGED_GAME.replace('is at least their red load.', 'is at least their kept pay.');
+      expect(kept).not.toBe(GAUGED_GAME);
+      expect(gaugePairs(compiled(plus(kept, KEPT_PAY)))).toEqual([]);
+    });
+  });
+
+  it('fades a card for a flag cards keep that a shown value leaves out, and for no flag worked out', () => {
+    expect(dimFlags(compiled(RESTING_GAME))).toEqual(['resting']);
+    expect(dimFlags(compiled(FORCE_GAME))).toEqual([]);
+    // Spare pay leaves out the jobs that are busy, but busy is worked out, not kept.
+    expect(dimFlags(compiled(plus(SHOWN, VALUES)))).toEqual([]);
+  });
+
+  describe('GAUGED_GAME for three at seed 1', () => {
+    const gauged = compiled(GAUGED_GAME);
+    // Setup deals 2 jobs to each stash, more than the pile holds for three: a state with p0's turn set skips it.
+    const start = createEngine(gauged, lib, 3, { ...initialState(gauged, 1), turn: { current: 'p0', phase: 'working' } }).engine.getState();
+    const all = (name: string) => start.cards.filter((card) => card.data?.name === name).map((card) => card.id);
+    const [[vase], [statue], [potter], [tinker], [smith]] = ['Vase', 'Statue', 'Potter', 'Tinker', 'Smith'].map(all);
+    /**
+     * p0's workshop holding the Vase (red need 2) with the Potter and the Tinker (red work 1 each) on it, and p1's the Statue (red need 1)
+     * with the Smith (gold, so no red work) on it. p2 has neither.
+     */
+    const table = [
+      (state: GameState) => relocate(state, [vase], 'workshop-p0', gauged),
+      (state: GameState) => putOn(state, [potter, tinker], 'crew-p0', vase, gauged),
+      (state: GameState) => relocate(state, [statue], 'workshop-p1', gauged),
+      (state: GameState) => putOn(state, [smith], 'crew-p1', statue, gauged),
+    ].reduce((state, arrange) => arrange(state), start);
+    /** What `seat` is given beside the table, in `state`. */
+    const viewOf = (state: GameState, seat: string) => {
+      const { engine, runtime } = createEngine(gauged, lib, 3, state);
+      return seatExtras(engine, runtime, engine.getState(), seat);
+    };
+    const sent = JSON.parse(JSON.stringify(viewOf(table, 'p1'))) as { [k: string]: Json };
+
+    it('gives every seat the red force and red load of each player, its own and the others alike', () => {
+      const values = { p0: { 'red force': 2, 'red load': 2 }, p1: { 'red force': 0, 'red load': 1 }, p2: { 'red force': 0, 'red load': 0 } };
+      for (const seat of ['p0', 'p1', 'p2']) expect(viewOf(table, seat).playerValues, seat).toEqual(values);
+    });
+
+    it('leaves a resting job out of the red load', () => {
+      expect(viewOf(changeCard(table, statue, { resting: true }, gauged), 'p0').playerValues!.p1['red load']).toBe(0);
+    });
+
+    it('reads back the values a view carries', () => {
+      expect(sent.playerValues).toBeDefined();
+      expect(readSeatExtras(sent)).toEqual(viewOf(table, 'p1'));
+    });
+
+    it('refuses values that are not numbers by name, by seat', () => {
+      expect(readSeatExtras({ ...sent, playerValues: { p0: { 'red force': '2' } } })).toBeNull();
+      expect(readSeatExtras({ ...sent, playerValues: { p0: 3 } })).toBeNull();
+    });
+
+    it('reads extras with no values about players', () => {
+      const { playerValues: _values, ...none } = sent;
+      expect(readSeatExtras(none)).toEqual(none);
+    });
+  });
+
+  it("Review Focus: leaves out a value the runtime throws at for that player alone, and keeps the player's entry", () => {
+    const looping = compiled(plus(LOOPING, "Loop pay:\n  A player's loop pay is the total red pay of the cards in their workshop."));
+    expect(shownPlayerValues(looping)).toEqual(['loop pay']);
+    // p0's workshop holds the looping Vase, whose red pay the runtime throws at; p1's holds nothing.
+    expect(arranged(looping).view('p1').playerValues).toEqual({ p0: {}, p1: { 'loop pay': 0 } });
+  });
+
+  it('counts one line as working out a value about a player: judge what a new one reads before the view shows a value by it', () => {
+    // `shownPlayerValues` shows a value only when each of its lines is this one and adds up cards everyone sees. A new line that works
+    // out a value about a player shows nothing until it is judged here, and taught to `shownPlayerValues` if it reads only what all see.
+    const registered: string[] = [];
+    const values = vi.spyOn(PhraseLibrary.prototype, 'value').mockImplementation(function (this: PhraseLibrary, pattern: string) {
+      registered.push(pattern);
+      return this;
+    });
+    try {
+      registerPlayerValuePhrases(new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES]));
+    } finally {
+      values.mockRestore();
+    }
+    expect(registered).toEqual([PLAYER_TOTAL]);
+  });
+
+  // These pass before the view carries values about players, and say it never carries any for a game that shows none.
+  it.each([['Hearts', HEARTS], ['Color Match', COLOR_MATCH], ['Venom', VENOM], ['Rent Day', RENT_DAY], ['CREW_GAME', CREW_GAME]])(
+    '(guard) gives %s no values about a player',
+    (_name, text) => {
+      const game = compiled(text);
+      const { engine, runtime, seats } = createEngine(game, lib, game.players.min, initialState(game, 1));
+      for (const seat of seats) expect('playerValues' in seatExtras(engine, runtime, engine.getState(), seat), seat).toBe(false);
+    },
+  );
 });

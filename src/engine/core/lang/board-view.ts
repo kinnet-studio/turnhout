@@ -24,6 +24,7 @@ import { startPlayerOf, usesTurns } from './turns';
 import type { CompiledGame, DeclaredAction } from './types';
 import { zoneIdFor, zoneInfo } from './zones';
 import { shownFlags, standIns } from './worked-view';
+import { shownPlayerValues } from './worked-view';
 
 /**
  * `color` is the space's color when it is written as text; `details` is every other thing the table says about it. `facts` is
@@ -108,8 +109,13 @@ export type ActionView = {
 export type WorkedCard = { columns: { [column: string]: number }; flags: string[] };
 /** Each card on a Board with something worked out to show, by id. */
 export type WorkedView = { [cardId: string]: WorkedCard };
-/** `worked` is there only when some card on a Board has something worked out to show (see `workedView`). */
-export type SeatExtras = { board: BoardView | null; actions: ActionView[]; worked?: WorkedView };
+/** Each seat's shown player values, by seat then name; the same for every seat looking. */
+export type PlayerValuesView = { [seat: string]: { [name: string]: number } };
+/**
+ * `worked` is there only when some card on a Board has something worked out to show (see `workedView`), and `playerValues` only when the
+ * game shows some value about a player (see `shownPlayerValues`).
+ */
+export type SeatExtras = { board: BoardView | null; actions: ActionView[]; worked?: WorkedView; playerValues?: PlayerValuesView };
 
 const OUT_OF_GAME = "You're out of the game.";
 
@@ -495,12 +501,40 @@ function workedView(runtime: LangRuntime, state: GameState, seat: PlayerId): Wor
 }
 
 /**
+ * What each seat's shown player values come to, by seat then name; null when the game shows none. Any seat may look, and gets the same
+ * map: a shown value adds up only cards everyone sees, each read from the card alone (`shownPlayerValues`). Every seat has an entry, one
+ * that is out too, which the page hides. A value the runtime throws at for a seat (one worked out from itself is found only when asked) is
+ * left out of that seat's entry alone, so that one mistake leaves every view whole.
+ */
+function playerValuesView(runtime: LangRuntime, state: GameState): PlayerValuesView | null {
+  const names = shownPlayerValues(runtime.game);
+  if (names.length === 0) return null;
+  const view: PlayerValuesView = {};
+  for (const seat of runtime.seats) {
+    const values: { [name: string]: number } = {};
+    for (const name of names) {
+      try {
+        values[name] = runtime.playerValue(state, seat, name);
+      } catch {
+        // Left out, as said above.
+      }
+    }
+    view[seat] = values;
+  }
+  return view;
+}
+
+/**
  * The board and buttons as `seat` sees them in `state`, which is the engine's current state; the board is null for a game without one.
- * `worked` is left out when there is nothing worked out to show.
+ * `worked` is left out when there is nothing worked out to show, and `playerValues` when the game shows no value about a player.
  */
 export function seatExtras(engine: GameEngine, runtime: LangRuntime, state: GameState, seat: PlayerId): SeatExtras {
   const worked = workedView(runtime, state, seat);
-  return { board: boardView(runtime, state, seat), actions: actionViews(engine, runtime, state, seat), ...(worked === null ? {} : { worked }) };
+  const playerValues = playerValuesView(runtime, state);
+  return {
+    board: boardView(runtime, state, seat), actions: actionViews(engine, runtime, state, seat), ...(worked === null ? {} : { worked }),
+    ...(playerValues === null ? {} : { playerValues }),
+  };
 }
 
 const isRecord = (v: unknown): v is { [k: string]: Json } => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -546,5 +580,6 @@ export function readSeatExtras(extras: Json | undefined): SeatExtras | null {
   if (!isRecord(extras) || !isList(extras.actions, isAction)) return null;
   if (extras.board !== null && !isBoard(extras.board)) return null;
   if (extras.worked !== undefined && !isMap(extras.worked, isWorkedCard)) return null;
+  if (extras.playerValues !== undefined && !isMap(extras.playerValues, (values) => isMap(values, isNumber))) return null;
   return extras as SeatExtras;
 }

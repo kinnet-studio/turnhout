@@ -3,12 +3,15 @@
 // lines of every value they read, all the way down, read nothing but the card and the cards on it; and a line that reads the cards on a
 // card counts only in a game where everyone sees every card that sits on a card. So a seat that sees a card sees all that its shown
 // values read, however deep the cards on cards go, and whether a value is shown hangs on the rules alone, never on where cards are.
+// So does which values about a player the page may show: a total of cards everyone sees, each read through what reads that card alone,
+// so every seat may know it for every player; with the pairs of them a button waits on, and the flags that leave a card out of one.
 import { CARDS_ON_IT, FROM_COLUMN, registerCardSubjectPhrases } from './library/card-subject-phrases';
 import { FLAGGED_VALUES, registerCardValuePhrases } from './library/card-value-phrases';
+import { AT_LEAST_THEIRS, PLAYER_TOTAL } from './library/player-value-phrases';
 import { FROM_CARDS_TOTAL, GOES_UP_BY_TOTAL } from './library/total-phrases';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
-import type { CardFilter, CardGroup, CompiledGame, PhraseRef } from './types';
+import type { CardFilter, CardGroup, CompiledGame, PhraseRef, ZoneRef } from './types';
 
 /**
  * The phrases about the card a value is worked out for and the cards on it: what kind of card it is, its own numbers and flags, its zone
@@ -99,4 +102,70 @@ export function shownFlags(game: CompiledGame): string[] {
   );
   return Object.entries(worked).filter(([name, value]) => value.kind === 'flag' && turnedOn.has(name) && readsOnlyCards(game, name))
     .map(([name]) => name);
+}
+
+/**
+ * Whether everyone sees the cards of a zone a group names: a zone in the center for `{ shared }`, and a zone each player has for `{ each }`
+ * and `{ of }`, that everyone can see. Each seat then sees every card the total may add up, whoever's zone it is.
+ */
+function everyoneSees(game: CompiledGame, zone: ZoneRef): boolean {
+  const [name, perPlayer] = 'shared' in zone ? [zone.shared, false] : ['each' in zone ? zone.each : zone.zone, true];
+  return game.zones.some((spec) => spec.name === name && spec.perPlayer === perPlayer && spec.visibility === 'public');
+}
+
+/** Whether a card's number or flag reads only the card: one a table prints or cards keep, or a value worked out from the card alone. */
+const readsTheCardAlone = (game: CompiledGame, name: string): boolean => !isWorked(game, name) || readsOnlyCards(game, name);
+
+/**
+ * Whether a line of a value about a player adds up, over zones everyone sees, a number read from each card alone, of the cards that pass
+ * tests read from each card alone (`… that are not resting`). A test against the card a rule is about reads a card no such value has.
+ */
+function totalSeenByAll(game: CompiledGame, ref: PhraseRef): boolean {
+  if (ref.phrase !== PLAYER_TOTAL) return false;
+  const group = ref.args[2] as CardGroup;
+  if (group.kind !== 'in' || !group.zones.every((zone) => everyoneSees(game, zone))) return false;
+  return readsTheCardAlone(game, ref.args[1] as string) && (group.whose ?? []).every((filter) =>
+    !('sameAs' in filter) && readsTheCardAlone(game, 'flag' in filter ? filter.flag : filter.attribute));
+}
+
+/**
+ * The values worked out for players the page may show, in section order: those whose every line adds up cards everyone sees, read
+ * through what reads the card alone (`totalSeenByAll`). So each seat may know each of them for every player, and whether one is shown
+ * hangs on the rules alone, never on where cards are. A value with any other line is not shown until the view is taught what it reads.
+ */
+export function shownPlayerValues(game: CompiledGame): string[] {
+  return Object.entries(game.playerValues ?? {}).filter(([, value]) => value.refs.every((ref) => totalSeenByAll(game, ref)))
+    .map(([name]) => name);
+}
+
+/**
+ * Each pair of shown values a button waits on, `Only if their X is at least their Y.`, as [X, Y], in phase, button and line order, once:
+ * the page shows the two side by side (`Red force 1 / load 2`), so a seat sees how far it is from pressing it. `is more than` makes no
+ * pair, and nor does a `When …` line, which presses no button.
+ */
+export function gaugePairs(game: CompiledGame): [string, string][] {
+  const shown = new Set(shownPlayerValues(game));
+  const pairs: [string, string][] = [];
+  for (const phase of game.phases) {
+    for (const action of phase.actions) {
+      for (const ref of action.conditions.flatMap((group) => group.refs)) {
+        if (ref.phrase !== AT_LEAST_THEIRS) continue;
+        const [x, y] = [ref.args[0] as string, ref.args[1] as string];
+        if (shown.has(x) && shown.has(y) && !pairs.some(([a, b]) => a === x && b === y)) pairs.push([x, y]);
+      }
+    }
+  }
+  return pairs;
+}
+
+/**
+ * The flags cards keep (`Cards can be …`) that a shown value's group leaves out (`… that are not resting`), in the order declared: a card
+ * that is so counts for nothing in that total, and the page fades it. A flag worked out is never one, as the page fades a card by the
+ * flags it keeps.
+ */
+export function dimFlags(game: CompiledGame): string[] {
+  const leftOut = new Set(shownPlayerValues(game).flatMap((name) => game.playerValues![name].refs)
+    .flatMap((ref) => (ref.args[2] as CardGroup).whose ?? [])
+    .flatMap((filter) => ('flag' in filter && !filter.wanted ? [filter.flag] : [])));
+  return game.facts.filter((fact) => fact.on === 'card' && fact.kind === 'flag' && leftOut.has(fact.name)).map((fact) => fact.name);
 }

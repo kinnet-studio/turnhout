@@ -24,6 +24,14 @@ const valueIsExpected: ExpectFn = (env, [seat, name, n]) => {
 };
 
 /**
+ * The line of a value about a player that adds up a group of cards: the view shows such a value only when each of its lines is this one,
+ * over zones everyone can see, so a new line that works one out shows nothing until the view is taught what it reads.
+ */
+export const PLAYER_TOTAL = "a player's {playervalue} is the total {attribute} of {cardgroup}";
+/** The condition a button may wait on, one of their values reaching another: the page gauges the two side by side. */
+export const AT_LEAST_THEIRS = 'their {playervalue} is at least their {playervalue}';
+
+/**
  * The sentences about a value the game works out for each player: the line of its section that adds up a number over a group of cards (each
  * card's number read as every phrase reads it, a card without it counting as 0), and the conditions that compare one of their values with
  * another of theirs or with a whole number. Every one is about a player, whose zones “their” names. And the Then line of an example that checks
@@ -31,8 +39,8 @@ const valueIsExpected: ExpectFn = (env, [seat, name, n]) => {
  */
 export function registerPlayerValuePhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
-    .value("a player's {playervalue} is the total {attribute} of {cardgroup}", valueIsTheTotal, { needsPlayer: true })
-    .condition('their {playervalue} is at least their {playervalue}', withTheir(AT_LEAST), { needsPlayer: true })
+    .value(PLAYER_TOTAL, valueIsTheTotal, { needsPlayer: true })
+    .condition(AT_LEAST_THEIRS, withTheir(AT_LEAST), { needsPlayer: true })
     .condition('their {playervalue} is more than their {playervalue}', withTheir(MORE_THAN), { needsPlayer: true })
     .condition('their {playervalue} is {int}', withNumber(IS), { needsPlayer: true })
     .condition('their {playervalue} is at least {int}', withNumber(AT_LEAST), { needsPlayer: true })
