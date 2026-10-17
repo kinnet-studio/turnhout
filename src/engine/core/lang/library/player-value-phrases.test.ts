@@ -104,3 +104,19 @@ describe('a value about a player in a button', () => {
     expect(playing.dispatch(stop)).toMatchObject({ ok: true });
   });
 });
+
+describe('an example that checks a value about a player', () => {
+  /** An example's Then line, judged on the arranged table with the values the runtime works out. */
+  const expected = (text: string) => runPhrase<true | string>(lib, 'expect', text, fixtureEnv(table, {
+    game, seats: runtime.seats, playerValue: runtime.playerValue, workedValue: runtime.workedValue, workedFlag: runtime.workedFlag,
+  }));
+
+  it('holds when the value comes to the number', () => {
+    expect(expected("p0's red force is 2")).toBe(true);
+    expect(expected("p1's red load is 1")).toBe(true);
+    expect(expected("p2's red force is 0")).toBe(true);
+  });
+  it('says what the value comes to when it is not the number', () => {
+    expect(expected("p0's red force is 3")).toBe("Expected p0's red force to be 3, but it is 2.");
+  });
+});

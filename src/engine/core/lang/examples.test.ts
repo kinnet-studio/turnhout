@@ -6,6 +6,7 @@ import { createDefaultLibrary } from './library';
 import type { PhraseLibrary } from './phrases';
 import { COUNTER_GAME, ROUNDS_GAME, TEST_DUEL, TINY_BOARD, deckGameText } from './testing';
 import { GUILD_GAME } from './testing';
+import { JOIN_GAME, MEND_GAME, RESTING_GAME, YARD_GAME } from './testing';
 import { createEngine, initialState } from './build';
 import { namedChoices } from './declared-actions';
 import { relocate } from './zones';
@@ -698,5 +699,63 @@ describe('examples that name choices', () => {
   it('is blocked by a press no phrase reads yet, on its line', () => {
     const { text, results } = run('', 'Example: dancing', '  When p0 dances, paying p2');
     expect(results[0]).toMatchObject({ status: 'blocked', atLine: lineOf(text, 'When p0 dances, paying p2', true) });
+  });
+});
+
+describe("the words for slice 4's pieces", () => {
+  /** `rules` with `example` after them, which must compile with no problems, and what running the example gives. */
+  function runOn(rules: string, ...example: string[]) {
+    const text = [rules, '', ...example].join('\n');
+    const { game, diagnostics } = compileGame(text, lib);
+    expect(diagnostics).toEqual([]);
+    return { text, results: runExamples(game!, lib) };
+  }
+  const PASSED = [expect.objectContaining({ status: 'pass', message: null })];
+  /** A Statue resting in p0's workshop beside a Vase. */
+  const RESTING = [
+    'Example: a resting job adds nothing to the red load', "  Given p0's workshop has a Vase and a Statue", "  And the Statue in p0's workshop is resting",
+  ];
+
+  it('checks a value about a player, worked out over the cards that are not so', () => {
+    expect(runOn(RESTING_GAME, ...RESTING, "  Then p0's red load is 2", "  And p0's red force is 0").results).toEqual(PASSED);
+  });
+
+  it('shares a player\'s total among cards whose numbers go down, first card first', () => {
+    const mending = MEND_GAME.replace('  A player may stop.', [
+      '  A player may mend.', '    Then:', '      The cards in their workshop lose cracks between them, up to their mend, first card first.',
+      '  A player may stop.',
+    ].join('\n'));
+    expect(mending).not.toBe(MEND_GAME);
+    const example = [
+      "Example: mending shares the idle hands' skill among the jobs, first job first", "  Given p0's workshop has a Vase and a Statue",
+      "  And the Vase in p0's workshop has 2 cracks", "  And the Statue in p0's workshop has 3 cracks", "  And p0's idle has a Potter and a Smith",
+      '  When p0 mends', "  Then the Vase in p0's workshop has 0 cracks", "  And the Statue in p0's workshop has 2 cracks",
+      "  And the Vase in p0's workshop has 3 worth",
+    ];
+    expect(runOn(mending, ...example).results).toEqual(PASSED);
+  });
+
+  it('runs a join rule for the card that joins a card', () => {
+    const example = [
+      'Example: a Smith that joins a job dents it, a Potter does not', "  Given p0's workshop has a Vase",
+      '  When p0 hires a Smith and a Potter to the Vase', '  Then it is accepted', "  And the Vase in p0's workshop has 1 dent",
+    ];
+    expect(runOn(JOIN_GAME, ...example).results).toEqual(PASSED);
+  });
+
+  it('moves a card with the cards that stay on it, to a zone where some cards are on cards', () => {
+    const example = [
+      'Example: shipping a job takes its clinging hand along, on it', "  Given p0's workshop has a Vase",
+      "  And the Vase in p0's workshop has a Smith and a Potter on it", '  When p0 ships the Vase', "  Then the Vase in p0's shelf has the Smith on it",
+      "  And p0's yard has a Smith and a Potter",
+    ];
+    expect(runOn(YARD_GAME, ...example).results).toEqual(PASSED);
+  });
+
+  it('fails an example whose value about a player is not what it says, on that line', () => {
+    const { text, results } = runOn(RESTING_GAME, ...RESTING, "  Then p0's red load is 9");
+    expect(results).toEqual([expect.objectContaining({
+      status: 'fail', message: "Expected p0's red load to be 9, but it is 2.", atLine: lineOf(text, "Then p0's red load is 9", true),
+    })]);
   });
 });

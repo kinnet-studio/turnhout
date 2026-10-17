@@ -490,6 +490,15 @@ export const YARD_GAME = CREW_GAME
     '  A player may stop.'].join('\n'))
   + '\n\nClinging:\n  Only if it is a Smith card.';
 
+/**
+ * YARD_GAME with a second hire, of hands from the hall onto a job on the shelf, where they sit in the yard. Both hires take hands from the
+ * hall, so an example that names the job they go to means the hire whose zone holds that job.
+ */
+export const TWO_HIRES_GAME = YARD_GAME.replace('  A player may stop.', [
+  '  A player may hire some cards from the hall to a card in their shelf.', '    It costs 1 move.', '    Then:',
+  '      The picked cards go to their yard, on the target card.', '  A player may stop.',
+].join('\n'));
+
 /** WORKED_GAME with a job's crew red: the red work of the cards on it, added up. */
 export const TOTALS_GAME = [WORKED_GAME, '', 'Crew red:', "  A card's crew red is the total red work of the cards on it."].join('\n');
 

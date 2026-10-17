@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { compileGame } from '../compile';
 import { runExamples } from '../examples';
 import { CARD_PICK_GAME, vocabFor } from '../testing';
+import { TWO_HIRES_GAME } from '../testing';
 import { createDefaultLibrary } from './index';
 
 const lib = createDefaultLibrary();
@@ -304,5 +305,82 @@ describe('examples that press a button that picks a card', () => {
         /with more than one button: “trade some cards from their stash to the shop” or “trade a card in their stash”\. Say which: “… to the shop”\. “trade a card in their stash” needs different words\.$/,
       );
     });
+  });
+});
+
+describe('an example that names the card its cards go to, when two buttons take them to cards in two zones', () => {
+  /** An example that hires from the hall: `given` arranges the jobs, and the rest are its When and Then lines. */
+  const hiring = (given: string[], ...lines: string[]) => ['Example: hiring hands', ...given.map((line, i) => `  ${i === 0 ? 'Given' : 'And'} ${line}`),
+    ...lines.map((line) => `  ${line}`)].join('\n');
+  const PASSED = [expect.objectContaining({ status: 'pass', message: null })];
+  const VASE_IN_BOTH = ["p0's workshop has a Vase", "p0's shelf has a Vase"];
+
+  it('is the TWO_HIRES_GAME, with two hires from the hall', () => expect(TWO_HIRES_GAME.match(/A player may hire some cards from the hall/g)).toHaveLength(2));
+
+  it('reads the zone of the card they go to after it', () => {
+    const vocab = vocabFor(compileGame(TWO_HIRES_GAME, lib).game!);
+    const shelf = { of: { seat: 'p0' }, zone: 'shelf' };
+    expect(lib.match('action', "p0 hires a Potter to the Vase in p0's shelf", vocab)).toEqual({
+      status: 'ok', pattern: '{player} {cardaction} {cardlist} to {card} in {zone}', args: ['p0', 'hire', [{ name: 'Potter' }], { name: 'Vase' }, shelf],
+    });
+    expect(lib.match('action', "p0 hires a Potter from the hall to the Vase in p0's shelf", vocab)).toEqual({
+      status: 'ok', pattern: '{player} {cardaction} {cardlist} from {zone} to {card} in {zone}',
+      args: ['p0', 'hire', [{ name: 'Potter' }], { shared: 'hall' }, { name: 'Vase' }, shelf],
+    });
+  });
+
+  it('presses the button whose zone holds the card they go to', () => {
+    const example = hiring(["p0's workshop has a Vase", "p0's shelf has a Statue"],
+      'When p0 hires a Potter to the Vase', 'Then it is accepted', "And the Vase in p0's workshop has the Potter on it", "And p0's crew has a Potter",
+      'When p0 hires a Smith to the Statue', 'Then it is accepted', "And the Statue in p0's shelf has the Smith on it", "And p0's yard has a Smith");
+    expect(run(TWO_HIRES_GAME, example)).toEqual(PASSED);
+  });
+
+  it('keeps the error that names both buttons when both zones hold such a card', () => {
+    const [result] = run(TWO_HIRES_GAME, hiring(VASE_IN_BOTH, 'When p0 hires a Potter to the Vase', 'Then it is accepted'));
+    expect(result.status).toBe('fail');
+    // The error starts with the press, after the line the example is told it on.
+    expect(result.message).toMatch(/^Line \d+ \(“p0 hires a Potter to the Vase”\): p0 could hire a Potter with more than one button: /);
+    expect(result.message).toContain('“hire some cards from the hall to a card in their workshop” or “hire some cards from the hall to a card in their shelf”.');
+  });
+
+  it('presses the button of the zone the example names', () => {
+    const example = hiring(VASE_IN_BOTH, "When p0 hires a Potter to the Vase in p0's shelf", 'Then it is accepted',
+      "And the Vase in p0's shelf has the Potter on it", "And p0's yard has a Potter", "And the Vase in p0's workshop has no cards on it", "And p0's crew is empty");
+    expect(run(TWO_HIRES_GAME, example)).toEqual(PASSED);
+    const fromTheHall = hiring(VASE_IN_BOTH, "When p0 hires a Potter from the hall to the Vase in p0's workshop", 'Then it is accepted',
+      "And the Vase in p0's workshop has the Potter on it", "And p0's yard is empty");
+    expect(run(TWO_HIRES_GAME, fromTheHall)).toEqual(PASSED);
+  });
+
+  it('says which zone to name, in words that each press one button', () => {
+    const [advice] = run(TWO_HIRES_GAME, hiring(VASE_IN_BOTH, 'When p0 hires a Potter to the Vase', 'Then it is accepted'));
+    const ask = "Say which: “… to the Vase in p0's workshop” or “… to the Vase in p0's shelf”.";
+    expect(advice.message!.slice(-ask.length)).toBe(ask);
+    const lands: Record<string, string> = {
+      "to the Vase in p0's workshop": "And the Vase in p0's workshop has the Potter on it", "to the Vase in p0's shelf": "And the Vase in p0's shelf has the Potter on it",
+    };
+    const wordings = [...ask.matchAll(/“… ([^”]+)”/g)].map(([, wording]) => wording);
+    expect(wordings.sort()).toEqual(Object.keys(lands).sort());
+    for (const wording of wordings) {
+      const example = hiring(VASE_IN_BOTH, `When p0 hires a Potter ${wording}`, 'Then it is accepted', lands[wording]);
+      expect(run(TWO_HIRES_GAME, example), wording).toEqual(PASSED);
+    }
+  });
+
+  it('presses the first button that fits when no zone it takes cards to holds the card, for the game to refuse it', () => {
+    const [result] = run(TWO_HIRES_GAME, hiring(["p0's stash has a Vase"], 'When p0 hires a Potter to the Vase', 'Then it is accepted'));
+    expect(result).toMatchObject({ status: 'fail', message: 'Expected the move to be accepted, but it was rejected: Pick where they go: a card in your workshop.' });
+  });
+
+  it('presses the button of the zone the example names even when that zone holds no such card, for the game to refuse it', () => {
+    const [result] = run(TWO_HIRES_GAME, hiring(["p0's workshop has a Vase"], "When p0 hires a Potter to the Vase in p0's shelf", 'Then it is accepted'));
+    expect(result).toMatchObject({ status: 'fail', message: 'Expected the move to be accepted, but it was rejected: Pick where they go: a card in your shelf.' });
+  });
+
+  it('says no button takes the cards to a card in a zone none of them takes them to', () => {
+    const [result] = run(TWO_HIRES_GAME, hiring(["p0's idle has a Vase"], "When p0 hires a Potter to the Vase in p0's idle"));
+    expect(result.status).toBe('fail');
+    expect(result.message).toMatch(/No button lets p0 hire a card to another card in p0's idle\.$/);
   });
 });
