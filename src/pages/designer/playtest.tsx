@@ -22,7 +22,7 @@ import { designerFaceRenderer } from '@/engine/pixi/text-faces';
 import { makeInitApp } from '@/utils/init-app';
 import { ActionButtons, BANNER_SLOT, BANNER_STYLE, BUTTON_ROW, MoneyLine, PlayerPicker } from './board-controls';
 import { BoardGrid } from './board-grid';
-import { boardBadges, boardCaptions } from './board-text';
+import { boardBadges, boardCaptions, boardDims } from './board-text';
 import { cardDetail } from './card-detail';
 import { CardOffer } from './card-offer';
 import { NOTHING_TAKES, PICK_START, clickCard, liveAt, ringsOf, takersOf, type PickAt, type PickChosen } from './card-pick';
@@ -205,8 +205,9 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
   }, [view, fitted, tableDef, drawn]);
   const placement: Placement = { cards: placed };
   // Only a game whose buttons pick cards puts anything on its cards or takes clicks on them, so every other game's table draws and
-  // plays as it always has. A card on a seat's Board is captioned with its counts, read against what the rules work out, and
-  // badged with the flags worked out that change what it makes or costs; both change only with the view.
+  // plays as it always has. A card on a seat's Board is captioned with its counts, read against what the rules work out, badged
+  // with the flags it keeps, the flags worked out that change what it makes or costs and the counts no caption reads, and faded
+  // while a flag leaves it out of a player's total; all of them change only with the view.
   const picksCards = game.phases.some((phase) => phase.actions.some((a) => a.pick !== undefined));
   const worked = extras?.worked;
   const captions = useMemo(
@@ -223,14 +224,16 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
       : offered !== null ? { [offered]: 'chosen' }
         : asked !== null ? { [asked.cardId]: 'chosen', ...(asked.onto !== undefined && { [asked.onto]: 'chosen' }) }
           : {};
-    const badges = boardBadges(placed, worked);
-    const ids = new Set([...Object.keys(captions), ...Object.keys(rings), ...Object.keys(badges)]);
+    const badges = boardBadges(game, placed, worked);
+    const dims = new Set(boardDims(game, placed));
+    const ids = new Set([...Object.keys(captions), ...Object.keys(rings), ...Object.keys(badges), ...dims]);
     return Object.fromEntries([...ids].map((id) => [id, {
       ...(id in rings && { ring: rings[id] }),
       ...(id in captions && { caption: captions[id] }),
       ...(id in badges && { badge: badges[id] }),
+      ...(dims.has(id) && { dim: true }),
     }]));
-  }, [captions, placed, worked, pickView, livePick, offered, asking, current]);
+  }, [game, captions, placed, worked, pickView, livePick, offered, asking, current]);
   // A card's face has room for only some of its columns, so a fitted table shows the card under the pointer in full below it.
   const [hovered, setHovered] = useState<string | null>(null);
   const hoveredCard = placement.cards.find((card) => card.id === hovered);

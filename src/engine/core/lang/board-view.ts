@@ -23,8 +23,7 @@ import type { LangRuntime } from './runtime';
 import { startPlayerOf, usesTurns } from './turns';
 import type { CompiledGame, DeclaredAction } from './types';
 import { zoneIdFor, zoneInfo } from './zones';
-import { shownFlags, standIns } from './worked-view';
-import { shownPlayerValues } from './worked-view';
+import { shownFlags, shownPlayerValues, standIns } from './worked-view';
 
 /**
  * `color` is the space's color when it is written as text; `details` is every other thing the table says about it. `facts` is

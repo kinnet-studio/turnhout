@@ -1116,3 +1116,150 @@ describe('choosing whom to pay and how to cut', () => {
     capitalOf(S, 7);
   });
 });
+
+/** setUp() with a Dating App and a Smart Lock in N's operations and the first Firmware Specialist in N's ops team. */
+const modesBoard = (): GameState => {
+  const state = setUp();
+  const products = relocate(state, [idOf(state, 'Dating App'), idOf(state, 'Smart Lock')], `operations-${N}`, game);
+  return relocate(products, [idOf(products, 'Firmware Specialist')], `ops-team-${N}`, game);
+};
+// The Choices group, the names of its buttons, and a click on one of them; named apart from 3-2's describe-local `choices`/`options`/`answer`.
+const askedGroup = () => screen.getByRole('group', { name: 'Choices' });
+const askedOptions = () => within(askedGroup()).getAllByRole('button').map((b) => b.textContent);
+const answerAsked = (value: string) => fireEvent.click(within(askedGroup()).getByRole('button', { name: value }));
+/** The labels of the seat's buttons, in order, read from the `seat-buttons` room. */
+const seatButtons = () => within(screen.getByTestId('seat-buttons')).getAllByRole('button').map((b) => b.textContent);
+
+/**
+ * How the numbers come (§20.B, §20.C, §5 Phase B, §20.E):
+ * - The Firmware Specialist is flex, output 2, salary $2, and the Fixer alone has QA Skill.
+ * - Blue costs: Dating App 6, To-Do List 4, Mobile Wallet 4. The Smart Lock costs 1 Blue / 5 Red and earns rev 2.
+ * - At Income: 7 + 2 = 9, the Dating App off and earning nothing. The $2 salary holds N at Income.
+ * - The Hacker adds 1 Bug when he joins a project. One Junior QA Tester gives 1 QA against 2 Bugs on two products, so the owner picks
+ *   which to clean.
+ * The Bug label reads the `bugs` count whether or not `bugged` is shown (G1); it is not shown (P4), so a Bug reads `1 bug` alone.
+ */
+describe('modes, Offline and Bugs on the Board', () => {
+  const tab = (name: string) => screen.getByRole('tab', { name });
+  const boardOf = (seat: string) => screen.getByTestId(`board-${seat}`).textContent;
+  const DECLARE_OPS = 'Declare a card in your ops team';
+  const SWITCH_OFF = 'Switch off a card in your operations';
+  const SWITCH_ON = 'Switch on a card in your operations';
+  /** Mounts `modesBoard()`, ends S's actions, and declares N's Firmware Specialist in Red, clicking it. */
+  const declaredRed = () => {
+    const state = modesBoard();
+    const [fs, dating, lock] = ['Firmware Specialist', 'Dating App', 'Smart Lock'].map((name) => idOf(state, name));
+    mount({ initial: state });
+    press('End your actions');
+    click(fs);
+    choose(DECLARE_OPS);
+    answerAsked('Red');
+    return { fs, dating, lock };
+  };
+
+  it('badges the project the Hacker joins with his Bug, and lists it in its square brackets', () => {
+    const set = setUp();
+    const [hacker, todo] = ['Hacker', 'To-Do List'].map((name) => idOf(set, name));
+    mount({ initial: relocate(relocate(set, [hacker], `bench-${S}`, game), [todo], `development-${S}`, game) });
+    click(hacker);
+    choose('Assign some cards from your bench to a card in your development');
+    click(todo);
+    expect(table!.decor![todo]).toEqual({ caption: 'Blue 0/4\nRed 0/0', badge: '1 bug' });
+    expect(boardOf(S)).toBe('development: To-Do List (tier Tier 1, tag App, sector Concept) [Blue 0/4, Red 0/0, 1 bug] with Hacker');
+  });
+
+  it('labels a card with the mode declared for it, and takes the label off for Blue', () => {
+    const state = modesBoard();
+    const fs = idOf(state, 'Firmware Specialist');
+    mount({ initial: state });
+    press('End your actions');
+    expect(tab(`${N} — to act`).getAttribute('aria-selected')).toBe('true');
+    expect(status()).toBe(`seat: ${N} — Your turn — ${hint('modes')}`);
+    expect(seatButtons()).toEqual(['Declare a card in your development team', DECLARE_OPS, 'Confirm your modes']);
+
+    click(fs);
+    expect(offered()).toEqual([[DECLARE_OPS, true]]);
+    choose(DECLARE_OPS);
+    expect(within(askedGroup()).getByText('Choose one')).toBeTruthy();
+    // The Fixer's QA is not offered to a Firmware Specialist.
+    expect(askedOptions()).toEqual(['Blue', 'Red', 'Cancel']);
+    expect(ring(fs)).toBe('chosen');
+
+    answerAsked('Red');
+    expect(table!.decor![fs]).toEqual({ badge: 'red mode' });
+    expect(boardOf(N)).toContain('ops team: Firmware Specialist (red mode)');
+
+    press(DECLARE_OPS);
+    pickNamed('Firmware Specialist');
+    answerAsked('Blue');
+    expect(table!.decor![fs]).toBeUndefined();
+  });
+
+  it('Review Focus: fades an Offline product, and only while it is off', () => {
+    const { dating, lock } = declaredRed();
+    press('Confirm your modes');
+    expect(status()!.endsWith(hint('ops check'))).toBe(true);
+
+    click(dating);
+    expect(offered()).toEqual([[SWITCH_OFF, true], [SWITCH_ON, 'it is offline']]);
+    choose(SWITCH_OFF);
+    expect(table!.decor![dating]).toEqual({ caption: 'Blue 0/6\nRed 0/0', badge: 'offline', dim: true });
+    expect(table!.decor![lock]).toEqual({ caption: 'Blue 0/1\nRed 0/5' });
+    expect(boardOf(N)).toContain('Dating App (tier Tier 1, tag Social, sector Consumer, offline) [Blue 0/6, Red 0/0]');
+    // The face and the hover line keep the printed Val, 5: being off is told by the fade, the badge and the Board line (P5).
+    act(() => table!.onHover!(dating));
+    expect(screen.getByTestId('card-detail').textContent).toContain('val 5');
+
+    click(dating);
+    choose(SWITCH_ON);
+    expect(table!.decor![dating]).toEqual({ caption: 'Blue 0/6\nRed 0/0' });
+
+    click(dating);
+    choose(SWITCH_OFF);
+    press('Confirm the products online');
+    expect(lineOf(N)?.startsWith(`${N} 9 capital, 3 actions, 1 market share`), lineOf(N)!).toBe(true);
+    expect(table!.decor![dating].dim).toBe(true);
+
+    press('Undo');
+    press('Undo');
+    expect(table!.decor![dating]).toEqual({ caption: 'Blue 0/6\nRed 0/0' });
+    expect(boardOf(N)).not.toContain('offline');
+  });
+
+  it('takes the badge off a Bug Ops QA cleans, and leaves the other', () => {
+    let state = setUp();
+    const [dating, wallet] = ['Dating App', 'Mobile Wallet'].map((name) => idOf(state, name));
+    state = relocate(state, [dating, wallet], `operations-${S}`, game);
+    state = changeCard(changeCard(state, dating, { bugs: 1 }, game), wallet, { bugs: 1 }, game);
+    mount({ initial: relocate(state, [idOf(state, 'Junior QA Tester', `bench-${S}`)], `ops-team-${S}`, game) });
+    expect([table!.decor![dating].badge, table!.decor![wallet].badge]).toEqual(['1 bug', '1 bug']);
+
+    press('End your actions');
+    expect(status()!.endsWith(hint('engine'))).toBe(true);
+    click(wallet);
+    expect(offered()).toEqual([['Clean a card in your operations', true]]);
+    choose('Clean a card in your operations');
+    expect(tab(`${N} — to act`).getAttribute('aria-selected')).toBe('true');
+
+    fireEvent.click(tab(S));
+    expect(table!.decor![wallet]).toEqual({ caption: 'Blue 0/4\nRed 0/0' });
+    expect(table!.decor![dating].badge).toBe('1 bug');
+    expect(boardOf(S)).toContain('Mobile Wallet (tier Tier 1, tag Commerce, sector FinTech) [Blue 0/4, Red 0/0]');
+    expect(boardOf(S)).toContain('[Blue 0/6, Red 0/0, 1 bug]');
+  });
+
+  // A guard: this passes before the change too, and pins that neither a badge nor a Bug reaches a card the Board doesn't show:
+  // another seat's backlog is hidden from the seat, and its own backlog is on no Board.
+  it("Review Focus: badges no card in a backlog, and never shows another seat's Bugs", () => {
+    let state = setUp();
+    const theirs = state.cards.find((card) => card.zoneId === `backlog-${O}`)!.id;
+    const own = state.cards.find((card) => card.zoneId === `backlog-${S}`)!.id;
+    state = changeCard(changeCard(state, theirs, { bugs: 2, offline: true }, game), own, { bugs: 3 }, game);
+    mount({ initial: state });
+    expect(status()).toMatch(new RegExp(`^seat: ${S} `));
+    expect(Object.keys(table!.decor!)).not.toContain(theirs);
+    expect(Object.keys(table!.decor!)).not.toContain(own);
+    expect(document.body.textContent).not.toContain('2 bugs');
+    expect(document.body.textContent).not.toContain('3 bugs');
+  });
+});

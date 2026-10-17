@@ -9,6 +9,8 @@ import { boldTextWidth } from './text-faces';
 const BADGE_SIZE = 10;
 const BADGE_LINE = 12;
 const BADGE_ROOM = 56;
+// A dimmed card's faces are drawn this see-through; its ring, caption and badge are not, so they stay as easy to read.
+const DIM_ALPHA = 0.4;
 
 /** A badge's text in lines, each as long as fits in the corner: a word too wide for it has a line of its own. */
 function badgeLines(text: string): string[] {
@@ -52,11 +54,17 @@ export class CardSprite extends Container {
     this.faceDownSprite.texture = faceDownTex;
   }
 
-  /** Puts the ring, the caption and the badge in `decor` on the card, and takes off any that it lacks. `null` leaves the card bare. */
+  /**
+   * Puts the ring, the caption and the badge in `decor` on the card, and takes off any that it lacks; fades both faces when it is
+   * `dim`, and brings them back when not. `null` leaves the card bare.
+   */
   setDecor(decor: CardDecor | null): void {
     this.setRing(decor?.ring);
     this.setCaption(decor?.caption);
     this.setBadge(decor?.badge);
+    const alpha = decor?.dim === true ? DIM_ALPHA : 1;
+    this.faceUpSprite.alpha = alpha;
+    this.faceDownSprite.alpha = alpha;
   }
 
   private setRing(kind: CardDecor['ring']): void {

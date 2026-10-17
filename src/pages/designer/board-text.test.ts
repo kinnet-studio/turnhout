@@ -13,6 +13,8 @@ import { boardCaptions, boardText, cardLabel, countParts } from './board-text';
 import { boardBadges } from './board-text';
 import { seatExtras } from '@/engine/core/lang/board-view';
 import { GUILD_GAME, SHOWN } from '@/engine/core/lang/testing';
+import { boardDims, loneCounts } from './board-text';
+import { RESTING_GAME } from '@/engine/core/lang/testing';
 
 const lib = createDefaultLibrary();
 const TIRED = '  Cards can be tired.';
@@ -172,8 +174,8 @@ describe('what the rules work out, on the Board', () => {
   });
 
   it('badges each card the view gives flags, and none without a view', () => {
-    expect(boardBadges(at.state.cards, at.worked)).toEqual({ [at.vase]: 'busy' });
-    expect(boardBadges(at.state.cards, undefined)).toEqual({});
+    expect(boardBadges(shown, at.state.cards, at.worked)).toEqual({ [at.vase]: 'busy' });
+    expect(boardBadges(shown, at.state.cards, undefined)).toEqual({});
   });
 
   it("lists a card's words, in its data order, and only for a card with counts", () => {
@@ -201,5 +203,105 @@ describe('what the rules work out, on the Board', () => {
     const after = engine.getState();
     expect(cardOf(after, stashed.id).data).toMatchObject({ name: 'Statue', movedBy: 'p0' });
     expect(boardText(dragged, after.cards, 'p0')).toBe('workshop: Statue (mark stone, wants clay) [Red 0/2, Gold 0/4]');
+  });
+});
+
+describe('flags kept, counts no column reads, and faded cards', () => {
+  /** CREW with two counts no column reads: 'dents' is one word, and 'fixed dents' rides on it. */
+  const MARKED = CREW.replace(TIRED, `${TIRED}\n  Cards can have dents and fixed dents.`);
+  const markedCompiled = compileGame(MARKED, lib);
+  const marked = markedCompiled.game!;
+  const laid = arrange(marked);
+  const [dented] = idsOf(laid, 'Vase');
+  const [potter] = idsOf(laid, 'Potter');
+  /** The laid-out MARKED state with these counts changed on one card. */
+  const withCounts = (id: string, counts: { [name: string]: number }, from = laid) => changeCard(from, id, counts, marked);
+
+  it('compiles MARKED with no problems', () => {
+    expect(MARKED).not.toBe(CREW);
+    expect(markedCompiled.diagnostics).toEqual([]);
+  });
+
+  describe('loneCounts', () => {
+    it('reads each count no column reads that is not 0, in the order declared', () => {
+      expect(loneCounts(cardOf(withCounts(dented, { dents: 2 }), dented), marked)).toEqual(['2 dents']);
+      expect(loneCounts(cardOf(withCounts(dented, { dents: 1, 'fixed dents': 1 }), dented), marked)).toEqual(['1 dent', '1 fixed dent']);
+    });
+
+    it('never gives a count a column reads, nor its rider', () => {
+      // The Vase's red done 1 reads against its red need, and its new red done 3 rides on it.
+      expect(cardOf(laid, dented).data).toMatchObject({ 'red done': 1, 'new red done': 3 });
+      expect(loneCounts(cardOf(laid, dented), marked)).toEqual([]);
+    });
+
+    it('reads a count on a card with no columns at all', () => {
+      expect(cardOf(laid, potter).data).toMatchObject({ tired: true });
+      expect(loneCounts(cardOf(withCounts(potter, { dents: 1 }), potter), marked)).toEqual(['1 dent']);
+    });
+
+    it('says nothing of a face-down card, even if its data were left on it', () => {
+      const card = cardOf(withCounts(dented, { dents: 2 }), dented);
+      expect(loneCounts({ ...card, faceUp: false, faceKey: 'back' }, marked)).toEqual([]);
+    });
+  });
+
+  it('puts the lone counts in the square brackets after the count parts, and gives a card with only lone counts brackets of its own', () => {
+    const both = withCounts(potter, { dents: 1 }, withCounts(dented, { dents: 2 }));
+    expect(boardText(marked, both.cards, 'p0')).toBe(
+      'workshop: Vase [Red 1/2 +3 new, Gold 0/0, 2 dents] with Potter (tired) [1 dent] and Smith; Statue [Red 0/1, Gold 0/2] · idle: Tinker',
+    );
+  });
+
+  describe('boardBadges', () => {
+    it('badges a card on a Board with the flags it keeps and its lone counts, cards on cards too', () => {
+      expect(boardBadges(marked, withCounts(dented, { dents: 2 }).cards)).toEqual({ [dented]: '2 dents', [potter]: 'tired' });
+    });
+
+    it('badges no card off a Board', () => {
+      const stashed = laid.cards.find((card) => card.zoneId === 'stash-p0')!;
+      const dentedStash = withCounts(stashed.id, { dents: 1 });
+      expect(cardOf(dentedStash, stashed.id).data).toMatchObject({ dents: 1 });
+      expect(boardBadges(marked, dentedStash.cards)).toEqual({ [potter]: 'tired' });
+    });
+
+    it('lists the flags kept, then the flags worked out, then the lone counts', () => {
+      const dentedShown = SHOWN.replace(TIRED, `${TIRED}\n  Cards can have dents.`);
+      expect(dentedShown).not.toBe(SHOWN);
+      const shownDents = compileGame(dentedShown, lib).game!;
+      // As the describe-local `arrangeShown` above lays out SHOWN, with the busy Vase tired and dented.
+      const start = createEngine(shownDents, lib, 2, initialState(shownDents, 1)).engine.getState();
+      const [[job], [other, stashed], [p1, p2], [tinker]] = ['Vase', 'Statue', 'Potter', 'Tinker'].map((name) => idsOf(start, name));
+      let arranged = relocate(start, [job, other], 'workshop-p0', shownDents);
+      arranged = putOn(arranged, [p1, p2], 'crew-p0', job, shownDents);
+      arranged = changeCard(arranged, job, { 'red done': 1, 'cut red done': 1 }, shownDents);
+      arranged = relocate(relocate(arranged, [stashed], 'stash-p1', shownDents), [tinker], 'idle-p0', shownDents);
+      arranged = changeCard(arranged, job, { tired: true, dents: 1 }, shownDents);
+      const { engine, runtime } = createEngine(shownDents, lib, 2, arranged);
+      const worked = seatExtras(engine, runtime, engine.getState(), 'p0').worked!;
+      expect(boardBadges(shownDents, engine.getState().cards, worked)[job]).toBe('tired, busy, 1 dent');
+    });
+  });
+
+  describe('boardDims', () => {
+    const resting = compileGame(RESTING_GAME, lib).game!;
+    const start = createEngine(resting, lib, 2, initialState(resting, 1)).engine.getState();
+    const [[job], [other]] = ['Vase', 'Statue'].map((name) => idsOf(start, name));
+    const working = relocate(start, [job, other], 'workshop-p0', resting);
+    const rested = (state: GameState) => changeCard(state, other, { resting: true }, resting);
+
+    it('gives the cards on a Board that keep a flag a shown value leaves out', () => {
+      expect(boardDims(resting, working.cards)).toEqual([]);
+      expect(boardDims(resting, rested(working).cards)).toEqual([other]);
+    });
+
+    it('gives no card off a Board, and no face-down card', () => {
+      expect(boardDims(resting, rested(relocate(working, [other], 'stash-p0', resting)).cards)).toEqual([]);
+      const faceDown = rested(working).cards.map((card): CardState => (card.id === other ? { ...card, faceUp: false, faceKey: 'back' } : card));
+      expect(boardDims(resting, faceDown)).toEqual([]);
+    });
+
+    it('gives none in a game no shown value leaves a flag out of', () => {
+      expect(boardDims(game, cards)).toEqual([]);
+    });
   });
 });

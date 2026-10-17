@@ -225,3 +225,34 @@ describe('badge', () => {
     expect([badge, back, text].map((part) => part.destroyed)).toEqual([true, true, true]);
   });
 });
+
+describe('dim', () => {
+  const kids = (s: CardSprite, label: string) => s.children.filter((c) => c.label === label);
+  /** The alpha of the two face sprites, the card's first two children. */
+  const faces = (s: CardSprite) => [s.children[0].alpha, s.children[1].alpha];
+
+  it('fades both faces of a dimmed card', () => {
+    const s = new CardSprite();
+    expect(faces(s)).toEqual([1, 1]);
+    s.setDecor({ dim: true });
+    expect(faces(s)).toEqual([0.4, 0.4]);
+  });
+
+  it('leaves the badge and the ring of a dimmed card as they are', () => {
+    const s = new CardSprite();
+    s.setDecor({ dim: true, badge: 'busy', ring: 'chosen' });
+    expect(faces(s)).toEqual([0.4, 0.4]);
+    expect(kids(s, 'card-badge').map((c) => c.alpha)).toEqual([1]);
+    expect(kids(s, 'card-ring').map((c) => c.alpha)).toEqual([1]);
+  });
+
+  it('brings both faces back for decor that is not dimmed, and for none', () => {
+    const s = new CardSprite();
+    s.setDecor({ dim: true });
+    s.setDecor({ caption: 'x' });
+    expect(faces(s)).toEqual([1, 1]);
+    s.setDecor({ dim: true });
+    s.setDecor(null);
+    expect(faces(s)).toEqual([1, 1]);
+  });
+});

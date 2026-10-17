@@ -45,10 +45,10 @@ export interface ZoneState {
 }
 
 /**
- * What a page may put on a card: a ring around it, a caption under it, and a badge inside its top-right corner. It lives in what
- * the page hands the canvas, never in the game's state.
+ * What a page may put on a card: a ring around it, a caption under it, and a badge inside its top-right corner, and whether its faces
+ * are drawn faded (`dim`). It lives in what the page hands the canvas, never in the game's state.
  */
-export type CardDecor = { ring?: 'choice' | 'chosen'; caption?: string; badge?: string };
+export type CardDecor = { ring?: 'choice' | 'chosen'; caption?: string; badge?: string; dim?: boolean };
 
 export interface Scene {
   cards: CardState[];

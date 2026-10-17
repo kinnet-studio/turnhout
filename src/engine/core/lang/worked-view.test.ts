@@ -381,6 +381,13 @@ describe('what the view says about each player', () => {
     expect(dimFlags(compiled(plus(SHOWN, VALUES)))).toEqual([]);
   });
 
+  it('fades no card for a flag a shown value counts the cards that have', () => {
+    const restingCounted = RESTING_GAME.replace('that are not resting', 'that are resting');
+    expect(restingCounted).not.toBe(RESTING_GAME);
+    expect(shownPlayerValues(compiled(restingCounted))).toContain('red load');
+    expect(dimFlags(compiled(restingCounted))).toEqual([]);
+  });
+
   describe('GAUGED_GAME for three at seed 1', () => {
     const gauged = compiled(GAUGED_GAME);
     // Setup deals 2 jobs to each stash, more than the pile holds for three: a state with p0's turn set skips it.
