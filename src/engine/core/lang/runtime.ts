@@ -1,5 +1,6 @@
 import { MAX_FLOW_ITERATIONS } from '../flow';
-import { cardById, setPhase, type GameState } from '../game-state';
+import { setPhase, type GameState } from '../game-state';
+import { cardById } from './zone-index';
 import type { Move } from '../moves';
 import type { CardState, PlayerId } from '../scene';
 import type { Json } from '../table-def';

@@ -1,4 +1,5 @@
-import { setPhase, zoneCards, type GameState } from '../../game-state';
+import { setPhase, type GameState } from '../../game-state';
+import { zoneCards } from '../zone-index';
 import { shuffleWithRng } from '../../rng';
 import type { PlayerId } from '../../scene';
 import { interruptTurn, isOut, nextIn, playerFact, resumeTurn } from '../board-state';

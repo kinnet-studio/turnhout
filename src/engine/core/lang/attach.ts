@@ -1,7 +1,8 @@
 // Cards that sit on cards (R3): a card's holder is the id under `HOLDER_KEY` in its own data. Every move takes a card off its
 // holder, a rule that puts it on one says so after the move, and the table is checked after every change, so that a rule which moves
 // a card and forgets the cards on it is refused with the cards named.
-import { zoneCards, type GameState } from '../game-state';
+import type { GameState } from '../game-state';
+import { zoneCards } from './zone-index';
 import type { CardState, PlayerId } from '../scene';
 import { pickName } from './card-facts';
 import { RuleError } from './diagnostics';
@@ -64,6 +65,23 @@ export function onCardsZoneOf(game: CompiledGame, seat: PlayerId, holderZone?: s
  * and names only the card it reports.
  */
 export function attachmentProblem(game: CompiledGame, state: GameState): string | null {
+  let known = problems.get(game);
+  if (known === undefined) problems.set(game, (known = new WeakMap()));
+  const found = known.get(state.cards);
+  if (found !== undefined) return found;
+  const problem = findProblem(game, state);
+  known.set(state.cards, problem);
+  return problem;
+}
+
+/**
+ * What `attachmentProblem` found, by game and then by cards array: it decides from the cards alone, and a state's cards never change,
+ * while every rule's lines, every turn's start and the view ask it again of cards nothing has moved since.
+ */
+const problems = new WeakMap<CompiledGame, WeakMap<readonly CardState[], string | null>>();
+
+/** `attachmentProblem` worked out from the cards. */
+function findProblem(game: CompiledGame, state: GameState): string | null {
   if (!game.zones.some((zone) => zone.onCards !== undefined)) return null;
   // Only a card that sits on a card needs the one it sits on, and most sit on none.
   let byId: Map<string, CardState> | null = null;

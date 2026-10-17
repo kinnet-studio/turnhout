@@ -1,4 +1,5 @@
-import { cardById, type GameState } from '../game-state';
+import type { GameState } from '../game-state';
+import { cardById } from './zone-index';
 import type { Move, MoveHandler } from '../moves';
 import type { CardState, PlayerId } from '../scene';
 import { clearTurnLog, endsTurn } from './board-state';

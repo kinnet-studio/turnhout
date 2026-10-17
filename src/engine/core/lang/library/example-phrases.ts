@@ -1,4 +1,5 @@
-import { zoneCards, type GameState } from '../../game-state';
+import type { GameState } from '../../game-state';
+import { zoneCards } from '../zone-index';
 import type { CardState } from '../../scene';
 import type { Json } from '../../table-def';
 import { isSaysColumn } from '../cards';

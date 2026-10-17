@@ -1,4 +1,5 @@
-import { cardById, zoneCards, type GameState } from '../../game-state';
+import type { GameState } from '../../game-state';
+import { cardById, zoneCards } from '../zone-index';
 import { pieceAt, setLastDrawn } from '../board-state';
 import { cardName, saysOf } from '../card-facts';
 import { homePileOf } from '../cards';

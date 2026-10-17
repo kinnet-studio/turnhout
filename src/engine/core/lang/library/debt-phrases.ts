@@ -1,4 +1,5 @@
-import { zoneCards, type GameState } from '../../game-state';
+import type { GameState } from '../../game-state';
+import { zoneCards } from '../zone-index';
 import { counterOf, owedTo, ownerOf, playersIn, setOwner, type Creditor } from '../board-state';
 import { homePileOf } from '../cards';
 import { NEEDS_PAYMENT } from '../compile-util';

@@ -1,4 +1,4 @@
-import { zoneCards } from '../../game-state';
+import { zoneCards } from '../zone-index';
 import type { PlayerId } from '../../scene';
 import { cardsOn } from '../attach';
 import { playersIn } from '../board-state';

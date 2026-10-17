@@ -1,4 +1,5 @@
-import { insertAtSlot, zoneCards } from '../../game-state';
+import { insertAtSlot } from '../../game-state';
+import { zoneCards } from '../zone-index';
 import { nextInt } from '../../rng';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';

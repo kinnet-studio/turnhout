@@ -1,4 +1,5 @@
-import { cardById, zoneCards, type GameState } from '../../game-state';
+import type { GameState } from '../../game-state';
+import { cardById, zoneCards } from '../zone-index';
 import type { CardState, PlayerId } from '../../scene';
 import { bankItemOf } from '../board';
 import { bankOf, holderOf, ownerOf, setBank, setOwner, setSpaceFact, spaceFact } from '../board-state';

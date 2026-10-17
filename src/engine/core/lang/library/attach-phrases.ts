@@ -1,4 +1,5 @@
-import { cardById, type GameState } from '../../game-state';
+import type { GameState } from '../../game-state';
+import { cardById } from '../zone-index';
 import type { PlayerId } from '../../scene';
 import { cardsOn, holderIdOf, onCardsZoneOf, putOn } from '../attach';
 import { changeCard } from '../card-facts';

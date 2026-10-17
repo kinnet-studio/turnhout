@@ -1,4 +1,5 @@
-import { zoneCards, type GameState } from '../game-state';
+import type { GameState } from '../game-state';
+import { zoneCards } from './zone-index';
 import type { CardState, PlayerId } from '../scene';
 import { clearTurnLog } from './board-state';
 import { RuleError } from './diagnostics';
@@ -16,14 +17,29 @@ export const NEEDS_TWO = '“the other player” needs a game for two players.';
 
 const SEAT_SUFFIX = /^p\d+$/;
 
+/**
+ * The slugs already made, by name: every zone id a rule, a move or a view asks for is a slug of a zone's name, so there are few names
+ * and each is asked for very often. A designer typing makes new ones, so the cache starts over once it holds many.
+ */
+const slugs = new Map<string, string>();
+const MAX_SLUGS = 1000;
+
 /** 'pass pile' → 'pass-pile': lowercase words joined by dashes. */
 export function slug(name: string): string {
-  return name
+  const known = slugs.get(name);
+  if (known !== undefined) return known;
+  const made = name
     .replace(/['‘’]/g, '')
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, '-')
     .replace(/^-+|-+$/g, '');
+  if (slugs.size >= MAX_SLUGS) slugs.clear();
+  slugs.set(name, made);
+  return made;
 }
+
+/** How many names `slug` holds the slugs of now; a test reads it to see that the cache stays bounded. */
+export const slugsKnown = (): number => slugs.size;
 
 /** The zone id for a named zone: shared zones are just the slug, per-player zones add the seat. */
 export function zoneIdFor(name: string, seat?: PlayerId): string {

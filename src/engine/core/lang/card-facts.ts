@@ -28,8 +28,23 @@ export function cardAttribute(card: CardState, name: string, game: CompiledGame)
 
 /** The columns of the game's tables in table order, found the way a card's identity names them; a standard deck has none. */
 export function tableColumns(game: CompiledGame): string[] {
-  const columns = game.cards.filter((set) => set.kind !== 'standard').flatMap((set) => set.identities.flatMap((i) => Object.keys(i.attrs)));
-  return [...new Set(columns)];
+  return [...columnsOf(game)];
+}
+
+/**
+ * `tableColumns`, worked out once for each game's card sets: a compiled game never changes, and every change to a card asks it again
+ * for the card's new face.
+ */
+const columnSets = new WeakMap<CompiledGame['cards'], Set<string>>();
+
+function columnsOf(game: CompiledGame): Set<string> {
+  let columns = columnSets.get(game.cards);
+  if (columns === undefined) {
+    const all = game.cards.filter((set) => set.kind !== 'standard').flatMap((set) => set.identities.flatMap((i) => Object.keys(i.attrs)));
+    columns = new Set(all);
+    columnSets.set(game.cards, columns);
+  }
+  return columns;
 }
 
 /** What the card's says column holds, as text; null for a card that has no such column. */
@@ -77,7 +92,7 @@ export function faceKeyOf(card: CardState, game: CompiledGame): string {
   // table together would put a column that an earlier row leaves blank, or another table lacks, after the rest.
   // The limit: a column deleted and later set again, or one an example's Given sets on a card whose row left it blank, is a new
   // key of the data, so it goes after the row's other columns.
-  const columns = new Set(tableColumns(game));
+  const columns = columnsOf(game);
   for (const [column, value] of Object.entries(card.data ?? {})) {
     if (columns.has(column)) face[column] = value as Json;
   }

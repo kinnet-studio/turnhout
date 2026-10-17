@@ -1,4 +1,4 @@
-import { cardById, zoneCards } from '../../game-state';
+import { cardById, zoneCards } from '../zone-index';
 import type { CardState, PlayerId } from '../../scene';
 import type { Json } from '../../table-def';
 import { cardsOn } from '../attach';

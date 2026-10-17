@@ -1,4 +1,4 @@
-import { cardById } from '../../game-state';
+import { cardById } from '../zone-index';
 import { addToCounter, counterOf } from '../board-state';
 import type { PhraseLibrary } from '../phrases';
 import type { CardGroup, ConditionFn, EffectFn, ValueFn } from '../types';

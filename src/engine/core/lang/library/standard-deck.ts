@@ -1,4 +1,4 @@
-import { zoneCards } from '../../game-state';
+import { zoneCards } from '../zone-index';
 import type { CardState } from '../../scene';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';

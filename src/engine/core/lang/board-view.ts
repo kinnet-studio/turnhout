@@ -2,7 +2,8 @@
 // Everything here is plain `Json`, so the net layer can carry it in a view without knowing a board exists.
 import { isRevealed } from '../derive-scene';
 import type { GameEngine } from '../game-engine';
-import { cardById, zoneCards, type GameState } from '../game-state';
+import type { GameState } from '../game-state';
+import { cardById, zoneCards } from './zone-index';
 import type { Move } from '../moves';
 import type { CardState, PlayerId } from '../scene';
 import type { Json } from '../table-def';
