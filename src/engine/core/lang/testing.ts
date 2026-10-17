@@ -378,6 +378,21 @@ export const ROUNDS_GAME = TURN_GAME.replace('Phase: working', [
 ].join('\n'));
 
 /**
+ * ROUNDS_GAME whose End waits for the round once the done pile has a card, and gives each player a final count before the score, in turn
+ * from the start player: its start line gives them 1 coin, and they pass it on by counting (2 coins more), or at once with 6 coins or
+ * more. Coins score 1 point for every 2.
+ */
+export const STEPS_GAME = [
+  ROUNDS_GAME.replace('  The game ends when the pile is empty.\n  The highest score wins.', [
+    '  The game ends when the done pile is not empty and the round is finished.',
+    '  Before the score, each player has the final count, in turn from the start player.',
+    '  Each player scores 1 point for every 2 coins.', '  The highest score wins, and tied players share the win.'].join('\n')), '',
+  'Phase: final count', '  Players take turns.', '  When this phase starts:', '    They get 1 coin.',
+  '  A player may count.', '    Then:', '      They get 2 coins.', '      The final count passes to the left.',
+  '  When they have at least 6 coins:', '    The final count passes to the left.',
+].join('\n');
+
+/**
  * A card game whose workers sit on the jobs they work on. Players start jobs from their stash in their workshop, hire workers
  * from the hall onto a job, shift a worker to another job and finish a job, which sends its crew to the idle row. Every card in a
  * crew sits on a job.

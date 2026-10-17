@@ -94,6 +94,16 @@ const PLAYER_LINE_ABOUT = /player['‘’]s (.+?) (?:is|are|goes up by|goes down
 const PLAYER_VALUE_IS_TAKEN = (name: string) =>
   `“${name}” is already a number each player has; a value worked out for players needs a name of its own.`;
 const PLAYER_VALUE_LINES = 'Write each line of a value about players as “A player\'s … is …”.';
+/** The End line that gives each player a step before the score: group 1 is the phase they take it in. */
+const BEFORE_THE_SCORE = /^before the score, each player has the (.+), in turn from the start player$/i;
+const SECOND_BEFORE_THE_SCORE = 'There is already a line saying what comes before the score.';
+const STEPS_AT_ONCE = (phase: string) =>
+  `The steps before the score are taken in turn, so “${phase}” can't be a phase where everyone acts at once.`;
+/** A step ends only by being passed on: a `go to` or an After line would take the game out of the steps, which then never finish. */
+const STEPS_GO_TO = (phase: string) =>
+  `The players take the ${phase} in turn before the score, so it can't go to another phase: pass it on with “The ${phase} passes to the left.”`;
+const STEPS_AFTER = (phase: string) =>
+  `The players take the ${phase} in turn before the score, so it has no After line: pass it on with “The ${phase} passes to the left.”`;
 
 type Section = { keyword: string; rest: string; node: OutlineNode };
 /** A section that works out a value for cards: `keyword` is the value's name, and `refines` says it is a column of a card table. */
@@ -685,15 +695,18 @@ const effectsOf = (phase: CompiledPhase): PhraseRef[] => [
  * A phase that is not the first needs something to lead to it, or the game can never reach it: a `go to` in another phase, or a
  * line that starts it, in another phase or `elsewhere` (Setup, what a card says, or a rule for every phase). A phase's own lines
  * run only once it is reached, so they never lead to it.
+ * The phases in `reached` are reached all the same: the End's steps before the score start in theirs.
  */
-function warnUnreachable(phases: CompiledPhase[], elsewhere: PhraseRef[], library: PhraseLibrary, diagnostics: Diagnostic[]): void {
+function warnUnreachable(
+  phases: CompiledPhase[], elsewhere: PhraseRef[], library: PhraseLibrary, diagnostics: Diagnostic[], reached: string[] = [],
+): void {
   const starts = (refs: PhraseRef[]) => new Set(refs.flatMap((ref) => phaseStartedBy(ref, library) ?? []));
   const startedElsewhere = starts(elsewhere);
   const startedBy = phases.map((phase) => starts(effectsOf(phase)));
   phases.forEach((phase, index) => {
     // A phase named twice is already reported; its repeat would only echo that.
     if (index === 0 || phases.findIndex((p) => p.id === phase.id) !== index) return;
-    if (startedElsewhere.has(phase.id)) return;
+    if (startedElsewhere.has(phase.id) || reached.includes(phase.id)) return;
     if (phases.some((p, i) => p.id !== phase.id && (p.goTo?.to === phase.id || startedBy[i].has(phase.id)))) return;
     addProblem(diagnostics, phase.line, `Nothing leads to the phase “${phase.id}”.`, { severity: 'warning' });
   });
@@ -710,13 +723,38 @@ function endCondition(body: string, line: number, ctx: LineCtx): PhraseRef {
   return { kind: 'lang', phrase: ROUND_FRAME, args: [matchLine('condition', round[1], line, ctx)], line, text };
 }
 
-function compileEnd(sections: Section[], ctx: LineCtx): CompiledEnd | null {
+/**
+ * The phase “Before the score, each player has the …, in turn from the start player.” names, with its line; null when it names no phase
+ * of the game, or one where everyone acts at once. A step ends only by being passed on, so a `go to` or an After line in that phase is
+ * refused on its own line.
+ */
+function endSteps(name: string, line: number, ctx: LineCtx, phases: CompiledPhase[]): CompiledEnd['steps'] | null {
+  const found = parseParam('phase', name, ctx.vocab);
+  if (found === null || !('value' in found)) {
+    addProblem(ctx.diagnostics, line, `There is no phase called “${name}”.`, { text: name, suggestions: suggestNames(name, ctx.vocab.phases) });
+    return null;
+  }
+  const id = found.value as string;
+  const phase = phases.find((p) => p.id === id);
+  if (phase?.actor === 'any') {
+    addProblem(ctx.diagnostics, line, STEPS_AT_ONCE(id));
+    return null;
+  }
+  if (phase?.goTo) addProblem(ctx.diagnostics, phase.goTo.line, STEPS_GO_TO(id));
+  if (phase?.after) addProblem(ctx.diagnostics, phase.after.line, STEPS_AFTER(id));
+  return { phase: id, line };
+}
+
+/** The End: when the game ends, what each player takes in turn before the score, how it is scored and who wins. */
+function compileEnd(sections: Section[], ctx: LineCtx, phases: CompiledPhase[]): CompiledEnd | null {
   if (sections.length === 0) {
     addProblem(ctx.diagnostics, 1, 'Without an End: section the game never finishes.', { severity: 'warning' });
     return null;
   }
   let when: PhraseRef | null = null;
   let winner: PhraseRef | null = null;
+  let steps: CompiledEnd['steps'] | null = null;
+  let sawSteps = false;
   const scores: PhraseRef[] = [];
   for (const node of linesOf(sections)) {
     rejectChildren(node, ctx.diagnostics);
@@ -725,6 +763,13 @@ function compileEnd(sections: Section[], ctx: LineCtx): CompiledEnd | null {
       const ref = endCondition(ends[1], node.line, ctx);
       if (when) addProblem(ctx.diagnostics, node.line, 'There is already a line saying when the game ends.');
       else when = ref;
+      continue;
+    }
+    const before = BEFORE_THE_SCORE.exec(normalizeLine(node.text));
+    if (before) {
+      if (sawSteps) addProblem(ctx.diagnostics, node.line, SECOND_BEFORE_THE_SCORE);
+      else steps = endSteps(before[1], node.line, ctx, phases);
+      sawSteps = true;
       continue;
     }
     // A line that no phrase fits is filed under the kind it sounds like.
@@ -744,7 +789,8 @@ function compileEnd(sections: Section[], ctx: LineCtx): CompiledEnd | null {
   const at = sections[0].node.line;
   if (!when) addProblem(ctx.diagnostics, at, 'Add a line saying when the game ends, like “The game ends when every hand is empty.”');
   if (!winner) addProblem(ctx.diagnostics, at, 'Add a line saying who wins, like “The lowest score wins.”');
-  return when && winner ? { line: when.line, when, scores, winner } : null;
+  // Left out, never undefined, for an End with no steps before the score: such an End is the same as before there were any.
+  return when && winner ? { line: when.line, when, scores, winner, ...(steps ? { steps } : {}) } : null;
 }
 
 function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]): CompiledGame | undefined {
@@ -820,9 +866,11 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
     phases.push(phase);
   }
   if (phaseNodes.length === 0) addProblem(diagnostics, 1, 'Add at least one Phase: section.');
-  warnUnreachable(phases, [...setup, ...Object.values(says).flat(), ...everyPhaseEffects(everyPhase)], library, diagnostics);
+  // The End is read with the phases, before any is found unreached: the phase of its steps before the score is reached that way.
+  const end = compileEnd(of('end'), ctx, phases);
+  const elsewhere = [...setup, ...Object.values(says).flat(), ...everyPhaseEffects(everyPhase)];
+  warnUnreachable(phases, elsewhere, library, diagnostics, end?.steps ? [end.steps.phase] : []);
 
-  const end = compileEnd(of('end'), ctx);
   const firstStarts = named.length > 0 ? startsLineOf(named[0]) : null;
   if (firstStarts !== null && usesTurns({ board, setup, everyPhase, end, phases })) {
     addProblem(diagnostics, firstStarts, FIRST_PHASE_STARTS, { severity: 'warning' });

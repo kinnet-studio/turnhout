@@ -17,6 +17,10 @@ import type {
   ActionFn, CardGroup, ColumnFn, CompiledGame, CompiledMoment, CompiledTrigger, CondGroup, ConditionFn, EffectFn, ExampleEnv, ExpectFn, MomentFn, Moment, MoveInfo,
   PhraseEnv, PhraseKind, PhraseRef, ScoreFn, Subject, TargetFn, TurnFn, ValueFn, WhichFn, WhoFn, WinnerFn, WorkedValue,
 } from './types';
+import { setPhase } from '../game-state';
+import { isOut, nextIn, playersIn } from './board-state';
+import { END_STEPS_KEY } from './turns';
+import { chooseNext } from './zones';
 
 type Checker = (state: GameState, move: Move) => true | string;
 
@@ -275,11 +279,44 @@ export class LangRuntime {
    * Whether the current player's turn has yet to start: the game goes on, in one of its own phases, with no turn interrupted (the
    * player another phase handed the turn to is only standing in), and the turn that last started was another player's, or none.
    * A turn that comes back to the same seat starts again only when it passes through “the turn passes to the left”, which forgets
-   * whose turn had started; an After line or a “goes next” rule that hands the turn back to that seat starts no new turn.
+   * whose turn had started; an After line or a “goes next” rule that hands the turn back to that seat starts no new turn. Once the
+   * steps before the score have begun no turn starts: the game is decided, and each step starts as it is passed on.
    */
   turnWaiting(state: GameState): boolean {
     return state.result === undefined && this.inGamePhase(state) && interruptedTurn(state) === null
-      && state.data[TURN_OF_KEY] !== state.turn?.current;
+      && state.data[TURN_OF_KEY] !== state.turn?.current && state.data[END_STEPS_KEY] === undefined;
+  }
+
+  /**
+   * Whether the steps before the score are to start: the End has them and none has begun, the game goes on in one of its own phases,
+   * and the End's condition holds (waiting for the round to finish when it says so).
+   */
+  endStepsDue(state: GameState): boolean {
+    const end = this.game.end;
+    return end?.steps !== undefined && state.data[END_STEPS_KEY] === undefined && state.result === undefined && this.inGamePhase(state)
+      && this.test(end.when, state);
+  }
+
+  /**
+   * Starts the steps before the score: the game goes to their phase, and the first step is the start player's, or the first seat's
+   * still in after them when they are out. That seat is kept as the one that took the first step, and the phase's start lines run
+   * about it, the table checked after each as a phase's start lines are. With no seat still in, the steps are done at once.
+   */
+  startEndSteps(state: GameState): GameState {
+    const steps = this.game.end?.steps;
+    if (!steps) throw new Error('This game has no steps before the score.');
+    if (playersIn(state, this.seats).length === 0) return { ...state, data: { ...state.data, [END_STEPS_KEY]: true } };
+    const start = startPlayerOf(state, this.seats);
+    const first = isOut(state, start) ? nextIn(state, start, this.seats) : start;
+    const chosen = chooseNext(setPhase(state, steps.phase), first);
+    const begun: GameState = { ...chosen, data: { ...chosen.data, [END_STEPS_KEY]: first } };
+    const startLines = this.game.phases.find((p) => p.id === steps.phase)?.onEnter ?? [];
+    return startLines.reduce((s, ref) => this.checkAttachments(this.runInPhase(steps.phase, ref, s), ref), begun);
+  }
+
+  /** Whether every seat still in has had its step before the score. */
+  endStepsDone(state: GameState): boolean {
+    return state.data[END_STEPS_KEY] === true;
   }
 
   /**

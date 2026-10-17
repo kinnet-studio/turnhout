@@ -22,11 +22,14 @@ import type { PhraseLibrary } from './phrases';
 import { LangRuntime } from './runtime';
 import { usesTurns } from './turns';
 import type { CompiledGame, CompiledTrigger, PhraseRef } from './types';
+import type { CompiledEnd } from './types';
 
 /** The phase the engine starts in: it runs the Setup lines, then goes straight to the game's first phase. */
 export const SETUP_PHASE = '__setup';
 /** The flow's name for the rule that starts each turn, in a game that plays in rounds of turns. */
 const TURN_START_RULE = 'a turn starts';
+/** The flow's name for the rule that starts the steps each player takes before the score, in a game whose End has them. */
+const END_STEPS_RULE = 'the steps before the score start';
 
 export function seatsFor(players: number): PlayerId[] {
   return Array.from({ length: players }, (_, i) => `p${i}`);
@@ -50,8 +53,11 @@ const phaseCond = (phase: string, ref: PhraseRef): NamedRef => ({ name: 'lang:ph
 const phaseEffect = (phase: string, ref: PhraseRef): NamedRef => ({ name: 'lang:phase-effect', params: { phase, ref } satisfies PhaseLineParams });
 /** A `When …:` rule and the phase it is written under (null for a rule for every phase), as the flow hands it back to the runtime. */
 type TriggerParams = { phase: string | null; trigger: CompiledTrigger };
-/** The End condition and the rules about a card that it waits for. */
-type EndParams = { when: PhraseRef; rules: TriggerParams[] };
+/**
+ * The End condition and the rules about a card that it waits for. `afterSteps` is there when the End has steps before the score: it
+ * then waits for those instead of its condition, which held when they started.
+ */
+type EndParams = { when: PhraseRef; rules: TriggerParams[]; afterSteps?: true };
 
 export function flowDefFor(game: CompiledGame, seats: PlayerId[]): FlowDef {
   const first = game.phases[0];
@@ -92,19 +98,28 @@ export function flowDefFor(game: CompiledGame, seats: PlayerId[]): FlowDef {
   const turnStart: TriggerDef[] = usesTurns(game)
     ? [{ id: TURN_START_RULE, when: { name: 'lang:turn-waiting' }, then: [{ name: 'lang:turn-start' }] }]
     : [];
-  const triggers = [...turnStart, ...ruleTriggers];
+  // The steps before the score start ahead of every other rule, the turn's among them: once the game is decided, in the moment the
+  // round is finished, no turn or round starts.
+  const endSteps: TriggerDef[] = game.end?.steps
+    ? [{ id: END_STEPS_RULE, when: { name: 'lang:end-steps-due' }, then: [{ name: 'lang:end-steps-start' }] }]
+    : [];
+  const triggers = [...endSteps, ...turnStart, ...ruleTriggers];
 
   // A rule about a card tidies the table, and the game is decided on the tidied table: the flow checks End before it fires any
   // rule, so End would otherwise count a card (at 0 health, say) that such a rule is about to move away. Every rule the flow
   // fires re-checks End, so End holds as soon as no card rule has a card left. Rules about a player or about nothing in
   // particular do not tidy anything the winner depends on, so they never hold End back.
   const cardRules = rules.filter(({ trigger }) => trigger.when.kind === 'which');
-  const endWhen = (when: PhraseRef): NamedRef => {
+  const endWhen = ({ when, steps }: CompiledEnd): NamedRef => {
+    if (steps) {
+      const params: EndParams = { when, rules: cardRules, afterSteps: true };
+      return { name: 'lang:end-when', params };
+    }
     if (cardRules.length === 0) return cond(when);
     const params: EndParams = { when, rules: cardRules };
     return { name: 'lang:end-when', params };
   };
-  const end = game.end ? [{ when: endWhen(game.end.when), result: 'lang:result' }] : [];
+  const end = game.end ? [{ when: endWhen(game.end), result: 'lang:result' }] : [];
   return { turn: { order: seats }, phases: [setup, ...phases], triggers, end };
 }
 
@@ -131,9 +146,14 @@ function flowRegistryFor(runtime: LangRuntime): FlowRegistry {
       return runtime.checkAttachments(runtime.runInPhase(phase, line, state), line);
     })
     .registerPredicate('lang:end-when', (state, _ctx, params) => {
-      const { when, rules } = ending(params);
-      return runtime.test(when, state) && rules.every(({ phase, trigger }) => runtime.triggerSubject(phase, trigger, state) === null);
+      const { when, rules, afterSteps } = ending(params);
+      // The steps before the score started because the condition held, and are not asked it again: a step that changes it must not
+      // leave the game in the steps for ever.
+      const decided = afterSteps ? runtime.endStepsDone(state) : runtime.test(when, state);
+      return decided && rules.every(({ phase, trigger }) => runtime.triggerSubject(phase, trigger, state) === null);
     })
+    .registerPredicate('lang:end-steps-due', (state) => runtime.endStepsDue(state))
+    .registerEffect('lang:end-steps-start', (state) => runtime.startEndSteps(state))
     .registerPredicate('lang:trigger-when', (state, _ctx, params) => {
       const { phase, trigger } = rule(params);
       return runtime.triggerSubject(phase, trigger, state) !== null;

@@ -125,7 +125,11 @@ export type CompiledPhase = {
  * card, the only moments it may have, and is left out when there are none.
  */
 export type EveryPhase = { triggers: CompiledTrigger[]; roundStarts: PhraseRef[]; turnStarts: PhraseRef[]; moments?: CompiledMoment[] };
-export type CompiledEnd = { line: number; when: PhraseRef; scores: PhraseRef[]; winner: PhraseRef };
+/**
+ * `steps` is the phase each player takes in turn from the start player once the game is decided and before it is scored (“Before the
+ * score, each player has the final count, in turn from the start player.”), with that line; left out when the End has no such line.
+ */
+export type CompiledEnd = { line: number; when: PhraseRef; scores: PhraseRef[]; winner: PhraseRef; steps?: { phase: string; line: number } };
 export type ExampleStep = { keyword: 'given' | 'when' | 'then'; ref: PhraseRef };
 export type CompiledExample = { name: string; line: number; players: number | null; steps: ExampleStep[] };
 /**

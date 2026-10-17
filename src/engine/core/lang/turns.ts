@@ -15,6 +15,9 @@ export const TURN_OF_KEY = 'lang:turn-of';
 /** How many rounds have started. */
 export const ROUND_KEY = 'lang:round';
 
+/** Absent before the steps before the score; while they run, the seat that took the first step; true once every seat still in has had one. */
+export const END_STEPS_KEY = 'lang:end-steps';
+
 /** The Setup line that picks the start player. A game that uses turns without it starts with the first seat. */
 export const START_PLAYER_PHRASE = 'the start player is chosen at random';
 
@@ -70,9 +73,9 @@ export function clearTurnOf(state: GameState): GameState {
   return { ...state, data };
 }
 
-/** The state with no turn started, no round and no start player, as a game is before its Setup. */
+/** The state with no turn started, no round, no start player and no steps before the score, as a game is before its Setup. */
 export function clearTurnMarkers(state: GameState): GameState {
-  const { [TURN_OF_KEY]: _turnOf, [ROUND_KEY]: _round, [START_PLAYER_KEY]: _start, ...data } = state.data;
+  const { [TURN_OF_KEY]: _turnOf, [ROUND_KEY]: _round, [START_PLAYER_KEY]: _start, [END_STEPS_KEY]: _steps, ...data } = state.data;
   return { ...state, data };
 }
 
