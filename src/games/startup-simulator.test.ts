@@ -98,8 +98,11 @@ const POOLS = ['open-job-market', 'open-idea-pool'];
 const OWN_ROWS = ['bench', 'backlog', 'research', 'scouting'];
 /** The rows of each player's Board, which everyone can see: projects, products in operation, the staff on projects and the ops staff (§3). */
 const BOARD_ROWS = ['development', 'operations', 'development team', 'ops team'];
-/** The phases of a turn, in order (§5): Income, Actions with its two interrupts, the Engine's Generate and Commit, and Cleanup. */
-const PHASES = ['income', 'actions', 'research', 'sourcing', 'engine', 'commit', 'bench cleanup', 'backlog cleanup'];
+/**
+ * The phases of a turn, in order (§5): the declaration of modes that opens Income (§5 Phase B, §11.C.2), Income, Actions with its two
+ * interrupts, the Engine's Generate and Commit, and Cleanup.
+ */
+const PHASES = ['modes', 'income', 'actions', 'research', 'sourcing', 'engine', 'commit', 'bench cleanup', 'backlog cleanup'];
 // The two buttons that pick a card from a project's staff.
 const REASSIGN_FROM_PROJECT = 'reassign a card from their development team to a card in their development';
 const DISMISS_FROM_PROJECT = 'dismiss a card in their development team';
@@ -113,6 +116,19 @@ const LET_GO: Record<string, string> = {
   'ops team': 'let go of a card in their ops team',
 };
 const PAY_SALARIES = 'pay salaries';
+/** The buttons that declare a mode, by the Board row they pick from (§11.C.2). */
+const DECLARE: Record<string, string> = {
+  'development team': 'declare a card in their development team',
+  'ops team': 'declare a card in their ops team',
+};
+/** The button that ends the declaration, keeping every mode as it is (§11.C.2). */
+const CONFIRM_MODES = 'confirm their modes';
+/** The modes a declaration leaves on a card as a flag; Blue is neither of them (§11.C.2). */
+const MODES = ['red mode', 'qa mode'];
+/** The modes each answer of a declaration leaves its card in, and no other: Blue none of them (§11.C.2). */
+const MODES_DECLARED: Record<string, string[]> = { Blue: [], Red: ['red mode'], QA: ['qa mode'] };
+/** The phases a turn passes through before its Income: the declaration of modes comes first (§5 Phase B, §11.C.2). */
+const PRE_INCOME = ['modes'];
 // The Board's other buttons in the actions phase (§6, rulings 7, 20 and 25).
 const HIRE_AGENCY_TO_PROJECT = 'hire a card from the agency row to a card in their development';
 const HIRE_AGENCY_TO_OPS = 'hire a card from the agency row to their ops team';
@@ -156,8 +172,8 @@ const REQUIREMENTS = ['requires', 'also requires'];
 const LEADS: Record<string, string[]> = { blue: ['software', 'flex'], red: ['hardware', 'flex'] };
 /** Why the rules refuse to reassign the Diva: her Ego (§6, §20.B.1). */
 const EGO_REFUSAL = 'the card is not an Ego card';
-/** The phases of a seat's turn before its Engine runs: Income, Actions and the two phases that interrupt Actions. */
-const BEFORE_THE_ENGINE = ['income', 'actions', 'research', 'sourcing'];
+/** The phases of a seat's turn before its Engine runs: the declaration of modes, Income, Actions and the two phases that interrupt Actions. */
+const BEFORE_THE_ENGINE = ['modes', 'income', 'actions', 'research', 'sourcing'];
 // What the tally calls the paths of slice 3 (see `happenings`), besides the moves themselves.
 const LICENSE_TO_THE_ONLY_PROVIDER = 'a license paid to the only provider';
 const LICENSE_TO_A_CHOSEN_PROVIDER = 'a license paid to a chosen provider';
@@ -184,8 +200,13 @@ const buttonOf = (state: GameState, type: string) =>
 const cubesOn = (card: CardState, kind: string) => (card.data?.[kind] as number | undefined) ?? 0;
 /** `seat`'s products in operation. */
 const operationsOf = (state: GameState, seat: PlayerId) => zoneCards(state, zoneIdFor('operations', seat));
-/** Whether a product in operation earns at Income, and so gives a market share: its rev is more than 0 (§5, ruling 25). */
-const earns = (product: CardState) => (product.data?.rev as number) > 0;
+/** The rev `product` earns at Income, as the rules work it out in `state` (§5). */
+const revOf = (runtime: LangRuntime, state: GameState, product: CardState) => runtime.workedValue(state, product.id, 'rev') as number;
+/**
+ * Whether a product in operation earns at Income, and so gives a market share: its rev, as the rules work it out, is more than 0
+ * (§5, ruling 25).
+ */
+const earns = (runtime: LangRuntime, state: GameState) => (product: CardState) => revOf(runtime, state, product) > 0;
 /**
  * What `seat` pays at Income: the salary of every staff member on its Board, on its projects and in its ops team (§5). A salary is the
  * one the rules work out, since a trait may change the printed one: the Engineer's is $1 in the ops team (§20.B.1).
@@ -193,7 +214,10 @@ const earns = (product: CardState) => (product.data?.rev as number) > 0;
 const payrollOf = (runtime: LangRuntime, state: GameState, seat: PlayerId) =>
   [...zoneCards(state, zoneIdFor('development team', seat)), ...zoneCards(state, zoneIdFor('ops team', seat))]
     .reduce((total, card) => total + (runtime.workedValue(state, card.id, 'salary') as number), 0);
-/** The colors of cube each skill makes in 1b: flex staff work in blue until modes arrive (§11), and QA and the Specialists make none. */
+/**
+ * The colors of cube each skill makes as it joins a project from the bench: the bench forgets every mode, so a flex Senior works in Blue
+ * until a declaration says otherwise (§11.C.2, ruling 24), and QA and the Specialists make none.
+ */
 const COLOR_OF_SKILL: Record<string, string> = { software: 'blue', flex: 'blue', hardware: 'red' };
 /**
  * The colors a project's tracks still lack cubes of; none once it is feature complete (§6). A track holds its need: its cost less the cut
@@ -303,6 +327,10 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  * `stop` says the log holds enough. `a` counts the actions taken so far in this turn. An idea Domain Expertise cuts is a product
  * whose sector a product in the seat's operations shares, other than Infra and Concept (§19.A).
  *
+ * - **Modes.** When `t % 4 === 3` it confirms its modes at once. Otherwise it declares each card of its Board the rules call
+ *   declarable, once each, the development team's first and then the ops team's, in slot order, and then confirms. Each declaration's
+ *   choice is answered as any press's is (see below), so a flex Senior is declared Blue on an even `t` and Red on an odd one, and the
+ *   Fixer Red or QA.
  * - **Income.** While the payroll is more than the seat's capital, or once when `t % 6 === 5`, it lets go of its salaried card
  *   with the highest salary (the first of those), from the development team on an even `t` and the ops team on an odd one, or
  *   from the other when that one has none. Then it pays salaries.
@@ -494,6 +522,23 @@ function playTurn(
     row.reduce<CardState | undefined>((top, card) => (salary(card) > (top ? salary(top) : 0) ? card : top), undefined);
   const lettingGo = () => (t % 2 === 0 ? ['development team', 'ops team'] : ['ops team', 'development team'])
     .map((row) => pick(LET_GO[row], own(row), highestPaid));
+  /** The cards this turn has declared a mode for, each once (§11.C.2). */
+  const declared = new Set<string>();
+  /**
+   * The declaration of the Board's first declarable card not yet declared this turn, the development team's before the ops team's;
+   * null with none.
+   */
+  const declaration = (): Move | null => {
+    const declarable = (card: CardState) => !declared.has(card.id) && runtime.workedFlag(engine.getState(), card.id, 'declarable');
+    for (const row of ['development team', 'ops team']) {
+      const move = pick(DECLARE[row], own(row), (cards) => cards.find(declarable));
+      if (move !== null) {
+        declared.add(move.cardId as string);
+        return move;
+      }
+    }
+    return null;
+  };
   /** Whether Domain Expertise would cut `card` for the seat: a product in its operations shares its sector, not Infra or Concept (§19.A). */
   const expertIn = (card: CardState) => !['Infra', 'Concept'].includes(card.data?.sector as string)
     && cards(own('operations')).some((product) => product.data?.sector === card.data?.sector);
@@ -639,7 +684,9 @@ function playTurn(
   let letGo = false;
   for (let a = 0; going();) {
     const { phase } = engine.getState().turn!;
-    if (phase === 'income') {
+    if (phase === 'modes') {
+      play(engine, choose([t % 4 === 3 ? null : declaration(), press(CONFIRM_MODES)]), watch);
+    } else if (phase === 'income') {
       if (payrollOf(runtime, engine.getState(), by) > capital() || (t % 6 === 5 && !letGo)) {
         letGo = true;
         play(engine, choose(lettingGo()), watch);
@@ -704,6 +751,18 @@ function turnStarted(before: GameState, after: GameState): PlayerId | null {
   return typeof turnOf === 'string' && turnOf !== before.data[TURN_OF_KEY] ? turnOf : null;
 }
 
+/**
+ * The seat that reached its Income in the move from `before` to `after`: its turn started in the move or it was in a `PRE_INCOME` phase,
+ * and it is now past them with no result. Null for a move that reached none. Income earns as it starts, so this is the move that
+ * pays a seat its rev and Market Share (§5 Phase B, R2); a game that ends as the round is finished reaches no Income.
+ */
+function enteredIncome(before: GameState, after: GameState): PlayerId | null {
+  const seat = turnStarted(before, after) ?? (PRE_INCOME.includes(before.turn!.phase!) ? before.turn!.current as PlayerId : null);
+  if (seat === null || after.result !== undefined) return null;
+  const { current, phase } = after.turn!;
+  return current === seat && !PRE_INCOME.includes(phase!) ? seat : null;
+}
+
 /** Whether the Engine ran for `by` in the move from `before` to `after`: its turn was short of the Engine before, and is past it after. */
 function ranTheEngine(before: GameState, after: GameState, by: PlayerId): boolean {
   const { current, phase } = after.turn!;
@@ -730,9 +789,9 @@ function atTheEngine(before: GameState, move: Move, after: GameState): GameState
 /**
  * What else a move made happen that the tally counts: each card a pool let go of to the box, the Market Crash reaching the
  * crash pile, by where it came from, each card the agency row pushed out to the open job market, and each product in operation
- * that earned when a turn started. A draft from the growth market draws the Crash only through the market's refill, and a
- * research of the growth deck only into the research row, so the move says which way it came. A card leaves the agency row for
- * the open job market only when cards entering the row's left end push it out, never by a hire (R7).
+ * that earned as its seat reached Income, by its rev as the rules work it out. A draft from the growth market draws the Crash only
+ * through the market's refill, and a research of the growth deck only into the research row, so the move says which way it came. A
+ * card leaves the agency row for the open job market only when cards entering the row's left end push it out, never by a hire (R7).
  *
  * Slice 3's paths, read through `runtime`:
  * - **A Greenlight** of a Tier 2 or 3 card, and the choices its press asked on `before`: each License paid to the only provider or to a
@@ -759,8 +818,8 @@ function happenings(runtime: LangRuntime, before: GameState, move: Move, after: 
     const agency = new Set(zoneCards(before, 'agency-row').map((c) => c.id));
     keys.push(...zoneCards(after, 'open-job-market').filter((c) => agency.has(c.id)).map(() => PUSHED_OUT));
   }
-  const started = turnStarted(before, after);
-  if (started !== null) keys.push(...operationsOf(after, started).filter(earns).map(() => EARNS));
+  const reached = enteredIncome(before, after);
+  if (reached !== null) keys.push(...operationsOf(after, reached).filter(earns(runtime, after)).map(() => EARNS));
 
   const by = move.by as PlayerId;
   const card = typeof move.cardId === 'string' ? cardById(before, move.cardId) : undefined;
@@ -815,13 +874,14 @@ function scoreOf(state: GameState, seat: PlayerId): number {
  *
  * - Money is conserved: each seat's capital changes by what it earned less what it paid. The mover pays the bank 2 for a recruit,
  *   the card's cost for a hire from the agency row, 1 for one from the open job market, the total cost of the picked cards for a
- *   hire from its scouting, its payroll for paying salaries, and nothing for anything else but a Greenlight. The seat whose turn
- *   started in the move earns the total rev of its products in operation, and no one else earns anything.
+ *   hire from its scouting, its payroll for paying salaries, and nothing for anything else but a Greenlight. The seat that reached its
+ *   Income in the move (see `enteredIncome`) earns the total rev of its products in operation, as the rules work it out, and no one
+ *   else earns anything.
  * - A Greenlight pays a License for each Tag the card requires that the mover's operations didn't provide, and pays it to the other
  *   seats: the mover pays the license times the Tags missing, each other seat gains a whole number of Licenses, no more than the
  *   missing Tags its operations provided, and together they gain what the mover paid. Some seat provided every Tag the card
  *   requires (§6, §14.B.2).
- * - Market Share changes only for the seat whose turn started, which gains 1 for each of its products in operation that earned.
+ * - Market Share changes only for the seat that reached its Income, which gains 1 for each of its products in operation that earned.
  * - No zone holds more than it may: the agency row 4, each market 2, each pool 5 and the crash pile 1; the bench of a player
  *   whose turn it is not 5, their backlog 3 and their research nothing; the player whose turn it is holds at most 4 in their
  *   backlog and 3 in their research, which has cards only in the research phase.
@@ -832,6 +892,10 @@ function scoreOf(state: GameState, seat: PlayerId): number {
  *   product in operation keeps a cut (§19.A).
  * - No project gains cubes while it is Stalled, as it was when the Engine generated them (see `atTheEngine`) (§3).
  * - No reassign the rules take moves the Diva, whose trait is Ego (§6, §20.B.1).
+ * - Modes: no card off the Board, out of every development team and ops team, is in Red mode or QA mode. Red mode sits only on a card
+ *   the rules call declarable, and QA mode only on a QA Skill card. A card's mode changes only in a declaration of that card, or as it
+ *   leaves the Board, so a mode stays on a card that moves between a project and the ops team (§11.C.2, ruling 24). A declaration
+ *   leaves its card in the mode its answer names and in no other: Blue in neither.
  * - Only the seat in the sourcing phase has cards in its scouting row.
  * - Each market refills at once: the agency row holds 4 and each product market 2 while its deck has cards, and the Market
  *   Crash is never anywhere but the growth deck or the crash pile.
@@ -844,6 +908,8 @@ function scoreOf(state: GameState, seat: PlayerId): number {
 function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
   const tableDef = tableDefFor(game!, seats);
   const owners = new Map(seats.flatMap((seat) => OWN_ROWS.map((row) => [zoneIdFor(row, seat), seat] as const)));
+  /** The Board's staff rows, the only rows a card keeps a mode in (§11.C.2, ruling 24). */
+  const teams = new Set(seats.flatMap((seat) => [zoneIdFor('development team', seat), zoneIdFor('ops team', seat)]));
   /** Each pool's cards in the order they entered it, oldest first, less those taken or let go of. */
   let queues: Record<string, string[]> | null = null;
   /** The cards the pools have let go of. */
@@ -864,8 +930,9 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       expect(before.data[ROUND_KEY], 'the round of the first turn').toBe(1);
     }
 
-    // Money is conserved: paid to the bank by the mover, earned at Income by the seat whose turn started.
+    // Money is conserved: paid to the bank by the mover, earned at Income by the seat that reached it.
     const started = turnStarted(before, after);
+    const income = enteredIncome(before, after);
     const capital = (state: GameState, seat: PlayerId) => counterOf(state, 'capital', seat);
     const costOf = (ids: string[]) => sum(ids.map((id) => cardById(before, id)!), 'cost');
     const paid = RECRUITS.includes(move.type) ? 2
@@ -873,7 +940,8 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
         : move.type === HIRE_MARKET ? 1
           : SOURCE_HIRES.includes(move.type) ? costOf(move.cardIds as string[])
             : move.type === PAY_SALARIES ? payrollOf(runtime, before, by) : 0;
-    const earned = (seat: PlayerId) => (seat === started ? sum(operationsOf(after, seat), 'rev') : 0);
+    const earned = (seat: PlayerId) =>
+      (seat === income ? operationsOf(after, seat).reduce((total, product) => total + revOf(runtime, after, product), 0) : 0);
     const gained = seats.map((seat) => capital(after, seat) - capital(before, seat));
     if (move.type === GREENLIGHT) {
       // A License for each Tag the mover lacks, paid to the seats that provide it, read as the rules hold the license (§6, §14.B.2).
@@ -893,10 +961,10 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     } else {
       expect(gained, `capital gained by ${seats.join(', ')} ${at}`).toEqual(seats.map((seat) => earned(seat) - (seat === by ? paid : 0)));
     }
-    // Market Share: 1 for each product that earned, when its owner's turn started.
+    // Market Share: 1 for each product that earned, when its owner reached Income.
     const share = (state: GameState, seat: PlayerId) => counterOf(state, 'market share', seat);
     const shares = seats.map((seat) => share(after, seat) - share(before, seat));
-    const earners = (seat: PlayerId) => (seat === started ? operationsOf(after, seat).filter(earns).length : 0);
+    const earners = (seat: PlayerId) => (seat === income ? operationsOf(after, seat).filter(earns(runtime, after)).length : 0);
     expect(shares, `market share gained by ${seats.join(', ')} ${at}`).toEqual(seats.map(earners));
     // No one pays what they don't have.
     const inDebt = seats.filter((seat) => capital(after, seat) < 0).map((seat) => `${seat} has ${capital(after, seat)} capital`);
@@ -968,6 +1036,32 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     expect(board, `the Board ${at}`).toEqual([]);
     // The Diva's Ego keeps her where she works: no reassign the rules take moves her (§6, §20.B.1).
     if (REASSIGNS.includes(move.type)) expect(card!.data?.trait, `the trait of the card ${by} reassigned ${at}`).not.toBe('Ego');
+    // Modes sit only on the Board, on a card that may take them, and change only by a declaration of that card or as it leaves the
+    // Board (§11.C.2, ruling 24). A mode is on only when its flag is true: "It is not red mode." may leave the flag false.
+    const declared = Object.values(DECLARE).includes(move.type) ? move.cardId as string : undefined;
+    const wasById = new Map(before.cards.map((c) => [c.id, c]));
+    const modes: string[] = [];
+    for (const c of after.cards) {
+      const which = `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
+      const was = wasById.get(c.id);
+      const left = was !== undefined && teams.has(was.zoneId) && !teams.has(c.zoneId);
+      for (const mode of MODES) {
+        const now = c.data?.[mode] === true;
+        if (now && !teams.has(c.zoneId)) modes.push(`${which} is ${mode} off the Board`);
+        // Red mode only on a declarable card, QA mode only on a QA Skill card.
+        const mayTake = () => (mode === 'red mode' ? runtime.workedFlag(after, c.id, 'declarable') : c.data?.trait === 'QA Skill');
+        if (now && !mayTake()) modes.push(`${which} is ${mode}, which it may not be`);
+        if (now !== (was?.data?.[mode] === true) && c.id !== declared && !left) modes.push(`${which} became ${now ? '' : 'not '}${mode}`);
+      }
+    }
+    expect(modes, `the modes ${at}`).toEqual([]);
+    if (declared !== undefined) {
+      // A declaration leaves its card in the mode its answer names, or the press's only option, and in no other (§11.C.2).
+      const asked = pressChoices(runtime, before, move);
+      const named = answersOf(move)[0] ?? (typeof asked === 'string' ? undefined : asked[0]?.options[0]);
+      const held = MODES.filter((mode) => cardById(after, declared)!.data?.[mode] === true);
+      expect(held, `the modes ${declared} is in once declared ${named} ${at}`).toEqual(MODES_DECLARED[named as string]);
+    }
 
     // Markets refill at once.
     const refilled = (row: string, deck: string, full: number) => {
@@ -1048,7 +1142,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(101);
+    expect(results).toHaveLength(108);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -1070,6 +1164,16 @@ describe('Startup Simulator (designer language)', () => {
       expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
     }
     expect(worked.salary).toMatchObject({ kind: 'number', refines: true });
+  });
+
+  it('works out slice 4’s values for cards and players (§5, §11.C.2, §20.B)', () => {
+    const worked = game!.worked!;
+    // A card's bandwidth is its output in the mode it works in, a number of its own; declarable marks a flex Senior and the Fixer.
+    expect(worked['blue bandwidth']).toMatchObject({ kind: 'number', refines: false });
+    expect(worked['red bandwidth']).toMatchObject({ kind: 'number', refines: false });
+    expect(worked.declarable).toMatchObject({ kind: 'flag' });
+    // A player's supply is the bandwidth of their ops team in each color, set against their products' maintenance (§5 Phase B).
+    expect(Object.keys(game!.playerValues!)).toEqual(['blue supply', 'red supply']);
   });
 
   it('asks an example which hire it means when both rows hold the card, in words that each press one button', () => {
@@ -1302,7 +1406,8 @@ describe('Startup Simulator (designer language)', () => {
     const seeds = Array.from({ length: 10 }, (_, i) => i + 1);
 
     it.each(counts)('sets up a table of %i players at every seed', (players) => {
-      // A turn starts in income, which has no salary to pay while every Board is empty, so it goes on to actions.
+      // A turn starts in modes, skipped with no flex staff on the Board, then income, which has no salary to pay while every Board
+      // is empty, so it goes on to actions.
       expect(game!.phases.map((phase) => phase.id)).toEqual(PHASES);
       for (const seed of seeds) {
         const state = setUp(players, seed);
@@ -1780,8 +1885,10 @@ describe('Startup Simulator (designer language)', () => {
 });
 
 describe('what the view says the rules work out', () => {
-  it('stands each need in for its cost, and shows Stalled and Efficient in ops, the flags that change a value', () => {
-    expect(standIns(game!)).toEqual({ 'blue cost': 'blue need', 'red cost': 'red need' });
+  it('stands each need in for its cost and each bandwidth for its output, and shows Stalled and Efficient in ops, the flags that change a value', () => {
+    expect(standIns(game!)).toEqual({
+      'blue output': 'blue bandwidth', 'red output': 'red bandwidth', 'blue cost': 'blue need', 'red cost': 'red need',
+    });
     // Every line of each reads only the card and the cards on it: its Tier, its need, the leads on it, its trait and its zone.
     expect(shownFlags(game!)).toEqual(['stalled', 'efficient in ops']);
   });
