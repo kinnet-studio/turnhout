@@ -18,6 +18,9 @@ export const ROUND_KEY = 'lang:round';
 /** Absent before the steps before the score; while they run, the seat that took the first step; true once every seat still in has had one. */
 export const END_STEPS_KEY = 'lang:end-steps';
 
+/** The line that ends a player's step before the score and hands it on: a game with steps but no such line warns. */
+export const STEP_PASSES_PHRASE = 'the {phase} passes to the left';
+
 /** The Setup line that picks the start player. A game that uses turns without it starts with the first seat. */
 export const START_PLAYER_PHRASE = 'the start player is chosen at random';
 

@@ -18,6 +18,8 @@ import type {
   PlayerValue, SpaceSpec, Vocab, WorkedValue, ZoneFn, ZoneSpec,
 } from './types';
 import type { CompiledMoment } from './types';
+import { CHOOSE_ONE, CHOOSE_PLAYER, type ChoiceOption } from './choices';
+import { STEP_PASSES_PHRASE } from './turns';
 
 export type CompileResult = { game?: CompiledGame; diagnostics: Diagnostic[] };
 
@@ -103,7 +105,13 @@ const STEPS_AT_ONCE = (phase: string) =>
 const STEPS_GO_TO = (phase: string) =>
   `The players take the ${phase} in turn before the score, so it can't go to another phase: pass it on with “The ${phase} passes to the left.”`;
 const STEPS_AFTER = (phase: string) =>
-  `The players take the ${phase} in turn before the score, so it has no After line: pass it on with “The ${phase} passes to the left.”`;
+  `The players take the ${phase} in turn before the score, so it can't have an After line: pass it on with “The ${phase} passes to the left.”`;
+/** A step that nothing passes on is the first player's for ever. */
+const STEPS_NEVER_PASS = (phase: string) =>
+  `No line passes the ${phase} on to the next player, so the first player's ${phase} would never end. `
+  + `Write “The ${phase} passes to the left.” where a player's ${phase} ends.`;
+/** The phrase that moves the game on to another phase (`flow-phrases.ts`), which would take it out of the steps before the score. */
+const GO_TO_PHASE = 'go to {phase}';
 
 type Section = { keyword: string; rest: string; node: OutlineNode };
 /** A section that works out a value for cards: `keyword` is the value's name, and `refines` says it is a column of a card table. */
@@ -725,8 +733,8 @@ function endCondition(body: string, line: number, ctx: LineCtx): PhraseRef {
 
 /**
  * The phase “Before the score, each player has the …, in turn from the start player.” names, with its line; null when it names no phase
- * of the game, or one where everyone acts at once. A step ends only by being passed on, so a `go to` or an After line in that phase is
- * refused on its own line.
+ * of the game, or one where everyone acts at once. A step ends only by being passed on, so a `go to` in that phase, as a rule or as a
+ * line of a button, rule or choice (an `If …, go to …` among them), or an After line, is refused on its own line.
  */
 function endSteps(name: string, line: number, ctx: LineCtx, phases: CompiledPhase[]): CompiledEnd['steps'] | null {
   const found = parseParam('phase', name, ctx.vocab);
@@ -741,8 +749,31 @@ function endSteps(name: string, line: number, ctx: LineCtx, phases: CompiledPhas
     return null;
   }
   if (phase?.goTo) addProblem(ctx.diagnostics, phase.goTo.line, STEPS_GO_TO(id));
+  for (const ref of phase ? effectsOf(phase).flatMap(linesDoing) : []) {
+    if (ref.kind === 'effect' && ref.phrase === GO_TO_PHASE) addProblem(ctx.diagnostics, ref.line, STEPS_GO_TO(id));
+  }
   if (phase?.after) addProblem(ctx.diagnostics, phase.after.line, STEPS_AFTER(id));
   return { phase: id, line };
+}
+
+/**
+ * What each line does: the effect of an `If …, …`, `For …, …` or `For each …, …` line, and for a choice each line of its options, or
+ * of the player's clause.
+ */
+function linesDoing(ref: PhraseRef): PhraseRef[] {
+  if (ref.kind === 'lang' && ref.phrase === CHOOSE_ONE) return (ref.args[2] as ChoiceOption[]).flatMap((option) => option.effects.flatMap(linesDoing));
+  if (ref.kind === 'lang' && ref.phrase === CHOOSE_PLAYER) return linesDoing(ref.args[3] as PhraseRef);
+  return [innerEffect(ref)];
+}
+
+/**
+ * Warns on the line that names the End's steps before the score when no line of the game passes them on: the first player's step would
+ * never end, and the game with it. `lines` is every line of the game that does something.
+ */
+function warnStepsNeverPass(steps: CompiledEnd['steps'], lines: PhraseRef[], diagnostics: Diagnostic[]): void {
+  if (!steps) return;
+  const passes = (ref: PhraseRef) => ref.kind === 'effect' && ref.phrase === STEP_PASSES_PHRASE && ref.args[0] === steps.phase;
+  if (!lines.flatMap(linesDoing).some(passes)) addProblem(diagnostics, steps.line, STEPS_NEVER_PASS(steps.phase), { severity: 'warning' });
 }
 
 /** The End: when the game ends, what each player takes in turn before the score, how it is scored and who wins. */
@@ -870,6 +901,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   const end = compileEnd(of('end'), ctx, phases);
   const elsewhere = [...setup, ...Object.values(says).flat(), ...everyPhaseEffects(everyPhase)];
   warnUnreachable(phases, elsewhere, library, diagnostics, end?.steps ? [end.steps.phase] : []);
+  warnStepsNeverPass(end?.steps, [...elsewhere, ...phases.flatMap(effectsOf)], diagnostics);
 
   const firstStarts = named.length > 0 ? startsLineOf(named[0]) : null;
   if (firstStarts !== null && usesTurns({ board, setup, everyPhase, end, phases })) {

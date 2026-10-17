@@ -10,6 +10,7 @@ import type { GameState } from '../../game-state';
 import type { PlayerId } from '../../scene';
 import { playersIn } from '../board-state';
 import { END_STEPS_KEY } from '../turns';
+import { STEP_PASSES_PHRASE } from '../turns';
 import type { Subject } from '../types';
 
 const TURN_IN_THE_STEPS = (phase: string) =>
@@ -92,7 +93,7 @@ const isStartPlayer: EffectFn = (env, [seat]) => ({ ...env.state, data: { ...env
 export function registerTurnPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
     .effect('the turn passes to the left', turnPassesLeft)
-    .effect('the {phase} passes to the left', stepPassesLeft)
+    .effect(STEP_PASSES_PHRASE, stepPassesLeft)
     .effect(START_PLAYER_PHRASE, startPlayerChosen)
     .given('{player} is the start player', isStartPlayer);
 }

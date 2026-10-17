@@ -37,6 +37,9 @@ function thrown(fn: () => unknown): unknown {
   throw new Error('Expected it to throw.');
 }
 
+/** What a line that would take the game out of the steps before the score is told. */
+const GO_TO_REFUSED =
+  'The players take the final count in turn before the score, so it can\'t go to another phase: pass it on with “The final count passes to the left.”';
 const BEFORE = '  Before the score, each player has the final count, in turn from the start player.';
 /** STEPS_GAME's final count up to its start line, which gives the player whose step it is a coin. */
 const STEP_STARTS = 'Phase: final count\n  Players take turns.\n  When this phase starts:\n    They get 1 coin.';
@@ -98,7 +101,7 @@ describe('the steps before the score, as written', () => {
     const text = STEPS_GAME.replace(STEP_STARTS, `${STEP_STARTS}\n${AFTER}`);
     expect(errorsOf(text)).toEqual([expect.objectContaining({
       line: lineOf(text, AFTER),
-      message: 'The players take the final count in turn before the score, so it has no After line: pass it on with “The final count passes to the left.”',
+      message: 'The players take the final count in turn before the score, so it can\'t have an After line: pass it on with “The final count passes to the left.”',
     })]);
   });
   it('refuses a “go to” in the phase, which would take the game out of the steps (P1)', () => {
@@ -106,8 +109,52 @@ describe('the steps before the score, as written', () => {
     const text = STEPS_GAME.replace(STEP_STARTS, `${STEP_STARTS}\n${GO_TO}`);
     expect(errorsOf(text)).toEqual([expect.objectContaining({
       line: lineOf(text, GO_TO),
-      message: 'The players take the final count in turn before the score, so it can\'t go to another phase: pass it on with “The final count passes to the left.”',
+      message: GO_TO_REFUSED,
     })]);
+  });
+  it.each([
+    ['a button', '      They get 2 coins.\n      The final count passes to the left.', '      They get 2 coins.\n      Go to working.', '      Go to working.'],
+    [
+      'a rule', '  When they have at least 6 coins:\n    The final count passes to the left.',
+      '  When they have at least 6 coins:\n    If they have at least 9 coins, go to working.', '    If they have at least 9 coins, go to working.',
+    ],
+    [
+      'a choice', '      They get 2 coins.\n      The final count passes to the left.',
+      [
+        '      They choose one:', '        Keep counting:', '          They get 2 coins.', '          The final count passes to the left.',
+        '        Stop counting:', '          Go to working.',
+      ].join('\n'),
+      '          Go to working.',
+    ],
+  ])('refuses a “Go to …” line in %s of the phase, on that line (P1)', (_where, from, to, goTo) => {
+    const text = STEPS_GAME.replace(from, to);
+    expect(errorsOf(text)).toEqual([expect.objectContaining({ line: lineOf(text, goTo), message: GO_TO_REFUSED })]);
+  });
+  it('refuses a “Go to …” line in the phase of a game whose other phases pass the turn after a press (P1)', () => {
+    const GO_TO = '      Go to working.';
+    const text = [
+      'Game: Walk', 'Players: 2 to 3', '  Each player has 0 coins that everyone can see.', '',
+      'Cards:', '  A deck called chores, starting in the pile:', '    | name  | copies |', '    | Sweep | 6      |', '',
+      'Table:', '  The pile is a pile in the center that no one can see.', '  The done pile is a pile in the center that everyone can see.', '',
+      'Phase: working', '  Players take turns.', '  A player may work.', '    Then:', '      Move the top card of the pile to the done pile.',
+      '  After a player works, the turn passes to the left.', '',
+      'Phase: final count', '  Players take turns.', '  A player may count.', '    Then:', '      They get 2 coins.', GO_TO, '',
+      'End:', '  The game ends when the done pile is not empty.',
+      '  Before the score, each player has the final count, in turn from the start player.',
+      '  Each player scores 1 point for every 2 coins.', '  The highest score wins.',
+    ].join('\n');
+    expect(errorsOf(text)).toEqual([expect.objectContaining({ line: lineOf(text, GO_TO), message: GO_TO_REFUSED })]);
+  });
+  it('warns when no line passes the step on, so the first step would never end', () => {
+    const counting = STEPS_GAME.replace('      They get 2 coins.\n      The final count passes to the left.', '      They get 2 coins.');
+    // The rule still passes the step on.
+    expect(compileGame(counting, lib).diagnostics).toEqual([]);
+    const stuck = counting.replace('\n  When they have at least 6 coins:\n    The final count passes to the left.', '');
+    expect(compileGame(stuck, lib).diagnostics).toEqual([{
+      line: lineOf(stuck, BEFORE), severity: 'warning', kind: 'structure',
+      message: 'No line passes the final count on to the next player, so the first player\'s final count would never end. '
+        + 'Write “The final count passes to the left.” where a player\'s final count ends.',
+    }]);
   });
 });
 
@@ -264,6 +311,20 @@ describe('the steps before the score', () => {
       message: 'The final count passes to the left only while the players take it before the score.', line: lineOf(text, PASS),
     });
     expect(engine.getState()).toBe(before);
+  });
+
+  it('stop running the rules of their phase once done, all but its rules about a card, which the End waits for', () => {
+    // A rule about a card, written after the rule that passes the step on, holds once the done pile has a card.
+    const text = `${STEPS_GAME.replace('    | Dust  | 6      |', '    | Dust  | 6      |\n  Cards can be poisoned.')}\n`
+      + '  When a card in the done pile is poisoned:\n    Move it to the pile.';
+    const poisoned = (state: GameState): GameState => ({ ...state, cards: state.cards.map((c) => ({ ...c, data: { ...c.data, poisoned: true } })) });
+    const engine = table(compiled(text), (state) => poisoned(withCoins(9, 'p0', 'p1', 'p2')(state)));
+    // Every step passed on at once, and the rule that passes it on, still holding for p0 at 12 coins, no longer runs.
+    round(engine);
+    const state = engine.getState();
+    expect(state.data[END_STEPS_KEY]).toBe(true);
+    expect(doneOf(state)).toBe(0);
+    expect(state.result).toEqual({ scores: { p0: 6, p1: 6, p2: 6 }, winner: 'p0', winners: ['p0', 'p1', 'p2'] });
   });
 
   it('replay and undo like any other press', () => {

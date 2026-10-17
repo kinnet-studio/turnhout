@@ -251,10 +251,14 @@ export class LangRuntime {
    * about the first one it picks out whose `Only if` lines hold, and a rule about a card the first such card; any other
    * rule is about the player whose turn it is where players take turns, and about no one in particular elsewhere.
    * A null `phaseId` is a rule for every phase: it holds in any phase the game declares, never in Setup, and a rule of it about no
-   * one in particular is about no one, whoever acts in the phase.
+   * one in particular is about no one, whoever acts in the phase. Once the steps before the score are done, a rule of their phase
+   * holds only when it is about a card.
    */
   triggerSubject(phaseId: string | null, trigger: CompiledTrigger, state: GameState): Subject | null {
     if (phaseId === null ? !this.inGamePhase(state) : state.turn?.phase !== phaseId) return null;
+    // Once the steps before the score are done, End waits only for the rules about a card, which tidy what the game is scored on. The
+    // step phase's other rules are about steps no one takes any more: one that passes a step on would only refuse, for ever.
+    if (phaseId === this.game.end?.steps?.phase && this.endStepsDone(state) && trigger.when.kind !== 'which') return null;
     const holdsFor = (subject: Subject) => this.failedGroup(trigger.conditions, state, undefined, subject) === null;
     if (trigger.when.kind === 'who') {
       const player = this.who(trigger.when, state).find((seat) => holdsFor({ player: seat, space: null, card: null }));
