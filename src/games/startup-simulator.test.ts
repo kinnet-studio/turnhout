@@ -2427,10 +2427,17 @@ describe('Startup Simulator (designer language)', () => {
       expect(bugs(engine, wallet)).toBe(2);
       expect(bugs(engine, dating, 'fixed bugs')).toBe(1);
       // The second press spends the QA, and the step ends.
+      const beforeLast = engine.getState();
       play(engine, { type: CLEAN, by: S, cardId: wallet }, rules);
       expect(engine.getState().turn?.current).toBe(O);
       expect(bugs(engine, wallet)).toBe(1);
       expect(engine.getState().cards.filter((card) => cubesOn(card, 'fixed bugs') !== 0)).toEqual([]);
+      // The two presses rebuild from the log, and taking the last back leaves the Engine waiting on the second.
+      const replayed = arranged(`ops-team-${S}`);
+      replayed.loadLog(engine.getLog());
+      expect(replayed.getState()).toEqual(engine.getState());
+      engine.undo();
+      expect(engine.getState()).toEqual(beforeLast);
 
       // With no QA in the ops team and Bugs on two products, the Engine goes straight on.
       const benched = arranged(`bench-${S}`);
