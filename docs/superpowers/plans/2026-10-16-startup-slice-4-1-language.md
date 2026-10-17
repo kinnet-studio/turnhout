@@ -96,6 +96,14 @@
       operations" form. Each shares its verb and source zone with the development form, and plan 4-2 writes them that
       way. Without this narrowing, every existing example of the development forms would become ambiguous.
 
+  - **P17–P23 (re-check after plan 3-2, at `ebf6b52`; full text in `recheck-after-3-2.md`, R1–R7).**
+    - **P17 (Task 3, R1).** 3-2's phrase-set test in `worked-view.test.ts` gains, in registration order, `its {attribute} are {int}`, `a card's {attribute} is at least {int}` and the `a/an {cardflag} card's {attribute} is its {attribute}` pair; the list becomes 18 and its title says 18. None reads the cards on a card, so `CARDS_ON_IT` is unchanged. `worked-view.test.ts` joins Task 3's Files and commit; the changed title line is expected by "Existing tests" and Task 7's check 4.
+    - **P18 (Task 3, R2).** `FLAGGED_VALUES` grows to 4 entries (`[0..1]` with `flaggedHas`, `[2..3]` with the new function); `shownFlags` needs no change. Test: such a flag is shown, and Startup's `shownFlags` stays `['stalled', 'efficient in ops']`.
+    - **P19 (Task 3, R3).** Export `GOES_UP_BY_TOTAL` from `total-phrases.ts`; `cardOnlyNames`' total test in `worked-view.ts` becomes `FROM_CARDS_TOTAL || GOES_UP_BY_TOTAL`, so it keeps the all-public rule. `worked-view.ts` joins Task 3's Files.
+    - **P20 (Task 2, R4).** `CardFilter` gaining `{ flag, wanted }` breaks `worked-view.ts`'s `filter.attribute`; it becomes `'flag' in filter ? names.push(filter.flag) : names.push(filter.attribute, ...sameAs)`. `worked-view.ts` and its test join Task 2's Files, with a test that a flag reading a stash through `the cards on it that are <hoarded>` is not shown.
+    - **P21 (Task 4, R5).** Widening `Moment` breaks `board-phrases.test.ts:215` and `:246` (`m.space`): a type-only fix there (`m.kind === 'join' ? … : …`); the file joins Task 4's Files, and Task 7's check 4 prints those two lines.
+    - **P22 (Task 2, R6).** `refs.test.ts:786-789` requires a `loose` shape on every vocab type of names, so `CARDCLAUSE` gets `loose: looseAs(...)` (`PLAYERVALUE` gets one through `declaredWord`).
+    - **P23 (Task 5, R7).** `cardsOnCardsArePublic` already handles `'some'` zones; fix its comment ("every card is on a card") and add one guard test in `worked-view.test.ts` (a hidden `'some'` zone turns the cards-on-it flags off; a public one leaves them on).
 - **Hard constraints (verbatim from plan 3-1, with slice 4's words added):**
   - Protected files must not change: `src/engine/core/game-state.ts`, `src/engine/core/flow.ts`, `src/engine/core/game-engine.ts`, and anything under `src/pages/hearts-demo/**`.
   - The core is pure: no pixi/react/DOM imports in `src/engine/core/**`, no `Math.random` or `Date.now`.
@@ -167,7 +175,7 @@
 
 ## Assumed from earlier plans (check before Task 1)
 
-The line numbers are at `90cd99f`. Plan 3-1 Task 7 is built, and nothing under `src/engine` has changed since `2f5e411`. Plan 3-1's Task 8 and its final review and fix wave run first, so re-read each item before Task 1. If one is missing or differs, stop and report it.
+The line numbers are at `ebf6b52`, after plan 3-2. Plans 3-1 and 3-2 are built (3-2 added `worked-view.ts`, `CARDS_ON_IT`, `FROM_CARDS_TOTAL` and a phrase-set test; see P17–P23), and every item below was re-checked at `ebf6b52` (`recheck-after-3-2.md` in the plan's SDD workspace). Re-read each item before Task 1. If one is missing or differs, stop and report it.
 
 - **1b-2: cards on cards.**
   - `HOLDER_KEY = 'lang:on'` (`zones.ts:12`).
@@ -183,7 +191,7 @@ The line numbers are at `90cd99f`. Plan 3-1 Task 7 is built, and nothing under `
     - `onCardsZone` refuses an unmarked zone (`:15`);
     - `itGoesOnTarget` and `pickedGoOnTarget` (`:25`, `:29`);
     - `cardHasOnItGiven` calls `onCardsZoneOf(env.game, seat)` (`:54-62`);
-    - the registrar is at `:85-95`.
+    - the registrar is at `:84-95`.
   - `runtime.checkAttachments` (`runtime.ts:446`). A press that throws keeps the engine's state, since `GameEngine.dispatch` throws before it commits.
 - **1b-2: worked values.**
   - `WorkedValue`, `CompiledGame.worked` and `PhraseEnv.workedValue`/`workedFlag` (`types.ts:129`, `:147`, `:215-217`).
@@ -196,20 +204,20 @@ The line numbers are at `90cd99f`. Plan 3-1 Task 7 is built, and nothing under `
   - `WORKED_KEPT`, `writesWorked` and `PhraseOpts.writes` (`compile-util.ts:43`, `:262`; `phrases.ts:230-234`).
 - **1b-2: totals, For each and Go to.**
   - `cardsIn` and `totalOf` (`support.ts:198`, `:208`).
-  - `registerTotalPhrases` (`total-phrases.ts:29`).
+  - `registerTotalPhrases` (`total-phrases.ts:32`).
   - `matchEffectLine` (`compile-util.ts:406`): a `For each` takes one plain effect, and an `If` frame's effect is matched with `matchLine`.
   - `go to {phase}` with `entersPhase` (`flow-phrases.ts:273`).
 - **1a / 1b-2: turns and the End.**
   - In `turns.ts`:
     - `START_PLAYER_KEY`, `TURN_OF_KEY`, `ROUND_KEY` and `ROUND_FRAME` (`:10`, `:13`, `:16`, `:22`);
-    - `startPlayerOf`, `roundFinished`, `clearTurnMarkers` and `usesTurns` (`:33`, `:49`, `:79`, `:88`).
+    - `startPlayerOf`, `roundFinished`, `clearTurnMarkers` and `usesTurns` (`:33`, `:49`, `:74`, `:84`).
   - In `runtime.ts`:
     - `test`'s round frame (`:115`), `turnSubject` (`:226`) and `runInPhase` (`:236`);
     - `turnWaiting` (`:280-283`), `startTurn` (`:293`), `announce` (`:325-345`) and `runLine` (`:351`).
   - In `build.ts`:
-    - `TURN_START_RULE` (`:31`) and `EndParams` (`:54`);
+    - `TURN_START_RULE` (`:29`) and `EndParams` (`:54`);
     - the trigger list `[...turnStart, ...ruleTriggers]` (`:92-95`) and `endWhen` (`:102-106`);
-    - `flowRegistryFor` (`:119-149`).
+    - `flowRegistryFor` (`:116-149`).
   - `turnPassesLeft` and `registerTurnPhrases` (`turn-phrases.ts:18-24`, `:39-44`).
   - `isOut`, `playersIn`, `nextIn` (which throws when no other seat is in) and `interruptedTurn` (`board-state.ts:237`, `:247`, `:252`, `:313`).
   - `compileEnd`, `endCondition`, `warnUnreachable`, `compileEveryPhase` and `everyPhaseEffects` (`compile.ts:613`, `:606`, `:589`, `:556`, `:574`).
@@ -224,21 +232,21 @@ The line numbers are at `90cd99f`. Plan 3-1 Task 7 is built, and nothing under `
   - `passes` and `cardsInZones` (`support.ts:171`, `:145`).
   - `cardArgsOf`, `withTheirTests`, `readsPressCard` and `unmetNeed` (`compile-util.ts:196`, `:192`, `:222`, `:239`).
   - `registerComparePhrases` (`compare-phrases.ts:56`).
-  - `card-subject-phrases.ts` (`:48`): `it is not {cardflag}`, `its {attribute} is {int}` and `a card's {attribute} goes down by its {attribute}`.
+  - `card-subject-phrases.ts` (`:54`): `it is not {cardflag}`, `its {attribute} is {int}` and `a card's {attribute} goes down by its {attribute}`.
   - `card-number-phrases.ts`: `changeable` (private, `:14`) and the registrar (`:57`).
-  - `card-value-phrases.ts`: `flaggedHas` (`:19`) and the registrar (`:25`).
-  - `fact-phrases.ts`: `itCard`, `cardsWithNumber`, `noCardIs`, `everyCardIsFlagged`, `changeNumber`, `itGains` and the registrar (`:100`, `:120`, `:303`, `:310`, `:322`, `:328`, `:451-523`).
+  - `card-value-phrases.ts`: `flaggedHas` (`:22`) and the registrar (`:28`).
+  - `fact-phrases.ts`: `itCard`, `cardsWithNumber`, `noCardIs`, `everyCardIsFlagged`, `changeNumber`, `itGains` and the registrar (`:100`, `:120`, `:303`, `:310`, `:322`, `:328`, `:451-524`).
 - **Library and fixtures.**
-  - `REGISTRARS` (`library/index.ts:28-54`).
+  - `REGISTRARS` (`library/index.ts:29-55`).
   - `emptyVocab` and `vocabFrom` (`phrases.ts:134`, `:148-204`). `PhraseLibrary.value`, `which` and `moment` (`:363`, `:368`, `:371`). The `moment` registrar takes no options. Two patterns matching one line is an `ambiguous` error (`:412`).
   - `testing.ts`:
-    - the fixtures `TURN_GAME`, `ROUNDS_GAME`, `CREW_GAME`, `WORKED_GAME` and `GUILD_GAME` (`:345`, `:368`, `:385`, `:418`, `:448`);
-    - the helpers `fixtureEnv`, `vocabFor` and `runPhrase` (`:517-538`, `:562-579`, `:583`).
-  - `runExample` (`examples.ts:52-108`): the engine is built at the first When or Then, and the Givens run through an arranging runtime with `checkAttachments`.
+    - the fixtures `TURN_GAME`, `ROUNDS_GAME`, `CREW_GAME`, `WORKED_GAME` and `GUILD_GAME` (`:345`, `:368`, `:385`, `:418`, `:460`);
+    - the helpers `fixtureEnv`, `vocabFor` and `runPhrase` (`:529-550`, `:574-589`, `:595`).
+  - `runExample` (`examples.ts:47-116`): the engine is built at the first When or Then, and the Givens run through an arranging runtime with `checkAttachments`.
   - `registerExamplePhrases` (`example-phrases.ts:318-346`).
 - **1b-3: C7.**
   - `fit-layout.ts:122`: `isAttached` holds only for `onCards === 'every'`, so a `'some'` zone stays a Board row.
-  - `board-text.ts:18`: `isBoardZone` is `onCards !== 'every'`.
+  - `src/pages/designer/board-text.ts:21`: `isBoardZone` is `onCards !== 'every'`.
 
 ---
 
