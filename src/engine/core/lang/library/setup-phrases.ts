@@ -43,7 +43,7 @@ const playerRow: ZoneFn = ([name, visibility]) => ({ name, perPlayer: true, layo
 const playerRowOnCards: ZoneFn = (args) => ({ ...playerRow(args), onCards: 'every' });
 
 /** What a zone line that not everyone can see is told when it ends with a mark only a zone everyone can see may have. */
-const MARK_NEEDS_EVERYONE = 'Only a zone everyone can see can hold some cards on cards, or name the zone of the cards they sit on.';
+const MARK_NEEDS_EVERYONE = 'Only a row everyone can see can end with “, where some cards are on cards” or name the zone of the cards its cards sit on.';
 
 /**
  * A row each player has where some cards sit on cards and the rest on none, or one that names the zone of the cards its cards sit on

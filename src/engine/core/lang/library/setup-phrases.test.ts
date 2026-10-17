@@ -93,7 +93,7 @@ describe('zones where some cards sit on cards, and the zone they sit in', () => 
       for (const visibility of ['only they can see', 'no one can see']) {
         const declare = zone(`Each player has a yard row that ${visibility}, where ${mark}.`);
         expect(declare, `${visibility}: ${mark}`).toThrow(new RuleError(
-          'Only a zone everyone can see can hold some cards on cards, or name the zone of the cards they sit on.',
+          'Only a row everyone can see can end with “, where some cards are on cards” or name the zone of the cards its cards sit on.',
         ));
       }
     }
