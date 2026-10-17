@@ -2444,7 +2444,7 @@ describe('Startup Simulator (designer language)', () => {
       expect(engine.getState().cards.filter((card) => cubesOn(card, 'fixed bugs') !== 0)).toEqual([]);
       // The two presses rebuild from the log, and taking the last back leaves the Engine waiting on the second.
       const replayed = arranged(`ops-team-${S}`);
-      replayed.loadLog(engine.getLog());
+      replayed.loadLog([...engine.getLog()]);
       expect(replayed.getState()).toEqual(engine.getState());
       engine.undo();
       expect(engine.getState()).toEqual(beforeLast);
