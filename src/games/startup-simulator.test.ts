@@ -17,13 +17,37 @@ import type { ZoneRef } from '@/engine/core/lang/types';
 import { markTurnStarted, ROUND_KEY, START_PLAYER_KEY, startPlayerOf, TURN_OF_KEY } from '@/engine/core/lang/turns';
 import { HOLDER_KEY, relocate, zoneIdFor, zoneInfo } from '@/engine/core/lang/zones';
 import { HIDDEN_FACE_KEY, deriveScene } from '@/engine/core/derive-scene';
-import { cardById, zoneCards, type GameState } from '@/engine/core/game-state';
+import type { GameState } from '@/engine/core/game-state';
+import { cardById, zoneCards } from '@/engine/core/lang/zone-index';
 import type { GameEngine } from '@/engine/core/game-engine';
 import type { Move } from '@/engine/core/moves';
 import type { CardState, PlayerId } from '@/engine/core/scene';
 import { changeCard } from '@/engine/core/lang/card-facts';
 import { shownFlags, standIns } from '@/engine/core/lang/worked-view';
 import { parseTextFaceKey } from '@/engine/core/lang/cards';
+
+// The long runs check every rule after every move, thousands of checks a game, and an `expect` costs vitest far more to build than the
+// check costs to make. So the checks that run after every move make theirs first and ask vitest only when it fails, with the same matcher
+// and the same message: a check that holds is one `expect` would pass, and one that fails is the same `expect` as before, which fails
+// as it always did. A message is a function, built only then.
+/** Whether `actual` and `expected` are lists of the same length whose values are the same, as `toEqual` finds lists of plain values. */
+function sameValues(actual: readonly unknown[], expected: readonly unknown[]): boolean {
+  if (!Array.isArray(actual) || !Array.isArray(expected) || actual.length !== expected.length) return false;
+  for (let i = 0; i < actual.length; i++) if (!Object.is(actual[i], expected[i])) return false;
+  return true;
+}
+/** `expect(actual, message()).toEqual(expected)` for lists of plain values, which `toEqual` compares one by one with Object.is. */
+function sameList(actual: readonly unknown[], expected: readonly unknown[], message: () => string): void {
+  if (!sameValues(actual, expected)) expect(actual, message()).toEqual(expected);
+}
+/** `expect(actual, message()).toEqual([])`. */
+function noneOf(actual: readonly unknown[], message: () => string): void {
+  if (!Array.isArray(actual) || actual.length > 0) expect(actual, message()).toEqual([]);
+}
+/** `expect(actual, message()).toBe(expected)`, which compares with Object.is. */
+function sameAs(actual: unknown, expected: unknown, message: () => string): void {
+  if (!Object.is(actual, expected)) expect(actual, message()).toBe(expected);
+}
 
 const lib = createDefaultLibrary();
 const { game, diagnostics } = compileGame(STARTUP_SIMULATOR, lib);
@@ -320,7 +344,7 @@ type Refused = (state: GameState, move: Move, reason: string) => void;
 function play(engine: GameEngine, move: Move, watch: Watch): void {
   const before = engine.getState();
   const outcome = engine.dispatch(move);
-  expect(outcome.ok, `${move.by} could not ${move.type} ${move.cardId ?? ''}: ${outcome.reason}`).toBe(true);
+  sameAs(outcome.ok, true, () => `${move.by} could not ${move.type} ${move.cardId ?? ''}: ${outcome.reason}`);
   watch(before, move, engine.getState());
 }
 
@@ -342,29 +366,32 @@ function viewedCards(
 ): CardPickView {
   const at = `${seat}'s ${type} in ${state.turn!.phase}`;
   const button = extras.actions.find((action) => action.move === type);
-  expect(button?.cards, `the cards the view offers for ${at}`).toBeDefined();
+  if (button?.cards === undefined) expect(button?.cards, `the cards the view offers for ${at}`).toBeDefined();
   const picking = button!.cards!;
   const offered = picking.cards;
   const zone = zoneCards(state, zoneId);
-  expect(cardCandidates(runtime, buttonOf(state, type)!, state, seat), `the candidates of ${at}`).toEqual(zone.map((card) => card.id));
-  expect(offered.map((card) => card.id), `the cards the view offers for ${at}`).toEqual(zone.map((card) => card.id));
-  expect(offered.map((card) => card.name), `the names the view gives the cards of ${at}`).toEqual(zone.map(nameOf));
-  expect(picking.onto === null, `whether ${at} puts its cards on a card`).toBe(ontoZoneId === null);
+  sameList(cardCandidates(runtime, buttonOf(state, type)!, state, seat), zone.map((card) => card.id), () => `the candidates of ${at}`);
+  sameList(offered.map((card) => card.id), zone.map((card) => card.id), () => `the cards the view offers for ${at}`);
+  sameList(offered.map((card) => card.name), zone.map(nameOf), () => `the names the view gives the cards of ${at}`);
+  sameAs(picking.onto === null, ontoZoneId === null, () => `whether ${at} puts its cards on a card`);
   if (picking.onto !== null) {
     const targets = zoneCards(state, ontoZoneId!);
-    expect(ontoCandidates(runtime, buttonOf(state, type)!, state, seat), `the targets of ${at}`).toEqual(targets.map((card) => card.id));
-    expect(Object.keys(picking.onto.targets), `the cards the view lists targets for in ${at}`).toEqual(zone.map((card) => card.id));
+    sameList(ontoCandidates(runtime, buttonOf(state, type)!, state, seat), targets.map((card) => card.id), () => `the targets of ${at}`);
+    sameList(Object.keys(picking.onto.targets), zone.map((card) => card.id), () => `the cards the view lists targets for in ${at}`);
     for (const card of offered) {
       const goes = picking.onto.targets[card.id];
       const named = targets.map((target) => [target.id, nameOf(target)]);
-      expect(goes.map(({ id, name }) => [id, name]), `the targets the view offers ${card.id} in ${at}`).toEqual(named);
-      expect(card.allowed === true, `whether ${at} allows ${card.id}, with ${JSON.stringify(goes)}`).toBe(goes.some((t) => t.allowed === true));
+      // Pairs of plain values: the same pairs when there are as many and each has the same id and the same name.
+      if (goes.length !== named.length || !goes.every(({ id, name }, i) => Object.is(id, named[i][0]) && Object.is(name, named[i][1]))) {
+        expect(goes.map(({ id, name }) => [id, name]), `the targets the view offers ${card.id} in ${at}`).toEqual(named);
+      }
+      sameAs(card.allowed === true, goes.some((t) => t.allowed === true), () => `whether ${at} allows ${card.id}, with ${JSON.stringify(goes)}`);
       viewChecks.targets += 1;
     }
   }
   if (picking.some) viewChecks.sets += offered.length;
   const some = offered.some((card) => card.allowed === true);
-  expect(button!.allowed === true, `whether ${at} is allowed, with ${JSON.stringify(offered)}`).toBe(some);
+  sameAs(button!.allowed === true, some, () => `whether ${at} is allowed, with ${JSON.stringify(offered)}`);
   return picking;
 }
 
@@ -630,9 +657,9 @@ function playTurn(
     for (const { id, allowed } of picks) {
       const alone = move.cardIds === undefined ? accepted : engine.canDispatch({ ...move, cardIds: [id] }) === true;
       const onto = move.onto === undefined ? '' : ` on ${move.onto}`;
-      expect(allowed === true, `whether the view allows ${by}'s ${move.type} ${id}${onto}: ${allowed}`).toBe(alone);
+      sameAs(allowed === true, alone, () => `whether the view allows ${by}'s ${move.type} ${id}${onto}: ${allowed}`);
     }
-    if (accepted) expect(picks.filter(({ allowed }) => allowed !== true), `the cards of ${by}'s ${move.type} the view greys`).toEqual([]);
+    if (accepted) noneOf(picks.filter(({ allowed }) => allowed !== true), () => `the cards of ${by}'s ${move.type} the view greys`);
     return accepted;
   };
   const choose = (choices: (Move | null)[]): Move => {
@@ -1361,30 +1388,33 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       const license = gameNumber(before, game!, 'license');
       const required = requirementsOf(card!);
       const missing = required.filter((tag) => !tagsOf(before, by).has(tag));
-      expect(required.filter((tag) => !seats.some((seat) => tagsOf(before, seat).has(tag))), `Tags no seat provides ${at}`).toEqual([]);
+      noneOf(required.filter((tag) => !seats.some((seat) => tagsOf(before, seat).has(tag))), () => `Tags no seat provides ${at}`);
       const net = (seat: PlayerId) => gained[seats.indexOf(seat)] - earned(seat);
-      expect(net(by), `capital ${by} paid in Licenses ${at}`).toBe(0 - license * missing.length);
+      sameAs(net(by), 0 - license * missing.length, () => `capital ${by} paid in Licenses ${at}`);
       const others = seats.filter((seat) => seat !== by);
       const overpaid = others.flatMap((seat) => {
         const most = license * missing.filter((tag) => tagsOf(before, seat).has(tag)).length;
         return net(seat) >= 0 && net(seat) % license === 0 && net(seat) <= most ? [] : [`${seat} gained ${net(seat)}, at most ${most}`];
       });
-      expect(overpaid, `Licenses received ${at}`).toEqual([]);
-      expect(others.reduce((total, seat) => total + net(seat), 0), `Licenses received in all ${at}`).toBe(license * missing.length);
+      noneOf(overpaid, () => `Licenses received ${at}`);
+      sameAs(others.reduce((total, seat) => total + net(seat), 0), license * missing.length, () => `Licenses received in all ${at}`);
     } else {
-      expect(gained, `capital gained by ${seats.join(', ')} ${at}`).toEqual(seats.map((seat) => earned(seat) - (seat === by ? paid : 0)));
+      sameList(gained, seats.map((seat) => earned(seat) - (seat === by ? paid : 0)), () => `capital gained by ${seats.join(', ')} ${at}`);
     }
     // Market Share: 1 for each product that earned, when its owner reached Income.
     const share = (state: GameState, seat: PlayerId) => counterOf(state, 'market share', seat);
     const shares = seats.map((seat) => share(after, seat) - share(before, seat));
     const earners = (seat: PlayerId) => (seat === income ? operationsOf(after, seat).filter(earns(runtime, after)).length : 0);
-    expect(shares, `market share gained by ${seats.join(', ')} ${at}`).toEqual(seats.map(earners));
+    sameList(shares, seats.map(earners), () => `market share gained by ${seats.join(', ')} ${at}`);
     // No one pays what they don't have.
     const inDebt = seats.filter((seat) => capital(after, seat) < 0).map((seat) => `${seat} has ${capital(after, seat)} capital`);
-    expect(inDebt, `capital below 0 ${at}`).toEqual([]);
+    noneOf(inDebt, () => `capital below 0 ${at}`);
 
     // No zone over its capacity.
-    const atMost = (zoneId: string, most: number) => expect(size(zoneId), `${zoneId} ${at}`).toBeLessThanOrEqual(most);
+    const atMost = (zoneId: string, most: number) => {
+      const held = size(zoneId);
+      if (!(held <= most)) expect(held, `${zoneId} ${at}`).toBeLessThanOrEqual(most);
+    };
     atMost('agency-row', 4);
     atMost('seed-market', 2);
     atMost('growth-market', 2);
@@ -1396,7 +1426,7 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       if (seat === current) {
         atMost(own('backlog'), 4);
         atMost(own('research'), 3);
-        if (size(own('research')) > 0) expect(phase, `the phase while ${own('research')} has cards ${at}`).toBe('research');
+        if (size(own('research')) > 0) sameAs(phase, 'research', () => `the phase while ${own('research')} has cards ${at}`);
       } else {
         atMost(own('bench'), 5);
         atMost(own('backlog'), 3);
@@ -1469,11 +1499,13 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       const rose = ['blue', 'red'].some((color) => cubesOn(c, `${color} cubes`) > (was === undefined ? 0 : cubesOn(was, `${color} cubes`)));
       if (rose && runtime.workedFlag(atGenerate(), c.id, 'stalled')) board.push(`${which} gained cubes while it was stalled`);
     }
-    expect(board, `the Board ${at}`).toEqual([]);
+    noneOf(board, () => `the Board ${at}`);
     // The Diva's Ego keeps her where she works: no reassign the rules take moves her (§6, §20.B.1).
-    if (REASSIGNS.includes(move.type)) expect(card!.data?.trait, `the trait of the card ${by} reassigned ${at}`).not.toBe('Ego');
+    if (REASSIGNS.includes(move.type) && Object.is(card!.data?.trait, 'Ego')) {
+      expect(card!.data?.trait, `the trait of the card ${by} reassigned ${at}`).not.toBe('Ego');
+    }
     // A project Launches only with 0 Bugs (§6).
-    if (move.type === LAUNCH) expect(bugsOn(card!), `the Bugs on the project ${by} launched ${at}`).toBe(0);
+    if (move.type === LAUNCH) sameAs(bugsOn(card!), 0, () => `the Bugs on the project ${by} launched ${at}`);
     // Modes sit only on the Board, on a card that may take them, and change only by a declaration of that card or as it leaves the
     // Board (§11.C.2, ruling 24). A mode is on only when its flag is true: "It is not red mode." may leave the flag false.
     const declared = Object.values(DECLARE).includes(move.type) ? move.cardId as string : undefined;
@@ -1492,17 +1524,17 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
         if (now !== (was?.data?.[mode] === true) && c.id !== declared && !left) modes.push(`${which} became ${now ? '' : 'not '}${mode}`);
       }
     }
-    expect(modes, `the modes ${at}`).toEqual([]);
+    noneOf(modes, () => `the modes ${at}`);
     if (declared !== undefined) {
       // A declaration leaves its card in the mode its answer names, or the press's only option, and in no other (§11.C.2).
       const asked = pressChoices(runtime, before, move);
       const named = answersOf(move)[0] ?? (typeof asked === 'string' ? undefined : asked[0]?.options[0]);
       const held = MODES.filter((mode) => cardById(after, declared)!.data?.[mode] === true);
-      expect(held, `the modes ${declared} is in once declared ${named} ${at}`).toEqual(MODES_DECLARED[named as string]);
+      sameList(held, MODES_DECLARED[named as string], () => `the modes ${declared} is in once declared ${named} ${at}`);
     }
 
     // Online fits after every Income: the ops team's supply runs the products left online, in each color (§5 Phase B, ruling 19).
-    if (income !== null) expect(shortOf(runtime, after, income), `the colors ${income} is short of at Income ${at}`).toEqual([]);
+    if (income !== null) noneOf(shortOf(runtime, after, income), () => `the colors ${income} is short of at Income ${at}`);
     // A product's Offline changes only in its owner's ops check: by a press there, as the check starts, or on the way through it to
     // Income (ruling 25). At the end, each step of the final check may bring its seat's products back online as it starts, and may
     // pass on in the move that starts it, up to the move that sets the result; but a product goes offline there only by its owner's
@@ -1519,17 +1551,17 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       if (owner !== undefined && finalCheck && (!offline(c) || (owner === by && c.id === switchedOff))) return [];
       return [`${c.id} (${nameOf(c)}) in ${c.zoneId} went ${offline(c) ? 'offline' : 'online'}`];
     });
-    expect(switched, `the products switched ${at}`).toEqual([]);
+    noneOf(switched, () => `the products switched ${at}`);
 
     // Markets refill at once.
     const refilled = (row: string, deck: string, full: number) => {
-      if (size(deck) > 0) expect(size(row), `${row} while ${deck} has cards ${at}`).toBe(full);
+      if (size(deck) > 0) sameAs(size(row), full, () => `${row} while ${deck} has cards ${at}`);
     };
     refilled('agency-row', 'talent-deck', 4);
     refilled('seed-market', 'seed-deck', 2);
     refilled('growth-market', 'growth-deck', 2);
     const crash = after.cards.find((c) => nameOf(c) === 'Market Crash')!;
-    expect(['growth-deck', 'crash-pile'], `where the Market Crash is ${at}`).toContain(crash.zoneId);
+    if (!['growth-deck', 'crash-pile'].includes(crash.zoneId)) expect(['growth-deck', 'crash-pile'], `where the Market Crash is ${at}`).toContain(crash.zoneId);
 
     // The pools hold the 5 newest.
     const letGoNow: string[] = [];
@@ -1537,38 +1569,38 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       const queue = queues[pool];
       // A card hired or drafted from a pool leaves it from wherever it sits.
       if (from === pool) {
-        expect(queue, `${pool} ${at}`).toContain(card!.id);
+        if (!queue.includes(card!.id)) expect(queue, `${pool} ${at}`).toContain(card!.id);
         queue.splice(queue.indexOf(card!.id), 1);
       }
       const held = new Set(zoneCards(before, pool).map((c) => c.id));
       const holds = zoneCards(after, pool).map((c) => c.id);
       queue.push(...holds.filter((id) => !held.has(id)));
       letGoNow.push(...queue.splice(0, Math.max(0, queue.length - 5)));
-      expect(holds, `${pool}, oldest first, ${at}`).toEqual(queue);
+      sameList(holds, queue, () => `${pool}, oldest first, ${at}`);
     }
     letGo.push(...letGoNow);
     const boxed = new Set(zoneCards(before, 'box').map((c) => c.id));
     const box = zoneCards(after, 'box').map((c) => c.id);
-    expect(letGo.filter((id) => !box.includes(id)), `cards a pool let go of that are not in the box ${at}`).toEqual([]);
+    noneOf(letGo.filter((id) => !box.includes(id)), () => `cards a pool let go of that are not in the box ${at}`);
     // Only the pools fill the box, and only with their oldest cards: a pool that let go of a card the moment it entered would
     // show the same 5 cards as before, so this is what catches it.
     // This assumes only the pools send cards to the box, as in slice 1a; a later slice that boxes cards some other way must widen it.
-    expect(box.filter((id) => !boxed.has(id)).sort(), `cards new in the box ${at}`).toEqual(letGoNow.sort());
+    sameList(box.filter((id) => !boxed.has(id)).sort(), letGoNow.sort(), () => `cards new in the box ${at}`);
 
     // Turns: each one that starts is the next seat's.
     const rounds = (after.data[ROUND_KEY] as number) - (before.data[ROUND_KEY] as number);
     if (started !== null) {
-      expect(started, `the turn that started ${at}`).toBe(seats[(seats.indexOf(lastTurn) + 1) % seats.length]);
+      sameAs(started, seats[(seats.indexOf(lastTurn) + 1) % seats.length], () => `the turn that started ${at}`);
       lastTurn = started;
     }
-    expect(rounds, `rounds started ${at}`).toBe(started !== null && started === startPlayerOf(after, seats) ? 1 : 0);
+    sameAs(rounds, started !== null && started === startPlayerOf(after, seats) ? 1 : 0, () => `rounds started ${at}`);
 
     // Hidden zones: only the owner sees the face of a card in their bench, backlog, research or scouting.
     for (const viewer of seats) {
       const wrong = deriveScene(tableDef, { cards: after.cards }, viewer).cards
         .filter((c) => owners.has(c.zoneId) && (c.faceKey === HIDDEN_FACE_KEY) !== (owners.get(c.zoneId) !== viewer))
         .map((c) => `${c.id} in ${c.zoneId}`);
-      expect(wrong, `cards ${viewer} sees wrongly ${at}`).toEqual([]);
+      noneOf(wrong, () => `cards ${viewer} sees wrongly ${at}`);
     }
   };
 }
@@ -1591,7 +1623,7 @@ function keepsTheBudget(seats: PlayerId[]): Watch {
       if (seat === by) return move.type === END_ACTIONS ? 0 : actions(before, by) - cost;
       return seat === started ? ACTIONS_EACH_TURN : actions(before, seat);
     });
-    expect(seats.map((seat) => actions(after, seat)), `actions of ${seats.join(', ')} ${at}`).toEqual(expected);
+    sameList(seats.map((seat) => actions(after, seat)), expected, () => `actions of ${seats.join(', ')} ${at}`);
   };
 }
 
@@ -1652,12 +1684,78 @@ describe('Startup Simulator (designer language)', () => {
     ]);
   });
 
+  // The next three tests each add to the rules an example that the rules refuse for naming no button alone, and then an example for each
+  // wording the refusal advises. A run plays every example the game has, the rules' own as well, and none of the added examples reads
+  // another or the rules' own, so the three add theirs to the rules together and share the one run, each reading its own results. Each
+  // test still checks that the wordings the refusal gives are the ones listed here, which are the ones pressed.
+  type Advice = { bare: string; lands: object; pressing: (wording: string) => string };
+  /** An example `bare` that the rules refuse, the wordings they advise with what pressing each one lands as, and the example that presses one. */
+  const advising = <L>(bare: string[], lands: Record<string, L>, pressing: (wording: string, lands: L) => string[]): Advice => ({
+    bare: bare.join('\n'), lands, pressing: (wording) => pressing(wording, lands[wording]).join('\n'),
+  });
+  const hackerGiven = [
+    '  Given the phase is actions', '  And the agency row has the Hacker, the Architect, the Veteran and the Diva', "  And p0's operations has a To-Do List",
+  ];
+  const juniorGiven = [
+    '  Given the phase is actions', "  And p0's development has a Dating App and a To-Do List",
+    "  And the Dating App in p0's development has a Junior Software Dev on it", "  And p0's operations has a Mobile Wallet",
+    "  And p0's ops team has a Junior Software Dev",
+  ];
+  const advice: Advice[] = [
+    advising(
+      [
+        'Example: a Sales Rep in both rows', '  Given the agency row has the Hacker, the Architect, the Veteran and a Sales Rep',
+        '  And the open job market has a Sales Rep', '  When p0 hires a Sales Rep', '  Then it is accepted',
+      ],
+      {
+        "from the agency row to p0's bench": ["Then p0's bench has a Sales Rep", 'And the open job market has a Sales Rep'],
+        'from the open job market': ["Then p0's bench has a Sales Rep", 'And the open job market is empty'],
+        "to p0's ops team": ["Then p0's ops team has a Sales Rep", 'And the open job market has a Sales Rep'],
+      },
+      (wording, lands) => [
+        `Example: hiring the Sales Rep ${wording}`, '  Given the agency row has the Hacker, the Architect, the Veteran and a Sales Rep',
+        '  And the phase is actions',
+        '  And the open job market has a Sales Rep', "  And p0's operations has a To-Do List", `  When p0 hires a Sales Rep ${wording}`,
+        ...lands.map((line) => `  ${line}`),
+      ],
+    ),
+    advising(
+      ['Example: hiring the Hacker', ...hackerGiven, '  When p0 hires the Hacker'],
+      { "to p0's bench": "  Then p0's bench has the Hacker", "to p0's ops team": "  Then p0's ops team has the Hacker" },
+      (wording, lands) => [`Example: hiring the Hacker ${wording}`, ...hackerGiven, `  When p0 hires the Hacker ${wording}`, lands],
+    ),
+    advising(
+      ['Example: a Junior Software Dev on a project and in the ops team', ...juniorGiven, '  When p0 reassigns a Junior Software Dev to the To-Do List'],
+      {
+        "from p0's development team to the To-Do List": ["And the Dating App in p0's development has no cards on it", "And p0's ops team has a Junior Software Dev"],
+        "from p0's ops team to the To-Do List": ["And the Dating App in p0's development has a Junior Software Dev on it", "And p0's ops team is empty"],
+      },
+      (wording, lands) => [
+        `Example: reassigning the Junior ${wording}`, ...juniorGiven, `  When p0 reassigns a Junior Software Dev ${wording}`, '  Then it is accepted',
+        "  And the To-Do List in p0's development has a Junior Software Dev on it", ...lands.map((line) => `  ${line}`),
+      ],
+    ),
+  ];
+  /** What `advice[which]` added to the rules, run with the rest of them: the result of its refused example, and of each one pressing a wording. */
+  const adviceRan = (() => {
+    let ran: { results: ReturnType<typeof runExamples>; pressed: ReturnType<typeof runExamples> }[] | undefined;
+    return (which: number) => {
+      if (ran === undefined) {
+        const added = advice.map(({ bare, lands, pressing }) => [bare, ...Object.keys(lands).map(pressing)]);
+        const results = runExamples(compileGame(`${STARTUP_SIMULATOR}\n\n${added.flat().join('\n\n')}\n`, lib).game!, lib).slice(-added.flat().length);
+        let next = 0;
+        ran = added.map(({ length }) => {
+          const mine = results.slice(next, next + length);
+          next += length;
+          return { results: mine.slice(0, 1), pressed: mine.slice(1) };
+        });
+      }
+      return { lands: advice[which].lands, ...ran[which] };
+    };
+  })();
+
   it('asks an example which hire it means when both rows hold the card, in words that each press one button', () => {
-    const bare = [
-      'Example: a Sales Rep in both rows', '  Given the agency row has the Hacker, the Architect, the Veteran and a Sales Rep',
-      '  And the open job market has a Sales Rep', '  When p0 hires a Sales Rep', '  Then it is accepted',
-    ].join('\n');
-    const results = runExamples(compileGame(`${STARTUP_SIMULATOR}\n\n${bare}\n`, lib).game!, lib);
+    const { lands, results, pressed } = adviceRan(0);
     expect(results.at(-1)!.status).toBe('fail');
     // Three buttons hire from the agency row or to the bench, so neither where the card comes from nor where it goes is enough alone.
     const ask = '. Say which: “… from the agency row to p0\'s bench”, “… from the open job market” or “… to p0\'s ops team”.';
@@ -1665,67 +1763,34 @@ describe('Startup Simulator (designer language)', () => {
     expect(message.slice(-ask.length)).toBe(ask);
 
     // Each wording the advice gives hires the Sales Rep from where it says, to where it says.
-    const lands: Record<string, string[]> = {
-      "from the agency row to p0's bench": ["Then p0's bench has a Sales Rep", 'And the open job market has a Sales Rep'],
-      'from the open job market': ["Then p0's bench has a Sales Rep", 'And the open job market is empty'],
-      "to p0's ops team": ["Then p0's ops team has a Sales Rep", 'And the open job market has a Sales Rep'],
-    };
     const wordings = [...message.matchAll(/“… ([^”]+)”/g)].map(([, wording]) => wording);
     expect(wordings.sort()).toEqual(Object.keys(lands).sort());
-    const pressing = wordings.map((wording) => [
-      `Example: hiring the Sales Rep ${wording}`, '  Given the agency row has the Hacker, the Architect, the Veteran and a Sales Rep',
-      '  And the phase is actions',
-      '  And the open job market has a Sales Rep', "  And p0's operations has a To-Do List", `  When p0 hires a Sales Rep ${wording}`,
-      ...lands[wording].map((line) => `  ${line}`),
-    ].join('\n'));
-    const pressed = runExamples(compileGame(`${STARTUP_SIMULATOR}\n\n${pressing.join('\n\n')}\n`, lib).game!, lib).slice(-wordings.length);
     expect(pressed.map(({ status, message }) => [status, message])).toEqual(wordings.map(() => ['pass', null]));
   });
 
   it('asks an example where an agency hire goes, in words that each press one button', () => {
-    const given = [
-      '  Given the phase is actions', '  And the agency row has the Hacker, the Architect, the Veteran and the Diva', "  And p0's operations has a To-Do List",
-    ];
-    const results = runExamples(compileGame(`${STARTUP_SIMULATOR}\n\n${['Example: hiring the Hacker', ...given, '  When p0 hires the Hacker'].join('\n')}\n`, lib).game!, lib);
+    const { lands, results, pressed } = adviceRan(1);
     expect(results.at(-1)!.status).toBe('fail');
     const ask = ". Say where it goes: “… to p0's bench” or “… to p0's ops team”.";
     const message = results.at(-1)!.message!;
     expect(message.slice(-ask.length)).toBe(ask);
 
     // Each wording the advice gives hires the Hacker to where it says.
-    const lands: Record<string, string> = { "to p0's bench": "  Then p0's bench has the Hacker", "to p0's ops team": "  Then p0's ops team has the Hacker" };
     const wordings = [...message.matchAll(/“… ([^”]+)”/g)].map(([, wording]) => wording);
     expect(wordings.sort()).toEqual(Object.keys(lands).sort());
-    const pressing = wordings.map((wording) => [`Example: hiring the Hacker ${wording}`, ...given, `  When p0 hires the Hacker ${wording}`, lands[wording]].join('\n'));
-    const pressed = runExamples(compileGame(`${STARTUP_SIMULATOR}\n\n${pressing.join('\n\n')}\n`, lib).game!, lib).slice(-wordings.length);
     expect(pressed.map(({ status, message }) => [status, message])).toEqual(wordings.map(() => ['pass', null]));
   });
 
   it('asks an example which reassign it means when a project and the ops team both have the staff member, keeping the project it goes to', () => {
-    const given = [
-      '  Given the phase is actions', "  And p0's development has a Dating App and a To-Do List",
-      "  And the Dating App in p0's development has a Junior Software Dev on it", "  And p0's operations has a Mobile Wallet",
-      "  And p0's ops team has a Junior Software Dev",
-    ];
-    const bare = ['Example: a Junior Software Dev on a project and in the ops team', ...given, '  When p0 reassigns a Junior Software Dev to the To-Do List'];
-    const results = runExamples(compileGame(`${STARTUP_SIMULATOR}\n\n${bare.join('\n')}\n`, lib).game!, lib);
+    const { lands, results, pressed } = adviceRan(2);
     expect(results.at(-1)!.status).toBe('fail');
     const ask = ". Say where it comes from: “… from p0's development team to the To-Do List” or “… from p0's ops team to the To-Do List”.";
     const message = results.at(-1)!.message!;
     expect(message.slice(-ask.length)).toBe(ask);
 
     // Each wording the advice gives moves the Junior from where it says onto the To-Do List.
-    const lands: Record<string, string[]> = {
-      "from p0's development team to the To-Do List": ["And the Dating App in p0's development has no cards on it", "And p0's ops team has a Junior Software Dev"],
-      "from p0's ops team to the To-Do List": ["And the Dating App in p0's development has a Junior Software Dev on it", "And p0's ops team is empty"],
-    };
     const wordings = [...message.matchAll(/“… ([^”]+)”/g)].map(([, wording]) => wording);
     expect(wordings.sort()).toEqual(Object.keys(lands).sort());
-    const pressing = wordings.map((wording) => [
-      `Example: reassigning the Junior ${wording}`, ...given, `  When p0 reassigns a Junior Software Dev ${wording}`, '  Then it is accepted',
-      "  And the To-Do List in p0's development has a Junior Software Dev on it", ...lands[wording].map((line) => `  ${line}`),
-    ].join('\n'));
-    const pressed = runExamples(compileGame(`${STARTUP_SIMULATOR}\n\n${pressing.join('\n\n')}\n`, lib).game!, lib).slice(-wordings.length);
     expect(pressed.map(({ status, message }) => [status, message])).toEqual(wordings.map(() => ['pass', null]));
   });
 
