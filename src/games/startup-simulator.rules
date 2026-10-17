@@ -2016,6 +2016,18 @@ Example: a mode stays on staff reassigned from the ops team to a project (sectio
   Then it is accepted
   And the Fixer in p0's development team is qa mode
 
+Example: a flex Senior declared Red on a project keeps Red as the project Launches, so it gives the ops team Red (section 6, section 11)
+  Given the phase is actions
+  And p0's development has a Smart Lock
+  And the Smart Lock in p0's development has 1 blue cube
+  And the Smart Lock in p0's development has 5 red cubes
+  And the Smart Lock in p0's development has a Firmware Specialist on it
+  And the Firmware Specialist in p0's development team is red mode
+  When p0 launches the Smart Lock
+  Then it is accepted
+  And the Firmware Specialist in p0's ops team is red mode
+  And p0's red supply is 2
+
 Example: at Income an ops team with the bandwidth in both colors runs every product, and each earns (section 5, ruling 19)
   Given p1's operations has a Dating App and a Smart Lock
   And p1's ops team has a Junior Software Dev and a Junior Hardware Eng
@@ -2316,6 +2328,21 @@ Example: the Growth Hacker adds a Bug to its product at the end of its owner's t
   When p0 ends their actions
   Then it is p1's turn
   And the Dating App in p0's operations has 1 bug
+
+Example: a product switched off at Income earns nothing, the Growth Hacker's $3 included, and still takes its Bug (section 9, ruling 5, section 20)
+  Given p1's operations has a Dating App and a Mobile Wallet
+  And p1's ops team has a Junior Software Dev
+  And the Dating App in p1's operations has the Growth Hacker on it
+  And the turn passes to the left
+  Then the phase is ops check
+  When p1 switches off the Dating App
+  And p1 confirms the products online
+  Then the phase is income
+  And p1 has 9 capital
+  And p1 has 1 market share
+  When p1 pays salaries
+  And p1 ends their actions
+  Then the Dating App in p1's operations has 1 bug
 
 Example: a working Architect in the ops team stops the Growth Hacker's Bug (section 20, ruling 25)
   Given the phase is actions
