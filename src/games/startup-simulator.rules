@@ -839,6 +839,14 @@ Example: greenlighting is free (ruling 7)
   And p0's development has a Dating App
   And p0's backlog has a Smart Lock
 
+Example: a Greenlight that owes no License needs no capital (ruling 7, section 14)
+  Given p0 has 0 capital
+  And p0's backlog has a Dating App
+  When p0 greenlights the Dating App
+  Then it is accepted
+  And p0 has 0 capital
+  And p0's development has a Dating App
+
 Example: three projects at most (section 3)
   Given p0's development has a To-Do List, a Dating App and a Mobile Wallet
   And p0's backlog has a Smart Lock
@@ -1270,6 +1278,26 @@ Example: a player who provides the Tag pays nobody, even when rivals provide it 
   And p1 has 7 capital
   And p2 has 7 capital
 
+Example: a player who provides one of a Tier 3's Tags pays a License only for the other, though a rival provides both (ruling 3, section 6, section 14)
+  Given 3 players
+  And p0's operations has a Search Engine
+  And p1's operations has a Drone Delivery and a Quantum Prototype
+  And p0's backlog has a Fusion Reactor
+  When p0 greenlights the Fusion Reactor
+  Then it is accepted
+  And p0 has 4 capital
+  And p1 has 10 capital
+  And p2 has 7 capital
+
+Example: a player who provides both of a Tier 3's Tags Greenlights it with no capital at all (ruling 3, section 14, section 19)
+  Given p0 has 0 capital
+  And p0's operations has a Drone Delivery and a Search Engine
+  And p0's backlog has a Fusion Reactor
+  When p0 greenlights the Fusion Reactor, choosing cut 2 red
+  Then it is accepted
+  And p0 has 0 capital
+  And the Fusion Reactor in p0's development has 18 red need
+
 Example: drafting a Tier 2 needs no Tag (ruling 18)
   Given the growth market has a Neobank and a Search Engine
   When p0 drafts the Neobank
@@ -1333,6 +1361,17 @@ Example: a pivot clears the cut, so the card costs its full price again (this sl
   Then the Viral Video App in the open idea pool has 0 cut blue cubes
   And the Viral Video App in the open idea pool has 6 blue need
 
+Example: a pivot clears a red cut as well (section 19, this slice's call)
+  Given the phase is actions
+  And p0's operations has a Smart Thermostat
+  And p0's backlog has a Smart Grid
+  When p0 greenlights the Smart Grid, choosing cut 2 red
+  Then the Smart Grid in p0's development has 8 red need
+  When p0 pivots the Smart Grid
+  Then it is accepted
+  And the Smart Grid in the open idea pool has 0 cut red cubes
+  And the Smart Grid in the open idea pool has 10 red need
+
 Example: cubes beyond the need are lost (section 6, this slice's call)
   Given the phase is actions
   And p0's operations has a Dating App
@@ -1350,6 +1389,74 @@ Example: Domain Expertise never takes a product below 1 cube (section 19; no pri
   And the Messaging App in p0's backlog has 2 blue cost
   When p0 greenlights the Messaging App
   Then the Messaging App in p0's development has 1 blue need
+
+Example: a hybrid cut 1 of each loses a cube of each color (section 19, ruling 25)
+  Given p0's operations has a Health Tracker
+  And p0's backlog has a Sleep Monitor
+  When p0 greenlights the Sleep Monitor, choosing cut 1 of each
+  Then it is accepted
+  And the Sleep Monitor in p0's development has 1 blue need
+  And the Sleep Monitor in p0's development has 3 red need
+
+Example: a pure Hardware product is cut 2 red, with nothing to choose (section 19)
+  Given p0's operations has a Health Tracker
+  And p0's backlog has a Genetics Kit
+  When p0 greenlights the Genetics Kit
+  Then it is accepted
+  And the Genetics Kit in p0's development has 0 blue need
+  And the Genetics Kit in p0's development has 6 red need
+
+Example: a hybrid of 1 blue can't be cut 2 blue, though it may lose its blue cube in a cut of 1 of each (section 19, ruling 25)
+  Given p0's operations has a Smart Thermostat
+  And p0's backlog has a Smart Lock
+  When p0 greenlights the Smart Lock
+  Then it is rejected because "Choose one: cut 2 red or cut 1 of each."
+  When p0 greenlights the Smart Lock, choosing cut 1 of each
+  Then it is accepted
+  And the Smart Lock in p0's development has 0 blue need
+  And the Smart Lock in p0's development has 4 red need
+
+Example: a hybrid of 2 blue and 1 red may be cut 2 blue or 1 of each, keeping 1 cube (section 19; no printed hybrid is this cheap, so the cost is set)
+  Given p0's operations has a Smart Thermostat
+  And p0's backlog has a Smart Toy
+  And the Smart Toy in p0's backlog has 2 blue cost
+  And the Smart Toy in p0's backlog has 1 red cost
+  When p0 greenlights the Smart Toy
+  Then it is rejected because "Choose one: cut 2 blue or cut 1 of each."
+  When p0 greenlights the Smart Toy, choosing cut 1 of each
+  Then it is accepted
+  And the Smart Toy in p0's development has 1 blue need
+  And the Smart Toy in p0's development has 0 red need
+
+Example: a hybrid of 1 blue and 2 red may be cut 2 red or 1 of each, but not 1 red alone (section 19; no printed hybrid is this cheap, so the cost is set)
+  Given p0's operations has a Smart Thermostat
+  And p0's backlog has a Smart Toy
+  And the Smart Toy in p0's backlog has 2 red cost
+  When p0 greenlights the Smart Toy
+  Then it is rejected because "Choose one: cut 2 red or cut 1 of each."
+  When p0 greenlights the Smart Toy, choosing cut 2 red
+  Then it is accepted
+  And the Smart Toy in p0's development has 1 blue need
+  And the Smart Toy in p0's development has 0 red need
+
+Example: a pure Hardware product of 2 red is cut by 1, to 1 cube (section 19; no printed product is this cheap, so the cost is set)
+  Given p0's operations has a Health Tracker
+  And p0's backlog has a Genetics Kit
+  And the Genetics Kit in p0's backlog has 2 red cost
+  When p0 greenlights the Genetics Kit
+  Then it is accepted
+  And the Genetics Kit in p0's development has 1 red need
+
+Example: a Greenlight with no Domain Expertise leaves the card no cut, whatever it held before (section 19, this slice's call)
+  Given p0's backlog has a Smart Lock
+  And the Smart Lock in p0's backlog has 1 cut blue cube
+  And the Smart Lock in p0's backlog has 2 cut red cubes
+  When p0 greenlights the Smart Lock
+  Then it is accepted
+  And the Smart Lock in p0's development has 0 cut blue cubes
+  And the Smart Lock in p0's development has 0 cut red cubes
+  And the Smart Lock in p0's development has 1 blue need
+  And the Smart Lock in p0's development has 5 red need
 
 Example: a Tier 2 Software project with only a Hardware Senior and a Specialist is Stalled, so its whole team generates nothing (section 3, section 7)
   Given the phase is actions
