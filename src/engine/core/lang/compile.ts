@@ -8,6 +8,7 @@ import {
   addProblem, attempt, FOR_EVERY_AT_LEAST_ONE, innerEffect, matchEffectLine, matchLine, phaseId, phraseFn, POINTS_FOR_EVERY, rejectChildren, type LineCtx,
 } from './compile-util';
 import type { Diagnostic } from './diagnostics';
+import { GO_TO_PHRASE } from './library/flow-phrases';
 import { parseOutline, type OutlineNode } from './outline';
 import { normalizeLine, suggestNames, vocabFrom, type PhraseLibrary } from './phrases';
 import { canon, parseParam } from './refs';
@@ -107,8 +108,6 @@ const STEPS_AFTER = (phase: string) =>
 const STEPS_NEVER_PASS = (phase: string) =>
   `No line passes the ${phase} on to the next player, so the first player's ${phase} would never end. `
   + `Write “The ${phase} passes to the left.” where a player's ${phase} ends.`;
-/** The phrase that moves the game on to another phase (`flow-phrases.ts`), which would take it out of the steps before the score. */
-const GO_TO_PHASE = 'go to {phase}';
 
 type Section = { keyword: string; rest: string; node: OutlineNode };
 /** A section that works out a value for cards: `keyword` is the value's name, and `refines` says it is a column of a card table. */
@@ -747,7 +746,7 @@ function endSteps(name: string, line: number, ctx: LineCtx, phases: CompiledPhas
   }
   if (phase?.goTo) addProblem(ctx.diagnostics, phase.goTo.line, STEPS_GO_TO(id));
   for (const ref of phase ? effectsOf(phase).flatMap(linesDoing) : []) {
-    if (ref.kind === 'effect' && ref.phrase === GO_TO_PHASE) addProblem(ctx.diagnostics, ref.line, STEPS_GO_TO(id));
+    if (ref.kind === 'effect' && ref.phrase === GO_TO_PHRASE) addProblem(ctx.diagnostics, ref.line, STEPS_GO_TO(id));
   }
   if (phase?.after) addProblem(ctx.diagnostics, phase.after.line, STEPS_AFTER(id));
   return { phase: id, line };

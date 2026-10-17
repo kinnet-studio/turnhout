@@ -138,6 +138,9 @@ function startPhase(env: PhraseEnv, phase: string, next: PlayerId): GameState {
   return runStartLines(env, interruptTurn(env.state, phase, next), phase, next);
 }
 
+/** The phrase that moves the game on to another phase; the compiler looks for it among the lines of the steps before the score. */
+export const GO_TO_PHRASE = 'go to {phase}';
+
 const GO_TO_IN_THE_STEPS = (phase: string) =>
   `The players take the ${phase} in turn before the score, so no line can go to another phase until they have all taken it.`;
 
@@ -277,7 +280,7 @@ export function registerFlowPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('the player holding {card} goes first', holderGoesFirst)
     .effect('the {phase} phase starts with the player on their left', phaseStartsOnTheirLeft, { needsPlayer: true, entersPhase: true })
     .effect('the {phase} phase starts with them', phaseStartsWithThem, { needsPlayer: true, entersPhase: true })
-    .effect('go to {phase}', goToPhase, { entersPhase: true })
+    .effect(GO_TO_PHRASE, goToPhase, { entersPhase: true })
     .effect('go back to the interrupted turn', goBackToTheTurn)
     .turn('the turn passes to the left', passesLeft)
     .turn('the turn passes to the next player on the left who is {playerflag}', passesToNextWhoIs)
