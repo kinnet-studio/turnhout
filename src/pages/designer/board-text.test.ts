@@ -10,6 +10,9 @@ import type { CompiledGame } from '@/engine/core/lang/types';
 import { relocate } from '@/engine/core/lang/zones';
 import type { CardState } from '@/engine/core/scene';
 import { boardCaptions, boardText, cardLabel, countParts } from './board-text';
+import { boardBadges } from './board-text';
+import { seatExtras } from '@/engine/core/lang/board-view';
+import { GUILD_GAME, SHOWN } from '@/engine/core/lang/testing';
 
 const lib = createDefaultLibrary();
 const TIRED = '  Cards can be tired.';
@@ -130,5 +133,59 @@ describe('boardText', () => {
 describe('boardCaptions', () => {
   it("captions each card on a seat's Board that has counts, one part a line", () => {
     expect(boardCaptions(game, cards)).toEqual({ [vase]: 'Red 1/2 +3 new\nGold 0/0', [statue]: 'Red 0/1\nGold 0/2' });
+  });
+});
+
+describe('what the rules work out, on the Board', () => {
+  const shown = compileGame(SHOWN, lib).game!;
+  /**
+   * The worked view's arrangement (worked-view.test.ts), SHOWN for two at seed 1: p0's workshop holds the first Vase and the first
+   * Statue, the first two Potters sit on the Vase in p0's crew, and the Vase has 1 red done and 1 cut red done; p1's stash holds the
+   * second Statue, and p0's idle row the first Tinker. `worked` is what p0's view says the rules work out.
+   */
+  const arrangeShown = () => {
+    const start = createEngine(shown, lib, 2, initialState(shown, 1)).engine.getState();
+    const [[job], [other, stashed], [p1, p2], [tinker]] = ['Vase', 'Statue', 'Potter', 'Tinker'].map((name) => idsOf(start, name));
+    let arranged = relocate(start, [job, other], 'workshop-p0', shown);
+    arranged = putOn(arranged, [p1, p2], 'crew-p0', job, shown);
+    arranged = changeCard(arranged, job, { 'red done': 1, 'cut red done': 1 }, shown);
+    arranged = relocate(relocate(arranged, [stashed], 'stash-p1', shown), [tinker], 'idle-p0', shown);
+    const { engine, runtime } = createEngine(shown, lib, 2, arranged);
+    return { state: engine.getState(), vase: job, statue: other, worked: seatExtras(engine, runtime, engine.getState(), 'p0').worked! };
+  };
+  const at = arrangeShown();
+
+  it('reads a count against the number worked out in place of its column, with its rider as before', () => {
+    expect(countParts(cardOf(at.state, at.vase), shown)).toEqual(['Red 1/2 +1 cut']);
+    expect(countParts(cardOf(at.state, at.vase), shown, at.worked[at.vase])).toEqual(['Red 1/1 +1 cut']);
+  });
+
+  it('lists the flags worked out after the kept ones, and reads every count against what is worked out', () => {
+    expect(boardText(shown, at.state.cards, 'p0', at.worked)).toBe(
+      'workshop: Vase (busy) [Red 1/1 +1 cut] with Potter and Potter; Statue [Red 0/1] · idle: Tinker',
+    );
+    expect(boardText(shown, at.state.cards, 'p0')).toBe('workshop: Vase [Red 1/2 +1 cut] with Potter and Potter; Statue [Red 0/1] · idle: Tinker');
+  });
+
+  it('captions each card with its counts read against what is worked out', () => {
+    expect(boardCaptions(shown, at.state.cards, at.worked)).toEqual({ [at.vase]: 'Red 1/1 +1 cut', [at.statue]: 'Red 0/1' });
+  });
+
+  it('badges each card the view gives flags, and none without a view', () => {
+    expect(boardBadges(at.state.cards, at.worked)).toEqual({ [at.vase]: 'busy' });
+    expect(boardBadges(at.state.cards, undefined)).toEqual({});
+  });
+
+  it("lists a card's words, in its data order, and only for a card with counts", () => {
+    const guild = compileGame(GUILD_GAME, lib).game!;
+    let arranged = createEngine(guild, lib, 2, initialState(guild, 1)).engine.getState();
+    const [[statueId], [vaseId], [potter]] = ['Statue', 'Vase', 'Potter'].map((name) => idsOf(arranged, name));
+    arranged = relocate(arranged, [statueId, vaseId], 'workshop-p0', guild);
+    arranged = putOn(arranged, [potter], 'crew-p0', statueId, guild);
+    expect(boardText(guild, arranged.cards, 'p0')).toBe(
+      'workshop: Statue (mark stone, wants clay) [Red 0/2, Gold 0/4] with Potter; Vase (mark clay) [Red 0/3, Gold 0/0]',
+    );
+    // The Potter has words of its own, but nothing to count, so it lists none; the card it sits on is bookkeeping, never a word.
+    expect(cardOf(arranged, potter).data).toMatchObject({ craft: 'red', mood: 'calm', 'lang:on': statueId });
   });
 });

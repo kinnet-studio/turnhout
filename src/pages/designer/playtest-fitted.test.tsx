@@ -434,7 +434,7 @@ describe('the Board on the page', () => {
   const todo = idOf(BUILT, 'To-Do List');
   const junior = idOf(BUILT, 'Junior Software Dev', `development-team-${S}`);
   const architect = idOf(BUILT, 'Architect');
-  const BOARD = `development: Dating App [Blue 4/6, Red 0/0] with Junior Software Dev and Architect · operations: To-Do List [Blue 0/4, Red 0/0] · ops team: QA Engineer`;
+  const BOARD = `development: Dating App (tier Tier 1, tag Social, sector Consumer) [Blue 4/6, Red 0/0] with Junior Software Dev and Architect · operations: To-Do List (tier Tier 1, tag App, sector Concept) [Blue 0/4, Red 0/0] · ops team: QA Engineer`;
 
   it('hangs the staff under their card on the canvas, and captions each card with its counts', () => {
     mount({ initial: BUILT });
@@ -587,7 +587,7 @@ describe('picking cards by clicking them', () => {
     expect(team.map((c) => c.data?.['lang:on'])).toEqual([greenlit, greenlit]);
     expect(lineOf(S)).toContain('2 actions');
     expect(boardOf(S)).toBe(
-      `development: ${attrs.name} [Blue 0/${attrs['blue cost']}, Red 0/${attrs['red cost']}] with Junior Software Dev and Junior Hardware Eng`,
+      `development: ${attrs.name} (tier ${attrs.tier}, tag ${attrs.tag}, sector ${attrs.sector}) [Blue 0/${attrs['blue cost']}, Red 0/${attrs['red cost']}] with Junior Software Dev and Junior Hardware Eng`,
     );
     expect(screen.queryByRole('group', { name: 'Pick cards' })).toBeNull();
   });
@@ -662,7 +662,7 @@ describe('picking cards by clicking them', () => {
     fireEvent.click(within(offer()).getByRole('button', { name: 'Cancel' }));
     click(dating);
     choose(LAUNCH);
-    expect(boardOf(S)).toBe('development: Smart Lock [Blue 0/1, Red 0/5] · operations: Dating App [Blue 6/6, Red 0/0] · ops team: Junior Software Dev');
+    expect(boardOf(S)).toBe('development: Smart Lock (tier Tier 1, tag IoT, sector Deep Tech) [Blue 0/1, Red 0/5] · operations: Dating App (tier Tier 1, tag Social, sector Consumer) [Blue 6/6, Red 0/0] · ops team: Junior Software Dev');
     expect(lineOf(S)).toContain('2 actions');
   });
 
@@ -824,7 +824,7 @@ describe('the Board played by clicking', () => {
 
     click(todo);
     choose('Launch a card from your development to your operations');
-    expect(screen.getByTestId(`board-${S}`).textContent).toBe('operations: To-Do List [Blue 4/4, Red 0/0] · ops team: Junior Software Dev');
+    expect(screen.getByTestId(`board-${S}`).textContent).toBe('operations: To-Do List (tier Tier 1, tag App, sector Concept) [Blue 4/4, Red 0/0] · ops team: Junior Software Dev');
 
     // Income: the To-Do List's rev of 1 is paid, and its rev earns 1 market share.
     for (const seat of [S, N, T]) {
@@ -951,5 +951,67 @@ describe('a click that wobbles into a short drag on the Board, through the real 
       const card = trackTable().restOf(idOf(state, name));
       expect(dragQaTo(state, card), name).toEqual([expect.objectContaining({ fromZoneId: `bench-${S}`, toZoneId: `development-${S}` })]);
     }
+  });
+});
+
+describe('what the rules work out, on the Board', () => {
+  const tab = (name: string) => screen.getByRole('tab', { name });
+  const boardOf = (seat: string) => screen.getByTestId(`board-${seat}`).textContent;
+  const NAMES = ['Neobank', 'Viral Video App', 'Search Engine', 'Engineer', 'Streaming Service'];
+  /**
+   * The worked view's arrangement (startup-simulator.test.ts): S develops a Neobank with no one on it, and a Viral Video App with 2
+   * blue cubes cut and, here, 1 made; a Search Engine is in S's operations and an Engineer in its ops team; O's backlog holds the
+   * Streaming Service.
+   */
+  const stall = (): GameState => {
+    let state = setUp();
+    const [neobank, viral, search, engineer, streaming] = NAMES.map((name) => idOf(state, name));
+    state = relocate(state, [neobank, viral], `development-${S}`, game);
+    state = changeCard(state, viral, { 'cut blue cubes': 2, 'blue cubes': 1 }, game);
+    state = relocate(state, [search], `operations-${S}`, game);
+    state = relocate(state, [engineer], `ops-team-${S}`, game);
+    return relocate(state, [streaming], `backlog-${O}`, game);
+  };
+  const STALL = stall();
+  const [neobank, viral, search, engineer, streaming] = NAMES.map((name) => idOf(STALL, name));
+  const LINE = [
+    'development: Neobank (tier Tier 2, tag Crypto, requires Commerce, sector FinTech, stalled) [Blue 0/10, Red 0/0];',
+    'Viral Video App (tier Tier 1, tag Social, sector Consumer) [Blue 1/4 +2 cut, Red 0/0]',
+    '· operations: Search Engine (tier Tier 2, tag AI, requires Platform, sector Infra) [Blue 0/12, Red 0/0]',
+    '· ops team: Engineer (efficient in ops)',
+  ].join(' ');
+
+  it('captions each card with its need after the cut, and badges a card with a flag that changes what it makes or costs', () => {
+    mount({ initial: STALL });
+    // Review Focus: the Search Engine is Launched and the Engineer is staff, so neither is stalled.
+    expect(table!.decor).toEqual({
+      [neobank]: { caption: 'Blue 0/10\nRed 0/0', badge: 'stalled' },
+      [viral]: { caption: 'Blue 1/4 +2 cut\nRed 0/0' },
+      [search]: { caption: 'Blue 0/12\nRed 0/0' },
+      [engineer]: { badge: 'efficient in ops' },
+    });
+  });
+
+  it("names each card's words and flags on the Board line, whichever seat is looked at", () => {
+    mount({ initial: STALL });
+    expect(boardOf(S)).toBe(LINE);
+    fireEvent.click(tab(O));
+    expect(boardOf(S)).toBe(LINE);
+  });
+
+  it('drops stalled once a lead it can use is on it', () => {
+    mount({ initial: putOn(STALL, [idOf(STALL, 'Architect')], `development-team-${S}`, neobank, game) });
+    expect(table!.decor![neobank]).toEqual({ caption: 'Blue 0/10\nRed 0/0' });
+    expect(boardOf(S)).toContain('Neobank (tier Tier 2, tag Crypto, requires Commerce, sector FinTech) [Blue 0/10, Red 0/0] with Architect');
+  });
+
+  // A guard: this passes before the badges and words too, and pins that neither reaches a card the Board doesn't show.
+  it("Review Focus: puts nothing on a card in a backlog, and never names a card in another seat's", () => {
+    mount({ initial: STALL });
+    const backlog = STALL.cards.filter((card) => card.zoneId === `backlog-${S}`).map((card) => card.id);
+    expect(backlog).toHaveLength(1);
+    expect(Object.keys(table!.decor!)).not.toContain(streaming);
+    expect(Object.keys(table!.decor!)).not.toContain(backlog[0]);
+    expect(document.body.textContent).not.toContain('Streaming Service');
   });
 });

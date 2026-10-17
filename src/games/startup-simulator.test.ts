@@ -1220,6 +1220,14 @@ describe('Startup Simulator (designer language)', () => {
       expect(product('Smart Lock').data).not.toHaveProperty('requires');
     });
 
+    // A face shows a card's name and its first three columns, so the columns that say what a product is come first.
+    it('puts a product’s tier, tag and requirements first, so its face shows them', () => {
+      const first = (name: string, n: number) => Object.keys(product(name).data!).slice(0, n);
+      expect(first('Neobank', 4)).toEqual(['name', 'tier', 'tag', 'requires']);
+      expect(first('Fusion Reactor', 5)).toEqual(['name', 'tier', 'tag', 'requires', 'also requires']);
+      expect(first('Smart Lock', 4)).toEqual(['name', 'tier', 'tag', 'sector']);
+    });
+
     it('has the three University stacks, which never run out (§20.B.2)', () => {
       const endless = game!.cards.filter((set) => set.kind === 'endless');
       expect(endless.map((set) => set.identities.map((identity) => identity.attrs.name))).toEqual(JUNIORS.map((name) => [name]));

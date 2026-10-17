@@ -33,74 +33,74 @@ Cards:
     | name             | cost | skill | output | salary |
     | Junior QA Tester | 2    | qa    | 1      | 0      |
   A deck called seed products, starting in the seed deck:
-    | name | tier | blue cost | red cost | rev | val | blue maint | red maint | sector | requires | also requires | tag | copies |
-    | To-Do List | Tier 1 | 4 | 0 | 1 | 1 | 1 | 0 | Concept |  |  | App | 1 |
-    | Flashlight App | Tier 1 | 4 | 0 | 1 | 1 | 1 | 0 | Concept |  |  | App | 1 |
-    | Basic Website | Tier 1 | 4 | 0 | 1 | 1 | 1 | 0 | Concept |  |  | Platform | 1 |
-    | USB Gadget | Tier 1 | 4 | 0 | 1 | 1 | 1 | 0 | Concept |  |  | Device | 1 |
-    | Dating App | Tier 1 | 6 | 0 | 1 | 5 | 1 | 0 | Consumer |  |  | Social | 1 |
-    | Viral Video App | Tier 1 | 6 | 0 | 2 | 3 | 1 | 0 | Consumer |  |  | Social | 1 |
-    | Messaging App | Tier 1 | 4 | 0 | 1 | 2 | 1 | 0 | Consumer |  |  | Social | 1 |
-    | Mobile Wallet | Tier 1 | 4 | 0 | 2 | 2 | 1 | 0 | FinTech |  |  | Commerce | 1 |
-    | Payment Gateway | Tier 1 | 6 | 0 | 3 | 2 | 1 | 0 | FinTech |  |  | Commerce | 1 |
-    | Trading Bot | Tier 1 | 6 | 0 | 4 | 1 | 2 | 0 | FinTech |  |  | Commerce | 1 |
-    | Smart Thermostat | Tier 1 | 2 | 4 | 2 | 3 | 0 | 1 | Deep Tech |  |  | IoT | 1 |
-    | Fitness Wearable | Tier 1 | 2 | 4 | 2 | 3 | 0 | 1 | Deep Tech |  |  | IoT | 1 |
-    | Smart Lock | Tier 1 | 1 | 5 | 2 | 3 | 0 | 1 | Deep Tech |  |  | IoT | 1 |
-    | Health Tracker | Tier 1 | 4 | 0 | 1 | 2 | 1 | 0 | Life Sci |  |  | Data | 1 |
-    | Genetics Kit | Tier 1 | 0 | 8 | 3 | 4 | 0 | 1 | Life Sci |  |  | Data | 1 |
-    | Telehealth Platform | Tier 1 | 6 | 0 | 2 | 3 | 1 | 0 | Life Sci |  |  | Data | 1 |
-    | Tech Blog | Tier 1 | 4 | 0 | 1 | 1 | 1 | 0 | Infra |  |  | Platform | 1 |
-    | Cloud Storage | Tier 1 | 4 | 4 | 3 | 2 | 0 | 1 | Infra |  |  | Platform | 1 |
-    | Gig Economy | Tier 1 | 8 | 0 | 3 | 2 | 1 | 0 | Infra |  |  | Platform | 1 |
-    | App Store | Tier 1 | 6 | 0 | 4 | 3 | 1 | 0 | Infra |  |  | Platform | 1 |
-    | Indie Game Hit | Tier 1 | 6 | 0 | 3 | 1 | 1 | 0 | Consumer |  |  | App | 1 |
-    | News Aggregator | Tier 1 | 4 | 0 | 1 | 3 | 1 | 0 | Consumer |  |  | Platform | 1 |
-    | Crowdfunding Page | Tier 1 | 4 | 0 | 1 | 3 | 1 | 0 | FinTech |  |  | Platform | 1 |
-    | Budgeting App | Tier 1 | 4 | 0 | 2 | 1 | 1 | 0 | FinTech |  |  | App | 1 |
-    | Smart Toy | Tier 1 | 1 | 3 | 2 | 2 | 0 | 1 | Deep Tech |  |  | Device | 1 |
-    | Pet Tracker | Tier 1 | 2 | 4 | 2 | 3 | 0 | 1 | Deep Tech |  |  | IoT | 1 |
-    | Sleep Monitor | Tier 1 | 2 | 4 | 1 | 4 | 0 | 1 | Life Sci |  |  | Data | 1 |
-    | Meditation App | Tier 1 | 4 | 0 | 1 | 2 | 1 | 0 | Life Sci |  |  | Data | 1 |
-    | VPN Service | Tier 1 | 4 | 0 | 2 | 2 | 1 | 0 | Infra |  |  | Platform | 1 |
-    | Dev Tools | Tier 1 | 6 | 0 | 3 | 2 | 1 | 0 | Infra |  |  | Platform | 1 |
+    | name | tier | tag | requires | also requires | sector | blue cost | red cost | rev | val | blue maint | red maint | copies |
+    | To-Do List | Tier 1 | App |  |  | Concept | 4 | 0 | 1 | 1 | 1 | 0 | 1 |
+    | Flashlight App | Tier 1 | App |  |  | Concept | 4 | 0 | 1 | 1 | 1 | 0 | 1 |
+    | Basic Website | Tier 1 | Platform |  |  | Concept | 4 | 0 | 1 | 1 | 1 | 0 | 1 |
+    | USB Gadget | Tier 1 | Device |  |  | Concept | 4 | 0 | 1 | 1 | 1 | 0 | 1 |
+    | Dating App | Tier 1 | Social |  |  | Consumer | 6 | 0 | 1 | 5 | 1 | 0 | 1 |
+    | Viral Video App | Tier 1 | Social |  |  | Consumer | 6 | 0 | 2 | 3 | 1 | 0 | 1 |
+    | Messaging App | Tier 1 | Social |  |  | Consumer | 4 | 0 | 1 | 2 | 1 | 0 | 1 |
+    | Mobile Wallet | Tier 1 | Commerce |  |  | FinTech | 4 | 0 | 2 | 2 | 1 | 0 | 1 |
+    | Payment Gateway | Tier 1 | Commerce |  |  | FinTech | 6 | 0 | 3 | 2 | 1 | 0 | 1 |
+    | Trading Bot | Tier 1 | Commerce |  |  | FinTech | 6 | 0 | 4 | 1 | 2 | 0 | 1 |
+    | Smart Thermostat | Tier 1 | IoT |  |  | Deep Tech | 2 | 4 | 2 | 3 | 0 | 1 | 1 |
+    | Fitness Wearable | Tier 1 | IoT |  |  | Deep Tech | 2 | 4 | 2 | 3 | 0 | 1 | 1 |
+    | Smart Lock | Tier 1 | IoT |  |  | Deep Tech | 1 | 5 | 2 | 3 | 0 | 1 | 1 |
+    | Health Tracker | Tier 1 | Data |  |  | Life Sci | 4 | 0 | 1 | 2 | 1 | 0 | 1 |
+    | Genetics Kit | Tier 1 | Data |  |  | Life Sci | 0 | 8 | 3 | 4 | 0 | 1 | 1 |
+    | Telehealth Platform | Tier 1 | Data |  |  | Life Sci | 6 | 0 | 2 | 3 | 1 | 0 | 1 |
+    | Tech Blog | Tier 1 | Platform |  |  | Infra | 4 | 0 | 1 | 1 | 1 | 0 | 1 |
+    | Cloud Storage | Tier 1 | Platform |  |  | Infra | 4 | 4 | 3 | 2 | 0 | 1 | 1 |
+    | Gig Economy | Tier 1 | Platform |  |  | Infra | 8 | 0 | 3 | 2 | 1 | 0 | 1 |
+    | App Store | Tier 1 | Platform |  |  | Infra | 6 | 0 | 4 | 3 | 1 | 0 | 1 |
+    | Indie Game Hit | Tier 1 | App |  |  | Consumer | 6 | 0 | 3 | 1 | 1 | 0 | 1 |
+    | News Aggregator | Tier 1 | Platform |  |  | Consumer | 4 | 0 | 1 | 3 | 1 | 0 | 1 |
+    | Crowdfunding Page | Tier 1 | Platform |  |  | FinTech | 4 | 0 | 1 | 3 | 1 | 0 | 1 |
+    | Budgeting App | Tier 1 | App |  |  | FinTech | 4 | 0 | 2 | 1 | 1 | 0 | 1 |
+    | Smart Toy | Tier 1 | Device |  |  | Deep Tech | 1 | 3 | 2 | 2 | 0 | 1 | 1 |
+    | Pet Tracker | Tier 1 | IoT |  |  | Deep Tech | 2 | 4 | 2 | 3 | 0 | 1 | 1 |
+    | Sleep Monitor | Tier 1 | Data |  |  | Life Sci | 2 | 4 | 1 | 4 | 0 | 1 | 1 |
+    | Meditation App | Tier 1 | Data |  |  | Life Sci | 4 | 0 | 1 | 2 | 1 | 0 | 1 |
+    | VPN Service | Tier 1 | Platform |  |  | Infra | 4 | 0 | 2 | 2 | 1 | 0 | 1 |
+    | Dev Tools | Tier 1 | Platform |  |  | Infra | 6 | 0 | 3 | 2 | 1 | 0 | 1 |
   A deck called growth products, starting in the growth deck:
-    | name | tier | blue cost | red cost | rev | val | blue maint | red maint | sector | requires | also requires | tag | copies |
+    | name | tier | tag | requires | also requires | sector | blue cost | red cost | rev | val | blue maint | red maint | copies |
     | Market Crash |  |  |  |  |  |  |  |  |  |  |  | 1 |
-    | Streaming Service | Tier 2 | 10 | 0 | 6 | 6 | 2 | 0 | Consumer | Social |  | Media | 1 |
-    | Esports League | Tier 2 | 10 | 0 | 5 | 8 | 2 | 0 | Consumer | Social |  | Media | 1 |
-    | Social VR Space | Tier 2 | 12 | 0 | 4 | 8 | 2 | 0 | Consumer | Social |  | Media | 1 |
-    | Neobank | Tier 2 | 10 | 0 | 3 | 10 | 1 | 0 | FinTech | Commerce |  | Crypto | 1 |
-    | NFT Marketplace | Tier 2 | 10 | 0 | 5 | 6 | 2 | 0 | FinTech | Platform |  | Crypto | 1 |
-    | P2P Lending | Tier 2 | 12 | 0 | 6 | 5 | 2 | 0 | FinTech | Commerce |  | Crypto | 1 |
-    | Drone Delivery | Tier 2 | 6 | 6 | 5 | 8 | 1 | 1 | Deep Tech | IoT |  | Robotics | 1 |
-    | Smart Grid | Tier 2 | 2 | 10 | 7 | 5 | 0 | 2 | Deep Tech | IoT |  | Energy | 1 |
-    | Auto Warehouse | Tier 2 | 4 | 8 | 6 | 6 | 0 | 2 | Deep Tech | IoT |  | Robotics | 1 |
-    | AI Diagnostician | Tier 2 | 14 | 0 | 2 | 12 | 2 | 0 | Life Sci | Data |  | Bio | 1 |
-    | Lab-Grown Meat | Tier 2 | 8 | 6 | 4 | 8 | 1 | 1 | Life Sci | Data |  | Bio | 1 |
-    | Smart Prosthetics | Tier 2 | 4 | 8 | 5 | 8 | 1 | 1 | Life Sci | Data |  | Bio | 1 |
-    | Server Farm | Tier 2 | 0 | 8 | 7 | 4 | 0 | 2 | Infra | Platform |  | Cloud | 1 |
-    | Search Engine | Tier 2 | 12 | 0 | 6 | 8 | 2 | 0 | Infra | Platform |  | AI | 1 |
-    | Cybersecurity Firm | Tier 2 | 14 | 0 | 8 | 4 | 2 | 0 | Infra | Platform |  | Cloud | 1 |
-    | The Metaverse | Tier 3 | 16 | 0 | 0 | 25 | 3 | 0 | Consumer | Media | Cloud | Metaverse | 1 |
-    | Global Currency | Tier 3 | 18 | 0 | 2 | 22 | 2 | 0 | FinTech | Crypto | Cloud | DeFi | 1 |
-    | Fusion Reactor | Tier 3 | 4 | 20 | 10 | 20 | 0 | 3 | Deep Tech | Robotics | AI | Fusion | 1 |
-    | Immortality Pill | Tier 3 | 10 | 10 | 15 | 25 | 2 | 2 | Life Sci | Bio | AI | Longevity | 1 |
-    | Quantum Computer | Tier 3 | 0 | 18 | 10 | 15 | 0 | 3 | Infra | AI |  | Quantum | 1 |
-    | Influencer Agency | Tier 2 | 10 | 0 | 7 | 5 | 2 | 0 | Consumer | Social |  | Media | 1 |
-    | Music API | Tier 2 | 12 | 0 | 4 | 8 | 2 | 0 | Consumer | Platform |  | Media | 1 |
-    | InsurTech Platform | Tier 2 | 12 | 0 | 5 | 7 | 2 | 0 | FinTech | Data |  | Crypto | 1 |
-    | Algo-Trading Firm | Tier 2 | 14 | 0 | 9 | 2 | 2 | 0 | FinTech | Commerce |  | Crypto | 1 |
-    | Vertical Farm | Tier 2 | 4 | 10 | 6 | 6 | 0 | 2 | Deep Tech | IoT |  | Robotics | 1 |
-    | Exoskeleton Suit | Tier 2 | 6 | 8 | 5 | 8 | 1 | 1 | Deep Tech | Device |  | Robotics | 1 |
-    | Genome Editor | Tier 2 | 15 | 0 | 3 | 12 | 2 | 0 | Life Sci | Data |  | Bio | 1 |
-    | Bio-Fuel Cell | Tier 2 | 2 | 12 | 6 | 6 | 0 | 2 | Life Sci | IoT |  | Energy | 1 |
-    | Blockchain Ledger | Tier 2 | 10 | 0 | 4 | 6 | 2 | 0 | Infra | Platform |  | Cloud | 1 |
-    | Quantum Prototype | Tier 2 | 2 | 12 | 1 | 10 | 0 | 2 | Infra | Platform |  | AI | 1 |
-    | Neural Social Grid | Tier 3 | 18 | 0 | 2 | 24 | 3 | 0 | Consumer | Media | Bio |  | 1 |
-    | DAO Nation | Tier 3 | 20 | 0 | 0 | 28 | 2 | 0 | FinTech | Crypto | Social |  | 1 |
-    | Asteroid Mining | Tier 3 | 8 | 18 | 12 | 18 | 0 | 3 | Deep Tech | Robotics | Cloud |  | 1 |
-    | Planetary Wi-Fi | Tier 3 | 6 | 16 | 8 | 16 | 0 | 3 | Infra | Cloud | IoT |  | 1 |
+    | Streaming Service | Tier 2 | Media | Social |  | Consumer | 10 | 0 | 6 | 6 | 2 | 0 | 1 |
+    | Esports League | Tier 2 | Media | Social |  | Consumer | 10 | 0 | 5 | 8 | 2 | 0 | 1 |
+    | Social VR Space | Tier 2 | Media | Social |  | Consumer | 12 | 0 | 4 | 8 | 2 | 0 | 1 |
+    | Neobank | Tier 2 | Crypto | Commerce |  | FinTech | 10 | 0 | 3 | 10 | 1 | 0 | 1 |
+    | NFT Marketplace | Tier 2 | Crypto | Platform |  | FinTech | 10 | 0 | 5 | 6 | 2 | 0 | 1 |
+    | P2P Lending | Tier 2 | Crypto | Commerce |  | FinTech | 12 | 0 | 6 | 5 | 2 | 0 | 1 |
+    | Drone Delivery | Tier 2 | Robotics | IoT |  | Deep Tech | 6 | 6 | 5 | 8 | 1 | 1 | 1 |
+    | Smart Grid | Tier 2 | Energy | IoT |  | Deep Tech | 2 | 10 | 7 | 5 | 0 | 2 | 1 |
+    | Auto Warehouse | Tier 2 | Robotics | IoT |  | Deep Tech | 4 | 8 | 6 | 6 | 0 | 2 | 1 |
+    | AI Diagnostician | Tier 2 | Bio | Data |  | Life Sci | 14 | 0 | 2 | 12 | 2 | 0 | 1 |
+    | Lab-Grown Meat | Tier 2 | Bio | Data |  | Life Sci | 8 | 6 | 4 | 8 | 1 | 1 | 1 |
+    | Smart Prosthetics | Tier 2 | Bio | Data |  | Life Sci | 4 | 8 | 5 | 8 | 1 | 1 | 1 |
+    | Server Farm | Tier 2 | Cloud | Platform |  | Infra | 0 | 8 | 7 | 4 | 0 | 2 | 1 |
+    | Search Engine | Tier 2 | AI | Platform |  | Infra | 12 | 0 | 6 | 8 | 2 | 0 | 1 |
+    | Cybersecurity Firm | Tier 2 | Cloud | Platform |  | Infra | 14 | 0 | 8 | 4 | 2 | 0 | 1 |
+    | The Metaverse | Tier 3 | Metaverse | Media | Cloud | Consumer | 16 | 0 | 0 | 25 | 3 | 0 | 1 |
+    | Global Currency | Tier 3 | DeFi | Crypto | Cloud | FinTech | 18 | 0 | 2 | 22 | 2 | 0 | 1 |
+    | Fusion Reactor | Tier 3 | Fusion | Robotics | AI | Deep Tech | 4 | 20 | 10 | 20 | 0 | 3 | 1 |
+    | Immortality Pill | Tier 3 | Longevity | Bio | AI | Life Sci | 10 | 10 | 15 | 25 | 2 | 2 | 1 |
+    | Quantum Computer | Tier 3 | Quantum | AI |  | Infra | 0 | 18 | 10 | 15 | 0 | 3 | 1 |
+    | Influencer Agency | Tier 2 | Media | Social |  | Consumer | 10 | 0 | 7 | 5 | 2 | 0 | 1 |
+    | Music API | Tier 2 | Media | Platform |  | Consumer | 12 | 0 | 4 | 8 | 2 | 0 | 1 |
+    | InsurTech Platform | Tier 2 | Crypto | Data |  | FinTech | 12 | 0 | 5 | 7 | 2 | 0 | 1 |
+    | Algo-Trading Firm | Tier 2 | Crypto | Commerce |  | FinTech | 14 | 0 | 9 | 2 | 2 | 0 | 1 |
+    | Vertical Farm | Tier 2 | Robotics | IoT |  | Deep Tech | 4 | 10 | 6 | 6 | 0 | 2 | 1 |
+    | Exoskeleton Suit | Tier 2 | Robotics | Device |  | Deep Tech | 6 | 8 | 5 | 8 | 1 | 1 | 1 |
+    | Genome Editor | Tier 2 | Bio | Data |  | Life Sci | 15 | 0 | 3 | 12 | 2 | 0 | 1 |
+    | Bio-Fuel Cell | Tier 2 | Energy | IoT |  | Life Sci | 2 | 12 | 6 | 6 | 0 | 2 | 1 |
+    | Blockchain Ledger | Tier 2 | Cloud | Platform |  | Infra | 10 | 0 | 4 | 6 | 2 | 0 | 1 |
+    | Quantum Prototype | Tier 2 | AI | Platform |  | Infra | 2 | 12 | 1 | 10 | 0 | 2 | 1 |
+    | Neural Social Grid | Tier 3 |  | Media | Bio | Consumer | 18 | 0 | 2 | 24 | 3 | 0 | 1 |
+    | DAO Nation | Tier 3 |  | Crypto | Social | FinTech | 20 | 0 | 0 | 28 | 2 | 0 | 1 |
+    | Asteroid Mining | Tier 3 |  | Robotics | Cloud | Deep Tech | 8 | 18 | 12 | 18 | 0 | 3 | 1 |
+    | Planetary Wi-Fi | Tier 3 |  | Cloud | IoT | Infra | 6 | 16 | 8 | 16 | 0 | 3 | 1 |
   Cards can be onboarding.
   Cards can have blue cubes, red cubes, new blue cubes and new red cubes.
   Cards can have cut blue cubes and cut red cubes.

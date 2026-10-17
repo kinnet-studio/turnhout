@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { CardSprite } from './card-sprite';
 import type { CardRenderState } from '../core/table-model';
 import type { Graphics, Text } from 'pixi.js';
+import * as PIXI from 'pixi.js';
 
 const rs = (over: Partial<CardRenderState> = {}): CardRenderState => ({
   id: 'a', faceUp: true, faceKey: 'AS', draggable: true,
@@ -124,5 +125,103 @@ describe('decor', () => {
     s.setDecor({ caption: 'y' });
     expect(kids(s, 'card-caption')[0]).toBe(caption);
     expect(caption.text).toBe('y');
+  });
+});
+
+describe('badge', () => {
+  const kids = (parent: PIXI.Container, label: string) => parent.children.filter((c) => c.label === label);
+  /** The card's one badge, with its back and its text. */
+  const badgeOf = (s: CardSprite) => {
+    const badges = kids(s, 'card-badge');
+    expect(badges).toHaveLength(1);
+    const [badge] = badges;
+    return { badge, back: kids(badge, 'card-badge-back')[0] as PIXI.Graphics, text: kids(badge, 'card-badge-text')[0] as PIXI.Text };
+  };
+  /** The back's box, as [x, y, width, height]. */
+  const boxOf = (back: PIXI.Graphics) => {
+    const { x, y, width, height } = back.context.bounds;
+    return [x, y, width, height].map((n) => Math.round(n * 100) / 100);
+  };
+
+  it('draws the flags white on red inside the card’s top-right corner, the back sized to the text', () => {
+    const s = new CardSprite();
+    s.setDecor({ badge: 'busy' });
+    const { badge, back, text } = badgeOf(s);
+    expect([badge.x, badge.y]).toEqual([46, -66]);
+    expect(badge.children).toHaveLength(2);
+    expect(badge.children[0]).toBe(back);
+    expect(badge.children[1]).toBe(text);
+    expect(back).toBeInstanceOf(PIXI.Graphics);
+    expect(text).toBeInstanceOf(PIXI.Text);
+    expect(text.text).toBe('busy');
+    expect([text.anchor.x, text.anchor.y]).toEqual([1, 0]);
+    expect([text.x, text.y]).toEqual([-3, 1]);
+    expect(text.style).toMatchObject({ fontSize: 10, fontWeight: 'bold', fill: 0xffffff, align: 'right', lineHeight: 12, wordWrap: false });
+    // 'busy' is 23.34 wide in bold at 10: the back is 3 wider on each side, and one line of 12 tall with 1 above and below.
+    expect(boxOf(back)).toEqual([-29.34, 0, 29.34, 14]);
+    expect(back.context.instructions.at(-1)?.data).toMatchObject({ style: { color: 0xb91c1c } });
+  });
+
+  it('breaks a badge too wide for the corner at a space, and sizes the back to its widest line and its lines', () => {
+    const s = new CardSprite();
+    // 94.47 wide on one line, past the 56 the corner has room for: the first line takes as many words as fit, 'busy, tired,' (53.35).
+    s.setDecor({ badge: 'busy, tired, working' });
+    const two = badgeOf(s);
+    expect(two.text.text).toBe('busy, tired,\nworking');
+    expect(boxOf(two.back)).toEqual([-59.35, 0, 59.35, 26]);
+    // 50.57 wide: one line.
+    s.setDecor({ badge: 'busy, tired' });
+    const one = badgeOf(s);
+    expect(one.text.text).toBe('busy, tired');
+    expect(boxOf(one.back)).toEqual([-56.57, 0, 56.57, 14]);
+  });
+
+  it('sits beside a ring and a caption, after the two faces', () => {
+    const s = new CardSprite();
+    s.setDecor({ ring: 'chosen', caption: 'Red 1/1', badge: 'busy' });
+    expect(s.children).toHaveLength(5);
+    expect(s.children.indexOf(badgeOf(s).badge)).toBeGreaterThanOrEqual(2);
+  });
+
+  it('redraws both parts of the same badge for a new text', () => {
+    const s = new CardSprite();
+    s.setDecor({ badge: 'busy' });
+    const before = badgeOf(s);
+    s.setDecor({ badge: 'busy, tired' });
+    const after = badgeOf(s);
+    expect(after.badge).toBe(before.badge);
+    expect(after.back).toBe(before.back);
+    expect(after.text).toBe(before.text);
+    expect(after.text.text).toBe('busy, tired');
+    expect(boxOf(after.back)).toEqual([-56.57, 0, 56.57, 14]);
+  });
+
+  it('takes off and destroys a badge that is gone, empty or left with the rest', () => {
+    const s = new CardSprite();
+    s.setDecor({ badge: 'busy' });
+    const { badge, back, text } = badgeOf(s);
+    const drawing = back.context;
+    s.setDecor({ caption: 'x' });
+    expect(kids(s, 'card-badge')).toHaveLength(0);
+    expect([badge, back, text].map((part) => part.destroyed)).toEqual([true, true, true]);
+    // The back's drawing goes too, which a Graphics keeps when it is destroyed with options, as a box hands its children.
+    expect(drawing.instructions).toBeNull();
+    s.setDecor({ badge: 'busy' });
+    s.setDecor({ badge: '' });
+    expect(kids(s, 'card-badge')).toHaveLength(0);
+    s.setDecor({ ring: 'choice', caption: 'x', badge: 'busy' });
+    s.setDecor(null);
+    expect(kids(s, 'card-badge')).toHaveLength(0);
+    expect(s.children).toHaveLength(2);
+  });
+
+  it('keeps one badge however often the same one is set, and takes it with the card', () => {
+    const s = new CardSprite();
+    for (let i = 0; i < 2; i++) s.setDecor({ badge: 'busy' });
+    expect(kids(s, 'card-badge')).toHaveLength(1);
+    expect(s.children).toHaveLength(3);
+    const { badge, back, text } = badgeOf(s);
+    s.destroy();
+    expect([badge, back, text].map((part) => part.destroyed)).toEqual([true, true, true]);
   });
 });

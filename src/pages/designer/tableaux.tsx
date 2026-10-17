@@ -1,5 +1,5 @@
 import { Fragment, useMemo } from 'react';
-import type { BoardView } from '@/engine/core/lang/board-view';
+import type { BoardView, WorkedView } from '@/engine/core/lang/board-view';
 import type { CompiledGame } from '@/engine/core/lang/types';
 import { zoneIdFor } from '@/engine/core/lang/zones';
 import type { CardState, PlayerId } from '@/engine/core/scene';
@@ -27,18 +27,23 @@ export function tableauLine(game: CompiledGame, board: BoardView | null, cards: 
 
 /**
  * Every player's tableau, one line each in seat order and in the seat's color, the viewer's own among them, each with its
- * Board under it when there is one to list; then what the bank has left and the game's numbers, when there are any. It stands
- * in for the zones a table that shows one seat at a time leaves off.
+ * Board under it when there is one to list, read with what the view says the rules work out (`worked`); then what the bank has
+ * left and the game's numbers, when there are any. It stands in for the zones a table that shows one seat at a time leaves off.
  */
-export function Tableaux({ game, seats, board, cards }: {
+export function Tableaux({ game, seats, board, cards, worked }: {
   game: CompiledGame;
   seats: PlayerId[];
   board: BoardView | null;
   cards: CardState[];
+  worked?: WorkedView;
 }) {
   const bank = board ? bankLine(board) : '';
-  // The list is drawn again with the seat's panel, on every hover, but a seat's Board changes only with the cards.
-  const texts = useMemo(() => new Map(seats.map((seat) => [seat, boardText(game, cards, seat)])), [game, seats, cards]);
+  // The list is drawn again with the seat's panel, on every hover, but a seat's Board changes only with the cards and what the
+  // rules work out from them.
+  const texts = useMemo(
+    () => new Map(seats.map((seat) => [seat, boardText(game, cards, seat, worked)])),
+    [game, seats, cards, worked],
+  );
   return (
     <div data-testid="tableaux" style={{ display: 'flex', flexDirection: 'column', gap: 4, font: 'bold 14px sans-serif' }}>
       {seats.map((seat) => {
