@@ -5,6 +5,7 @@ Players: 2 to 5
   Each player has 0 market share that everyone can see.
   Players pay with capital.
   Players can have mentoring.
+  Players can be choosing offline products.
   The game has a license of 3.
 
 Cards:
@@ -321,6 +322,27 @@ Workshop ready:
   Only if it is a Synergy card.
   Only if it is not badged.
 
+Hardware side:
+  Only if it is not offline.
+  Only if one of:
+    It is a card whose tag is IoT.
+    It is a card whose tag is Robotics.
+    It is a card whose tag is Energy.
+    It is a card whose tag is Fusion.
+    It is a card whose tag is Longevity.
+    It is a card whose tag is Quantum.
+
+Software side:
+  Only if it is not offline.
+  Only if one of:
+    It is a card whose tag is App.
+    It is a card whose tag is Social.
+    It is a card whose tag is Commerce.
+    It is a card whose tag is Media.
+    It is a card whose tag is Crypto.
+    It is a card whose tag is Metaverse.
+    It is a card whose tag is DeFi.
+
 Stalled:
   Only if it is in a development.
   Only if it is not a Tier 1 card.
@@ -514,6 +536,9 @@ Bugged products:
 Operational revenue:
   A player's operational revenue is the total rev of the cards in their operations.
 
+Active tags:
+  A player's active tags is the number of different tag values among the cards in their operations that are not offline.
+
 Setup:
   Shuffle the talent deck.
   Shuffle the strategy deck.
@@ -576,6 +601,18 @@ In every phase:
     It loses its pending green.
     It is not badged.
     It is not fired.
+  When a player has at least 2 cards in their bench, their development team and their ops team whose xp is more than 2:
+    Only if the milestone row has a Talent Magnet.
+    Move the talent magnet from the milestone row to their milestones.
+  When a player's active tags is at least 3:
+    Only if no player is choosing offline products.
+    Only if the milestone row has a Platform Power.
+    Move the platform power from the milestone row to their milestones.
+  When a player has a card in their operations that is hardware side:
+    Only if they have a card in their operations that is software side.
+    Only if no player is choosing offline products.
+    Only if the milestone row has a Full Stack Founder.
+    Move the full stack founder from the milestone row to their milestones.
 
 Phase: modes
   Hint: Choose what each flex Senior, the Fixer and each Junior with a Skill token work on this turn: Blue, Red or QA. Each keeps its mode until you change it.
@@ -644,6 +681,7 @@ Phase: ops check
   Hint: Your ops team can't run all your products. Switch some off until the rest fit your Blue and Red bandwidth, then confirm. A product switched off earns nothing.
   When this phase starts:
     Every card in their operations is not offline.
+    They are choosing offline products.
   A player may switch off a card in their operations.
     Only if it is not offline.
     Then:
@@ -656,9 +694,11 @@ Phase: ops check
     Only if their blue supply is at least their blue demand.
     Only if their red supply is at least their red demand.
     Then:
+      They are not choosing offline products.
       Go to income.
   When their blue supply is at least their blue load:
     Only if their red supply is at least their red load.
+    They are not choosing offline products.
     Go to income.
 
 Phase: income
@@ -1141,12 +1181,15 @@ Phase: backlog cleanup
 
 Phase: final check
   Hint: After the last round your ops team can't run all your products. Switch products off, or back on, until those still on fit your Blue and Red bandwidth.
+  When this phase starts:
+    They are choosing offline products.
   When their blue supply is at least their blue load:
     Only if their red supply is at least their red load.
     Only if some card in their operations is offline.
     Every card in their operations is not offline.
   When their blue supply is at least their blue demand:
     Only if their red supply is at least their red demand.
+    They are not choosing offline products.
     The final check passes to the left.
   A player may switch off a card in their operations.
     Only if it is not offline.
@@ -4142,3 +4185,138 @@ Example: Revenue Leader is claimed only once: $10 at a later Income claims nothi
   Then the phase is income
   And p1 has 17 capital
   And p1's milestones is empty
+
+Example: Talent Magnet goes to the first player with 2 employees of 3 or more Permanent XP, a Junior on the bench included, once a Launch graduates the second (section 12, section 20, ruling 25)
+  Given the phase is actions
+  And the milestone row has a Talent Magnet, a Clean Launch and a Platform Power
+  And p0's bench has a Junior Software Dev
+  And the Junior Software Dev in p0's bench has 3 blue xp tokens
+  And p0's development has a Smart Lock
+  And the Smart Lock in p0's development has 1 blue cube
+  And the Smart Lock in p0's development has 5 red cubes
+  And the Smart Lock in p0's development has a Junior Hardware Eng on it
+  And the Junior Hardware Eng in p0's development team has 2 red xp tokens
+  And the Junior Hardware Eng in p0's development team has 1 pending red
+  Then the milestone row has a Talent Magnet, a Clean Launch and a Platform Power
+  When p0 launches the Smart Lock
+  Then p0's milestones has a Talent Magnet and a Clean Launch
+
+Example: two players meeting Talent Magnet at the same moment: it goes to the Active Player (section 12)
+  Given 3 players
+  And it is p2's turn
+  And the milestone row has a Talent Magnet, a Clean Launch and a Platform Power
+  And p0's bench has a Junior Software Dev and a Junior Hardware Eng
+  And the Junior Software Dev in p0's bench has 3 blue xp tokens
+  And the Junior Hardware Eng in p0's bench has 3 red xp tokens
+  And p2's bench has a Junior Software Dev and a Junior Hardware Eng
+  And the Junior Software Dev in p2's bench has 3 blue xp tokens
+  And the Junior Hardware Eng in p2's bench has 3 red xp tokens
+  When p2 recruits a junior qa tester
+  Then p2's milestones has a Talent Magnet
+  And p0's milestones is empty
+
+Example: Platform Power needs 3 Active products providing different Tags: two of one Tag count once, and an offline product not at all (section 20, ruling 5)
+  Given the phase is actions
+  And the milestone row has a Platform Power, a Clean Launch and a Talent Magnet
+  And p0's operations has a Dating App, a Viral Video App, a Mobile Wallet and a To-Do List
+  And the To-Do List in p0's operations is offline
+  And p0's development has a Smart Lock
+  And the Smart Lock in p0's development has 1 blue cube
+  And the Smart Lock in p0's development has 5 red cubes
+  Then p0's active tags is 2
+  When p0 launches the Smart Lock
+  Then p0's milestones has a Platform Power and a Clean Launch
+
+Example: nothing is claimed from the products an ops check brings back online until the player has chosen which to switch off (section 5, the slice's R1)
+  Given the milestone row has a Platform Power, a Clean Launch and a Talent Magnet
+  And p1's operations has a Dating App, a Mobile Wallet, a To-Do List and a Health Tracker
+  And the To-Do List in p1's operations is offline
+  And the Health Tracker in p1's operations is offline
+  And p1's ops team has a Junior Software Dev, a Junior Software Dev and a Junior Software Dev
+  And the turn passes to the left
+  Then the phase is ops check
+  And p1's milestones is empty
+  When p1 switches off the Health Tracker
+  And p1 confirms the products online
+  Then the phase is actions
+  And p1's milestones has a Platform Power
+
+Example: Full Stack Founder is not claimed from an Offline set still undecided either (section 5, the slice's R1)
+  Given the milestone row has a Full Stack Founder, a Clean Launch and a Talent Magnet
+  And p1's operations has a Smart Lock and a Dating App
+  And the Smart Lock in p1's operations is offline
+  And p1's ops team has a Junior Software Dev
+  And the turn passes to the left
+  Then the phase is ops check
+  And p1's milestones is empty
+  When p1 switches off the Smart Lock
+  And p1 confirms the products online
+  Then the phase is actions
+  And p1's milestones is empty
+
+Example: Full Stack Founder needs Active products on the hardware side and on the software side: an offline one doesn't count, and a Platform Tag is neither (section 20, ruling 5)
+  Given the phase is actions
+  And the milestone row has a Full Stack Founder, a Clean Launch and a Talent Magnet
+  And p0's operations has a Smart Thermostat, a Dating App and a Cloud Storage
+  And the Smart Thermostat in p0's operations is offline
+  And p0's development has a Smart Lock and a Viral Video App
+  And the Smart Lock in p0's development has 1 blue cube
+  And the Smart Lock in p0's development has 5 red cubes
+  And the Viral Video App in p0's development has 6 blue cubes
+  Then p0's milestones is empty
+  Given the Dating App in p0's operations is offline
+  When p0 launches the Smart Lock
+  Then the milestone row has a Full Stack Founder and a Talent Magnet
+  When p0 launches the Viral Video App
+  Then p0's milestones has a Full Stack Founder and a Clean Launch
+
+Example: a product the game-end Ops check brings back online claims Platform Power before the score (section 12, the slice's R1)
+  Given the crash pile has the Market Crash
+  And it is p1's turn
+  And the milestone row has a Platform Power, a Clean Launch and a Talent Magnet
+  And p0's operations has a Dating App, a Mobile Wallet and a To-Do List
+  And the To-Do List in p0's operations is offline
+  And p0's ops team has a Junior Software Dev, a Junior Software Dev and a Junior Software Dev
+  When p1 ends their actions
+  Then the game is over
+  And p0's milestones has a Platform Power
+  And p0 scores 19
+
+Example: the last Milestone check runs after every player's game-end Ops check, from the player whose turn ended the round (section 12, the slice's R1)
+  Given the crash pile has the Market Crash
+  And it is p1's turn
+  And the milestone row has a Platform Power, a Clean Launch and a Talent Magnet
+  And p0's operations has a Dating App, a Mobile Wallet and a To-Do List
+  And the To-Do List in p0's operations is offline
+  And p0's ops team has a Junior Software Dev, a Junior Software Dev and a Junior Software Dev
+  And p1's operations has a Viral Video App, a Payment Gateway and a Basic Website
+  And the Basic Website in p1's operations is offline
+  And p1's ops team has a Junior Software Dev, a Junior Software Dev and a Junior Software Dev
+  When p1 ends their actions
+  Then the game is over
+  And p1's milestones has a Platform Power
+  And p0's milestones is empty
+
+Example: an ops check that can run every product claims Platform Power once it passes (section 5, section 20)
+  Given the milestone row has a Platform Power, a Clean Launch and a Talent Magnet
+  And p1's operations has a Dating App, a Mobile Wallet and a To-Do List
+  And the To-Do List in p1's operations is offline
+  And p1's ops team has a Junior Software Dev, a Junior Software Dev and a Junior Software Dev
+  And the turn passes to the left
+  Then the phase is actions
+  And p1's milestones has a Platform Power
+
+Example: the game-end Ops check claims nothing while a player is still choosing which products to run (section 12, the slice's R1)
+  Given the crash pile has the Market Crash
+  And it is p1's turn
+  And the milestone row has a Platform Power, a Clean Launch and a Talent Magnet
+  And p0's operations has a Dating App, a Viral Video App, a Mobile Wallet and a To-Do List
+  And the To-Do List in p0's operations is offline
+  And p0's ops team has a Junior Software Dev and a Junior Software Dev
+  When p1 ends their actions
+  Then the phase is final check
+  When p0 switches on the To-Do List
+  And p0 switches off the Viral Video App
+  And p0 switches off the Mobile Wallet
+  Then the game is over
+  And p0's milestones is empty

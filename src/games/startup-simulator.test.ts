@@ -240,6 +240,12 @@ const SWITCH_OFF = 'switch off a card in their operations';
 const SWITCH_ON = 'switch on a card in their operations';
 const CONFIRM_ONLINE = 'confirm the products online';
 /**
+ * The flag a seat holds while it chooses which of its products run: from the start of its ops check, or of its step of the final check,
+ * until it confirms or the check passes. Platform Power and Full Stack Founder wait on it, so that neither is claimed from products
+ * that check brought back online before the player switches some off (§5 Phase B, §12, R1).
+ */
+const CHOOSING = 'choosing offline products';
+/**
  * The Engine's button (§5 Phase D, R3): clean one Bug off a product in operation, when the ops team's QA can't clean every Bug and the
  * owner picks which, one Bug a press.
  */
@@ -1611,7 +1617,8 @@ function scoreOf(state: GameState, seat: PlayerId): number {
  * - Ops: the seat that reached its Income in the move runs its online products within its ops team's supply, in Blue and in Red
  *   (§5 Phase B, ruling 19). A product goes offline or back online only in its owner's ops check: by a press there, as the check
  *   starts, or on the way through it to Income (ruling 25). At the end, a product goes back online in any move into, through or out
- *   of the final check before the score, but offline only by its owner's switch off in it (§12).
+ *   of the final check before the score, but offline only by its owner's switch off in it (§12). A seat is choosing which products
+ *   to run only while its turn is in its ops check, or its step in the final check (§5 Phase B, §12, R1).
  * - Only the seat in the sourcing phase has cards in its scouting row.
  * - The Strategy cards (§3, §5 Phase D step 7, §6, §15.C, §20.A, ruling 10): the strategy deck, its discard, every Strategy Hand and
  *   every brainstorm row hold the 30 cards of §20.A between them, by name. A seat's brainstorm row holds cards, 3 at most, only while its
@@ -1621,7 +1628,13 @@ function scoreOf(state: GameState, seat: PlayerId): number {
  *   3, or, in a game arranged without Setup, the milestone deck holds all 6. A card enters a milestones row only from the milestone row,
  *   and never leaves one. First Mover Advantage is claimed only in its seat's Launch of a Tier 2 card, Clean Launch only in its seat's
  *   Launch, and Revenue Leader only by the seat that reached its Income in the move (see `enteredIncome`) with an operational revenue
- *   of 10 or more, as the rules work it out.
+ *   of 10 or more, as the rules work it out. And each of those three is claimed at its moment whenever it is in the milestone row then:
+ *   Clean Launch at any Launch and First Mover Advantage at a Tier 2 Launch, by the seat that launched, and Revenue Leader at an Income
+ *   of 10 or more. No move changes how many the milestone deck, those rows and the box hold, so a game holds all 6 in the milestone
+ *   deck only if it never ran Setup. Talent Magnet, Platform Power and Full Stack Founder enter a seat's milestones row only in a move
+ *   after which that seat meets them, read through the rules: 2 cards on its bench or Board with more than 2 XP, 3 active Tags or more,
+ *   and a product in operation on the hardware side and one on the software side (§20.G, ruling 25); and Platform Power and Full Stack
+ *   Founder never while their seat is still choosing which products to run (R1).
  * - Each market refills at once: the agency row holds 4 and each product market 2 while its deck has cards, and the Market
  *   Crash is never anywhere but the growth deck or the crash pile.
  * - Each pool holds the 5 cards that entered it last, in the order they entered, every card it let go of is in the box, and
@@ -1746,17 +1759,20 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     noneOf([BRAINSTORM, BRAINSTORM_FLUSHING].includes(move.type) ? [] : newInTheDeck, () => `cards new in the strategy deck ${at}`);
 
     // The Milestones: Setup revealed 3 and boxed the rest (§4.3), and a revealed one is claimed into a milestones row for good, only at
-    // its moment (§12.5, §20.G).
+    // its moment or once its seat meets it (§12.5, §20.G).
     const claimRows = new Set(seats.map((seat) => zoneIdFor('milestones', seat)));
-    const six = after.cards.filter((c) => MILESTONES.includes(nameOf(c) as string));
-    const sixIn = (zoneIds: (zoneId: string) => boolean) => six.filter((c) => zoneIds(c.zoneId)).length;
-    // The milestone deck, the milestone row with the milestones rows, and the box. A game arranged without Setup, as the arranged tests
-    // below are, keeps all 6 in the milestone deck.
-    const split = [
-      sixIn((z) => z === 'milestone-deck'), sixIn((z) => z === 'milestone-row' || claimRows.has(z)), sixIn((z) => z === 'box'),
-    ];
-    const claims = sameValues(split, [0, 3, 3]) || sameValues(split, [6, 0, 0]) ? []
-      : [`${split.join(', ')} in the milestone deck, the milestone row and the milestones rows, and the box`];
+    /** The milestone deck, the milestone row with the milestones rows, and the box: how many of the 6 each holds in `state`. */
+    const splitOf = (state: GameState) => {
+      const six = state.cards.filter((c) => MILESTONES.includes(nameOf(c) as string));
+      const sixIn = (zoneIds: (zoneId: string) => boolean) => six.filter((c) => zoneIds(c.zoneId)).length;
+      return [sixIn((z) => z === 'milestone-deck'), sixIn((z) => z === 'milestone-row' || claimRows.has(z)), sixIn((z) => z === 'box')];
+    };
+    // A game arranged without Setup, as the arranged tests below are, keeps all 6 in the milestone deck from its first move to its last,
+    // and a game played from Setup never puts one back: no move changes the split.
+    const split = splitOf(after);
+    const where = 'in the milestone deck, the milestone row and the milestones rows, and the box';
+    const claims = (sameValues(split, [0, 3, 3]) || sameValues(split, [6, 0, 0])) && sameValues(splitOf(before), split) ? []
+      : [`${splitOf(before).join(', ')} before the move and ${split.join(', ')} after it ${where}`];
     for (const seat of seats) {
       const row = zoneIdFor('milestones', seat);
       for (const c of zoneCards(before, row)) {
@@ -1764,16 +1780,46 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       }
       const launched = move.type === LAUNCH && by === seat;
       const revenue = () => runtime.playerValue(after, seat, 'operational revenue');
+      // What a seat must meet after the move to claim the Milestones that wait on no moment (§20.G, ruling 25): 2 employees with 3 XP or
+      // more, on the bench or the Board; 3 different Tags among its products online; and products online on both sides of the stack.
+      const employees = () => ['bench', 'development team', 'ops team'].flatMap((name) => zoneCards(after, zoneIdFor(name, seat)));
+      const experienced = () => employees().filter((c) => ((runtime.workedValue(after, c.id, 'xp') as number | null) ?? 0) > 2).length;
+      const onSide = (side: string) => operationsOf(after, seat).some((c) => runtime.workedFlag(after, c.id, side));
+      const meets: Record<string, () => boolean> = {
+        'Talent Magnet': () => experienced() >= 2,
+        'Platform Power': () => runtime.playerValue(after, seat, 'active tags') >= 3,
+        'Full Stack Founder': () => onSide('hardware side') && onSide('software side'),
+      };
       for (const c of zoneCards(after, row)) {
         const was = cardById(before, c.id)?.zoneId;
         if (was === row) continue;
-        const which = `${c.id} (${nameOf(c)}) entered ${row} from ${was}`;
+        const name = nameOf(c) as string;
+        const which = `${c.id} (${name}) entered ${row} from ${was}`;
         if (was !== 'milestone-row') claims.push(which);
-        if (nameOf(c) === 'First Mover Advantage' && !(launched && card!.data?.tier === 'Tier 2')) claims.push(which);
-        if (nameOf(c) === 'Clean Launch' && !launched) claims.push(which);
-        if (nameOf(c) === 'Revenue Leader' && !(income === seat && revenue() >= 10)) {
+        if (name === 'First Mover Advantage' && !(launched && card!.data?.tier === 'Tier 2')) claims.push(which);
+        if (name === 'Clean Launch' && !launched) claims.push(which);
+        if (name === 'Revenue Leader' && !(income === seat && revenue() >= 10)) {
           claims.push(`${which}, with ${revenue()} operational revenue and ${income ?? 'no seat'} reaching Income`);
         }
+        if (name in meets && !meets[name]()) claims.push(`${which}, which ${seat} does not meet`);
+        // Not from an Offline set its seat is still choosing (R1). Another seat may be choosing by then: a claim made before the turn
+        // passed on to it stands.
+        if (['Platform Power', 'Full Stack Founder'].includes(name) && playerFact(after, seat, CHOOSING) === true) {
+          claims.push(`${which} while ${seat} is ${CHOOSING}`);
+        }
+      }
+    }
+    // And each one waiting on a moment is claimed at it while it is in the milestone row: Clean Launch by any Launch, First Mover
+    // Advantage by a Launch of a Tier 2 card, both by the seat that launched, and Revenue Leader by the seat whose Income came to 10 or
+    // more.
+    const due: [string, PlayerId][] = [];
+    if (move.type === LAUNCH) due.push(['Clean Launch', by]);
+    if (move.type === LAUNCH && card!.data?.tier === 'Tier 2') due.push(['First Mover Advantage', by]);
+    if (income !== null && runtime.playerValue(after, income, 'operational revenue') >= 10) due.push(['Revenue Leader', income]);
+    for (const [name, seat] of due) {
+      const revealed = zoneCards(before, 'milestone-row').some((c) => nameOf(c) === name);
+      if (revealed && !zoneCards(after, zoneIdFor('milestones', seat)).some((c) => nameOf(c) === name)) {
+        claims.push(`${name}, in the milestone row, not claimed by ${seat} at its moment`);
       }
     }
     noneOf(claims, () => `the Milestones ${at}`);
@@ -2019,6 +2065,11 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       return [`${c.id} (${nameOf(c)}) in ${c.zoneId} went ${offline(c) ? 'offline' : 'online'}`];
     });
     noneOf(switched, () => `the products switched ${at}`);
+    // A seat is choosing which products to run only while its own ops check waits on it, or its own step of the final check: the flag
+    // clears as the check passes, by a confirm or on the way through it (§5 Phase B, §12, R1).
+    const choosing = seats.filter((seat) => playerFact(after, seat, CHOOSING) === true)
+      .filter((seat) => !(seat === current && (phase === 'ops check' || phase === FINAL_CHECK)));
+    noneOf(choosing.map((seat) => `${seat} is ${CHOOSING} in ${current}'s ${phase}`), () => `the seats choosing their products ${at}`);
 
     // Markets refill at once.
     const refilled = (row: string, deck: string, full: number) => {
@@ -2099,7 +2150,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(233);
+    expect(results).toHaveLength(243);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -2146,14 +2197,14 @@ describe('Startup Simulator (designer language)', () => {
     // the load counts every product in operation, offline ones too (§5 Phase B). Their ops team's QA is set against the Bugs on
     // every product in operation and the Bugs it has cleaned by a press this Engine, and the products that have Bugs are counted
     // (§5 Phase D, R3). Their operational revenue is the rev of their products in operation, which Revenue Leader reads at Income
-    // (§9.A, §20.G).
+    // (§9.A, §20.G). Their active tags are the different Tags of their products online, which Platform Power reads (§20.G, ruling 5).
     expect(Object.keys(game!.playerValues!)).toEqual([
       'blue supply', 'red supply', 'blue demand', 'red demand', 'blue load', 'red load', 'qa supply', 'bug load', 'qa spent', 'bugged products',
-      'operational revenue',
+      'operational revenue', 'active tags',
     ]);
   });
 
-  it('works out slice 5’s values and flags for cards: XP and Skill tokens, the XP of the colour worked in, the salary bump, Badge points and Human Capital, learning, graduation, the QA Engineer’s and the Sales Rep’s Bug Decay, and the PMs’ Synergy and Agile (§3, §5, §11, §12, §20.B)', () => {
+  it('works out slice 5’s values and flags for cards: XP and Skill tokens, the XP of the colour worked in, the salary bump, Badge points and Human Capital, learning, graduation, the QA Engineer’s and the Sales Rep’s Bug Decay, the PMs’ Synergy and Agile, and the side of the stack a product is on (§3, §5, §11, §12, §20.B, §20.G)', () => {
     const worked = game!.worked!;
     // A Junior's XP and its Skill tokens, of every colour, are numbers of their own: 2 XP or more raise its salary to $1 (§3, §11.A.3),
     // and a Skill token makes it declarable (§11.C.2).
@@ -2199,6 +2250,9 @@ describe('Startup Simulator (designer language)', () => {
     ]) {
       expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
     }
+    // Which side of the stack a product is on, which Full Stack Founder reads: the hardware side's Tags or the software side's, and
+    // neither while it is offline (§20.G, ruling 5).
+    for (const flag of ['hardware side', 'software side']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
   });
 
   // The next three tests each add to the rules an example that the rules refuse for naming no button alone, and then an example for each
@@ -2427,6 +2481,29 @@ describe('Startup Simulator (designer language)', () => {
       expect(nameCounts(milestones)).toEqual(Object.fromEntries(MILESTONES.map((name) => [name, 1])));
       // First Mover 5, Talent Magnet 8, Platform Power 10, Revenue Leader 6, Clean Launch 5, Full Stack Founder 7.
       expect(sum(milestones, 'vp')).toBe(41);
+    });
+
+    it('puts every Tag of §20.G on its side, and no other (§20.G)', () => {
+      // Full Stack Founder's lists: these Tags are the hardware side and these the software side; Device, Platform, Data, Bio, Cloud and
+      // AI are neither (§20.G).
+      const HARDWARE = ['IoT', 'Robotics', 'Energy', 'Fusion', 'Longevity', 'Quantum'];
+      const SOFTWARE = ['App', 'Social', 'Commerce', 'Media', 'Crypto', 'Metaverse', 'DeFi'];
+      const decks = fresh();
+      const tagged = ['seed-deck', 'growth-deck'].flatMap((deck) => inZone(decks.cards, deck))
+        .filter((card) => typeof card.data?.tag === 'string');
+      // Each product online in an operations row, where the sides are read.
+      const state = relocate(decks, tagged.map((card) => card.id), 'operations-p0', game!);
+      const runtime = new LangRuntime(game!, lib, seatsFor(2));
+      const wrong = tagged.flatMap((card) => {
+        const tag = card.data?.tag as string;
+        const [hardware, software] = ['hardware side', 'software side'].map((side) => runtime.workedFlag(state, card.id, side) === true);
+        const right = hardware === HARDWARE.includes(tag) && software === SOFTWARE.includes(tag);
+        return right ? [] : [`${nameOf(card)} (${tag}): hardware side ${hardware}, software side ${software}`];
+      });
+      expect(wrong).toEqual([]);
+      // Every Tag of both lists is on some product, so each one's line is read.
+      const tags = new Set(tagged.map((card) => card.data?.tag));
+      expect([...HARDWARE, ...SOFTWARE].filter((tag) => !tags.has(tag))).toEqual([]);
     });
   });
 
