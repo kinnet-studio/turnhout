@@ -112,3 +112,26 @@ describe('makeInitApp decor', () => {
     expect(draw).toHaveBeenCalledWith(decor);
   });
 });
+
+describe('makeInitApp world', () => {
+  const world = { min: { x: -800, y: -920 }, max: { x: 800, y: 920 } };
+
+  it('pans and fits to the world it is given, centred on its middle', async () => {
+    await start({ size: { width: 1200, height: 1380 }, world });
+    expect(base.app.renderer.resize).toHaveBeenCalledWith(1200, 1380);
+    expect(base.camera.setZoomLevel).toHaveBeenCalledWith(0.75);
+    expect(base.camera.setPosition).toHaveBeenCalledWith({ x: 0, y: 0 });
+    expect((fake.base as BaseAppComponents).camera.boundaries).toEqual(world);
+  });
+
+  it('fits the world\'s height when it is the tighter side', async () => {
+    // 1200 / 1600 is 0.75, but 920 / 1840 is 0.5.
+    await start({ size: { width: 1200, height: 920 }, world });
+    expect(base.camera.setZoomLevel).toHaveBeenCalledWith(0.5);
+  });
+
+  it('looks at the middle of a world that is not centred on the origin', async () => {
+    await start({ size: { width: 1200, height: 900 }, world: { min: { x: 0, y: 0 }, max: { x: 1600, y: 1200 } } });
+    expect(base.camera.setPosition).toHaveBeenCalledWith({ x: 800, y: 600 });
+  });
+});

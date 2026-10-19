@@ -25,7 +25,12 @@ const defaultRenderer: FaceRenderer = (card) => (container: Container) => {
 };
 
 export const makeInitApp =
-  (faceRenderer: FaceRenderer = defaultRenderer, opts?: { showEmptyZones?: boolean; size?: { width: number; height: number } }) =>
+  (faceRenderer: FaceRenderer = defaultRenderer, opts?: {
+    showEmptyZones?: boolean;
+    size?: { width: number; height: number };
+    /** The camera's boundaries and the box its zoom fits; TABLE_BOUNDS when left out. */
+    world?: { min: Vec2; max: Vec2 };
+  }) =>
   async (
     canvas: HTMLCanvasElement,
     option: Partial<InitAppOptions> = { fullScreen: true, limitEntireViewPort: false, boundaries: TABLE_BOUNDS },
@@ -119,18 +124,20 @@ export const makeInitApp =
     canvas.addEventListener('pointerleave', leave);
     base.cleanups.push(() => canvas.removeEventListener('pointerleave', leave));
 
-    // Fit camera to the table bounds; lock zoom and pan (fixed table).
+    // Fit camera to the world (the table bounds, or the taller world a fitted
+    // table grows into); lock zoom and pan (fixed table).
     // `option.boundaries` isn't guaranteed to reach baseInitApp (main.tsx passes
     // its own `option` with no `boundaries` key, so the default parameter here
     // never applies), so set the camera's position boundaries explicitly here to
-    // keep the pan clamp consistent with the `fit` zoom computed from
-    // TABLE_BOUNDS below.
-    base.camera.boundaries = TABLE_BOUNDS;
+    // keep the pan clamp consistent with the `fit` zoom computed from the same
+    // world below.
+    const world = opts?.world ?? TABLE_BOUNDS;
+    base.camera.boundaries = world;
     const fit = Math.min(
-      base.camera.viewPortWidth / (TABLE_BOUNDS.max.x - TABLE_BOUNDS.min.x),
-      base.camera.viewPortHeight / (TABLE_BOUNDS.max.y - TABLE_BOUNDS.min.y),
+      base.camera.viewPortWidth / (world.max.x - world.min.x),
+      base.camera.viewPortHeight / (world.max.y - world.min.y),
     );
-    base.camera.setPosition({ x: 0, y: 0 });
+    base.camera.setPosition({ x: (world.min.x + world.max.x) / 2, y: (world.min.y + world.max.y) / 2 });
     base.camera.zoomBoundaries = { min: fit, max: fit };
     base.camera.setZoomLevel(fit);
 

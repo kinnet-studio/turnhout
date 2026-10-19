@@ -6,12 +6,13 @@ import { seatExtras, readSeatExtras, type ActionView } from '@/engine/core/lang/
 import { createEngine, initialState } from '@/engine/core/lang/build';
 import { comparedColumn } from '@/engine/core/lang/choices';
 import { moveForDrop } from '@/engine/core/lang/drops';
-import { fitsTable, fittedLayout, stackOnHolders } from '@/engine/core/lang/fit-layout';
+import { fitsTable, fittedBounds, fittedLayout, stackOnHolders } from '@/engine/core/lang/fit-layout';
 import { friendlyError, friendlyReason } from '@/engine/core/lang/friendly';
 import type { PhraseLibrary } from '@/engine/core/lang/phrases';
 import type { CompiledGame } from '@/engine/core/lang/types';
 import type { Move } from '@/engine/core/moves';
 import type { PlayerId } from '@/engine/core/scene';
+import { TABLE_BOUNDS } from '@/engine/core/scene';
 import type { Placement, TableDef } from '@/engine/core/table-def';
 import type { DropIntent } from '@/engine/input/table-input-context';
 import { GameServer } from '@/engine/net/game-server';
@@ -44,10 +45,10 @@ const NO_RULE = 'No rule lets you move a card there.';
 const SEAT_WIDTH = 800;
 const SEAT_HEIGHT = 600;
 const PANEL_STYLE = { width: SEAT_WIDTH, flex: '0 0 auto', border: '1px solid #ccc' } as const;
-// A game too big for one table shows one seat at a time, on a canvas that draws the 1600 x 1200 world at three quarters.
+// A game too big for one table shows one seat at a time, on a canvas that draws its world at three quarters: the 1600 x 1200
+// table, or a taller world when the seat's board needs the room (`fittedBounds`).
 const FITTED_WIDTH = 1200;
-const FITTED_HEIGHT = 900;
-const initFittedApp = makeInitApp(designerFaceRenderer, { showEmptyZones: true, size: { width: FITTED_WIDTH, height: FITTED_HEIGHT } });
+const FITTED_SCALE = FITTED_WIDTH / (TABLE_BOUNDS.max.x - TABLE_BOUNDS.min.x);
 
 type Started = { server: GameServer; session: GameSession; tableDef: TableDef; seats: PlayerId[] } | { error: string };
 
@@ -196,6 +197,14 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
     askedCard === null ? undefined : view?.scene.cards.find((card) => card.id === askedCard.cardId),
   ));
   const option = useMemo(() => ({ fullScreen: false, limitEntireViewPort: false }), []);
+  // The fitted canvas is as tall as its world needs. A table that needs no more room is made with exactly what it was before, with
+  // no world. The canvas makes its app once, when it mounts, so this is worked out once for each game.
+  const fittedCanvas = useMemo(() => {
+    const world = fittedBounds(game.zones);
+    const size = { width: FITTED_WIDTH, height: (world.max.y - world.min.y) * FITTED_SCALE };
+    const init = makeInitApp(designerFaceRenderer, { showEmptyZones: true, size, ...(world !== TABLE_BOUNDS && { world }) });
+    return { size, init };
+  }, [game]);
   const drawn = useMemo(() => new Set(tableDef.zones.map((zone) => zone.id)), [tableDef]);
   // A fitted table leaves the other players' zones off, so their cards have nowhere to stand: they are counted in the tableaux.
   // The cards on a card hang under it, placed once for each view rather than on every hover.
@@ -298,7 +307,7 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
     && (game.board === null || game.board.spaces.length === 0 || picksCards
       || game.phases.some((phase) => phase.moves.length > 0 || phase.rearrange.length > 0));
   const canvas = showsCards && (
-    <Wrapper option={option} initFunction={fitted ? initFittedApp : initAppWithFaces}>
+    <Wrapper option={option} initFunction={fitted ? fittedCanvas.init : initAppWithFaces}>
       <CardTable
         tableDef={tableDef}
         placement={placement}
@@ -414,7 +423,7 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
     const choicePicker = current !== null && question !== null && (
       <ChoicePicker question={question} choice={current} onAnswer={answer} onRefused={flash} onCancel={() => setAsking(null)} />
     );
-    const canvasBox = fitted ? { width: FITTED_WIDTH, height: FITTED_HEIGHT } : { height: SEAT_HEIGHT };
+    const canvasBox = fitted ? fittedCanvas.size : { height: SEAT_HEIGHT };
     return (
       <div style={{ ...PANEL_STYLE, width: fitted ? FITTED_WIDTH : SEAT_WIDTH, boxSizing: 'content-box', padding: 8, display: 'flex', flexDirection: 'column', gap: 8, font: '14px sans-serif', color: '#eee' }}>
         <div>{status}</div>

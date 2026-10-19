@@ -32,6 +32,8 @@ import { TableModel } from '@/engine/core/table-model';
 import type { DropIntent } from '@/engine/input/table-input-context';
 import { TableInputTracker } from '@/engine/input/table-input-tracker';
 import { STACK_STEP } from '@/engine/core/lang/fit-layout';
+import { fittedBounds, HANG_ONE } from '@/engine/core/lang/fit-layout';
+import { TALL_GAME } from '@/engine/core/lang/testing';
 
 // The canvas a seat is drawn on: keep what its app was last made with.
 let canvasMadeWith: unknown = null;
@@ -361,6 +363,22 @@ const inWorld = (b: FullBox) =>
 const misfits = (defs: ZoneDef[]): string[] => {
   const slotted = defs.filter((d) => d.layout !== 'free').map((d) => [d.id, fullBox(d)] as const);
   const problems = slotted.filter(([, b]) => !inWorld(b)).map(([id]) => `${id} leaves the world`);
+  slotted.forEach(([a, ab], i) => {
+    for (const [b, bb] of slotted.slice(i + 1)) if (boxesOverlap(ab, bb)) problems.push(`${a} overlaps ${b}`);
+  });
+  for (const d of defs) {
+    const boardRow = d.owner !== 'shared' && d.visibility === 'public' && d.layout === 'row';
+    if (boardRow && (d.bounds?.height ?? 0) < CARD_HEIGHT) problems.push(`${d.id} is less than a card tall`);
+  }
+  return problems;
+};
+/** `misfits` read against the world given, which `fittedBounds` grows taller than TABLE_BOUNDS for a band too short. */
+const misfitsIn = (defs: ZoneDef[], bounds: ReturnType<typeof fittedBounds>): string[] => {
+  const within = (b: FullBox) =>
+    b.x - b.width / 2 >= bounds.min.x && b.x + b.width / 2 <= bounds.max.x &&
+    b.y - b.height / 2 >= bounds.min.y && b.y + b.height / 2 <= bounds.max.y;
+  const slotted = defs.filter((d) => d.layout !== 'free').map((d) => [d.id, fullBox(d)] as const);
+  const problems = slotted.filter(([, b]) => !within(b)).map(([id]) => `${id} leaves the world`);
   slotted.forEach(([a, ab], i) => {
     for (const [b, bb] of slotted.slice(i + 1)) if (boxesOverlap(ab, bb)) problems.push(`${a} overlaps ${b}`);
   });
@@ -1379,5 +1397,34 @@ describe('a Growth Hacker hangs under its product', () => {
     fireEvent.click(tab(O));
     expect(cardsIn(`ops-team-${S}`)).toEqual([]);
     expect(boardOf(S)).toBe(BOARD_LINE);
+  });
+});
+
+describe('a fitted table that grows', () => {
+  const tall = compileGame(TALL_GAME, lib).game!;
+
+  it('is drawn on a 1200 × 1380 canvas, the 1840-tall world at three quarters', () => {
+    mount({ game: tall, players: 2 });
+    expect(canvasMadeWith).toEqual({
+      opts: { showEmptyZones: true, size: { width: 1200, height: 1380 }, world: { min: { x: -800, y: -920 }, max: { x: 800, y: 920 } } },
+    });
+    expect(table!.tableDef.zones).toEqual(fittedLayout(tall.zones, 'p0'));
+  });
+
+  // Holds before plan 5-2b's zones, when Startup Simulator's table fits as it is, and after, when it grows. The layout depends
+  // only on the viewer, so p0 to p4 cover 2 to 5 seats.
+  it.each(seatsOf(5))('keeps Startup Simulator inside its world, each Board row tall enough to hang a card, for %s', (viewer) => {
+    const b = fittedBounds(game.zones);
+    const placed = fittedLayout(game.zones, viewer);
+    expect(misfitsIn(placed, b)).toEqual([]);
+    const own = placed.filter((d) => d.owner === viewer);
+    for (const d of own.filter((d) => d.visibility === 'public' && d.layout === 'row')) {
+      expect(d.bounds!.height, d.id).toBeGreaterThanOrEqual(HANG_ONE);
+    }
+    // The development team's first card hangs clear of the private strip.
+    const team = placed.find((d) => d.id === `development-team-${viewer}`)!;
+    for (const d of own.filter((d) => d.visibility !== 'public')) {
+      expect(team.transform.y + CARD_HEIGHT / 2, d.id).toBeLessThan(d.transform.y - CARD_HEIGHT / 2);
+    }
   });
 });

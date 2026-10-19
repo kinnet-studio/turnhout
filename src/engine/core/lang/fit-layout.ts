@@ -1,10 +1,11 @@
-// Places a game's zones for one viewer on the fixed table world, each in a slot of its own, so a game with more zones than
-// one line can hold still lies inside the world. The shared zones wrap onto lines from the top, the viewer's private zones onto
-// lines from the bottom, the viewer's public zones into the band between, and rivals' zones are left off. A zone where every
-// card sits on a card gets no slot: its cards hang under the cards they sit on. A board row where only some cards do keeps its
-// slot, and those few hang the same way. Like autoLayout, it works from the declared zones alone.
+// Places a game's zones for one viewer on the table world, each in a slot of its own, so a game with more zones than one line can
+// hold still lies inside the world. The shared zones wrap onto lines from the top, the viewer's private zones onto lines from the
+// bottom, the viewer's public zones into the band between, and rivals' zones are left off. The world is the table's, or a taller
+// one when the band's lines would be too short to hang a card under another (`fittedBounds`). A zone where every card sits on a
+// card gets no slot: its cards hang under the cards they sit on. A board row where only some cards do keeps its slot, and those
+// few hang the same way. Like autoLayout, it works from the declared zones alone.
 import { computeZoneLayout } from '../layout';
-import { CARD_HEIGHT, CARD_WIDTH, cardsByZone, TABLE_BOUNDS, type CardState, type PlayerId } from '../scene';
+import { CARD_HEIGHT, CARD_WIDTH, cardsByZone, TABLE_BOUNDS, type CardState, type PlayerId, type Vec2 } from '../scene';
 import type { ZoneDef } from '../table-def';
 import { placeZone } from '../zone-geometry';
 import { holderIdOf } from './attach';
@@ -36,6 +37,10 @@ export const BOARD_SPACING = 110;
 export const STACK_GAP = 36;
 /** From one card of a column to the next, which is drawn over it and leaves its top strip, the corner index, showing. */
 export const STACK_STEP = 34;
+/** A band line's least height: a card, the gap its caption takes, and one card hanging under it. */
+export const HANG_ONE = 2 * CARD_HEIGHT + STACK_GAP;
+/** A grown band line: a card and four hanging under it at a full step. */
+export const HANG_FOUR = HANG_ONE + 3 * STACK_STEP;
 
 // How many cards stand in a zone when asking whether a table fits, the counts `unreachableZones` uses.
 const ROW_CARDS = 4;
@@ -100,8 +105,44 @@ function placeLine(
   });
 }
 
+const isPrivate = (spec: ZoneSpec) => spec.visibility !== 'public';
+// Only a zone where every card sits on a card gives up its slot: under any other mark a zone may hold cards that sit on none.
+// A private one keeps its slot in the strip all the same, so a viewer with no public zone of its own has all its zones along the
+// bottom, as a table with no band does.
+const isAttached = (spec: ZoneSpec) => !isPrivate(spec) && spec.onCards === 'every';
+
+/** The lines a fitted table wraps the zones onto: the shared zones', the private strip's and the band's. */
+function linesOf(zones: ZoneSpec[]): { shared: Line[]; strip: Line[]; band: Line[] } {
+  const own = zones.filter((z) => z.perPlayer);
+  return {
+    shared: wrap(zones.filter((z) => !z.perPlayer)),
+    strip: wrap(own.filter(isPrivate)),
+    band: wrap(own.filter((spec) => !isPrivate(spec) && !isAttached(spec))),
+  };
+}
+
 /**
- * The table as `viewer` sees it, and nothing of the other players':
+ * The world a fitted table lies in: TABLE_BOUNDS, or one as wide and taller, centred on 0, when the band's lines would be shorter
+ * than HANG_ONE. A grown world gives each band line at least HANG_FOUR, its height rounded up to a multiple of 8. A table that
+ * needs no more room gets the TABLE_BOUNDS object itself, so the page can tell that its canvas is made as before.
+ */
+export function fittedBounds(zones: ZoneSpec[]): { min: Vec2; max: Vec2 } {
+  const { shared, strip, band } = linesOf(zones);
+  const n = band.length;
+  // A table with no band has nothing to grow for.
+  if (n === 0) return TABLE_BOUNDS;
+  // Everything but the band's lines, as fittedLayout lays it out: the margins, the shared and private lines, and the names over
+  // every line.
+  const spent = 2 * MARGIN + LABEL_ROOM
+    + [...shared, ...strip].reduce((sum, line) => sum + line.height + LINE_GAP + LABEL_ROOM, 0)
+    + (n - 1) * (LINE_GAP + LABEL_ROOM);
+  if (Math.floor((TABLE_BOUNDS.max.y - TABLE_BOUNDS.min.y - spent) / n) >= HANG_ONE) return TABLE_BOUNDS;
+  const height = Math.ceil((spent + n * HANG_FOUR) / 8) * 8;
+  return { min: { x: TABLE_BOUNDS.min.x, y: -height / 2 }, max: { x: TABLE_BOUNDS.max.x, y: height / 2 } };
+}
+
+/**
+ * The table as `viewer` sees it, and nothing of the other players', in the world `fittedBounds` gives it:
  * - the shared zones from the top of the world down;
  * - the viewer's private zones from the bottom up;
  * - the viewer's public zones (the board) in the band between, its lines sharing the band's height, each zone's cards at the top
@@ -116,24 +157,21 @@ function placeLine(
  */
 export function fittedLayout(zones: ZoneSpec[], viewer: PlayerId): ZoneDef[] {
   const own = zones.filter((z) => z.perPlayer);
-  const isPrivate = (spec: ZoneSpec) => spec.visibility !== 'public';
-  // Only a zone where every card sits on a card gives up its slot: under any other mark a zone may hold cards that sit on none.
-  // A private one keeps its slot in the strip all the same, so a viewer with no public zone of its own has all its zones along the
-  // bottom, as a table with no band does.
-  const isAttached = (spec: ZoneSpec) => !isPrivate(spec) && spec.onCards === 'every';
   const ownId = (spec: ZoneSpec) => zoneIdFor(spec.name, viewer);
+  const { shared, strip, band } = linesOf(zones);
+  const world = fittedBounds(zones);
 
   const placed = new Map<string, ZoneDef>();
-  let bottom = TABLE_BOUNDS.max.y - MARGIN;
-  for (const line of wrap(own.filter(isPrivate))) {
+  let bottom = world.max.y - MARGIN;
+  for (const line of strip) {
     const y = bottom - line.height / 2;
     for (const def of placeLine(line, () => y, ownId, viewer)) placed.set(def.id, def);
     bottom -= line.height + LABEL_ROOM + LINE_GAP;
   }
 
   const common: ZoneDef[] = [];
-  let top = TABLE_BOUNDS.min.y + MARGIN + LABEL_ROOM;
-  for (const line of wrap(zones.filter((z) => !z.perPlayer))) {
+  let top = world.min.y + MARGIN + LABEL_ROOM;
+  for (const line of shared) {
     const y = top + line.height / 2;
     common.push(...placeLine(line, () => y, (spec) => zoneIdFor(spec.name), 'shared'));
     top += line.height + LINE_GAP + LABEL_ROOM;
@@ -141,10 +179,9 @@ export function fittedLayout(zones: ZoneSpec[], viewer: PlayerId): ZoneDef[] {
 
   // The band runs from under the last shared line's names to above the first private line's; `top` and `bottom` stand there now.
   const board: ZoneDef[] = [];
-  const lines = wrap(own.filter((spec) => !isPrivate(spec) && !isAttached(spec)));
   // With no board zone there is no line to share the band among.
-  const height = lines.length === 0 ? 0 : Math.floor((bottom - top - (lines.length - 1) * (LINE_GAP + LABEL_ROOM)) / lines.length);
-  lines.forEach((line, k) => {
+  const height = band.length === 0 ? 0 : Math.floor((bottom - top - (band.length - 1) * (LINE_GAP + LABEL_ROOM)) / band.length);
+  band.forEach((line, k) => {
     const lineTop = top + k * (height + LINE_GAP + LABEL_ROOM);
     const defs = placeLine(line, (slot) => lineTop + slot.height / 2, ownId, viewer);
     board.push(...defs.map((def, i) => boardDef(def, height, line.slots[i].spec)));

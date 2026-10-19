@@ -17,6 +17,8 @@ import { CARD_HEIGHT } from '../scene';
 import { stackOnHolders } from './fit-layout';
 import { fixtureCard } from './testing';
 import { BOARD_SPACING, STACK_GAP } from './fit-layout';
+import { fittedBounds, HANG_FOUR, HANG_ONE } from './fit-layout';
+import { TALL_GAME } from './testing';
 
 const lib = createDefaultLibrary();
 const seats = (n: number) => Array.from({ length: n }, (_, i) => `p${i}`);
@@ -383,5 +385,78 @@ describe('a zone where only some cards sit on cards', () => {
     // Three cards 110 apart fit the 400-wide slot, so they keep the board's spacing around the row's middle.
     expect(['t2', 't3', 't4'].map((id) => poses.get(id)!.x - idle.transform.x)).toEqual([-110, 0, 110]);
     expect(['t2', 't3', 't4'].map((id) => poses.get(id)!.y)).toEqual([idle.transform.y, idle.transform.y, idle.transform.y]);
+  });
+});
+
+describe('a fitted table that needs more room', () => {
+  const compiled = compileGame(TALL_GAME, lib);
+  const TALL = compiled.game!.zones;
+  // Without the rack, the band's rows fill one line.
+  const NO_RACK = TALL.filter((z) => z.name !== 'rack');
+  type Bounds = ReturnType<typeof fittedBounds>;
+  /** `misfits` read against the bounds given rather than TABLE_BOUNDS. */
+  const fitsIn = (defs: ZoneDef[], bounds: Bounds): string[] => {
+    const within = (b: Box) =>
+      b.x - b.width / 2 >= bounds.min.x && b.x + b.width / 2 <= bounds.max.x &&
+      b.y - b.height / 2 >= bounds.min.y && b.y + b.height / 2 <= bounds.max.y;
+    const slotted = defs.filter((d) => d.layout !== 'free').map((d) => [d.id, box(d)] as const);
+    const problems = slotted.filter(([, b]) => !within(b)).map(([id]) => `${id} leaves the world`);
+    slotted.forEach(([a, ab], i) => {
+      for (const [b, bb] of slotted.slice(i + 1)) if (overlap(ab, bb)) problems.push(`${a} overlaps ${b}`);
+    });
+    for (const d of defs) {
+      const boardRow = d.owner !== 'shared' && d.visibility === 'public' && d.layout === 'row';
+      if (boardRow && (d.bounds?.height ?? 0) < CARD_HEIGHT) problems.push(`${d.id} is less than a card tall`);
+    }
+    return problems;
+  };
+
+  it('needs a card, its caption and one card under it in a band line, and grows each to hang four', () => {
+    expect(HANG_ONE).toBe(316);
+    expect(HANG_FOUR).toBe(418);
+  });
+
+  it('is a fixture that compiles and does not fit one table', () => {
+    expect(compiled.diagnostics).toEqual([]);
+    for (const n of [2, 3, 4, 5]) expect(fitsTable(TALL, seats(n)), `${n} seats`).toBe(false);
+  });
+
+  it('grows to 1840 tall, as wide as the table and centred on it', () =>
+    expect(fittedBounds(TALL)).toEqual({ min: { x: -800, y: -920 }, max: { x: 800, y: 920 } }));
+
+  it('lays the shared lines down from the top of the grown world, the strip up from its bottom, and the band between', () => {
+    const defs = fittedLayout(TALL, 'p1');
+    const expectAt = (id: string, x: number, y: number) => expect(at(defs, id), id).toEqual({ x, y });
+    expectAt('pile', -630, -806); expectAt('hall', -360, -806); expectAt('scrap', 60, -806); expectAt('fair', 480, -806);
+    expectAt('bazaar', -420, -626); expectAt('booth', 0, -626); expectAt('yard', 420, -626);
+    expectAt('loft', 0, -446);
+    expectAt('stash-p1', -420, 830); expectAt('drawer-p1', 0, 830); expectAt('locker-p1', 420, 830);
+    expectAt('satchel-p1', 0, 650);
+    expectAt('workshop-p1', -420, -266); expectAt('idle-p1', 0, -266); expectAt('shelf-p1', 420, -266);
+    expectAt('rack-p1', 0, 192);
+    for (const id of ['workshop-p1', 'idle-p1', 'shelf-p1', 'rack-p1']) {
+      expect(defs.find((d) => d.id === id)!.bounds, id).toEqual({ width: 400, height: 418, anchor: { x: 0.5, y: 70 / 418 } });
+    }
+    expect(defs.find((d) => d.id === 'crew-p1')).toMatchObject({ layout: 'free', transform: { x: -420, y: -90 } });
+  });
+
+  it('grows less for one band line: 1382 rounded up to 1384', () => {
+    expect(fittedBounds(NO_RACK)).toEqual({ min: { x: -800, y: -692 }, max: { x: 800, y: 692 } });
+    const defs = fittedLayout(NO_RACK, 'p1');
+    expect(defs.find((d) => d.id === 'workshop-p1')!.bounds!.height).toBe(420);
+    expect(at(defs, 'workshop-p1')).toEqual({ x: -420, y: -38 });
+  });
+
+  describe.each([['two band lines', TALL], ['one band line', NO_RACK]] as const)('Review Focus, on %s', (_, zones) => {
+    // As on TWO_LINES' band: the workshop's middle is where the first card hanging under its middle card goes.
+    it.each(seats(5))('keeps every slot inside the grown world, apart and at least a card tall, for %s', (viewer) => {
+      const table = fittedLayout(zones, viewer);
+      expect(fitsIn(table, fittedBounds(zones))).toEqual([]);
+      expect(unreachableZones(table, 7)).toEqual([`workshop-${viewer}: centre goes to crew-${viewer}`]);
+    });
+  });
+
+  it('is the table itself for a table whose band has room, or that has no band', () => {
+    for (const zones of [MARKET, BOARD, TWO_LINES]) expect(fittedBounds(zones)).toBe(TABLE_BOUNDS);
   });
 });

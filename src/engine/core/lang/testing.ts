@@ -427,6 +427,17 @@ export const CREW_GAME = [
 ].join('\n');
 
 /**
+ * CREW_GAME with five more rows in the center, three more rows only their owner sees and two more everyone sees: three shared lines,
+ * two private lines and two band lines, more than the table's height holds.
+ */
+export const TALL_GAME = CREW_GAME.replace('  Each player has an idle row that everyone can see.', [
+  '  Each player has an idle row that everyone can see.',
+  ...['fair', 'bazaar', 'booth', 'yard', 'loft'].map((zone) => `  The ${zone} is a row in the center that everyone can see.`),
+  ...['drawer', 'locker', 'satchel'].map((zone) => `  Each player has a ${zone} row that only they can see.`),
+  ...['shelf', 'rack'].map((zone) => `  Each player has a ${zone} row that everyone can see.`),
+].join('\n'));
+
+/**
  * CREW_GAME with the numbers a job's crew works up to, and values worked out for cards from them: what a hand puts into red and gold
  * work, a Tinker's wage, and whether a job is done.
  */
