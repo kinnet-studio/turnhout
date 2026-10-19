@@ -431,6 +431,24 @@ describe('an If line with two conditions', () => {
       expect.objectContaining({ line: lineOf(text, COINZ), message: 'There is no counter called “coinz”.' }),
     ]);
   });
+  it('is cut at the first comma after two conditions whose effect reads, though the words before an earlier comma read as two', () => {
+    // A condition that holds a comma of its own, beside a phrase for each half.
+    const truly = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
+      .condition('the bank is empty', () => true).condition('the till is empty', () => true)
+      .condition('the till is empty, truly', () => true).effect('the bell rings', (env) => env.state);
+    const one = { ...ctx(), library: truly };
+    const [condition, effect] = matchEffectLine('If the bank is empty and the till is empty, truly, the bell rings.', 3, one).args as PhraseRef[];
+    expect((condition.args as PhraseRef[]).map((part) => part.phrase)).toEqual(['the bank is empty', 'the till is empty, truly']);
+    expect(effect).toMatchObject({ kind: 'effect', phrase: 'the bell rings' });
+    expect(one.diagnostics).toEqual([]);
+  });
+  it('tells what is wrong with the effect after the comma that follows both conditions, though the second holds one of its own', () => {
+    const LISTED = '      If it is a Vase card and they have a card in their workshop, their crew and their idle whose wage is more than 1, they get 1 coinz.';
+    const text = finishing(LISTED);
+    expect(compileGame(text, defaultLibrary).diagnostics).toEqual([
+      expect.objectContaining({ line: lineOf(text, LISTED), message: 'There is no counter called “coinz”.' }),
+    ]);
+  });
   it('(guard) reads words that read as one condition whole, though each half reads as one too', () => {
     // A phrase whose own words hold “and”, beside a phrase for each half.
     const joined = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])

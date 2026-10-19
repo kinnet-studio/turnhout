@@ -257,8 +257,8 @@ export class LangRuntime {
    */
   triggerSubject(phaseId: string | null, trigger: CompiledTrigger, state: GameState): Subject | null {
     if (phaseId === null ? !this.inGamePhase(state) : state.turn?.phase !== phaseId) return null;
-    // Once the steps before the score are done, End waits only for the rules about a card, which tidy what the game is scored on. The
-    // step phase's other rules are about steps no one takes any more: one that passes a step on would only refuse, for ever.
+    // Once the steps before the score are done, a rule of their phase holds only when it is about a card, which tidies what the game is
+    // scored on: the phase's other rules are about steps no one takes any more, and one that passes a step on would only refuse, for ever.
     if (phaseId === this.game.end?.steps?.phase && this.endStepsDone(state) && trigger.when.kind !== 'which') return null;
     const holdsFor = (subject: Subject) => this.failedGroup(trigger.conditions, state, undefined, subject) === null;
     if (isPlayerRule(trigger.when)) {
