@@ -388,7 +388,8 @@ describe('a deal that shuffles a discard back in', () => {
     // The done pile's cards go to the pile in their slot order, and the pile is shuffled with the state's random numbers.
     const { items, rng } = shuffleWithRng(zoneCards(before, 'done-pile'), before.rng);
     const shuffled = items.map((c) => c.id);
-    expect(ids(next, 'list-p0')).toEqual(['c0', shuffled[3], shuffled[2]]);
+    // The pile's card goes first, as a run of its own; then the top two of the shuffled pile, in the order `deal up to` gives a run.
+    expect(ids(next, 'list-p0')).toEqual(['c0', shuffled[2], shuffled[3]]);
     expect(ids(next, 'pile')).toEqual([shuffled[0], shuffled[1]]);
     expect(ids(next, 'done-pile')).toEqual([]);
     expect(next.rng).toEqual(rng);
@@ -399,10 +400,22 @@ describe('a deal that shuffles a discard back in', () => {
     expect(pile).toHaveLength(2);
     expect(pile.every((c) => !c.faceUp)).toBe(true);
   });
-  it('deals the top card first, so the first dealt is at the bottom of the list', () => {
+  it('places the cards as deal up to does: the top three of the pile in their pile order, the top one last', () => {
     const next = dealing(arranged(5, 3));
-    expect(ids(next, 'list-p0')).toEqual(['c4', 'c3', 'c2']);
+    expect(ids(next, 'list-p0')).toEqual(['c2', 'c3', 'c4']);
     expect(zoneCards(next, 'list-p0').map((c) => c.slot)).toEqual([0, 1, 2]);
+  });
+  it('gives exactly what deal up to gives when the pile does not run dry, to one player and to each', () => {
+    const plain = (text: string) => text.replace(', shuffling the done pile into it when it runs out', '');
+    const EACH = DEAL.replace('their list', 'each list');
+    // A pile that has enough, runs out exactly, or runs out with no done pile to bring back, for p0 alone and for both players.
+    const cases: [string, number, number][] = [[DEAL, 5, 3], [DEAL, 3, 2], [DEAL, 4, 0], [EACH, 7, 3], [EACH, 6, 2], [EACH, 4, 0]];
+    for (const [text, pile, done] of cases) {
+      const before = arranged(pile, done);
+      const next = dealing(before, text);
+      expect(next).toEqual(dealing(before, plain(text)));
+      expect(next.rng).toEqual(before.rng);
+    }
   });
 
   describe('Review Focus: the random numbers move only when it shuffles', () => {
@@ -451,8 +464,8 @@ describe('a deal that shuffles a discard back in', () => {
   it('deals to each player in turn, shuffling when the pile runs out between them', () => {
     const next = dealing(arranged(4, 2), 'deal up to 3 cards from the pile to each list, shuffling the done pile into it when it runs out');
     expect([ids(next, 'list-p0').length, ids(next, 'list-p1').length, ids(next, 'pile').length, ids(next, 'done-pile').length]).toEqual([3, 3, 0, 0]);
-    // p0 had the pile's top three before it ran out; p1 had the one left, and then two of the done pile's cards.
-    expect(ids(next, 'list-p0')).toEqual(['c3', 'c2', 'c1']);
+    // p0 had the pile's top three before it ran out, as deal up to places them; p1 had the one left, and then two of the done pile's cards.
+    expect(ids(next, 'list-p0')).toEqual(['c1', 'c2', 'c3']);
     expect(ids(next, 'list-p1')[0]).toBe('c0');
   });
   it('is not the phrase that deals without shuffling', () => {

@@ -434,5 +434,14 @@ describe('a number given to a group, or to its first few', () => {
       const zone = '      The cards in their crew gain 1 drill.';
       expect(messages(DRILL_GAME.replace('      Their moves go back to 0.', `      Their moves go back to 0.\n${zone}`))).toEqual([]);
     });
+    it('asks a button that picks some cards of a group of the picked cards', () => {
+      const line = '      The picked cards gain 1 drill.';
+      const text = DRILL_GAME.replace('      Their moves go back to 0.', `      Their moves go back to 0.\n${line}`);
+      expect(messages(text)).toEqual([[
+        at(text, line), '“The picked cards gain 1 drill” only makes sense in a button that picks some cards, like “A player may discard some cards from their hand.”',
+      ]]);
+      const picking = '  A player may practice some cards from the hall.\n    Then:\n      The picked cards gain 1 drill.\n  A player may stop.';
+      expect(messages(DRILL_GAME.replace('  A player may stop.', picking))).toEqual([]);
+    });
   });
 });

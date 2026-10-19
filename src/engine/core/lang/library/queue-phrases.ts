@@ -56,10 +56,12 @@ export const dealUpTo: EffectFn = (env, args) => {
 };
 
 /**
- * `dealUpTo`, one card at a time from the top, for a deck that may run dry: when a card is still owed, the deck is empty and the discard
- * is not, every card of the discard goes to the deck, which is shuffled with the state's random numbers, and the dealing goes on. It
- * ends at the number or when both are empty. The random numbers move only on a shuffle, so a deal that never runs dry leaves them alone,
- * and the same game deals the same cards when it is played again from its log. A negative number is refused, as `deal` refuses it.
+ * `dealUpTo` for a deck that may run dry, placing the cards just as `dealUpTo` does, a run of the deck at a time: each zone dealt to takes
+ * the top cards the deck has, up to what is still owed, in the order `dealUpTo` gives them. Only when a card is still owed, the deck is
+ * empty and the discard is not does every card of the discard go to the deck, which is shuffled with the state's random numbers, and
+ * the dealing goes on. It ends at the number or when both are empty. The random numbers move only on a shuffle, so a deal that never
+ * runs dry leaves them alone and gives exactly what `dealUpTo` gives, and the same game deals the same cards when it is played again from
+ * its log. A negative number is refused, as `deal` refuses it.
  */
 const dealUpToShuffling: EffectFn = (env, args) => {
   const [count, fromRef, toRef, discardRef] = args as [number, ZoneRef, ZoneRef, ZoneRef];
@@ -67,14 +69,16 @@ const dealUpToShuffling: EffectFn = (env, args) => {
   const deck = soleZone(fromRef, env);
   const discard = soleZone(discardRef, env);
   return resolveZoneIds(toRef, env).reduce((state, to) => {
-    for (let dealt = 0; dealt < count; dealt++) {
-      if (zoneCards(state, deck).length === 0) {
+    for (let owed = count; owed > 0;) {
+      let run = zoneCards(state, deck).slice(-owed);
+      if (run.length === 0) {
         const spent = zoneCards(state, discard);
         if (spent.length === 0) break;
         state = shuffleOne(relocate(state, spent.map((card) => card.id), deck, env.game), deck);
+        run = zoneCards(state, deck).slice(-owed);
       }
-      const [top] = zoneCards(state, deck).slice(-1);
-      state = relocate(state, [top.id], to, env.game);
+      state = relocate(state, run.map((card) => card.id), to, env.game);
+      owed -= run.length;
     }
     return state;
   }, env.state);
