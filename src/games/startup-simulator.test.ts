@@ -499,7 +499,8 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *   attaching card it can pay for, the Growth Hacker or a Sales Rep, onto its first product in operation (see `hireGrowthHacker`).
  *   Else it hires the Hacker from the agency row, when it can pay for him, onto its first project that needs blue cubes and no red
  *   (see `hireHacker`). Else, once a turn when `t % 4 === 1`, it reassigns the first card of its ops team that sits on a product to
- *   its first other product (see `moveGrowthHacker`). Else it pivots the project the Diva is on, which fires her (ruling 9), and it
+ *   its first other product (see `moveGrowthHacker`). Else, when `t % 3 === 1`, it assigns the bench's first PM to its project with
+ *   the most cards on it (see `pmToProject`). Else it pivots the project the Diva is on, which fires her (ruling 9), and it
  *   assigns her from the bench to the ops team, where her Ego refuses a reassign too. With
  *   none of those, it assigns the bench's makers of a color its first Tier 1 project with a cut lacks to that project (see
  *   `buildCut`), else it finds a lead for its first Stalled project (§3): the bench's first Senior Developer who would lead a colour
@@ -950,6 +951,23 @@ function playTurn(
       onProduct((products, card) => products.find((product) => product.id !== card.data?.[HOLDER_KEY])));
   };
   /**
+   * On a `t` with `t % 3 === 1`, while some project in the seat's development has a card on it, the bench's first PM, a card whose trait
+   * is Synergy or Agile Synergy, assigned to the project with the most cards on it (the first of those), where its Synergy adds to each
+   * working teammate's output and an Agile PM spares the staff moved there their Onboarding token (§11.E, R8). Null otherwise. From the
+   * bench only (plan 5-2a's P9): hiring a PM from the agency row onto the project as well spends the capital and the actions that the
+   * scouting's hires to the ops team and to a product, the Launch of a project with a cut, the Pivot that makes a bench forget a mode and
+   * ops QA cleaning a Bug by itself need in the few games that hold each, and the long runs would see none of them.
+   */
+  const pmToProject = (): Move | null => {
+    const projects = cards(own('development'));
+    const staffed = (project: CardState) => cardsOn(engine.getState(), project.id).length;
+    if (t % 3 !== 1 || !projects.some((project) => staffed(project) > 0)) return null;
+    const most = projects.reduce((best, project) => (staffed(project) > staffed(best) ? project : best));
+    const pm = (card: CardState) => ['Synergy', 'Agile Synergy'].includes(card.data?.trait as string);
+    return pickSome(ASSIGN_TO_PROJECT, own('bench'), (bench) => bench.filter(pm).slice(0, 1),
+      onProject((targets) => targets.find((target) => target.id === most.id)));
+  };
+  /**
    * A lead for the seat's first Stalled project (§3): the bench's first Senior Developer who would lead a color it needs, assigned to
    * it, else the agency row's first such Senior the seat can pay for, hired onto it, else the open job market's first, hired when the
    * seat has the $1 it costs, else a Layoff of the bench's first card, which digs the talent deck for one. Null with no project Stalled.
@@ -1084,8 +1102,8 @@ function playTurn(
         buildCut() ?? leadForStalled() ?? boardAction(action, a), ...boardMovesAfter(action).map((next) => boardAction(next, a)),
       ];
       const planned = a === 0 ? ideation() : [
-        reassignDiva(), launch(), qaForBugs(), hireGrowthHacker(action), hireHacker(), moveGrowthHacker(), pivotDiva(), divaToOps(),
-        ...board(),
+        reassignDiva(), launch(), qaForBugs(), hireGrowthHacker(action), hireHacker(), moveGrowthHacker(), pmToProject(), pivotDiva(),
+        divaToOps(), ...board(),
       ];
       const move = choose([...planned, recruitMaker(a), press(END_ACTIONS)]);
       if (move.type === REASSIGN_TO_PRODUCT) movedOnProducts = true;
@@ -1390,6 +1408,10 @@ function scoreOf(runtime: LangRuntime, state: GameState, seat: PlayerId): number
  *   product in operation keeps a cut (§19.A).
  * - No project gains cubes while it is Stalled, as it was when the Engine generated them (see `atTheEngine`) (§3).
  * - No reassign the rules take moves the Diva, whose trait is Ego (§6, §20.B.1).
+ * - Agile: staff moved onto a project, by a reassign or by an assign from the bench, are spared the Onboarding token exactly when some
+ *   card on the project was Agile before the move: a reassigned card is onboarding exactly when none was, and a card still onboarding on
+ *   the bench, pivoted or recalled this turn, is no longer onboarding once assigned exactly when one was (§6, §11.E.3, ruling 8). Only
+ *   where no turn starts in the move, since a move that spends the last action starts the next turn, whose start clears every token (P8).
  * - Modes: no card off the Board, out of every development team and ops team, is in Red mode or QA mode. Red mode sits only on a card
  *   the rules call declarable, and QA mode only on a QA Skill card. A card's mode changes only in a declaration of that card, or as it
  *   leaves the Board, so a mode stays on a card that moves between a project and the ops team (§11.C.2, ruling 24). A declaration
@@ -1567,6 +1589,18 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     // The Diva's Ego keeps her where she works: no reassign the rules take moves her (§6, §20.B.1).
     if (REASSIGNS.includes(move.type) && Object.is(card!.data?.trait, 'Ego')) {
       expect(card!.data?.trait, `the trait of the card ${by} reassigned ${at}`).not.toBe('Ego');
+    }
+    // An Agile PM on a project spares the staff moved onto it the Onboarding token, as it was before the move: a PM arriving in the same
+    // assign spares no one, and one reassigning itself is onboarding (§6, §11.E.3, ruling 8). A move that spends the last action starts
+    // the next turn, which clears every Onboarding token, so the check reads only a move that starts no turn (P8).
+    if (started === null && [REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS, ASSIGN_TO_PROJECT].includes(move.type)) {
+      const agile = cardsOn(before, move.onto as string).some((c) => runtime.workedFlag(before, c.id, 'agile'));
+      const onboarding = (state: GameState, id: string) => cardById(state, id)?.data?.onboarding === true;
+      const wrong = move.type === ASSIGN_TO_PROJECT
+        ? (move.cardIds as string[]).filter((id) => onboarding(before, id) && onboarding(after, id) === agile)
+        : [move.cardId as string].filter((id) => onboarding(after, id) === agile);
+      noneOf(wrong.map((id) => `${id} (${nameOf(cardById(after, id)!)}) is ${agile ? '' : 'not '}onboarding`),
+        () => `the staff moved onto ${move.onto}, which ${agile ? 'had' : 'had no'} Agile PM on it, ${at}`);
     }
     // A project Launches only with 0 Bugs (§6).
     if (move.type === LAUNCH) sameAs(bugsOn(card!), 0, () => `the Bugs on the project ${by} launched ${at}`);
@@ -1781,7 +1815,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(197);
+    expect(results).toHaveLength(206);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -1866,6 +1900,12 @@ describe('Startup Simulator (designer language)', () => {
     for (const flag of ['practised', 'waiving decay', 'stopping decay', 'decaying']) {
       expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
     }
+    // What the PMs do (§11.E, R8): a project's PMs at work and its workers of each colour, numbers of their own, whose product adds to its
+    // team output; a PM not onboarding is managing, and a Senior PM or a badged one managing is Agile.
+    for (const name of ['pm count', 'blue workers', 'red workers', 'qa workers']) {
+      expect(worked[name], name).toMatchObject({ kind: 'number', refines: false });
+    }
+    for (const flag of ['managing', 'agile']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
   });
 
   // The next three tests each add to the rules an example that the rules refuse for naming no button alone, and then an example for each
@@ -2873,7 +2913,8 @@ describe('what the view says the rules work out', () => {
       val: 'portfolio points',
     });
     // Every line of each reads only the card and the cards on it: its Tier, its need, the leads on it, its trait, its zone, its xp and
-    // its training xp. Decaying reads its owner's ops team, so it is not shown.
+    // its training xp. A lead's Badge and Skill lines read the card alone too (`it is a card whose …`), so Stalled still shows. Decaying
+    // reads its owner's ops team, so it is not shown.
     expect(shownFlags(game!)).toEqual(['stalled', 'efficient in ops', 'experienced', 'practised']);
   });
 

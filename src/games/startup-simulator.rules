@@ -178,15 +178,30 @@ Working green xp:
 
 Blue team output:
   A card's blue team output is the total blue output of the cards on it.
+  A card's blue team output goes up by its pm count times its blue workers.
   A stalled card's blue team output is 0.
 
 Red team output:
   A card's red team output is the total red output of the cards on it.
+  A card's red team output goes up by its pm count times its red workers.
   A stalled card's red team output is 0.
 
 QA team output:
   A card's qa team output is the total qa output of the cards on it.
+  A card's qa team output goes up by its pm count times its qa workers.
   A stalled card's qa team output is 0.
+
+PM count:
+  A card's pm count is the number of the cards on it that are managing.
+
+Blue workers:
+  A card's blue workers is the number of the cards on it whose blue output is more than 0.
+
+Red workers:
+  A card's red workers is the number of the cards on it whose red output is more than 0.
+
+QA workers:
+  A card's qa workers is the number of the cards on it whose qa output is more than 0.
 
 Blue bandwidth:
   A card's blue bandwidth is its blue output.
@@ -203,18 +218,36 @@ Red need:
   A card's red need goes down by its cut red cubes.
 
 Leading software:
-  Only if it is a Senior Developer card.
+  Only if one of:
+    It is a Senior Developer card.
+    It is a card whose badge points are more than 0.
   Only if one of:
     It is a software card.
     It is a flex card.
+    It is a card whose blue skill tokens are more than 0.
   Only if it is not onboarding.
 
 Leading hardware:
-  Only if it is a Senior Developer card.
+  Only if one of:
+    It is a Senior Developer card.
+    It is a card whose badge points are more than 0.
   Only if one of:
     It is a hardware card.
     It is a flex card.
+    It is a card whose red skill tokens are more than 0.
   Only if it is not onboarding.
+
+Managing:
+  Only if one of:
+    It is a Synergy card.
+    It is an Agile Synergy card.
+  Only if it is not onboarding.
+
+Agile:
+  Only if it is managing.
+  Only if one of:
+    It is an Agile Synergy card.
+    It is badged.
 
 Stalled:
   Only if it is in a development.
@@ -687,6 +720,7 @@ Phase: actions
   A player may assign some cards from their bench to a card in their development.
     It costs 1 action.
     Then:
+      If some card on the target card is agile, every picked card is not onboarding.
       The picked cards go to their development team, on the target card.
   A player may assign some cards from their bench to their ops team.
     It costs 1 action.
@@ -702,14 +736,16 @@ Phase: actions
     Only if the card is not an Ego card.
     Only if it is not on the target card.
     Then:
-      It goes to their development team, on the target card.
       It is onboarding.
+      If some card on the target card is agile, it is not onboarding.
+      It goes to their development team, on the target card.
   A player may reassign a card from their ops team to a card in their development.
     It costs 1 action.
     Only if the card is not an Ego card.
     Then:
-      It goes to their development team, on the target card.
       It is onboarding.
+      If some card on the target card is agile, it is not onboarding.
+      It goes to their development team, on the target card.
   A player may reassign a card from their ops team to a card in their operations.
     It costs 1 action.
     Only if it is on a card.
@@ -3524,3 +3560,101 @@ Example: a QA Engineer with 2 XP stops no Bug Decay while it is onboarding after
   And p0 assigns the QA Engineer to p0's ops team
   Then the QA Engineer in p0's ops team is onboarding
   And the Dating App in p0's operations has 0 rev
+
+Example: a Junior PM adds 1 output for each working teammate, in that teammate's own colour (section 11, section 20)
+  Given the phase is actions
+  And p0's development has a Cloud Storage
+  And the Cloud Storage in p0's development has a Junior PM, a Junior Software Dev and a Junior Hardware Eng on it
+  When p0 ends their actions
+  Then the Cloud Storage in p0's development has 2 blue cubes
+  And the Cloud Storage in p0's development has 2 red cubes
+
+Example: two PMs on one team each add their Synergy, and a QA teammate cleans 1 more Bug for each (section 11)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And the Dating App in p0's development has 3 bugs
+  And the Dating App in p0's development has a Junior PM, the Senior PM, a Junior Software Dev and a Junior QA Tester on it
+  When p0 ends their actions
+  Then the Dating App in p0's development has 3 blue cubes
+  And the Dating App in p0's development has 0 bugs
+
+Example: a PM Reassigned this turn is onboarding: it gives no Synergy, and staff moved to its team are onboarding too (section 11, ruling 8)
+  Given the phase is actions
+  And p0's development has a Dating App and a To-Do List
+  And the Dating App in p0's development has the Senior PM and a Junior Hardware Eng on it
+  And the To-Do List in p0's development has a Junior Software Dev on it
+  When p0 reassigns the Senior PM to the To-Do List
+  And p0 reassigns the Junior Hardware Eng to the To-Do List
+  Then the Senior PM in p0's development team is onboarding
+  And the Junior Hardware Eng in p0's development team is onboarding
+  When p0 ends their actions
+  Then the To-Do List in p0's development has 1 blue cube
+
+Example: staff Reassigned to a team with a working Senior PM, from a project or from the ops team, get no Onboarding token and work at once (section 6, section 11, ruling 8)
+  Given the phase is actions
+  And p0's development has a Dating App and a To-Do List
+  And the Dating App in p0's development has the Senior PM on it
+  And the To-Do List in p0's development has a Junior Software Dev on it
+  And p0's operations has a Smart Lock
+  And p0's ops team has a Junior Hardware Eng
+  When p0 reassigns the Junior Software Dev to the Dating App
+  And p0 reassigns the Junior Hardware Eng to the Dating App
+  Then the Junior Software Dev in p0's development team is not onboarding
+  And the Junior Hardware Eng in p0's development team is not onboarding
+  When p0 ends their actions
+  Then the Dating App in p0's development has 2 blue cubes
+
+Example: pivoted staff Assigned to a team with a working Senior PM clear their Onboarding token (section 6, ruling 8)
+  Given the phase is actions
+  And p0's development has a Dating App and a To-Do List
+  And the Dating App in p0's development has the Senior PM on it
+  And the To-Do List in p0's development has a Junior Software Dev on it
+  When p0 pivots the To-Do List
+  Then the Junior Software Dev in p0's bench is onboarding
+  When p0 assigns the Junior Software Dev to the Dating App
+  Then the Junior Software Dev in p0's development team is not onboarding
+
+Example: a Senior PM Assigned together with pivoted staff does not clear their tokens yet (section 6, the Rust engine's reading)
+  Given the phase is actions
+  And p0's development has a Dating App and a To-Do List
+  And the To-Do List in p0's development has a Junior Software Dev on it
+  And p0's bench has the Senior PM
+  When p0 pivots the To-Do List
+  And p0 assigns the Senior PM and the Junior Software Dev to the Dating App
+  Then the Junior Software Dev in p0's development team is onboarding
+  And the Senior PM in p0's development team is not onboarding
+
+Example: a Junior PM with a Badge is Agile (section 11, section 20)
+  Given the phase is actions
+  And p0's development has a Dating App and a To-Do List
+  And the Dating App in p0's development has a Junior PM on it
+  And the Junior PM in p0's development team is badged
+  And the To-Do List in p0's development has a Junior Software Dev on it
+  When p0 reassigns the Junior Software Dev to the Dating App
+  Then the Junior Software Dev in p0's development team is not onboarding
+
+Example: a badged Junior Software Dev leads a Tier 2 Software project, but a badged Junior QA Tester leads nothing (section 11, section 7, ruling 25)
+  Given the phase is actions
+  And p0's development has a Neobank and a Server Farm
+  And the Neobank in p0's development has a Junior Software Dev on it
+  And the Junior Software Dev in p0's development team is badged
+  And the Server Farm in p0's development has a Junior QA Tester and a Junior Hardware Eng on it
+  And the Junior QA Tester in p0's development team is badged
+  When p0 ends their actions
+  Then the Neobank in p0's development is not stalled
+  And the Neobank in p0's development has 1 blue cube
+  And the Server Farm in p0's development is stalled
+  And the Server Farm in p0's development has 0 red cubes
+
+Example: a badged Junior with Blue and Red Skill tokens leads both colours, so it Launches a hybrid alone (section 7, section 11)
+  Given the phase is actions
+  And p0's development has a Drone Delivery
+  And the Drone Delivery in p0's development has 6 blue cubes
+  And the Drone Delivery in p0's development has 6 red cubes
+  And the Drone Delivery in p0's development has a Junior QA Tester on it
+  And the Junior QA Tester in p0's development team has 1 blue skill token
+  And the Junior QA Tester in p0's development team has 1 red skill token
+  And the Junior QA Tester in p0's development team is badged
+  When p0 launches the Drone Delivery
+  Then it is accepted
+  And p0's operations has a Drone Delivery
