@@ -23,6 +23,10 @@ import {
   AMOUNT_BOARD, ANY_PLAYER_BOARD, CARD_PICK_GAME, INTERRUPT_BOARD, MARK_BOARD, PICK_BOARD, TEST_DUEL, TINY_BOARD, TINY_BOARD_HEAD, TURN_GAME,
 } from './testing';
 import { relocate, topCard } from './zones';
+import { cardsOn, putOn } from './attach';
+import { changeCard } from './card-facts';
+import { COACH_GAME } from './testing';
+import { cardById } from './zone-index';
 
 const lib = createDefaultLibrary();
 const game = compileGame(TINY_BOARD, lib).game!;
@@ -1169,5 +1173,85 @@ describe('buttons that pick a card', () => {
       engine.undo();
       expect(engine.getState()).toEqual(before);
     });
+  });
+});
+
+describe('a target card in several zones', () => {
+  const COACH = 'coach a card from their stash to a card in their workshop, their crew or their idle';
+  const ROUSE = 'rouse some cards from the hall to a card in their workshop';
+  const PROMPT = 'Pick where it goes: a card in your workshop, your crew or your idle.';
+  const g = compileGame(COACH_GAME, lib).game!;
+  /** A two-player game of COACH_GAME once Setup is done: p0 to act. */
+  const started = createEngine(g, lib, 2, initialState(g, 1)).engine.getState();
+  const named = (name: string) => started.cards.filter((c) => c.data?.name === name).map((c) => c.id);
+  const [statue] = named('Statue');
+  const [vase, vase2] = named('Vase');
+  const [potter, potter2, potter3] = named('Potter');
+  const [smith] = named('Smith');
+  /** p0's stash holds the Statue alone, their workshop the Vase with the Potter on it in their crew, and their idle the Smith. */
+  const arranged = (s: GameState): GameState => {
+    const jobs = [...zoneCards(s, 'stash-p0'), ...zoneCards(s, 'stash-p1')].map((c) => c.id);
+    const placed = relocate(relocate(relocate(relocate(s, jobs, 'pile', g), [statue], 'stash-p0', g), [vase], 'workshop-p0', g), [smith], 'idle-p0', g);
+    return putOn(placed, [potter], 'crew-p0', vase, g);
+  };
+  /** An engine on the arranged table, after `arrange`. */
+  const coaching = (arrange: (s: GameState) => GameState = (s) => s) => createEngine(g, lib, 2, arrange(arranged(started)));
+  const tired = (...ids: string[]) => (s: GameState) => ids.reduce((state, id) => changeCard(state, id, { tired: true }, g), s);
+  const dataOf = (s: GameState, id: string) => cardById(s, id)!.data;
+  const coach = (onto: string): Move => ({ type: COACH, by: 'p0', cardId: statue, onto });
+  const coachAction = g.phases[0].actions.find((a) => a.words === COACH)!;
+
+  it('says how to pick where it goes, naming every zone, and offers the cards of each zone in turn', () => {
+    const { engine, runtime } = coaching();
+    expect(ontoPrompt(coachAction)).toBe(PROMPT);
+    expect(ontoCandidates(runtime, coachAction, engine.getState(), 'p0')).toEqual([vase, potter, smith]);
+  });
+
+  it('coaches onto a card in the second zone: Gold is refused for a Potter, so Plain is filled in', () => {
+    const { engine } = coaching();
+    expect(engine.dispatch(coach(potter))).toMatchObject({ ok: true });
+    const s = engine.getState();
+    expect(dataOf(s, potter)).toMatchObject({ drills: 1 });
+    expect(dataOf(s, potter)).not.toHaveProperty('gold drills');
+    expect(cardById(s, statue)!.zoneId).toBe('scrap');
+  });
+
+  it('coaches onto a card in the first zone and in the last', () => {
+    const first = coaching().engine;
+    expect(first.dispatch(coach(vase))).toMatchObject({ ok: true });
+    expect(dataOf(first.getState(), vase)).toMatchObject({ drills: 1 });
+    const last = coaching().engine;
+    expect(last.dispatch({ ...coach(smith), choices: ['Gold'] })).toMatchObject({ ok: true });
+    expect(dataOf(last.getState(), smith)).toMatchObject({ 'gold drills': 1 });
+  });
+
+  it('refuses a card in no zone it names with its prompt, and a tired one with its Only if line, changing nothing', () => {
+    const { engine } = coaching();
+    const before = engine.getState();
+    const inHall = zoneCards(before, 'hall')[0].id;
+    expect(engine.dispatch(coach(inHall))).toMatchObject({ ok: false, reason: PROMPT });
+    expect(engine.dispatch(coach(statue))).toMatchObject({ ok: false, reason: PROMPT });
+    expect(engine.getState()).toEqual(before);
+    const worn = coaching(tired(smith)).engine;
+    expect(worn.dispatch(coach(smith))).toMatchObject({ ok: false, reason: 'the target card is not tired' });
+  });
+
+  it('tires the card it goes to when a card on it is tired, and still gives it a drill', () => {
+    const { engine } = coaching(tired(potter));
+    expect(engine.dispatch(coach(vase))).toMatchObject({ ok: true });
+    expect(dataOf(engine.getState(), vase)).toMatchObject({ drills: 1, tired: true });
+  });
+
+  it('wakes two tired hands roused onto a job, which sit on it in the crew', () => {
+    const { engine } = coaching((s) => tired(potter2, potter3)(relocate(s, [vase2], 'workshop-p0', g)));
+    expect(engine.dispatch({ type: ROUSE, by: 'p0', cardIds: [potter2, potter3], onto: vase2 })).toMatchObject({ ok: true });
+    const s = engine.getState();
+    expect(cardsOn(s, vase2).map((c) => [c.id, c.zoneId])).toEqual([[potter2, 'crew-p0'], [potter3, 'crew-p0']]);
+    for (const id of [potter2, potter3]) expect(dataOf(s, id)).not.toHaveProperty('tired');
+  });
+
+  it('refuses to rouse hands onto a job a tired hand is on', () => {
+    const { engine } = coaching(tired(potter));
+    expect(engine.dispatch({ type: ROUSE, by: 'p0', cardIds: [potter2], onto: vase })).toMatchObject({ ok: false, reason: 'no card on the target card is tired' });
   });
 });

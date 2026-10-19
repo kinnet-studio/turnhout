@@ -5,6 +5,7 @@ import type { CardState, PlayerId } from '../scene';
 import { addToCounter, clearTurnLog, counterOf, endsTurn, isOut, playersIn, recordAction } from './board-state';
 import { askChoices, choicesOf, fillChoices, type AskedChoice, type ChoiceOption } from './choices';
 import { isPile, isTakeable, moveZoneId, yours } from './declared-moves';
+import { ontoPlaces } from './declared-moves';
 import { RuleError } from './diagnostics';
 import { canon, counted, joinAnd, joinOr, secondPersonWords } from './refs';
 import type { LangRuntime } from './runtime';
@@ -76,16 +77,19 @@ export function cardPrompt(action: DeclaredAction): string {
   return `Pick a card ${where} ${yours(fromText)} to ${doing}.`;
 }
 
-/** The zone a button picks the card its cards go to in, as written too; a caller that asks it of a button that picks none has a bug. */
-function ontoOf(action: DeclaredAction): { onto: ZoneRef; ontoText: string } {
-  const { onto, ontoText } = pickOf(action);
-  if (onto === null || ontoText === null) throw new Error(`The “${action.words}” button picks no card for its cards to go to.`);
-  return { onto, ontoText };
+/**
+ * The zones a button picks the card its cards go to in, each as written too, in the order written; a caller that asks it of a button that
+ * picks none is a mistake in the code.
+ */
+function ontoOf(action: DeclaredAction): { zone: ZoneRef; text: string }[] {
+  const places = ontoPlaces(pickOf(action));
+  if (places.length === 0) throw new Error(`The “${action.words}” button picks no card for its cards to go to.`);
+  return places;
 }
 
-/** What a button that picks a card for its cards to go to asks of the player who has not picked one it takes. */
+/** What a button that picks a card for its cards to go to asks of the player who has not picked one it takes, naming every zone it may be in. */
 export function ontoPrompt(action: DeclaredAction): string {
-  return `Pick where ${pickOf(action).some ? 'they go' : 'it goes'}: a card in ${yours(ontoOf(action).ontoText)}.`;
+  return `Pick where ${pickOf(action).some ? 'they go' : 'it goes'}: a card in ${joinOr(ontoOf(action).map(({ text }) => yours(text)))}.`;
 }
 
 /** Why a button that picks a card in a zone can't be pressed while the zone holds none. */
@@ -107,9 +111,12 @@ export function cardCandidates(runtime: LangRuntime, action: DeclaredAction, sta
   return takeableIds(runtime, pickOf(action).from, state, seat);
 }
 
-/** The cards a button that picks a card for its cards to go to offers `seat` as that card, as `cardCandidates` offers the cards. */
+/**
+ * The cards a button that picks a card for its cards to go to offers `seat` as that card, as `cardCandidates` offers the cards: those of
+ * each zone it may be in, in the order the zones are written.
+ */
 export function ontoCandidates(runtime: LangRuntime, action: DeclaredAction, state: GameState, seat: PlayerId): string[] {
-  return takeableIds(runtime, ontoOf(action).onto, state, seat);
+  return ontoOf(action).flatMap(({ zone }) => takeableIds(runtime, zone, state, seat));
 }
 
 /**
@@ -160,13 +167,14 @@ function aboutSet(action: DeclaredAction, pick: CardPick, runtime: LangRuntime, 
 
 /**
  * The press of a button that picks cards: one card or a set, then, for a button that picks a card for them to go to, that card,
- * refused with its own prompt unless `onto` is a card on the table in the zone the button picks it in for `by` (the top card of a pile),
+ * refused with its own prompt unless `onto` is a card on the table in a zone the button picks it in for `by` (the top card of a pile),
  * other than the cards picked. Its lines read it as “the target card”.
  */
 function aboutCards(action: DeclaredAction, pick: CardPick, runtime: LangRuntime, state: GameState, m: Move, by: PlayerId): Press | string {
   const press = (pick.some ? aboutSet : aboutCard)(action, pick, runtime, state, m, by);
-  if (typeof press === 'string' || pick.onto === null) return press;
-  const target = cardIn(runtime, state, pick.onto, by, m.onto);
+  const places = ontoPlaces(pick);
+  if (typeof press === 'string' || places.length === 0) return press;
+  const target = places.map(({ zone }) => cardIn(runtime, state, zone, by, m.onto)).find((card) => card !== undefined);
   const picked = press.subject.cards ?? [press.subject.card];
   if (!target || !isTakeable(runtime.game, state, target) || picked.includes(target.id)) return ontoPrompt(action);
   return { ...press, subject: { ...press.subject, onto: target.id } };

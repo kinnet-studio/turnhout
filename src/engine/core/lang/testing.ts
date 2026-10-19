@@ -502,6 +502,25 @@ export const TWO_HIRES_GAME = YARD_GAME.replace('  A player may stop.', [
   '      The picked cards go to their yard, on the target card.', '  A player may stop.',
 ].join('\n'));
 
+/**
+ * CREW_GAME where cards gather drills: a player may coach a card from their stash onto a card in their workshop, their crew or their
+ * idle that is not tired, which gains a drill, or a gold drill if it is a Smith, as they choose, and is tired when a card on it is; and
+ * may rouse hands from the hall onto a job no tired hand is on, waking them.
+ */
+export const COACH_GAME = CREW_GAME
+  .replace('  Cards can be tired.', '  Cards can be tired.\n  Cards can have drills and gold drills.')
+  .replace('  A player may stop.', [
+    '  A player may coach a card from their stash to a card in their workshop, their crew or their idle.',
+    '    Only if the target card is not tired.', '    Then:',
+    '      If some card on the target card is tired, the target card is tired.',
+    '      They choose one:', '        Plain:', '          The target card gains 1 drill.',
+    '        Gold:', '          Only if the target card is a Smith.', '          The target card gains 1 gold drill.',
+    '      Move it to the scrap.',
+    '  A player may rouse some cards from the hall to a card in their workshop.',
+    '    Only if no card on the target card is tired.', '    Then:',
+    '      Every picked card is not tired.', '      The picked cards go to their crew, on the target card.',
+    '  A player may stop.'].join('\n'));
+
 /** WORKED_GAME with a job's crew red: the red work of the cards on it, added up. */
 export const TOTALS_GAME = [WORKED_GAME, '', 'Crew red:', "  A card's crew red is the total red work of the cards on it."].join('\n');
 

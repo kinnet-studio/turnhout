@@ -82,9 +82,14 @@ export type ActionCost = { amount: number; counter: string; line: number };
 /**
  * The cards a button picks. `some` is true for a set (“some cards”). `from` is the zone they are picked in and `fromText` that zone as
  * written ('their stash'). `to` is the zone the picked cards move to before the `Then:` lines, and `onto` the zone a target card is
- * picked in, with `ontoText` as written. A one-card pick with `to` and `onto` both null was written “a card in {zone}”.
+ * picked in, with `ontoText` as written. A one-card pick with `to` and `onto` both null was written “a card in {zone}”. A target may be
+ * picked in any of several zones (“… to a card in their workshop, their crew or their idle”): `onto` is the first, and `ontoAlso` the
+ * ones after it, each with its text as written, in order; it is left out for a target picked in one zone.
  */
-export type CardPick = { some: boolean; from: ZoneRef; fromText: string; to: ZoneRef | null; onto: ZoneRef | null; ontoText: string | null };
+export type CardPick = {
+  some: boolean; from: ZoneRef; fromText: string; to: ZoneRef | null; onto: ZoneRef | null; ontoText: string | null;
+  ontoAlso?: { zone: ZoneRef; text: string }[];
+};
 /**
  * `words` is the lowercase text after "a player may" ('roll the dice'); `label` is the button text in the second person,
  * with the designer's capitals ('Roll the dice', 'Go to Rose Lane'). `words` is also the button's move type, so that

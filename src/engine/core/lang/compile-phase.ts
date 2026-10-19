@@ -6,6 +6,8 @@ import {
 } from './compile-util';
 import type { OutlineNode } from './outline';
 import { normalizeLine, suggestNames } from './phrases';
+import { OR_SEPARATORS, splitAtSeparators, splitList } from './phrases';
+import { ontoPlaces } from './declared-moves';
 import { joinOr, misnamedParam, parseParam, secondPersonWords, thirdPerson, thirdPersonWords, VOCAB_TYPES } from './refs';
 import type {
   ActionCost, CardPick, CompiledMoment, CompiledPhase, CompiledTrigger, CondGroup, DeclaredAction, DeclaredMove, ParamType, PhraseKind, PhraseRef, SpaceClass,
@@ -172,6 +174,23 @@ function oneZones(node: OutlineNode, texts: string[], ctx: LineCtx): ZoneRef[] |
     return null;
   }
   return read;
+}
+
+/** Whether `text` reads as a zone of the game, though it may be more than one zone. */
+const readsAsZone = (text: string, vocab: Vocab): boolean => {
+  const parsed = parseParam('zone', text, vocab);
+  return parsed !== null && 'value' in parsed;
+};
+
+/**
+ * The zones a pick's target card may be picked in, each as written: the whole text when it reads as one zone (`splitList` tries that
+ * first), else its parts at the “, or”, “,” and “or” between them when each reads as a zone, else the text cut at every one of those, so
+ * that a part that is no zone is told as a move's zone is.
+ */
+function ontoTexts(text: string, vocab: Vocab): string[] {
+  const zones = splitList(text, (part) => (readsAsZone(part, vocab) ? part : null), OR_SEPARATORS);
+  // Each part is kept as it is, so the cut always reads.
+  return zones ?? splitAtSeparators(text, (part) => part, OR_SEPARATORS)!;
 }
 
 /** The zones of a move line, or null (with the reason given) when they cannot be a move's. */
@@ -506,15 +525,15 @@ function compileAction(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx):
  * can't be read or is more than one zone, or its cost line has a problem. Its zones are read as a card move's are, so a misnamed one is
  * told the same way. Its lines are about the player who presses it and, as a card move's are, the one card picked: “it” and “the card”.
  * A set has no one card: its lines read “the picked cards” instead. A button that picks a card for its cards to go to reads it as
- * “the target card”.
+ * “the target card”, which may be picked in any of several zones, written as a list with “or” (see `ontoTexts`): each must be one zone.
  */
 function compileCardPick(node: OutlineNode, words: PickWords, ctx: LineCtx): DeclaredAction | null {
   const { verb, written, base, anyone, some, fromText, toText, ontoText } = words;
   const reserved = verb === RESERVED_VERB;
   if (reserved) addProblem(ctx.diagnostics, node.line, `“${RESERVED_VERB}” is reserved; pick another word.`, { text: written.split(' ')[0] });
-  // A line names either the zone the cards go to or the zone of the card they go to, never both.
-  const second = toText ?? ontoText;
-  const zones = oneZones(node, second === null ? [fromText] : [fromText, second], ctx);
+  // A line names either the zone the cards go to or the zones of the card they go to, never both.
+  const ontoParts = ontoText === null ? [] : ontoTexts(ontoText, ctx.vocab);
+  const zones = oneZones(node, [fromText, ...(toText === null ? ontoParts : [toText])], ctx);
   const onto = ontoText !== null;
   // Only the press of one card, with its target or without, may ask for a choice: the page shows a choice beside the card picked.
   const about: LineCtx = some
@@ -522,8 +541,11 @@ function compileCardPick(node: OutlineNode, words: PickWords, ctx: LineCtx): Dec
     : { ...ctx, inMove: true, player: true, card: true, onto, choices: true };
   const { conditions, effects, cost, badCost } = readRuleBody(node, about);
   if (reserved || !zones || badCost) return null;
+  // The target's first zone is `onto`, as when it has one; the zones after it are kept only when there are any.
+  const [first, ...also] = ontoParts.map((text, i) => ({ zone: zones[i + 1], text }));
   const pick: CardPick = {
-    some, from: zones[0], fromText, to: toText === null ? null : zones[1], onto: onto ? zones[1] : null, ontoText,
+    some, from: zones[0], fromText, to: toText === null ? null : zones[1], onto: first?.zone ?? null, ontoText: first?.text ?? null,
+    ...(also.length > 0 ? { ontoAlso: also } : {}),
   };
   return {
     verb, words: words.words, base, label: actionLabel(written), target: null, anyone, amount: false, picksPlayer: false, conditions, effects,
@@ -560,16 +582,15 @@ function choiceGroups(action: DeclaredAction): CondGroup[] {
 
 /**
  * Reports each `Only if` line of the phase's buttons that reads a card of the press (“the card”, the target card, the picked cards)
- * under a pick whose cards, or the card they go to, the presser may not see, and each line of a choice that does: its clause and its
- * guard. A press the line refuses, or asks a choice of, costs nothing and changes nothing, so pressing each face-down card in turn would
- * tell the player which is which. Face-down cards in a zone everyone sees are slice 9's.
+ * under a pick whose cards, or a zone the card they go to is picked in, the presser may not see, and each line of a choice that does:
+ * its clause and its guard. A press the line refuses, or asks a choice of, costs nothing and changes nothing, so pressing each face-down
+ * card in turn would tell the player which is which. Face-down cards in a zone everyone sees are slice 9's.
  */
 export function reportHiddenCardReads(phase: CompiledPhase, zones: ZoneSpec[], ctx: LineCtx): void {
   for (const action of phase.actions) {
     const { pick, conditions } = action;
     if (!pick) continue;
-    const places = [{ ref: pick.from, text: pick.fromText }];
-    if (pick.onto !== null && pick.ontoText !== null) places.push({ ref: pick.onto, text: pick.ontoText });
+    const places = [{ ref: pick.from, text: pick.fromText }, ...ontoPlaces(pick).map(({ zone, text }) => ({ ref: zone, text }))];
     const hidden = places.find(({ ref }) => mayHideFromPresser(ref, zones));
     if (!hidden) continue;
     for (const group of [...conditions, ...choiceGroups(action)]) {

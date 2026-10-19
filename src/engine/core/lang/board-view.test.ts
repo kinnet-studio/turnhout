@@ -13,6 +13,7 @@ import {
   TURN_GAME,
   GUILD_GAME,
 } from './testing';
+import { COACH_GAME } from './testing';
 import { START_PLAYER_KEY } from './turns';
 import type { CompiledGame } from './types';
 import { relocate, zoneIdFor } from './zones';
@@ -1288,5 +1289,28 @@ describe('choices in the view', () => {
       expect(readSeatExtras(shaped([{ ...choice, options: [{ value: 'p1', allowed: false }] }]))).toBeNull();
       expect(readSeatExtras(shaped(choice))).toBeNull();
     }
+  });
+});
+
+describe('a button whose target card may be in any of several zones', () => {
+  const COACH = 'coach a card from their stash to a card in their workshop, their crew or their idle';
+  const ROUSE = 'rouse some cards from the hall to a card in their workshop';
+  const coaching = compileGame(COACH_GAME, lib).game!;
+  // As the game starts, Setup has dealt jobs to each stash and every hand is in the hall: no one has a card in their workshop, crew or idle.
+  const { engine, runtime } = createEngine(coaching, lib, 2, initialState(coaching, 1));
+  const view = (move: string) => seatExtras(engine, runtime, engine.getState(), 'p0').actions.find((a) => a.move === move)!;
+
+  it('says there is no card in any of its zones, naming each', () => {
+    const none = 'There is no card in your workshop, your crew or your idle.';
+    const coach = view(COACH);
+    expect(coach.cards!.onto!.prompt).toBe('Pick where it goes: a card in your workshop, your crew or your idle');
+    expect(coach.cards!.cards).toHaveLength(2);
+    expect([coach.allowed, ...coach.cards!.cards.map((c) => c.allowed)]).toEqual([none, none, none]);
+  });
+  it('(guard) names the one zone of a button whose target card is in one', () => {
+    const none = 'There is no card in your workshop.';
+    const rouse = view(ROUSE);
+    expect(rouse.cards!.cards.length).toBeGreaterThan(0);
+    expect([rouse.allowed, ...new Set(rouse.cards!.cards.map((c) => c.allowed))]).toEqual([none, none]);
   });
 });

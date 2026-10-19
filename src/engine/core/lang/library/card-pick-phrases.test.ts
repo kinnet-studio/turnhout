@@ -4,6 +4,11 @@ import { runExamples } from '../examples';
 import { CARD_PICK_GAME, vocabFor } from '../testing';
 import { TWO_HIRES_GAME } from '../testing';
 import { createDefaultLibrary } from './index';
+import type { GameState } from '../../game-state';
+import { putOn } from '../attach';
+import { RuleError } from '../diagnostics';
+import { COACH_GAME, fixtureCard, fixtureEnv, fixtureState, runPhrase } from '../testing';
+import { cardById } from '../zone-index';
 
 const lib = createDefaultLibrary();
 
@@ -382,5 +387,118 @@ describe('an example that names the card its cards go to, when two buttons take 
     const [result] = run(TWO_HIRES_GAME, hiring(["p0's idle has a Vase"], "When p0 hires a Potter to the Vase in p0's idle"));
     expect(result.status).toBe('fail');
     expect(result.message).toMatch(/No button lets p0 hire a card to another card in p0's idle\.$/);
+  });
+});
+
+describe('the target card and the picked cards', () => {
+  const game = compileGame(COACH_GAME, lib).game!;
+  /** p0's workshop holds a Vase with a Potter and a Smith on it in their crew, and their idle a Tinker; only the cards `tired` names are tired. */
+  const table = (...tired: string[]): GameState => {
+    const card = (id: string, zoneId: string, name: string) => fixtureCard(id, zoneId, { name, ...(tired.includes(id) ? { tired: true } : {}) });
+    const cards = [card('vase', 'workshop-p0', 'Vase'), card('potter', 'hall', 'Potter'), card('smith', 'hall', 'Smith'), card('tinker', 'idle-p0', 'Tinker')];
+    return putOn(fixtureState(cards), ['potter', 'smith'], 'crew-p0', 'vase', game);
+  };
+  const aboutOnto = (state: GameState, onto: string) => fixtureEnv(state, { game, seats: ['p0', 'p1'], subject: { player: 'p0', space: null, card: null, onto } });
+  const aboutPicked = (state: GameState, cards: string[]) =>
+    fixtureEnv(state, { game, seats: ['p0', 'p1'], subject: { player: 'p0', space: null, card: null, cards } });
+  const holds = (text: string, env: ReturnType<typeof fixtureEnv>) => runPhrase<boolean>(lib, 'condition', text, env);
+  const ran = (text: string, env: ReturnType<typeof fixtureEnv>) => runPhrase<GameState>(lib, 'effect', text, env);
+  const tiredOnes = (state: GameState) => state.cards.filter((card) => card.data?.tired === true).map((card) => card.id);
+
+  it('tests whether the target card is so, each way', () => {
+    expect([holds('the target card is tired', aboutOnto(table('vase'), 'vase')), holds('the target card is tired', aboutOnto(table(), 'vase'))]).toEqual([true, false]);
+    expect([holds('the target card is not tired', aboutOnto(table('vase'), 'vase')), holds('the target card is not tired', aboutOnto(table(), 'vase'))])
+      .toEqual([false, true]);
+  });
+  it('tests whether some card, or no card, on the target card is so, each way', () => {
+    const some = (state: GameState, onto: string) => holds('some card on the target card is tired', aboutOnto(state, onto));
+    const none = (state: GameState, onto: string) => holds('no card on the target card is tired', aboutOnto(state, onto));
+    expect([some(table('smith'), 'vase'), some(table(), 'vase'), some(table('vase'), 'vase'), some(table('smith'), 'tinker')]).toEqual([true, false, false, false]);
+    expect([none(table('smith'), 'vase'), none(table(), 'vase'), none(table('vase'), 'vase'), none(table('smith'), 'tinker')]).toEqual([false, true, true, true]);
+  });
+  it('makes the target card so, and not so, clearing the key', () => {
+    expect(tiredOnes(ran('the target card is tired', aboutOnto(table(), 'tinker')))).toEqual(['tinker']);
+    const woken = ran('the target card is not tired', aboutOnto(table('vase', 'smith'), 'vase'));
+    expect(cardById(woken, 'vase')!.data).not.toHaveProperty('tired');
+    expect(tiredOnes(woken)).toEqual(['smith']);
+  });
+  it('gives the target card more of a count the game keeps on cards, and no other number', () => {
+    const once = ran('the target card gains 1 drill', aboutOnto(table(), 'vase'));
+    const twice = ran('the target card gains 2 gold drills', aboutOnto(ran('the target card gains 1 drill', aboutOnto(once, 'vase')), 'vase'));
+    expect(cardById(twice, 'vase')!.data).toMatchObject({ drills: 2, 'gold drills': 2 });
+    expect(() => ran('the target card gains 1 wage', aboutOnto(table(), 'vase'))).toThrow(
+      new RuleError("Only a number the game keeps on cards can change, like “Cards can have charges.”; wage isn't one."),
+    );
+  });
+  it('makes every picked card so, and not so, and no other card', () => {
+    expect(tiredOnes(ran('every picked card is tired', aboutPicked(table(), ['potter', 'tinker'])))).toEqual(['potter', 'tinker']);
+    expect(tiredOnes(ran('every picked card is not tired', aboutPicked(table('vase', 'potter', 'smith'), ['potter', 'tinker'])))).toEqual(['vase', 'smith']);
+  });
+
+  describe('as examples', () => {
+    const PASSED = [expect.objectContaining({ status: 'pass', message: null })];
+    const LAST_ZONE = [
+      'Example: a target in the last of three zones, with the choice it asks',
+      "  Given p0's stash has a Statue",
+      "  And p0's idle has a Smith",
+      '  When p0 coaches the Statue to the Smith, choosing gold',
+      "  Then the Smith in p0's idle has 1 gold drill",
+    ].join('\n');
+    const FIRST_HOLDING = [
+      'Example: Review Focus: the first zone written that holds the target, unless the press names another',
+      "  Given p0's stash has a Statue and a Vase",
+      "  And p0's workshop has a Vase",
+      "  And the Vase in p0's workshop has a Potter on it",
+      "  And p0's idle has a Potter",
+      '  When p0 coaches the Statue to the Potter',
+      "  Then the Potter in p0's crew has 1 drill",
+      "  When p0 coaches the Vase to the Potter in p0's idle",
+      "  Then the Potter in p0's idle has 1 drill",
+    ].join('\n');
+    /** p0's stash has a Statue and their workshop a Vase with a Potter on it, the Potter alone in their crew, and the When and Then lines are `lines`. */
+    const potterOnVase = (title: string, ...lines: string[]) => [
+      `Example: ${title}`, "  Given p0's stash has a Statue", "  And p0's workshop has a Vase", "  And the Vase in p0's workshop has a Potter on it",
+      ...lines.map((line) => `  ${line}`),
+    ].join('\n');
+
+    it('press a button with a target in the last of its zones, choosing', () => expect(run(COACH_GAME, LAST_ZONE)).toEqual(PASSED));
+    it('Review Focus: take the target from the first zone written that holds it, unless the press names another', () => {
+      expect(run(COACH_GAME, FIRST_HOLDING)).toEqual(PASSED);
+    });
+    it('Review Focus: take the target from the first zone written that holds it, whichever card is first on the table', () => {
+      // The Potter in the idle is claimed first, so it is the first Potter on the table; the crew comes before the idle in the line.
+      const example = [
+        'Example: the Potter in the idle comes first', "  Given p0's stash has a Statue", "  And p0's idle has a Potter", "  And p0's workshop has a Vase",
+        "  And the Vase in p0's workshop has a Potter on it", '  When p0 coaches the Statue to the Potter', "  Then the Potter in p0's crew has 1 drill",
+        "  And the Potter in p0's idle has 0 drills",
+      ].join('\n');
+      expect(run(COACH_GAME, example)).toEqual(PASSED);
+    });
+    it('Review Focus: never take the target from another of the button\'s zones than the one the press names', () => {
+      const [alone] = run(COACH_GAME, potterOnVase('no Potter in the idle', 'And the hall is empty', "When p0 coaches the Statue to the Potter in p0's idle"));
+      expect(alone.status).toBe('fail');
+      expect(alone.message).toMatch(/: I can't find a Potter for p0 to coach\.$/);
+      // A Potter outside the button's zones is pressed instead, for the game to refuse it in its own words.
+      const [refused] = run(COACH_GAME, potterOnVase('a Potter in the hall', 'And the hall has a Potter', "When p0 coaches the Statue to the Potter in p0's idle",
+        'Then it is rejected because "Pick where it goes: a card in your workshop, your crew or your idle."'));
+      expect(refused).toMatchObject({ status: 'pass', message: null });
+    });
+    it('Review Focus: say which zone to name for a button with several, in words that each press one button', () => {
+      const TWO_COACHES = COACH_GAME.replace('  A player may stop.', [
+        '  A player may coach a card from their stash to a card in the hall.', '    Then:', '      The target card gains 1 gold drill.', '  A player may stop.',
+      ].join('\n'));
+      expect(TWO_COACHES).not.toBe(COACH_GAME);
+      const [advice] = run(TWO_COACHES, potterOnVase('two coaches', 'And the hall has a Potter', 'When p0 coaches the Statue to the Potter', 'Then it is accepted'));
+      const ask = "Say which: “… to the Potter in p0's crew” or “… to the Potter in the hall”.";
+      expect(advice.status).toBe('fail');
+      expect(advice.message!.slice(-ask.length)).toBe(ask);
+      const lands: Record<string, string> = {
+        "to the Potter in p0's crew": "And the Potter in p0's crew has 1 drill", 'to the Potter in the hall': 'And the Potter in the hall has 1 gold drill',
+      };
+      for (const [wording, then] of Object.entries(lands)) {
+        const example = potterOnVase('two coaches', 'And the hall has a Potter', `When p0 coaches the Statue ${wording}`, 'Then it is accepted', then);
+        expect(run(TWO_COACHES, example), wording).toEqual(PASSED);
+      }
+    });
   });
 });

@@ -19,6 +19,8 @@ import {
 } from './declared-actions';
 import { friendlyError, friendlyReason } from './friendly';
 import { secondPersonWords } from './refs';
+import { joinOr } from './refs';
+import { ontoPlaces, yours } from './declared-moves';
 import type { LangRuntime } from './runtime';
 import { startPlayerOf, usesTurns } from './turns';
 import type { CompiledGame, DeclaredAction } from './types';
@@ -401,11 +403,14 @@ const unstopped = (prompt: string): string => prompt.replace(/\.$/, '');
 function cardPickView(
   engine: GameEngine, runtime: LangRuntime, state: GameState, seat: PlayerId, action: DeclaredAction,
 ): { cards: CardPickView; allowed: true | string } {
-  const { some, fromText, ontoText } = action.pick!;
-  // The zone of the card they go to, as written, beside what the view says of it.
-  const placing = ontoText === null
-    ? null
-    : { ontoText, view: { prompt: unstopped(ontoPrompt(action)), targets: {} as { [cardId: string]: PickCardView[] } } };
+  const { some, fromText } = action.pick!;
+  // Every zone the card they go to may be in, as the player is told it (“your workshop, your crew or your idle”), beside what the view
+  // says of it.
+  const places = ontoPlaces(action.pick!);
+  const placing = places.length === 0 ? null : {
+    where: joinOr(places.map(({ text }) => yours(text))),
+    view: { prompt: unstopped(ontoPrompt(action)), targets: {} as { [cardId: string]: PickCardView[] } },
+  };
   const view: CardPickView = { some, prompt: unstopped(cardPrompt(action)), cards: [], onto: placing?.view ?? null };
   if (isOut(state, seat) && state.result === undefined) return { cards: view, allowed: OUT_OF_GAME };
   // The move with no card says the same for every card the seat can't see, so it is asked once for the button, and only if one is listed.
@@ -422,7 +427,7 @@ function cardPickView(
       ...target, ...pickVerdict(engine, runtime, state, seat, action, cardless, { id, seen }, { id: target.id, seen: shown }),
     }));
     placing.view.targets[id] = goes;
-    view.cards.push({ ...card, allowed: goes.some((t) => t.allowed === true) ? true : goes[0]?.allowed ?? noCardIn(placing.ontoText) });
+    view.cards.push({ ...card, allowed: goes.some((t) => t.allowed === true) ? true : goes[0]?.allowed ?? noCardIn(placing.where) });
   }
   // Once the game is over every button says so, as the ones that pick nothing do, whatever is left to pick.
   if (state.result !== undefined) return { cards: view, allowed: friendlyReason('game is over') };

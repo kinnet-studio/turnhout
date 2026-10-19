@@ -17,8 +17,8 @@ const COUNT_WORDS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eig
 
 /** How the items of a list are separated: "a, b and c", with or without a comma before the last "and". */
 export const SEPARATORS = [', and ', ', ', ' and '];
-/** Numbers are said as alternatives: "25, 50 or 100". */
-const OR_SEPARATORS = [', or ', ', ', ' or '];
+/** Numbers are said as alternatives: "25, 50 or 100"; so are the zones a button's target card may be picked in. */
+export const OR_SEPARATORS = [', or ', ', ', ' or '];
 
 export const separatorSource = (separators: string[]): string => `(?:${separators.join('|')})`;
 

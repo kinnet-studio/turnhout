@@ -8,10 +8,44 @@ import type { ActionFn, CardMatch, CardPick, ConditionFn, DeclaredAction, Effect
 import { BOX_ZONE, matchesCard, relocate, zoneNameOf } from '../zones';
 import { byCardId, describeCard } from './example-phrases';
 import { describeZone, seatOf, soleZone, theTargetCard, thePickedCards } from './support';
+import { ontoPlaces } from '../declared-moves';
+import { cardsOn } from '../attach';
+import { changeCard } from '../card-facts';
+import { changeable } from './card-number-phrases';
+import { cardHasFlag, cardNumber, mustBeKept } from './support';
 
 // ---- the lines of a button that picks cards ------------------------------------------------------
 
 const targetIs = (wanted: boolean): ConditionFn => (env, args) => matchesCard(theTargetCard(env), args[0] as CardMatch) === wanted;
+
+/** A flag read as every phrase reads one, so a flag worked out from lines is so when its lines say it is. */
+const targetIsFlagged = (wanted: boolean): ConditionFn => (env, [flag]) => cardHasFlag(env, theTargetCard(env), flag as string) === wanted;
+
+/** Each card on the target card, read only through `cardsOn`, is read as every phrase reads a flag. */
+const someCardOnTargetIs = (wanted: boolean): ConditionFn => (env, [flag]) =>
+  cardsOn(env.state, theTargetCard(env).id).some((card) => cardHasFlag(env, card, flag as string)) === wanted;
+
+/**
+ * The target card gains that much of a count. Only a count the game keeps on cards can change, so a column of a card's table is a
+ * mistake in the rule, refused as “the card it joins gains …” refuses it.
+ */
+const targetGains: EffectFn = (env, [n, name]) => {
+  const count = changeable(env, name as string);
+  const card = theTargetCard(env);
+  return changeCard(env.state, card.id, { [count]: cardNumber(env, card, count) + (n as number) }, env.game);
+};
+
+/** A flag a card is not is a flag it never had, as “It is not …” leaves it. A flag worked out from lines is never set. */
+const targetBecomes = (wanted: boolean): EffectFn => (env, [flag]) => {
+  mustBeKept(env, flag as string);
+  return changeCard(env.state, theTargetCard(env).id, { [flag as string]: wanted ? true : null }, env.game);
+};
+
+/** Each picked card, in the press's order, as “The target card is …” makes one. A flag worked out from lines is refused first. */
+const pickedBecome = (wanted: boolean): EffectFn => (env, [flag]) => {
+  mustBeKept(env, flag as string);
+  return thePickedCards(env).reduce((state, id) => changeCard(state, id, { [flag as string]: wanted ? true : null }, env.game), env.state);
+};
 
 /** The press is judged as a whole, so this counts the set the press gave, not any one card of it. */
 const pickedAtMost: ConditionFn = (env, [most]) => thePickedCards(env).length <= (most as number);
@@ -70,43 +104,64 @@ type Wording = { form: Form; from: string | null; to: string | null };
  */
 type Press = { by: PlayerId; base: string; matches: CardMatch[]; target: CardMatch | null; inPlay: CardState[] };
 
-/** Where `pick`'s button takes the card its cards go to from, for `by`, if it picks one. */
-const ontoZoneOf = (env: PhraseEnv, by: PlayerId, pick: CardPick): string | null =>
-  (pick.onto === null ? null : moveZoneId(pick.onto, env.seats, by));
+/** The zones `pick`'s button takes the card its cards go to from, for `by`, in the order written: none if it picks none. */
+const ontoZonesOf = (env: PhraseEnv, by: PlayerId, pick: CardPick): (string | null)[] =>
+  ontoPlaces(pick).map(({ zone }) => moveZoneId(zone, env.seats, by));
 
 /** Whether an example with `wording` could mean the button that picks `pick`. */
 function fitsWording(env: PhraseEnv, by: PlayerId, pick: CardPick, { form, from, to }: Wording): boolean {
   if (from !== null && moveZoneId(pick.from, env.seats, by) !== from) return false;
-  if (form === 'to card') return pick.onto !== null && (to === null || ontoZoneOf(env, by, pick) === to);
+  if (form === 'to card') return pick.onto !== null && (to === null || ontoZonesOf(env, by, pick).includes(to));
   if (form === 'alone') return pick.onto === null;
   return pick.to !== null && moveZoneId(pick.to, env.seats, by) === to;
 }
 
 /**
  * The buttons with the press's base that `wording` fits, for one card or a set as the example names, and of those the ones that could
- * take the cards: the current phase's, whose zone holds each card named and, when the example names a card for them to go to, whose zone
- * for that card holds one like it. Two buttons that take the same cards to cards in two zones are then told apart by where the card is.
+ * take the cards: the current phase's, whose zone holds each card named and, when the example names a card for them to go to, one of
+ * whose zones for that card holds one like it (the zone the example names, when it names one). Two buttons that take the same cards to
+ * cards in two zones are then told apart by where the card is.
  */
 function buttonsFor(env: PhraseEnv, { by, base, matches, target, inPlay }: Press, wording: Wording): { fits: Button[]; takers: Button[] } {
   const fits = buttonsWithBase(env, base)
     .filter(({ action }) => fitsWording(env, by, action.pick!, wording) && (matches.length === 1 || action.pick!.some));
   const holds = (zoneId: string | null, wanted: CardMatch[]) => holdsEach(inPlay.filter((card) => card.zoneId === zoneId), wanted);
+  // A zone the example names is one of the button's (`fitsWording` asked), and the only one it may take the card from.
+  const ontoZones = (pick: CardPick) => (wording.to === null ? ontoZonesOf(env, by, pick) : [wording.to]);
   const takers = fits.filter(({ action, here }) => here && holds(moveZoneId(action.pick!.from, env.seats, by), matches)
-    && (target === null || holds(ontoZoneOf(env, by, action.pick!), [target])));
+    && (target === null || ontoZones(action.pick!).some((zoneId) => holds(zoneId, [target]))));
   return { fits, takers };
 }
 
 /**
  * The wordings that could press `pick`'s button, fewest words first: where its cards come from, where they go, then both. For a button
- * that picks a card for them to go to, where they go is the zone of that card, as “… to the Vase in p0's shelf” says it.
+ * that picks a card for them to go to, where they go is the zone of that card, as “… to the Vase in p0's shelf” says it: each zone it
+ * may be in, in the order written.
  */
 function wordingsOf(env: PhraseEnv, by: PlayerId, pick: CardPick): Wording[] {
   const from = moveZoneId(pick.from, env.seats, by);
   const form: Form = pick.onto !== null ? 'to card' : pick.to === null ? 'alone' : 'to zone';
-  const to = pick.onto !== null ? ontoZoneOf(env, by, pick) : pick.to === null ? null : moveZoneId(pick.to, env.seats, by);
+  const tos = (pick.onto !== null ? ontoZonesOf(env, by, pick) : [pick.to === null ? null : moveZoneId(pick.to, env.seats, by)])
+    .filter((to): to is string => to !== null);
   const whence: Wording[] = from === null ? [] : [{ form: form === 'to zone' ? 'alone' : form, from, to: null }];
-  if (to === null) return whence;
-  return [...whence, { form, from: null, to }, ...(from === null ? [] : [{ form, from, to } satisfies Wording])];
+  return [
+    ...whence, ...tos.map((to): Wording => ({ form, from: null, to })), ...(from === null ? [] : tos.map((to): Wording => ({ form, from, to }))),
+  ];
+}
+
+/**
+ * The id of the card `target` the press names for its cards to go to, as `cardFor` finds one: in the zone `named`, the one the example
+ * names, else in the first of the button's zones, in the order written, that holds one not taken. A card in another of the button's zones
+ * than the one the example names would be taken there, though the example named that one, so none stands in for a card it lacks.
+ */
+function targetFor(env: PhraseEnv, { by, base, inPlay }: Press, target: CardMatch, pick: CardPick, named: string | null, taken: Set<string>): string {
+  const zones = ontoZonesOf(env, by, pick);
+  if (named === null) {
+    const holding = zones.find((zoneId) => inPlay.some((card) => card.zoneId === zoneId && !taken.has(card.id) && matchesCard(card, target)));
+    return cardFor(inPlay, target, holding ?? zones[0], taken, by, base);
+  }
+  const others = zones.filter((zoneId) => zoneId !== named);
+  return cardFor(inPlay.filter((card) => !others.includes(card.zoneId)), target, named, taken, by, base);
 }
 
 /**
@@ -197,23 +252,33 @@ const pressesCardButton = (form: Form, saysFrom = false): ActionFn => (env, args
     return id;
   });
   const move: Move = pick.some ? { type: button.words, cardIds: ids } : { type: button.words, cardId: ids[0] };
-  // The card they go to is taken from the zone the example names for it, else from the button's.
-  if (target !== null) move.onto = cardFor(press.inPlay, target, wording.to ?? ontoZoneOf(env, by, pick), taken, by, base);
+  // The card they go to is taken from the zone the example names for it, else from the first of the button's that holds one.
+  if (target !== null) move.onto = targetFor(env, press, target, pick, wording.to, taken);
   return { by, move };
 };
 
 /**
  * What the lines of a button that picks cards may say about them: “the target card” for the card a press picked for its cards to go
- * to, and “the picked cards” for a set. And the lines of an example that press such a button (“A player may buy a card from the shop to
- * their stash.”), naming the cards after the button's base, and where they come from, where they go or both when several buttons could take them,
- * with the zone of the card they go to when cards in two zones have its name.
+ * to (what kind of card it is, whether it is so, whether some card, or no card, on it is so, what it gains and what it is made), and
+ * “the picked cards” for a set (how many there are, and every one made so or not so). And the lines of an example that press such a
+ * button (“A player may buy a card from the shop to their stash.”), naming the cards after the button's base, and where they come from,
+ * where they go or both when several buttons could take them, with the zone of the card they go to when cards in two zones have its name.
  */
 export function registerCardPickPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
     .condition('the target card is {cardclass}', targetIs(true), { needsOnto: true })
     .condition('the target card is not {cardclass}', targetIs(false), { needsOnto: true })
     .condition('they picked at most {int} card(s)', pickedAtMost, { needsCards: true })
+    .condition('the target card is {cardflag}', targetIsFlagged(true), { needsOnto: true })
+    .condition('the target card is not {cardflag}', targetIsFlagged(false), { needsOnto: true })
+    .condition('some card on the target card is {cardflag}', someCardOnTargetIs(true), { needsOnto: true })
+    .condition('no card on the target card is {cardflag}', someCardOnTargetIs(false), { needsOnto: true })
     .effect('move the picked cards to {zone}', movePickedTo, { needsCards: true })
+    .effect('the target card gains {int} {attribute}', targetGains, { needsOnto: true, writes: 1 })
+    .effect('the target card is {cardflag}', targetBecomes(true), { needsOnto: true, writes: 0 })
+    .effect('the target card is not {cardflag}', targetBecomes(false), { needsOnto: true, writes: 0 })
+    .effect('every picked card is {cardflag}', pickedBecome(true), { needsCards: true, writes: 0 })
+    .effect('every picked card is not {cardflag}', pickedBecome(false), { needsCards: true, writes: 0 })
     .action('{player} {cardaction} {cardlist}', pressesCardButton('alone'))
     .action('{player} {cardaction} {cardlist} to {zone}', pressesCardButton('to zone'))
     .action('{player} {cardaction} {cardlist} to {card}', pressesCardButton('to card'))

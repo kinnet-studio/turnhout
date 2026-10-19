@@ -7,6 +7,7 @@ import { createDefaultLibrary } from './library';
 import { parseOutline } from './outline';
 import { vocabFrom } from './phrases';
 import { AMOUNT_BOARD, ANY_PLAYER_BOARD, CARD_PICK_GAME, MARK_BOARD, PICK_BOARD, TINY_BOARD_HEAD, TURN_GAME, fixtureBoardGame, vocabFor } from './testing';
+import { COACH_GAME, CREW_GAME, WORKED_GAME } from './testing';
 
 const lib = createDefaultLibrary();
 const BASE = [
@@ -1730,5 +1731,101 @@ describe('buttons that pick a card', () => {
       const text = forTwo(["  A player may peek a card in the other player's stash.", '    Only if they have at least 1 coin.', ...MOVE_IT]);
       expect(compileGame(text, lib).diagnostics).toEqual([]);
     });
+  });
+});
+
+describe('a target card in several zones', () => {
+  const COACH_LINE = '  A player may coach a card from their stash to a card in their workshop, their crew or their idle.';
+  const ONLY_IF = '    Only if the target card is not tired.';
+  const GOLD_ONLY_IF = '          Only if the target card is a Smith.';
+  /** The 1-based number of `line` in `text`, which must hold it once. */
+  const at = (text: string, line: string) => {
+    expect(text.split('\n').filter((l) => l === line)).toHaveLength(1);
+    return text.split('\n').indexOf(line) + 1;
+  };
+  /** `text` with `from` written as `to`, which it must hold. */
+  const swapped = (text: string, from: string, to: string) => {
+    const changed = text.replace(from, to);
+    expect(changed).not.toBe(text);
+    return changed;
+  };
+  /** `text` with `line` put in after `after`, which it must hold. */
+  const adding = (text: string, after: string, line: string) => swapped(text, `${after}\n`, `${after}\n${line}\n`);
+  const coachOf = (text: string) => compileGame(text, lib).game!.phases[0].actions.find((a) => a.base === 'coach')!;
+  const stash = { of: { who: 'actor' }, zone: 'stash' };
+  const mine = (zone: string) => ({ of: { who: 'actor' }, zone });
+
+  it('reads the first zone as the one the card goes to, and each zone after it with its text', () => {
+    expect(compileGame(COACH_GAME, lib).diagnostics).toEqual([]);
+    expect(coachOf(COACH_GAME).pick).toEqual({
+      some: false, from: stash, fromText: 'their stash', to: null, onto: mine('workshop'), ontoText: 'their workshop',
+      ontoAlso: [{ zone: mine('crew'), text: 'their crew' }, { zone: mine('idle'), text: 'their idle' }],
+    });
+  });
+  it('reads the zones the same with a comma before the last “or”', () => {
+    const oxford = swapped(COACH_GAME, 'their crew or their idle.', 'their crew, or their idle.');
+    expect(compileGame(oxford, lib).diagnostics).toEqual([]);
+    expect(coachOf(oxford).pick).toEqual(coachOf(COACH_GAME).pick);
+  });
+  it('(guard) leaves a pick of one zone without the zones after it', () => {
+    const hire = compileGame(CREW_GAME, lib).game!.phases[0].actions.find((a) => a.base === 'hire')!;
+    expect(hire.pick).toMatchObject({ onto: mine('workshop'), ontoText: 'their workshop' });
+    expect('ontoAlso' in hire.pick!).toBe(false);
+  });
+  it('names a zone it can not read on the button\'s line', () => {
+    const line = '  A player may coach a card from their stash to a card in their workshop or their crw.';
+    const text = swapped(COACH_GAME, COACH_LINE, line);
+    expect(messages(text)).toEqual([[at(text, line), 'There is no zone called “crw”.']]);
+  });
+  it('takes each zone as one zone only', () => {
+    const line = '  A player may coach a card from their stash to a card in their workshop or each idle.';
+    const text = swapped(COACH_GAME, COACH_LINE, line);
+    expect(messages(text)).toEqual([[at(text, line), 'A move goes from one zone to one zone.']]);
+  });
+  it('Review Focus: refuses each line about the target card when a zone after the first may hide it, naming that zone', () => {
+    const hidden = "This line would tell the player what the card is, though they can't see the cards in p1's stash. Check it in the Then: lines, after a reveal.";
+    const text = swapped(COACH_GAME, COACH_LINE, "  A player may coach a card from their stash to a card in their workshop or p1's stash.");
+    // The Gold option's Only if line reads the target card too, so it is told the same (P7).
+    expect(messages(text)).toEqual([[at(text, ONLY_IF), hidden], [at(text, GOLD_ONLY_IF), hidden]]);
+    expect(compileGame(text, lib).game).toBeUndefined();
+  });
+  it('reads the target card only in a button that picks one, and the picked cards only in one that picks some', () => {
+    const gains = adding(COACH_GAME, '      Their moves go back to 0.', '      The target card gains 1 drill.');
+    expect(messages(gains)).toEqual([[at(gains, '      The target card gains 1 drill.'),
+      '“The target card gains 1 drill” only makes sense in a button that picks a card and the card it goes to, like “A player may stack a card from their hand to a card in the row.”']]);
+    const waking = adding(COACH_GAME, '      Move it to their workshop.', '      Every picked card is not tired.');
+    // The rouse button has the same line; the one under start comes right after its Then line.
+    expect(messages(waking)).toEqual([[at(waking, '      Move it to their workshop.') + 1,
+      '“Every picked card is not tired” only makes sense in a button that picks some cards, like “A player may discard some cards from their hand.”']]);
+  });
+  it('asks every line about the target card for a button that picks one, and every line about the picked cards for one that picks some', () => {
+    const START = '  A player may start a card in their stash.';
+    const tests = ['the target card is tired', 'the target card is not tired', 'some card on the target card is tired', 'no card on the target card is tired'];
+    const changes = ['The target card is tired', 'The target card is not tired', 'Every picked card is tired', 'Every picked card is not tired'];
+    const text = swapped(COACH_GAME, `${START}\n    Then:\n      Move it to their workshop.\n`, [
+      START, ...tests.map((test) => `    Only if ${test}.`), '    Then:', '      Move it to their workshop.', ...changes.map((change) => `      ${change}.`), '',
+    ].join('\n'));
+    const first = at(text, START) + 1;
+    const needs = (clean: string) => (clean.startsWith('Every picked')
+      ? `“${clean}” only makes sense in a button that picks some cards, like “A player may discard some cards from their hand.”`
+      : `“${clean}” only makes sense in a button that picks a card and the card it goes to, like “A player may stack a card from their hand to a card in the row.”`);
+    expect(messages(text)).toEqual([
+      ...tests.map((test, i) => [first + i, needs(test)]), ...changes.map((change, i) => [first + tests.length + 2 + i, needs(change)]),
+    ]);
+  });
+  it('refuses a line that would change a number worked out from its lines', () => {
+    const text = swapped(WORKED_GAME, '  A player may stop.', [
+      '  A player may coach a card from their stash to a card in their workshop.', '    Then:', '      The target card gains 1 red work.', '  A player may stop.',
+    ].join('\n'));
+    expect(messages(text)).toEqual([[at(text, '      The target card gains 1 red work.'), '“red work” is worked out from its lines, so no rule can change it.']]);
+  });
+  it('refuses a line that would make the target card or the picked cards so, or not so, where that is worked out from its lines', () => {
+    const onTarget = ['      The target card is done.', '      The target card is not done.'];
+    const onPicked = ['      Every picked card is done.', '      Every picked card is not done.'];
+    const text = swapped(WORKED_GAME, '  A player may stop.', [
+      '  A player may coach a card from their stash to a card in their workshop.', '    Then:', ...onTarget,
+      '  A player may rouse some cards from the hall to a card in their workshop.', '    Then:', ...onPicked, '  A player may stop.',
+    ].join('\n'));
+    expect(messages(text)).toEqual([...onTarget, ...onPicked].map((line) => [at(text, line), '“done” is worked out from its lines, so no rule can change it.']));
   });
 });

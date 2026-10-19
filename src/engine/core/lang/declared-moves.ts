@@ -5,6 +5,7 @@ import type { CardState, PlayerId } from '../scene';
 import { clearTurnLog, endsTurn } from './board-state';
 import type { LangRuntime } from './runtime';
 import type { CompiledGame, CompiledPhase, DeclaredMove, MoveInfo, SeatRef, ZoneRef } from './types';
+import type { CardPick } from './types';
 import { otherSeat, relocate, topCard, zoneIdFor, zoneInfo } from './zones';
 
 const NOT_ON_TABLE = "That card isn't on the table.";
@@ -30,6 +31,12 @@ function seatOfMove(of: SeatRef, seats: PlayerId[], by: PlayerId): PlayerId | nu
 
 /** The zone as the designer named it, said to the player making the move: “their hand” becomes “your hand”. */
 export const yours = (text: string) => text.replace(/^their\s+/i, 'your ');
+
+/** The zones a button's target card may be picked in, each as written, in the order written: none for a button that picks no target. */
+export function ontoPlaces(pick: CardPick): { zone: ZoneRef; text: string }[] {
+  if (pick.onto === null || pick.ontoText === null) return [];
+  return [{ zone: pick.onto, text: pick.ontoText }, ...(pick.ontoAlso ?? [])];
+}
 
 /** Whether the zone is a pile, whose top card is the only one a move may take. */
 export const isPile = (game: CompiledGame, zoneId: string): boolean => zoneInfo(game, zoneId)?.spec.layout === 'pile';
