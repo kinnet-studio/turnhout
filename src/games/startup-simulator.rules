@@ -158,6 +158,8 @@ QA output:
   A qa card's qa output is its output.
   A qa mode card's qa output is 1.
   A card's qa output goes up by its working green xp.
+  A Bug Hunter card's qa output is 1.
+  A practised card's qa output is 2.
   A red mode card's qa output is 0.
   A blue mode card's qa output is 0.
   An onboarding card's qa output is 0.
@@ -318,12 +320,35 @@ Declarable:
 
 Rev:
   A card's rev goes up by the total rev bonus of the cards on it.
-  A card's rev goes down by its bugs.
+  A card's rev goes down by its bug decay.
   A card's rev is at least 0.
   An offline card's rev is 0.
 
 Rev bonus:
   A Viral Loop card's rev bonus is 3.
+  A Rainmaker card's rev bonus is 2.
+  A card's rev bonus goes up by its training xp.
+  An onboarding card's rev bonus is 0.
+
+Practised:
+  Only if it is a Bug Hunter card.
+  Only if it is a card whose training xp is more than 0.
+
+Waiving decay:
+  Only if it is badged.
+  Only if it is not onboarding.
+
+Stopping decay:
+  Only if it is a Bug Hunter card.
+  Only if its training xp is more than 1.
+  Only if it is not onboarding.
+
+Decaying:
+  Only if no card on it is waiving decay.
+  Only if its owner has no card in their ops team that is stopping decay.
+
+Bug decay:
+  A decaying card's bug decay is its bugs.
 
 Portfolio points:
   A card's portfolio points is its val.
@@ -336,7 +361,9 @@ Bug mark:
   A bugged card's bug mark is 1.
 
 Attaching:
-  Only if it is a Viral Loop card.
+  Only if one of:
+    It is a Viral Loop card.
+    It is a Rainmaker card.
 
 Spreading bugs:
   Only if it is a Viral Loop card.
@@ -2664,11 +2691,11 @@ Example: cards a Layoff found go on a product only if they attach, the rest join
   Then it is rejected because "no picked card is attaching"
   When p0 hires the Growth Hacker, the Sales Rep and the QA Engineer to the Dating App
   Then it is rejected because "they have at least the total cost of the picked cards in capital"
-  When p0 hires the Growth Hacker and the Sales Rep to the Dating App
+  When p0 hires the Growth Hacker and the QA Engineer to the Dating App
   Then it is accepted
   And p0 has 0 capital
   And the Dating App in p0's operations has the Growth Hacker on it
-  And p0's ops team has the Growth Hacker and a Sales Rep
+  And p0's ops team has the Growth Hacker and a QA Engineer
 
 Example: after the last round, a player whose ops team can run every product has them all back online before the score (section 12, ruling 25)
   Given the crash pile has the Market Crash
@@ -3412,3 +3439,88 @@ Example: a QA Engineer on a Launching team gains no XP, since Specialists learn 
   When p0 launches the Dating App
   Then the QA Engineer in p0's ops team has 0 training xp
   And the Junior Software Dev in p0's ops team has 1 blue xp token
+
+Example: a QA Engineer cleans 1 Bug a turn and 2 once it has 1 XP, and at 1 XP stops no Bug Decay (section 11, section 20)
+  Given p1's development has a Dating App
+  And the Dating App in p1's development has 3 bugs
+  And the Dating App in p1's development has a QA Engineer on it
+  And p1's operations has a Mobile Wallet
+  And the Mobile Wallet in p1's operations has 3 bugs
+  And p1's ops team has a QA Engineer and a Junior Software Dev
+  And the QA Engineer in p1's ops team has 1 training xp
+  And the turn passes to the left
+  Then the phase is income
+  And p1 has 7 capital
+  And p1 has 0 market share
+  When p1 pays salaries
+  And p1 ends their actions
+  Then the Dating App in p1's development has 2 bugs
+  And the Mobile Wallet in p1's operations has 1 bug
+
+Example: a QA Engineer with 2 XP working in the ops team stops Bug Decay on all its owner's Active products (section 11, ruling 19)
+  Given p1's operations has a Dating App and a Mobile Wallet
+  And the Dating App in p1's operations has 2 bugs
+  And the Mobile Wallet in p1's operations has 1 bug
+  And p1's ops team has a QA Engineer, a Junior Software Dev and a Junior Software Dev
+  And the QA Engineer in p1's ops team has 2 training xp
+  And the turn passes to the left
+  Then the phase is income
+  And p1 has 10 capital
+  And p1 has 2 market share
+
+Example: a Sales Rep with 2 XP adds $4 to its product's revenue, and neither stops Bug Decay nor cleans Bugs (section 11, section 20)
+  Given p1's operations has a Dating App and a Mobile Wallet
+  And the Mobile Wallet in p1's operations has 1 bug
+  And p1's ops team has a Junior Software Dev and a Junior Software Dev
+  And the Mobile Wallet in p1's operations has a Sales Rep on it
+  And the Sales Rep in p1's ops team has 2 training xp
+  And the turn passes to the left
+  Then the phase is actions
+  And p1 has 13 capital
+  And p1 has 2 market share
+  When p1 ends their actions
+  Then the Mobile Wallet in p1's operations has 1 bug
+
+Example: a badged Sales Rep, the VP of Sales, adds $2 and waives its product's Bug Decay (section 11)
+  Given p1's operations has a Payment Gateway
+  And the Payment Gateway in p1's operations has 2 bugs
+  And p1's ops team has a Junior Software Dev
+  And the Payment Gateway in p1's operations has a Sales Rep on it
+  And the Sales Rep in p1's ops team is badged
+  And the turn passes to the left
+  Then the phase is actions
+  And p1 has 12 capital
+
+Example: a Sales Rep assigned to the ops team goes on the product its owner picks, never into the pool (section 3, ruling 19)
+  Given the phase is actions
+  And p0's operations has a Dating App and a To-Do List
+  And p0's bench has a Sales Rep and a Junior Software Dev
+  When p0 assigns the Sales Rep and the Junior Software Dev to p0's ops team
+  Then it is rejected because "no picked card is attaching"
+  When p0 assigns the Sales Rep and the Junior Software Dev to the To-Do List
+  Then it is accepted
+  And the To-Do List in p0's operations has a Sales Rep on it
+  And p0's ops team has a Sales Rep and a Junior Software Dev
+
+Example: a Sales Rep Reassigned to another product is onboarding: it adds nothing that turn, and even badged it waives no Bug Decay (section 6, section 11, ruling 8)
+  Given the phase is actions
+  And p0's operations has a Dating App and a To-Do List
+  And the To-Do List in p0's operations has 1 bug
+  And the Dating App in p0's operations has a Sales Rep on it
+  And the Sales Rep in p0's ops team is badged
+  Then the Dating App in p0's operations has 3 rev
+  When p0 reassigns the Sales Rep to the To-Do List
+  Then the To-Do List in p0's operations has 0 rev
+  And the Dating App in p0's operations has 1 rev
+
+Example: a QA Engineer with 2 XP stops no Bug Decay while it is onboarding after a Pivot (section 11, ruling 8)
+  Given the phase is actions
+  And p0's operations has a Dating App
+  And the Dating App in p0's operations has 1 bug
+  And p0's development has a To-Do List
+  And the To-Do List in p0's development has a QA Engineer on it
+  And the QA Engineer in p0's development team has 2 training xp
+  When p0 pivots the To-Do List
+  And p0 assigns the QA Engineer to p0's ops team
+  Then the QA Engineer in p0's ops team is onboarding
+  And the Dating App in p0's operations has 0 rev

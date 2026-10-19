@@ -495,11 +495,12 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *   (§20.B.1). Then it launches the first project the engine takes, which a Tier 2 or 3 project needs to be fully led for as well as
  *   complete (P11), so that the Diva may go to the ops team with her team. Else it puts QA on its first project with Bugs that no QA
  *   on it cleans and that isn't Stalled, since a project with Bugs can't Launch (§6): the bench's first card that would clean them
- *   (see `qaForBugs`). Else it hires the agency row's first attaching card it can pay for, the Growth Hacker, onto its first product
- *   in operation (see `hireGrowthHacker`). Else it hires the Hacker from the agency row, when it can pay for him, onto its first
- *   project that needs blue cubes and no red (see `hireHacker`). Else, once a turn when `t % 4 === 1`, it reassigns the first card
- *   of its ops team that sits on a product to its first other product (see `moveGrowthHacker`). Else it pivots the project the Diva
- *   is on, which fires her (ruling 9), and it assigns her from the bench to the ops team, where her Ego refuses a reassign too. With
+ *   (see `qaForBugs`). Else, when the action by `(t + a) % 9` below is 0, the recruit, it hires instead the agency row's first
+ *   attaching card it can pay for, the Growth Hacker or a Sales Rep, onto its first product in operation (see `hireGrowthHacker`).
+ *   Else it hires the Hacker from the agency row, when it can pay for him, onto its first project that needs blue cubes and no red
+ *   (see `hireHacker`). Else, once a turn when `t % 4 === 1`, it reassigns the first card of its ops team that sits on a product to
+ *   its first other product (see `moveGrowthHacker`). Else it pivots the project the Diva is on, which fires her (ruling 9), and it
+ *   assigns her from the bench to the ops team, where her Ego refuses a reassign too. With
  *   none of those, it assigns the bench's makers of a color its first Tier 1 project with a cut lacks to that project (see
  *   `buildCut`), else it finds a lead for its first Stalled project (§3): the bench's first Senior Developer who would lead a colour
  *   it needs, assigned to it, else the agency row's first such Senior it can pay for, hired onto it, else the open job market's
@@ -781,9 +782,9 @@ function playTurn(
    * The cards of `team`, the seat's ops team, it can spare, in slot order: each one whose leaving, with those before it, keeps the
    * team's bandwidth in each color the card gives at the maintenance of every product in its operations, offline ones too, since the
    * next Income switches them all back on (§5 Phase B). A card that gives no bandwidth, such as a QA Tester, changes nothing by
-   * leaving, so it is spare even from a team already short. But a card on a product, the Growth Hacker, is never spare, for the $3 it
-   * adds there (§20.B), and nor is a card that cleans Bugs while a product in operation has Bugs or is viral, so that the Engine
-   * cleans them (§5 Phase D).
+   * leaving, so it is spare even from a team already short. But a card on a product, the Growth Hacker or a Sales Rep, is never spare,
+   * for the revenue it adds there (§20.B), and nor is a card that cleans Bugs while a product in operation has Bugs or is viral, so that
+   * the Engine cleans them (§5 Phase D).
    */
   const spare = (team: CardState[]): CardState[] => {
     const state = engine.getState();
@@ -913,11 +914,15 @@ function playTurn(
   /** The agency row's first attaching card the seat can pay for. */
   const attachingFor = (row: CardState[]) => row.find((card) => attaching(card) && canPay(card));
   /**
-   * The Growth Hacker from the agency row onto the seat's first product in operation, when the row holds an attaching card the seat
-   * can pay for and the seat has a product (§3, §20.B). Null otherwise.
+   * The agency row's first attaching card the seat can pay for, the Growth Hacker or a Sales Rep, onto the seat's first product in
+   * operation, when the seat has a product and `action`, the cycle's action this turn (see `playTurn`), is 0, the recruit's (§3,
+   * §20.B, ruling 19). Null otherwise. Only in the recruit's place: the three Sales Reps attach as well as the one Growth Hacker, and a
+   * seat hiring one at any action it could would take a Sales Rep where the agency row's hire to the ops team takes a QA Engineer (3
+   * players seed 4, 4 players seed 3), and would lead 2 players seed 4 off the long runs' only Cut 2 red (plan 5-2a's P9). Every
+   * Growth Hacker the long runs hired before the Sales Reps attached came at action 0, so those hires stay as they were.
    */
-  const hireGrowthHacker = (): Move | null => {
-    if (attachingFor(cards('agency-row')) === undefined || cards(own('operations')).length === 0) return null;
+  const hireGrowthHacker = (action: number): Move | null => {
+    if (action !== 0 || attachingFor(cards('agency-row')) === undefined || cards(own('operations')).length === 0) return null;
     return pick(HIRE_AGENCY_TO_PRODUCT, 'agency-row', attachingFor, onProduct());
   };
   /**
@@ -1079,7 +1084,8 @@ function playTurn(
         buildCut() ?? leadForStalled() ?? boardAction(action, a), ...boardMovesAfter(action).map((next) => boardAction(next, a)),
       ];
       const planned = a === 0 ? ideation() : [
-        reassignDiva(), launch(), qaForBugs(), hireGrowthHacker(), hireHacker(), moveGrowthHacker(), pivotDiva(), divaToOps(), ...board(),
+        reassignDiva(), launch(), qaForBugs(), hireGrowthHacker(action), hireHacker(), moveGrowthHacker(), pivotDiva(), divaToOps(),
+        ...board(),
       ];
       const move = choose([...planned, recruitMaker(a), press(END_ACTIONS)]);
       if (move.type === REASSIGN_TO_PRODUCT) movedOnProducts = true;
@@ -1775,7 +1781,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(190);
+    expect(results).toHaveLength(197);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -1853,6 +1859,13 @@ describe('Startup Simulator (designer language)', () => {
     for (const flag of ['coaching', 'pending badge', 'maxed out', 'due to graduate', 'choosing a token', 'mentorable']) {
       expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
     }
+    // What the QA Engineer and the Sales Rep do (§11.D, §20.B): a QA Engineer with Training XP is practised and cleans 2 Bugs, and one
+    // with 2 stops Bug Decay on its owner's products from the ops team, as a badged card waives it on the product it sits on. A
+    // product's bug decay, a number of its own, is the revenue its Bugs cost it while it is decaying.
+    expect(worked['bug decay']).toMatchObject({ kind: 'number', refines: false });
+    for (const flag of ['practised', 'waiving decay', 'stopping decay', 'decaying']) {
+      expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
+    }
   });
 
   // The next three tests each add to the rules an example that the rules refuse for naming no button alone, and then an example for each
@@ -1875,18 +1888,18 @@ describe('Startup Simulator (designer language)', () => {
   const advice: Advice[] = [
     advising(
       [
-        'Example: a Sales Rep in both rows', '  Given the agency row has the Hacker, the Architect, the Veteran and a Sales Rep',
-        '  And the open job market has a Sales Rep', '  When p0 hires a Sales Rep', '  Then it is accepted',
+        'Example: a QA Engineer in both rows', '  Given the agency row has the Hacker, the Architect, the Veteran and a QA Engineer',
+        '  And the open job market has a QA Engineer', '  When p0 hires a QA Engineer', '  Then it is accepted',
       ],
       {
-        "from the agency row to p0's bench": ["Then p0's bench has a Sales Rep", 'And the open job market has a Sales Rep'],
-        'from the open job market': ["Then p0's bench has a Sales Rep", 'And the open job market is empty'],
-        "to p0's ops team": ["Then p0's ops team has a Sales Rep", 'And the open job market has a Sales Rep'],
+        "from the agency row to p0's bench": ["Then p0's bench has a QA Engineer", 'And the open job market has a QA Engineer'],
+        'from the open job market': ["Then p0's bench has a QA Engineer", 'And the open job market is empty'],
+        "to p0's ops team": ["Then p0's ops team has a QA Engineer", 'And the open job market has a QA Engineer'],
       },
       (wording, lands) => [
-        `Example: hiring the Sales Rep ${wording}`, '  Given the agency row has the Hacker, the Architect, the Veteran and a Sales Rep',
+        `Example: hiring the QA Engineer ${wording}`, '  Given the agency row has the Hacker, the Architect, the Veteran and a QA Engineer',
         '  And the phase is actions',
-        '  And the open job market has a Sales Rep', "  And p0's operations has a To-Do List", `  When p0 hires a Sales Rep ${wording}`,
+        '  And the open job market has a QA Engineer', "  And p0's operations has a To-Do List", `  When p0 hires a QA Engineer ${wording}`,
         ...lands.map((line) => `  ${line}`),
       ],
     ),
@@ -1933,7 +1946,7 @@ describe('Startup Simulator (designer language)', () => {
     const message = results.at(-1)!.message!;
     expect(message.slice(-ask.length)).toBe(ask);
 
-    // Each wording the advice gives hires the Sales Rep from where it says, to where it says.
+    // Each wording the advice gives hires the QA Engineer from where it says, to where it says.
     const wordings = [...message.matchAll(/“… ([^”]+)”/g)].map(([, wording]) => wording);
     expect(wordings.sort()).toEqual(Object.keys(lands).sort());
     expect(pressed.map(({ status, message }) => [status, message])).toEqual(wordings.map(() => ['pass', null]));
@@ -2854,13 +2867,14 @@ describe('Startup Simulator (designer language)', () => {
 });
 
 describe('what the view says the rules work out', () => {
-  it('stands each need in for its cost, each bandwidth for its output and the portfolio points for the val, and shows Stalled, Efficient in ops and Experienced, the flags that change a value', () => {
+  it('stands each need in for its cost, each bandwidth for its output and the portfolio points for the val, and shows Stalled, Efficient in ops, Experienced and Practised, the flags that change a value', () => {
     expect(standIns(game!)).toEqual({
       'blue output': 'blue bandwidth', 'red output': 'red bandwidth', 'blue cost': 'blue need', 'red cost': 'red need',
       val: 'portfolio points',
     });
-    // Every line of each reads only the card and the cards on it: its Tier, its need, the leads on it, its trait, its zone and its xp.
-    expect(shownFlags(game!)).toEqual(['stalled', 'efficient in ops', 'experienced']);
+    // Every line of each reads only the card and the cards on it: its Tier, its need, the leads on it, its trait, its zone, its xp and
+    // its training xp. Decaying reads its owner's ops team, so it is not shown.
+    expect(shownFlags(game!)).toEqual(['stalled', 'efficient in ops', 'experienced', 'practised']);
   });
 
   it('gives a seat the needs and the flags of the cards on a Board, and nothing of a backlog (Review Focus: 3 players, seed 1)', () => {
