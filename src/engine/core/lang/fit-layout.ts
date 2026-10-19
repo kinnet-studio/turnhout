@@ -1,8 +1,8 @@
 // Places a game's zones for one viewer on the fixed table world, each in a slot of its own, so a game with more zones than
 // one line can hold still lies inside the world. The shared zones wrap onto lines from the top, the viewer's private zones onto
 // lines from the bottom, the viewer's public zones into the band between, and rivals' zones are left off. A zone where every
-// card sits on a card gets no slot: its cards hang under the cards they sit on. Like autoLayout, it works from the declared
-// zones alone.
+// card sits on a card gets no slot: its cards hang under the cards they sit on. A board row where only some cards do keeps its
+// slot, and those few hang the same way. Like autoLayout, it works from the declared zones alone.
 import { computeZoneLayout } from '../layout';
 import { CARD_HEIGHT, CARD_WIDTH, cardsByZone, TABLE_BOUNDS, type CardState, type PlayerId } from '../scene';
 import type { ZoneDef } from '../table-def';
@@ -105,7 +105,8 @@ function placeLine(
  * - the shared zones from the top of the world down;
  * - the viewer's private zones from the bottom up;
  * - the viewer's public zones (the board) in the band between, its lines sharing the band's height, each zone's cards at the top
- *   of its line so the cards on them can hang below;
+ *   of its line so the cards on them can hang below; a board row where only some cards sit on cards keeps the places
+ *   `stackOnHolders` gives those (`keepPlaced`);
  * - a zone where every card sits on a card as a free zone with no slot, last, so its cards draw over the board and a drop on one
  *   of them lands in it; empty, it rests under the first board zone's middle card, where the first card hanging there goes.
  *
@@ -145,7 +146,8 @@ export function fittedLayout(zones: ZoneSpec[], viewer: PlayerId): ZoneDef[] {
   const height = lines.length === 0 ? 0 : Math.floor((bottom - top - (lines.length - 1) * (LINE_GAP + LABEL_ROOM)) / lines.length);
   lines.forEach((line, k) => {
     const lineTop = top + k * (height + LINE_GAP + LABEL_ROOM);
-    board.push(...placeLine(line, (slot) => lineTop + slot.height / 2, ownId, viewer).map((def) => boardDef(def, height)));
+    const defs = placeLine(line, (slot) => lineTop + slot.height / 2, ownId, viewer);
+    board.push(...defs.map((def, i) => boardDef(def, height, line.slots[i].spec)));
   });
   for (const def of board) placed.set(def.id, def);
 
@@ -165,23 +167,25 @@ export function fittedLayout(zones: ZoneSpec[], viewer: PlayerId): ZoneDef[] {
 
 /**
  * A board row runs from its line's top down the line's whole height, its cards at the top, so the slot holds the columns of cards
- * hanging under them too. A board pile or hand keeps its slot as it is.
+ * hanging under them too. A board pile or hand keeps its slot as it is. A row where only some cards sit on cards draws each of
+ * those where `stackOnHolders` hangs it, under its holder, and spaces only the others.
  */
-function boardDef(def: ZoneDef, height: number): ZoneDef {
+function boardDef(def: ZoneDef, height: number, spec: ZoneSpec): ZoneDef {
   if (def.layout !== 'row') return def;
   return {
     ...def,
-    layoutOptions: { spacing: BOARD_SPACING, maxWidth: ROW_SLOT },
+    layoutOptions: { spacing: BOARD_SPACING, maxWidth: ROW_SLOT, ...(spec.onCards === 'some' && { keepPlaced: true }) },
     bounds: { width: ROW_SLOT, height, anchor: { x: 0.5, y: CARD_HEIGHT / 2 / height } },
   };
 }
 
 /**
- * The cards of the free zones placed under the cards they sit on: each holder's cards hang in a column at its x, in slot order,
- * the first one's top `STACK_GAP` below the holder's bottom edge and each next one `STACK_STEP` lower, the steps closing up evenly
- * where the column would pass the bottom of the holder's slot. A moved card is a copy with its place in `data.x` and `data.y`,
- * where the free layout reads it. Every other card, a card whose holder is in no slot among them, is the same object, and the
- * order is kept.
+ * The cards on cards placed under the cards they sit on, those of the free zones and of the rows that keep placed cards: each
+ * holder's cards hang in a column at its x, in slot order, the first one's top `STACK_GAP` below the holder's bottom edge and each
+ * next one `STACK_STEP` lower, the steps closing up evenly where the column would pass the bottom of the holder's slot. A moved
+ * card is a copy with its place in `data.x` and `data.y`, where the free layout and such a row read it. A card of such a row that
+ * hangs under nothing is spaced in the row, so one that carries a place from before is a copy without it. Every other card, a card
+ * whose holder is in no slot among them, is the same object, and the order is kept.
  */
 export function stackOnHolders(defs: ZoneDef[], cards: CardState[]): CardState[] {
   const byZone = cardsByZone({ cards, zones: [] });
@@ -194,11 +198,18 @@ export function stackOnHolders(defs: ZoneDef[], cards: CardState[]): CardState[]
 
   const moved = new Map<string, CardState>();
   for (const def of defs) {
-    if (def.layout !== 'free') continue;
+    const keepsPlaced = def.layoutOptions?.keepPlaced === true;
+    if (def.layout !== 'free' && !keepsPlaced) continue;
     const columns = new Map<string, CardState[]>();
     for (const card of zoneCardsOf(def)) {
       const holderId = holderIdOf(card);
-      if (holderId === null || !holders.has(holderId)) continue;
+      if (holderId === null || !holders.has(holderId)) {
+        if (keepsPlaced && card.data !== undefined && ('x' in card.data || 'y' in card.data)) {
+          const { x: _x, y: _y, ...rest } = card.data;
+          moved.set(card.id, { ...card, data: rest });
+        }
+        continue;
+      }
       const column = columns.get(holderId) ?? [];
       column.push(card);
       columns.set(holderId, column);

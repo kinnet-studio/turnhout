@@ -22,6 +22,15 @@ export function computeZoneLayout(
   const { x: zx, y: zy, rotation: zr = 0 } = zone.transform;
   const opts = zone.layoutOptions ?? {};
   const n = cards.length;
+  // A row that keeps placed cards draws each card carrying a place of its own there, and spaces the rest as a row of their count.
+  const keeps = zone.layout === 'row' && opts.keepPlaced === true;
+  const placeOf = (card: CardState): { x: number; y: number } | null => {
+    const x = card.data?.x;
+    const y = card.data?.y;
+    return keeps && typeof x === 'number' && typeof y === 'number' ? { x, y } : null;
+  };
+  const spaced = keeps ? cards.filter((card) => placeOf(card) === null).length : n;
+  let next = 0;
 
   cards.forEach((card, i) => {
     const z = zBase + i;
@@ -33,10 +42,18 @@ export function computeZoneLayout(
         break;
       }
       case 'row': {
+        const place = placeOf(card);
+        if (place !== null) {
+          t = { x: place.x, y: place.y, rotation: zr, scale: 1, z };
+          break;
+        }
+        const k = next++;
         const wanted = opts.spacing ?? DEFAULT_ROW_SPACING;
         // A row given a width draws its first and last card inside it, however many cards it holds.
-        const spacing = opts.maxWidth !== undefined && n > 1 ? Math.min(wanted, (opts.maxWidth - CARD_WIDTH) / (n - 1)) : wanted;
-        t = { x: zx + (i - (n - 1) / 2) * spacing, y: zy, rotation: zr, scale: 1, z };
+        const spacing = opts.maxWidth !== undefined && spaced > 1
+          ? Math.min(wanted, (opts.maxWidth - CARD_WIDTH) / (spaced - 1))
+          : wanted;
+        t = { x: zx + (k - (spaced - 1) / 2) * spacing, y: zy, rotation: zr, scale: 1, z };
         break;
       }
       case 'grid': {

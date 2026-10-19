@@ -16,6 +16,7 @@ import VENOM from '@/games/venom.rules?raw';
 import { CARD_HEIGHT } from '../scene';
 import { stackOnHolders } from './fit-layout';
 import { fixtureCard } from './testing';
+import { BOARD_SPACING, STACK_GAP } from './fit-layout';
 
 const lib = createDefaultLibrary();
 const seats = (n: number) => Array.from({ length: n }, (_, i) => `p${i}`);
@@ -335,4 +336,52 @@ describe('(guard) a zone where some cards sit on cards, and zones that name the 
     expect(defs.find((d) => d.id === 'idle-p1')).toMatchObject({ layout: 'row', bounds: { height: 776 } }));
   it('keeps a zone where every card sits on a card free, whatever zone it names', () =>
     expect(defs.find((d) => d.id === 'crew-p1')).toMatchObject({ layout: 'free' }));
+});
+
+describe('a zone where only some cards sit on cards', () => {
+  // The idle row marked as 4-1's guard marks it: some of its cards sit on cards in the workshop, and the crew names it as well.
+  const marked = BOARD.map((zone): ZoneSpec => {
+    if (zone.name === 'idle') return { ...zone, onCards: 'some', holders: 'workshop' };
+    return zone.name === 'crew' ? { ...zone, holders: 'workshop' } : zone;
+  });
+  const defs = fittedLayout(marked, 'p1');
+  const get = (id: string) => defs.find((d) => d.id === id)!;
+  // One card on a workshop card, one on nothing, one on nothing that carries a place from before, and one on a card not on the table.
+  const CARDS = [
+    fixtureCard('j1', 'workshop-p1', {}, { slot: 0 }),
+    fixtureCard('t1', 'idle-p1', { 'lang:on': 'j1' }),
+    fixtureCard('t2', 'idle-p1', {}),
+    fixtureCard('t3', 'idle-p1', { x: 5, y: 5 }),
+    fixtureCard('t4', 'idle-p1', { 'lang:on': 'c999' }),
+  ];
+  const find = (cards: CardState[], id: string) => cards.find((c) => c.id === id)!;
+
+  it('keeps it a board row that draws a placed card where it is placed, and marks no other row so', () => {
+    expect(get('idle-p1').layout).toBe('row');
+    expect(get('idle-p1').layoutOptions).toEqual({ spacing: BOARD_SPACING, maxWidth: 400, keepPlaced: true });
+    expect(get('workshop-p1').layoutOptions).toStrictEqual({ spacing: BOARD_SPACING, maxWidth: 400 });
+  });
+
+  it('hangs a card that sits on a card under it, takes an old place off a card that sits on none, and leaves the rest as they are', () => {
+    const out = stackOnHolders(defs, CARDS);
+    const j1 = computeZoneLayout(get('workshop-p1'), [CARDS[0]]).get('j1')!;
+    expect({ x: find(out, 't1').data!.x, y: find(out, 't1').data!.y }).toEqual({ x: j1.x, y: j1.y + CARD_HEIGHT + STACK_GAP });
+    expect(find(out, 't2')).toBe(find(CARDS, 't2'));
+    expect(find(out, 't4')).toBe(find(CARDS, 't4'));
+    const t3 = find(out, 't3');
+    expect(t3).not.toBe(find(CARDS, 't3'));
+    expect('x' in t3.data! || 'y' in t3.data!).toBe(false);
+    expect(out.map((c) => c.id)).toEqual(CARDS.map((c) => c.id));
+  });
+
+  it('draws the hanging card at its place and the others as a row of their own', () => {
+    const idle = get('idle-p1');
+    const held = stackOnHolders(defs, CARDS).filter((c) => c.zoneId === 'idle-p1');
+    const poses = computeZoneLayout(idle, held);
+    const t1 = find(held, 't1');
+    expect({ x: poses.get('t1')!.x, y: poses.get('t1')!.y }).toEqual({ x: t1.data!.x, y: t1.data!.y });
+    // Three cards 110 apart fit the 400-wide slot, so they keep the board's spacing around the row's middle.
+    expect(['t2', 't3', 't4'].map((id) => poses.get(id)!.x - idle.transform.x)).toEqual([-110, 0, 110]);
+    expect(['t2', 't3', 't4'].map((id) => poses.get(id)!.y)).toEqual([idle.transform.y, idle.transform.y, idle.transform.y]);
+  });
 });

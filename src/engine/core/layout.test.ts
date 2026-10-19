@@ -82,3 +82,24 @@ describe('computeZoneLayout of a row with a maxWidth', () => {
     expect(loose[1] - loose[0]).toBeCloseTo(75);
   });
 });
+
+describe('computeZoneLayout of a row that keeps its placed cards', () => {
+  const row = (keepPlaced?: boolean): ZoneState => ({
+    id: 'z', layout: 'row', transform: { x: 0, y: 0 }, layoutOptions: { spacing: 110, ...(keepPlaced === undefined ? {} : { keepPlaced }) },
+  });
+  const cards = [card('a', { data: { x: 7, y: 9 } }), card('b'), card('c')];
+
+  it('draws a card that carries its own place there, and spaces only the others, each keeping its z', () => {
+    const m = computeZoneLayout(row(true), cards, 10);
+    expect(m.get('a')).toEqual({ x: 7, y: 9, rotation: 0, scale: 1, z: 10 });
+    expect(m.get('b')).toEqual({ x: -55, y: 0, rotation: 0, scale: 1, z: 11 });
+    expect(m.get('c')).toEqual({ x: 55, y: 0, rotation: 0, scale: 1, z: 12 });
+  });
+
+  // A guard: this passes before the change, and pins that a row told nothing spaces every card, a place it carries or not.
+  it('(guard) spaces every card without keepPlaced', () => {
+    const m = computeZoneLayout(row(), cards);
+    expect(['a', 'b', 'c'].map((id) => m.get(id)!.x)).toEqual([-110, 0, 110]);
+    expect(m.get('a')!.y).toBe(0);
+  });
+});

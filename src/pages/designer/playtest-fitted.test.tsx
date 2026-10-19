@@ -1337,3 +1337,47 @@ describe('the gauges, the ops check and the final check', () => {
     expect(screen.queryByTestId(/^gauges-/)).toBeNull();
   });
 });
+
+/**
+ * How the numbers come (§20.B, §20.C, §5):
+ * - The Growth Hacker sits on a product in operations; the rest of the ops team sits on nothing.
+ * - The Dating App needs 6 Blue and no Red, none of it worked yet: `[Blue 0/6, Red 0/0]`.
+ * - 176 is `CARD_HEIGHT` 140 + `STACK_GAP` 36, as the development team test above has it.
+ */
+describe('a Growth Hacker hangs under its product', () => {
+  const tab = (name: string) => screen.getByRole('tab', { name });
+  const boardOf = (seat: string) => screen.getByTestId(`board-${seat}`).textContent;
+  /** setUp() with a Dating App in S's operations, the Growth Hacker on it in S's ops team, and S's Junior Software Dev there on nothing. */
+  const arranged = () => {
+    const set = setUp();
+    const [dating, hacker, junior] = [idOf(set, 'Dating App'), idOf(set, 'Growth Hacker'), idOf(set, 'Junior Software Dev', `bench-${S}`)];
+    let state = relocate(set, [dating], `operations-${S}`, game);
+    state = putOn(state, [hacker], `ops-team-${S}`, dating, game);
+    state = relocate(state, [junior], `ops-team-${S}`, game);
+    return { state, dating, hacker, junior };
+  };
+  const BOARD_LINE = 'operations: Dating App (tier Tier 1, tag Social, sector Consumer) [Blue 0/6, Red 0/0] with Growth Hacker · ops team: Junior Software Dev';
+
+  it('draws the Growth Hacker under the product it sits on, and the rest of the ops team in its row', () => {
+    const { state, dating, hacker, junior } = arranged();
+    mount({ initial: state });
+    const def = (id: string) => table!.tableDef.zones.find((z) => z.id === id)!;
+    const team = def(`ops-team-${S}`);
+    expect(team.layout).toBe('row');
+    expect(team.layoutOptions?.keepPlaced).toBe(true);
+    const at = computeZoneLayout(def(`operations-${S}`), cardsIn(`operations-${S}`)).get(dating)!;
+    const poses = computeZoneLayout(team, cardsIn(`ops-team-${S}`));
+    expect({ x: poses.get(hacker)!.x, y: poses.get(hacker)!.y }).toEqual({ x: at.x, y: at.y + 176 });
+    // Alone in the row, the Junior stands at the row's own place.
+    expect({ x: poses.get(junior)!.x, y: poses.get(junior)!.y }).toEqual({ x: team.transform.x, y: team.transform.y });
+  });
+
+  // A guard: this passes before the change, and pins that hanging the card changes neither the Board line nor another seat's tab.
+  it("(guard) names the Growth Hacker on its product in the Board line, and draws none of S's ops team on another seat's tab", () => {
+    mount({ initial: arranged().state });
+    expect(boardOf(S)).toBe(BOARD_LINE);
+    fireEvent.click(tab(O));
+    expect(cardsIn(`ops-team-${S}`)).toEqual([]);
+    expect(boardOf(S)).toBe(BOARD_LINE);
+  });
+});

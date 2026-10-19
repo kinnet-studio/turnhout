@@ -31,6 +31,8 @@ export interface LayoutOptions {
   rowSpacing?: number;
   jitter?: number; // radians of max rotation jitter; 0 = none (default)
   maxWidth?: number; // a row's cards squeeze together to span no more than this
+  /** A row's card that carries its own place (numeric `data.x` and `data.y`) is drawn there; the row spaces only the others. */
+  keepPlaced?: boolean;
 }
 
 export interface ZoneState {
