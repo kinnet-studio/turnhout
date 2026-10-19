@@ -132,3 +132,8 @@ Running list for the final report. Each is a call made under delegation; none bl
 - Timing (5-2b T5): Startup's test file is ≈26.5 s (30.7 s once under load), at the 30 s watch. A speed-up (memoize the shared 2-player runs, ≈4 s per 5-2a's final review) should run before slice 6 adds more.
 - 5-2b final review: the actions phase ended at 0 AP, so a free action (e.g. a Training card drawn by the last Brainstorm) couldn't be taken after the last paid action. The rulebook says free actions can be taken at any time during the Action Phase, so a mini plan before slice 6's rules makes the player end their actions themselves.
 - 5-3 pre-flight gaps parked for a later page plan: milestone faces break names mid-word ('Clean Launc|h'); greyed reasons from 'Only if one of:' groups read with mid-sentence capitals.
+
+## Files saved beside this note (the SDD workspace and scratchpad are not kept in git)
+- `2026-10-19-startup-5-3-preflight-task-1.md` and `2026-10-19-startup-5-3-preflight-tasks-2-4.md`: plan 5-3's pre-flight reports. The plan's "Controller amendment" bullets point at their §4 and §6 for exact texts.
+- `2026-10-19-startup-5-3-ledger.md`: plan 5-3's ledger (Task 1 complete; Task 2 not started).
+- `2026-10-19-startup-notes-for-<plan>-preflight.md`: the notes carried to each later plan's pre-flight (6, 7, 8, 9, 10, and 5-3's).

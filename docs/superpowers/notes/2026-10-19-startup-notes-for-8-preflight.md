@@ -1,0 +1,7 @@
+- 8-2: the poach fee reads the printed cost, not a cost raised by Chip Shortage (§16.B.1).
+- 8-1 Task 6 changes one 7-1 test line (Dusty:) because a hidden zone's size becomes a public read — verify only zone-size phrases are allowed.
+- 8-1 pre-flight: consider a phrase that reads a card's printed column (not the refined value), so 8-2b's poach base isn't "cost minus Chip Shortage's $3" (a duplicated rulebook number).
+- 8-1 pre-flight: consider "A player's X is their Y minus their Z" so 8-2a's blue/red room doesn't copy the supply sections line by line.
+- 8-2b: token destruction is one rule that boxes a locked token whenever a player's locked tokens outnumber their marks (covers every firing/sale route incl. slice 9's Fold); it would silently fix a mark lost another way — the long-run invariant must compare marks and locked tokens after every move.
+- 8-2b: the poach destination is a second press after the fee (rulebook names it before the fee); refused when the poacher has nowhere to put the employee.
+- 8-3 pre-flight (G1): a picker that lists the viewer's own cards from more than one zone names each card's zone (the placing step's projects and products would otherwise look alike); update 5-3's Training pins then — accept the cost.
