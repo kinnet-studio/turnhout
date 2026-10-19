@@ -133,6 +133,13 @@ const STRATEGY_CARDS: Record<string, number> = {
   'Corporate Raider': 2, 'Hit Piece': 2, 'Non-Compete Suit': 2, Workaholic: 1, 'Clean Coder': 1, Visionary: 1, 'Toxic Personality': 1,
   Burnout: 1, 'Flight Risk': 1, 'TechCrunch Feature': 2, 'Design Sprint': 2, 'Cease & Desist': 2,
 };
+/**
+ * Training (§6 Play Strategy Card, §20.A): for its printed price and no action, a seat plays a Training card from its Strategy Hand
+ * onto an employee it fits, which gains a Skill token, Training XP or a Badge, and the card goes to the strategy discard.
+ */
+const PLAY_TRAINING = 'play a card from their strategy hand to a card in their bench, their development team or their ops team';
+/** The rows a Training card's target is picked in, in the order the button names them (§20.A: Bench or Board). */
+const TRAINING_TARGETS = ['bench', 'development team', 'ops team'];
 /** The rows that keep only their 5 newest cards, letting the oldest go to the box. */
 const POOLS = ['open-job-market', 'open-idea-pool'];
 /** The rows each player has that only they can see: their hands, the rows a step deals into, and the Brainstorm look (§3, §15.C). */
@@ -444,10 +451,12 @@ const viewChecks = { targets: 0, sets: 0 };
  * rules: they are the button's candidates, which are the cards of `zoneId` in slot order, each is named by its card's name, and
  * the button is allowed exactly when some card is. A button that puts its cards on a card picks that card in `ontoZoneId`, and the
  * view lists for each card the cards it may go on: the button's targets, which are the cards of `ontoZoneId` in slot order, each
- * named by its card's name, and the card is allowed exactly when some target takes it.
+ * named by its card's name, and the card is allowed exactly when some target takes it. A button that picks its target in several
+ * zones, as Training does, offers the cards of each zone in turn, in the order `ontoZoneId` lists them.
  */
 function viewedCards(
-  runtime: LangRuntime, extras: SeatExtras, state: GameState, seat: PlayerId, type: string, zoneId: string, ontoZoneId: string | null,
+  runtime: LangRuntime, extras: SeatExtras, state: GameState, seat: PlayerId, type: string, zoneId: string,
+  ontoZoneId: string | string[] | null,
 ): CardPickView {
   const at = `${seat}'s ${type} in ${state.turn!.phase}`;
   const button = extras.actions.find((action) => action.move === type);
@@ -460,7 +469,7 @@ function viewedCards(
   sameList(offered.map((card) => card.name), zone.map(nameOf), () => `the names the view gives the cards of ${at}`);
   sameAs(picking.onto === null, ontoZoneId === null, () => `whether ${at} puts its cards on a card`);
   if (picking.onto !== null) {
-    const targets = zoneCards(state, ontoZoneId!);
+    const targets = [ontoZoneId!].flat().flatMap((onto) => zoneCards(state, onto));
     sameList(ontoCandidates(runtime, buttonOf(state, type)!, state, seat), targets.map((card) => card.id), () => `the targets of ${at}`);
     sameList(Object.keys(picking.onto.targets), zone.map((card) => card.id), () => `the cards the view lists targets for in ${at}`);
     for (const card of offered) {
@@ -482,9 +491,9 @@ function viewedCards(
 
 /**
  * Where a button that puts its cards on a card puts them: on the card `which` finds among the cards of `zoneId` that `card`, the first
- * card picked, may go on.
+ * card picked, may go on. A button that picks its target in several zones offers the cards of each, in turn, in the order of its list.
  */
-type Onto = { zoneId: string; which: (targets: CardState[], card: CardState) => CardState | undefined };
+type Onto = { zoneId: string | string[]; which: (targets: CardState[], card: CardState) => CardState | undefined };
 
 /**
  * A press of one card alone, as the view says through it, else as the rules say: whether it is allowed, and the choices it asks, each
@@ -520,7 +529,10 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *   with the highest salary (the first of those), from the development team on an even `t` and the ops team on an odd one, or
  *   from the other when that one has none. Then it pays salaries.
  * - **Free moves** come first in the actions phase, each at most once a turn. While its development has fewer than 3, it greenlights
- *   the first backlog card whose press is allowed, Tier 2 and 3 included, but an idea Domain Expertise cuts before any other. It
+ *   the first backlog card whose press is allowed, Tier 2 and 3 included, but an idea Domain Expertise cuts before any other. Then it
+ *   plays the first Training card of its Strategy Hand that has a target the rules take, in its bench, development team or ops team:
+ *   a Leadership Masterclass on the first such target of the kind `t % 3` names (a Junior, a QA Engineer or a Sales Rep), else on the
+ *   first such target, and any other card on the one at `t` (mod how many) among them (see `training`, §20.A). It
  *   dismisses the ops team's first card it can spare when `t % 9 === 4` and the development team's first when `t % 9 === 8`. In the
  *   last round, with the Market Crash in the crash pile, it dismisses on an even `t` the ops team's first card that gives Blue or Red
  *   bandwidth, once a turn (see `lastRound`): a path-driver, not play, that sends a seat short so that the final check has a choice
@@ -648,13 +660,14 @@ function playTurn(
   const verdicts = new Map<Move, { id: string; allowed: true | string }[]>();
   /**
    * The cards `type` offers from `zoneId`, and for each the cards of `ontoZoneId` it may go on: the zones' cards, or, through the view,
-   * the ones the page's view lists, with the view itself.
+   * the ones the page's view lists, with the view itself. Targets in several zones are the cards of each zone in turn.
    */
-  const offers = (type: string, zoneId: string, ontoZoneId: string | null) => {
+  const offers = (type: string, zoneId: string, ontoZoneId: string | string[] | null) => {
     const state = engine.getState();
     const byId = (id: string) => cardById(state, id)!;
     if (!throughView) {
-      return { row: zoneCards(state, zoneId), targetsOf: (_id: string) => (ontoZoneId === null ? [] : zoneCards(state, ontoZoneId)), seen: null };
+      const targetsOf = (_id: string) => (ontoZoneId === null ? [] : [ontoZoneId].flat().flatMap((onto) => zoneCards(state, onto)));
+      return { row: zoneCards(state, zoneId), targetsOf, seen: null };
     }
     if (view?.of !== state) view = { of: state, extras: seatExtras(engine, runtime, state, by) };
     const seen = viewedCards(runtime, view.extras, state, by, type, zoneId, ontoZoneId);
@@ -865,6 +878,32 @@ function playTurn(
   /** Whether `card` gives Blue or Red bandwidth, as the rules work it out (§5 Phase B). */
   const givesBandwidth = (card: CardState) =>
     ['blue', 'red'].some((color) => (runtime.workedValue(engine.getState(), card.id, `${color} bandwidth`) as number) > 0);
+  /** Whether the rules take Training card `card` played on `target`: the press is refused for none of their reasons before its choices. */
+  const takes = (card: CardState, target: CardState) =>
+    typeof pressChoices(runtime, engine.getState(), { type: PLAY_TRAINING, by, cardId: card.id, onto: target.id }) !== 'string';
+  /** What a Masterclass looks for in a target: a Junior by its role, else the card's name (§20.A). */
+  const kindOf = (card: CardState) => (card.data?.role === 'Junior' ? 'Junior' : nameOf(card));
+  /**
+   * The play of the Strategy Hand's first Training card that has a target the rules take, in the seat's bench, development team or ops
+   * team (§20.A). A Leadership Masterclass goes on the first taken target of the kind `t % 3` names, a Junior, a QA Engineer or a Sales
+   * Rep, else on the first taken target; any other card on the taken target at `t` (mod how many). The choice a Bootcamp asks of a
+   * Junior both colours fit is answered as any press's is, by `t`.
+   */
+  const training = (): Move | null => {
+    const zones = TRAINING_TARGETS.map(own);
+    const fits = (card: CardState) => isTraining(card) && zones.some((zoneId) => cards(zoneId).some((target) => takes(card, target)));
+    return pick(PLAY_TRAINING, own('strategy hand'), (row) => row.find(fits), {
+      zoneId: zones,
+      which: (targets, card) => {
+        const taken = targets.filter((target) => takes(card, target));
+        if (nameOf(card) === 'Leadership Masterclass') {
+          const kind = ['Junior', 'QA Engineer', 'Sales Rep'][t % 3];
+          return taken.find((target) => kindOf(target) === kind) ?? taken[0];
+        }
+        return taken.length === 0 ? undefined : taken[t % taken.length];
+      },
+    });
+  };
   /** The free move to make now, or null. */
   const freeMove = (): Move | null => {
     const dismiss = t % 9 === 4 ? DISMISS_FROM_OPS : t % 9 === 8 ? DISMISS_FROM_PROJECT : null;
@@ -876,6 +915,7 @@ function playTurn(
         const allowed = row.filter(allows);
         return allowed.find((card) => asks(card).some(({ at }) => cutAt(at))) ?? allowed[0];
       }) : null,
+      made.has(PLAY_TRAINING) ? null : training(),
       dismiss !== null && !made.has(dismiss)
         ? pick(dismiss, own(fromOps ? 'ops team' : 'development team'), (row) => (fromOps ? spare(row) : row)[0])
         : null,
@@ -1514,9 +1554,9 @@ function scoreOf(state: GameState, seat: PlayerId): number {
  *
  * - Money is conserved: each seat's capital changes by what it earned less what it paid. The mover pays the bank 2 for a recruit,
  *   the card's cost for a hire from the agency row, 1 for one from the open job market, the total cost of the picked cards for a
- *   hire from its scouting, its payroll for paying salaries, and nothing for anything else but a Greenlight. The seat that reached its
- *   Income in the move (see `enteredIncome`) earns the total rev of its products in operation, as the rules work it out, and no one
- *   else earns anything.
+ *   hire from its scouting, its payroll for paying salaries, the played card's price for a Training card (§20.A), and nothing for
+ *   anything else but a Greenlight. The seat that reached its Income in the move (see `enteredIncome`) earns the total rev of its
+ *   products in operation, as the rules work it out, and no one else earns anything.
  * - A Greenlight pays a License for each Tag the card requires that the mover's operations didn't provide, and pays it to the other
  *   seats: the mover pays the license times the Tags missing, each other seat gains a whole number of Licenses, no more than the
  *   missing Tags its operations provided, and together they gain what the mover paid. Some seat provided every Tag the card
@@ -1548,6 +1588,9 @@ function scoreOf(state: GameState, seat: PlayerId): number {
  * - XP and Skill tokens sit only on Juniors, never a Skill token in the colour a card works in already, and a Junior has at most 4 XP
  *   (§3, §11.A, §11.C.3). XP tokens rise only as a Junior graduates: in a Launch, by 1 at most on each card, or in a keep or a Mentor
  *   press, by 1 on the card pressed and on no other (§11.B.2, §20.B, ruling 25).
+ * - Training (§6, §20.A): in a Training press the only card that leaves a Strategy Hand for the strategy discard is the one played, and
+ *   it is a Training card; the press changes its target's Skill tokens, Training XP or Badge, and nothing else of any card's tokens or
+ *   Badge.
  * - Pending: a card holds one Pending token of each colour at most, and only a Junior holds one. It gains one only as its owner's Engine
  *   runs, while it sits on a project in their development that was not Stalled as the Engine generated (see `atTheEngine`) (§3, §5
  *   Phase D, §11.B, ruling 1). It holds one only in a development team, or in the ops team of the seat whose turn is in Launch's
@@ -1611,7 +1654,8 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       : AGENCY_HIRES.includes(move.type) ? (card!.data?.cost as number)
         : move.type === HIRE_MARKET ? 1
           : SOURCE_HIRES.includes(move.type) ? costOf(move.cardIds as string[])
-            : move.type === PAY_SALARIES ? payrollOf(runtime, before, by) : 0;
+            : move.type === PAY_SALARIES ? payrollOf(runtime, before, by)
+              : move.type === PLAY_TRAINING ? (card!.data?.price as number) : 0;
     const earned = (seat: PlayerId) =>
       (seat === income ? operationsOf(after, seat).reduce((total, product) => total + revOf(runtime, after, product), 0) : 0);
     const gained = seats.map((seat) => capital(after, seat) - capital(before, seat));
@@ -1821,6 +1865,23 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       if (c.id === graduates ? gained !== 1 : gained > (move.type === LAUNCH ? 1 : 0)) tokens.push(`${which} gained ${gained} xp tokens`);
     }
     noneOf(tokens, () => `the XP and Skill tokens ${at}`);
+    // Training plays only a Training card, which goes to the strategy discard, and changes nothing but its target's Skill tokens, Training
+    // XP or Badge (§6, §20.A): never XP tokens, which rise only as a Junior graduates, nor any other card's tokens.
+    if (move.type === PLAY_TRAINING) {
+      const hands = new Set(seats.map((seat) => zoneIdFor('strategy hand', seat)));
+      const played = after.cards.filter((c) => c.zoneId === 'strategy-discard' && hands.has(wasById.get(c.id)?.zoneId as string));
+      sameList(played.map((c) => c.id), [move.cardId], () => `the cards that left a Strategy Hand for the strategy discard ${at}`);
+      const notTraining = played.filter((c) => !isTraining(c)).map((c) => `${c.id} (${nameOf(c)})`);
+      noneOf(notTraining, () => `the Strategy cards played that are not Training ${at}`);
+      const trained = ['blue skill tokens', 'red skill tokens', 'green skill tokens', 'training xp', 'badged'];
+      /** A count read as a number, missing as 0, and the Badge as `=== true`, on a card that may not have been there before. */
+      const held = (c: CardState | undefined, name: string) =>
+        (name === 'badged' ? c?.data?.badged === true : c === undefined ? 0 : tokenOn(c, name));
+      const changed = after.cards.flatMap((c) => [...TOKENS, 'badged']
+        .filter((name) => held(c, name) !== held(wasById.get(c.id), name) && !(c.id === move.onto && trained.includes(name)))
+        .map((name) => `${c.id} (${nameOf(c)}) in ${c.zoneId}: ${name} ${held(wasById.get(c.id), name)} → ${held(c, name)}`));
+      noneOf(changed, () => `the tokens and Badges a Training press changed, other than its target's Skill tokens, Training XP or Badge ${at}`);
+    }
     // A card holds one Pending token of each colour at most, and gains one only as its owner's Engine runs, while it sits on a project
     // in their development that was not Stalled as the Engine generated, since a Stalled team makes nothing (see `atTheEngine`) (§3, §5
     // Phase D, §11.B, ruling 1). Only a Junior learns, so only a Junior holds one (§11.B). It holds one only in a development team, or in
@@ -1992,7 +2053,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(216);
+    expect(results).toHaveLength(226);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -2083,6 +2144,13 @@ describe('Startup Simulator (designer language)', () => {
       expect(worked[name], name).toMatchObject({ kind: 'number', refines: false });
     }
     for (const flag of ['managing', 'agile']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
+    // Whom each Training card fits (§20.A, §11, ruling 14): a Junior lacking a Skill token of a colour it doesn't work in already, a QA
+    // Engineer or a Sales Rep short of 2 Training XP, an unbadged University Junior, QA Engineer or Sales Rep, and an unbadged Junior PM.
+    for (const flag of [
+      'blue trainable', 'red trainable', 'green trainable', 'fully trained', 'certifiable', 'seminar ready', 'masterclass ready', 'workshop ready',
+    ]) {
+      expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
+    }
   });
 
   // The next three tests each add to the rules an example that the rules refuse for naming no button alone, and then an example for each
@@ -2726,9 +2794,9 @@ describe('Startup Simulator (designer language)', () => {
       // deck's shuffle replayed every game and Brainstorm took actions (plan 5-2b's Task 1):
       // - LICENSE_TO_A_CHOSEN_PROVIDER, a License paid to a provider chosen among several;
       // - ENGINEER_IN_OPS, the Engineer paid his $1 in the ops team.
-      // Held by one game each: Cut 2 red (3 players, seed 1), a Tier 2 or 3 card launched and a project launched with a cut (both 2
-      // players, seed 5), and the Diva refused a reassign from the ops team (2 players, seed 4). A failure here means a cadence moved:
-      // retune the auto-player, never the rules.
+      // Held by one game each: Cut 2 red (3 players, seed 1), Cut 1 of each (2 players, seed 1), a Tier 2 or 3 card launched and a
+      // project launched with a cut (both 2 players, seed 5), and the Diva refused a reassign from the ops team (2 players, seed 4). A
+      // failure here means a cadence moved: retune the auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
@@ -2748,16 +2816,16 @@ describe('Startup Simulator (designer language)', () => {
       // deck's shuffle replayed every game and Brainstorm took actions (plan 5-2b's Task 1):
       // - `${MODE_DECLARED}: QA`, a mode declared QA;
       // - CLEANED_IN_OPS, a Bug cleaned in operations by itself.
-      // Held by one game: a mode forgotten on a bench (3 players, seed 4); by two each: modes kept by a confirm alone (3 players, seeds 2
-      // and 4) and the Growth Hacker's $3 (2 and 3 players, seed 4). A failure here means a cadence moved: retune the auto-player, never
-      // the rules.
+      // Held by three games each, the fewest: the Growth Hacker's $3, the Bug he adds to a product and the revenue it costs (2 and 3
+      // players seed 4, 5 players seed 2); by four each: modes kept by a confirm alone (2 players seed 4, 3 players seeds 2, 4 and 5) and
+      // a mode forgotten on a bench (3 players seeds 4 and 5, 4 players seeds 2 and 5). A failure here means a cadence moved: retune the
+      // auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
     it('played slice 5’s talent in those runs: Pending tokens gained and graduated, returned by pivots and stripped from fired staff, Synergy, the Sales Rep’s bonus and experienced Juniors paid', () => {
       const paths = [
-        ...PENDING.map((name) => `${PENDING_GAINED}: ${name.slice('pending '.length)}`), GRADUATED, PIVOT_RETURNED, STRIPPED,
-        SYNERGY, SALES_BONUS,
+        ...PENDING.map((name) => `${PENDING_GAINED}: ${name.slice('pending '.length)}`), GRADUATED, PIVOT_RETURNED, STRIPPED, SALES_BONUS,
       ];
       // Counted, but not required:
       // - a token kept by choice and the Mentor's second token: a Junior gains a Pending token of a second colour only by working in it,
@@ -2767,12 +2835,14 @@ describe('Startup Simulator (designer language)', () => {
       // - the Agile spare: only the one Senior PM is Agile until a Junior PM is promoted, and none of the runs moves a card onto a team
       //   it manages in a move that starts no turn (P8; plan 5-2b requires it once Agile Workshop gives Junior PMs Badges).
       // Examples pin each, and the arranged tests below pin the auto-player's graduation presses and its Agile spare.
-      // Re-measured at T5 (plan 5-2b's P7), counted but not required until then, since it came to 0 at seeds 1 to 5 once the Strategy
-      // deck's shuffle replayed every game and Brainstorm took actions (plan 5-2b's Task 1):
-      // - EXPERIENCED_PAID, an experienced Junior paid. A Junior keeps one token at each Launch, so it reaches 2 XP only at its second
-      //   Launch, and it must then still be on the Board at an Income.
-      // Synergy is held by one game (4 players, seed 5), and the Sales Rep's bonus by four (2 players seeds 3 and 4, 3 players seeds 1
-      // and 4). A failure here means a cadence moved: retune the auto-player, never the rules.
+      // Re-measured at T5 (plan 5-2b's P7), counted but not required until then, since each came to 0 at seeds 1 to 5:
+      // - EXPERIENCED_PAID, an experienced Junior paid, once the Strategy deck's shuffle replayed every game and Brainstorm took actions
+      //   (plan 5-2b's Task 1). A Junior keeps one token at each Launch, so it reaches 2 XP only at its second Launch, and it must then
+      //   still be on the Board at an Income;
+      // - SYNERGY, Synergy at the Engine, once the auto-player played Training, which spends a seat's capital and changed the one game
+      //   that held it (4 players, seed 5) (plan 5-2b's Task 2).
+      // The Sales Rep's bonus is held by three games (2 players seeds 3 and 4, 3 players seed 4). A failure here means a cadence moved:
+      // retune the auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
@@ -3123,8 +3193,8 @@ describe('Startup Simulator (designer language)', () => {
         expect(engine.getState(), `${where}: the game with its last move, ${log.at(-1)!.type}, taken back`).toEqual(states.at(-1));
       }
       // Some log declared a mode, switched a product off, added a Bug to a project, raised a Pending token at the Engine and graduated
-      // one at a Launch, so the replays rebuilt each of them. The declarations are in seed 2 only, and a final-check switch-off is the
-      // last move taken back in seeds 1 and 3. No log holds a clean press, so the R3 Review Focus test above replays
+      // one at a Launch, so the replays rebuilt each of them. The declarations are in seeds 1, 2, 4 and 5, and a final-check switch-off
+      // is the last move taken back in seeds 1 and 3. No log holds a clean press, so the R3 Review Focus test above replays
       // one; none a keep or Mentor press, so the arranged graduation test below replays those; and none moves a card onto an Agile PM's
       // team (P8), so the arranged Agile test below replays the Agile spare.
       expect(Object.entries(seen).filter(([, times]) => times === 0), JSON.stringify(seen)).toEqual([]);
@@ -3241,6 +3311,34 @@ describe('Startup Simulator (designer language)', () => {
       expect(replayed.getState()).toEqual(engine.getState());
       engine.undo();
       expect(engine.getState()).toEqual(states.at(-1));
+    });
+
+    it('plays a Training card the auto-player holds on a target it fits, answering the colour by t, through the page’s view and without it (§20.A)', () => {
+      // A Full Stack Bootcamp fits a Junior QA Tester in Blue and in Red, so its press asks which; the seat's only other targets, its
+      // Junior Software Dev and Junior Hardware Eng, go to the box, so the press has one target. Choice 0 is answered with option
+      // (t + 0) % 2: Blue on t = 0, Red on t = 1.
+      const start = setUp(2, 1);
+      const seats = seatsFor(2);
+      const S = startPlayerOf(start, seats);
+      const benched = (name: string) => zoneCards(start, zoneIdFor('bench', S)).find((card) => nameOf(card) === name)!.id;
+      const bootcamp = idOf('Full Stack Bootcamp');
+      const qa = benched('Junior QA Tester');
+      let state = relocate(start, [bootcamp], zoneIdFor('strategy hand', S), game!);
+      state = relocate(state, [benched('Junior Software Dev'), benched('Junior Hardware Eng')], 'box', game!);
+      for (const t of [0, 1]) {
+        const runs = [false, true].map((throughView) => {
+          const { engine, runtime } = createEngine(game!, lib, 2, state);
+          playTurn(engine, t, 'researches', keepsTheRules(seats, runtime), (log) => log.some((move) => move.type === PLAY_TRAINING), runtime, throughView);
+          return engine;
+        });
+        const log = runs[0].getLog();
+        expect(log.filter((move) => move.type === PLAY_TRAINING), `turn ${t}`).toEqual([
+          { type: PLAY_TRAINING, by: S, cardId: bootcamp, onto: qa, choices: [t === 0 ? 'Blue' : 'Red'] },
+        ]);
+        const skill = ['blue', 'red'].map((colour) => tokenOn(cardById(runs[0].getState(), qa)!, `${colour} skill tokens`));
+        expect(skill, `turn ${t}: the QA Tester's blue and red Skill tokens`).toEqual(t === 0 ? [1, 0] : [0, 1]);
+        expect(runs[1].getLog(), `turn ${t}`).toEqual(log);
+      }
     });
   });
 });

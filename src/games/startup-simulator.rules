@@ -273,6 +273,43 @@ Agile:
     It is an Agile Synergy card.
     It is badged.
 
+Blue trainable:
+  Only if it is a Junior card.
+  Only if it is not a software card.
+  Only if its blue skill tokens are 0.
+
+Red trainable:
+  Only if it is a Junior card.
+  Only if it is not a hardware card.
+  Only if its red skill tokens are 0.
+
+Green trainable:
+  Only if it is a Junior card.
+  Only if it is not a qa card.
+  Only if its green skill tokens are 0.
+
+Fully trained:
+  Only if its training xp is more than 1.
+
+Certifiable:
+  Only if it is a Bug Hunter card.
+  Only if it is not fully trained.
+
+Seminar ready:
+  Only if it is a Rainmaker card.
+  Only if it is not fully trained.
+
+Masterclass ready:
+  Only if one of:
+    It is a Junior card.
+    It is a Bug Hunter card.
+    It is a Rainmaker card.
+  Only if it is not badged.
+
+Workshop ready:
+  Only if it is a Synergy card.
+  Only if it is not badged.
+
 Stalled:
   Only if it is in a development.
   Only if it is not a Tier 1 card.
@@ -742,6 +779,53 @@ Phase: actions
           Only if its blue cost is 0.
           It gains 1 cut red cube.
       Move it to their development.
+  A player may play a card from their strategy hand to a card in their bench, their development team or their ops team.
+    Only if the card is a Training card.
+    Only if they have at least the card's price in capital.
+    Only if one of:
+      The card is not a Full Stack Bootcamp.
+      The target card is blue trainable.
+      The target card is red trainable.
+    Only if one of:
+      The card is not a QA Certification.
+      The target card is green trainable.
+      The target card is certifiable.
+    Only if one of:
+      The card is not a Sales Seminar.
+      The target card is seminar ready.
+    Only if one of:
+      The card is not a Leadership Masterclass.
+      The target card is masterclass ready.
+    Only if one of:
+      The card is not an Agile Workshop.
+      The target card is workshop ready.
+    Then:
+      They pay the card's price.
+      They choose one:
+        Blue:
+          Only if the card is a Full Stack Bootcamp.
+          Only if the target card is blue trainable.
+          The target card gains 1 blue skill token.
+        Red:
+          Only if the card is a Full Stack Bootcamp.
+          Only if the target card is red trainable.
+          The target card gains 1 red skill token.
+        Green:
+          Only if the card is a QA Certification.
+          Only if the target card is green trainable.
+          The target card gains 1 green skill token.
+        XP:
+          Only if one of:
+            The card is a QA Certification.
+            The card is a Sales Seminar.
+          Only if the target card is not a Junior card.
+          The target card gains 1 training xp.
+        Badge:
+          Only if one of:
+            The card is a Leadership Masterclass.
+            The card is an Agile Workshop.
+          The target card is badged.
+      Move it to the strategy discard.
   A player may assign some cards from their bench to a card in their development.
     It costs 1 action.
     Then:
@@ -3822,3 +3906,148 @@ Example: the Strategy Hand holds 3 at Cleanup, discarded after the Bench and bef
   And p0's strategy hand has 3 cards
   When p0 discards the Smart Lock
   Then it is p1's turn
+
+Example: Full Stack Bootcamp gives a Junior Hardware Eng a Blue Skill token for $3 and no action, and it declares Blue at its next turn (section 20, section 11)
+  Given the phase is actions
+  And p0's strategy hand has a Full Stack Bootcamp
+  And p0's development has a Dating App
+  And the Dating App in p0's development has a Junior Hardware Eng on it
+  When p0 plays the Full Stack Bootcamp to the Junior Hardware Eng
+  Then it is accepted
+  And p0 has 4 capital
+  And p0 has 3 actions
+  And the Junior Hardware Eng in p0's development team has 1 blue skill token
+  And the strategy discard has a Full Stack Bootcamp
+  When p0 ends their actions
+  And p1 ends their actions
+  Then the phase is modes
+  When p0 declares the Junior Hardware Eng, choosing blue
+  And p0 confirms their modes
+  And p0 ends their actions
+  Then the Dating App in p0's development has 1 blue cube
+
+Example: Full Stack Bootcamp asks a Junior QA Tester which colour, gives it the other one next and then fits it no more, and gives a Junior Software Dev Red, the colour it lacks (section 20, section 11)
+  Given p0 has 9 capital
+  And p0's strategy hand has a Full Stack Bootcamp and a Full Stack Bootcamp
+  And p0's bench has a Junior QA Tester and a Junior Software Dev
+  When p0 plays a Full Stack Bootcamp to the Junior QA Tester
+  Then it is rejected because "Choose one: blue or red."
+  When p0 plays a Full Stack Bootcamp to the Junior QA Tester, choosing red
+  And p0 plays the Full Stack Bootcamp to the Junior QA Tester
+  Then the Junior QA Tester in p0's bench has 1 red skill token
+  And the Junior QA Tester in p0's bench has 1 blue skill token
+  Given move a Full Stack Bootcamp from the strategy discard to p0's strategy hand
+  When p0 plays the Full Stack Bootcamp to the Junior QA Tester
+  Then it is rejected because "the card is not a Full Stack Bootcamp or the target card is blue trainable or the target card is red trainable"
+  When p0 plays the Full Stack Bootcamp to the Junior Software Dev
+  Then it is accepted
+  And the Junior Software Dev in p0's bench has 1 red skill token
+  And p0 has 0 capital
+
+Example: QA Certification gives a Junior without QA a Green Skill token, and fits no Junior that has QA already (section 20, the slice's ruling b)
+  Given p0's strategy hand has a QA Certification and a QA Certification
+  And p0's bench has a Junior Hardware Eng, a Junior QA Tester and a Junior Software Dev
+  And the Junior Software Dev in p0's bench has 1 green skill token
+  When p0 plays a QA Certification to the Junior QA Tester
+  Then it is rejected because "the card is not a QA Certification or the target card is green trainable or the target card is certifiable"
+  When p0 plays a QA Certification to the Junior Software Dev
+  Then it is rejected because "the card is not a QA Certification or the target card is green trainable or the target card is certifiable"
+  When p0 plays a QA Certification to the Junior Hardware Eng
+  Then it is accepted
+  And the Junior Hardware Eng in p0's bench has 1 green skill token
+  And p0 has 4 capital
+
+Example: QA Certification gives a QA Engineer 1 XP, up to 2, and fits neither a Sales Rep nor a Senior (section 20, section 11, ruling 14)
+  Given p0's strategy hand has a QA Certification and a QA Certification
+  And p0's bench has a QA Engineer, a Sales Rep and the Architect
+  And the QA Engineer in p0's bench has 1 training xp
+  When p0 plays a QA Certification to the Sales Rep
+  Then it is rejected because "the card is not a QA Certification or the target card is green trainable or the target card is certifiable"
+  When p0 plays a QA Certification to the Architect
+  Then it is rejected because "the card is not a QA Certification or the target card is green trainable or the target card is certifiable"
+  When p0 plays a QA Certification to the QA Engineer
+  Then it is accepted
+  And the QA Engineer in p0's bench has 2 training xp
+  When p0 plays the QA Certification to the QA Engineer
+  Then it is rejected because "the card is not a QA Certification or the target card is green trainable or the target card is certifiable"
+
+Example: Sales Seminar gives a Sales Rep 1 XP for $2, up to 2, and fits no QA Engineer (section 20, section 11)
+  Given the phase is actions
+  And p0's strategy hand has a Sales Seminar and a Sales Seminar
+  And p0's operations has a Dating App
+  And the Dating App in p0's operations has a Sales Rep on it
+  And the Sales Rep in p0's ops team has 1 training xp
+  And p0's bench has a QA Engineer
+  When p0 plays a Sales Seminar to the QA Engineer
+  Then it is rejected because "the card is not a Sales Seminar or the target card is seminar ready"
+  When p0 plays a Sales Seminar to the Sales Rep
+  Then it is accepted
+  And p0 has 5 capital
+  And the Sales Rep in p0's ops team has 2 training xp
+  When p0 plays the Sales Seminar to the Sales Rep
+  Then it is rejected because "the card is not a Sales Seminar or the target card is seminar ready"
+
+Example: Leadership Masterclass badges a University Junior, a QA Engineer or a Sales Rep that has no Badge, and fits no Junior PM (section 20, section 11)
+  Given the phase is actions
+  And p0 has 9 capital
+  And p0's strategy hand has a Leadership Masterclass
+  And p0's bench has a Junior QA Tester, a QA Engineer, a Sales Rep and a Junior PM
+  And p0's operations has a Dating App
+  And the Dating App in p0's operations has a Sales Rep on it
+  And the Sales Rep in p0's ops team is badged
+  When p0 plays the Leadership Masterclass to the Junior PM
+  Then it is rejected because "the card is not a Leadership Masterclass or the target card is masterclass ready"
+  When p0 plays the Leadership Masterclass to the Sales Rep in p0's ops team
+  Then it is rejected because "the card is not a Leadership Masterclass or the target card is masterclass ready"
+  When p0 plays the Leadership Masterclass to the Junior QA Tester
+  Then it is accepted
+  And the Junior QA Tester in p0's bench is badged
+  Given move the Leadership Masterclass from the strategy discard to p0's strategy hand
+  When p0 plays the Leadership Masterclass to the QA Engineer
+  Then the QA Engineer in p0's bench is badged
+  Given move the Leadership Masterclass from the strategy discard to p0's strategy hand
+  When p0 plays the Leadership Masterclass to the Sales Rep
+  Then the Sales Rep in p0's bench is badged
+  And p0 has 0 capital
+
+Example: Agile Workshop badges a Junior PM, which is then Agile, and fits neither the Senior PM nor a Junior PM badged already (section 20, section 11)
+  Given the phase is actions
+  And p0's strategy hand has an Agile Workshop
+  And p0's bench has the Senior PM
+  And p0's development has a Dating App and a To-Do List
+  And the Dating App in p0's development has a Junior PM on it
+  And the To-Do List in p0's development has a Junior Software Dev on it
+  When p0 plays the Agile Workshop to the Senior PM
+  Then it is rejected because "the card is not an Agile Workshop or the target card is workshop ready"
+  When p0 plays the Agile Workshop to the Junior PM
+  Then it is accepted
+  And the Junior PM in p0's development team is badged
+  When p0 reassigns the Junior Software Dev to the Dating App
+  Then the Junior Software Dev in p0's development team is not onboarding
+  Given move the Agile Workshop from the strategy discard to p0's strategy hand
+  When p0 plays the Agile Workshop to the Junior PM
+  Then it is rejected because "the card is not an Agile Workshop or the target card is workshop ready"
+
+Example: no Training card fits a Senior: a Full Stack Bootcamp is refused on the Architect and on the Diva, and nothing is paid (ruling 14, section 11)
+  Given p0's strategy hand has a Full Stack Bootcamp
+  And p0's bench has the Architect and the Diva
+  When p0 plays the Full Stack Bootcamp to the Architect
+  Then it is rejected because "the card is not a Full Stack Bootcamp or the target card is blue trainable or the target card is red trainable"
+  When p0 plays the Full Stack Bootcamp to the Diva
+  Then it is rejected because "the card is not a Full Stack Bootcamp or the target card is blue trainable or the target card is red trainable"
+  And p0 has 7 capital
+
+Example: Training is refused without its printed price, and nothing changes (section 6, section 20)
+  Given p0 has 2 capital
+  And p0's strategy hand has a Full Stack Bootcamp
+  And p0's bench has a Junior Software Dev
+  When p0 plays the Full Stack Bootcamp to the Junior Software Dev
+  Then it is rejected because "they have at least the card's price in capital"
+  And p0 has 2 capital
+  And p0's strategy hand has a Full Stack Bootcamp
+
+Example: only a Training card can be played in this slice: a Hit Piece waits in the hand (the spec's call, section 20)
+  Given p0's strategy hand has a Hit Piece
+  And p0's bench has a Junior Software Dev
+  When p0 plays the Hit Piece to the Junior Software Dev
+  Then it is rejected because "the card is a Training card"
