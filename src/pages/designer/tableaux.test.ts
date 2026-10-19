@@ -39,7 +39,7 @@ describe('tableauLine', () => {
     expect(SEATS).toContain(S);
     const all = lines(start);
     for (const seat of SEATS) {
-      expect(all[seat]).toBe(`${seat} 7 capital, 3 actions, 0 market share · bench 3 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0 · strategy hand 0 · brainstorm 0${seat === S ? ' · start player' : ''}`);
+      expect(all[seat]).toBe(`${seat} 7 capital, 3 actions, 0 market share · bench 3 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0 · strategy hand 0 · brainstorm 0 · milestones 0${seat === S ? ' · start player' : ''}`);
     }
   });
 

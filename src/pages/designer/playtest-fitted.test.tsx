@@ -104,7 +104,7 @@ describe('Playtest of a game too big for one table', () => {
   it("lists every player's tableau", () => {
     mount();
     for (const seat of seatsOf(3)) {
-      expect(lineOf(seat)).toBe(`${seat} 7 capital, 3 actions, 0 market share · bench 3 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0 · strategy hand 0 · brainstorm 0${seat === S ? ' · start player' : ''}`);
+      expect(lineOf(seat)).toBe(`${seat} 7 capital, 3 actions, 0 market share · bench 3 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0 · strategy hand 0 · brainstorm 0 · milestones 0${seat === S ? ' · start player' : ''}`);
     }
   });
 
@@ -240,7 +240,7 @@ describe('a round played through the page', () => {
   it('recruits from every source, drafts, researches, discards and passes the turn', () => {
     mount();
     for (let i = 0; i < 3; i++) press('Recruit a junior software dev');
-    expect(lineOf(S)).toBe(`${S} 1 capital, 0 actions, 0 market share · bench 6 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0 · strategy hand 0 · brainstorm 0 · start player`);
+    expect(lineOf(S)).toBe(`${S} 1 capital, 0 actions, 0 market share · bench 6 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0 · strategy hand 0 · brainstorm 0 · milestones 0 · start player`);
     expect(status()).toBe(`seat: ${S} — Your turn — ${hint('bench cleanup')}`);
 
     press('Discard a card in your bench');
@@ -307,10 +307,10 @@ describe('a round played through the page', () => {
 });
 
 describe('the canvas', () => {
-  it('is 1200 × 1038 for a game too big for one table, its world grown 1384 tall, so the world is drawn at three quarters', () => {
+  it('is 1200 × 1380 for a game too big for one table, its world grown 1840 tall, so the world is drawn at three quarters', () => {
     mount();
     expect(canvasMadeWith).toEqual({
-      opts: { showEmptyZones: true, size: { width: 1200, height: 1038 }, world: { min: { x: -800, y: -692 }, max: { x: 800, y: 692 } } },
+      opts: { showEmptyZones: true, size: { width: 1200, height: 1380 }, world: { min: { x: -800, y: -920 }, max: { x: 800, y: 920 } } },
     });
   });
 
@@ -382,24 +382,25 @@ describe("the Board's place on the table", () => {
   const get = (zone: string) => fittedZone('p1', zone);
 
   it('keeps the private rows in the strip along the bottom, the scouting, the strategy hand and the brainstorm on a second line', () => {
-    expect(get('bench').transform).toEqual({ x: -420, y: 602 });
-    expect(get('backlog').transform).toEqual({ x: 0, y: 602 });
-    expect(get('research').transform).toEqual({ x: 420, y: 602 });
-    expect(get('scouting').transform).toEqual({ x: -420, y: 422 });
-    expect(get('strategy-hand').transform).toEqual({ x: 0, y: 422 });
-    expect(get('brainstorm').transform).toEqual({ x: 420, y: 422 });
+    expect(get('bench').transform).toEqual({ x: -420, y: 830 });
+    expect(get('backlog').transform).toEqual({ x: 0, y: 830 });
+    expect(get('research').transform).toEqual({ x: 420, y: 830 });
+    expect(get('scouting').transform).toEqual({ x: -420, y: 650 });
+    expect(get('strategy-hand').transform).toEqual({ x: 0, y: 650 });
+    expect(get('brainstorm').transform).toEqual({ x: 420, y: 650 });
   });
 
-  it('puts the Board in one line between the shared lines and the strip, each slot 420 tall', () => {
-    expect(get('development').transform).toEqual({ x: -420, y: -38 });
-    expect(get('operations').transform).toEqual({ x: 0, y: -38 });
-    expect(get('ops-team').transform).toEqual({ x: 420, y: -38 });
-    for (const zone of ['development', 'operations', 'ops-team']) expect(get(zone).bounds?.height, zone).toBe(420);
+  it('puts the Board in two lines between the shared lines and the strip, the milestones alone on the second, each slot 418 tall', () => {
+    expect(get('development').transform).toEqual({ x: -420, y: -266 });
+    expect(get('operations').transform).toEqual({ x: 0, y: -266 });
+    expect(get('ops-team').transform).toEqual({ x: 420, y: -266 });
+    expect(get('milestones').transform).toEqual({ x: 0, y: 192 });
+    for (const zone of ['development', 'operations', 'ops-team', 'milestones']) expect(get(zone).bounds?.height, zone).toBe(418);
   });
 
   it('hangs the development team under the development, as a free zone last in the list', () => {
-    // Where the first card hanging under the development's middle card goes: -38 + 140 + 36.
-    expect(get('development-team')).toMatchObject({ layout: 'free', transform: { x: -420, y: 138 } });
+    // Where the first card hanging under the development's middle card goes: -266 + 140 + 36.
+    expect(get('development-team')).toMatchObject({ layout: 'free', transform: { x: -420, y: -90 } });
     expect(fittedLayout(game.zones, 'p1').at(-1)?.id).toBe('development-team-p1');
   });
 
@@ -673,7 +674,7 @@ describe('picking cards by clicking them', () => {
     fireEvent.click(within(offer()).getByRole('button', { name: 'Cancel' }));
     click(dating);
     choose(LAUNCH);
-    expect(boardOf(S)).toBe('development: Smart Lock (tier Tier 1, tag IoT, sector Deep Tech) [Blue 0/1, Red 0/5] · operations: Dating App (tier Tier 1, tag Social, sector Consumer) [Blue 6/6, Red 0/0] · ops team: Junior Software Dev');
+    expect(boardOf(S)).toBe('development: Smart Lock (tier Tier 1, tag IoT, sector Deep Tech) [Blue 0/1, Red 0/5] · operations: Dating App (tier Tier 1, tag Social, sector Consumer) [Blue 6/6, Red 0/0] · ops team: Junior Software Dev · milestones: Clean Launch');
     expect(lineOf(S)).toContain('2 actions');
   });
 
@@ -838,7 +839,7 @@ describe('the Board played by clicking', () => {
 
     click(todo);
     choose('Launch a card from your development to your operations');
-    expect(screen.getByTestId(`board-${S}`).textContent).toBe('operations: To-Do List (tier Tier 1, tag App, sector Concept) [Blue 4/4, Red 0/0] · ops team: Junior Software Dev [1 blue xp token]');
+    expect(screen.getByTestId(`board-${S}`).textContent).toBe('operations: To-Do List (tier Tier 1, tag App, sector Concept) [Blue 4/4, Red 0/0] · ops team: Junior Software Dev [1 blue xp token] · milestones: Clean Launch');
 
     // Income: the To-Do List's rev of 1 is paid, and its rev earns 1 market share.
     for (const seat of [S, N, T]) {

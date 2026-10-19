@@ -122,6 +122,14 @@ Cards:
     | TechCrunch Feature     | Utility   | 5     | 2      |
     | Design Sprint          | Utility   | 0     | 2      |
     | Cease & Desist         | Utility   | 0     | 2      |
+  A deck called milestones, starting in the milestone deck:
+    | name                  | vp | copies |
+    | First Mover Advantage | 5  | 1      |
+    | Talent Magnet         | 8  | 1      |
+    | Platform Power        | 10 | 1      |
+    | Revenue Leader        | 6  | 1      |
+    | Clean Launch          | 5  | 1      |
+    | Full Stack Founder    | 7  | 1      |
   Cards can be onboarding.
   Cards can be red mode.
   Cards can be qa mode.
@@ -149,6 +157,8 @@ Table:
   The crash pile is a pile in the center that everyone can see.
   The strategy deck is a pile in the center that no one can see.
   The strategy discard is a pile in the center that everyone can see.
+  The milestone deck is a pile in the center that no one can see.
+  The milestone row is a row in the center that everyone can see.
   The box is a pile in the center that no one can see.
   Each player has a bench row that only they can see.
   Each player has a backlog row that only they can see.
@@ -160,6 +170,7 @@ Table:
   Each player has a scouting row that only they can see.
   Each player has a strategy hand row that only they can see.
   Each player has a brainstorm row that only they can see.
+  Each player has a milestones row that everyone can see.
 
 Blue output:
   A software card's blue output is its output.
@@ -500,12 +511,18 @@ QA spent:
 Bugged products:
   A player's bugged products is the total bug mark of the cards in their operations.
 
+Operational revenue:
+  A player's operational revenue is the total rev of the cards in their operations.
+
 Setup:
   Shuffle the talent deck.
   Shuffle the strategy deck.
   Shuffle the seed deck.
   Shuffle the growth deck.
   The market crash goes into the bottom fifth of the growth deck.
+  Shuffle the milestone deck.
+  Deal up to 3 cards from the milestone deck to the milestone row.
+  Move the milestone deck to the box.
   The start player is chosen at random.
   A new Junior Software Dev goes to each bench.
   A new Junior Hardware Eng goes to each bench.
@@ -649,6 +666,7 @@ Phase: income
   When this phase starts:
     They get the total rev of the cards in their operations.
     For each card in their operations whose rev is more than 0, they get 1 market share.
+    If their operational revenue is at least 10 and the milestone row has a Revenue Leader, move the revenue leader from the milestone row to their milestones.
   A player may let go of a card in their development team.
     Only if its salary is more than 0.
     Then:
@@ -923,6 +941,8 @@ Phase: actions
       Every card on it that is pending badge is badged.
       Every card on it that is attaching goes to their ops team, staying on it.
       Every card on it that is not attaching goes to their ops team.
+      If it is a Tier 2 card and the milestone row has a First Mover Advantage, move the first mover advantage from the milestone row to their milestones.
+      If the milestone row has a Clean Launch, move the clean launch from the milestone row to their milestones.
       The graduation phase starts with them.
   A player may pivot a card in their development.
     It costs 1 action.
@@ -1146,6 +1166,7 @@ End:
   Each card in a player's bench scores its human capital.
   Each card in a player's development team scores its human capital.
   Each card in a player's ops team scores its human capital.
+  Each card in a player's milestones scores its vp.
   Each Tier 1 card in a player's backlog scores -2 points.
   Each Tier 2 card in a player's backlog scores -5 points.
   Each Tier 3 card in a player's backlog scores -10 points.
@@ -4051,3 +4072,73 @@ Example: only a Training card can be played in this slice: a Hit Piece waits in 
   And p0's bench has a Junior Software Dev
   When p0 plays the Hit Piece to the Junior Software Dev
   Then it is rejected because "the card is a Training card"
+
+Example: setup reveals 3 of the 6 Milestones and puts the rest in the box (section 4, section 20)
+  Given the game is set up
+  Then the milestone row has 3 cards
+  And the milestone deck is empty
+  And the box has 3 cards
+  And p0's milestones is empty
+
+Example: the first Tier 2 Launch claims First Mover Advantage, and the first Launch of any product claims Clean Launch, each for good (section 12, section 20, ruling 24)
+  Given the phase is actions
+  And the milestone row has a First Mover Advantage, a Clean Launch and a Platform Power
+  And p0's development has a Neobank and a Dating App
+  And the Neobank in p0's development has 10 blue cubes
+  And the Neobank in p0's development has the Architect on it
+  And the Dating App in p0's development has 6 blue cubes
+  When p0 launches the Dating App
+  Then p0's milestones has a Clean Launch
+  And the milestone row has a First Mover Advantage and a Platform Power
+  When p0 launches the Neobank
+  Then it is accepted
+  And p0's milestones has a Clean Launch and a First Mover Advantage
+  And the milestone row has a Platform Power
+
+Example: a Tier 3 Launch claims no First Mover Advantage, though it is a Clean Launch (section 20)
+  Given the phase is actions
+  And the milestone row has a First Mover Advantage, a Clean Launch and a Talent Magnet
+  And p0's development has a Quantum Computer
+  And the Quantum Computer in p0's development has 18 red cubes
+  And the Quantum Computer in p0's development has the Engineer on it
+  When p0 launches the Quantum Computer
+  Then it is accepted
+  And p0's milestones has a Clean Launch
+  And the milestone row has a First Mover Advantage and a Talent Magnet
+
+Example: the first player to collect $10 of Operational Revenue in one Income claims Revenue Leader (section 9, section 20)
+  Given the milestone row has a Revenue Leader, a Clean Launch and a Talent Magnet
+  And p1's operations has an App Store, a Trading Bot and a Mobile Wallet
+  And p1's ops team has the Architect and a Junior Software Dev
+  And the turn passes to the left
+  Then the phase is income
+  And p1 has 17 capital
+  And p1's milestones has a Revenue Leader
+
+Example: each Milestone claimed scores its face value (section 12)
+  Given the crash pile has the Market Crash
+  And it is p1's turn
+  And p0's milestones has a Platform Power and a Clean Launch
+  When p1 ends their actions
+  Then the game is over
+  And p0 scores 16
+  And p1 scores 1
+
+Example: $9 of Operational Revenue in one Income claims no Revenue Leader (section 9, section 20)
+  Given the milestone row has a Revenue Leader, a Clean Launch and a Talent Magnet
+  And p1's operations has an App Store, a Trading Bot and a To-Do List
+  And p1's ops team has the Architect and a Junior Software Dev
+  And the turn passes to the left
+  Then the phase is income
+  And p1 has 16 capital
+  And p1's milestones is empty
+
+Example: Revenue Leader is claimed only once: $10 at a later Income claims nothing more (section 12, section 20)
+  Given the milestone row has a Clean Launch, a Talent Magnet and a Platform Power
+  And p0's milestones has a Revenue Leader
+  And p1's operations has an App Store, a Trading Bot and a Mobile Wallet
+  And p1's ops team has the Architect and a Junior Software Dev
+  And the turn passes to the left
+  Then the phase is income
+  And p1 has 17 capital
+  And p1's milestones is empty

@@ -134,6 +134,11 @@ const STRATEGY_CARDS: Record<string, number> = {
   Burnout: 1, 'Flight Risk': 1, 'TechCrunch Feature': 2, 'Design Sprint': 2, 'Cease & Desist': 2,
 };
 /**
+ * The 6 Milestones, one card each: Setup reveals 3 in the milestone row and returns the rest to the box, and the first player to meet a
+ * revealed one claims it into their milestones row for good (§4.3, §12.5, §20.G).
+ */
+const MILESTONES = ['First Mover Advantage', 'Talent Magnet', 'Platform Power', 'Revenue Leader', 'Clean Launch', 'Full Stack Founder'];
+/**
  * Training (§6 Play Strategy Card, §20.A): for its printed price and no action, a seat plays a Training card from its Strategy Hand
  * onto an employee it fits, which gains a Skill token, Training XP or a Badge, and the card goes to the strategy discard.
  */
@@ -1532,11 +1537,12 @@ function passedTurn(before: GameState, after: GameState, by: PlayerId): boolean 
 
 /**
  * A score as §12 and rulings 5, 24 and 25 count it: a point for every 5 capital, the val of each product in operation that is not
- * offline (§12, ruling 5), 2 points for each market share and the Human Capital of every employee on the bench and on the Board
- * (§12.6, ruling 25), less the backlog's vaporware. Human Capital is counted from the cards' tokens, not read through the rules, so that
- * the End's score checks the rules' `Human capital:` section: a point for each Permanent XP token, Skill token and point of Training XP,
- * and 2 for a Badge, whatever the card; a Pending token, a native skill and a printed trait score nothing (§12.6). The invariants keep
- * XP and Skill tokens on Juniors and Training XP on the QA Engineer and the Sales Rep, where that section reads them.
+ * offline (§12, ruling 5), 2 points for each market share, the face value of each Milestone in the seat's milestones row (§12.5,
+ * §20.G) and the Human Capital of every employee on the bench and on the Board (§12.6, ruling 25), less the backlog's vaporware.
+ * Human Capital is counted from the cards' tokens, not read through the rules, so that the End's score checks the rules' `Human
+ * capital:` section: a point for each Permanent XP token, Skill token and point of Training XP, and 2 for a Badge, whatever the card; a
+ * Pending token, a native skill and a printed trait score nothing (§12.6). The invariants keep XP and Skill tokens on Juniors and
+ * Training XP on the QA Engineer and the Sales Rep, where that section reads them.
  */
 function scoreOf(state: GameState, seat: PlayerId): number {
   const vaporware = zoneCards(state, zoneIdFor('backlog', seat)).reduce((sum, card) => sum + VAPORWARE[card.data?.tier as string], 0);
@@ -1545,7 +1551,9 @@ function scoreOf(state: GameState, seat: PlayerId): number {
   const scored = [...JUNIOR_TOKENS, 'training xp'];
   const human = staff.reduce((total, card) =>
     total + scored.reduce((tokens, name) => tokens + tokenOn(card, name), 0) + (card.data?.badged === true ? 2 : 0), 0);
-  return Math.floor(counterOf(state, 'capital', seat) / 5) + val + 2 * counterOf(state, 'market share', seat) + human - vaporware;
+  const milestones = sum(zoneCards(state, zoneIdFor('milestones', seat)), 'vp');
+  const capital = Math.floor(counterOf(state, 'capital', seat) / 5);
+  return capital + val + 2 * counterOf(state, 'market share', seat) + milestones + human - vaporware;
 }
 
 /**
@@ -1609,6 +1617,11 @@ function scoreOf(state: GameState, seat: PlayerId): number {
  *   every brainstorm row hold the 30 cards of §20.A between them, by name. A seat's brainstorm row holds cards, 3 at most, only while its
  *   turn is in the brainstorm step; a seat whose turn it is not holds 3 Strategy cards at most; and the strategy deck gains cards only
  *   in a Brainstorm, plain or flushing, as the discard is shuffled into it.
+ * - The Milestones (§4.3, §12.5, §20.G): the milestone row and every milestones row hold 3 of the 6 between them, and the box the other
+ *   3, or, in a game arranged without Setup, the milestone deck holds all 6. A card enters a milestones row only from the milestone row,
+ *   and never leaves one. First Mover Advantage is claimed only in its seat's Launch of a Tier 2 card, Clean Launch only in its seat's
+ *   Launch, and Revenue Leader only by the seat that reached its Income in the move (see `enteredIncome`) with an operational revenue
+ *   of 10 or more, as the rules work it out.
  * - Each market refills at once: the agency row holds 4 and each product market 2 while its deck has cards, and the Market
  *   Crash is never anywhere but the growth deck or the crash pile.
  * - Each pool holds the 5 cards that entered it last, in the order they entered, every card it let go of is in the box, and
@@ -1731,6 +1744,39 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     const inTheDeck = new Set(zoneCards(before, 'strategy-deck').map((c) => c.id));
     const newInTheDeck = zoneCards(after, 'strategy-deck').filter((c) => !inTheDeck.has(c.id)).map((c) => `${c.id} (${nameOf(c)})`);
     noneOf([BRAINSTORM, BRAINSTORM_FLUSHING].includes(move.type) ? [] : newInTheDeck, () => `cards new in the strategy deck ${at}`);
+
+    // The Milestones: Setup revealed 3 and boxed the rest (§4.3), and a revealed one is claimed into a milestones row for good, only at
+    // its moment (§12.5, §20.G).
+    const claimRows = new Set(seats.map((seat) => zoneIdFor('milestones', seat)));
+    const six = after.cards.filter((c) => MILESTONES.includes(nameOf(c) as string));
+    const sixIn = (zoneIds: (zoneId: string) => boolean) => six.filter((c) => zoneIds(c.zoneId)).length;
+    // The milestone deck, the milestone row with the milestones rows, and the box. A game arranged without Setup, as the arranged tests
+    // below are, keeps all 6 in the milestone deck.
+    const split = [
+      sixIn((z) => z === 'milestone-deck'), sixIn((z) => z === 'milestone-row' || claimRows.has(z)), sixIn((z) => z === 'box'),
+    ];
+    const claims = sameValues(split, [0, 3, 3]) || sameValues(split, [6, 0, 0]) ? []
+      : [`${split.join(', ')} in the milestone deck, the milestone row and the milestones rows, and the box`];
+    for (const seat of seats) {
+      const row = zoneIdFor('milestones', seat);
+      for (const c of zoneCards(before, row)) {
+        if (cardById(after, c.id)?.zoneId !== row) claims.push(`${c.id} (${nameOf(c)}) left ${row}`);
+      }
+      const launched = move.type === LAUNCH && by === seat;
+      const revenue = () => runtime.playerValue(after, seat, 'operational revenue');
+      for (const c of zoneCards(after, row)) {
+        const was = cardById(before, c.id)?.zoneId;
+        if (was === row) continue;
+        const which = `${c.id} (${nameOf(c)}) entered ${row} from ${was}`;
+        if (was !== 'milestone-row') claims.push(which);
+        if (nameOf(c) === 'First Mover Advantage' && !(launched && card!.data?.tier === 'Tier 2')) claims.push(which);
+        if (nameOf(c) === 'Clean Launch' && !launched) claims.push(which);
+        if (nameOf(c) === 'Revenue Leader' && !(income === seat && revenue() >= 10)) {
+          claims.push(`${which}, with ${revenue()} operational revenue and ${income ?? 'no seat'} reaching Income`);
+        }
+      }
+    }
+    noneOf(claims, () => `the Milestones ${at}`);
 
     // The Board: staff sit on their own seat's projects, the Growth Hacker on its own seat's products (§20.B), and the tracks hold at
     // most their need, the cost less the cut (§19.A).
@@ -2053,7 +2099,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(226);
+    expect(results).toHaveLength(233);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -2099,9 +2145,11 @@ describe('Startup Simulator (designer language)', () => {
     // A player's supply is the bandwidth of their ops team in each color, set against the maintenance their online products demand;
     // the load counts every product in operation, offline ones too (§5 Phase B). Their ops team's QA is set against the Bugs on
     // every product in operation and the Bugs it has cleaned by a press this Engine, and the products that have Bugs are counted
-    // (§5 Phase D, R3).
+    // (§5 Phase D, R3). Their operational revenue is the rev of their products in operation, which Revenue Leader reads at Income
+    // (§9.A, §20.G).
     expect(Object.keys(game!.playerValues!)).toEqual([
       'blue supply', 'red supply', 'blue demand', 'red demand', 'blue load', 'red load', 'qa supply', 'bug load', 'qa spent', 'bugged products',
+      'operational revenue',
     ]);
   });
 
@@ -2264,13 +2312,14 @@ describe('Startup Simulator (designer language)', () => {
   });
 
   describe('the cards (§20)', () => {
-    it('has 117 cards: 22 talent, 30 seed products, 34 growth products with the Market Crash, and 30 Strategy cards', () => {
+    it('has 123 cards: 22 talent, 30 seed products, 34 growth products with the Market Crash, 30 Strategy cards and 6 Milestones', () => {
       const { cards } = fresh();
-      expect(cards).toHaveLength(117);
+      expect(cards).toHaveLength(123);
       expect(inZone(cards, 'talent-deck')).toHaveLength(22);
       expect(inZone(cards, 'seed-deck')).toHaveLength(30);
       expect(inZone(cards, 'growth-deck')).toHaveLength(35);
       expect(inZone(cards, 'strategy-deck')).toHaveLength(30);
+      expect(inZone(cards, 'milestone-deck')).toHaveLength(6);
     });
 
     it('has the talent deck of §20.B.1, with its costs and salaries', () => {
@@ -2372,9 +2421,16 @@ describe('Startup Simulator (designer language)', () => {
       expect(strategy.filter(isTraining)).toHaveLength(8);
       expect(sum(strategy, 'price')).toBe(63);
     });
+
+    it('has the 6 Milestones of §20.G with their VP', () => {
+      const milestones = inZone(fresh().cards, 'milestone-deck');
+      expect(nameCounts(milestones)).toEqual(Object.fromEntries(MILESTONES.map((name) => [name, 1])));
+      // First Mover 5, Talent Magnet 8, Platform Power 10, Revenue Leader 6, Clean Launch 5, Full Stack Founder 7.
+      expect(sum(milestones, 'vp')).toBe(41);
+    });
   });
 
-  it('lays out the table: each player’s bench, backlog, research, scouting, Strategy Hand and brainstorm are rows only they can see, and their Board rows everyone can', () => {
+  it('lays out the table: each player’s bench, backlog, research, scouting, Strategy Hand and brainstorm are rows only they can see, and their Board rows and claimed Milestones everyone can', () => {
     const zones = game!.zones.map(({ name, perPlayer, layout, visibility }) => [zoneIdFor(name), perPlayer, layout, visibility]);
     expect(zones).toEqual([
       ['talent-deck', false, 'pile', 'secret'],
@@ -2388,6 +2444,8 @@ describe('Startup Simulator (designer language)', () => {
       ['crash-pile', false, 'pile', 'public'],
       ['strategy-deck', false, 'pile', 'secret'],
       ['strategy-discard', false, 'pile', 'public'],
+      ['milestone-deck', false, 'pile', 'secret'],
+      ['milestone-row', false, 'row', 'public'],
       ['box', false, 'pile', 'secret'],
       ['bench', true, 'row', 'owner'],
       ['backlog', true, 'row', 'owner'],
@@ -2399,6 +2457,7 @@ describe('Startup Simulator (designer language)', () => {
       ['scouting', true, 'row', 'owner'],
       ['strategy-hand', true, 'row', 'owner'],
       ['brainstorm', true, 'row', 'owner'],
+      ['milestones', true, 'row', 'public'],
     ]);
     // Staff on a project sit on it (§3); the ops team is a pool that runs every product in operation, where only a card that attaches,
     // the Growth Hacker, sits on a product (§20.B).
@@ -2456,6 +2515,7 @@ describe('Startup Simulator (designer language)', () => {
           expect(zoneCards(state, `scouting-p${p}`), `${at}, p${p}'s scouting`).toEqual([]);
           // No player starts with a Strategy card: they draw them with Brainstorm (§4.4).
           expect(zoneCards(state, `strategy-hand-p${p}`), `${at}, p${p}'s strategy hand`).toEqual([]);
+          expect(zoneCards(state, `milestones-p${p}`), `${at}, p${p}'s milestones`).toEqual([]);
           const counters = state.data[COUNTERS_KEY] as Record<string, Record<string, number>>;
           expect(counters['market share']?.[`p${p}`], `${at}, p${p}'s market share`).toBe(0);
         }
@@ -2463,14 +2523,18 @@ describe('Startup Simulator (designer language)', () => {
         expect(zoneCards(state, 'seed-market'), at).toHaveLength(2);
         expect(zoneCards(state, 'growth-market'), at).toHaveLength(2);
         expect(zoneCards(state, 'strategy-deck'), at).toHaveLength(30);
+        // Setup reveals 3 of the 6 Milestones and returns the rest to the box (§4.3).
+        expect(zoneCards(state, 'milestone-row'), at).toHaveLength(3);
+        expect(zoneCards(state, 'milestone-deck'), at).toEqual([]);
+        expect(zoneCards(state, 'box').filter((card) => MILESTONES.includes(nameOf(card) as string)), at).toHaveLength(3);
       }
     });
 
-    it('makes the Juniors after the 117 dealt cards, c117 to c125 at 3 players', () => {
+    it('makes the Juniors after the 123 dealt cards, c123 to c131 at 3 players', () => {
       const state = setUp(3, 1);
       const ids = [0, 1, 2].flatMap((p) => zoneCards(state, `bench-p${p}`)).map((card) => Number(card.id.slice(1)));
-      expect(ids.sort((a, b) => a - b)).toEqual(Array.from({ length: 9 }, (_, i) => 117 + i));
-      expect(state.data[NEXT_CARD_KEY]).toBe(126);
+      expect(ids.sort((a, b) => a - b)).toEqual(Array.from({ length: 9 }, (_, i) => 123 + i));
+      expect(state.data[NEXT_CARD_KEY]).toBe(132);
     });
 
     it('chooses the start player at random', () => {
@@ -2787,25 +2851,26 @@ describe('Startup Simulator (designer language)', () => {
       const paths = [
         GROWTH_GREENLIT, GROWTH_LAUNCHED, LICENSE_TO_THE_ONLY_PROVIDER,
         CUT_FILLED_IN, CUT_CHOSEN, 'the cut: Cut 2 blue', 'the cut: Cut 2 red', 'the cut: Cut 1 of each', CUT_LAUNCHED,
-        STALLED_AT_THE_ENGINE, ...Object.values(DIVA_REFUSED), DIVA_PIVOTED,
+        STALLED_AT_THE_ENGINE, DIVA_REFUSED[REASSIGN_FROM_PROJECT], DIVA_PIVOTED,
       ];
       // Two Licenses in one Greenlight takes a Tier 3 card whose both Tags the mover lacks; it is counted, but not required.
       // Re-measured at T5 (plan 5-2b's P7), counted but not required until then, since they came to 0 at seeds 1 to 5 once the Strategy
       // deck's shuffle replayed every game and Brainstorm took actions (plan 5-2b's Task 1):
       // - LICENSE_TO_A_CHOSEN_PROVIDER, a License paid to a provider chosen among several;
-      // - ENGINEER_IN_OPS, the Engineer paid his $1 in the ops team.
-      // Held by one game each: Cut 2 red (3 players, seed 1), Cut 1 of each (2 players, seed 1), a Tier 2 or 3 card launched and a
-      // project launched with a cut (both 2 players, seed 5), and the Diva refused a reassign from the ops team (2 players, seed 4). A
-      // failure here means a cadence moved: retune the auto-player, never the rules.
+      // - ENGINEER_IN_OPS, the Engineer paid his $1 in the ops team;
+      // and since it came to 0 there once the Milestones' shuffle at Setup replayed every game again (plan 5-2b's Task 3):
+      // - DIVA_REFUSED[REASSIGN_FROM_OPS], the Diva refused a reassign from the ops team.
+      // Held by one game: a Tier 2 or 3 card launched (3 players, seed 4); by two: a project launched with a cut (3 players seed 4,
+      // 5 players seed 2); by three each: Cut 2 red (2 players seed 3, 3 players seeds 1 and 2), and the Diva refused a reassign from a
+      // project and fired by a pivot (3, 4 and 5 players, seed 1). A failure here means a cadence moved: retune the auto-player, never
+      // the rules.
       expect(paths.filter((key) => !(tally[key] > 0)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
     it('played slice 4 in those runs: modes declared and kept, products offline at Income, Bugs added, costing revenue and cleaned, the Growth Hacker’s $3 and the final check', () => {
       const paths = [
-        `${MODE_DECLARED}: Blue`, `${MODE_DECLARED}: Red`, MODES_KEPT, MODE_FORGOTTEN,
-        OFFLINE_AT_INCOME, EARNING_LESS, GROWTH_HACKER_EARNED,
-        BUG_ON_PROJECT, BUG_ON_PRODUCT, CLEANED_ON_PROJECT,
-        SWITCHED_OFF_AT_THE_END,
+        `${MODE_DECLARED}: Blue`, `${MODE_DECLARED}: Red`, MODES_KEPT, MODE_FORGOTTEN, OFFLINE_AT_INCOME,
+        BUG_ON_PROJECT, CLEANED_ON_PROJECT, SWITCHED_OFF_AT_THE_END,
       ];
       // Counted, but not required: a mode carried between teams, the clean button, a product switched on or brought back online at the
       // final check, and the Architect stopping a Growth Hacker's Bug. Only the one Growth Hacker brings Bugs to products in operation,
@@ -2815,11 +2880,14 @@ describe('Startup Simulator (designer language)', () => {
       // Re-measured at T5 (plan 5-2b's P7), counted but not required until then, since they came to 0 at seeds 1 to 5 once the Strategy
       // deck's shuffle replayed every game and Brainstorm took actions (plan 5-2b's Task 1):
       // - `${MODE_DECLARED}: QA`, a mode declared QA;
-      // - CLEANED_IN_OPS, a Bug cleaned in operations by itself.
-      // Held by three games each, the fewest: the Growth Hacker's $3, the Bug he adds to a product and the revenue it costs (2 and 3
-      // players seed 4, 5 players seed 2); by four each: modes kept by a confirm alone (2 players seed 4, 3 players seeds 2, 4 and 5) and
-      // a mode forgotten on a bench (3 players seeds 4 and 5, 4 players seeds 2 and 5). A failure here means a cadence moved: retune the
-      // auto-player, never the rules.
+      // - CLEANED_IN_OPS, a Bug cleaned in operations by itself;
+      // and since they came to 0 there once the Milestones' shuffle at Setup replayed every game again (plan 5-2b's Task 3), the
+      // Growth Hacker's other three:
+      // - EARNING_LESS, a product earning less for its Bugs;
+      // - GROWTH_HACKER_EARNED, the Growth Hacker's $3 earned;
+      // - BUG_ON_PRODUCT, a Bug added to a product in operation.
+      // Held by two games, the fewest: an offline product at Income (2 players, seeds 2 and 4); by three: a mode forgotten on a bench
+      // (3 players seed 3, 4 players seeds 1 and 2). A failure here means a cadence moved: retune the auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
@@ -2841,14 +2909,16 @@ describe('Startup Simulator (designer language)', () => {
       //   still be on the Board at an Income;
       // - SYNERGY, Synergy at the Engine, once the auto-player played Training, which spends a seat's capital and changed the one game
       //   that held it (4 players, seed 5) (plan 5-2b's Task 2).
-      // The Sales Rep's bonus is held by three games (2 players seeds 3 and 4, 3 players seed 4). A failure here means a cadence moved:
-      // retune the auto-player, never the rules.
+      // The Sales Rep's bonus is held by one game (3 players, seed 4). A failure here means a cadence moved: retune the auto-player, never
+      // the rules.
       expect(paths.filter((key) => !(tally[key] > 0)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
-    it('plays the same game through the page’s view as without it (2 players, seed 1)', () => {
-      const plain = playGame(2, 1, () => {});
-      const viewed = playGame(2, 1, () => {}, { throughView: true });
+    it('plays the same game through the page’s view as without it (2 players, seed 2)', () => {
+      // Seed 2 is the first 2-player game with a Greenlight that asks a choice since the Milestones' shuffle replayed every game
+      // (plan 5-2b's P9).
+      const plain = playGame(2, 2, () => {});
+      const viewed = playGame(2, 2, () => {}, { throughView: true });
       expect(plain.getState().result).toBeDefined();
       // Greenlights that asked choices, answered from the choices the view lists for the card and from the rules alike.
       const answering = plain.getLog().filter((move) => move.choices !== undefined);
@@ -2948,13 +3018,15 @@ describe('Startup Simulator (designer language)', () => {
       expect(engine.getState()).toEqual(fresh().getState());
     });
 
-    it('takes back every move with undo, and rebuilds the game from its log, across an assign, a launch, a pivot and a reassign (Review Focus: 3 players, seed 1)', () => {
+    it('takes back every move with undo, and rebuilds the game from its log, across an assign, a launch, a pivot and a reassign (Review Focus: 3 players, seed 2)', () => {
       const made = (log: readonly Move[], types: string[]) => log.some((move) => types.includes(move.type));
       // The brief asks for a launch or a pivot; the Review Focus names both, and the run that has both is still short.
       const board = (log: readonly Move[]) => made(log, [ASSIGN_TO_PROJECT, ASSIGN_TO_OPS]) && made(log, [LAUNCH]) && made(log, [PIVOT])
         && made(log, [REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS]);
       const states: GameState[] = [];
-      const engine = playGame(3, 1, (_before, _move, after) => states.push(after), { until: board });
+      // Seed 2 is the first 3-player game to make all four before it ends since the Milestones' shuffle replayed every game (plan
+      // 5-2b's P9).
+      const engine = playGame(3, 2, (_before, _move, after) => states.push(after), { until: board });
       const log = [...engine.getLog()];
       expect(board(log), `the moves made: ${[...new Set(log.map((move) => move.type))].join(', ')}`).toBe(true);
       expect(states).toHaveLength(log.length);
@@ -2964,7 +3036,7 @@ describe('Startup Simulator (designer language)', () => {
       expect(some((card) => cubesOn(card, 'blue cubes') + cubesOn(card, 'red cubes') > 0), 'a project with cubes').toBe(true);
       expect(some((card) => card.data?.onboarding === true), 'an onboarding card').toBe(true);
 
-      const fresh = () => createEngine(game!, lib, 3, initialState(game!, 1)).engine;
+      const fresh = () => createEngine(game!, lib, 3, initialState(game!, 2)).engine;
       const replayed = fresh();
       replayed.loadLog(log);
       expect(replayed.getState()).toEqual(engine.getState());
@@ -2986,7 +3058,7 @@ describe('Startup Simulator (designer language)', () => {
       /** Whether some Greenlight has paid a License, some chose among several answers, and some had every answer filled in. */
       const everyKind = () => Object.values(seen).every((times) => times > 0);
       // Each game stops at its first such Greenlight, and the seeds run from 1 until a game of each kind has been seen, which takes the
-      // games up to seed 18 since the Strategy deck's shuffle replayed every game (plan 5-2b's P9); a seed past 30 means the auto-player
+      // games up to seed 7 since the Milestones' shuffle replayed every game again (plan 5-2b's P9); a seed past 30 means the auto-player
       // or the rules moved too far for this to be a seed's matter.
       const lastSeed = 30;
       let seed = 1;
@@ -3193,8 +3265,8 @@ describe('Startup Simulator (designer language)', () => {
         expect(engine.getState(), `${where}: the game with its last move, ${log.at(-1)!.type}, taken back`).toEqual(states.at(-1));
       }
       // Some log declared a mode, switched a product off, added a Bug to a project, raised a Pending token at the Engine and graduated
-      // one at a Launch, so the replays rebuilt each of them. The declarations are in seeds 1, 2, 4 and 5, and a final-check switch-off
-      // is the last move taken back in seeds 1 and 3. No log holds a clean press, so the R3 Review Focus test above replays
+      // one at a Launch, so the replays rebuilt each of them. The declarations are in seeds 2, 4 and 5, and a final-check switch-off
+      // is the last move taken back in seed 3. No log holds a clean press, so the R3 Review Focus test above replays
       // one; none a keep or Mentor press, so the arranged graduation test below replays those; and none moves a card onto an Agile PM's
       // team (P8), so the arranged Agile test below replays the Agile spare.
       expect(Object.entries(seen).filter(([, times]) => times === 0), JSON.stringify(seen)).toEqual([]);
