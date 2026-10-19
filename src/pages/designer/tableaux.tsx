@@ -65,7 +65,7 @@ export function Tableaux({ game, seats, board, cards, worked, playerValues }: {
           <Fragment key={seat}>
             <div style={{ color: seatColor(seat) }}>{tableauLine(game, board, cards, seat)}</div>
             {shown.length > 0 && (
-              <div data-testid={`gauges-${seat}`} style={{ color: seatColor(seat) }}>
+              <div data-testid={`gauges-${seat}`} style={{ color: seatColor(seat), paddingLeft: 24 }}>
                 {shown.map((gauge, i) => (
                   <Fragment key={i}>
                     {i > 0 && ' · '}
