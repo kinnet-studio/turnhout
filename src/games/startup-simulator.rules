@@ -3658,3 +3658,14 @@ Example: a badged Junior with Blue and Red Skill tokens leads both colours, so i
   When p0 launches the Drone Delivery
   Then it is accepted
   And p0's operations has a Drone Delivery
+
+Example: an onboarding teammate is no worker: a Junior PM adds no Synergy for a Junior Reassigned to its team this turn (section 11, ruling 8)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And the Dating App in p0's development has a Junior PM and a Junior Software Dev on it
+  And p0's operations has a To-Do List
+  And p0's ops team has a Junior Software Dev
+  When p0 reassigns the Junior Software Dev from p0's ops team to the Dating App
+  Then it is accepted
+  When p0 ends their actions
+  Then the Dating App in p0's development has 2 blue cubes

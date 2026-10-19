@@ -4,8 +4,7 @@ import { compileGame } from '@/engine/core/lang/compile';
 import { createDefaultLibrary } from '@/engine/core/lang/library';
 import { runExamples } from '@/engine/core/lang/examples';
 import { createEngine, initialState, seatsFor, tableDefFor } from '@/engine/core/lang/build';
-import { COUNTERS_KEY, counterOf, gameNumber, setCounter } from '@/engine/core/lang/board-state';
-import { playerFact } from '@/engine/core/lang/board-state';
+import { COUNTERS_KEY, counterOf, gameNumber, playerFact, setCounter } from '@/engine/core/lang/board-state';
 import { seatExtras, type CardPickView, type SeatExtras } from '@/engine/core/lang/board-view';
 import { attachmentProblem, cardsOn, putOn } from '@/engine/core/lang/attach';
 import { deckOf, NEXT_CARD_KEY } from '@/engine/core/lang/cards';
@@ -311,6 +310,24 @@ const SWITCHED_OFF_AT_THE_END = 'a product switched off at the final check';
 const SWITCHED_ON_AT_THE_END = 'a product switched on at the final check';
 const BACK_ONLINE_AT_THE_END = 'every product back online at the final check';
 const BUG_STOPPED = "a Growth Hacker's Bug stopped by the Architect";
+// What the tally calls the paths of slice 5 (see `happenings`), besides the moves themselves.
+/** A Pending token a card gained, by its colour: `a Pending token gained: blue` (§11.B, ruling 1). */
+const PENDING_GAINED = 'a Pending token gained';
+const GRADUATED = 'a Junior graduated with no press';
+const KEPT_BY_CHOICE = 'a token kept by choice';
+const MENTORS_SECOND = "the Mentor's second token";
+const PIVOT_RETURNED = 'Pending tokens returned by a pivot';
+const STRIPPED = 'tokens stripped from fired staff';
+const EXPERIENCED_PAID = 'an experienced Junior paid';
+const SYNERGY = 'Synergy at the Engine';
+const AGILE_SPARED = 'an onboarding token spared by an Agile PM';
+const PROMOTED = 'a Junior PM promoted at a Launch';
+const SALES_BONUS = "a Sales Rep's bonus earned";
+const QA_ENGINEER_CLEANED = 'a Bug cleaned by a QA Engineer';
+/** The Permanent XP tokens of each colour a Junior holds (§11.A). */
+const XP_TOKENS = ['blue xp tokens', 'red xp tokens', 'green xp tokens'];
+/** The counts of the workers a PM's Synergy adds to, one for each colour of its team's output (§11.E.1). */
+const WORKERS = ['blue workers', 'red workers', 'qa workers'];
 
 /** The button of the phase `state` is in whose move type is `type`, as the game declares it. */
 const buttonOf = (state: GameState, type: string) =>
@@ -1250,6 +1267,20 @@ function atTheEngine(before: GameState, move: Move, after: GameState): GameState
  * - **The Architect's shield.** Each viral product of a seat whose turn the move passed with the Architect in its ops team, not
  *   onboarding, whose Bugs did not rise. The Engine's ops QA may clean in the same move, so a product whose Bugs did not rise without
  *   the Architect was cleaned, not shielded.
+ *
+ * Slice 5's paths, read through `runtime` too (§3, §5, §11, §12, §18.B, §20.B, rulings 1, 8 and 25):
+ * - **Pending tokens.** Each card whose Pending token of a colour rose, by the colour (`a Pending token gained: blue`); each card on a
+ *   pivoted project holding a Pending token before the Pivot, which returns it.
+ * - **Graduation.** Each card whose Permanent XP of some colour rose in a Launch press, which graduates a Junior with one token at once;
+ *   each press that keeps a token by choice, and each of the Mentor's; each card a Launch press made badged.
+ * - **Firing.** Each card holding a token or a Badge before a dismiss or a let-go that reached the open job market in it, stripped.
+ * - **Pay.** Each card of the mover's Board that was experienced before its salaries were paid.
+ * - **Synergy**, in a move that ran the mover's Engine: each of its projects not Stalled with a PM managing and a worker of some colour
+ *   on it, as the team was when the Engine generated (see `atTheEngine`).
+ * - **The Agile spare**, only in a move that starts no turn (P8): the card reassigned onto a project an Agile PM was on before the move
+ *   that is not onboarding after it, and each picked card of an assign there that was onboarding before and is not after.
+ * - **The Sales Rep**, for the seat that reached its Income: each of its online products with a Rainmaker card on it, not onboarding.
+ * - **The QA Engineer**, in a move that ran the mover's Engine: each of its projects with a Bug Hunter card on it whose Bugs fell.
  */
 function happenings(runtime: LangRuntime, before: GameState, move: Move, after: GameState): string[] {
   const boxed = new Set(zoneCards(before, 'box').map((c) => c.id));
@@ -1353,6 +1384,58 @@ function happenings(runtime: LangRuntime, before: GameState, move: Move, after: 
     const stopped = operationsOf(passing, by).filter((product) => runtime.workedFlag(passing, product.id, 'viral')
       && bugsOn(product) <= bugsOn(wasById.get(product.id) ?? product));
     if (shielded) keys.push(...stopped.map(() => BUG_STOPPED));
+  }
+
+  // Slice 5's paths.
+  for (const c of after.cards) {
+    const was = wasById.get(c.id);
+    for (const name of PENDING) {
+      if (tokenOn(c, name) > (was === undefined ? 0 : tokenOn(was, name))) keys.push(`${PENDING_GAINED}: ${name.slice('pending '.length)}`);
+    }
+    if (move.type === LAUNCH && was !== undefined) {
+      if (XP_TOKENS.some((name) => tokenOn(c, name) > tokenOn(was, name))) keys.push(GRADUATED);
+      if (c.data?.badged === true && was.data?.badged !== true) keys.push(PROMOTED);
+    }
+    if (FIRES.includes(move.type) && c.zoneId === 'open-job-market' && was !== undefined && was.zoneId !== c.zoneId && holding(was) !== '') {
+      keys.push(STRIPPED);
+    }
+  }
+  if (Object.values(KEEP_PENDING).includes(move.type)) keys.push(KEPT_BY_CHOICE);
+  if (move.type === MENTOR) keys.push(MENTORS_SECOND);
+  if (move.type === PIVOT) {
+    const returning = cardsOn(before, move.cardId as string).filter((staff) => PENDING.some((name) => tokenOn(staff, name) > 0));
+    keys.push(...returning.map(() => PIVOT_RETURNED));
+  }
+  if (move.type === PAY_SALARIES) {
+    const board = ['development team', 'ops team'].flatMap((row) => zoneCards(before, zoneIdFor(row, by)));
+    keys.push(...board.filter((staff) => runtime.workedFlag(before, staff.id, 'experienced')).map(() => EXPERIENCED_PAID));
+  }
+  if (engineRan) {
+    const generating = atTheEngine(before, move, after);
+    const value = (id: string, name: string) => runtime.workedValue(generating, id, name) as number;
+    const synergy = zoneCards(generating, zoneIdFor('development', by)).filter((project) =>
+      !runtime.workedFlag(generating, project.id, 'stalled') && value(project.id, 'pm count') > 0
+      && WORKERS.some((name) => value(project.id, name) > 0));
+    keys.push(...synergy.map(() => SYNERGY));
+    const hunted = zoneCards(after, zoneIdFor('development', by)).filter((project) =>
+      cardsOn(after, project.id).some((staff) => staff.data?.trait === 'Bug Hunter')
+      && bugsOn(project) < bugsOn(wasById.get(project.id) ?? project));
+    keys.push(...hunted.map(() => QA_ENGINEER_CLEANED));
+  }
+  // A move that spends the last action starts the next turn, whose start clears every Onboarding token, so only a move that starts
+  // none shows what Agile spared; and Agile is read before the move, since a PM arriving in it spares no one (P8, §11.E.3, ruling 8).
+  if (turnStarted(before, after) === null && [REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS, ASSIGN_TO_PROJECT].includes(move.type)) {
+    const agile = cardsOn(before, move.onto as string).some((staff) => runtime.workedFlag(before, staff.id, 'agile'));
+    const onboarding = (state: GameState, id: string) => cardById(state, id)?.data?.onboarding === true;
+    const spared = !agile ? [] : move.type === ASSIGN_TO_PROJECT
+      ? (move.cardIds as string[]).filter((id) => onboarding(before, id) && !onboarding(after, id))
+      : [move.cardId as string].filter((id) => !onboarding(after, id));
+    keys.push(...spared.map(() => AGILE_SPARED));
+  }
+  if (reached !== null) {
+    const selling = (product: CardState) =>
+      cardsOn(after, product.id).some((staff) => staff.data?.trait === 'Rainmaker' && staff.data?.onboarding !== true);
+    keys.push(...operationsOf(after, reached).filter((product) => product.data?.offline !== true && selling(product)).map(() => SALES_BONUS));
   }
   return keys;
 }
@@ -1652,8 +1735,10 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     }
     noneOf(tokens, () => `the XP and Skill tokens ${at}`);
     // A card holds one Pending token of each colour at most, and gains one only as its owner's Engine runs, while it sits on a project
-    // in their development (§5 Phase D, §11.B, ruling 1). It holds one only in a development team, or in the ops team of the seat whose
-    // turn is in Launch's graduation step: the step ends by returning every token its ops team still holds to the supply (§11.B.2).
+    // in their development that was not Stalled as the Engine generated, since a Stalled team makes nothing (see `atTheEngine`) (§3, §5
+    // Phase D, §11.B, ruling 1). Only a Junior learns, so only a Junior holds one (§11.B). It holds one only in a development team, or in
+    // the ops team of the seat whose turn is in Launch's graduation step: the step ends by returning every token its ops team still holds
+    // to the supply (§11.B.2).
     const engineRan = ranTheEngine(before, after, by);
     const graduating = phase === GRADUATION ? current as PlayerId : null;
     const developmentTeams = new Set(seats.map((seat) => zoneIdFor('development team', seat)));
@@ -1669,9 +1754,14 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       for (const name of PENDING) {
         const held = tokenOn(c, name);
         if (held > 1) pending.push(`${which} has ${held} ${name}`);
+        if (held > 0 && c.data?.role !== 'Junior') pending.push(`${which} holds ${held} ${name}, though it is no Junior`);
         if (held > 0 && !mayHoldPending(c.zoneId)) pending.push(`${which} holds ${held} ${name} out of a development team`);
-        if (held > (was === undefined ? 0 : tokenOn(was, name)) && !(engineRan && onProject)) {
+        const rose = held > (was === undefined ? 0 : tokenOn(was, name));
+        if (rose && !(engineRan && onProject)) {
           pending.push(`${which} gained ${name} ${engineRan ? `off a project of ${by}` : `with no Engine run for ${by}`}`);
+        }
+        if (rose && onProject && runtime.workedFlag(atGenerate(), holder as string, 'stalled')) {
+          pending.push(`${which} gained ${name} on ${holder}, which was stalled`);
         }
       }
       // A Junior is graduated only while its owner's graduation step runs, in their ops team: the step ends by clearing it (§11.B.2).
@@ -1815,7 +1905,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(206);
+    expect(results).toHaveLength(207);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -2492,9 +2582,10 @@ describe('Startup Simulator (designer language)', () => {
         STALLED_AT_THE_ENGINE, ...Object.values(DIVA_REFUSED), DIVA_PIVOTED, ENGINEER_IN_OPS,
       ];
       // Two Licenses in one Greenlight takes a Tier 3 card whose both Tags the mover lacks; it is counted, but not required.
-      // Held by one game each: Cut 2 red (2 players, seed 4), the Engineer's $1 in the ops team (2 players, seed 1) and the scouting
-      // hire to the bench (5 players, seed 3), to the ops team (2 players, seed 2) and to a product (3 players, seed 2), which the
-      // test of every move requires. A failure here means a cadence moved: retune the auto-player, never the rules.
+      // Held by one game each: Cut 2 red (2 players, seed 4), the Engineer's $1 in the ops team (2 players, seed 1), a Tier 2 or 3 card
+      // launched (2 players, seed 2) and the scouting hire to the bench (5 players, seed 3) and to the ops team (2 players, seed 2),
+      // which the test of every move requires, as it does the scouting hire to a product (2, 3 and 4 players, seed 2). A failure here
+      // means a cadence moved: retune the auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
@@ -2510,9 +2601,29 @@ describe('Startup Simulator (designer language)', () => {
       // so two such products with Bugs at once are rare, and he seldom shares an ops team with the one Architect. A seat seldom comes to
       // the final check holding a product its last ops check switched off, and seldom then short (to switch it on) or able to run every
       // product (to bring it back). Examples pin each, and the arranged tests below pin the auto-player's clean and final check.
-      // Held by one game each: a mode forgotten on a bench (3 players, seed 2, through the Pivot steer), a Bug cleaned in operations
-      // by itself (5 players, seed 2) and a mode declared QA (2 players, seed 4). A failure here means a cadence moved: retune the
-      // auto-player, never the rules.
+      // Held by one game each: a mode forgotten on a bench (3 players, seed 2, through the Pivot steer) and a mode declared QA (2
+      // players, seed 4); a Bug cleaned in operations by itself by two (2 and 5 players, seed 2). A failure here means a cadence moved:
+      // retune the auto-player, never the rules.
+      expect(paths.filter((key) => !(tally[key] > 0)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
+    });
+
+    it('played slice 5’s talent in those runs: Pending tokens gained and graduated, returned by pivots and stripped from fired staff, Synergy, the Sales Rep’s bonus and experienced Juniors paid', () => {
+      const paths = [
+        ...PENDING.map((name) => `${PENDING_GAINED}: ${name.slice('pending '.length)}`), GRADUATED, PIVOT_RETURNED, STRIPPED,
+        EXPERIENCED_PAID, SYNERGY, SALES_BONUS,
+      ];
+      // Counted, but not required:
+      // - a token kept by choice and the Mentor's second token: a Junior gains a Pending token of a second colour only by working in it,
+      //   which takes a Skill token, and only Training gives those (plan 5-2b requires both);
+      // - a Junior PM promoted at a Launch: a Junior PM must be on a Tier 2 or 3 team that Launches;
+      // - a Bug cleaned by a QA Engineer: a QA Engineer must be on a project with Bugs;
+      // - the Agile spare: only the one Senior PM is Agile until a Junior PM is promoted, and none of the runs moves a card onto a team
+      //   it manages in a move that starts no turn (P8; plan 5-2b requires it once Agile Workshop gives Junior PMs Badges).
+      // Examples pin each, and the arranged tests below pin the auto-player's graduation presses and its Agile spare.
+      // Held by one game: an experienced Junior paid (3 players, seed 4), since a Junior keeps one token a Launch, so it reaches 2 XP
+      // only at its second Launch, and must then still be on the Board at an Income;
+      // the Sales Rep's bonus by three (2 players seed 2, 3 players seed 4, 4 players seed 2) and a green Pending token by four (seed 1
+      // at each count). A failure here means a cadence moved: retune the auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
@@ -2851,6 +2962,36 @@ describe('Startup Simulator (designer language)', () => {
       expect(Object.entries(seen).filter(([, times]) => times === 0), JSON.stringify(seen)).toEqual([]);
     }, 120_000);
 
+    it('takes back the last move and rebuilds whole games from their logs, through Pending tokens and graduation (Review Focus: 2 players, seeds 1 to 5)', () => {
+      const seen = { 'Pending tokens gained': 0, 'Launches that raised XP': 0 };
+      for (let seed = 1; seed <= 5; seed++) {
+        const where = `2 players, seed ${seed}`;
+        const states: GameState[] = [];
+        const engine = playGame(2, seed, (before, move, after) => {
+          states.push(before);
+          const gained = (c: CardState, names: readonly string[]) => {
+            const was = cardById(before, c.id);
+            return names.some((name) => tokenOn(c, name) > (was === undefined ? 0 : tokenOn(was, name)));
+          };
+          if (after.cards.some((c) => gained(c, PENDING))) seen['Pending tokens gained'] += 1;
+          if (move.type === LAUNCH && after.cards.some((c) => gained(c, XP_TOKENS))) seen['Launches that raised XP'] += 1;
+        });
+        const log = [...engine.getLog()];
+        const end = engine.getState();
+        expect(end.result, `${where}: the result`).toBeDefined();
+        expect(states).toHaveLength(log.length);
+
+        const replayed = createEngine(game!, lib, 2, initialState(game!, seed)).engine;
+        replayed.loadLog(log);
+        expect(replayed.getState(), `${where}: the game rebuilt from its log`).toEqual(end);
+        engine.undo();
+        expect(engine.getState(), `${where}: the game with its last move, ${log.at(-1)!.type}, taken back`).toEqual(states.at(-1));
+      }
+      // Some log raised a Pending token at the Engine and graduated it at a Launch, so the replays rebuilt both. None moves a card onto
+      // an Agile PM's team (P8), so the arranged test below rebuilds and takes back the Agile spare.
+      expect(Object.entries(seen).filter(([, times]) => times === 0), JSON.stringify(seen)).toEqual([]);
+    }, 120_000);
+
     it('makes the graduation choices the auto-player picks, through the page’s view and without it (§11.B.2, ruling 25)', () => {
       // The long runs never press a button of the graduation step: a Junior earns a Pending token of a second colour only by working
       // in it, which takes a Skill token, and only Training gives those (plan 5-2b). So this arranges a Launch with two Juniors holding
@@ -2902,6 +3043,50 @@ describe('Startup Simulator (designer language)', () => {
         expect([dev, qa].map(xp), `turn ${t}`).toEqual(expected[t].xp);
         expect([dev, qa].flatMap((id) => PENDING.map((name) => tokenOn(cardById(end, id)!, name))), `turn ${t}`).toEqual([0, 0, 0, 0, 0, 0]);
       }
+    });
+
+    it('reassigns a spare QA Engineer from the ops team onto the project the Senior PM manages, which spares it the Onboarding token, through the page’s view and without it, and rebuilds and takes back the move (§6, §11.E.3, ruling 8)', () => {
+      // The long runs never move a card onto an Agile PM's team in a move that starts no turn (P8): only the one Senior PM is Agile in
+      // them, and it seldom reaches a project. So this puts it on the Dating App, with two QA Engineers in the ops team. On t = 4 the
+      // seat's free dismiss takes the first, which the ops team can spare, and its second action is action 5, which reassigns the
+      // second onto its first project. The agency row holds Seniors no planned hire takes.
+      const [dating, seniorPm] = ['Dating App', 'Senior PM'].map(idOf);
+      const qaEngineers = fresh().cards.filter((card) => nameOf(card) === 'QA Engineer').slice(0, 2).map((card) => card.id);
+      const arranged = arrange({
+        'development-p0': [dating],
+        'agency-row': ['Architect', 'Veteran', 'Diva', 'Engineer'].map(idOf),
+        'backlog-p0': [],
+      }).getState();
+      const state = putOn(relocate(arranged, qaEngineers, 'ops-team-p0', game!), [seniorPm], 'development-team-p0', dating, game!);
+      const seats = seatsFor(2);
+      const runs = [false, true].map((throughView) => {
+        const { engine, runtime } = createEngine(game!, lib, 2, state);
+        const rules = keepsTheRules(seats, runtime);
+        const states: GameState[] = [];
+        const spared: Move[] = [];
+        playTurn(engine, 4, 'researches', (before, move, after) => {
+          rules(before, move, after);
+          states.push(before);
+          if (happenings(runtime, before, move, after).includes(AGILE_SPARED)) spared.push(move);
+        }, (log) => log.some((move) => move.type === REASSIGN_FROM_OPS), runtime, throughView);
+        return { engine, states, spared };
+      });
+      const { engine, states, spared } = runs[0];
+      const log = [...engine.getLog()];
+      const reassign = { type: REASSIGN_FROM_OPS, by: 'p0', cardId: qaEngineers[1], onto: dating };
+      expect(log.filter((move) => [DISMISS_FROM_OPS, REASSIGN_FROM_OPS].includes(move.type))).toEqual([
+        { type: DISMISS_FROM_OPS, by: 'p0', cardId: qaEngineers[0] }, reassign,
+      ]);
+      expect(cardById(engine.getState(), qaEngineers[1])!.data?.onboarding === true, 'the QA Engineer onboarding').toBe(false);
+      expect(spared).toEqual([reassign]);
+      expect(runs[1].engine.getLog()).toEqual(log);
+      expect(runs[1].spared).toEqual(spared);
+      // The log alone rebuilds the turn, and undo gives the state before the reassign (Review Focus).
+      const replayed = createEngine(game!, lib, 2, state).engine;
+      replayed.loadLog(log);
+      expect(replayed.getState()).toEqual(engine.getState());
+      engine.undo();
+      expect(engine.getState()).toEqual(states.at(-1));
     });
   });
 });
