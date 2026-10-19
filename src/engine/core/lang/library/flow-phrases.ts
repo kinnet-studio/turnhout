@@ -32,7 +32,7 @@ const someSeatEmpty: ConditionFn = (env, args) =>
 // ---- effects ---------------------------------------------------------------------------------
 
 /** Puts the zone's cards in a new order, slots rewritten 0…n-1. */
-function shuffleOne(state: GameState, zoneId: string): GameState {
+export function shuffleOne(state: GameState, zoneId: string): GameState {
   const { items, rng } = shuffleWithRng(zoneCards(state, zoneId), state.rng);
   const slotById = new Map(items.map((c, i) => [c.id, i] as const));
   return {

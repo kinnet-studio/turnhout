@@ -9,6 +9,9 @@ import { RuleError } from '../diagnostics';
 import { CREW_GAME, fixtureEnv, runPhrase } from '../testing';
 import { MEND_GAME } from '../testing';
 import type { PhraseKind } from '../types';
+import { putOn } from '../attach';
+import { DRILL_GAME } from '../testing';
+import { WORKED_GAME } from '../testing';
 import { relocate } from '../zones';
 import { createDefaultLibrary } from './index';
 import { cardNumber } from './support';
@@ -278,5 +281,158 @@ describe('numbers that go down, in MEND_GAME', () => {
     expect(lib.get('effect', 'its {attribute} goes down by its {attribute}')).toMatchObject({ needsCard: true, writes: 0 });
     expect(lib.get('effect', 'it loses {int} {attribute}')).toMatchObject({ needsCard: true, writes: 1 });
     expect(lib.get('condition', 'its {attribute} are {int}')).toMatchObject({ needsCard: true });
+  });
+});
+
+describe('a number given to a group, or to its first few', () => {
+  const drill = compileGame(DRILL_GAME, lib);
+  const dg = drill.game!;
+  const built = createEngine(dg, lib, 2, initialState(dg, 1));
+  /** The state once Setup has run: the jobs in the stashes, the hands in the hall. */
+  const start = built.engine.getState();
+  const first = (name: string) => start.cards.find((c) => c.data?.name === name)!.id;
+  const [jar, potterHand, smithHand, tinkerHand] = [first('Vase'), first('Potter'), first('Smith'), first('Tinker')];
+  /** p0's workshop holding the Vase, with a Potter, a Smith and a Tinker on it, in that order. */
+  const table = putOn(relocate(start, [jar], 'workshop-p0', dg), [potterHand, smithHand, tinkerHand], 'crew-p0', jar, dg);
+  const run = (text: string, state: GameState = table) =>
+    runPhrase<GameState>(lib, 'effect', text, built.runtime.env(state, undefined, undefined, { player: 'p0', space: null, card: jar }));
+  /** The table with those hands tired. */
+  const tired = (...hands: string[]) => hands.reduce((state, id) => changeCard(state, id, { tired: true }, dg), table);
+  /** The table with the Vase at that many cracks. */
+  const cracked = (n: number, state: GameState = table) => changeCard(state, jar, { cracks: n }, dg);
+  /** How many drills the Potter, the Smith and the Tinker have. */
+  const drills = (state: GameState) => [potterHand, smithHand, tinkerHand].map((id) => cardAttribute(card(state, id), 'drills', dg));
+  const TIRED = 'the cards on it that are tired gain 1 drill';
+  const UP_TO = 'up to its cracks of the cards on it that are not tired gain 1 drill, first card first';
+  const onlyKept = (name: string) => new RuleError(`Only a number the game keeps on cards can change, like “Cards can have charges.”; ${name} isn't one.`);
+
+  it('compiles with the game it is tried on', () => {
+    expect(drill.diagnostics).toEqual([]);
+  });
+
+  describe('every card of a group', () => {
+    it('gains the number, and a card the group leaves out does not', () => {
+      const next = run(TIRED, tired(potterHand, tinkerHand));
+      expect(drills(next)).toEqual([1, 0, 1]);
+    });
+    it('adds to what a card has, and shows it on the face', () => {
+      const next = run(TIRED, changeCard(tired(potterHand), potterHand, { drills: 2 }, dg));
+      expect(drills(next)).toEqual([3, 0, 0]);
+      expect(parseTextFaceKey(card(next, potterHand).faceKey)).toMatchObject({ drills: '3' });
+    });
+    it('gains nothing when no card is in the group, and changes nothing', () => {
+      expect(run(TIRED, table)).toEqual(table);
+    });
+    it('changes the cards of the group and no others, the card they are on included', () => {
+      const next = run(TIRED, tired(smithHand));
+      expect(card(next, jar)).toEqual(card(table, jar));
+      expect(card(next, potterHand)).toEqual(card(table, potterHand));
+      expect(card(next, smithHand).data).toMatchObject({ drills: 1, tired: true });
+    });
+    it('gives every card of the group the number when no test is written', () => {
+      expect(drills(run('the cards on it gain 2 drills'))).toEqual([2, 2, 2]);
+    });
+    it('reads a group of the cards in a zone as well', () => {
+      const next = run('the cards in their crew gain 1 drill');
+      expect(drills(next)).toEqual([1, 1, 1]);
+    });
+  });
+
+  describe('the first few of a group', () => {
+    it('gives the number to as many cards as the card has of the other, first card first', () => {
+      expect(drills(run(UP_TO, cracked(2)))).toEqual([1, 1, 0]);
+      expect(drills(run(UP_TO, cracked(1)))).toEqual([1, 0, 0]);
+    });
+    it('is Review Focus: none at 0 cracks, with no key', () => {
+      expect(run(UP_TO, table)).toEqual(table);
+      expect(card(table, jar).data).not.toHaveProperty('cracks');
+    });
+    it('is Review Focus: every card, once, when the number is more than the group holds', () => {
+      expect(drills(run(UP_TO, cracked(9)))).toEqual([1, 1, 1]);
+    });
+    it('is Review Focus: counted among the cards the group leaves in, so a tired card takes no place', () => {
+      const next = run(UP_TO, cracked(1, tired(potterHand)));
+      expect(drills(next)).toEqual([0, 1, 0]);
+    });
+    it('takes the number from any number the card has, a column of its table too', () => {
+      // The Vase's pay is 1.
+      expect(drills(run('up to its pay of the cards on it gain 1 drill, first card first'))).toEqual([1, 0, 0]);
+    });
+    it('reads the number before any card changes, though the card is in the group itself', () => {
+      // The Vase has 1 crack and heads the workshop: it gains one, and the number of cards stays 1 rather than growing with its cracks.
+      const statue = first('Statue');
+      const workshop = cracked(1, relocate(start, [jar, statue], 'workshop-p0', dg));
+      const next = run('up to its cracks of the cards in their workshop gain 1 crack, first card first', workshop);
+      expect([jar, statue].map((id) => cardAttribute(card(next, id), 'cracks', dg))).toEqual([2, 0]);
+    });
+    it('takes a number below 0 for no card at all', () => {
+      // The Vase's owing is its pay less its worth: 1 less 3.
+      const OWING = `${DRILL_GAME}\n\nOwing:\n  A card's owing is its pay.\n  A card's owing goes down by its worth.`;
+      const owing = compileGame(OWING, lib);
+      expect(owing.diagnostics).toEqual([]);
+      const og = owing.game!;
+      const worked = createEngine(og, lib, 2, initialState(og, 1));
+      const state = putOn(relocate(worked.engine.getState(), [jar], 'workshop-p0', og), [potterHand, smithHand, tinkerHand], 'crew-p0', jar, og);
+      const env = worked.runtime.env(state, undefined, undefined, { player: 'p0', space: null, card: jar });
+      expect(env.workedValue?.(state, jar, 'owing')).toBe(-2);
+      expect(runPhrase<GameState>(lib, 'effect', 'up to its owing of the cards on it gain 1 drill, first card first', env)).toEqual(state);
+    });
+  });
+
+  describe('refused', () => {
+    it('changes only a number the game keeps on cards, even over no card', () => {
+      expect(() => run('the cards on it gain 1 wage')).toThrow(onlyKept('wage'));
+      expect(() => run('the cards on it that are tired gain 1 wage')).toThrow(onlyKept('wage'));
+      expect(() => run('up to its cracks of the cards on it gain 1 wage, first card first')).toThrow(onlyKept('wage'));
+    });
+    it('says a worked value can\'t gain, on its line, when the rules are read', () => {
+      const line = '      The cards on it gain 1 red work.';
+      const text = WORKED_GAME.replace('      Every card on it is tired.', `${line}\n      Every card on it is tired.`);
+      expect(messages(text)).toEqual([[at(text, line), '“red work” is worked out from its lines, so no rule can change it.']]);
+      const upTo = '      Up to its red need of the cards on it gain 1 red work, first card first.';
+      const second = WORKED_GAME.replace('      Every card on it is tired.', `${upTo}\n      Every card on it is tired.`);
+      expect(messages(second)).toEqual([[at(second, upTo), '“red work” is worked out from its lines, so no rule can change it.']]);
+    });
+  });
+
+  describe('in a button', () => {
+    /** An engine of DRILL_GAME on the table, with the Vase and its three hands in p0's workshop and crew. */
+    const { engine } = createEngine(dg, lib, 2, table);
+
+    it('drills the tired cards on a job in a button that picks a card', () => {
+      const state = tired(potterHand, tinkerHand);
+      const { engine: playing } = createEngine(dg, lib, 2, state);
+      expect(playing.dispatch({ type: 'drill a card in their workshop', by: 'p0', cardId: jar })).toMatchObject({ ok: true });
+      expect(drills(playing.getState())).toEqual([1, 0, 1]);
+    });
+    it('tutors as many of the cards on a job that are not tired as it has cracks', () => {
+      const { engine: playing } = createEngine(dg, lib, 2, cracked(2, tired(potterHand)));
+      expect(playing.dispatch({ type: 'tutor a card in their workshop', by: 'p0', cardId: jar })).toMatchObject({ ok: true });
+      expect(drills(playing.getState())).toEqual([0, 1, 1]);
+    });
+    it('can be undone, and a replayed log rebuilds the same state', () => {
+      const before = engine.getState();
+      expect(engine.dispatch({ type: 'drill a card in their workshop', by: 'p0', cardId: jar })).toMatchObject({ ok: true });
+      const after = engine.getState();
+      const fresh = createEngine(dg, lib, 2, table).engine;
+      fresh.loadLog([...engine.getLog()]);
+      expect(fresh.getState()).toEqual(after);
+      engine.undo();
+      expect(engine.getState()).toEqual(before);
+    });
+  });
+
+  describe('what the lines need', () => {
+    it('names the number they change among their arguments', () => {
+      expect(lib.get('effect', '{cardgroup} gain {int} {attribute}')).toMatchObject({ writes: 2 });
+      expect(lib.get('effect', 'up to its {attribute} of {cardgroup} gain {int} {attribute}, first card first')).toMatchObject({ needsCard: true, writes: 3 });
+    });
+    it('asks a card of a group of the cards on it, and nothing of a group of the cards in their zone', () => {
+      const line = '      The cards on it gain 1 drill.';
+      const text = DRILL_GAME.replace('      Their moves go back to 0.', `      Their moves go back to 0.\n${line}`);
+      expect(messages(text)).toEqual([[at(text, line), '“The cards on it gain 1 drill” only makes sense in a rule about a card, such as “When a card …”.']]);
+      const zone = '      The cards in their crew gain 1 drill.';
+      expect(messages(DRILL_GAME.replace('      Their moves go back to 0.', `      Their moves go back to 0.\n${zone}`))).toEqual([]);
+    });
   });
 });

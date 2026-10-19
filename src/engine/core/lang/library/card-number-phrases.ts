@@ -4,8 +4,11 @@ import { changeCard, isCardCount } from '../card-facts';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import type { ConditionFn, EffectFn, PhraseEnv } from '../types';
+import type { CardGroup } from '../types';
+import { cardById } from '../zone-index';
 import { itCard } from './fact-phrases';
 import { cardNumber, mustBeKept } from './support';
+import { cardsIn } from './support';
 
 /**
  * The count a rule changes on the card it is about. Only a count the game declares on cards can change, since a column of a card's table
@@ -52,6 +55,34 @@ const itsGoUp: EffectFn = (env, [name, by]) => goUp(env, name as string, by as s
 
 const itsGoUpToCap: EffectFn = (env, [name, by, cap]) => goUp(env, name as string, by as string, cap as string);
 
+/**
+ * Each of these cards gains that much of a count `changeable` let through, one card at a time, each read as the walk has left it: a card
+ * a group names twice (a zone written twice) gains twice, as it counts twice in a total.
+ */
+function gainEach(env: PhraseEnv, cards: CardState[], count: string, by: number): GameState {
+  return cards.reduce((state, found) => {
+    const card = cardById(state, found.id) ?? found;
+    return changeCard(state, card.id, { [count]: cardNumber(env, card, count) + by }, env.game);
+  }, env.state);
+}
+
+/** Every card of the group gains that much of a count. Only a count the game keeps on cards can gain, even over no card. */
+const groupGains: EffectFn = (env, [group, by, name]) => {
+  const count = changeable(env, name as string);
+  return gainEach(env, cardsIn(env, group as CardGroup), count, by as number);
+};
+
+/**
+ * The first cards of the group, in the group's order, as many as the card the rule is about has of a number, each gain that much of a
+ * count: a card the group's tests leave out is no card of it, and takes no place in the first few. The number is read before any card
+ * changes, and a number below 0 is no card.
+ */
+const firstOfGroupGain: EffectFn = (env, [limit, group, by, name]) => {
+  const count = changeable(env, name as string);
+  const first = Math.max(0, cardNumber(env, itCard(env), limit as string));
+  return gainEach(env, cardsIn(env, group as CardGroup).slice(0, first), count, by as number);
+};
+
 /** A flag a card is not is a flag it never had, as “No card is …” leaves it. A flag worked out from lines is never set. */
 const itIs = (wanted: boolean): EffectFn => (env, [flag]) => {
   mustBeKept(env, flag as string);
@@ -68,7 +99,8 @@ const moreThan: ConditionFn = (env, [name, n]) => cardNumber(env, itCard(env), n
 /**
  * The sentences about the numbers on the card a rule is about. A count reads plural (“its red done are at least its red need”) and a
  * column of the card's table singular (“its pay is more than 1”), so each comparison reads both ways, as “go up” and “goes up” do, and
- * “go down” and “goes down”. Every one is about “it”, so each needs a card.
+ * “go down” and “goes down”. Each is about “it”, so each needs a card, except the one that gives a number to a group of cards: the
+ * compiler asks of the group itself what it needs, as for any group. The first few of a group are as many as “it” has of a number.
  */
 export function registerCardNumberPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
@@ -79,6 +111,8 @@ export function registerCardNumberPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('its {attribute} goes up by its {attribute}, up to its {attribute}', itsGoUpToCap, { needsCard: true, writes: 0 })
     .effect('its {attribute} go down by its {attribute}', itsGoDown, { needsCard: true, writes: 0 })
     .effect('its {attribute} goes down by its {attribute}', itsGoDown, { needsCard: true, writes: 0 })
+    .effect('{cardgroup} gain {int} {attribute}', groupGains, { writes: 2 })
+    .effect('up to its {attribute} of {cardgroup} gain {int} {attribute}, first card first', firstOfGroupGain, { needsCard: true, writes: 3 })
     .effect('it is {cardflag}', itIs(true), { needsCard: true, writes: 0 })
     .effect('it is not {cardflag}', itIs(false), { needsCard: true, writes: 0 })
     .condition('its {attribute} is at least its {attribute}', atLeast, { needsCard: true })

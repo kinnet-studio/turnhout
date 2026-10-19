@@ -521,6 +521,22 @@ export const COACH_GAME = CREW_GAME
     '      Every picked card is not tired.', '      The picked cards go to their crew, on the target card.',
     '  A player may stop.'].join('\n'));
 
+/** TURN_GAME where a player may gather 3 cards from the pile to their list, shuffling the done pile back into the pile when it runs out. */
+export const RESHUFFLE_GAME = TURN_GAME.replace('  A player may stop.', ['  A player may gather.', '    Then:',
+  '      Deal up to 3 cards from the pile to their list, shuffling the done pile into it when it runs out.', '  A player may stop.'].join('\n'));
+
+/**
+ * CREW_GAME where jobs gather cracks and cards drills: drilling a job gives each tired card on it a drill, and tutoring one gives a drill
+ * to as many of the cards on it that are not tired as it has cracks, first card first.
+ */
+export const DRILL_GAME = CREW_GAME
+  .replace('  Cards can be tired.', '  Cards can be tired.\n  Cards can have drills and cracks.')
+  .replace('  A player may stop.', [
+    '  A player may drill a card in their workshop.', '    Then:', '      The cards on it that are tired gain 1 drill.',
+    '  A player may tutor a card in their workshop.', '    Then:',
+    '      Up to its cracks of the cards on it that are not tired gain 1 drill, first card first.',
+    '  A player may stop.'].join('\n'));
+
 /** WORKED_GAME with a job's crew red: the red work of the cards on it, added up. */
 export const TOTALS_GAME = [WORKED_GAME, '', 'Crew red:', "  A card's crew red is the total red work of the cards on it."].join('\n');
 

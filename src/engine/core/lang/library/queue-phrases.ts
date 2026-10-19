@@ -7,6 +7,7 @@ import type { CardMatch, ConditionFn, EffectFn, ZoneRef } from '../types';
 import { BOX_ZONE, matchesCard, relocate, resolveZoneIds, toBottom, withoutHolder, zoneIdFor, zoneInfo } from '../zones';
 import { describeCard } from './example-phrases';
 import { deal } from './flow-phrases';
+import { shuffleOne } from './flow-phrases';
 import { describeZone, soleZone, thePickedCards } from './support';
 
 // Rows that keep their order and queues whose bottom card is the oldest: a zone's cards are in slot order, the first at the bottom.
@@ -54,6 +55,31 @@ export const dealUpTo: EffectFn = (env, args) => {
   }, env.state);
 };
 
+/**
+ * `dealUpTo`, one card at a time from the top, for a deck that may run dry: when a card is still owed, the deck is empty and the discard
+ * is not, every card of the discard goes to the deck, which is shuffled with the state's random numbers, and the dealing goes on. It
+ * ends at the number or when both are empty. The random numbers move only on a shuffle, so a deal that never runs dry leaves them alone,
+ * and the same game deals the same cards when it is played again from its log. A negative number is refused, as `deal` refuses it.
+ */
+const dealUpToShuffling: EffectFn = (env, args) => {
+  const [count, fromRef, toRef, discardRef] = args as [number, ZoneRef, ZoneRef, ZoneRef];
+  if (count < 0) return deal(env, args);
+  const deck = soleZone(fromRef, env);
+  const discard = soleZone(discardRef, env);
+  return resolveZoneIds(toRef, env).reduce((state, to) => {
+    for (let dealt = 0; dealt < count; dealt++) {
+      if (zoneCards(state, deck).length === 0) {
+        const spent = zoneCards(state, discard);
+        if (spent.length === 0) break;
+        state = shuffleOne(relocate(state, spent.map((card) => card.id), deck, env.game), deck);
+      }
+      const [top] = zoneCards(state, deck).slice(-1);
+      state = relocate(state, [top.id], to, env.game);
+    }
+    return state;
+  }, env.state);
+};
+
 /** `dealUpTo` as many cards as the press picked: a button that picks some cards of one zone deals the same number to the zone they go to. */
 const dealUpToAsManyAsPicked: EffectFn = (env, args) => dealUpTo(env, [thePickedCards(env).length, ...args]);
 
@@ -94,8 +120,8 @@ const goesIntoBottomFifth: EffectFn = (env, args) => {
 };
 
 /**
- * The bottom card of a zone, a shared zone that has a card, moving a named card, dealing up to a number or as many as were picked, a row's
- * left end, and the bottom fifth.
+ * The bottom card of a zone, a shared zone that has a card, moving a named card, dealing up to a number, with a discard shuffled back in
+ * or as many as were picked, a row's left end, and the bottom fifth.
  */
 export function registerQueuePhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
@@ -103,6 +129,7 @@ export function registerQueuePhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('move the bottom card of {zone} to {zone}', moveBottom)
     .effect('move {card} from {zone} to {zone}', moveNamed)
     .effect('deal up to {int} cards from {zone} to {zone}', dealUpTo)
+    .effect('deal up to {int} card(s) from {zone} to {zone}, shuffling {zone} into it when it runs out', dealUpToShuffling)
     .effect('deal up to as many cards as they picked from {zone} to {zone}', dealUpToAsManyAsPicked, { needsCards: true })
     .effect('deal 1 card from {zone} to {zone}', dealOne)
     .effect('move {zone} to the left end of {zone}', moveToLeftEnd)

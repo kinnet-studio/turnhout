@@ -7,6 +7,9 @@ import { misnamedParam } from '../refs';
 import { COUNTER_GAME, CREW_GAME, fixtureCard, fixtureEnv, fixtureState, runPhrase, vocabFor } from '../testing';
 import type { PhraseEnv, PhraseKind, Subject } from '../types';
 import { relocate } from '../zones';
+import { BOX_ZONE } from '../zones';
+import { RESHUFFLE_GAME } from '../testing';
+import { shuffleWithRng } from '../../rng';
 import { createDefaultLibrary } from './index';
 
 const lib = createDefaultLibrary();
@@ -356,6 +359,131 @@ describe('the cards a press picked, and the left end of a row', () => {
       expect(ids(state, 'hall')).toEqual([s1, s2, h1, h2]);
       expect(ids(state, 'scrap')).toEqual([h4, h3]);
       expect(ids(state, 'stash-p0')).toEqual([]);
+    });
+  });
+});
+
+describe('a deal that shuffles a discard back in', () => {
+  const reshuffling = compileGame(RESHUFFLE_GAME, lib);
+  const dealGame = () => reshuffling.game!;
+  const DEAL = 'deal up to 3 cards from the pile to their list, shuffling the done pile into it when it runs out';
+
+  /** The 12 cards of the game: `pile` in the pile, then `done` in the done pile (face up there), the rest boxed. Ids c0…c11, slots from 0. */
+  const arranged = (pile: number, done: number): GameState => fixtureState(Array.from({ length: 12 }, (_, i) => {
+    if (i < pile) return fixtureCard(`c${i}`, 'pile', { name: 'Sweep' }, { slot: i });
+    if (i < pile + done) return fixtureCard(`c${i}`, 'done-pile', { name: 'Sweep' }, { slot: i - pile, faceUp: true });
+    return fixtureCard(`c${i}`, BOX_ZONE, { name: 'Sweep' });
+  }));
+  /** A line about p0 on `state`. */
+  const envFor = (state: GameState): PhraseEnv => fixtureEnv(state, { game: dealGame(), seats, subject: { player: 'p0', space: null, card: null } });
+  const dealing = (state: GameState, text = DEAL) => runPhrase<GameState>(lib, 'effect', text, envFor(state));
+
+  it('compiles with the game it is tried on', () => {
+    expect(reshuffling.diagnostics).toEqual([]);
+  });
+
+  it('shuffles the done pile into the pile when the pile runs out, and goes on dealing', () => {
+    const before = arranged(1, 4);
+    const next = dealing(before);
+    // The done pile's cards go to the pile in their slot order, and the pile is shuffled with the state's random numbers.
+    const { items, rng } = shuffleWithRng(zoneCards(before, 'done-pile'), before.rng);
+    const shuffled = items.map((c) => c.id);
+    expect(ids(next, 'list-p0')).toEqual(['c0', shuffled[3], shuffled[2]]);
+    expect(ids(next, 'pile')).toEqual([shuffled[0], shuffled[1]]);
+    expect(ids(next, 'done-pile')).toEqual([]);
+    expect(next.rng).toEqual(rng);
+    expect(next.rng).not.toEqual(before.rng);
+  });
+  it('turns the cards that go back face down, as the pile shows them', () => {
+    const pile = zoneCards(dealing(arranged(1, 4)), 'pile');
+    expect(pile).toHaveLength(2);
+    expect(pile.every((c) => !c.faceUp)).toBe(true);
+  });
+  it('deals the top card first, so the first dealt is at the bottom of the list', () => {
+    const next = dealing(arranged(5, 3));
+    expect(ids(next, 'list-p0')).toEqual(['c4', 'c3', 'c2']);
+    expect(zoneCards(next, 'list-p0').map((c) => c.slot)).toEqual([0, 1, 2]);
+  });
+
+  describe('Review Focus: the random numbers move only when it shuffles', () => {
+    it('leaves them alone when the pile has enough', () => {
+      const before = arranged(5, 3);
+      const next = dealing(before);
+      expect([ids(next, 'list-p0').length, ids(next, 'pile').length, ids(next, 'done-pile').length]).toEqual([3, 2, 3]);
+      expect(next.rng).toEqual(before.rng);
+    });
+    it('leaves them alone when the pile runs out exactly at the number', () => {
+      const before = arranged(3, 2);
+      const next = dealing(before);
+      expect([ids(next, 'list-p0').length, ids(next, 'pile').length, ids(next, 'done-pile').length]).toEqual([3, 0, 2]);
+      expect(next.rng).toEqual(before.rng);
+    });
+    it('leaves them alone when nothing is owed, though the pile is empty and the done pile is not', () => {
+      const before = arranged(0, 2);
+      const next = dealing(before, 'deal up to 0 cards from the pile to their list, shuffling the done pile into it when it runs out');
+      expect(next).toEqual(before);
+    });
+  });
+
+  describe('Review Focus: when there is little to deal', () => {
+    it('moves nothing, and says nothing, when both are empty', () => {
+      const before = arranged(0, 0);
+      expect(dealing(before)).toEqual(before);
+    });
+    it('deals what the done pile holds when the pile is empty', () => {
+      const before = arranged(0, 2);
+      const next = dealing(before);
+      expect(ids(next, 'list-p0')).toHaveLength(2);
+      expect([ids(next, 'pile'), ids(next, 'done-pile')]).toEqual([[], []]);
+      expect(next.rng).not.toEqual(before.rng);
+    });
+  });
+
+  it('refuses a negative number as deal does, whatever the piles hold', () => {
+    const negative = () => dealing(arranged(2, 2), 'deal up to -1 cards from the pile to their list, shuffling the done pile into it when it runs out');
+    expect(negative).toThrow(new RuleError('A negative number of cards cannot be dealt.'));
+  });
+  it('reads 1 card as well as 3 cards', () => {
+    const next = dealing(arranged(0, 2), 'deal up to 1 card from the pile to their list, shuffling the done pile into it when it runs out');
+    expect(ids(next, 'list-p0')).toHaveLength(1);
+    expect(ids(next, 'pile')).toHaveLength(1);
+  });
+  it('deals to each player in turn, shuffling when the pile runs out between them', () => {
+    const next = dealing(arranged(4, 2), 'deal up to 3 cards from the pile to each list, shuffling the done pile into it when it runs out');
+    expect([ids(next, 'list-p0').length, ids(next, 'list-p1').length, ids(next, 'pile').length, ids(next, 'done-pile').length]).toEqual([3, 3, 0, 0]);
+    // p0 had the pile's top three before it ran out; p1 had the one left, and then two of the done pile's cards.
+    expect(ids(next, 'list-p0')).toEqual(['c3', 'c2', 'c1']);
+    expect(ids(next, 'list-p1')[0]).toBe('c0');
+  });
+  it('is not the phrase that deals without shuffling', () => {
+    const found = lib.match('effect', 'deal up to 3 cards from the pile to their list', vocabFor(dealGame()));
+    expect(found).toMatchObject({ status: 'ok', pattern: 'deal up to {int} cards from {zone} to {zone}' });
+    const shuffling = lib.match('effect', DEAL, vocabFor(dealGame()));
+    expect(shuffling).toMatchObject({ status: 'ok', pattern: 'deal up to {int} card(s) from {zone} to {zone}, shuffling {zone} into it when it runs out' });
+  });
+
+  describe('in the game', () => {
+    const { game: g } = reshuffling;
+    // p0 to move, so Setup is skipped; one card stays in the pile, four go to the done pile and the rest are boxed.
+    const start = (): GameState => {
+      const dealt = { ...initialState(g!, 1), turn: { current: 'p0', phase: 'working' } };
+      const all = dealt.cards.map((c) => c.id);
+      return relocate(relocate(dealt, all.slice(1, 5), 'done-pile', g!), all.slice(5), BOX_ZONE, g!);
+    };
+
+    it('replays from its log to the same state, shuffle and all, and undoes to the state before', () => {
+      const before = start();
+      const { engine } = createEngine(g!, lib, 2, before);
+      const built = engine.getState();
+      expect(engine.dispatch({ type: 'gather', by: 'p0' })).toMatchObject({ ok: true });
+      const after = engine.getState();
+      expect([ids(after, 'list-p0').length, ids(after, 'pile').length, ids(after, 'done-pile').length]).toEqual([3, 2, 0]);
+      expect(after.rng).not.toEqual(built.rng);
+      const fresh = createEngine(g!, lib, 2, before).engine;
+      fresh.loadLog([...engine.getLog()]);
+      expect(fresh.getState()).toEqual(after);
+      engine.undo();
+      expect(engine.getState()).toEqual(built);
     });
   });
 });
