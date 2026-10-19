@@ -16,7 +16,7 @@ import { BUTTON_ROW } from './board-controls';
 import { cardDetail } from './card-detail';
 import { Playtest } from './playtest';
 import { unreachableZones } from '@/engine/core/lang/testing';
-import { CARD_HEIGHT, TABLE_BOUNDS, type CardState } from '@/engine/core/scene';
+import { CARD_HEIGHT, type CardState } from '@/engine/core/scene';
 import type { ZoneDef } from '@/engine/core/table-def';
 import { placeZone } from '@/engine/core/zone-geometry';
 import type { GameState } from '@/engine/core/game-state';
@@ -104,7 +104,7 @@ describe('Playtest of a game too big for one table', () => {
   it("lists every player's tableau", () => {
     mount();
     for (const seat of seatsOf(3)) {
-      expect(lineOf(seat)).toBe(`${seat} 7 capital, 3 actions, 0 market share · bench 3 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0${seat === S ? ' · start player' : ''}`);
+      expect(lineOf(seat)).toBe(`${seat} 7 capital, 3 actions, 0 market share · bench 3 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0 · strategy hand 0 · brainstorm 0${seat === S ? ' · start player' : ''}`);
     }
   });
 
@@ -240,7 +240,7 @@ describe('a round played through the page', () => {
   it('recruits from every source, drafts, researches, discards and passes the turn', () => {
     mount();
     for (let i = 0; i < 3; i++) press('Recruit a junior software dev');
-    expect(lineOf(S)).toBe(`${S} 1 capital, 0 actions, 0 market share · bench 6 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0 · start player`);
+    expect(lineOf(S)).toBe(`${S} 1 capital, 0 actions, 0 market share · bench 6 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0 · strategy hand 0 · brainstorm 0 · start player`);
     expect(status()).toBe(`seat: ${S} — Your turn — ${hint('bench cleanup')}`);
 
     press('Discard a card in your bench');
@@ -307,9 +307,11 @@ describe('a round played through the page', () => {
 });
 
 describe('the canvas', () => {
-  it('is 1200 × 900 for a game too big for one table, so the world is drawn at three quarters', () => {
+  it('is 1200 × 1038 for a game too big for one table, its world grown 1384 tall, so the world is drawn at three quarters', () => {
     mount();
-    expect(canvasMadeWith).toEqual({ opts: { showEmptyZones: true, size: { width: 1200, height: 900 } } });
+    expect(canvasMadeWith).toEqual({
+      opts: { showEmptyZones: true, size: { width: 1200, height: 1038 }, world: { min: { x: -800, y: -692 }, max: { x: 800, y: 692 } } },
+    });
   });
 
   it('is the size Pixi starts with for a game that fits, as before', () => {
@@ -353,26 +355,11 @@ const fullBox = (def: ZoneDef) => placeZone(def, Array.from({ length: def.layout
 type FullBox = ReturnType<typeof fullBox>;
 const boxesOverlap = (a: FullBox, b: FullBox) =>
   Math.abs(a.x - b.x) < (a.width + b.width) / 2 && Math.abs(a.y - b.y) < (a.height + b.height) / 2;
-const inWorld = (b: FullBox) =>
-  b.x - b.width / 2 >= TABLE_BOUNDS.min.x && b.x + b.width / 2 <= TABLE_BOUNDS.max.x &&
-  b.y - b.height / 2 >= TABLE_BOUNDS.min.y && b.y + b.height / 2 <= TABLE_BOUNDS.max.y;
 /**
- * What keeps a fitted table from fitting: a slot outside the world, two slots that overlap, or a board row (a public row of the
- * seat's) less than a card tall. A free zone has no slot of its own.
+ * What keeps a fitted table from fitting in the world given, which `fittedBounds` grows taller than TABLE_BOUNDS for a band too short:
+ * a slot outside that world, two slots that overlap, or a board row (a public row of the seat's) less than a card tall. A free zone has
+ * no slot of its own.
  */
-const misfits = (defs: ZoneDef[]): string[] => {
-  const slotted = defs.filter((d) => d.layout !== 'free').map((d) => [d.id, fullBox(d)] as const);
-  const problems = slotted.filter(([, b]) => !inWorld(b)).map(([id]) => `${id} leaves the world`);
-  slotted.forEach(([a, ab], i) => {
-    for (const [b, bb] of slotted.slice(i + 1)) if (boxesOverlap(ab, bb)) problems.push(`${a} overlaps ${b}`);
-  });
-  for (const d of defs) {
-    const boardRow = d.owner !== 'shared' && d.visibility === 'public' && d.layout === 'row';
-    if (boardRow && (d.bounds?.height ?? 0) < CARD_HEIGHT) problems.push(`${d.id} is less than a card tall`);
-  }
-  return problems;
-};
-/** `misfits` read against the world given, which `fittedBounds` grows taller than TABLE_BOUNDS for a band too short. */
 const misfitsIn = (defs: ZoneDef[], bounds: ReturnType<typeof fittedBounds>): string[] => {
   const within = (b: FullBox) =>
     b.x - b.width / 2 >= bounds.min.x && b.x + b.width / 2 <= bounds.max.x &&
@@ -394,23 +381,25 @@ const fittedZone = (seat: string, zone: string) => fittedLayout(game.zones, seat
 describe("the Board's place on the table", () => {
   const get = (zone: string) => fittedZone('p1', zone);
 
-  it('keeps the private rows in the strip along the bottom, the scouting on a second line', () => {
-    expect(get('bench').transform).toEqual({ x: -420, y: 510 });
-    expect(get('backlog').transform).toEqual({ x: 0, y: 510 });
-    expect(get('research').transform).toEqual({ x: 420, y: 510 });
-    expect(get('scouting').transform).toEqual({ x: 0, y: 330 });
+  it('keeps the private rows in the strip along the bottom, the scouting, the strategy hand and the brainstorm on a second line', () => {
+    expect(get('bench').transform).toEqual({ x: -420, y: 602 });
+    expect(get('backlog').transform).toEqual({ x: 0, y: 602 });
+    expect(get('research').transform).toEqual({ x: 420, y: 602 });
+    expect(get('scouting').transform).toEqual({ x: -420, y: 422 });
+    expect(get('strategy-hand').transform).toEqual({ x: 0, y: 422 });
+    expect(get('brainstorm').transform).toEqual({ x: 420, y: 422 });
   });
 
-  it('puts the Board in one line between the shared lines and the strip, each slot 416 tall', () => {
-    expect(get('development').transform).toEqual({ x: -420, y: -126 });
-    expect(get('operations').transform).toEqual({ x: 0, y: -126 });
-    expect(get('ops-team').transform).toEqual({ x: 420, y: -126 });
-    for (const zone of ['development', 'operations', 'ops-team']) expect(get(zone).bounds?.height, zone).toBe(416);
+  it('puts the Board in one line between the shared lines and the strip, each slot 420 tall', () => {
+    expect(get('development').transform).toEqual({ x: -420, y: -38 });
+    expect(get('operations').transform).toEqual({ x: 0, y: -38 });
+    expect(get('ops-team').transform).toEqual({ x: 420, y: -38 });
+    for (const zone of ['development', 'operations', 'ops-team']) expect(get(zone).bounds?.height, zone).toBe(420);
   });
 
   it('hangs the development team under the development, as a free zone last in the list', () => {
-    // Where the first card hanging under the development's middle card goes: -126 + 140 + 36.
-    expect(get('development-team')).toMatchObject({ layout: 'free', transform: { x: -420, y: 50 } });
+    // Where the first card hanging under the development's middle card goes: -38 + 140 + 36.
+    expect(get('development-team')).toMatchObject({ layout: 'free', transform: { x: -420, y: 138 } });
     expect(fittedLayout(game.zones, 'p1').at(-1)?.id).toBe('development-team-p1');
   });
 
@@ -418,7 +407,7 @@ describe("the Board's place on the table", () => {
   // cover 2 to 5 seats.
   it.each(seatsOf(5))('keeps every slot inside the world, apart and at least a card tall, and every zone reachable, for %s', (viewer) => {
     const placed = fittedLayout(game.zones, viewer);
-    expect(misfits(placed)).toEqual([]);
+    expect(misfitsIn(placed, fittedBounds(game.zones))).toEqual([]);
     // The development's middle is where the first card hanging under its middle card goes, so a drop there lands in the
     // development team, as one on a card hanging there would; the development's cards, at its top, are above it.
     expect(unreachableZones(placed, 7)).toEqual([`development-${viewer}: centre goes to development-team-${viewer}`]);
@@ -659,7 +648,9 @@ describe('picking cards by clicking them', () => {
     click(dating);
     expect(screen.getByText('they have at least the total cost of the picked cards in capital')).toBeTruthy();
     expect([ring(first.id), ring(second.id)]).toEqual(['chosen', 'chosen']);
-    expect([first, second].map((card) => pressedIn(parseTextFaceKey(card.faceKey)!.name))).toEqual(['true', 'true']);
+    const picks = within(picker()).getAllByRole('button', { name: /^Pick / });
+    expect(picks.map((button) => [button.getAttribute('aria-label'), button.getAttribute('aria-pressed')]))
+      .toEqual([first, second].map((card) => [`Pick ${parseTextFaceKey(card.faceKey)!.name}`, 'true']));
     expect(cardsIn(`scouting-${S}`)).toHaveLength(2);
   });
 

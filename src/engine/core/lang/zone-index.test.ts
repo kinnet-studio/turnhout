@@ -102,7 +102,7 @@ describe('the zone index', () => {
     expect(cardById(state, first.id)).toBe(first);
     expect(cardById(state, first.id)).toBe(gameCardById(state, first.id));
     const slotted: GameState = {
-      ...run[0], cards: [{ ...first, zoneId: 'z', slot: 2 }, { ...second, zoneId: 'z', slot: 0 }, { ...third, zoneId: 'z' }],
+      ...run[0], cards: [{ ...first, zoneId: 'z', slot: 2 }, { ...second, zoneId: 'z', slot: 0 }, { ...third, zoneId: 'z', slot: undefined }],
     };
     expect(zoneCards(slotted, 'z').map((card) => card.id)).toEqual(gameZoneCards(slotted, 'z').map((card) => card.id));
     expect(zoneCards(slotted, 'z').map((card) => card.id)).toEqual([second.id, first.id, third.id]);

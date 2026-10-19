@@ -102,6 +102,26 @@ Cards:
     | DAO Nation | Tier 3 |  | Crypto | Social | FinTech | 20 | 0 | 0 | 28 | 2 | 0 | 1 |
     | Asteroid Mining | Tier 3 |  | Robotics | Cloud | Deep Tech | 8 | 18 | 12 | 18 | 0 | 3 | 1 |
     | Planetary Wi-Fi | Tier 3 |  | Cloud | IoT | Infra | 6 | 16 | 8 | 16 | 0 | 3 | 1 |
+  A deck called strategy cards, starting in the strategy deck:
+    | name                   | kind      | price | copies |
+    | Full Stack Bootcamp    | Training  | 3     | 2      |
+    | QA Certification       | Training  | 3     | 2      |
+    | Sales Seminar          | Training  | 2     | 2      |
+    | Leadership Masterclass | Training  | 3     | 1      |
+    | Agile Workshop         | Training  | 3     | 1      |
+    | Headhunter             | Warfare   | 0     | 4      |
+    | Corporate Raider       | Warfare   | 2     | 2      |
+    | Hit Piece              | Warfare   | 3     | 2      |
+    | Non-Compete Suit       | Warfare   | 4     | 2      |
+    | Workaholic             | Attribute | 2     | 1      |
+    | Clean Coder            | Attribute | 3     | 1      |
+    | Visionary              | Attribute | 3     | 1      |
+    | Toxic Personality      | Attribute | 3     | 1      |
+    | Burnout                | Attribute | 0     | 1      |
+    | Flight Risk            | Attribute | 2     | 1      |
+    | TechCrunch Feature     | Utility   | 5     | 2      |
+    | Design Sprint          | Utility   | 0     | 2      |
+    | Cease & Desist         | Utility   | 0     | 2      |
   Cards can be onboarding.
   Cards can be red mode.
   Cards can be qa mode.
@@ -127,6 +147,8 @@ Table:
   The growth market is a row in the center that everyone can see.
   The open idea pool is a row in the center that everyone can see.
   The crash pile is a pile in the center that everyone can see.
+  The strategy deck is a pile in the center that no one can see.
+  The strategy discard is a pile in the center that everyone can see.
   The box is a pile in the center that no one can see.
   Each player has a bench row that only they can see.
   Each player has a backlog row that only they can see.
@@ -136,6 +158,8 @@ Table:
   Each player has a development team row that everyone can see, where every card is on a card in their development.
   Each player has an ops team row that everyone can see, where some cards are on cards in their operations.
   Each player has a scouting row that only they can see.
+  Each player has a strategy hand row that only they can see.
+  Each player has a brainstorm row that only they can see.
 
 Blue output:
   A software card's blue output is its output.
@@ -441,6 +465,7 @@ Bugged products:
 
 Setup:
   Shuffle the talent deck.
+  Shuffle the strategy deck.
   Shuffle the seed deck.
   Shuffle the growth deck.
   The market crash goes into the bottom fifth of the growth deck.
@@ -788,6 +813,22 @@ Phase: actions
     Then:
       Deal up to 3 cards from the growth deck to their research.
       The research phase starts with them.
+  A player may brainstorm.
+    It costs 1 action.
+    Only if one of:
+      The strategy deck is not empty.
+      The strategy discard is not empty.
+    Then:
+      If some card in their development team and their ops team is managing, deal up to 3 cards from the strategy deck to their brainstorm, shuffling the strategy discard into it when it runs out.
+      If no card in their development team and their ops team is managing, deal up to 2 cards from the strategy deck to their brainstorm, shuffling the strategy discard into it when it runs out.
+      The brainstorm phase starts with them.
+  A player may brainstorm after flushing some cards from their strategy hand.
+    It costs 1 action.
+    Then:
+      Move the picked cards to the strategy discard.
+      If some card in their development team and their ops team is managing, deal up to 3 cards from the strategy deck to their brainstorm, shuffling the strategy discard into it when it runs out.
+      If no card in their development team and their ops team is managing, deal up to 2 cards from the strategy deck to their brainstorm, shuffling the strategy discard into it when it runs out.
+      The brainstorm phase starts with them.
   A player may launch a card from their development to their operations.
     It costs 1 action.
     Only if it is feature complete.
@@ -922,6 +963,17 @@ Phase: graduation
     Their mentoring go back to 0.
     Go back to the interrupted turn.
 
+Phase: brainstorm
+  Hint: Keep one of the Strategy cards you drew. The rest go to the strategy discard.
+  A player may keep a card in their brainstorm.
+    Then:
+      Move it to their strategy hand.
+      Move their brainstorm to the strategy discard.
+      Go back to the interrupted turn.
+  When their brainstorm has 1 card:
+    Move their brainstorm to their strategy hand.
+    Go back to the interrupted turn.
+
 Phase: engine
   Hint: Your ops team's QA can't fix every Bug on your products. Clean one Bug at a time from the products you choose.
   When this phase starts:
@@ -963,7 +1015,15 @@ Phase: bench cleanup
     Only if their bench has more than 5 cards.
     Then:
       Move it to the open job market.
-  When their bench has fewer than 6 cards, go to backlog cleanup.
+  When their bench has fewer than 6 cards, go to strategy cleanup.
+
+Phase: strategy cleanup
+  Hint: Your strategy hand holds 3 cards. Discard the rest to the strategy discard.
+  A player may discard a card in their strategy hand.
+    Only if their strategy hand has more than 3 cards.
+    Then:
+      Move it to the strategy discard.
+  When their strategy hand has fewer than 4 cards, go to backlog cleanup.
 
 Phase: backlog cleanup
   Hint: Your backlog holds 3 cards. Discard the rest to the open idea pool.
@@ -3669,3 +3729,96 @@ Example: an onboarding teammate is no worker: a Junior PM adds no Synergy for a 
   Then it is accepted
   When p0 ends their actions
   Then the Dating App in p0's development has 2 blue cubes
+
+Example: the Strategy deck holds all 30 cards, and no player starts with one (section 4, section 20, ruling 25)
+  Given the game is set up
+  Then the strategy deck has 30 cards
+  And the strategy discard is empty
+  And p0's strategy hand is empty
+  And p1's strategy hand is empty
+
+Example: Brainstorm draws 2 Strategy cards for 1 action and keeps 1, and the other goes to the strategy discard (section 6, section 15)
+  Given the strategy deck has a Headhunter, a Burnout and a Hit Piece
+  When p0 brainstorms
+  Then it is accepted
+  And the phase is brainstorm
+  And p0 has 2 actions
+  And p0's brainstorm has a Hit Piece and a Burnout
+  When p0 keeps the Hit Piece
+  Then the phase is actions
+  And p0's strategy hand has a Hit Piece
+  And the strategy discard has a Burnout
+  And the strategy deck has a Headhunter
+  And p0's brainstorm is empty
+
+Example: with a working PM on the Board, even in the ops team, Brainstorm draws 3 and keeps 1 (section 6, ruling 25)
+  Given the phase is actions
+  And p0's operations has a To-Do List
+  And p0's ops team has a Junior PM
+  And the strategy deck has a Headhunter, a Burnout, a Hit Piece and a Visionary
+  When p0 brainstorms
+  Then p0's brainstorm has a Visionary, a Hit Piece and a Burnout
+  When p0 keeps the Visionary
+  Then the strategy discard has a Hit Piece and a Burnout
+  And the strategy deck has a Headhunter
+  When p0 brainstorms after flushing the Visionary
+  Then p0's brainstorm has 3 cards
+  And the strategy deck has 1 card
+  And the strategy discard is empty
+
+Example: a PM onboarding this turn gives Brainstorm no third card (section 6, ruling 8)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And p0's operations has a To-Do List
+  And p0's ops team has a Junior PM
+  And the strategy deck has a Headhunter, a Burnout and a Hit Piece
+  When p0 reassigns the Junior PM to the Dating App
+  And p0 brainstorms
+  Then p0's brainstorm has a Hit Piece and a Burnout
+
+Example: Brainstorm on an empty Strategy deck shuffles the discard in to form a new deck (section 15)
+  Given the strategy deck is empty
+  And the strategy discard has a Headhunter, a Burnout and a Hit Piece
+  When p0 brainstorms
+  Then p0's brainstorm has 2 cards
+  And the strategy deck has 1 card
+  And the strategy discard is empty
+
+Example: Brainstorm may flush Strategy cards first; they go to the discard before the draw, so a reshuffle can bring them back (section 6, section 15)
+  Given p0's strategy hand has a Hit Piece and a Burnout
+  And the strategy deck is empty
+  When p0 brainstorms after flushing the Hit Piece and the Burnout
+  Then it is accepted
+  And p0 has 2 actions
+  And p0's strategy hand is empty
+  And p0's brainstorm has a Hit Piece and a Burnout
+  When p0 keeps the Burnout
+  Then p0's strategy hand has a Burnout
+  And the strategy discard has a Hit Piece
+
+Example: with the Strategy deck and its discard both empty, Brainstorm is refused and spends nothing (section 6, section 15)
+  Given the strategy deck is empty
+  When p0 brainstorms
+  Then it is rejected because "the strategy deck is not empty or the strategy discard is not empty"
+  And p0 has 3 actions
+
+Example: a Brainstorm that draws a single card keeps it at once (section 6, the slice's R10)
+  Given the strategy deck has a Hit Piece
+  When p0 brainstorms
+  Then the phase is actions
+  And p0's strategy hand has a Hit Piece
+  And p0 has 2 actions
+
+Example: the Strategy Hand holds 3 at Cleanup, discarded after the Bench and before the Backlog (section 5, ruling 10)
+  Given the phase is bench cleanup
+  And p0's bench has a QA Engineer, a QA Engineer, a QA Engineer, a Sales Rep, a Sales Rep and a Sales Rep
+  And p0's strategy hand has a Hit Piece, a Burnout, a Headhunter and a Visionary
+  And p0's backlog has a To-Do List, a Smart Lock, a Dating App and a Mobile Wallet
+  When p0 discards a Sales Rep
+  Then the phase is strategy cleanup
+  When p0 discards the Burnout
+  Then the phase is backlog cleanup
+  And the strategy discard has a Burnout
+  And p0's strategy hand has 3 cards
+  When p0 discards the Smart Lock
+  Then it is p1's turn
