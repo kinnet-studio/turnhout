@@ -24,14 +24,14 @@ Cards:
     | Senior PM           | 8    |          | 0      | 3      | Specialist       | Agile Synergy  | 1      |
     | Growth Hacker       | 5    |          | 0      | 2      | Specialist       | Viral Loop     | 1      |
   A stack called junior software devs that never runs out:
-    | name                | cost | skill    | output | salary |
-    | Junior Software Dev | 2    | software | 1      | 0      |
+    | name                | cost | skill    | output | salary | role   |
+    | Junior Software Dev | 2    | software | 1      | 0      | Junior |
   A stack called junior hardware engineers that never runs out:
-    | name                | cost | skill    | output | salary |
-    | Junior Hardware Eng | 2    | hardware | 1      | 0      |
+    | name                | cost | skill    | output | salary | role   |
+    | Junior Hardware Eng | 2    | hardware | 1      | 0      | Junior |
   A stack called junior qa testers that never runs out:
-    | name             | cost | skill | output | salary |
-    | Junior QA Tester | 2    | qa    | 1      | 0      |
+    | name             | cost | skill | output | salary | role   |
+    | Junior QA Tester | 2    | qa    | 1      | 0      | Junior |
   A deck called seed products, starting in the seed deck:
     | name | tier | tag | requires | also requires | sector | blue cost | red cost | rev | val | blue maint | red maint | copies |
     | To-Do List | Tier 1 | App |  |  | Concept | 4 | 0 | 1 | 1 | 1 | 0 | 1 |
@@ -104,6 +104,11 @@ Cards:
   Cards can be onboarding.
   Cards can be red mode.
   Cards can be qa mode.
+  Cards can be blue mode.
+  Cards can have blue xp tokens, red xp tokens, green xp tokens and training xp.
+  Cards can have blue skill tokens, red skill tokens and green skill tokens.
+  Cards can have pending blue, pending red and pending green.
+  Cards can be badged.
   Cards can be offline.
   Cards can have blue cubes, red cubes, new blue cubes and new red cubes.
   Cards can have cut blue cubes and cut red cubes.
@@ -132,19 +137,39 @@ Table:
 Blue output:
   A software card's blue output is its output.
   A flex card's blue output is its output.
+  A blue mode card's blue output is its output.
+  A card's blue output goes up by its working blue xp.
   A red mode card's blue output is 0.
+  A qa mode card's blue output is 0.
   An onboarding card's blue output is 0.
 
 Red output:
   A hardware card's red output is its output.
   A red mode card's red output is its output.
+  A card's red output goes up by its working red xp.
   A qa mode card's red output is 0.
+  A blue mode card's red output is 0.
   An onboarding card's red output is 0.
 
 QA output:
   A qa card's qa output is its output.
   A qa mode card's qa output is 1.
+  A card's qa output goes up by its working green xp.
+  A red mode card's qa output is 0.
+  A blue mode card's qa output is 0.
   An onboarding card's qa output is 0.
+
+Working blue xp:
+  A software card's working blue xp is its blue xp tokens.
+  A blue mode card's working blue xp is its blue xp tokens.
+
+Working red xp:
+  A hardware card's working red xp is its red xp tokens.
+  A red mode card's working red xp is its red xp tokens.
+
+Working green xp:
+  A qa card's working green xp is its green xp tokens.
+  A qa mode card's working green xp is its green xp tokens.
 
 Blue team output:
   A card's blue team output is the total blue output of the cards on it.
@@ -210,13 +235,28 @@ Efficient in ops:
   Only if it is an Efficient card.
   Only if it is in an ops team.
 
+XP:
+  A Junior card's xp is its blue xp tokens.
+  A card's xp goes up by its red xp tokens.
+  A card's xp goes up by its green xp tokens.
+
+Skills:
+  A Junior card's skills is its blue skill tokens.
+  A card's skills goes up by its red skill tokens.
+  A card's skills goes up by its green skill tokens.
+
+Experienced:
+  Only if it is a card whose xp is more than 1.
+
 Salary:
   An efficient in ops card's salary is 1.
+  An experienced card's salary is 1.
 
 Declarable:
   Only if one of:
     It is a flex card.
     It is a QA Skill card.
+    Its skills are more than 0.
 
 Rev:
   A card's rev goes up by the total rev bonus of the cards on it.
@@ -320,39 +360,71 @@ In every phase:
     It is not red mode.
   When a card in the open job market is qa mode:
     It is not qa mode.
+  When a card in a bench is blue mode:
+    It is not blue mode.
+  When a card in the open job market is blue mode:
+    It is not blue mode.
   When a Spaghetti Code card joins a card in a development:
     The card it joins gains 1 bug.
 
 Phase: modes
-  Hint: Choose what each flex Senior and the Fixer work on this turn: Blue or Red, or Bugs for the Fixer. Each keeps its mode until you change it.
+  Hint: Choose what each flex Senior, the Fixer and each Junior with a Skill token work on this turn: Blue, Red or QA. Each keeps its mode until you change it.
   A player may declare a card in their development team.
     Only if it is declarable.
     Then:
       They choose one:
         Blue:
-          Only if it is a flex card.
+          Only if one of:
+            It is a flex card.
+            It is a software card.
+            Its blue skill tokens are more than 0.
           It is not red mode.
+          It is not qa mode.
+          If its blue skill tokens are more than 0, it is blue mode.
         Red:
+          Only if one of:
+            It is a flex card.
+            It is a hardware card.
+            Its red skill tokens are more than 0.
           It is red mode.
           It is not qa mode.
+          It is not blue mode.
         QA:
-          Only if it is a QA Skill card.
+          Only if one of:
+            It is a QA Skill card.
+            It is a qa card.
+            Its green skill tokens are more than 0.
           It is qa mode.
           It is not red mode.
+          It is not blue mode.
   A player may declare a card in their ops team.
     Only if it is declarable.
     Then:
       They choose one:
         Blue:
-          Only if it is a flex card.
+          Only if one of:
+            It is a flex card.
+            It is a software card.
+            Its blue skill tokens are more than 0.
           It is not red mode.
+          It is not qa mode.
+          If its blue skill tokens are more than 0, it is blue mode.
         Red:
+          Only if one of:
+            It is a flex card.
+            It is a hardware card.
+            Its red skill tokens are more than 0.
           It is red mode.
           It is not qa mode.
+          It is not blue mode.
         QA:
-          Only if it is a QA Skill card.
+          Only if one of:
+            It is a QA Skill card.
+            It is a qa card.
+            Its green skill tokens are more than 0.
           It is qa mode.
           It is not red mode.
+          It is not blue mode.
   A player may confirm their modes.
     Then:
       Go to ops check.
@@ -2577,3 +2649,200 @@ Example: at the final check a player switches off only a product that is on, and
   Then the game is over
   And the Neobank in p0's operations is offline
   And p0 scores 4
+
+Example: a Junior Software Dev with 2 Blue XP makes 3 Blue, and from 2 XP its salary is $1 (section 3, section 11)
+  Given p1's development has a Dating App
+  And the Dating App in p1's development has a Junior Software Dev on it
+  And the Junior Software Dev in p1's development team has 2 blue xp tokens
+  And the turn passes to the left
+  Then it is p1's turn
+  And the phase is income
+  When p1 pays salaries
+  Then p1 has 6 capital
+  When p1 ends their actions
+  Then the Dating App in p1's development has 3 blue cubes
+
+Example: XP adds to a Junior's output only in its own colour, a Junior with 1 XP is paid nothing, and XP of every colour counts toward the $1 (section 3, section 11)
+  Given p1's development has a Smart Lock
+  And the Smart Lock in p1's development has 3 bugs
+  And the Smart Lock in p1's development has a Junior Hardware Eng and a Junior QA Tester on it
+  And the Junior Hardware Eng in p1's development team has 1 red xp token
+  And the Junior QA Tester in p1's development team has 1 green xp token
+  And the Junior QA Tester in p1's development team has 1 red xp token
+  And the Junior QA Tester in p1's development team has 1 red skill token
+  And the turn passes to the left
+  Then the phase is modes
+  When p1 confirms their modes
+  Then the phase is income
+  When p1 pays salaries
+  Then p1 has 6 capital
+  When p1 ends their actions
+  Then the Smart Lock in p1's development has 2 red cubes
+  And the Smart Lock in p1's development has 1 bug
+
+Example: a Junior Software Dev with 2 Blue XP and a Red Skill token declared Red makes 1 Red, its Blue XP idle (section 11, the slice's R11)
+  Given p1's development has a Smart Lock
+  And the Smart Lock in p1's development has a Junior Software Dev on it
+  And the Junior Software Dev in p1's development team has 2 blue xp tokens
+  And the Junior Software Dev in p1's development team has 1 red skill token
+  And the turn passes to the left
+  Then the phase is modes
+  When p1 declares the Junior Software Dev, choosing red
+  And p1 confirms their modes
+  Then the phase is income
+  When p1 pays salaries
+  And p1 ends their actions
+  Then the Smart Lock in p1's development has 1 red cube
+  And the Smart Lock in p1's development has 0 blue cubes
+  And p1 has 6 capital
+
+Example: a Junior Hardware Eng with a Blue Skill token declared Blue makes 1 Blue, its Red XP idle (section 11)
+  Given p1's development has a Smart Lock
+  And the Smart Lock in p1's development has a Junior Hardware Eng on it
+  And the Junior Hardware Eng in p1's development team has 2 red xp tokens
+  And the Junior Hardware Eng in p1's development team has 1 blue skill token
+  And the turn passes to the left
+  Then the phase is modes
+  When p1 declares the Junior Hardware Eng, choosing blue
+  And p1 confirms their modes
+  And p1 pays salaries
+  And p1 ends their actions
+  Then the Smart Lock in p1's development has 1 blue cube
+  And the Smart Lock in p1's development has 0 red cubes
+
+Example: multi-skilled Juniors and a flex Senior work in the mode declared each turn, and in their own colour again when declared so (section 11, section 5)
+  Given p1's development has a Cloud Storage
+  And the Cloud Storage in p1's development has 3 bugs
+  And the Cloud Storage in p1's development has a Junior Hardware Eng, a Junior QA Tester, a Junior Software Dev and a Firmware Specialist on it
+  And the Junior Hardware Eng in p1's development team has 1 blue skill token
+  And the Junior QA Tester in p1's development team has 1 red skill token
+  And the Junior Software Dev in p1's development team has 1 green skill token
+  And the turn passes to the left
+  Then the phase is modes
+  When p1 declares the Junior Hardware Eng, choosing blue
+  And p1 declares the Junior QA Tester, choosing red
+  And p1 declares the Junior Software Dev, choosing qa
+  And p1 declares the Firmware Specialist, choosing red
+  And p1 confirms their modes
+  And p1 pays salaries
+  And p1 ends their actions
+  Then the Cloud Storage in p1's development has 1 blue cube
+  And the Cloud Storage in p1's development has 3 red cubes
+  And the Cloud Storage in p1's development has 2 bugs
+  When p0 ends their actions
+  Then it is p1's turn
+  And the phase is modes
+  When p1 declares the Junior Hardware Eng, choosing red
+  And p1 declares the Junior QA Tester, choosing qa
+  And p1 declares the Junior Software Dev, choosing blue
+  And p1 declares the Firmware Specialist, choosing blue
+  And p1 confirms their modes
+  And p1 pays salaries
+  And p1 ends their actions
+  Then the Cloud Storage in p1's development has 4 blue cubes
+  And the Cloud Storage in p1's development has 4 red cubes
+  And the Cloud Storage in p1's development has 1 bug
+
+Example: a Junior QA Tester with a Blue Skill token declared Blue makes Blue and cleans no Bug, until it is declared QA again (section 11)
+  Given p1's development has a Dating App
+  And the Dating App in p1's development has 2 bugs
+  And the Dating App in p1's development has a Junior QA Tester on it
+  And the Junior QA Tester in p1's development team has 1 blue skill token
+  And the turn passes to the left
+  Then the phase is modes
+  When p1 declares the Junior QA Tester, choosing blue
+  And p1 confirms their modes
+  Then the phase is actions
+  When p1 ends their actions
+  Then the Dating App in p1's development has 1 blue cube
+  And the Dating App in p1's development has 2 bugs
+  When p0 ends their actions
+  Then the phase is modes
+  When p1 declares the Junior QA Tester, choosing qa
+  And p1 confirms their modes
+  And p1 ends their actions
+  Then the Dating App in p1's development has 1 blue cube
+  And the Dating App in p1's development has 1 bug
+
+Example: a trained Junior that reaches the Board after the declaration works in its native colour (section 11, ruling 24)
+  Given the phase is actions
+  And p0's development has a Smart Lock
+  And the Smart Lock in p0's development has 1 bug
+  And p0's bench has a Junior Hardware Eng and a Junior Software Dev
+  And the Junior Hardware Eng in p0's bench has 1 blue skill token
+  And the Junior Hardware Eng in p0's bench has 1 blue xp token
+  And the Junior Software Dev in p0's bench has 1 green skill token
+  And the Junior Software Dev in p0's bench has 1 green xp token
+  When p0 assigns the Junior Hardware Eng and the Junior Software Dev to the Smart Lock
+  And p0 ends their actions
+  Then the Smart Lock in p0's development has 1 red cube
+  And the Smart Lock in p0's development has 1 blue cube
+  And the Smart Lock in p0's development has 1 bug
+
+Example: staff that leave the Board forget a declared Blue mode, on the bench and in the open job market (ruling 24)
+  Given the phase is actions
+  And p0's operations has a Smart Lock
+  And p0's ops team has a Junior Hardware Eng and a Junior QA Tester
+  And the Junior Hardware Eng in p0's ops team has 1 blue skill token
+  And the Junior Hardware Eng in p0's ops team is blue mode
+  And the Junior QA Tester in p0's ops team has 1 blue skill token
+  And the Junior QA Tester in p0's ops team is blue mode
+  When p0 recalls the Junior Hardware Eng
+  And p0 dismisses the Junior QA Tester
+  Then the Junior Hardware Eng in p0's bench is not blue mode
+  And the Junior QA Tester in the open job market is not blue mode
+
+Example: a trained Junior declared in its trained colour adds that colour's Permanent XP (section 11)
+  Given p1's development has a Cloud Storage
+  And the Cloud Storage in p1's development has 3 bugs
+  And the Cloud Storage in p1's development has a Junior Hardware Eng, a Junior QA Tester and a Junior Software Dev on it
+  And the Junior Hardware Eng in p1's development team has 1 blue skill token
+  And the Junior Hardware Eng in p1's development team has 1 blue xp token
+  And the Junior QA Tester in p1's development team has 1 red skill token
+  And the Junior QA Tester in p1's development team has 1 red xp token
+  And the Junior Software Dev in p1's development team has 1 green skill token
+  And the Junior Software Dev in p1's development team has 1 green xp token
+  And the turn passes to the left
+  Then the phase is modes
+  When p1 declares the Junior Hardware Eng, choosing blue
+  And p1 declares the Junior QA Tester, choosing red
+  And p1 declares the Junior Software Dev, choosing qa
+  And p1 confirms their modes
+  Then the phase is actions
+  When p1 ends their actions
+  Then the Cloud Storage in p1's development has 2 blue cubes
+  And the Cloud Storage in p1's development has 2 red cubes
+  And the Cloud Storage in p1's development has 1 bug
+
+Example: trained Juniors in the ops team are declared as on a project, and the mode each is in sets the bandwidth and the QA it gives (section 11, section 5)
+  Given p1's ops team has a Junior Hardware Eng, a Junior Software Dev and a Junior QA Tester
+  And the Junior Hardware Eng in p1's ops team has 1 blue skill token
+  And the Junior Software Dev in p1's ops team has 1 red skill token
+  And the Junior Software Dev in p1's ops team has 1 green skill token
+  And the Junior QA Tester in p1's ops team has 1 blue skill token
+  And the turn passes to the left
+  Then the phase is modes
+  When p1 declares the Junior Hardware Eng, choosing blue
+  And p1 declares the Junior Software Dev, choosing qa
+  And p1 declares the Junior QA Tester, choosing blue
+  And p1 confirms their modes
+  Then p1's blue supply is 2
+  And p1's red supply is 0
+  And p1's qa supply is 1
+  When p1 ends their actions
+  And p0 ends their actions
+  Then the phase is modes
+  When p1 declares the Junior Hardware Eng, choosing red
+  And p1 declares the Junior Software Dev, choosing blue
+  And p1 declares the Junior QA Tester, choosing qa
+  And p1 confirms their modes
+  Then p1's blue supply is 1
+  And p1's red supply is 1
+  And p1's qa supply is 1
+  When p1 ends their actions
+  And p0 ends their actions
+  And p1 declares the Junior Software Dev, choosing red
+  And p1 confirms their modes
+  Then p1's blue supply is 0
+  And p1's red supply is 2
+  And p1's qa supply is 1

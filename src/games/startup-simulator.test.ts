@@ -161,6 +161,20 @@ const CONFIRM_MODES = 'confirm their modes';
 const MODES = ['red mode', 'qa mode'];
 /** The modes each answer of a declaration leaves its card in, and no other: Blue none of them (§11.C.2). */
 const MODES_DECLARED: Record<string, string[]> = { Blue: [], Red: ['red mode'], QA: ['qa mode'] };
+/** The mode a declaration of Blue leaves on a Junior with a blue Skill token, which works Blue only so (§11.C.2, ruling 24). */
+const BLUE_MODE = 'blue mode';
+/**
+ * The counts slice 5 puts on staff (§3, §11): Permanent XP and Skill tokens of each colour, a Specialist's Training XP, and the Pending
+ * tokens a Junior learns on a project.
+ */
+const TOKENS = [
+  'blue xp tokens', 'red xp tokens', 'green xp tokens', 'training xp', 'blue skill tokens', 'red skill tokens', 'green skill tokens',
+  'pending blue', 'pending red', 'pending green',
+] as const;
+/** The tokens only a Junior holds: Permanent XP and Skill tokens, of each colour (§3, §11.A). */
+const JUNIOR_TOKENS = TOKENS.filter((name) => name.endsWith(' tokens'));
+/** The Skill token in the colour each skill works in already, which no card of that skill holds (§11.A.1). */
+const NATIVE_SKILL: Record<string, string> = { software: 'blue skill tokens', hardware: 'red skill tokens', qa: 'green skill tokens' };
 /**
  * The phases a turn passes through before its Income: the declaration of modes, then the ops check, which Income pays out after
  * (§5 Phase B, §11.C.2).
@@ -283,6 +297,8 @@ const buttonOf = (state: GameState, type: string) =>
 const cubesOn = (card: CardState, kind: string) => (card.data?.[kind] as number | undefined) ?? 0;
 /** How many Bugs a card has: a count read as a number, like the cubes, since a count back at 0 has no key (P6). */
 const bugsOn = (card: CardState) => cubesOn(card, 'bugs');
+/** How many of a kind of token a card has: a count read as a number, missing as 0, like the cubes. */
+const tokenOn = (card: CardState, name: string) => (card.data?.[name] as number | undefined) ?? 0;
 /** `seat`'s products in operation. */
 const operationsOf = (state: GameState, seat: PlayerId) => zoneCards(state, zoneIdFor('operations', seat));
 /** The rev `product` earns at Income, as the rules work it out in `state` (§5). */
@@ -1519,20 +1535,40 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       for (const mode of MODES) {
         const now = c.data?.[mode] === true;
         if (now && !teams.has(c.zoneId)) modes.push(`${which} is ${mode} off the Board`);
-        // Red mode only on a declarable card, QA mode only on a QA Skill card.
-        const mayTake = () => (mode === 'red mode' ? runtime.workedFlag(after, c.id, 'declarable') : c.data?.trait === 'QA Skill');
+        // Red mode only on a declarable card; QA mode only on a QA Skill card, a qa card or one with a green Skill token.
+        const mayTake = () => (mode === 'red mode' ? runtime.workedFlag(after, c.id, 'declarable')
+          : c.data?.trait === 'QA Skill' || c.data?.skill === 'qa' || tokenOn(c, 'green skill tokens') > 0);
         if (now && !mayTake()) modes.push(`${which} is ${mode}, which it may not be`);
         if (now !== (was?.data?.[mode] === true) && c.id !== declared && !left) modes.push(`${which} became ${now ? '' : 'not '}${mode}`);
       }
+      // Blue mode only on a Board card with a blue Skill token, and it changes as the other modes do.
+      const blue = c.data?.[BLUE_MODE] === true;
+      if (blue && (!teams.has(c.zoneId) || tokenOn(c, 'blue skill tokens') === 0)) modes.push(`${which} is ${BLUE_MODE}, which it may not be`);
+      if (blue !== (was?.data?.[BLUE_MODE] === true) && c.id !== declared && !left) modes.push(`${which} became ${blue ? '' : 'not '}${BLUE_MODE}`);
     }
     noneOf(modes, () => `the modes ${at}`);
     if (declared !== undefined) {
-      // A declaration leaves its card in the mode its answer names, or the press's only option, and in no other (§11.C.2).
+      // A declaration leaves its card in the mode its answer names, or the press's only option, and in no other: Blue leaves a card with
+      // a blue Skill token in blue mode (§11.C.2).
       const asked = pressChoices(runtime, before, move);
       const named = answersOf(move)[0] ?? (typeof asked === 'string' ? undefined : asked[0]?.options[0]);
-      const held = MODES.filter((mode) => cardById(after, declared)!.data?.[mode] === true);
-      sameList(held, MODES_DECLARED[named as string], () => `the modes ${declared} is in once declared ${named} ${at}`);
+      const held = [...MODES, BLUE_MODE].filter((mode) => cardById(after, declared)!.data?.[mode] === true);
+      const trained = named === 'Blue' && tokenOn(cardById(before, declared)!, 'blue skill tokens') > 0;
+      sameList(held, trained ? [BLUE_MODE] : MODES_DECLARED[named as string], () => `the modes ${declared} is in once declared ${named} ${at}`);
     }
+    // XP and Skill tokens sit only on Juniors, never a Skill token in the colour a card works in already, and a Junior has at most 4 XP
+    // (§3, §11.A, §11.C.3).
+    const talent: string[] = [];
+    for (const c of after.cards) {
+      const which = `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
+      const junior = c.data?.role === 'Junior';
+      for (const name of JUNIOR_TOKENS) if (tokenOn(c, name) > 0 && !junior) talent.push(`${which} has ${tokenOn(c, name)} ${name}`);
+      const native = NATIVE_SKILL[c.data?.skill as string];
+      if (native !== undefined && tokenOn(c, native) > 0) talent.push(`${which} has ${tokenOn(c, native)} ${native}, its own colour`);
+      const xp = junior ? runtime.workedValue(after, c.id, 'xp') as number : 0;
+      if (xp > 4) talent.push(`${which} has ${xp} xp`);
+    }
+    noneOf(talent, () => `the XP and Skill tokens ${at}`);
 
     // Online fits after every Income: the ops team's supply runs the products left online, in each color (§5 Phase B, ruling 19).
     if (income !== null) noneOf(shortOf(runtime, after, income), () => `the colors ${income} is short of at Income ${at}`);
@@ -1633,7 +1669,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(156);
+    expect(results).toHaveLength(166);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -1683,6 +1719,21 @@ describe('Startup Simulator (designer language)', () => {
     expect(Object.keys(game!.playerValues!)).toEqual([
       'blue supply', 'red supply', 'blue demand', 'red demand', 'blue load', 'red load', 'qa supply', 'bug load', 'qa spent', 'bugged products',
     ]);
+  });
+
+  it('works out slice 5’s values for cards: XP, Skill tokens and the salary bump (§3, §11.A)', () => {
+    const worked = game!.worked!;
+    // A Junior's XP and its Skill tokens, of every colour, are numbers of their own: 2 XP or more raise its salary to $1 (§3, §11.A.3),
+    // and a Skill token makes it declarable (§11.C.2).
+    expect(worked.xp).toMatchObject({ kind: 'number', refines: false });
+    expect(worked.skills).toMatchObject({ kind: 'number', refines: false });
+    expect(worked.experienced).toMatchObject({ kind: 'flag' });
+    // Its XP adds to its output only in the colour it works in (§11.C.3).
+    for (const name of ['working blue xp', 'working red xp', 'working green xp']) {
+      expect(worked[name], name).toMatchObject({ kind: 'number', refines: false });
+    }
+    // The salary still refines the talent table's column.
+    expect(worked.salary).toMatchObject({ kind: 'number', refines: true });
   });
 
   // The next three tests each add to the rules an example that the rules refuse for naming no button alone, and then an example for each
@@ -2631,13 +2682,13 @@ describe('Startup Simulator (designer language)', () => {
 });
 
 describe('what the view says the rules work out', () => {
-  it('stands each need in for its cost, each bandwidth for its output and the portfolio points for the val, and shows Stalled and Efficient in ops, the flags that change a value', () => {
+  it('stands each need in for its cost, each bandwidth for its output and the portfolio points for the val, and shows Stalled, Efficient in ops and Experienced, the flags that change a value', () => {
     expect(standIns(game!)).toEqual({
       'blue output': 'blue bandwidth', 'red output': 'red bandwidth', 'blue cost': 'blue need', 'red cost': 'red need',
       val: 'portfolio points',
     });
-    // Every line of each reads only the card and the cards on it: its Tier, its need, the leads on it, its trait and its zone.
-    expect(shownFlags(game!)).toEqual(['stalled', 'efficient in ops']);
+    // Every line of each reads only the card and the cards on it: its Tier, its need, the leads on it, its trait, its zone and its xp.
+    expect(shownFlags(game!)).toEqual(['stalled', 'efficient in ops', 'experienced']);
   });
 
   it('gives a seat the needs and the flags of the cards on a Board, and nothing of a backlog (Review Focus: 3 players, seed 1)', () => {
