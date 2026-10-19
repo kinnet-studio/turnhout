@@ -4,6 +4,7 @@ Players: 2 to 5
   Each player has 3 actions each turn.
   Each player has 0 market share that everyone can see.
   Players pay with capital.
+  Players can have mentoring.
   The game has a license of 3.
 
 Cards:
@@ -110,6 +111,7 @@ Cards:
   Cards can have pending blue, pending red and pending green.
   Cards can be badged.
   Cards can be fired.
+  Cards can be graduated.
   Cards can be offline.
   Cards can have blue cubes, red cubes, new blue cubes and new red cubes.
   Cards can have cut blue cubes and cut red cubes.
@@ -272,6 +274,37 @@ Learning green:
   Only if it is a Junior card.
   Only if its qa output is more than 0.
   Only if its pending green is 0.
+
+Pending tokens:
+  A Junior card's pending tokens is its pending blue.
+  A card's pending tokens goes up by its pending red.
+  A card's pending tokens goes up by its pending green.
+
+Coaching:
+  Only if it is a Mentor card.
+  Only if it is not onboarding.
+
+Pending badge:
+  Only if it is a Synergy card.
+  Only if it is not badged.
+  Only if the card it is on is not a Tier 1 card.
+
+Maxed out:
+  Only if its xp is more than 3.
+
+Due to graduate:
+  Only if its pending tokens are 1.
+  Only if it is not graduated.
+  Only if it is not maxed out.
+
+Choosing a token:
+  Only if its pending tokens are more than 1.
+  Only if it is not graduated.
+  Only if it is not maxed out.
+
+Mentorable:
+  Only if it is graduated.
+  Only if it is not maxed out.
 
 Salary:
   An efficient in ops card's salary is 1.
@@ -698,8 +731,11 @@ Phase: actions
     Only if it is fully led.
     Only if its bugs are 0.
     Then:
+      If some card on it is coaching, they gain 1 mentoring.
+      Every card on it that is pending badge is badged.
       Every card on it that is attaching goes to their ops team, staying on it.
       Every card on it that is not attaching goes to their ops team.
+      The graduation phase starts with them.
   A player may pivot a card in their development.
     It costs 1 action.
     Then:
@@ -765,6 +801,62 @@ Phase: sourcing
     Then:
       Move their scouting to the left end of the agency row.
   When their scouting is empty:
+    Go back to the interrupted turn.
+
+Phase: graduation
+  Hint: Each Junior on the launched team keeps one of its Pending XP tokens as Permanent XP. With the Veteran on the team, one Junior that kept one may keep a second.
+  When a card in an ops team is due to graduate:
+    If its pending blue is 1, it gains 1 blue xp token.
+    If its pending red is 1, it gains 1 red xp token.
+    If its pending green is 1, it gains 1 green xp token.
+    It loses its pending blue.
+    It loses its pending red.
+    It loses its pending green.
+  A player may keep blue on a card in their ops team.
+    Only if it is choosing a token.
+    Only if its pending blue is 1.
+    Then:
+      It gains 1 blue xp token.
+      It loses its pending blue.
+      It is graduated.
+  A player may keep red on a card in their ops team.
+    Only if it is choosing a token.
+    Only if its pending red is 1.
+    Then:
+      It gains 1 red xp token.
+      It loses its pending red.
+      It is graduated.
+  A player may keep green on a card in their ops team.
+    Only if it is choosing a token.
+    Only if its pending green is 1.
+    Then:
+      It gains 1 green xp token.
+      It loses its pending green.
+      It is graduated.
+  A player may mentor a card in their ops team.
+    Only if they have 1 mentoring.
+    Only if it is mentorable.
+    Then:
+      They choose one:
+        Blue:
+          Only if its pending blue is 1.
+          It gains 1 blue xp token.
+        Red:
+          Only if its pending red is 1.
+          It gains 1 red xp token.
+        Green:
+          Only if its pending green is 1.
+          It gains 1 green xp token.
+      Their mentoring go back to 0.
+  When no card in their ops team is choosing a token:
+    Only if one of:
+      They have 0 mentoring.
+      No card in their ops team is mentorable.
+    Every card in their ops team is not graduated.
+    For each card in their ops team, it loses its pending blue.
+    For each card in their ops team, it loses its pending red.
+    For each card in their ops team, it loses its pending green.
+    Their mentoring go back to 0.
     Go back to the interrupted turn.
 
 Phase: engine
@@ -3096,3 +3188,227 @@ Example: Pending tokens stay with a Junior who is Reassigned, and a Pivot return
   And the Junior QA Tester in p0's bench has 0 pending green
   When p0 pivots the Smart Lock
   Then the Junior Software Dev in p0's bench has 0 pending blue
+
+Example: at Launch a Junior with one Pending token makes it Permanent with no press, so the Veteran has nothing to mentor (section 6, section 11, section 20)
+  Given the phase is actions
+  And p0's development has a Cloud Storage
+  And the Cloud Storage in p0's development has 4 blue cubes
+  And the Cloud Storage in p0's development has 4 red cubes
+  And the Cloud Storage in p0's development has the Veteran, a Junior Software Dev, a Junior Hardware Eng and a Junior QA Tester on it
+  And the Junior Software Dev in p0's development team has 1 pending blue
+  And the Junior Hardware Eng in p0's development team has 1 pending red
+  And the Junior QA Tester in p0's development team has 1 pending green
+  When p0 launches the Cloud Storage
+  Then it is accepted
+  And the phase is actions
+  And p0 has 2 actions
+  And p0 has 0 mentoring
+  And the Junior Software Dev in p0's ops team has 1 blue xp token
+  And the Junior Hardware Eng in p0's ops team has 1 red xp token
+  And the Junior QA Tester in p0's ops team has 1 green xp token
+  And the Junior QA Tester in p0's ops team has 0 pending green
+
+Example: a Junior with two Pending tokens keeps the one its owner picks, and the other returns to the supply (section 11, ruling 1)
+  Given the phase is actions
+  And p0's development has a Smart Lock
+  And the Smart Lock in p0's development has 1 blue cube
+  And the Smart Lock in p0's development has 5 red cubes
+  And the Smart Lock in p0's development has a Junior Hardware Eng and a Junior Software Dev on it
+  And the Junior Hardware Eng in p0's development team has 1 pending blue
+  And the Junior Hardware Eng in p0's development team has 1 pending red
+  And the Junior Hardware Eng in p0's development team has 1 blue skill token
+  And the Junior Software Dev in p0's development team has 1 pending red
+  And the Junior Software Dev in p0's development team has 1 pending green
+  And the Junior Software Dev in p0's development team has 1 red skill token
+  And the Junior Software Dev in p0's development team has 1 green skill token
+  When p0 launches the Smart Lock
+  Then the phase is graduation
+  When p0 keeps blue on the Junior Software Dev
+  Then it is rejected because "its pending blue is 1"
+  When p0 keeps green on the Junior Hardware Eng
+  Then it is rejected because "its pending green is 1"
+  When p0 keeps red on the Junior Hardware Eng
+  And p0 mentors the Junior Hardware Eng
+  Then it is rejected because "they have 1 mentoring"
+  When p0 keeps green on the Junior Software Dev
+  Then the phase is actions
+  And the Junior Hardware Eng in p0's ops team has 1 red xp token
+  And the Junior Hardware Eng in p0's ops team has 0 blue xp tokens
+  And the Junior Hardware Eng in p0's ops team has 0 pending blue
+  And the Junior Software Dev in p0's ops team has 1 green xp token
+  And the Junior Software Dev in p0's ops team has 0 pending red
+  And the Junior Hardware Eng in p0's ops team is not graduated
+
+Example: the Veteran's Mentor lets one Junior of its owner's choice, not the first on the team, make a second Pending token Permanent (section 20, ruling 25)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And the Dating App in p0's development has 6 blue cubes
+  And the Dating App in p0's development has the Veteran, a Junior Software Dev and a Junior QA Tester on it
+  And the Junior Software Dev in p0's development team has 1 pending blue
+  And the Junior Software Dev in p0's development team has 1 pending red
+  And the Junior Software Dev in p0's development team has 1 red skill token
+  And the Junior QA Tester in p0's development team has 1 pending blue
+  And the Junior QA Tester in p0's development team has 1 pending green
+  And the Junior QA Tester in p0's development team has 1 blue skill token
+  When p0 launches the Dating App
+  Then the phase is graduation
+  When p0 keeps red on the Junior QA Tester
+  Then it is rejected because "its pending red is 1"
+  When p0 keeps red on the Junior Software Dev
+  And p0 keeps blue on the Junior QA Tester
+  Then the phase is graduation
+  And p0 has 1 mentoring
+  When p0 keeps green on the Junior QA Tester
+  Then it is rejected because "it is choosing a token"
+  When p0 mentors the Junior QA Tester
+  Then the phase is actions
+  And the Junior QA Tester in p0's ops team has 1 blue xp token
+  And the Junior QA Tester in p0's ops team has 1 green xp token
+  And the Junior Software Dev in p0's ops team has 1 red xp token
+  And the Junior Software Dev in p0's ops team has 0 blue xp tokens
+  And p0 has 0 mentoring
+
+Example: the Mentor's second token must differ from the one kept, and comes only after the Junior keeps one (section 20, ruling 25)
+  Given the phase is actions
+  And p0's development has a Smart Lock
+  And the Smart Lock in p0's development has 1 blue cube
+  And the Smart Lock in p0's development has 5 red cubes
+  And the Smart Lock in p0's development has the Veteran and a Junior Hardware Eng on it
+  And the Junior Hardware Eng in p0's development team has 1 pending blue
+  And the Junior Hardware Eng in p0's development team has 1 pending red
+  And the Junior Hardware Eng in p0's development team has 1 blue skill token
+  When p0 launches the Smart Lock
+  And p0 mentors the Junior Hardware Eng, choosing red
+  Then it is rejected because "it is mentorable"
+  When p0 keeps red on the Junior Hardware Eng
+  And p0 keeps blue on the Junior Hardware Eng
+  Then it is rejected because "it is choosing a token"
+  When p0 mentors the Junior Hardware Eng
+  Then the phase is actions
+  And the Junior Hardware Eng in p0's ops team has 1 red xp token
+  And the Junior Hardware Eng in p0's ops team has 1 blue xp token
+
+Example: when the Junior has two Pending tokens left, its owner picks which one the Mentor makes Permanent (section 20, ruling 25)
+  Given the phase is actions
+  And p0's development has a Cloud Storage
+  And the Cloud Storage in p0's development has 4 blue cubes
+  And the Cloud Storage in p0's development has 4 red cubes
+  And the Cloud Storage in p0's development has the Veteran and a Junior QA Tester on it
+  And the Junior QA Tester in p0's development team has 1 pending blue
+  And the Junior QA Tester in p0's development team has 1 pending red
+  And the Junior QA Tester in p0's development team has 1 pending green
+  And the Junior QA Tester in p0's development team has 1 blue skill token
+  And the Junior QA Tester in p0's development team has 1 red skill token
+  When p0 launches the Cloud Storage
+  And p0 keeps green on the Junior QA Tester
+  And p0 keeps red on the Junior QA Tester
+  Then it is rejected because "it is choosing a token"
+  When p0 mentors the Junior QA Tester
+  Then it is rejected because "Choose one: blue or red."
+  When p0 mentors the Junior QA Tester, choosing red
+  Then the phase is actions
+  And the Junior QA Tester in p0's ops team has 1 green xp token
+  And the Junior QA Tester in p0's ops team has 1 red xp token
+  And the Junior QA Tester in p0's ops team has 0 blue xp tokens
+
+Example: a Veteran onboarding this turn mentors nothing (section 20, ruling 8)
+  Given the phase is actions
+  And p0's development has a Dating App and a To-Do List
+  And the Dating App in p0's development has 6 blue cubes
+  And the Dating App in p0's development has a Junior Software Dev on it
+  And the Junior Software Dev in p0's development team has 1 pending blue
+  And the Junior Software Dev in p0's development team has 1 pending red
+  And the Junior Software Dev in p0's development team has 1 red skill token
+  And the To-Do List in p0's development has the Veteran on it
+  When p0 reassigns the Veteran to the Dating App
+  And p0 launches the Dating App
+  And p0 keeps blue on the Junior Software Dev
+  Then the phase is actions
+  And p0 has 0 mentoring
+  And the Junior Software Dev in p0's ops team has 0 red xp tokens
+
+Example: a Junior at 3 XP graduates one token to reach 4, so the Mentor helps another Junior instead (section 11, section 20)
+  Given the phase is actions
+  And p0's development has a Cloud Storage
+  And the Cloud Storage in p0's development has 4 blue cubes
+  And the Cloud Storage in p0's development has 4 red cubes
+  And the Cloud Storage in p0's development has the Veteran, a Junior Software Dev and a Junior Hardware Eng on it
+  And the Junior Software Dev in p0's development team has 3 blue xp tokens
+  And the Junior Software Dev in p0's development team has 1 pending blue
+  And the Junior Software Dev in p0's development team has 1 pending red
+  And the Junior Software Dev in p0's development team has 1 red skill token
+  And the Junior Hardware Eng in p0's development team has 1 pending red
+  And the Junior Hardware Eng in p0's development team has 1 pending blue
+  And the Junior Hardware Eng in p0's development team has 1 blue skill token
+  When p0 launches the Cloud Storage
+  And p0 keeps blue on the Junior Software Dev
+  And p0 keeps red on the Junior Hardware Eng
+  And p0 mentors the Junior Software Dev
+  Then it is rejected because "it is mentorable"
+  When p0 mentors the Junior Hardware Eng
+  Then the phase is actions
+  And the Junior Software Dev in p0's ops team has 4 blue xp tokens
+  And the Junior Software Dev in p0's ops team has 0 red xp tokens
+  And the Junior Hardware Eng in p0's ops team has 1 red xp token
+  And the Junior Hardware Eng in p0's ops team has 1 blue xp token
+
+Example: a Junior at 4 Permanent XP graduates nothing at Launch, and its Pending tokens return to the supply (section 11)
+  Given the phase is actions
+  And p0's development has a Cloud Storage
+  And the Cloud Storage in p0's development has 4 blue cubes
+  And the Cloud Storage in p0's development has 4 red cubes
+  And the Cloud Storage in p0's development has a Junior Software Dev and a Junior QA Tester on it
+  And the Junior Software Dev in p0's development team has 4 blue xp tokens
+  And the Junior Software Dev in p0's development team has 1 pending blue
+  And the Junior Software Dev in p0's development team has 1 pending red
+  And the Junior Software Dev in p0's development team has 1 red skill token
+  And the Junior QA Tester in p0's development team has 4 green xp tokens
+  And the Junior QA Tester in p0's development team has 1 pending green
+  When p0 launches the Cloud Storage
+  Then the phase is actions
+  And the Junior Software Dev in p0's ops team has 4 blue xp tokens
+  And the Junior Software Dev in p0's ops team has 0 red xp tokens
+  And the Junior Software Dev in p0's ops team has 0 pending red
+  And the Junior QA Tester in p0's ops team has 4 green xp tokens
+  And the Junior QA Tester in p0's ops team has 0 pending green
+
+Example: a Junior PM on a Tier 2 team carries a pending Badge, made Permanent when the team Launches, and once badged it has none pending (section 11)
+  Given the phase is actions
+  And p0's development has a Neobank and a Server Farm
+  And the Neobank in p0's development has 10 blue cubes
+  And the Neobank in p0's development has the Architect, a Junior PM and a Junior Software Dev on it
+  Then the Junior PM in p0's development team is pending badge
+  And the Junior Software Dev in p0's development team is not pending badge
+  When p0 launches the Neobank
+  Then the Junior PM in p0's ops team is badged
+  And the Junior Software Dev in p0's ops team is not badged
+  When p0 reassigns the Junior PM to the Server Farm
+  Then the Junior PM in p0's development team is not pending badge
+
+Example: a Junior PM Reassigned from a Tier 2 to a Tier 1 project loses its pending Badge, so that Launch promotes nobody (section 11, the slice's R8)
+  Given the phase is actions
+  And p0's development has a Neobank and a Dating App
+  And the Dating App in p0's development has 6 blue cubes
+  And the Neobank in p0's development has a Junior PM on it
+  Then the Junior PM in p0's development team is pending badge
+  When p0 reassigns the Junior PM to the Dating App
+  Then the Junior PM in p0's development team is not pending badge
+  When p0 launches the Dating App
+  Then the Junior PM in p0's ops team is not badged
+
+Example: a Pivot loses a Junior PM's pending Badge (section 11)
+  Given the phase is actions
+  And p0's development has a Neobank
+  And the Neobank in p0's development has a Junior PM on it
+  When p0 pivots the Neobank
+  Then the Junior PM in p0's bench is not pending badge
+
+Example: a QA Engineer on a Launching team gains no XP, since Specialists learn only from Training cards (ruling 14)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And the Dating App in p0's development has 6 blue cubes
+  And the Dating App in p0's development has a QA Engineer and a Junior Software Dev on it
+  And the Junior Software Dev in p0's development team has 1 pending blue
+  When p0 launches the Dating App
+  Then the QA Engineer in p0's ops team has 0 training xp
+  And the Junior Software Dev in p0's ops team has 1 blue xp token

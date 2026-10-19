@@ -829,7 +829,7 @@ describe('the Board played by clicking', () => {
 
     click(todo);
     choose('Launch a card from your development to your operations');
-    expect(screen.getByTestId(`board-${S}`).textContent).toBe('operations: To-Do List (tier Tier 1, tag App, sector Concept) [Blue 4/4, Red 0/0] · ops team: Junior Software Dev [1 pending blue]');
+    expect(screen.getByTestId(`board-${S}`).textContent).toBe('operations: To-Do List (tier Tier 1, tag App, sector Concept) [Blue 4/4, Red 0/0] · ops team: Junior Software Dev [1 blue xp token]');
 
     // Income: the To-Do List's rev of 1 is paid, and its rev earns 1 market share.
     for (const seat of [S, N, T]) {

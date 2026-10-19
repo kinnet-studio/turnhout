@@ -5,6 +5,7 @@ import { createDefaultLibrary } from '@/engine/core/lang/library';
 import { runExamples } from '@/engine/core/lang/examples';
 import { createEngine, initialState, seatsFor, tableDefFor } from '@/engine/core/lang/build';
 import { COUNTERS_KEY, counterOf, gameNumber, setCounter } from '@/engine/core/lang/board-state';
+import { playerFact } from '@/engine/core/lang/board-state';
 import { seatExtras, type CardPickView, type SeatExtras } from '@/engine/core/lang/board-view';
 import { attachmentProblem, cardsOn, putOn } from '@/engine/core/lang/attach';
 import { deckOf, NEXT_CARD_KEY } from '@/engine/core/lang/cards';
@@ -130,11 +131,11 @@ const BOARD_ROWS = ['development', 'operations', 'development team', 'ops team']
 const FINAL_CHECK = 'final check';
 /**
  * The phases of a turn, in order (§5): the declaration of modes and the ops check that open Income (§5 Phase B, §11.C.2), Income,
- * Actions with its two interrupts, the Engine's Generate and Commit, and Cleanup; then the final check, which only the End's steps
+ * Actions with its three interrupts, the Engine's Generate and Commit, and Cleanup; then the final check, which only the End's steps
  * reach (§12).
  */
 const PHASES = [
-  'modes', 'ops check', 'income', 'actions', 'research', 'sourcing', 'engine', 'commit', 'bench cleanup', 'backlog cleanup',
+  'modes', 'ops check', 'income', 'actions', 'research', 'sourcing', 'graduation', 'engine', 'commit', 'bench cleanup', 'backlog cleanup',
   FINAL_CHECK,
 ];
 // The two buttons that pick a card from a project's staff.
@@ -179,6 +180,19 @@ const PENDING = ['pending blue', 'pending red', 'pending green'] as const;
 const NATIVE_SKILL: Record<string, string> = { software: 'blue skill tokens', hardware: 'red skill tokens', qa: 'green skill tokens' };
 /** The traits of the only Specialists that earn Training XP, 2 at most: the QA Engineer's and the Sales Rep's (§11.D). */
 const TRAINED = ['Bug Hunter', 'Rainmaker'];
+/**
+ * The step a Launch interrupts Actions with while a Junior of the launched team has a choice to make: which of its Pending tokens it
+ * keeps, and which one more the Veteran's Mentor makes Permanent (§11.B.2, §20.B, ruling 25).
+ */
+const GRADUATION = 'graduation';
+/** The buttons that keep one Pending token Permanent, by its colour (§11.B.2). */
+const KEEP_PENDING: Record<'blue' | 'red' | 'green', string> = {
+  blue: 'keep blue on a card in their ops team',
+  red: 'keep red on a card in their ops team',
+  green: 'keep green on a card in their ops team',
+};
+/** The button of the Veteran's Mentor: one Junior that kept a token keeps a second, of a colour its owner picks (§20.B, ruling 25). */
+const MENTOR = 'mentor a card in their ops team';
 /**
  * The phases a turn passes through before its Income: the declaration of modes, then the ops check, which Income pays out after
  * (§5 Phase B, §11.C.2).
@@ -259,10 +273,10 @@ const LEADS: Record<string, string[]> = { blue: ['software', 'flex'], red: ['har
 /** Why the rules refuse to reassign the Diva: her Ego (§6, §20.B.1). */
 const EGO_REFUSAL = 'the card is not an Ego card';
 /**
- * The phases of a seat's turn before its Engine runs: the declaration of modes, the ops check, Income, Actions and the two phases that
- * interrupt Actions.
+ * The phases of a seat's turn before its Engine runs: the declaration of modes, the ops check, Income, Actions and the three phases
+ * that interrupt Actions.
  */
-const BEFORE_THE_ENGINE = ['modes', 'ops check', 'income', 'actions', 'research', 'sourcing'];
+const BEFORE_THE_ENGINE = ['modes', 'ops check', 'income', 'actions', 'research', 'sourcing', 'graduation'];
 // What the tally calls the paths of slice 3 (see `happenings`), besides the moves themselves.
 const LICENSE_TO_THE_ONLY_PROVIDER = 'a license paid to the only provider';
 const LICENSE_TO_A_CHOSEN_PROVIDER = 'a license paid to a chosen provider';
@@ -517,6 +531,9 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *   switches on its offline product with the highest val, if it has one. Then, while the step is its, it switches off the product
  *   with the lowest val (the first of those) among its online products with maintenance in a color it is short of (see `shortOf`).
  *   Each step is a `t` of its own, since the step passes to the next seat as the products online fit.
+ * - **Graduation**, while the step is its (§11.B.2, §20.B, ruling 25). It keeps a Pending token on a Junior that has several, trying
+ *   the colours in the order Blue, Red, Green turned by `t % 3`, each on the first card of its ops team the press allows. With none
+ *   allowed, it mentors the first card the press allows, answering the colour it asks as any press's choice is answered (see below).
  * - **Sourcing.** It hires the first card in its scouting it can pay for, to its bench, its ops team or its first project, by
  *   `(t + ⌊t / 9⌋) % 3`, or to its ops team while it has a product in operation, by its first product's button as action 1 does.
  *   When the rules refuse that, or it has nothing to pick, it tries the next of those places in that order, and with none it passes
@@ -1072,6 +1089,10 @@ function playTurn(
       play(engine, choose([pick(KEEP, own('research'), (row) => cutIdea(row) ?? row[t % row.length])]), watch);
     } else if (phase === 'sourcing') {
       play(engine, choose([...sourcing(), press(PASS_ON_THE_REST)]), watch);
+    } else if (phase === GRADUATION) {
+      const colours = (['blue', 'red', 'green'] as const).map((_, i, all) => all[(i + t) % all.length]);
+      const allowed = (type: string) => pick(type, own('ops team'), (row, { allows }) => row.find(allows));
+      play(engine, choose([...colours.map((colour) => allowed(KEEP_PENDING[colour])), allowed(MENTOR)]), watch);
     } else if (phase === 'engine') {
       // The Engine waits on the seat only while its ops QA can't clean every Bug on its products, so some product has Bugs (R3).
       const bugged = (row: CardState[]) => row.filter((product) => bugsOn(product) > 0);
@@ -1591,9 +1612,13 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     }
     noneOf(tokens, () => `the XP and Skill tokens ${at}`);
     // A card holds one Pending token of each colour at most, and gains one only as its owner's Engine runs, while it sits on a project
-    // in their development (§5 Phase D, §11.B, ruling 1). Where a Pending token may sit is left open: a Launch carries the team's into
-    // the ops team, and a Recall from there to the bench.
+    // in their development (§5 Phase D, §11.B, ruling 1). It holds one only in a development team, or in the ops team of the seat whose
+    // turn is in Launch's graduation step: the step ends by returning every token its ops team still holds to the supply (§11.B.2).
     const engineRan = ranTheEngine(before, after, by);
+    const graduating = phase === GRADUATION ? current as PlayerId : null;
+    const developmentTeams = new Set(seats.map((seat) => zoneIdFor('development team', seat)));
+    const mayHoldPending = (zoneId: string) => developmentTeams.has(zoneId)
+      || (graduating !== null && zoneId === zoneIdFor('ops team', graduating));
     const pending: string[] = [];
     for (const c of after.cards) {
       const which = `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
@@ -1604,8 +1629,27 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       for (const name of PENDING) {
         const held = tokenOn(c, name);
         if (held > 1) pending.push(`${which} has ${held} ${name}`);
+        if (held > 0 && !mayHoldPending(c.zoneId)) pending.push(`${which} holds ${held} ${name} out of a development team`);
         if (held > (was === undefined ? 0 : tokenOn(was, name)) && !(engineRan && onProject)) {
           pending.push(`${which} gained ${name} ${engineRan ? `off a project of ${by}` : `with no Engine run for ${by}`}`);
+        }
+      }
+      // A Junior is graduated only while its owner's graduation step runs, in their ops team: the step ends by clearing it (§11.B.2).
+      if (c.data?.graduated === true && !(graduating !== null && c.zoneId === zoneIdFor('ops team', graduating))) {
+        pending.push(`${which} is graduated, with ${graduating === null ? 'no seat' : graduating} in graduation`);
+      }
+    }
+    // The Veteran's Mentor waits on a seat only through its graduation step, which ends by setting it back to 0 (§20.B).
+    for (const seat of seats) {
+      const mentoring = (playerFact(after, seat, 'mentoring') as number | null) ?? 0;
+      if (mentoring !== 0 && seat !== graduating) pending.push(`${seat} has ${mentoring} mentoring`);
+    }
+    // A Launch that leaves no choice to make graduates at once, so its team reaches the ops team holding no Pending token (§11.B.2).
+    if (move.type === LAUNCH && phase !== GRADUATION) {
+      for (const c of after.cards) {
+        const held = PENDING.filter((name) => tokenOn(c, name) > 0);
+        if (zoneInfo(game!, c.zoneId)?.seat === by && !developmentTeams.has(c.zoneId) && held.length > 0) {
+          pending.push(`${c.id} (${nameOf(c)}) in ${c.zoneId} holds ${held.join(', ')} after a Launch with no graduation step`);
         }
       }
     }
@@ -1731,7 +1775,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(178);
+    expect(results).toHaveLength(190);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -1802,6 +1846,13 @@ describe('Startup Simulator (designer language)', () => {
     // What a Junior is learning at the Engine: each colour it works in, or cleans Bugs in, while it holds no Pending token of that colour
     // (§5 Phase D, §11.B).
     for (const flag of ['learning blue', 'learning red', 'learning green']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
+    // What Launch's graduation step reads (§11.B.2, §11.E.2, §20.B): a Junior's Pending tokens of every colour, a number of its own;
+    // the Veteran coaching, a Junior PM's pending Badge, a Junior at 4 XP maxed out, and whether a Junior graduates by itself, has a
+    // token to choose, or may keep a second through the Mentor.
+    expect(worked['pending tokens']).toMatchObject({ kind: 'number', refines: false });
+    for (const flag of ['coaching', 'pending badge', 'maxed out', 'due to graduate', 'choosing a token', 'mentorable']) {
+      expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
+    }
   });
 
   // The next three tests each add to the rules an example that the rules refuse for naming no button alone, and then an example for each
@@ -2746,6 +2797,59 @@ describe('Startup Simulator (designer language)', () => {
       // a clean press, so the R3 Review Focus test above replays one.
       expect(Object.entries(seen).filter(([, times]) => times === 0), JSON.stringify(seen)).toEqual([]);
     }, 120_000);
+
+    it('makes the graduation choices the auto-player picks, through the page’s view and without it (§11.B.2, ruling 25)', () => {
+      // The long runs never press a button of the graduation step: a Junior earns a Pending token of a second colour only by working
+      // in it, which takes a Skill token, and only Training gives those (plan 5-2b). So this arranges a Launch with two Juniors holding
+      // two Pending tokens each, one in a colour their Skill token lets them work in, and the Veteran on the team to coach them.
+      const start = setUp(2, 1);
+      const seats = seatsFor(2);
+      const S = startPlayerOf(start, seats);
+      const benched = (name: string) => zoneCards(start, zoneIdFor('bench', S)).find((card) => nameOf(card) === name)!.id;
+      const [cloud, veteran] = ['Cloud Storage', 'Veteran'].map(idOf);
+      const [dev, qa] = ['Junior Software Dev', 'Junior QA Tester'].map(benched);
+      // The Cloud Storage needs 4 Blue and 4 Red (§20.C.1), so the seat Launches it with its second action, after its Ideation.
+      let state = relocate(start, [cloud], zoneIdFor('development', S), game!);
+      state = changeCard(state, cloud, { 'blue cubes': 4, 'red cubes': 4 }, game!);
+      state = putOn(state, [veteran, dev, qa], zoneIdFor('development team', S), cloud, game!);
+      state = changeCard(state, dev, { 'pending blue': 1, 'pending red': 1, 'red skill tokens': 1 }, game!);
+      state = changeCard(state, qa, { 'pending blue': 1, 'pending green': 1, 'blue skill tokens': 1 }, game!);
+      // On t = 0 the seat tries Blue first, so both Juniors keep Blue and the Mentor gives the Software Dev its Red. On t = 1 it tries
+      // Red, then Green, then Blue: the Software Dev keeps Red, the QA Tester Green, and the Mentor gives the Software Dev its Blue.
+      const expected: Record<number, { steps: Move[]; xp: number[][] }> = {
+        0: {
+          steps: [
+            { type: KEEP_PENDING.blue, by: S, cardId: dev }, { type: KEEP_PENDING.blue, by: S, cardId: qa },
+            { type: MENTOR, by: S, cardId: dev, choices: ['Red'] },
+          ],
+          xp: [[1, 1, 0], [1, 0, 0]],
+        },
+        1: {
+          steps: [
+            { type: KEEP_PENDING.red, by: S, cardId: dev }, { type: KEEP_PENDING.green, by: S, cardId: qa },
+            { type: MENTOR, by: S, cardId: dev, choices: ['Blue'] },
+          ],
+          xp: [[1, 1, 0], [0, 0, 1]],
+        },
+      };
+      const presses = [...Object.values(KEEP_PENDING), MENTOR];
+      for (const t of [0, 1]) {
+        const engines = [false, true].map((throughView) => {
+          const { engine, runtime } = createEngine(game!, lib, 2, state);
+          playTurn(engine, t, 'researches', keepsTheRules(seats, runtime), (log) => log.some((move) => move.type === MENTOR), runtime, throughView);
+          return engine;
+        });
+        const log = engines[0].getLog();
+        expect(log.filter((move) => presses.includes(move.type)), `turn ${t}`).toEqual(expected[t].steps);
+        expect(engines[1].getLog(), `turn ${t}`).toEqual(log);
+        // The step is over: the turn is back in its actions, and the Juniors hold the Permanent XP they kept and nothing pending.
+        const end = engines[0].getState();
+        expect([end.turn?.current, end.turn?.phase], `turn ${t}`).toEqual([S, 'actions']);
+        const xp = (id: string) => ['blue', 'red', 'green'].map((colour) => tokenOn(cardById(end, id)!, `${colour} xp tokens`));
+        expect([dev, qa].map(xp), `turn ${t}`).toEqual(expected[t].xp);
+        expect([dev, qa].flatMap((id) => PENDING.map((name) => tokenOn(cardById(end, id)!, name))), `turn ${t}`).toEqual([0, 0, 0, 0, 0, 0]);
+      }
+    });
   });
 });
 
