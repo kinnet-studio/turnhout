@@ -68,6 +68,15 @@ It sits under `docs/superpowers/specs/2026-10-16-startup-simulator-overview-desi
 
 - **Sequencing (controller ruling).** Task 1 runs before plan 5-2b (5-2b's zones need the taller fitted table); Tasks 2–4 run after 5-2b. The Pending Badge flag is `pending badge` (renamed from `up for promotion` in 5-2a, the rulebook's term).
 
+- **Controller amendment (Task 1 pre-flight at `c3ac18a`).** The scan is in the plan's SDD workspace (`preflight-t1.md`; probes in the scratchpad's `pf53t1/`). Task 1 built as written works: every number matches the code (band 416 at HEAD, not grown; 1200×1038 after 5-2b Task 1; a 1840-tall world on a 1200×1380 canvas after 5-2b Task 3), the other games' layouts are unchanged, no existing test changes. Rulings for Task 1 (Tasks 2–4 get their own pre-flight after 5-2b):
+  - **F1.** `init-app.test.ts` asserts `expect((fake.base as BaseAppComponents).camera.boundaries).toEqual(world)`; `fakeBase` stays as it is (its camera literal has no `boundaries`, so the plan's `base.camera.boundaries` fails typecheck).
+  - **F2 (forward to 5-2b).** `playtest-fitted.test.tsx` gains a module-scope `misfitsIn(defs, bounds)` right after `misfits` (reusing `fullBox` and `boxesOverlap`); Task 1's new describe uses it. Plan 5-2b's Task 1 re-points the old Startup `misfits(placed)` line to `misfitsIn(placed, fittedBounds(game.zones))` and re-takes the grown pins (listed in `preflight-t1.md` F2).
+  - **F3.** `TALL_GAME` is written in Step 1 as fixture scaffolding, in `testing.ts` below `CREW_GAME` (above it is a TDZ error).
+  - **F4.** "`fittedBounds` is `TABLE_BOUNDS` for MARKET, BOARD and TWO_LINES" is a new test, not a guard; add the zoom case `size 1200×920, world ±920 → setZoomLevel(0.5)` (the plan's 0.75 doesn't see the world's height).
+  - **F5.** `fittedBounds` returns the `TABLE_BOUNDS` object itself when nothing grows; `playtest.tsx` leaves `world` out exactly when `bounds === TABLE_BOUNDS`.
+  - **F6.** The HEAD names Task 1 re-checks: `fittedLayout`, private `wrap`, `MARGIN` 20, `LABEL_ROOM` 24, `LINE_GAP` 16, `STACK_GAP` 36, `STACK_STEP` 34, `stackOnHolders`, `keepPlaced`; `makeInitApp(renderer, { showEmptyZones?, size? })` with its `TABLE_BOUNDS` camera block; playtest's `FITTED_WIDTH`/`FITTED_HEIGHT`/`initFittedApp`; the scaffolds `MARKET`, `BOARD`, `TWO_LINES`, `box`, `overlap`, `seats`, `start`, `fakeBase`, `mount`, `canvasMadeWith`, `fullBox`, `boxesOverlap`, `misfits`; `CREW_GAME`'s idle line.
+  - **F7.** Update the comments that go stale: `init-app.ts` (~120–127, the `fit` zoom from TABLE_BOUNDS), `playtest.tsx` (~47, "draws the 1600 x 1200 world at three quarters"), `fit-layout.ts`'s header and `fittedLayout`'s doc.
+  - Step 2 expects the new tests to fail (22 in the probe: 1 init-app, 15 fit-layout, 6 playtest) and every existing test to pass; Step 4 gives 3594 plus the new tests, typecheck clean.
 - **Branch and commits.**
   - Develop on `claude/peaceful-curie-rdfkow`.
   - Commit by pathspec, never `git add -A`.
