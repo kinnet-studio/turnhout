@@ -47,6 +47,17 @@
 
 ## Global Constraints
 
+- **Controller amendment (pre-flight at `fd9d0df`).** The scan is in the plan's SDD workspace (`preflight.md`; probes in the scratchpad's `pf51/`). 2 of 138 assumed items differ (A27: 4-1's line reads `… goes to {zone}, staying on it`; A36: P16's named zone travels as `Wording.to` — `fitsWording`, `buttonsFor` and `move.onto` are what Task 3 extends). The turn-order change was probed at HEAD: no outcome changes in any game (68 run records byte-identical; Rent Day never sets the last turn and keeps seat order), so it stands. Each task's brief carries its rulings:
+  - **P1 (Task 1).** 4-3's test "counts one line as working out a value about a player…" (`worked-view.test.ts` ~:446) pins the player-value phrases to `[PLAYER_TOTAL]`; Task 1 updates that list to `PLAYER_TOTAL` plus its two count patterns, judged "not shown" (`shownPlayerValues` unchanged; 5-3 decides on showing counts). Task 8's check 4 prints that line.
+  - **P2 (Task 1).** Write `Crowded:` as `Only if it is a card whose crew count is more than 1.` (`its {attribute} is more than {int}` isn't card-only, so it would never show).
+  - **P3 (Task 1).** The Tinker's wage works out to 1, so `… at least 4 cards …` holds: assert 4 holds and 5 does not.
+  - **P4 (Tasks 1, 2, 5).** 3-player CREW-based engines and CLAIM_GAME start with Setup skipped, as `end-steps.test.ts`'s `table` does (then the last turn reads p2 then p0).
+  - **P5 (Task 5).** Take the `When a player …:` frame only when a phrase matches or the text misnames something (a small helper beside `libraryHasSayOn` in `compile-util.ts`; that one is also true on mere suggestions). The guard uses `toContainEqual` (a second diagnostic on `They are crowned.` exists at HEAD).
+  - **P6 (Task 6).** The End example writes `Move the pile to their list.` (ROUNDS_GAME's done-pile rule would refill the pile while End waits).
+  - **P7 (Task 3).** The hidden-zone case expects both diagnostics (the Gold option's `Only if the target card is a Smith.` too). G1 folds in: `board-view.ts`'s "There is no card in your …" names every target zone.
+  - **P8 (all).** New code imports `zoneCards`/`cardById` from `zone-index.ts`.
+  - **G2 (forward to 5-2/5-3).** Flags written `its … is more than …` or `it is {cardflag}` never show on a face; prefer `it is a card whose …` where a flag should show.
+
 - **Branch and commits.** Develop on `claude/peaceful-curie-rdfkow`. Commit by pathspec, never `git add -A`. Every commit message ends with these two lines and contains no model identifiers:
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`
   `Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC`
