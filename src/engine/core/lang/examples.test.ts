@@ -12,6 +12,7 @@ import { namedChoices } from './declared-actions';
 import { relocate } from './zones';
 import type { CompiledGame } from './types';
 import { SORT_GAME } from './testing';
+import { BOOST_GAME, COUNT_GAME, DRILL_GAME, RESHUFFLE_GAME } from './testing';
 
 const lib = createDefaultLibrary();
 const LINES = TEST_DUEL.split('\n');
@@ -791,5 +792,62 @@ describe('a step of choices for each card', () => {
     expect(runExamples(game!, lib).map(({ name, status, message }) => [name, status, message])).toEqual(
       SORTING_EXAMPLES.filter((line) => line.startsWith('Example: ')).map((line) => [line.slice('Example: '.length), 'pass', null]),
     );
+  });
+});
+
+describe("the words for slice 5's pieces", () => {
+  /** `rules` with `example` after them, which must compile with no problems, and what running the example gives. */
+  function runOn(rules: string, ...example: string[]) {
+    const text = [rules, '', ...example].join('\n');
+    const { game, diagnostics } = compileGame(text, lib);
+    expect(diagnostics).toEqual([]);
+    return { text, results: runExamples(game!, lib) };
+  }
+  const PASSED = [expect.objectContaining({ status: 'pass', message: null })];
+  const COUNTING = [
+    'Example: counting hands and the kinds of craft among them', "  Given p0's workshop has a Vase",
+    "  And the Vase in p0's workshop has a Potter and a Smith on it", "  And p0's idle has a Tinker",
+    "  Then the Vase in p0's workshop has 2 crew size", "  And p0's hands at work is 2", "  And p0's craft kinds is 3",
+    "  And the Smith in p0's crew is gilded",
+  ];
+
+  it('counts the cards on a card, a player\'s hands and the kinds of craft among them, and tests a card\'s craft', () => {
+    expect(runOn(COUNT_GAME, ...COUNTING).results).toEqual(PASSED);
+  });
+
+  it('adds one of a card\'s numbers to another, and two of them multiplied', () => {
+    const example = [
+      'Example: a gold hand on a job adds 1 red for each card on it that makes red', "  Given p0's workshop has a Vase",
+      "  And the Vase in p0's workshop has a Potter, a Tinker and a Smith on it", "  Then the Vase in p0's workshop has 4 team red",
+      "  And the Vase in p0's workshop has 4 polish",
+    ];
+    expect(runOn(BOOST_GAME, ...example).results).toEqual(PASSED);
+  });
+
+  it('deals past the end of a deck by shuffling the done pile back in', () => {
+    const example = [
+      'Example: gathering past the end of the pile shuffles the done pile back in', "  Given it is p0's turn", '  And the pile has a Sweep',
+      '  And the done pile has a Dust and a Dust', '  When p0 gathers', "  Then p0's list has 3 cards", '  And the done pile is empty',
+    ];
+    expect(runOn(RESHUFFLE_GAME, ...example).results).toEqual(PASSED);
+  });
+
+  it('gives a drill to the first cards on a card that are not tired, as many as the card has cracks', () => {
+    const example = [
+      'Example: tutoring a job with 1 crack drills only its first card that is not tired', "  Given p0's workshop has a Vase",
+      "  And the Vase in p0's workshop has a Potter and a Smith on it", "  And the Vase in p0's workshop has 1 crack",
+      '  When p0 tutors the Vase', "  Then the Potter in p0's crew has 1 drill", "  And the Smith in p0's crew has 0 drills",
+    ];
+    expect(runOn(DRILL_GAME, ...example).results).toEqual(PASSED);
+  });
+
+  it('fails an example whose count of a player\'s kinds is not what it says, on that line', () => {
+    const { text, results } = runOn(
+      COUNT_GAME, 'Example: a wrong count of kinds', "  Given p0's workshop has a Vase",
+      "  And the Vase in p0's workshop has a Potter and a Smith on it", "  And p0's idle has a Tinker", "  Then p0's craft kinds is 9",
+    );
+    expect(results).toEqual([expect.objectContaining({
+      status: 'fail', message: "Expected p0's craft kinds to be 9, but it is 3.", atLine: lineOf(text, "Then p0's craft kinds is 9", true),
+    })]);
   });
 });
