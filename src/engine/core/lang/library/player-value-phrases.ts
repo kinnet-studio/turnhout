@@ -2,6 +2,9 @@ import type { PhraseLibrary } from '../phrases';
 import type { ConditionFn, ExpectFn, PhraseEnv } from '../types';
 import { playerValueOf, seatOf, theyOf } from './support';
 import { valueIsTheTotal } from './total-phrases';
+import type { CardGroup, ValueFn } from '../types';
+import { kindsAmong } from './support';
+import { valueIsTheNumber } from './total-phrases';
 
 /** What one of their values comes to, as the lines of its section work it out. */
 const theirs = (env: PhraseEnv, name: string): number => playerValueOf(env, theyOf(env), name);
@@ -15,6 +18,9 @@ const MORE_THAN: Compare = (have, wanted) => have > wanted;
 const withTheir = (compare: Compare): ConditionFn => (env, [name, other]) => compare(theirs(env, name as string), theirs(env, other as string));
 /** One of their values against a whole number. */
 const withNumber = (compare: Compare): ConditionFn => (env, [name, n]) => compare(theirs(env, name as string), n as number);
+
+/** How many kinds of a value the cards of a group have: the second {attribute} is the value, the first the one its section works out. */
+const valueIsTheKinds: ValueFn = (env, [, attribute, group]) => kindsAmong(env, attribute as string, group as CardGroup);
 
 /** An example's check of what one of a player's values comes to, as the lines of its section work it out on the table as it is. */
 const valueIsExpected: ExpectFn = (env, [seat, name, n]) => {
@@ -33,13 +39,16 @@ export const AT_LEAST_THEIRS = 'their {playervalue} is at least their {playerval
 
 /**
  * The sentences about a value the game works out for each player: the line of its section that adds up a number over a group of cards (each
- * card's number read as every phrase reads it, a card without it counting as 0), and the conditions that compare one of their values with
- * another of theirs or with a whole number. Every one is about a player, whose zones “their” names. And the Then line of an example that checks
- * what one of a player's values comes to.
+ * card's number read as every phrase reads it, a card without it counting as 0), the lines that count the cards of a group or the kinds of
+ * a value among them, and the conditions that compare one of their values with another of theirs or with a whole number. Every one is
+ * about a player, whose zones “their” names. And the Then line of an example that checks what one of a player's values comes to.
  */
 export function registerPlayerValuePhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
     .value(PLAYER_TOTAL, valueIsTheTotal, { needsPlayer: true })
+    // Counts are no totals: the view does not show a value counted from cards until it is taught what a count reads.
+    .value("a player's {playervalue} is the number of {cardgroup}", valueIsTheNumber, { needsPlayer: true })
+    .value("a player's {playervalue} is the number of different {attribute} values among {cardgroup}", valueIsTheKinds, { needsPlayer: true })
     .condition(AT_LEAST_THEIRS, withTheir(AT_LEAST), { needsPlayer: true })
     .condition('their {playervalue} is more than their {playervalue}', withTheir(MORE_THAN), { needsPlayer: true })
     .condition('their {playervalue} is {int}', withNumber(IS), { needsPlayer: true })

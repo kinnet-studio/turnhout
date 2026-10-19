@@ -505,6 +505,15 @@ export const TWO_HIRES_GAME = YARD_GAME.replace('  A player may stop.', [
 /** WORKED_GAME with a job's crew red: the red work of the cards on it, added up. */
 export const TOTALS_GAME = [WORKED_GAME, '', 'Crew red:', "  A card's crew red is the total red work of the cards on it."].join('\n');
 
+/** WORKED_GAME with counts: the cards on a job, the hands in a player's crew, the kinds of craft among their hands, and a gold hand. */
+export const COUNT_GAME = [
+  WORKED_GAME, '',
+  'Crew size:', "  A card's crew size is the number of the cards on it.", '',
+  'Hands at work:', "  A player's hands at work is the number of the cards in their crew.", '',
+  'Craft kinds:', "  A player's craft kinds is the number of different craft values among the cards in their crew and their idle.", '',
+  'Gilded:', '  Only if it is a card whose craft is gold.',
+].join('\n');
+
 /**
  * CREW_GAME with a cut a job's red need can be given, and values worked out from what kind of card each is and what is on it: the red a
  * job has left once its cut is taken off, whether a hand is working (a red one that is not tired), and whether a job is busy (some card

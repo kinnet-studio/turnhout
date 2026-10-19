@@ -6,6 +6,7 @@ import { changeCard } from '../card-facts';
 import { compileGame } from '../compile';
 import { isNoSuchNumber } from '../diagnostics';
 import { SUBJECT, runPhrase } from '../testing';
+import { COUNT_GAME } from '../testing';
 import type { CompiledGame, PhraseKind } from '../types';
 import { relocate } from '../zones';
 import { createDefaultLibrary } from './index';
@@ -170,5 +171,40 @@ describe('what the phrases need', () => {
     const line = '    Only if it is a red card.';
     const text = SUBJECT.replace('  A player may stop.', `  A player may stop.\n${line}`);
     expect(messages(text)).toEqual([[at(text, line), '“it is a red card” only makes sense in a rule about a card, such as “When a card …”.']]);
+  });
+});
+
+describe('a test of it by any column or value', () => {
+  const counting = compiled(COUNT_GAME);
+  // Setup deals 2 jobs to each stash, more than the pile holds for three: a state with p0's turn set skips it.
+  const built = createEngine(counting, lib, 3, { ...initialState(counting, 1), turn: { current: 'p0', phase: 'working' } });
+  const start = built.engine.getState();
+  const every = (name: string) => start.cards.filter((card) => card.data?.name === name).map((card) => card.id);
+  const [[jar], [potterHand, otherPotter], [smithHand], [tinkerHand]] = ['Vase', 'Potter', 'Smith', 'Tinker'].map(every);
+  /** p0's workshop holding the Vase, with a Potter and the Smith on it in p0's crew; p0's idle holding the Tinker and the other Potter. */
+  const crewed = [
+    (state: GameState) => relocate(state, [jar], 'workshop-p0', counting),
+    (state: GameState) => putOn(state, [potterHand, smithHand], 'crew-p0', jar, counting),
+    (state: GameState) => relocate(state, [tinkerHand, otherPotter], 'idle-p0', counting),
+  ].reduce((state, arrange) => arrange(state), start);
+  /** A line about the card `id` and no player, read as a rule about that card reads it. */
+  const judged = (text: string, id: string) =>
+    runPhrase<boolean>(lib, 'condition', text, built.runtime.env(crewed, undefined, undefined, { player: null, space: null, card: id }));
+
+  it('works out a flag from a test of a column: a gold hand is gilded, and a red one or a job is not', () => {
+    expect([smithHand, potterHand, jar].map((id) => built.runtime.workedFlag(crewed, id, 'gilded'))).toEqual([true, false, false]);
+  });
+  it('reads it the other way round: a card without the value does not pass the test', () => {
+    expect(judged('it is not a card whose craft is gold', jar)).toBe(true);
+    expect(judged('it is not a card whose craft is gold', smithHand)).toBe(false);
+  });
+  it('tests a number: only the Smith has a wage of more than 1', () => {
+    const above = [smithHand, potterHand, tinkerHand, jar].map((id) => judged('it is a card whose wage is more than 1', id));
+    expect(above).toEqual([true, false, false, false]);
+  });
+  it('marks both as about a card', () => {
+    for (const pattern of ['it is a card whose {cardfilter}', 'it is not a card whose {cardfilter}']) {
+      expect([pattern, lib.get('condition', pattern)?.needsCard]).toEqual([pattern, true]);
+    }
   });
 });

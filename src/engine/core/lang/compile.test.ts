@@ -17,6 +17,7 @@ import type { ParamType } from './types';
 import { FORCE_GAME } from './testing';
 import { MEND_GAME } from './testing';
 import { JOIN_GAME } from './testing';
+import { COUNT_GAME } from './testing';
 
 const lib = createDefaultLibrary();
 const BASE = [
@@ -1461,5 +1462,30 @@ describe('a card that joins a card', () => {
   });
   it('leaves the moments out of the rules for every phase of a game that has none (guard: passes before and after)', () => {
     expect(compileGame(CREW_GAME, lib).game!.everyPhase).not.toHaveProperty('moments');
+  });
+});
+
+describe('counting cards', () => {
+  /** The 1-based number of `line` in `text`. */
+  const at = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+
+  it('compiles COUNT_GAME with no problems, keeping what it counts for cards and for players', () => {
+    const { game, diagnostics } = compileGame(COUNT_GAME, lib);
+    expect(diagnostics).toEqual([]);
+    expect(game!.worked).toMatchObject({
+      'crew size': { kind: 'number', refs: [{ kind: 'value', phrase: "a card's {attribute} is the number of {cardgroup}", args: ['crew size', { kind: 'on it' }] }] },
+      gilded: { kind: 'flag' },
+    });
+    expect(Object.keys(game!.playerValues!)).toEqual(['hands at work', 'craft kinds']);
+  });
+  it('reads a count of the cards in their zones only in a rule about a player', () => {
+    const line = "  A card's crew size is the number of the cards in their crew.";
+    const text = COUNT_GAME.replace("  A card's crew size is the number of the cards on it.", line);
+    expect(messages(text)).toEqual([[at(text, line), "“A card's crew size is the number of the cards in their crew” only makes sense in a rule about a player's move."]]);
+  });
+  it('names a column the game lacks in a test of the card', () => {
+    const line = '  Only if it is a card whose crft is gold.';
+    const text = COUNT_GAME.replace('  Only if it is a card whose craft is gold.', line);
+    expect(messages(text)).toEqual([[at(text, line), 'There is no card attribute called “crft”.']]);
   });
 });

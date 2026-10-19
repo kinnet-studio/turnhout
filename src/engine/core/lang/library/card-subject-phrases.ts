@@ -4,6 +4,8 @@ import type { CardMatch, ConditionFn, ValueFn } from '../types';
 import { matchesCard, zoneInfo } from '../zones';
 import { itCard } from './fact-phrases';
 import { cardHasFlag, cardNumber } from './support';
+import type { CardFilter } from '../types';
+import { passes } from './support';
 
 // ---- conditions ------------------------------------------------------------------------------
 
@@ -14,6 +16,12 @@ const itIsNotFlagged: ConditionFn = (env, [flag]) => !cardHasFlag(env, itCard(en
 
 /** A card without the number is the rule's mistake, as in every rule about the numbers of the one card it is about. */
 const itsNumberIs: ConditionFn = (env, [name, n]) => cardNumber(env, itCard(env), name as string) === n;
+
+/**
+ * A test of any column or value, read as every phrase reads one (see `passes`), so a value worked out for cards counts as it comes to: a
+ * card without the value does not pass, and so is “not a card whose …”.
+ */
+const itIsACardWhose = (wanted: boolean): ConditionFn => (env, [filter]) => passes(env, itCard(env), [filter as CardFilter]) === wanted;
 
 /** In that zone of any player's: a rule about a card asks what kind of place it is in, whoever's it is. */
 const itIsIn: ConditionFn = (env, [zone]) => {
@@ -54,8 +62,9 @@ const isAtLeast: ValueFn = (_env, [, n], value) => (value === null ? null : Math
 /**
  * The sentences about the card a rule is about: what kind of card it is, a flag it does not have, a number it has (a count reads plural:
  * “its cracks are 0”), the zone it is in (that zone of any player's), and whether some card, or no card, on it is so. Then three lines of
- * a value worked out for cards: any card's is one of its numbers, it goes down by another, and it is at least a whole number. Every one
- * reads “it”, so each needs a card: a face-down view and a hidden pick are judged by that.
+ * a value worked out for cards: any card's is one of its numbers, it goes down by another, and it is at least a whole number. Then whether
+ * it passes, or fails, a test of any column or value. Every one reads “it”, so each needs a card: a face-down view and a hidden pick are
+ * judged by that.
  */
 export function registerCardSubjectPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
@@ -70,5 +79,7 @@ export function registerCardSubjectPhrases(lib: PhraseLibrary): PhraseLibrary {
     .condition(CARDS_ON_IT[1], someCardOnItIs(false), { needsCard: true })
     .value(FROM_COLUMN, isIts, { needsCard: true })
     .value("a card's {attribute} goes down by its {attribute}", goesDownByIts, { needsCard: true })
-    .value("a card's {attribute} is at least {int}", isAtLeast, { needsCard: true });
+    .value("a card's {attribute} is at least {int}", isAtLeast, { needsCard: true })
+    .condition('it is a card whose {cardfilter}', itIsACardWhose(true), { needsCard: true })
+    .condition('it is not a card whose {cardfilter}', itIsACardWhose(false), { needsCard: true });
 }

@@ -25,6 +25,15 @@ const theyHaveACard = (wanted: boolean): ConditionFn => (env, [zones, filter]) =
 const theyHaveACardThatIs = (wanted: boolean): ConditionFn => (env, [zones, clause]) =>
   theyHave(env, zones as ZoneRef[], clause as CardFilter[]) === wanted;
 
+/**
+ * At least that many of the cards in their zones pass the test, read as `theyHave` reads them; a zone named twice counts its cards twice,
+ * as a group of cards does. At least 0 always holds.
+ */
+const theyHaveAtLeast: ConditionFn = (env, [n, zones, filter]) => {
+  const theirs = (zones as ZoneRef[]).flatMap((ref) => cardsInZones(env, ref, theyOf(env)));
+  return theirs.filter((card) => passes(env, card, [filter as CardFilter])).length >= (n as number);
+};
+
 /** Whether a card in that zone of the seat's passes the test. */
 const seatHasACard = (env: PhraseEnv, seat: PlayerId, zone: string, filter: CardFilter): boolean =>
   zoneCards(env.state, zoneIdFor(zone, seat)).some((card) => passes(env, card, [filter]));
@@ -58,14 +67,16 @@ const everyCardOnItWhoseGoesTo: EffectFn = (env, [filter, zone]) => {
 
 /**
  * The sentences that compare cards by a test (see `passes`): whether they, some player, or another player has a card that passes it in a
- * zone, and whether they have one that is, or is not, so (maybe passing a test as well); whether the card a press moves, or “it”, has no
- * value under a name; and moving the cards on it that pass. A test that compares with “the card's” value needs a card move and one that
- * compares with “its” needs a card; the compiler asks that of the test itself, in a clause as well.
+ * zone, whether they have at least some number of such cards, and whether they have one that is, or is not, so (maybe passing a test as
+ * well); whether the card a press moves, or “it”, has no value under a name; and moving the cards on it that pass. A test that compares
+ * with “the card's” value needs a card move and one that compares with “its” needs a card; the compiler asks that of the test itself, in a
+ * clause as well.
  */
 export function registerComparePhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
     .condition('they have a card in {zones} whose {cardfilter}', theyHaveACard(true), { needsPlayer: true })
     .condition('they have no card in {zones} whose {cardfilter}', theyHaveACard(false), { needsPlayer: true })
+    .condition('they have at least {int} cards in {zones} whose {cardfilter}', theyHaveAtLeast, { needsPlayer: true })
     .condition('they have a card in {zones} {cardclause}', theyHaveACardThatIs(true), { needsPlayer: true })
     .condition('they have no card in {zones} {cardclause}', theyHaveACardThatIs(false), { needsPlayer: true })
     .condition('some player has a card in their {perzone} whose {cardfilter}', somePlayerHasACard)

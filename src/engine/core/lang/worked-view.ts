@@ -9,6 +9,7 @@ import { CARDS_ON_IT, FROM_COLUMN, registerCardSubjectPhrases } from './library/
 import { FLAGGED_VALUES, registerCardValuePhrases } from './library/card-value-phrases';
 import { AT_LEAST_THEIRS, PLAYER_TOTAL } from './library/player-value-phrases';
 import { FROM_CARDS_TOTAL, GOES_UP_BY_TOTAL } from './library/total-phrases';
+import { FROM_CARDS_COUNT } from './library/total-phrases';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
 import type { CardFilter, CardGroup, CompiledGame, PhraseRef, ZoneRef } from './types';
@@ -36,12 +37,13 @@ const testNames = (filter: CardFilter): string[] =>
 /**
  * The names a line reads a card's numbers and flags by, each of which may be a value worked out in turn, when the line reads only the card
  * and the cards on it; null for any other line, and for a line that reads the cards on it in a game that hides some card on a card. A
- * phrase's args follow its parameters in order. The tests of a group of the cards on it, and of a clause, are read too: a flag a group is
- * tested by (“the cards on it that are hoarded”) may read beyond the card as surely as a line of the value does.
+ * phrase's args follow its parameters in order. The tests of a group of the cards on it, of a clause and of a test alone are read too: a
+ * flag a group is tested by (“the cards on it that are hoarded”), or a value a card is tested by (“it is a card whose hall red is more
+ * than 1”), may read beyond the card as surely as a line of the value does.
  */
 function cardOnlyNames(game: CompiledGame, ref: PhraseRef): string[] | null {
-  // A value that is a total, or goes up by one, reads only the card when its group is the cards on it.
-  const total = ref.kind === 'value' && (ref.phrase === FROM_CARDS_TOTAL || ref.phrase === GOES_UP_BY_TOTAL);
+  // A value that is a total, goes up by one or is a count reads only the card when its group is the cards on it.
+  const total = ref.kind === 'value' && (ref.phrase === FROM_CARDS_TOTAL || ref.phrase === GOES_UP_BY_TOTAL || ref.phrase === FROM_CARDS_COUNT);
   if (!total && (ref.kind === 'lang' || CARD_ONLY.get(ref.kind, ref.phrase) === undefined)) return null;
   if ((total || cardsOnIt.includes(ref.phrase)) && !cardsOnCardsArePublic(game)) return null;
   const names: string[] = [];
@@ -49,6 +51,7 @@ function cardOnlyNames(game: CompiledGame, ref: PhraseRef): string[] | null {
     if (type === 'attribute' || type === 'cardflag') names.push(ref.args[i] as string);
     // No card-only phrase takes a clause yet; one that does has its tests traced like a group's.
     if (type === 'cardclause') names.push(...(ref.args[i] as CardFilter[]).flatMap(testNames));
+    if (type === 'cardfilter') names.push(...testNames(ref.args[i] as CardFilter));
     if (type !== 'cardgroup') continue;
     const group = ref.args[i] as CardGroup;
     if (group.kind !== 'on it') return null;

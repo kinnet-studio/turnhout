@@ -7,6 +7,7 @@ import { changeCard } from '../card-facts';
 import { compileGame } from '../compile';
 import { RuleError } from '../diagnostics';
 import { FORCE_GAME, fixtureEnv, runPhrase } from '../testing';
+import { COUNT_GAME } from '../testing';
 import type { CompiledGame } from '../types';
 import { relocate } from '../zones';
 import { createDefaultLibrary } from './index';
@@ -118,5 +119,55 @@ describe('an example that checks a value about a player', () => {
   });
   it('says what the value comes to when it is not the number', () => {
     expect(expected("p0's red force is 3")).toBe("Expected p0's red force to be 3, but it is 2.");
+  });
+});
+
+describe('values about a player that count cards', () => {
+  const counting = compiled(COUNT_GAME);
+  // Setup deals 2 jobs to each stash, more than the pile holds for three: a state with p0's turn set skips it.
+  const built = createEngine(counting, lib, 3, { ...initialState(counting, 1), turn: { current: 'p0', phase: 'working' } });
+  const start = built.engine.getState();
+  const every = (name: string) => start.cards.filter((card) => card.data?.name === name).map((card) => card.id);
+  const [[jar], [potterHand, otherPotter], [smithHand], [tinkerHand]] = ['Vase', 'Potter', 'Smith', 'Tinker'].map(every);
+  /**
+   * p0's workshop holding the Vase, with a Potter (red) and the Smith (gold) on it in p0's crew; p0's idle holding the Tinker (mixed) and
+   * the other Potter. p1 and p2 have none.
+   */
+  const crewed = [
+    (state: GameState) => relocate(state, [jar], 'workshop-p0', counting),
+    (state: GameState) => putOn(state, [potterHand, smithHand], 'crew-p0', jar, counting),
+    (state: GameState) => relocate(state, [tinkerHand, otherPotter], 'idle-p0', counting),
+  ].reduce((state, arrange) => arrange(state), start);
+  const counted = (seat: PlayerId, name: string, state: GameState = crewed) => built.runtime.playerValue(state, seat, name);
+
+  it('counts the cards in their zones, from 0', () => {
+    expect([counted('p0', 'hands at work'), counted('p1', 'hands at work')]).toEqual([2, 0]);
+  });
+  it('counts each kind of a value among the cards once', () => {
+    // Red, gold and mixed: the two Potters are one kind.
+    expect(counted('p0', 'craft kinds')).toBe(3);
+    // The two Potters alone are left.
+    expect(counted('p0', 'craft kinds', relocate(crewed, [smithHand, tinkerHand], 'scrap', counting))).toBe(1);
+    expect(counted('p1', 'craft kinds')).toBe(0);
+  });
+  it('counts text in any capitals as one kind', () => {
+    const shouted = { ...crewed, cards: crewed.cards.map((card) => (card.id === otherPotter ? { ...card, data: { ...card.data, craft: 'RED' } } : card)) };
+    expect(counted('p0', 'craft kinds', shouted)).toBe(3);
+  });
+
+  describe('Review Focus: the kinds of a value', () => {
+    /** A line of a value about p0, run alone, with the values the runtime works out. */
+    const kinds = (text: string) => runPhrase<number>(lib, 'value', text, fixtureEnv(crewed, {
+      game: counting, seats: built.runtime.seats, subject: { player: 'p0', space: null, card: null },
+      playerValue: built.runtime.playerValue, workedValue: built.runtime.workedValue, workedFlag: built.runtime.workedFlag,
+    }), 0);
+
+    it('counts no kind among cards without the value: jobs have no craft', () => {
+      expect(kinds("a player's craft kinds is the number of different craft values among the cards in their workshop")).toBe(0);
+    });
+    it('reads a value worked out for cards, where 0 is a kind like any other', () => {
+      // The Potter's red work is 1, and the Smith's 0: no line of Red work is about a gold card.
+      expect(kinds("a player's craft kinds is the number of different red work values among the cards in their crew")).toBe(2);
+    });
   });
 });

@@ -6,6 +6,8 @@ import { createEngine, initialState } from '../build';
 import { compileGame } from '../compile';
 import { GUILD_GAME, runPhrase } from '../testing';
 import { RESTING_GAME } from '../testing';
+import { COUNT_GAME } from '../testing';
+import { putOn } from '../attach';
 import { changeCard } from '../card-facts';
 import type { CompiledGame } from '../types';
 import { HOLDER_KEY, relocate } from '../zones';
@@ -158,5 +160,36 @@ describe('a card of theirs that is or is not so, compared with the card a press 
   it('finds none once that card is so', () => {
     const rested = changeCard(placed, working, { resting: true }, resting);
     expect([judged(HAVE_CLAUSE, rested), judged(HAVE_NO_CLAUSE, rested)]).toEqual([false, true]);
+  });
+});
+
+describe('at least some cards of theirs that pass a test', () => {
+  const counting = compiled(COUNT_GAME);
+  // Setup deals 2 jobs to each stash, more than the pile holds for three: a state with p0's turn set skips it.
+  const built = createEngine(counting, lib, 3, { ...initialState(counting, 1), turn: { current: 'p0', phase: 'working' } });
+  const start = built.engine.getState();
+  const every = (name: string) => start.cards.filter((card) => card.data?.name === name).map((card) => card.id);
+  const [[jar], [potterHand, otherPotter], [smithHand], [tinkerHand]] = ['Vase', 'Potter', 'Smith', 'Tinker'].map(every);
+  /** p0's workshop holding the Vase, with a Potter and the Smith on it in p0's crew; p0's idle holding the Tinker and the other Potter. */
+  const crewed = [
+    (state: GameState) => relocate(state, [jar], 'workshop-p0', counting),
+    (state: GameState) => putOn(state, [potterHand, smithHand], 'crew-p0', jar, counting),
+    (state: GameState) => relocate(state, [tinkerHand, otherPotter], 'idle-p0', counting),
+  ].reduce((state, arrange) => arrange(state), start);
+  /** Whether `seat` has at least `n` cards in their crew and their idle whose wage is more than 0. */
+  const atLeast = (seat: PlayerId, n: number) => runPhrase<boolean>(
+    lib, 'condition', `they have at least ${n} cards in their crew and their idle whose wage is more than 0`,
+    built.runtime.env(crewed, undefined, undefined, { player: seat, space: null, card: null }),
+  );
+
+  it('holds when enough of the cards in their zones pass', () => {
+    expect(atLeast('p0', 2)).toBe(true);
+  });
+  it('reads each card as its value is worked out, and holds no further than the cards that pass', () => {
+    // Wages 1, 2, 1 and 1: the Potter, the Smith, the Tinker (whose column says 0 and whose worked wage is 1) and the other Potter.
+    expect([atLeast('p0', 4), atLeast('p0', 5)]).toEqual([true, false]);
+  });
+  it('holds of at least 0 cards about a player who has none', () => {
+    expect([atLeast('p1', 0), atLeast('p1', 1)]).toEqual([true, false]);
   });
 });

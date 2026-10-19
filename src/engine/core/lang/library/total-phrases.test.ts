@@ -8,6 +8,7 @@ import { compileGame } from '../compile';
 import { faceDownReady } from '../declared-actions';
 import { TOTALS_GAME, runPhrase } from '../testing';
 import { MEND_GAME } from '../testing';
+import { COUNT_GAME } from '../testing';
 import { RuleError } from '../diagnostics';
 import type { CompiledGame, Subject } from '../types';
 import { relocate } from '../zones';
@@ -296,5 +297,23 @@ describe('a total shared among cards', () => {
   it('marks the line as about a player, and the name of what it changes', () => {
     expect(lib.get('effect', '{cardgroup} lose {attribute} between them, up to their {playervalue}, first card first'))
       .toMatchObject({ needsPlayer: true, writes: 1 });
+  });
+});
+
+describe('a value that counts the cards of a group', () => {
+  const counting = compiled(COUNT_GAME);
+  // Setup deals 2 jobs to each stash, more than the pile holds for three: a state with p0's turn set skips it.
+  const built = createEngine(counting, lib, 3, { ...initialState(counting, 1), turn: { current: 'p0', phase: 'working' } });
+  const start = built.engine.getState();
+  const every = (name: string) => start.cards.filter((card) => card.data?.name === name).map((card) => card.id);
+  const [[jar], [bust], [potterHand], [smithHand]] = ['Vase', 'Statue', 'Potter', 'Smith'].map(every);
+  /** p0's workshop holding the Vase, with a Potter and the Smith on it in p0's crew, and the Statue with nothing on it. */
+  const crewed = putOn(relocate(start, [jar, bust], 'workshop-p0', counting), [potterHand, smithHand], 'crew-p0', jar, counting);
+
+  it('counts the cards on the card', () => {
+    expect(built.runtime.workedValue(crewed, jar, 'crew size')).toBe(2);
+  });
+  it('is 0 on a card with nothing on it', () => {
+    expect(built.runtime.workedValue(crewed, bust, 'crew size')).toBe(0);
   });
 });

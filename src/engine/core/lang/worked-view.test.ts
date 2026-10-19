@@ -14,6 +14,7 @@ import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
 import { CREW_GAME, SHOWN, SUBJECT, WORKED_GAME } from './testing';
 import { FORCE_GAME, GAUGED_GAME, RESTING_GAME } from './testing';
+import { COUNT_GAME } from './testing';
 import type { CompiledGame } from './types';
 import type { ZoneSpec } from './types';
 import { shownFlags, standIns } from './worked-view';
@@ -134,7 +135,7 @@ describe('what the game says the view may show', () => {
 });
 
 describe('the phrases the view counts as reading only the card', () => {
-  it('are these 18: decide whether a new one reads beyond the card, and add it to CARDS_ON_IT if it reads the cards on it', () => {
+  it('are these 20: decide whether a new one reads beyond the card, and add it to CARDS_ON_IT if it reads the cards on it', () => {
     // Everything these two registrars register is card-only to `worked-view.ts`, but for CARDS_ON_IT, which counts only where every card
     // on a card is public: a new phrase that reads the cards on it and is missing there would show hidden cards to every seat, and one that
     // reads anything else of the table (a zone's cards, a player's numbers) belongs in another registrar.
@@ -160,6 +161,7 @@ describe('the phrases the view counts as reading only the card', () => {
       'condition: no card on it is {cardflag}',
       "value: a card's {attribute} is its {attribute}", "value: a card's {attribute} goes down by its {attribute}",
       "value: a card's {attribute} is at least {int}",
+      'condition: it is a card whose {cardfilter}', 'condition: it is not a card whose {cardfilter}',
       "value: {cardclass}'s {attribute} is its {attribute}", "value: {cardclass}'s {attribute} is {int}",
       "value: a {cardflag} card's {attribute} is {int}", "value: an {cardflag} card's {attribute} is {int}",
       "value: a {cardflag} card's {attribute} is its {attribute}", "value: an {cardflag} card's {attribute} is its {attribute}",
@@ -456,7 +458,11 @@ describe('what the view says about each player', () => {
     } finally {
       values.mockRestore();
     }
-    expect(registered).toEqual([PLAYER_TOTAL]);
+    // The two counts are judged not shown: `shownPlayerValues` reads only totals, and a count shows nothing until the view is taught it.
+    expect(registered).toEqual([
+      PLAYER_TOTAL, "a player's {playervalue} is the number of {cardgroup}",
+      "a player's {playervalue} is the number of different {attribute} values among {cardgroup}",
+    ]);
   });
 
   // These pass before the view carries values about players, and say it never carries any for a game that shows none.
@@ -468,4 +474,33 @@ describe('what the view says about each player', () => {
       for (const seat of seats) expect('playerValues' in seatExtras(engine, runtime, engine.getState(), seat), seat).toBe(false);
     },
   );
+});
+
+describe('counting the cards on it, and a test by any column', () => {
+  /** SHOWN with a red pay a crowded job gets: one with more than 1 card on it, counted among `group`. */
+  const crowded = (group = 'the cards on it') => withPay(
+    ["  A crowded card's red pay is 2."],
+    'Crew count:', `  A card's crew count is the number of ${group}.`, '',
+    'Crowded:', '  Only if it is a card whose crew count is more than 1.',
+  );
+  /** SHOWN with a red pay a needy job gets: one whose `name` is more than 1, with `sections` before Needy:. */
+  const needy = (name: string, ...sections: string[]) =>
+    withPay(["  A needy card's red pay is 3."], ...sections, 'Needy:', `  Only if it is a card whose ${name} is more than 1.`);
+
+  it('shows a flag that tests a count of the cards on it, and not one of a zone, or where crews are hidden', () => {
+    expect(shownFlags(compiled(crowded()))).toEqual(['busy', 'crowded']);
+    // With crews only their owner sees, crowded would tell every seat how many hidden cards sit on a job.
+    expect(shownFlags(compiled(crowded().replace(CREW_ROW, CREW_ROW.replace('everyone can see', 'only they can see'))))).toEqual([]);
+    expect(shownFlags(compiled(crowded('the cards in the hall')))).toEqual(['busy']);
+  });
+
+  it('shows a flag that tests a column of the card, and not one that tests a value read beyond the card', () => {
+    expect(shownFlags(compiled(needy('red need')))).toEqual(['busy', 'needy']);
+    const hallRed = ['Hall red:', "  A card's hall red is the total red need of the cards in the hall.", ''];
+    expect(shownFlags(compiled(needy('hall red', ...hallRed)))).toEqual(['busy']);
+  });
+
+  it('shows no value about a player that counts cards', () => {
+    expect(shownPlayerValues(compiled(COUNT_GAME))).toEqual([]);
+  });
 });

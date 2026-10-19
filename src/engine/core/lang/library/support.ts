@@ -220,6 +220,27 @@ export function totalOf(env: PhraseEnv, attribute: string, group: CardGroup): nu
   return cardsIn(env, group).reduce((sum, card) => sum + (numberIfAny(env, card, attribute) ?? 0), 0);
 }
 
+/** How many cards a group holds, read as `cardsIn` reads them: those that pass its tests, when it has some. 0 over no cards. */
+export function numberOfCards(env: PhraseEnv, group: CardGroup): number {
+  return cardsIn(env, group).length;
+}
+
+/**
+ * How many different values the cards of a group have under a name, each read as every phrase reads one (`cardValueOf`), so a value
+ * worked out for cards counts as it comes to, 0 included. A card without the value adds no kind. Two values are one kind as a test of a
+ * card compares them: text in any capitals, a number only with the same number, and never text with a number.
+ */
+export function kindsAmong(env: PhraseEnv, attribute: string, group: CardGroup): number {
+  const kinds = new Set<string>();
+  for (const card of cardsIn(env, group)) {
+    const value = cardValueOf(env, card, attribute);
+    if (value === null) continue;
+    // Tagged by type, so the text “1” and the number 1 stay two kinds, as `sameValue` keeps them.
+    kinds.add(typeof value === 'string' ? `text:${canon(value)}` : `json:${JSON.stringify(value)}`);
+  }
+  return kinds.size;
+}
+
 /** The seat an example line names; it has to be sitting at the table. */
 export const seatOf = (env: PhraseEnv, seat: Json): PlayerId => resolveSeat({ seat: seat as string }, env);
 

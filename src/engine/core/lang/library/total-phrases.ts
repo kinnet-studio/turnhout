@@ -5,6 +5,7 @@ import type { CardGroup, ConditionFn, EffectFn, ValueFn } from '../types';
 import { payCounter, transfer } from './board-phrases';
 import { changeable, loseCount } from './card-number-phrases';
 import { cardNumber, cardsIn, playerValueOf, theyOf, totalOf } from './support';
+import { numberOfCards } from './support';
 
 const totalIs: ConditionFn = (env, [attribute, group, n]) => totalOf(env, attribute as string, group as CardGroup) === n;
 
@@ -34,6 +35,15 @@ export const GOES_UP_BY_TOTAL = "a card's {attribute} goes up by the total {attr
 const goesUpByTheTotal: ValueFn = (env, [, attribute, group], value) =>
   (value === null ? null : value + totalOf(env, attribute as string, group as CardGroup));
 
+/** The line of a value worked out for a card that counts a group: the page shows it as it shows `FROM_CARDS_TOTAL`. */
+export const FROM_CARDS_COUNT = "a card's {attribute} is the number of {cardgroup}";
+
+/**
+ * The first {attribute} (or {playervalue}) is the value its section works out, which the compiler checks; the line says what it comes
+ * to: how many cards the group holds. A value worked out for a card and one worked out for a player read it alike.
+ */
+export const valueIsTheNumber: ValueFn = (env, [, group]) => numberOfCards(env, group as CardGroup);
+
 /**
  * One amount shared among the cards of a group: as much as one of their values comes to before any card changes, which the cards use up
  * in the group's order. Each loses what it has of the count, up to what is left, and the rest goes on to the next card; a card at 0 uses
@@ -61,9 +71,9 @@ const loseBetweenThem: EffectFn = (env, [group, name, shared]) => {
  * The sentences that add up a number over a group of cards (R6): the cards in some zones, maybe only those whose number is more than
  * some, the cards on “it”, or the picked cards. Each card's number is read as every phrase reads it, through the values worked out for
  * cards, and a card without it counts as 0, since a group may well hold cards of several kinds. A value's line may be the total, or go up
- * by it. And one of their values shared among the cards of a group, each losing a count up to what is left of it. What a group needs (a
- * player for their zones, a card for “it”, a button that picks some cards) the compiler asks of the group itself; a value's line is about
- * the card it works the value out for, as every such line is.
+ * by it, or count the cards of a group. And one of their values shared among the cards of a group, each losing a count up to what is left
+ * of it. What a group needs (a player for their zones, a card for “it”, a button that picks some cards) the compiler asks of the group
+ * itself; a value's line is about the card it works the value out for, as every such line is.
  */
 export function registerTotalPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
@@ -73,5 +83,6 @@ export function registerTotalPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('they pay the total {attribute} of {cardgroup}', payTheTotal, { needsPlayer: true, needsPayment: true })
     .effect('{cardgroup} lose {attribute} between them, up to their {playervalue}, first card first', loseBetweenThem, { needsPlayer: true, writes: 1 })
     .value(FROM_CARDS_TOTAL, valueIsTheTotal, { needsCard: true })
-    .value(GOES_UP_BY_TOTAL, goesUpByTheTotal, { needsCard: true });
+    .value(GOES_UP_BY_TOTAL, goesUpByTheTotal, { needsCard: true })
+    .value(FROM_CARDS_COUNT, valueIsTheNumber, { needsCard: true });
 }
