@@ -258,6 +258,21 @@ Human capital:
   A card's human capital goes up by its skills.
   A card's human capital goes up by its badge points.
 
+Learning blue:
+  Only if it is a Junior card.
+  Only if its blue output is more than 0.
+  Only if its pending blue is 0.
+
+Learning red:
+  Only if it is a Junior card.
+  Only if its red output is more than 0.
+  Only if its pending red is 0.
+
+Learning green:
+  Only if it is a Junior card.
+  Only if its qa output is more than 0.
+  Only if its pending green is 0.
+
 Salary:
   An efficient in ops card's salary is 1.
   An experienced card's salary is 1.
@@ -690,6 +705,9 @@ Phase: actions
     Then:
       Every card on it whose trait is Ego goes to the open job market.
       Every card on it is onboarding.
+      For each card on it, it loses its pending blue.
+      For each card on it, it loses its pending red.
+      For each card on it, it loses its pending green.
       Every card on it goes to their bench.
       It loses its blue cubes.
       It loses its red cubes.
@@ -754,6 +772,9 @@ Phase: engine
   When this phase starts:
     For each card in their development, its new blue cubes go up by its blue team output.
     For each card in their development, its new red cubes go up by its red team output.
+    For each card in their development whose blue team output is more than 0, the cards on it that are learning blue gain 1 pending blue.
+    For each card in their development whose red team output is more than 0, the cards on it that are learning red gain 1 pending red.
+    For each card in their development whose qa team output is more than 0, up to its bugs of the cards on it that are learning green gain 1 pending green, first card first.
     For each card in their development, its bugs go down by its qa team output.
   A player may clean a card in their operations.
     Only if its bugs are more than 0.
@@ -2966,3 +2987,112 @@ Example: a trained Junior discarded from the bench keeps its tokens, and another
   And p1 has 6 capital
   And the Junior Software Dev in p1's bench has 2 blue xp tokens
   And the Junior Software Dev in p1's bench has 1 red skill token
+
+Example: a Junior making Blue gains one Blue Pending token, never two, even at 4 XP, and a Senior beside it gains none (section 11, ruling 1)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And the Dating App in p0's development has a Junior Software Dev and the Architect on it
+  And the Junior Software Dev in p0's development team has 4 blue xp tokens
+  When p0 ends their actions
+  Then the Junior Software Dev in p0's development team has 1 pending blue
+  And the Architect in p0's development team has 0 pending blue
+  When p1 ends their actions
+  And p0 pays salaries
+  And p0 ends their actions
+  Then the Junior Software Dev in p0's development team has 1 pending blue
+
+Example: a Junior Hardware Eng on a Blue-only project gains a Red Pending token for the cubes it wastes, once, and no one gains a token of a colour they don't make (ruling 25, section 11)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And the Dating App in p0's development has a Junior Software Dev, a Junior Hardware Eng and the Diva on it
+  When p0 ends their actions
+  Then the Dating App in p0's development has 0 red cubes
+  And the Junior Hardware Eng in p0's development team has 1 pending red
+  And the Junior Hardware Eng in p0's development team has 0 pending blue
+  And the Junior Software Dev in p0's development team has 0 pending red
+  And the Diva in p0's development team has 0 pending red
+  When p1 ends their actions
+  And p0 pays salaries
+  And p0 ends their actions
+  Then the Junior Hardware Eng in p0's development team has 1 pending red
+
+Example: a Junior QA Tester cleaning a Bug off its project gains a Green Pending token, and a Junior Software Dev beside it does not (section 5, section 11, ruling 1)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And the Dating App in p0's development has 2 bugs
+  And the Dating App in p0's development has a Junior Software Dev and a Junior QA Tester on it
+  When p0 ends their actions
+  Then the Dating App in p0's development has 1 bug
+  And the Junior QA Tester in p0's development team has 1 pending green
+  And the Junior Software Dev in p0's development team has 0 pending green
+
+Example: with one Bug and two Juniors who could clean it, the first on the project gains Green, and once it holds one the next does (section 11, the Rust engine's team order)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And the Dating App in p0's development has 1 bug
+  And the Dating App in p0's development has a Junior Hardware Eng and a Junior QA Tester on it
+  And the Junior Hardware Eng in p0's development team has 1 green skill token
+  And the Junior Hardware Eng in p0's development team is qa mode
+  When p0 ends their actions
+  Then the Junior Hardware Eng in p0's development team has 1 pending green
+  And the Junior QA Tester in p0's development team has 0 pending green
+  Given the Dating App in p0's development has 1 bug
+  When p1 ends their actions
+  Then the phase is modes
+  When p0 confirms their modes
+  And p0 ends their actions
+  Then the Junior QA Tester in p0's development team has 1 pending green
+
+Example: a Junior takes the Green token ahead of a Senior cleaning beside it (section 11, the Rust engine's order)
+  Given the phase is actions
+  And p0's development has a Server Farm
+  And the Server Farm in p0's development has 1 bug
+  And the Server Farm in p0's development has the Fixer and a Junior QA Tester on it
+  And the Fixer in p0's development team is qa mode
+  When p0 ends their actions
+  Then the Server Farm in p0's development has 0 bugs
+  And the Junior QA Tester in p0's development team has 1 pending green
+  And the Fixer in p0's development team has 0 pending green
+
+Example: a Stalled project teaches nothing: no Pending token of any colour (section 3, the slice's R7)
+  Given the phase is actions
+  And p0's development has a Neobank and a Server Farm
+  And the Neobank in p0's development has 1 bug
+  And the Neobank in p0's development has a Junior Software Dev and a Junior QA Tester on it
+  And the Server Farm in p0's development has a Junior Hardware Eng on it
+  When p0 ends their actions
+  Then the Neobank in p0's development is stalled
+  And the Server Farm in p0's development is stalled
+  And the Neobank in p0's development has 1 bug
+  And the Junior Software Dev in p0's development team has 0 pending blue
+  And the Junior QA Tester in p0's development team has 0 pending green
+  And the Junior Hardware Eng in p0's development team has 0 pending red
+
+Example: an onboarding Junior learns nothing, and neither does work in the ops team (section 5, ruling 8)
+  Given the phase is actions
+  And p0's development has a Dating App and a To-Do List
+  And the To-Do List in p0's development has a Junior Software Dev on it
+  And p0's operations has a Mobile Wallet
+  And the Mobile Wallet in p0's operations has 1 bug
+  And p0's ops team has a Junior QA Tester
+  When p0 reassigns the Junior Software Dev to the Dating App
+  And p0 ends their actions
+  Then the Junior Software Dev in p0's development team has 0 pending blue
+  And the Mobile Wallet in p0's operations has 0 bugs
+  And the Junior QA Tester in p0's ops team has 0 pending green
+
+Example: Pending tokens stay with a Junior who is Reassigned, and a Pivot returns them all (section 11, section 6)
+  Given the phase is actions
+  And p0's development has a Dating App and a Smart Lock
+  And the Dating App in p0's development has a Junior Software Dev, a Junior Hardware Eng and a Junior QA Tester on it
+  And the Junior Software Dev in p0's development team has 1 pending blue
+  And the Junior Hardware Eng in p0's development team has 1 pending red
+  And the Junior QA Tester in p0's development team has 1 pending green
+  When p0 reassigns the Junior Software Dev to the Smart Lock
+  Then the Junior Software Dev in p0's development team has 1 pending blue
+  When p0 pivots the Dating App
+  Then p0's bench has a Junior Hardware Eng and a Junior QA Tester
+  And the Junior Hardware Eng in p0's bench has 0 pending red
+  And the Junior QA Tester in p0's bench has 0 pending green
+  When p0 pivots the Smart Lock
+  Then the Junior Software Dev in p0's bench has 0 pending blue

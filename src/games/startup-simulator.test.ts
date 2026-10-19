@@ -173,6 +173,8 @@ const TOKENS = [
 ] as const;
 /** The tokens only a Junior holds: Permanent XP and Skill tokens, of each colour (§3, §11.A). */
 const JUNIOR_TOKENS = TOKENS.filter((name) => name.endsWith(' tokens'));
+/** The Pending tokens a Junior learns on a project, one of each colour at most (§11.B, ruling 1). */
+const PENDING = ['pending blue', 'pending red', 'pending green'] as const;
 /** The Skill token in the colour each skill works in already, which no card of that skill holds (§11.A.1). */
 const NATIVE_SKILL: Record<string, string> = { software: 'blue skill tokens', hardware: 'red skill tokens', qa: 'green skill tokens' };
 /** The traits of the only Specialists that earn Training XP, 2 at most: the QA Engineer's and the Sales Rep's (§11.D). */
@@ -1588,6 +1590,26 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       if (xp > 4) tokens.push(`${which} has ${xp} xp`);
     }
     noneOf(tokens, () => `the XP and Skill tokens ${at}`);
+    // A card holds one Pending token of each colour at most, and gains one only as its owner's Engine runs, while it sits on a project
+    // in their development (§5 Phase D, §11.B, ruling 1). Where a Pending token may sit is left open: a Launch carries the team's into
+    // the ops team, and a Recall from there to the bench.
+    const engineRan = ranTheEngine(before, after, by);
+    const pending: string[] = [];
+    for (const c of after.cards) {
+      const which = `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
+      const was = wasById.get(c.id);
+      const holder = c.data?.[HOLDER_KEY];
+      const onProject = c.zoneId === zoneIdFor('development team', by) && typeof holder === 'string'
+        && cardById(after, holder)?.zoneId === zoneIdFor('development', by);
+      for (const name of PENDING) {
+        const held = tokenOn(c, name);
+        if (held > 1) pending.push(`${which} has ${held} ${name}`);
+        if (held > (was === undefined ? 0 : tokenOn(was, name)) && !(engineRan && onProject)) {
+          pending.push(`${which} gained ${name} ${engineRan ? `off a project of ${by}` : `with no Engine run for ${by}`}`);
+        }
+      }
+    }
+    noneOf(pending, () => `the Pending tokens ${at}`);
     // Training XP sits only on a QA Engineer or a Sales Rep, 2 at most, and no Senior Developer earns a Badge (§11.D, §11.F). A card is
     // fired only while the rules strip it, so none is fired once a move is over. Staff fired from the Board, dismissed or let go unpaid,
     // reach the open job market with no token and no Badge; staff discarded from a bench, at the bench cleanup or for a Layoff, keep
@@ -1709,7 +1731,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(170);
+    expect(results).toHaveLength(178);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -1777,6 +1799,9 @@ describe('Startup Simulator (designer language)', () => {
     // What each card adds to the score: a Badge's 2 points, and its Human Capital, which no column of the talent table holds (§12.6).
     expect(worked['badge points']).toMatchObject({ kind: 'number', refines: false });
     expect(worked['human capital']).toMatchObject({ kind: 'number', refines: false });
+    // What a Junior is learning at the Engine: each colour it works in, or cleans Bugs in, while it holds no Pending token of that colour
+    // (§5 Phase D, §11.B).
+    for (const flag of ['learning blue', 'learning red', 'learning green']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
   });
 
   // The next three tests each add to the rules an example that the rules refuse for naming no button alone, and then an example for each
