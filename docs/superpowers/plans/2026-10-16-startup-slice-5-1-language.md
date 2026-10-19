@@ -56,6 +56,7 @@
   - **P6 (Task 6).** The End example writes `Move the pile to their list.` (ROUNDS_GAME's done-pile rule would refill the pile while End waits).
   - **P7 (Task 3).** The hidden-zone case expects both diagnostics (the Gold option's `Only if the target card is a Smith.` too). G1 folds in: `board-view.ts`'s "There is no card in your …" names every target zone.
   - **P8 (all).** New code imports `zoneCards`/`cardById` from `zone-index.ts`.
+  - **R1 (Task 4, review ruling).** The reshuffling deal places cards in the order `deal up to` gives — a run of the deck at a time, in slot order, so the deck's top card lands last — not one card at a time; with no run-dry the two phrases give the same state. A designer who swaps one for the other on the same row sees the same order.
   - **G2 (forward to 5-2/5-3).** Flags written `its … is more than …` or `it is {cardflag}` never show on a face; prefer `it is a card whose …` where a flag should show.
 
 - **Branch and commits.** Develop on `claude/peaceful-curie-rdfkow`. Commit by pathspec, never `git add -A`. Every commit message ends with these two lines and contains no model identifiers:
@@ -431,8 +432,9 @@ Before starting: re-check `dealUpTo`, `deal`, `shuffleOne` and 4-1's `changeable
 ```ts
 // flow-phrases.ts
 export function shuffleOne(state: GameState, zoneId: string): GameState;
-// queue-phrases.ts — effect: to each zone in turn, one card at a time from the top; when the deck is empty and the discard is not, every
-// card of the discard goes to the deck, which is shuffled; it stops at the number or when both are empty
+// queue-phrases.ts — effect: to each zone in turn, in the order `deal up to` gives (a run of the deck at a time, in slot order); when
+// cards are still owed, the deck is empty and the discard is not, every card of the discard goes to the deck, which is shuffled; it stops
+// at the number or when both are empty (Task 4 review ruling R1)
 'deal up to {int} card(s) from {zone} to {zone}, shuffling {zone} into it when it runs out'
 // card-number-phrases.ts — effects
 '{cardgroup} gain {int} {attribute}'                                                // writes 2: each card of the group gains n
