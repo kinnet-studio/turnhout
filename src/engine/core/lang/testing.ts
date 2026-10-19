@@ -515,6 +515,21 @@ export const COUNT_GAME = [
 ].join('\n');
 
 /**
+ * WORKED_GAME where a gold hand on a job boosts it: a job's team red is the red work of the cards on it, plus its boosters (gold hands
+ * on it) times its red makers (cards on it that make red); a card's polish is its pay plus its worth; a card is guarded while its owner
+ * has a tired card in their idle; a card is high while the card it is on is a Statue.
+ */
+export const BOOST_GAME = [
+  WORKED_GAME, '',
+  'Boosters:', "  A card's boosters is the number of the cards on it whose craft is gold.", '',
+  'Red makers:', "  A card's red makers is the number of the cards on it whose red work is more than 0.", '',
+  'Team red:', "  A card's team red is the total red work of the cards on it.", "  A card's team red goes up by its boosters times its red makers.", '',
+  'Polish:', "  A card's polish is its pay.", "  A card's polish goes up by its worth.", '',
+  'Guarded:', '  Only if its owner has a card in their idle that is tired.', '',
+  'High:', '  Only if the card it is on is a Statue card.',
+].join('\n');
+
+/**
  * CREW_GAME with a cut a job's red need can be given, and values worked out from what kind of card each is and what is on it: the red a
  * job has left once its cut is taken off, whether a hand is working (a red one that is not tired), and whether a job is busy (some card
  * on it is working).

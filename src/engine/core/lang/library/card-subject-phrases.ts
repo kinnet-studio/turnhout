@@ -60,11 +60,24 @@ const goesDownByIts: ValueFn = (env, [, other], value) => (value === null ? null
 const isAtLeast: ValueFn = (_env, [, n], value) => (value === null ? null : Math.max(value, n as number));
 
 /**
+ * The value so far plus another of the card's numbers. Nothing so far stays nothing, as there is nothing to add to; a card without the
+ * number says so as `cardNumber` does, which a worked value takes as a line not about it.
+ */
+const goesUpByIts: ValueFn = (env, [, other], value) => (value === null ? null : value + cardNumber(env, itCard(env), other as string));
+
+/** The value so far plus two of the card's numbers multiplied, each read as `goesUpByIts` reads one. Nothing so far stays nothing. */
+const goesUpByItsTimes: ValueFn = (env, [, first, second], value) => {
+  if (value === null) return null;
+  const card = itCard(env);
+  return value + cardNumber(env, card, first as string) * cardNumber(env, card, second as string);
+};
+
+/**
  * The sentences about the card a rule is about: what kind of card it is, a flag it does not have, a number it has (a count reads plural:
  * “its cracks are 0”), the zone it is in (that zone of any player's), and whether some card, or no card, on it is so. Then three lines of
  * a value worked out for cards: any card's is one of its numbers, it goes down by another, and it is at least a whole number. Then whether
- * it passes, or fails, a test of any column or value. Every one reads “it”, so each needs a card: a face-down view and a hidden pick are
- * judged by that.
+ * it passes, or fails, a test of any column or value. Then two more lines of a value: it goes up by another of its numbers, or by two of
+ * them multiplied. Every one reads “it”, so each needs a card: a face-down view and a hidden pick are judged by that.
  */
 export function registerCardSubjectPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
@@ -81,5 +94,7 @@ export function registerCardSubjectPhrases(lib: PhraseLibrary): PhraseLibrary {
     .value("a card's {attribute} goes down by its {attribute}", goesDownByIts, { needsCard: true })
     .value("a card's {attribute} is at least {int}", isAtLeast, { needsCard: true })
     .condition('it is a card whose {cardfilter}', itIsACardWhose(true), { needsCard: true })
-    .condition('it is not a card whose {cardfilter}', itIsACardWhose(false), { needsCard: true });
+    .condition('it is not a card whose {cardfilter}', itIsACardWhose(false), { needsCard: true })
+    .value("a card's {attribute} goes up by its {attribute}", goesUpByIts, { needsCard: true })
+    .value("a card's {attribute} goes up by its {attribute} times its {attribute}", goesUpByItsTimes, { needsCard: true });
 }

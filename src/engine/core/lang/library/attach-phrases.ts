@@ -64,6 +64,13 @@ const pickedGoOnTarget: EffectFn = (env, [zone]) => {
 /** Whether it, the card the rule is about, sits on any card. */
 const isOnACard: ConditionFn = (env) => holderIdOf(itCard(env)) !== null;
 
+/** Whether the card it sits on is, or is not, of that kind. A card on no card is on no card of any kind, so neither holds of it. */
+const theCardItIsOnIs = (wanted: boolean): ConditionFn => (env, [match]) => {
+  const holderId = holderIdOf(itCard(env));
+  const holder = holderId === null ? undefined : cardById(env.state, holderId);
+  return holder !== undefined && matchesCard(holder, match as CardMatch) === wanted;
+};
+
 /** The ids of the picked cards, in the press's order, that are so, or with `wanted` false are not, read as every phrase reads a flag. */
 function pickedThatAre(env: PhraseEnv, flag: string, wanted: boolean): string[] {
   return thePickedCards(env).filter((id) => {
@@ -185,18 +192,20 @@ const cardHasOnItExpected: ExpectFn = (env, [match, zone, wanted]) =>
 const cardHasNothingOnItExpected: ExpectFn = (env, [match, zone]) => onItIs(env, match as CardMatch, zone as ZoneRef, [], 'no cards');
 
 /**
- * The sentences about cards that sit on cards (R3): whether the card a press is about sits on its target card, or on any card, and
- * whether any picked card is so; putting it or the picked cards (all, or those that are so) on the target card, and the picked cards
- * that are not so elsewhere; moving or marking every card on it, and moving those that are so along with it, still on it, and those that
- * are not elsewhere. The rules for when a card of a kind joins a card in a zone, which every line that puts cards on a target card tells,
- * and what they do to the card it joins. And the lines of an example that put cards on a card, or check what is on one. A card comes off
- * its card whenever it moves, so a line that puts it on one says so after the move.
+ * The sentences about cards that sit on cards (R3): whether the card a press is about sits on its target card, or on any card, whether
+ * the card it sits on is, or is not, of a kind, and whether any picked card is so; putting it or the picked cards (all, or those that are
+ * so) on the target card, and the picked cards that are not so elsewhere; moving or marking every card on it, and moving those that are
+ * so along with it, still on it, and those that are not elsewhere. The rules for when a card of a kind joins a card in a zone, which every
+ * line that puts cards on a target card tells, and what they do to the card it joins. And the lines of an example that put cards on a
+ * card, or check what is on one. A card comes off its card whenever it moves, so a line that puts it on one says so after the move.
  */
 export function registerAttachPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
     .condition('it is on the target card', isOnTarget(true), { needsCard: true, needsOnto: true })
     .condition('it is not on the target card', isOnTarget(false), { needsCard: true, needsOnto: true })
     .condition('it is on a card', isOnACard, { needsCard: true })
+    .condition('the card it is on is {cardclass}', theCardItIsOnIs(true), { needsCard: true })
+    .condition('the card it is on is not {cardclass}', theCardItIsOnIs(false), { needsCard: true })
     .condition('no picked card is {cardflag}', noPickedCardIs, { needsCards: true })
     .effect('it goes to {zone}, on the target card', itGoesOnTarget, { needsCard: true, needsOnto: true })
     .effect('the picked cards go to {zone}, on the target card', pickedGoOnTarget, { needsCards: true, needsOnto: true })

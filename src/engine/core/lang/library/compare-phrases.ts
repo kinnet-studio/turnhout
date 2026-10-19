@@ -7,6 +7,7 @@ import type { CardFilter, ConditionFn, EffectFn, PhraseEnv, ZoneRef } from '../t
 import { relocate, zoneIdFor } from '../zones';
 import { itCard } from './fact-phrases';
 import { cardOf, cardsInZones, cardValueOf, movedCard, passes, soleZone, theyOf } from './support';
+import { ownerOf } from './support';
 
 // ---- a card of theirs, or of anyone's ----------------------------------------------------------
 
@@ -47,6 +48,16 @@ const anotherPlayerHasACard: ConditionFn = (env, [zone, filter]) => {
   return playersIn(env.state, env.seats).some((seat) => seat !== they && seatHasACard(env, seat, zone as string, filter as CardFilter));
 };
 
+/**
+ * Whether its owner, the player whose zone it is in, has a card in that zone of theirs that passes the tests of the clause. A card in the
+ * center has no owner, and so no owner who has such a card.
+ */
+const itsOwnerHas = (wanted: boolean): ConditionFn => (env, [zone, clause]) => {
+  const owner = ownerOf(env, itCard(env));
+  const theirs = owner === null ? [] : cardsInZones(env, { of: { seat: owner }, zone: zone as string });
+  return theirs.some((card) => passes(env, card, clause as CardFilter[])) === wanted;
+};
+
 // ---- a value a card has none of ------------------------------------------------------------------
 
 /** A blank cell, or a name the card has no column or count for: read as every phrase reads a card's value. */
@@ -68,9 +79,9 @@ const everyCardOnItWhoseGoesTo: EffectFn = (env, [filter, zone]) => {
 /**
  * The sentences that compare cards by a test (see `passes`): whether they, some player, or another player has a card that passes it in a
  * zone, whether they have at least some number of such cards, and whether they have one that is, or is not, so (maybe passing a test as
- * well); whether the card a press moves, or “it”, has no value under a name; and moving the cards on it that pass. A test that compares
- * with “the card's” value needs a card move and one that compares with “its” needs a card; the compiler asks that of the test itself, in a
- * clause as well.
+ * well); whether the card a press moves, or “it”, has no value under a name; moving the cards on it that pass; and whether its owner has,
+ * or has no, card in a zone of theirs that is, or is not, so. A test that compares with “the card's” value needs a card move and one that
+ * compares with “its” needs a card; the compiler asks that of the test itself, in a clause as well.
  */
 export function registerComparePhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
@@ -83,5 +94,7 @@ export function registerComparePhrases(lib: PhraseLibrary): PhraseLibrary {
     .condition('another player has a card in their {perzone} whose {cardfilter}', anotherPlayerHasACard, { needsPlayer: true })
     .condition('the card has no {attribute}', theCardHasNo, { needsMove: true })
     .condition('it has no {attribute}', itHasNo, { needsCard: true })
-    .effect('every card on it whose {cardfilter} goes to {zone}', everyCardOnItWhoseGoesTo, { needsCard: true });
+    .effect('every card on it whose {cardfilter} goes to {zone}', everyCardOnItWhoseGoesTo, { needsCard: true })
+    .condition('its owner has a card in their {perzone} {cardclause}', itsOwnerHas(true), { needsCard: true })
+    .condition('its owner has no card in their {perzone} {cardclause}', itsOwnerHas(false), { needsCard: true });
 }

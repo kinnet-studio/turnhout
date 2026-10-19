@@ -8,6 +8,7 @@ import { RuleError } from '../diagnostics';
 import { runExamples } from '../examples';
 import { CREW_GAME, WORKED_GAME, fixtureEnv, runPhrase } from '../testing';
 import { MEND_GAME } from '../testing';
+import { BOOST_GAME } from '../testing';
 import { putOn } from '../attach';
 import type { CompiledGame, MoveInfo, Subject } from '../types';
 import { relocate } from '../zones';
@@ -353,6 +354,66 @@ describe('worth and rest work, in MEND_GAME', () => {
       "a {cardflag} card's {attribute} is its {attribute}", "an {cardflag} card's {attribute} is its {attribute}",
       "a card's {attribute} is at least {int}", "a card's {attribute} goes up by the total {attribute} of {cardgroup}",
     ]) {
+      expect([pattern, lib.get('value', pattern)?.needsCard]).toEqual([pattern, true]);
+    }
+  });
+});
+
+describe("a card's numbers added and multiplied", () => {
+  const boost = compiled(BOOST_GAME);
+  // Setup deals 2 jobs to each stash, more than the pile holds for three: a state with p0's turn set skips it.
+  const built = createEngine(boost, lib, 3, { ...initialState(boost, 1), turn: { current: 'p0', phase: 'working' } });
+  /** The state as p0's turn starts: the jobs in the pile, the hands in the hall. */
+  const start = built.engine.getState();
+  const every = (name: string) => start.cards.filter((card) => card.data?.name === name).map((card) => card.id);
+  const [[jar], [bust], [potterHand], [smithHand, otherSmith], [tinkerHand]] = ['Vase', 'Statue', 'Potter', 'Smith', 'Tinker'].map(every);
+  /** p0's workshop holding the Vase, with `hands` on it in p0's crew, in that order. */
+  const onTheJar = (hands: string[]) => putOn(relocate(start, [jar], 'workshop-p0', boost), hands, 'crew-p0', jar, boost);
+  const value = (state: GameState, id: string, name: string) => built.runtime.workedValue(state, id, name);
+  /** A runtime for three of BOOST_GAME with `lines` after it. */
+  const reading = (...lines: string[]) => createEngine(compiled([BOOST_GAME, '', ...lines].join('\n')), lib, 3, start).runtime;
+
+  describe('team red', () => {
+    it('is the red work of the cards on it plus its boosters times its red makers: a Potter, a Tinker and a Smith come to 4', () => {
+      // Red work 1 + 1 + 0, plus 1 booster (the Smith) times 2 red makers (the Potter and the Tinker).
+      expect(value(onTheJar([potterHand, tinkerHand, smithHand]), jar, 'team red')).toBe(4);
+    });
+    it('comes to 3 for two Smiths and a Potter', () => {
+      // Red work 0 + 0 + 1, plus 2 boosters times 1 red maker.
+      expect(value(onTheJar([smithHand, otherSmith, potterHand]), jar, 'team red')).toBe(3);
+    });
+    it('comes to 0 for a tired Potter and a Smith: a tired hand makes no red, so 1 booster times 0 red makers', () => {
+      expect(value(changeCard(onTheJar([potterHand, smithHand]), potterHand, { tired: true }, boost), jar, 'team red')).toBe(0);
+    });
+    it('is 0 with nothing on it', () => {
+      expect(value(relocate(start, [jar], 'workshop-p0', boost), jar, 'team red')).toBe(0);
+    });
+  });
+
+  describe('polish', () => {
+    it('is its pay plus its worth: 4 for a Vase, 6 for a Statue', () => {
+      expect([value(start, jar, 'polish'), value(start, bust, 'polish')]).toEqual([4, 6]);
+    });
+    it('is 0 for a Potter, which has neither, so neither line is about it', () => {
+      expect(value(start, potterHand, 'polish')).toBe(0);
+    });
+  });
+
+  describe('nothing so far', () => {
+    it('stays nothing: a hand has no pay for its pay to go up from', () => {
+      expect(reading('Pay:', "  A card's pay goes up by its worth.").workedValue(start, potterHand, 'pay')).toBeNull();
+    });
+    it('stays nothing on a card that has the numbers it would add: a Vase has a worth but no wage', () => {
+      expect(reading('Wage:', "  A card's wage goes up by its worth.").workedValue(start, jar, 'wage')).toBeNull();
+      expect(reading('Wage:', "  A card's wage goes up by its worth times its worth.").workedValue(start, jar, 'wage')).toBeNull();
+    });
+    it("adds its two numbers multiplied to what there is: a Vase's pay of 1 goes up by its worth times its worth, to 10", () => {
+      expect(reading('Pay:', "  A card's pay goes up by its worth times its worth.").workedValue(start, jar, 'pay')).toBe(10);
+    });
+  });
+
+  it('marks both lines as about a card', () => {
+    for (const pattern of ["a card's {attribute} goes up by its {attribute}", "a card's {attribute} goes up by its {attribute} times its {attribute}"]) {
       expect([pattern, lib.get('value', pattern)?.needsCard]).toEqual([pattern, true]);
     }
   });

@@ -135,7 +135,7 @@ describe('what the game says the view may show', () => {
 });
 
 describe('the phrases the view counts as reading only the card', () => {
-  it('are these 20: decide whether a new one reads beyond the card, and add it to CARDS_ON_IT if it reads the cards on it', () => {
+  it('are these 22: decide whether a new one reads beyond the card, and add it to CARDS_ON_IT if it reads the cards on it', () => {
     // Everything these two registrars register is card-only to `worked-view.ts`, but for CARDS_ON_IT, which counts only where every card
     // on a card is public: a new phrase that reads the cards on it and is missing there would show hidden cards to every seat, and one that
     // reads anything else of the table (a zone's cards, a player's numbers) belongs in another registrar.
@@ -162,6 +162,7 @@ describe('the phrases the view counts as reading only the card', () => {
       "value: a card's {attribute} is its {attribute}", "value: a card's {attribute} goes down by its {attribute}",
       "value: a card's {attribute} is at least {int}",
       'condition: it is a card whose {cardfilter}', 'condition: it is not a card whose {cardfilter}',
+      "value: a card's {attribute} goes up by its {attribute}", "value: a card's {attribute} goes up by its {attribute} times its {attribute}",
       "value: {cardclass}'s {attribute} is its {attribute}", "value: {cardclass}'s {attribute} is {int}",
       "value: a {cardflag} card's {attribute} is {int}", "value: an {cardflag} card's {attribute} is {int}",
       "value: a {cardflag} card's {attribute} is its {attribute}", "value: an {cardflag} card's {attribute} is its {attribute}",
@@ -502,5 +503,24 @@ describe('counting the cards on it, and a test by any column', () => {
 
   it('shows no value about a player that counts cards', () => {
     expect(shownPlayerValues(compiled(COUNT_GAME))).toEqual([]);
+  });
+});
+
+describe("a card's numbers added and multiplied, what its owner has, and the card it is on", () => {
+  it('stands a value in for a column still when it goes up by its numbers, or by two of them multiplied', () => {
+    const LAST = "  A card's red left goes down by its cut red done.";
+    const added = SHOWN.replace(LAST, [
+      LAST, "  A card's red left goes up by its red done times its cut red done.", "  A card's red left goes up by its red done.",
+    ].join('\n'));
+    expect(added).not.toBe(SHOWN);
+    expect(standIns(compiled(added))).toEqual({ 'red need': 'red left' });
+  });
+
+  it('Review Focus: shows no flag read through what its owner has, nor through the card it is on', () => {
+    // Watched reads a stash, which only its owner sees; perched reads another card than the one it is about.
+    const watched = withPay(["  A watched card's red pay is 2."], 'Watched:', '  Only if its owner has a card in their stash that is tired.');
+    expect(shownFlags(compiled(watched))).toEqual(['busy']);
+    const perched = withPay(["  A perched card's red pay is 2."], 'Perched:', '  Only if the card it is on is a Statue card.');
+    expect(shownFlags(compiled(perched))).toEqual(['busy']);
   });
 });

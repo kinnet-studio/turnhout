@@ -9,6 +9,7 @@ import { noSuchNumber, RuleError } from '../diagnostics';
 import { canon } from '../refs';
 import type { CardFilter, CardGroup, MoveInfo, PhraseEnv, ZoneRef } from '../types';
 import { resolveSeat, resolveZoneIds } from '../zones';
+import { zoneInfo } from '../zones';
 
 const OWNER_WORDS = { actor: 'their', winner: "the winner's", other: "the other player's" };
 
@@ -153,6 +154,11 @@ export function playerValueOf(env: PhraseEnv, seat: PlayerId, name: string): num
 /** Every card in the zones a reference names, zone by zone and slot by slot. `actor` is who “their” means. */
 export const cardsInZones = (env: PhraseEnv, ref: ZoneRef, actor?: PlayerId): CardState[] =>
   resolveZoneIds(ref, env, actor).flatMap((id) => zoneCards(env.state, id));
+
+/** Whose a card is: the seat of the zone each player has that it is in; null for a card in the center, which is no one's. */
+export function ownerOf(env: PhraseEnv, card: CardState): PlayerId | null {
+  return zoneInfo(env.game, card.zoneId)?.seat ?? null;
+}
 
 /** The card a test compares a card with: the card the press moves, or “it”, the card the rule is about. */
 function comparedCard(env: PhraseEnv, of: 'the card' | 'it'): CardState {

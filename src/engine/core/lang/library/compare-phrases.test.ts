@@ -7,6 +7,7 @@ import { compileGame } from '../compile';
 import { GUILD_GAME, runPhrase } from '../testing';
 import { RESTING_GAME } from '../testing';
 import { COUNT_GAME } from '../testing';
+import { BOOST_GAME } from '../testing';
 import { putOn } from '../attach';
 import { changeCard } from '../card-facts';
 import type { CompiledGame } from '../types';
@@ -191,5 +192,47 @@ describe('at least some cards of theirs that pass a test', () => {
   });
   it('holds of at least 0 cards about a player who has none', () => {
     expect([atLeast('p1', 0), atLeast('p1', 1)]).toEqual([true, false]);
+  });
+});
+
+describe('what its owner has', () => {
+  const boost = compiled(BOOST_GAME);
+  // Setup deals 2 jobs to each stash, more than the pile holds for three: a state with p0's turn set skips it.
+  const built = createEngine(boost, lib, 3, { ...initialState(boost, 1), turn: { current: 'p0', phase: 'working' } });
+  const start = built.engine.getState();
+  const every = (name: string) => start.cards.filter((card) => card.data?.name === name).map((card) => card.id);
+  const [[jar, scrapped], [potterHand]] = ['Vase', 'Potter'].map(every);
+  /** A Vase in p0's workshop, the other Vase in the scrap, and a Potter in `seat`'s idle, tired or not. */
+  const table = (seat: PlayerId, tired: boolean) => [
+    (state: GameState) => relocate(state, [jar], 'workshop-p0', boost),
+    (state: GameState) => relocate(state, [scrapped], 'scrap', boost),
+    (state: GameState) => relocate(state, [potterHand], `idle-${seat}`, boost),
+    (state: GameState) => changeCard(state, potterHand, { tired }, boost),
+  ].reduce((state, arrange) => arrange(state), start);
+  const guarded = (state: GameState, id: string) => built.runtime.workedFlag(state, id, 'guarded');
+  /** A line about the card `id` and no player, read as a rule about that card reads it. */
+  const judged = (text: string, state: GameState, id: string) =>
+    runPhrase<boolean>(lib, 'condition', text, built.runtime.env(state, undefined, undefined, { player: null, space: null, card: id }));
+  const HAS_NONE = 'its owner has no card in their idle that is tired';
+
+  it("holds of a card in a player's zone when that player has such a card: a Vase in p0's workshop, with a tired Potter in p0's idle", () => {
+    expect(guarded(table('p0', true), jar)).toBe(true);
+  });
+  it("does not hold when their card is not so, nor when the card that is so is another player's", () => {
+    expect(guarded(table('p0', false), jar)).toBe(false);
+    expect(guarded(table('p1', true), jar)).toBe(false);
+  });
+  it('does not hold of a card in the center, which has no owner', () => {
+    expect(guarded(table('p0', true), scrapped)).toBe(false);
+  });
+  it('reads the other way round: it holds when its owner has none, and of a card that has no owner', () => {
+    expect(judged(HAS_NONE, table('p0', true), scrapped)).toBe(true);
+    expect(judged(HAS_NONE, table('p0', false), jar)).toBe(true);
+    expect(judged(HAS_NONE, table('p0', true), jar)).toBe(false);
+  });
+  it('marks both as about a card', () => {
+    for (const pattern of ['its owner has a card in their {perzone} {cardclause}', 'its owner has no card in their {perzone} {cardclause}']) {
+      expect([pattern, lib.get('condition', pattern)?.needsCard]).toEqual([pattern, true]);
+    }
   });
 });

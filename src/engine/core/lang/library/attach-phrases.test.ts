@@ -12,6 +12,7 @@ import { friendlyError } from '../friendly';
 import { CREW_GAME, fixtureEnv, runPhrase } from '../testing';
 import { JOIN_GAME } from '../testing';
 import { YARD_GAME } from '../testing';
+import { BOOST_GAME } from '../testing';
 import { relocate } from '../zones';
 import { createDefaultLibrary } from './index';
 
@@ -535,5 +536,43 @@ describe('a yard where some hands sit on a job in the shelf', () => {
       expect(holderOf(engine.getState(), smith)).toBe(shippedVase);
       expect(dentsOf(engine.getState(), shippedVase)).toBeUndefined();
     });
+  });
+});
+
+describe('the card it is on', () => {
+  const compiled = compileGame(BOOST_GAME, lib);
+  const boost = compiled.game!;
+  // Setup deals 2 jobs to each stash, more than the pile holds for three: a state with p0's turn set skips it.
+  const built = createEngine(boost, lib, 3, { ...initialState(boost, 1), turn: { current: 'p0', phase: 'working' } });
+  const start = built.engine.getState();
+  const every = (name: string) => start.cards.filter((card) => card.data?.name === name).map((card) => card.id);
+  const [[jar], [bust], [potterHand]] = ['Vase', 'Statue', 'Potter'].map(every);
+  const atWorkThere = relocate(start, [jar, bust], 'workshop-p0', boost);
+  /** The Vase and the Statue in p0's workshop, and the Potter in p0's crew, on `holder`. */
+  const on = (holder: string) => putOn(atWorkThere, [potterHand], 'crew-p0', holder, boost);
+  /** The Vase and the Statue in p0's workshop, and the Potter in p0's idle, on no card. */
+  const onNothing = relocate(atWorkThere, [potterHand], 'idle-p0', boost);
+  const high = (state: GameState) => built.runtime.workedFlag(state, potterHand, 'high');
+  /** A line about the Potter and no player, read as a rule about that card reads it. */
+  const judged = (text: string, state: GameState) =>
+    runPhrase<boolean>(lib, 'condition', text, built.runtime.env(state, undefined, undefined, { player: null, space: null, card: potterHand }));
+  const NOT_A_STATUE = 'the card it is on is not a Statue card';
+
+  it('compiles with no problems', () => {
+    expect(compiled.diagnostics).toEqual([]);
+  });
+  it('holds of a card on a card of that kind: a Potter on a Statue is high, and one on a Vase is not', () => {
+    expect([high(on(bust)), high(on(jar))]).toEqual([true, false]);
+  });
+  it('reads the other way round: a Potter on a Vase is on a card that is not a Statue', () => {
+    expect([judged(NOT_A_STATUE, on(jar)), judged(NOT_A_STATUE, on(bust))]).toEqual([true, false]);
+  });
+  it('holds neither way of a card on no card', () => {
+    expect([high(onNothing), judged(NOT_A_STATUE, onNothing)]).toEqual([false, false]);
+  });
+  it('marks both as about a card', () => {
+    for (const pattern of ['the card it is on is {cardclass}', 'the card it is on is not {cardclass}']) {
+      expect([pattern, lib.get('condition', pattern)?.needsCard]).toEqual([pattern, true]);
+    }
   });
 });
