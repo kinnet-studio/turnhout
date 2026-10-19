@@ -176,6 +176,20 @@ describe('badge', () => {
     expect(boxOf(one.back)).toEqual([-56.57, 0, 56.57, 14]);
   });
 
+  it('breaks only between the badge’s comma-separated parts, never inside a count and its name', () => {
+    const s = new CardSprite();
+    // 56.68 wide on one line, past the 56 of the corner. A break at a word would leave 'tired, 1' (32.79) over 'dent', which reads as a count of
+    // tired: the part '1 dent' moves down whole.
+    s.setDecor({ badge: 'tired, 1 dent' });
+    expect(badgeOf(s).text.text).toBe('tired,\n1 dent');
+    // Parts that fit together stay on a line: 'busy, tired,' is 53.35 wide, and '1 dent' no longer fits after it.
+    s.setDecor({ badge: 'busy, tired, 1 dent' });
+    expect(badgeOf(s).text.text).toBe('busy, tired,\n1 dent');
+    // A part wider than a line of its own (96.14) starts a line and breaks at its spaces, as the parts around it do not.
+    s.setDecor({ badge: 'busy, 12 dents in the code, tired' });
+    expect(badgeOf(s).text.text).toBe('busy,\n12 dents in\nthe code,\ntired');
+  });
+
   it('sits beside a ring and a caption, after the two faces', () => {
     const s = new CardSprite();
     s.setDecor({ ring: 'chosen', caption: 'Red 1/1', badge: 'busy' });

@@ -12,15 +12,25 @@ const BADGE_ROOM = 56;
 // A dimmed card's faces are drawn this see-through; its ring, caption and badge are not, so they stay as easy to read.
 const DIM_ALPHA = 0.4;
 
-/** A badge's text in lines, each as long as fits in the corner: a word too wide for it has a line of its own. */
-function badgeLines(text: string): string[] {
+/** Packs `pieces` into lines joined by a space, each as long as fits in the corner; a piece too wide for it has a line of its own. */
+function packLines(pieces: string[]): string[] {
   const lines: string[] = [];
-  for (const word of text.split(' ')) {
-    const longer = lines.length === 0 ? null : `${lines[lines.length - 1]} ${word}`;
+  for (const piece of pieces) {
+    const longer = lines.length === 0 ? null : `${lines[lines.length - 1]} ${piece}`;
     if (longer !== null && boldTextWidth(longer, BADGE_SIZE) <= BADGE_ROOM) lines[lines.length - 1] = longer;
-    else lines.push(word);
+    else lines.push(piece);
   }
   return lines;
+}
+
+/**
+ * A badge's text in lines, each as long as fits in the corner. The text is a list of parts joined by ', ', and a line breaks only
+ * between parts, so a count stays with what it counts (`tired,` then `1 dent`). Only a part too wide for a line of its own is broken,
+ * at its spaces; a word too wide for a line has a line of its own.
+ */
+function badgeLines(text: string): string[] {
+  const parts = text.split(', ').map((part, i, all) => (i < all.length - 1 ? `${part},` : part));
+  return packLines(parts).flatMap((line) => (boldTextWidth(line, BADGE_SIZE) <= BADGE_ROOM ? [line] : packLines(line.split(' '))));
 }
 
 type Badge = { box: Container; back: Graphics; text: Text; says: string };
