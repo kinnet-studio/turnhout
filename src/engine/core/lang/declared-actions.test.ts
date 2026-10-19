@@ -27,6 +27,7 @@ import { cardsOn, putOn } from './attach';
 import { changeCard } from './card-facts';
 import { COACH_GAME } from './testing';
 import { cardById } from './zone-index';
+import { noCardToGoTo } from './declared-actions';
 
 const lib = createDefaultLibrary();
 const game = compileGame(TINY_BOARD, lib).game!;
@@ -1204,7 +1205,22 @@ describe('a target card in several zones', () => {
   it('says how to pick where it goes, naming every zone, and offers the cards of each zone in turn', () => {
     const { engine, runtime } = coaching();
     expect(ontoPrompt(coachAction)).toBe(PROMPT);
+    expect(noCardToGoTo(coachAction)).toBe('There is no card in your workshop, your crew or your idle.');
     expect(ontoCandidates(runtime, coachAction, engine.getState(), 'p0')).toEqual([vase, potter, smith]);
+  });
+
+  it('offers each card once when two of its zones are one for the seat, and both zones\' cards when they are two', () => {
+    const CREWS = 'coach a card from their stash to a card in their crew or p0\'s crew';
+    const text = COACH_GAME.replace(`  A player may ${COACH}.`, `  A player may ${CREWS}.`);
+    expect(text).not.toBe(COACH_GAME);
+    const crews = compileGame(text, lib);
+    expect(crews.diagnostics).toEqual([]);
+    // p1's workshop holds the other Vase, with a second Potter on it in their crew.
+    const theirs = (s: GameState) => putOn(relocate(s, [vase2], 'workshop-p1', g), [potter2], 'crew-p1', vase2, g);
+    const { engine, runtime } = createEngine(crews.game!, lib, 2, theirs(arranged(started)));
+    const action = crews.game!.phases[0].actions.find((a) => a.words === CREWS)!;
+    expect(ontoCandidates(runtime, action, engine.getState(), 'p0')).toEqual([potter]);
+    expect(ontoCandidates(runtime, action, engine.getState(), 'p1')).toEqual([potter2, potter]);
   });
 
   it('coaches onto a card in the second zone: Gold is refused for a Potter, so Plain is filled in', () => {

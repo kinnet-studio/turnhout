@@ -87,13 +87,19 @@ function ontoOf(action: DeclaredAction): { zone: ZoneRef; text: string }[] {
   return places;
 }
 
+/** Every zone a button picks the card its cards go to in, as the player is told it: “your workshop, your crew or your idle”. */
+const ontoZonesSaid = (action: DeclaredAction): string => joinOr(ontoOf(action).map(({ text }) => yours(text)));
+
 /** What a button that picks a card for its cards to go to asks of the player who has not picked one it takes, naming every zone it may be in. */
 export function ontoPrompt(action: DeclaredAction): string {
-  return `Pick where ${pickOf(action).some ? 'they go' : 'it goes'}: a card in ${joinOr(ontoOf(action).map(({ text }) => yours(text)))}.`;
+  return `Pick where ${pickOf(action).some ? 'they go' : 'it goes'}: a card in ${ontoZonesSaid(action)}.`;
 }
 
 /** Why a button that picks a card in a zone can't be pressed while the zone holds none. */
 export const noCardIn = (zoneText: string): string => `There is no card in ${yours(zoneText)}.`;
+
+/** Why a button that picks a card for its cards to go to can't be pressed while none of the zones it may be in holds one, naming each. */
+export const noCardToGoTo = (action: DeclaredAction): string => `There is no card in ${ontoZonesSaid(action)}.`;
 
 /** The ids in the zone `zone` names for `seat` that a move may take, in slot order: only the top card of a pile. None for no seat's zone. */
 function takeableIds(runtime: LangRuntime, zone: ZoneRef, state: GameState, seat: PlayerId): string[] {
@@ -113,10 +119,11 @@ export function cardCandidates(runtime: LangRuntime, action: DeclaredAction, sta
 
 /**
  * The cards a button that picks a card for its cards to go to offers `seat` as that card, as `cardCandidates` offers the cards: those of
- * each zone it may be in, in the order the zones are written.
+ * each zone it may be in, in the order the zones are written. Two zones that are one for this seat (“their crew or p0's crew”, for p0)
+ * offer its cards once, where they are first offered, so that the picker shows each card once.
  */
 export function ontoCandidates(runtime: LangRuntime, action: DeclaredAction, state: GameState, seat: PlayerId): string[] {
-  return ontoOf(action).flatMap(({ zone }) => takeableIds(runtime, zone, state, seat));
+  return [...new Set(ontoOf(action).flatMap(({ zone }) => takeableIds(runtime, zone, state, seat)))];
 }
 
 /**
