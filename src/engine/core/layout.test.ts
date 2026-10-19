@@ -96,6 +96,21 @@ describe('computeZoneLayout of a row that keeps its placed cards', () => {
     expect(m.get('c')).toEqual({ x: 55, y: 0, rotation: 0, scale: 1, z: 12 });
   });
 
+  // A guard: this passes against the layout as it stands, and pins that the squeeze divides by the cards that are spaced, not by all of
+  // them: four spaced cards in 400 sit (400 - CARD_WIDTH) / 3 = 100 apart, where counting the placed card too would give 75.
+  it('(guard) squeezes a row by the cards it spaces, leaving the placed one out', () => {
+    const zone: ZoneState = {
+      id: 'z', layout: 'row', transform: { x: 0, y: 0 }, layoutOptions: { spacing: 110, maxWidth: 400, keepPlaced: true },
+    };
+    const five = [card('a'), card('b'), card('p', { data: { x: 7, y: 9 } }), card('c'), card('d')];
+    const m = computeZoneLayout(zone, five, 10);
+    expect(['a', 'b', 'c', 'd'].map((id) => m.get(id)!.x)).toEqual([-150, -50, 50, 150]);
+    expect(['a', 'b', 'c', 'd'].map((id) => m.get(id)!.y)).toEqual([0, 0, 0, 0]);
+    expect(m.get('p')).toEqual({ x: 7, y: 9, rotation: 0, scale: 1, z: 12 });
+    // Each card keeps the z of its place in the zone, the placed one included.
+    expect(['a', 'b', 'c', 'd'].map((id) => m.get(id)!.z)).toEqual([10, 11, 13, 14]);
+  });
+
   // A guard: this passes before the change, and pins that a row told nothing spaces every card, a place it carries or not.
   it('(guard) spaces every card without keepPlaced', () => {
     const m = computeZoneLayout(row(), cards);
