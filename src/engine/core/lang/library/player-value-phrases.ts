@@ -19,7 +19,7 @@ const withTheir = (compare: Compare): ConditionFn => (env, [name, other]) => com
 /** One of their values against a whole number. */
 const withNumber = (compare: Compare): ConditionFn => (env, [name, n]) => compare(theirs(env, name as string), n as number);
 
-/** How many kinds of a value the cards of a group have: the second {attribute} is the value, the first the one its section works out. */
+/** How many kinds of a value the cards of a group have: the {playervalue} is the one its section works out, the {attribute} the value counted. */
 const valueIsTheKinds: ValueFn = (env, [, attribute, group]) => kindsAmong(env, attribute as string, group as CardGroup);
 
 /** An example's check of what one of a player's values comes to, as the lines of its section work it out on the table as it is. */

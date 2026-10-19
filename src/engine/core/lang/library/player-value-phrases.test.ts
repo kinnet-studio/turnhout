@@ -150,7 +150,7 @@ describe('values about a player that count cards', () => {
     expect(counted('p0', 'craft kinds', relocate(crewed, [smithHand, tinkerHand], 'scrap', counting))).toBe(1);
     expect(counted('p1', 'craft kinds')).toBe(0);
   });
-  it('counts text in any capitals as one kind', () => {
+  it('counts text in upper or lower case alike as one kind', () => {
     const shouted = { ...crewed, cards: crewed.cards.map((card) => (card.id === otherPotter ? { ...card, data: { ...card.data, craft: 'RED' } } : card)) };
     expect(counted('p0', 'craft kinds', shouted)).toBe(3);
   });

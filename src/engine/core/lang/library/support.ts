@@ -228,14 +228,14 @@ export function numberOfCards(env: PhraseEnv, group: CardGroup): number {
 /**
  * How many different values the cards of a group have under a name, each read as every phrase reads one (`cardValueOf`), so a value
  * worked out for cards counts as it comes to, 0 included. A card without the value adds no kind. Two values are one kind as a test of a
- * card compares them: text in any capitals, a number only with the same number, and never text with a number.
+ * card compares them: text in upper or lower case alike, a number only with the same number, and never text with a number.
  */
 export function kindsAmong(env: PhraseEnv, attribute: string, group: CardGroup): number {
   const kinds = new Set<string>();
   for (const card of cardsIn(env, group)) {
     const value = cardValueOf(env, card, attribute);
     if (value === null) continue;
-    // Tagged by type, so the text “1” and the number 1 stay two kinds, as `sameValue` keeps them.
+    // Kept apart by type, so the text “1” and the number 1 stay two kinds, as `sameValue` keeps them.
     kinds.add(typeof value === 'string' ? `text:${canon(value)}` : `json:${JSON.stringify(value)}`);
   }
   return kinds.size;
