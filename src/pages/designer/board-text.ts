@@ -18,6 +18,7 @@ import { seatNumber } from './board-controls';
 /**
  * A zone of a seat's Board: one each player has, that everyone can see. A zone where every card sits on a card is not one: its
  * cards are listed under the cards they sit on. A zone with any other mark is, since some of its cards sit on none.
+ * `onABoard` below also takes the zones where every card sits on a card: they are the set the view works values out for (`cardsKept`).
  */
 const isBoardZone = (spec: ZoneSpec): boolean => spec.perPlayer && spec.visibility === 'public' && spec.onCards !== 'every';
 
