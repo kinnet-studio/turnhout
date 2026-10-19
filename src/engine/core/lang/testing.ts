@@ -629,6 +629,16 @@ export const GUILD_GAME = [
   'End:', '  The game ends when the pile is empty.', '  The highest score wins.',
 ].join('\n');
 
+/**
+ * ROUNDS_GAME where players can be ready and crowned: a player may ready everyone, and a rule for every phase crowns a ready player
+ * while no player is crowned, asked in turn from the player whose turn last started.
+ */
+export const CLAIM_GAME = ROUNDS_GAME
+  .replace('  Players pay with coins.', '  Players pay with coins.\n  Players can be ready.\n  Players can be crowned.')
+  .replace('\nPhase: working', ['  When a player is ready:', '    Only if no player is crowned.', '    They are crowned.', '',
+    'Phase: working'].join('\n'))
+  .replace('  A player may stop.', '  A player may ready everyone.\n    Then:\n      Every player is ready.\n  A player may stop.');
+
 /** The loop of the board fixtures: a start, two streets, a tax, a station, a utility and two chance spaces. */
 export const FIXTURE_SPACES: SpaceSpec[] = [
   { name: 'Go', attrs: { kind: 'go' } },

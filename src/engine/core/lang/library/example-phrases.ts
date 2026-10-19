@@ -7,6 +7,7 @@ import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import { STANDARD_RANKS, STANDARD_SUITS } from '../refs';
 import { TURN_OF_KEY, usesTurns } from '../turns';
+import { LAST_TURN_KEY } from '../turns';
 import type {
   ActionFn, CardMatch, CompiledGame, DeclaredMove, EffectFn, ExampleEnv, ExpectFn, PhraseEnv, ZoneRef,
 } from '../types';
@@ -105,11 +106,14 @@ const phaseIs: EffectFn = (env, args) => ({
   turn: { current: env.seats[0], ...env.state.turn, phase: args[0] as string },
 });
 
-/** In a game of rounds, the arranged turn has started already: building the engine must not start it again over the Given lines. */
+/**
+ * In a game of rounds, the arranged turn has started already: building the engine must not start it again over the Given lines. It is
+ * the turn that last started too, so the rules about a player ask from its player.
+ */
 const turnIs: EffectFn = (env, args) => {
   const seat = seatOf(env, args[0]);
   const state: GameState = { ...env.state, turn: { ...env.state.turn, current: seat } };
-  return usesTurns(env.game) ? { ...state, data: { ...state.data, [TURN_OF_KEY]: seat } } : state;
+  return usesTurns(env.game) ? { ...state, data: { ...state.data, [TURN_OF_KEY]: seat, [LAST_TURN_KEY]: seat } } : state;
 };
 
 const holds: EffectFn = (env, args) => {

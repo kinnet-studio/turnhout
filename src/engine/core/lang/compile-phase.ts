@@ -4,11 +4,14 @@ import { readChoice } from './compile-choice';
 import {
   addProblem, asksChoice, canRead, isMissing, libraryHasSayOn, matchEffectLine, matchLine, phaseId, readsPressCard, rejectChildren, type LineCtx,
 } from './compile-util';
+import { libraryMatchesOrMisnames } from './compile-util';
 import type { OutlineNode } from './outline';
 import { normalizeLine, suggestNames } from './phrases';
 import { OR_SEPARATORS, splitAtSeparators, splitList } from './phrases';
 import { ontoPlaces } from './declared-moves';
 import { joinOr, misnamedParam, parseParam, secondPersonWords, thirdPerson, thirdPersonWords, VOCAB_TYPES } from './refs';
+import { theyForm } from './refs';
+import { isPlayerRule, PLAYER_FRAME } from './turns';
 import type {
   ActionCost, CardPick, CompiledMoment, CompiledPhase, CompiledTrigger, CondGroup, DeclaredAction, DeclaredMove, ParamType, PhraseKind, PhraseRef, SpaceClass,
   Vocab, ZoneRef, ZoneSpec,
@@ -622,24 +625,43 @@ const ruleText = (clean: string) => clean.slice(0, -1).trimEnd();
 const isPhraseOf = (ref: PhraseRef, kind: PhraseKind) => ref.kind === kind || (ref.phrase === 'missing' && ref.args[0] === kind);
 
 /**
- * What a rule's lines are about, from the kind of phrase its `When` line is: each player it picks out, each card, or else what
- * `otherwise` says.
+ * What a rule's lines are about, from the kind of phrase its `When` line is: each player it picks out (or, through the frame, each player
+ * its condition holds about), each card, or else what `otherwise` says.
  */
 function aboutOf(when: PhraseRef, ctx: LineCtx, otherwise: LineCtx = ctx): LineCtx {
-  if (isPhraseOf(when, 'who')) return { ...ctx, player: true };
+  if (isPhraseOf(when, 'who') || isPlayerRule(when)) return { ...ctx, player: true };
   return isPhraseOf(when, 'which') ? { ...ctx, card: true } : otherwise;
 }
 
+/** A `When a player …:` line said of one player: group 1 is there for “a player's …”, group 2 is what is said. */
+const SAID_OF_A_PLAYER = /^a player(['‘’]s)? (.+)$/i;
+
 /**
- * A `When <condition>:` rule, `When a player <who>:` (the rule is then about each player it picks out) or `When a card
- * <which>:` (about each card it picks out). With `aboutTurn`, a rule of the first kind is about the player whose turn it is, its
- * `When` line too.
+ * A `When a player …:` line no phrase reads, as the compiler's frame: a condition said of “they” (“a player has …” is “they have …”,
+ * “a player's …” is “their …”), asked of each player. Null when a phrase reads the line, or when no phrase matches the condition and it
+ * names nothing the game lacks: the line is then read, and reported, in the designer's own words rather than in words they never wrote.
+ */
+function playerFrame(whenText: string, line: number, ctx: LineCtx): PhraseRef | null {
+  const text = normalizeLine(whenText);
+  const said = SAID_OF_A_PLAYER.exec(text);
+  if (!said || (['condition', 'who', 'which'] as const).some((kind) => canRead(kind, text, ctx))) return null;
+  const condition = said[1] ? `their ${said[2]}` : `they ${theyForm(said[2])}`;
+  const about: LineCtx = { ...ctx, player: true };
+  if (!libraryMatchesOrMisnames('condition', condition, about)) return null;
+  return { kind: 'lang', phrase: PLAYER_FRAME, args: [matchLine('condition', condition, line, about)], line, text };
+}
+
+/**
+ * A `When <condition>:` rule, `When a player <who>:` (the rule is then about each player it picks out), `When a player <words>:` that
+ * a condition reads when said of “they” (about each player it holds about) or `When a card <which>:` (about each card it picks out).
+ * With `aboutTurn`, a rule of the first kind is about the player whose turn it is, its `When` line too.
  */
 export function compileTrigger(node: OutlineNode, clean: string, whenText: string, ctx: LineCtx, aboutTurn: boolean): CompiledTrigger {
   const turnCtx: LineCtx = aboutTurn ? { ...ctx, player: true } : ctx;
   // Only a line a condition reads is a rule about no one in particular, and only a line a phrase reads can need a player, so the
   // `When` line of a rule about each player or each card is never read as about the turn's player too.
-  const when = matchLine('condition', whenText, node.line, canRead('condition', whenText, ctx) ? turnCtx : ctx, ['who', 'which']);
+  const when = playerFrame(whenText, node.line, ctx)
+    ?? matchLine('condition', whenText, node.line, canRead('condition', whenText, ctx) ? turnCtx : ctx, ['who', 'which']);
   return { line: node.line, text: ruleText(clean), when, ...readWhenBody(node, aboutOf(when, ctx, turnCtx)) };
 }
 

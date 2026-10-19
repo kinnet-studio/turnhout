@@ -173,6 +173,14 @@ export function libraryHasSayOn(kind: PhraseKind, text: string, ctx: LineCtx): b
   return result.status !== 'unknown' || result.suggestions.length > 0 || tryMisnamed([kind], text, ctx) !== null;
 }
 
+/**
+ * True when a phrase of `kind` matches `text` (even to refuse it) or a name in it was never defined by the game: `libraryHasSayOn`
+ * without the suggestions, since almost any words said of “they” are alike enough to some phrase to be suggested it.
+ */
+export function libraryMatchesOrMisnames(kind: PhraseKind, text: string, ctx: LineCtx): boolean {
+  return tryMatch(kind, text, ctx).status !== 'unknown' || tryMisnamed([kind], text, ctx) !== null;
+}
+
 /** A name in a line no phrase matched that the game never defined; a library that fails here just says nothing. */
 function tryMisnamed(kinds: PhraseKind[], text: string, ctx: LineCtx): Misnamed | null {
   try {

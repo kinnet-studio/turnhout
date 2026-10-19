@@ -14,6 +14,7 @@ import { isNoSuchNumber, MissingPhraseError, RuleError } from './diagnostics';
 import { cardsIn } from './library/support';
 import type { PhraseLibrary } from './phrases';
 import { END_STEPS_KEY, phaseTakesTurns, ROUND_FRAME, ROUND_KEY, roundFinished, roundOf, startPlayerOf, TURN_OF_KEY } from './turns';
+import { isPlayerRule, LAST_TURN_KEY, playersInTurnOrder } from './turns';
 import type {
   ActionFn, CardGroup, ColumnFn, CompiledGame, CompiledMoment, CompiledTrigger, CondGroup, ConditionFn, EffectFn, ExampleEnv, ExpectFn, MomentFn, Moment, MoveInfo,
   PhraseEnv, PhraseKind, PhraseRef, ScoreFn, Subject, TargetFn, TurnFn, ValueFn, WhichFn, WhoFn, WinnerFn, WorkedValue,
@@ -246,9 +247,10 @@ export class LangRuntime {
   }
 
   /**
-   * Who a `When …:` rule of `phaseId` is about if it fires now, or null when it does not. A rule about a player is
-   * about the first one it picks out whose `Only if` lines hold, and a rule about a card the first such card; any other
-   * rule is about the player whose turn it is where players take turns, and about no one in particular elsewhere.
+   * Who a `When …:` rule of `phaseId` is about if it fires now, or null when it does not. A rule about a player is about the first
+   * player it picks out, or its condition holds about, whose `Only if` lines hold, asked in turn from the player whose turn last started
+   * (in seat order before any has); a rule about a card is about the first such card; any other rule is about the player whose turn it
+   * is where players take turns, and about no one in particular elsewhere.
    * A null `phaseId` is a rule for every phase: it holds in any phase the game declares, never in Setup, and a rule of it about no
    * one in particular is about no one, whoever acts in the phase. Once the steps before the score are done, a rule of their phase
    * holds only when it is about a card.
@@ -259,8 +261,12 @@ export class LangRuntime {
     // step phase's other rules are about steps no one takes any more: one that passes a step on would only refuse, for ever.
     if (phaseId === this.game.end?.steps?.phase && this.endStepsDone(state) && trigger.when.kind !== 'which') return null;
     const holdsFor = (subject: Subject) => this.failedGroup(trigger.conditions, state, undefined, subject) === null;
-    if (trigger.when.kind === 'who') {
-      const player = this.who(trigger.when, state).find((seat) => holdsFor({ player: seat, space: null, card: null }));
+    if (isPlayerRule(trigger.when)) {
+      const picks = this.picksPlayer(trigger.when, state);
+      const player = playersInTurnOrder(state, this.seats).find((seat) => {
+        const about: Subject = { player: seat, space: null, card: null };
+        return picks(about) && holdsFor(about);
+      });
       return player === undefined ? null : { player, space: null, card: null };
     }
     if (trigger.when.kind === 'which') {
@@ -269,6 +275,19 @@ export class LangRuntime {
     }
     const about = phaseId === null ? NO_ONE : this.turnSubject(phaseId, state);
     return this.test(trigger.when, state, undefined, undefined, about) && holdsFor(about) ? about : null;
+  }
+
+  /**
+   * Whether a rule about a player picks out the player in `about`: its `who` phrase names them, or, for a `When a player …:` line read
+   * through the compiler's frame, its condition about “they” holds about them.
+   */
+  private picksPlayer(when: PhraseRef, state: GameState): (about: Subject) => boolean {
+    if (when.kind === 'who') {
+      const picked = this.who(when, state);
+      return (about) => about.player !== null && picked.includes(about.player);
+    }
+    const condition = when.args[0] as PhraseRef;
+    return (about) => this.test(condition, state, undefined, undefined, about);
   }
 
   /** Runs a `When …:` rule's lines about whoever or whichever card it is about now. The flow only fires a rule that holds. */
@@ -325,7 +344,8 @@ export class LangRuntime {
   /**
    * Starts the current player's turn. The start player's turn starts a round first, whose lines are about no one. Then the player's
    * numbers for each turn go back to their start, and the lines that start a turn run about them: those for every phase, then those
-   * of the phase the turn starts in (C2). Last, the turn counts as started, so that this runs once a turn.
+   * of the phase the turn starts in (C2). Last, the turn counts as started, so that this runs once a turn, and as the one that last
+   * started, which the rules about a player ask from.
    *
    * The table is checked once the lines have all run, since one may move a card before another moves the cards on it. A table they
    * leave broken is blamed on the line after which it stayed broken: the last one that found it whole.
@@ -351,7 +371,7 @@ export class LangRuntime {
     const about: Subject = { player: seat, space: null, card: null };
     const phase = this.game.phases.find((p) => p.id === phaseId);
     s = runAll(s, [...this.game.everyPhase.turnStarts, ...(phase?.turnStarts ?? [])], about);
-    const started: GameState = { ...s, data: { ...s.data, [TURN_OF_KEY]: seat } };
+    const started: GameState = { ...s, data: { ...s.data, [TURN_OF_KEY]: seat, [LAST_TURN_KEY]: seat } };
     if (attachmentProblem(this.game, started) === null) return started;
     const breaking = [...ran].reverse().find(({ before }) => attachmentProblem(this.game, before) === null);
     return this.checkAttachments(started, breaking?.ref);
