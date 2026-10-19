@@ -3,6 +3,7 @@ import type { GameState } from '../game-state';
 import type { PlayerId } from '../scene';
 import { markOut, withBoardData } from './board-state';
 import { playerFact } from './board-state';
+import { counterOf } from './board-state';
 import { createEngine, initialState, seatsFor } from './build';
 import { flowDefFor } from './build';
 import { compileGame } from './compile';
@@ -14,6 +15,8 @@ import { clearTurnMarkers, LAST_TURN_KEY, markTurnStarted, PLAYER_FRAME, players
 import { END_STEPS_KEY, isPlayerRule } from './turns';
 import type { CompiledGame, CompiledTrigger, PhraseRef } from './types';
 import HEARTS from '@/games/hearts.rules?raw';
+import { zoneCards } from './zone-index';
+import { zoneIdFor } from './zones';
 import RENT_DAY from '@/games/rent-day.rules?raw';
 
 const lib = createDefaultLibrary();
@@ -240,5 +243,62 @@ describe('the End waits for rules about a player', () => {
       replayed.loadLog([...engine.getLog()]);
       expect(replayed.getState()).toEqual(state);
     });
+  });
+});
+
+describe('a game decided by a move that also passes the turn', () => {
+  const TIDY = '  When their list has fewer than 2 cards:\n    The turn passes to the left.';
+  /** `text` whose tidying rule, which passes the turn, first runs `lines` and empties the pile into the done pile. */
+  const passing = (text: string, ...lines: string[]) => text.replace(TIDY, [
+    '  When their list has fewer than 2 cards:', ...lines, '    Move the pile to the done pile.', '    The turn passes to the left.',
+  ].join('\n'));
+  const READIES = '    Every player is ready.';
+  /** p2's last move ends their turn, readies everyone and empties the pile; p0 would be crowned if p0's turn started first. */
+  const ENDS = [
+    '  Given 3 players', "  And it is p2's turn", '  When p2 works', '  And p2 works', '  Then the game is over', '  And p2 is crowned', '  And p0 is not crowned',
+  ];
+  const PASSES = [expect.objectContaining({ status: 'pass', message: null })];
+
+  it('makes a claim the move meets before the score, from the seat whose turn ended the game, and starts no turn', () => {
+    expect(examplesOf(passing(CLAIM_GAME, READIES), ['Example: a claim met as the turn passes is made before the score', ...ENDS])).toEqual(PASSES);
+  });
+  it('ends with the round it finished when the End waits for the round', () => {
+    const text = passing(CLAIM_GAME, READIES).replace('  The game ends when the pile is empty.', '  The game ends when the pile is empty and the round is finished.');
+    expect(examplesOf(text, ['Example: a claim met as the round finishes is made before the score', ...ENDS])).toEqual(PASSES);
+  });
+  it('lets the rules about a card tidy the table before the score, and starts no turn', () => {
+    const text = passing(ROUNDS_GAME)
+      .replace('    | Dust  | 6      |', '    | Dust  | 6      |\n  Cards can be poisoned.')
+      .replace('\nPhase: working', '  When a card in the done pile is poisoned:\n    It is not poisoned.\n\nPhase: working');
+    const game = compiled(text);
+    expect(compileGame(text, lib).diagnostics).toEqual([]);
+    const poisoned = (state: GameState): GameState => ({ ...state, cards: state.cards.map((c) => ({ ...c, data: { ...c.data, poisoned: true } })) });
+    const start = poisoned(withBoardData({ ...initialState(game, 1), turn: { current: 'p0', phase: 'working' } }, game, SEATS));
+    const { engine } = createEngine(game, lib, 3, start);
+    // p0's stop empties the pile, which ends the game, and passes the turn to p1, whose turn would give them a coin.
+    expect(engine.dispatch({ type: 'stop', by: 'p0' }).reason).toBeUndefined();
+    const state = engine.getState();
+    expect(state.result).toBeDefined();
+    expect(zoneCards(state, zoneIdFor('pile'))).toEqual([]);
+    expect(zoneCards(state, zoneIdFor('done pile')).filter((card) => card.data?.poisoned === true)).toEqual([]);
+    expect([counterOf(state, 'coins', 'p1'), state.data[LAST_TURN_KEY]]).toEqual([0, 'p0']);
+  });
+});
+
+describe('a condition said of one player under a phase that takes turns', () => {
+  it('(guard) is read through the frame there too, and asked in turn from the player whose turn it is', () => {
+    const CROWN = [CLAIM_RULE, '    Only if no player is crowned.', '    They are crowned.'].join('\n');
+    const COINS = '  When a player has at least 3 coins:';
+    // CLAIM_GAME with the crowning rule moved under working, said of one player.
+    const text = CLAIM_GAME.replace(`\n${CROWN}`, '')
+      .replace('Phase: working\n  Players take turns.', `Phase: working\n  Players take turns.\n${CROWN.replace(CLAIM_RULE, COINS)}`);
+    expect(compileGame(text, lib).diagnostics).toEqual([]);
+    const working = compiled(text).phases.find((phase) => phase.id === 'working')!;
+    expect(working.triggers.find((trigger) => trigger.line === lineOf(text, COINS))?.when).toMatchObject({ kind: 'lang', phrase: PLAYER_FRAME });
+    // In seat order p0 would be crowned.
+    expect(examplesOf(text, [
+      'Example: the first player in turn with 3 coins is crowned, in a phase that takes turns',
+      '  Given 3 players', '  And p0 has 3 coins', '  And p2 has 5 coins', "  And it is p1's turn", '  Then p2 is crowned', '  And p0 is not crowned',
+    ])).toEqual([expect.objectContaining({ status: 'pass', message: null })]);
   });
 });

@@ -589,6 +589,10 @@ function choiceGroups(action: DeclaredAction): CondGroup[] {
  * under a pick whose cards, or a zone the card they go to is picked in, the presser may not see, and each line of a choice that does:
  * its clause and its guard. A press the line refuses, or asks a choice of, costs nothing and changes nothing, so pressing each face-down
  * card in turn would tell the player which is which. Face-down cards in a zone everyone sees are slice 9's.
+ * The cards on the press's card (“some card on the target card is …”, “some card on it is …”) are read through `cardsOn`, and the zone
+ * they sit in is not checked here: cards in a zone only its owner sees, sitting on a card everyone sees, would let a refused press hint
+ * at a hidden flag. No game has such a zone today; narrowing `cardsOn` to the cards of the holder's owner would not close it, so the
+ * check belongs here.
  */
 export function reportHiddenCardReads(phase: CompiledPhase, zones: ZoneSpec[], ctx: LineCtx): void {
   for (const action of phase.actions) {

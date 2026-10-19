@@ -302,11 +302,24 @@ export class LangRuntime {
    * player another phase handed the turn to is only standing in), and the turn that last started was another player's, or none.
    * A turn that comes back to the same seat starts again only when it passes through “the turn passes to the left”, which forgets
    * whose turn had started; an After line or a “goes next” rule that hands the turn back to that seat starts no new turn. Once the
-   * steps before the score have begun no turn starts: the game is decided, and each step starts as it is passed on.
+   * steps before the score have begun no turn starts: the game is decided, and each step starts as it is passed on. Nor does one while
+   * the End waits for its rules (`endWaiting`).
    */
   turnWaiting(state: GameState): boolean {
     return state.result === undefined && this.inGamePhase(state) && interruptedTurn(state) === null
-      && state.data[TURN_OF_KEY] !== state.turn?.current && state.data[END_STEPS_KEY] === undefined;
+      && state.data[TURN_OF_KEY] !== state.turn?.current && state.data[END_STEPS_KEY] === undefined && !this.endWaiting(state);
+  }
+
+  /**
+   * Whether the game is decided and waits for the rules its End waits for: the End has no steps before the score, the game goes on and
+   * the End's condition holds. The flow checks End before any rule, so when a rule or a turn asks this, it holds only while one of
+   * those rules still has something to do. Until none has, no turn starts and no other rule runs, as once the steps before the score
+   * have begun: a claim is made from the seat whose turn ended the game, and the game is scored on the table its deciding move left,
+   * as the rules about a card tidy it.
+   */
+  endWaiting(state: GameState): boolean {
+    const end = this.game.end;
+    return !!end && end.steps === undefined && state.result === undefined && this.test(end.when, state);
   }
 
   /**

@@ -466,4 +466,23 @@ describe('an If line with two conditions', () => {
       expect.objectContaining({ line: lineOf(text, MISSPELT), text: 'it is a Vsae card and the scrap is empty' }),
     ]);
   });
+  it('blames the one condition that is wrong when the other reads, quoting it as written, on the line', () => {
+    const cases: [string, string, string][] = [
+      ['      If it is a Vase card and the scrapp is empty, they get 1 coin.', 'the scrapp is empty', 'There is no zone called “scrapp”.'],
+      ['      If it is a Vase card and they have at least 3 coinz, they get 1 coin.', 'they have at least 3 coinz', 'There is no counter called “coinz”.'],
+      ['      If the scrapp is empty and it is a Vase card, they get 1 coin.', 'the scrapp is empty', 'There is no zone called “scrapp”.'],
+    ];
+    for (const [line, half, message] of cases) {
+      const text = finishing(line);
+      expect(compileGame(text, defaultLibrary).diagnostics, line).toEqual([expect.objectContaining({ line: lineOf(text, line), message, text: half })]);
+    }
+  });
+  it('(guard) blames a condition whose own words hold “and” as a whole when neither half reads', () => {
+    const WAGEE = '      If they have a card in their workshop and their idle whose wagee is more than 1, they get 1 coin.';
+    const text = finishing(WAGEE);
+    expect(compileGame(text, defaultLibrary).diagnostics).toEqual([expect.objectContaining({
+      line: lineOf(text, WAGEE), message: 'There is no card attribute called “wagee”.',
+      text: 'they have a card in their workshop and their idle whose wagee is more than 1',
+    })]);
+  });
 });

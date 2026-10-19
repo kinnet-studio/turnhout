@@ -409,22 +409,28 @@ export function innerEffect(ref: PhraseRef): PhraseRef {
   return ref.kind === 'lang' && (ref.phrase === 'if' || ref.phrase === 'for' || ref.phrase === 'for each') ? (ref.args[1] as PhraseRef) : ref;
 }
 
+/** The words cut in two at each “ and ”, in turn. */
+const cutsAtAnd = (text: string): [string, string][] =>
+  [...text.matchAll(AND)].map((found) => [text.slice(0, found.index), text.slice(found.index + found[0].length)]);
+
 /** The words cut in two at the first “ and ” where both halves read as conditions; null when no cut does. */
 function conditionPair(text: string, ctx: LineCtx): [string, string] | null {
-  for (const found of text.matchAll(AND)) {
-    const pair: [string, string] = [text.slice(0, found.index), text.slice(found.index + found[0].length)];
-    if (pair.every((part) => canRead('condition', part, ctx))) return pair;
-  }
-  return null;
+  return cutsAtAnd(text).find((pair) => pair.every((part) => canRead('condition', part, ctx))) ?? null;
 }
 
 /**
  * The condition of an If line: one condition, or two joined by “and” that must both hold. Words that read whole are never cut, since a
- * condition's own words may hold “and” (“a card in their workshop and their idle”). Words that are neither are reported whole, as one
- * condition, so that a cut that failed says nothing.
+ * condition's own words may hold “and” (“a card in their workshop and their idle”). When no cut reads as two, the first cut where one
+ * half reads and a phrase matches the other, or it names something the game never defined, is read as two all the same, so that what
+ * is wrong is told of that half, in its own words. Words that are none of these are reported whole, as one condition, so that a cut
+ * that failed says nothing.
  */
 function matchIfCondition(text: string, line: number, ctx: LineCtx): PhraseRef {
-  const pair = canRead('condition', text, ctx) ? null : conditionPair(text, ctx);
+  if (canRead('condition', text, ctx)) return matchLine('condition', text, line, ctx);
+  const reads = (part: string) => canRead('condition', part, ctx);
+  const wrong = (part: string) => libraryMatchesOrMisnames('condition', part, ctx);
+  const pair = conditionPair(text, ctx)
+    ?? cutsAtAnd(text).find(([first, second]) => (reads(first) && wrong(second)) || (reads(second) && wrong(first)));
   if (!pair) return matchLine('condition', text, line, ctx);
   return { kind: 'lang', phrase: 'all', args: pair.map((part) => matchLine('condition', part, line, ctx)), line, text: normalizeLine(text) };
 }

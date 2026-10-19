@@ -58,6 +58,8 @@ type TriggerParams = { phase: string | null; trigger: CompiledTrigger };
  * the End has steps before the score: it then waits for those instead of its condition, which held when they started.
  */
 type EndParams = { when: PhraseRef; rules: TriggerParams[]; afterSteps?: true };
+/** Whether the End waits for a rule: one about a card, or one for every phase about a player. */
+const endWaitsFor = ({ phase, trigger }: TriggerParams): boolean => trigger.when.kind === 'which' || (phase === null && isPlayerRule(trigger.when));
 
 export function flowDefFor(game: CompiledGame, seats: PlayerId[]): FlowDef {
   const first = game.phases[0];
@@ -94,7 +96,8 @@ export function flowDefFor(game: CompiledGame, seats: PlayerId[]): FlowDef {
   }));
   // A turn starts by itself, before any other rule, in a game that plays in rounds of turns. It is a rule, never part of what
   // passes the turn: the flow checks End before it fires any rule, so once the turn has passed there is a moment, before the next
-  // turn starts, when the game may end with the round finished.
+  // turn starts, when the game may end with the round finished. A game decided then whose End waits for a rule starts no turn: the
+  // rule runs first, and the game is scored once none is left (see `LangRuntime.endWaiting`).
   const turnStart: TriggerDef[] = usesTurns(game)
     ? [{ id: TURN_START_RULE, when: { name: 'lang:turn-waiting' }, then: [{ name: 'lang:turn-start' }] }]
     : [];
@@ -110,8 +113,8 @@ export function flowDefFor(game: CompiledGame, seats: PlayerId[]): FlowDef {
   // about a player is waited for too: the move that ends the game, or the last step before the score, may meet what it asks of a
   // player, and the player has what it gives them before the game is scored. Every rule the flow fires re-checks End, so End holds
   // as soon as none of these holds. A rule about a player written under a phase, or one about nothing in particular, never holds
-  // End back.
-  const waitedFor = rules.filter(({ phase, trigger }) => trigger.when.kind === 'which' || (phase === null && isPlayerRule(trigger.when)));
+  // End back, and does not run while it waits: no turn starts then either (see `LangRuntime.endWaiting`).
+  const waitedFor = rules.filter(endWaitsFor);
   const endWhen = ({ when, steps }: CompiledEnd): NamedRef => {
     if (steps) {
       const params: EndParams = { when, rules: waitedFor, afterSteps: true };
@@ -158,7 +161,8 @@ function flowRegistryFor(runtime: LangRuntime): FlowRegistry {
     .registerEffect('lang:end-steps-start', (state) => runtime.startEndSteps(state))
     .registerPredicate('lang:trigger-when', (state, _ctx, params) => {
       const { phase, trigger } = rule(params);
-      return runtime.triggerSubject(phase, trigger, state) !== null;
+      // Once the game is decided, only the rules the End waits for run. The End is asked only of a rule that holds, which few do.
+      return runtime.triggerSubject(phase, trigger, state) !== null && (endWaitsFor({ phase, trigger }) || !runtime.endWaiting(state));
     })
     .registerEffect('lang:trigger-then', (state, _ctx, params) => {
       const { phase, trigger } = rule(params);
