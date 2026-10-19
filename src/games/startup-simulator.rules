@@ -2778,6 +2778,7 @@ Example: a trained Junior that reaches the Board after the declaration works in 
   Then the Smart Lock in p0's development has 1 red cube
   And the Smart Lock in p0's development has 1 blue cube
   And the Smart Lock in p0's development has 1 bug
+  And the Junior Hardware Eng in p0's development team has 0 blue output
 
 Example: staff that leave the Board forget a declared Blue mode, on the bench and in the open job market (ruling 24)
   Given the phase is actions

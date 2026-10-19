@@ -1543,7 +1543,8 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       }
       // Blue mode only on a Board card with a blue Skill token, and it changes as the other modes do.
       const blue = c.data?.[BLUE_MODE] === true;
-      if (blue && (!teams.has(c.zoneId) || tokenOn(c, 'blue skill tokens') === 0)) modes.push(`${which} is ${BLUE_MODE}, which it may not be`);
+      if (blue && !teams.has(c.zoneId)) modes.push(`${which} is ${BLUE_MODE} off the Board`);
+      if (blue && tokenOn(c, 'blue skill tokens') === 0) modes.push(`${which} is ${BLUE_MODE} with no blue Skill token`);
       if (blue !== (was?.data?.[BLUE_MODE] === true) && c.id !== declared && !left) modes.push(`${which} became ${blue ? '' : 'not '}${BLUE_MODE}`);
     }
     noneOf(modes, () => `the modes ${at}`);
@@ -1558,17 +1559,17 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     }
     // XP and Skill tokens sit only on Juniors, never a Skill token in the colour a card works in already, and a Junior has at most 4 XP
     // (§3, §11.A, §11.C.3).
-    const talent: string[] = [];
+    const tokens: string[] = [];
     for (const c of after.cards) {
       const which = `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
       const junior = c.data?.role === 'Junior';
-      for (const name of JUNIOR_TOKENS) if (tokenOn(c, name) > 0 && !junior) talent.push(`${which} has ${tokenOn(c, name)} ${name}`);
+      for (const name of JUNIOR_TOKENS) if (tokenOn(c, name) > 0 && !junior) tokens.push(`${which} has ${tokenOn(c, name)} ${name}`);
       const native = NATIVE_SKILL[c.data?.skill as string];
-      if (native !== undefined && tokenOn(c, native) > 0) talent.push(`${which} has ${tokenOn(c, native)} ${native}, its own colour`);
+      if (native !== undefined && tokenOn(c, native) > 0) tokens.push(`${which} has ${tokenOn(c, native)} ${native}, its own colour`);
       const xp = junior ? runtime.workedValue(after, c.id, 'xp') as number : 0;
-      if (xp > 4) talent.push(`${which} has ${xp} xp`);
+      if (xp > 4) tokens.push(`${which} has ${xp} xp`);
     }
-    noneOf(talent, () => `the XP and Skill tokens ${at}`);
+    noneOf(tokens, () => `the XP and Skill tokens ${at}`);
 
     // Online fits after every Income: the ops team's supply runs the products left online, in each color (§5 Phase B, ruling 19).
     if (income !== null) noneOf(shortOf(runtime, after, income), () => `the colors ${income} is short of at Income ${at}`);
