@@ -109,6 +109,7 @@ Cards:
   Cards can have blue skill tokens, red skill tokens and green skill tokens.
   Cards can have pending blue, pending red and pending green.
   Cards can be badged.
+  Cards can be fired.
   Cards can be offline.
   Cards can have blue cubes, red cubes, new blue cubes and new red cubes.
   Cards can have cut blue cubes and cut red cubes.
@@ -248,6 +249,15 @@ Skills:
 Experienced:
   Only if it is a card whose xp is more than 1.
 
+Badge points:
+  A badged card's badge points is 2.
+
+Human capital:
+  A Junior card's human capital is its xp.
+  A Specialist card's human capital is its training xp.
+  A card's human capital goes up by its skills.
+  A card's human capital goes up by its badge points.
+
 Salary:
   An efficient in ops card's salary is 1.
   An experienced card's salary is 1.
@@ -366,6 +376,19 @@ In every phase:
     It is not blue mode.
   When a Spaghetti Code card joins a card in a development:
     The card it joins gains 1 bug.
+  When a card in the open job market is fired:
+    It loses its blue xp tokens.
+    It loses its red xp tokens.
+    It loses its green xp tokens.
+    It loses its training xp.
+    It loses its blue skill tokens.
+    It loses its red skill tokens.
+    It loses its green skill tokens.
+    It loses its pending blue.
+    It loses its pending red.
+    It loses its pending green.
+    It is not badged.
+    It is not fired.
 
 Phase: modes
   Hint: Choose what each flex Senior, the Fixer and each Junior with a Skill token work on this turn: Blue, Red or QA. Each keeps its mode until you change it.
@@ -459,10 +482,12 @@ Phase: income
   A player may let go of a card in their development team.
     Only if its salary is more than 0.
     Then:
+      It is fired.
       Move it to the open job market.
   A player may let go of a card in their ops team.
     Only if its salary is more than 0.
     Then:
+      It is fired.
       Move it to the open job market.
   A player may pay salaries.
     Only if they have at least the total salary of the cards in their development team and their ops team in capital.
@@ -622,10 +647,12 @@ Phase: actions
   A player may dismiss a card in their development team.
     Then:
       It is not onboarding.
+      It is fired.
       Move it to the open job market.
   A player may dismiss a card in their ops team.
     Then:
       It is not onboarding.
+      It is fired.
       Move it to the open job market.
   A player may draft a card from the seed market to their backlog.
     It costs 1 action.
@@ -796,6 +823,9 @@ End:
   Each player scores 1 point for every 5 capital.
   Each card in a player's operations scores its portfolio points.
   Each player scores 2 points for each market share.
+  Each card in a player's bench scores its human capital.
+  Each card in a player's development team scores its human capital.
+  Each card in a player's ops team scores its human capital.
   Each Tier 1 card in a player's backlog scores -2 points.
   Each Tier 2 card in a player's backlog scores -5 points.
   Each Tier 3 card in a player's backlog scores -10 points.
@@ -2847,3 +2877,92 @@ Example: trained Juniors in the ops team are declared as on a project, and the m
   Then p1's blue supply is 0
   And p1's red supply is 2
   And p1's qa supply is 1
+
+Example: Human Capital scores 1 point for each Permanent XP and Skill token and 2 for each Badge, on the bench and on the Board, and nothing for a Pending token (section 12, ruling 25)
+  Given the crash pile has the Market Crash
+  And it is p1's turn
+  And p0's bench has a Junior Software Dev and a QA Engineer
+  And the Junior Software Dev in p0's bench has 2 blue xp tokens
+  And the Junior Software Dev in p0's bench has 1 red skill token
+  And the Junior Software Dev in p0's bench is badged
+  And the QA Engineer in p0's bench has 1 training xp
+  And p0's development has a Smart Lock
+  And the Smart Lock in p0's development has a Junior Hardware Eng and a Junior PM on it
+  And the Junior Hardware Eng in p0's development team has 1 red xp token
+  And the Junior Hardware Eng in p0's development team has 1 blue skill token
+  And the Junior Hardware Eng in p0's development team has 1 pending red
+  And the Junior PM in p0's development team is badged
+  And p0's operations has a Dating App
+  And p0's ops team has a Junior Software Dev
+  And the Junior Software Dev in p0's ops team has 1 green xp token
+  And the Junior Software Dev in p0's ops team has 1 green skill token
+  When p1 ends their actions
+  Then the game is over
+  And p0 scores 18
+  And p1 scores 1
+
+Example: staff dismissed from the Board lose their XP, Skill, Pending and Badge tokens in the open job market (section 18)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And the Dating App in p0's development has a Junior Hardware Eng on it
+  And the Junior Hardware Eng in p0's development team has 1 blue xp token
+  And the Junior Hardware Eng in p0's development team has 1 red xp token
+  And the Junior Hardware Eng in p0's development team has 1 green xp token
+  And the Junior Hardware Eng in p0's development team has 1 blue skill token
+  And the Junior Hardware Eng in p0's development team has 1 green skill token
+  And the Junior Hardware Eng in p0's development team has 1 pending blue
+  And the Junior Hardware Eng in p0's development team has 1 pending red
+  And the Junior Hardware Eng in p0's development team has 1 pending green
+  And the Junior Hardware Eng in p0's development team is badged
+  And p0's operations has a To-Do List
+  And p0's ops team has a Junior Software Dev and a QA Engineer
+  And the Junior Software Dev in p0's ops team has 1 red skill token
+  And the QA Engineer in p0's ops team has 2 training xp
+  And the QA Engineer in p0's ops team is badged
+  When p0 dismisses the Junior Hardware Eng
+  And p0 dismisses the Junior Software Dev
+  And p0 dismisses the QA Engineer
+  Then the open job market has a Junior Hardware Eng, a Junior Software Dev and a QA Engineer
+  And the Junior Hardware Eng in the open job market has 0 blue xp tokens
+  And the Junior Hardware Eng in the open job market has 0 red xp tokens
+  And the Junior Hardware Eng in the open job market has 0 green xp tokens
+  And the Junior Hardware Eng in the open job market has 0 blue skill tokens
+  And the Junior Hardware Eng in the open job market has 0 green skill tokens
+  And the Junior Hardware Eng in the open job market has 0 pending blue
+  And the Junior Hardware Eng in the open job market has 0 pending red
+  And the Junior Hardware Eng in the open job market has 0 pending green
+  And the Junior Hardware Eng in the open job market is not badged
+  And the Junior Hardware Eng in the open job market is not fired
+  And the Junior Software Dev in the open job market has 0 red skill tokens
+  And the QA Engineer in the open job market has 0 training xp
+  And the QA Engineer in the open job market is not badged
+
+Example: staff let go unpaid at Income lose their tokens, from a project and from the ops team (section 5, section 18)
+  Given p1's development has a Dating App
+  And the Dating App in p1's development has a Junior Software Dev on it
+  And the Junior Software Dev in p1's development team has 2 blue xp tokens
+  And p1's operations has a Smart Lock
+  And p1's ops team has a Junior Hardware Eng
+  And the Junior Hardware Eng in p1's ops team has 2 red xp tokens
+  And the turn passes to the left
+  Then the phase is income
+  When p1 lets go of the Junior Software Dev
+  And p1 lets go of the Junior Hardware Eng
+  Then the phase is actions
+  And the open job market has a Junior Software Dev and a Junior Hardware Eng
+  And the Junior Software Dev in the open job market has 0 blue xp tokens
+  And the Junior Hardware Eng in the open job market has 0 red xp tokens
+
+Example: a trained Junior discarded from the bench keeps its tokens, and another player hires it for $1 with them (section 15, section 13)
+  Given the phase is bench cleanup
+  And p0's bench has a Junior Software Dev, a QA Engineer, a QA Engineer, a QA Engineer, a Sales Rep and a Sales Rep
+  And the Junior Software Dev in p0's bench has 2 blue xp tokens
+  And the Junior Software Dev in p0's bench has 1 red skill token
+  When p0 discards the Junior Software Dev
+  Then it is p1's turn
+  And the Junior Software Dev in the open job market has 2 blue xp tokens
+  When p1 hires the Junior Software Dev
+  Then it is accepted
+  And p1 has 6 capital
+  And the Junior Software Dev in p1's bench has 2 blue xp tokens
+  And the Junior Software Dev in p1's bench has 1 red skill token

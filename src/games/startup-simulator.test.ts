@@ -175,6 +175,8 @@ const TOKENS = [
 const JUNIOR_TOKENS = TOKENS.filter((name) => name.endsWith(' tokens'));
 /** The Skill token in the colour each skill works in already, which no card of that skill holds (§11.A.1). */
 const NATIVE_SKILL: Record<string, string> = { software: 'blue skill tokens', hardware: 'red skill tokens', qa: 'green skill tokens' };
+/** The traits of the only Specialists that earn Training XP, 2 at most: the QA Engineer's and the Sales Rep's (§11.D). */
+const TRAINED = ['Bug Hunter', 'Rainmaker'];
 /**
  * The phases a turn passes through before its Income: the declaration of modes, then the ops check, which Income pays out after
  * (§5 Phase B, §11.C.2).
@@ -217,6 +219,11 @@ const REASSIGN_TO_PRODUCT = 'reassign a card from their ops team to a card in th
  * refuses (§20.B.1), and from one product in operation to another.
  */
 const REASSIGNS = [REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS, REASSIGN_TO_PRODUCT];
+/**
+ * The buttons that fire staff from the Board to the open job market, where they lose their tokens (§5, §18.B): a dismiss from a project
+ * or from the ops team, and a let-go at Income of staff whose salary won't be paid.
+ */
+const FIRES = [DISMISS_FROM_PROJECT, DISMISS_FROM_OPS, ...Object.values(LET_GO)];
 /** Sourcing's hires (§13.B): the cards a Layoff found, at their printed cost, to the bench, the ops team, a project or a product. */
 const SOURCE_HIRES = [
   'hire some cards from their scouting to their bench',
@@ -299,6 +306,11 @@ const cubesOn = (card: CardState, kind: string) => (card.data?.[kind] as number 
 const bugsOn = (card: CardState) => cubesOn(card, 'bugs');
 /** How many of a kind of token a card has: a count read as a number, missing as 0, like the cubes. */
 const tokenOn = (card: CardState, name: string) => (card.data?.[name] as number | undefined) ?? 0;
+/** The tokens and the Badge a card holds, as `2 blue xp tokens, badged`, '' for none: a Badge is on only when its flag is true. */
+const holding = (card: CardState) => [
+  ...TOKENS.filter((name) => tokenOn(card, name) > 0).map((name) => `${tokenOn(card, name)} ${name}`),
+  ...(card.data?.badged === true ? ['badged'] : []),
+].join(', ');
 /** `seat`'s products in operation. */
 const operationsOf = (state: GameState, seat: PlayerId) => zoneCards(state, zoneIdFor('operations', seat));
 /** The rev `product` earns at Income, as the rules work it out in `state` (§5). */
@@ -1309,12 +1321,16 @@ function passedTurn(before: GameState, after: GameState, by: PlayerId): boolean 
 
 /**
  * A score as §12 and rulings 5, 24 and 25 count it: a point for every 5 capital, the val of each product in operation that is not
- * offline (§12, ruling 5) and 2 points for each market share, less the backlog's vaporware.
+ * offline (§12, ruling 5), 2 points for each market share and the Human Capital of every employee on the bench and on the Board, as
+ * the rules work it out through `runtime` (§12.6, ruling 25), less the backlog's vaporware. A card the rules give no Human Capital
+ * counts 0.
  */
-function scoreOf(state: GameState, seat: PlayerId): number {
+function scoreOf(runtime: LangRuntime, state: GameState, seat: PlayerId): number {
   const vaporware = zoneCards(state, zoneIdFor('backlog', seat)).reduce((sum, card) => sum + VAPORWARE[card.data?.tier as string], 0);
   const val = sum(operationsOf(state, seat).filter((product) => product.data?.offline !== true), 'val');
-  return Math.floor(counterOf(state, 'capital', seat) / 5) + val + 2 * counterOf(state, 'market share', seat) - vaporware;
+  const staff = ['bench', 'development team', 'ops team'].flatMap((row) => zoneCards(state, zoneIdFor(row, seat)));
+  const human = staff.reduce((total, card) => total + ((runtime.workedValue(state, card.id, 'human capital') as number | null) ?? 0), 0);
+  return Math.floor(counterOf(state, 'capital', seat) / 5) + val + 2 * counterOf(state, 'market share', seat) + human - vaporware;
 }
 
 /**
@@ -1367,6 +1383,8 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
   const owners = new Map(seats.flatMap((seat) => OWN_ROWS.map((row) => [zoneIdFor(row, seat), seat] as const)));
   /** The Board's staff rows, the only rows a card keeps a mode in (§11.C.2, ruling 24). */
   const teams = new Set(seats.flatMap((seat) => [zoneIdFor('development team', seat), zoneIdFor('ops team', seat)]));
+  /** The benches, whose discards keep their tokens (§15.A.3). */
+  const benches = new Set(seats.map((seat) => zoneIdFor('bench', seat)));
   /** Each pool's cards in the order they entered it, oldest first, less those taken or let go of. */
   let queues: Record<string, string[]> | null = null;
   /** The cards the pools have let go of. */
@@ -1570,6 +1588,27 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       if (xp > 4) tokens.push(`${which} has ${xp} xp`);
     }
     noneOf(tokens, () => `the XP and Skill tokens ${at}`);
+    // Training XP sits only on a QA Engineer or a Sales Rep, 2 at most, and no Senior Developer earns a Badge (§11.D, §11.F). A card is
+    // fired only while the rules strip it, so none is fired once a move is over. Staff fired from the Board, dismissed or let go unpaid,
+    // reach the open job market with no token and no Badge; staff discarded from a bench, at the bench cleanup or for a Layoff, keep
+    // every one (§13.B, §15.A.3, §18.B).
+    const firing = FIRES.includes(move.type);
+    const staff: string[] = [];
+    for (const c of after.cards) {
+      const which = `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
+      const training = tokenOn(c, 'training xp');
+      if (training > 0 && !TRAINED.includes(c.data?.trait as string)) staff.push(`${which} has ${training} training xp`);
+      if (training > 2) staff.push(`${which} has ${training} training xp, more than 2`);
+      if (c.data?.role === 'Senior Developer' && c.data?.badged === true) staff.push(`${which} is a badged Senior Developer`);
+      if (c.data?.fired === true) staff.push(`${which} is fired`);
+      const was = wasById.get(c.id);
+      if (c.zoneId !== 'open-job-market' || was === undefined || was.zoneId === c.zoneId) continue;
+      if (firing && teams.has(was.zoneId) && holding(c) !== '') staff.push(`${which}, fired from ${was.zoneId}, holds ${holding(c)}`);
+      if (benches.has(was.zoneId) && holding(c) !== holding(was)) {
+        staff.push(`${which}, discarded from ${was.zoneId}, holds ${holding(c) || 'nothing'} where it held ${holding(was) || 'nothing'}`);
+      }
+    }
+    noneOf(staff, () => `the Training XP, Badges and firing of staff ${at}`);
 
     // Online fits after every Income: the ops team's supply runs the products left online, in each color (§5 Phase B, ruling 19).
     if (income !== null) noneOf(shortOf(runtime, after, income), () => `the colors ${income} is short of at Income ${at}`);
@@ -1670,7 +1709,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(166);
+    expect(results).toHaveLength(170);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -1722,7 +1761,7 @@ describe('Startup Simulator (designer language)', () => {
     ]);
   });
 
-  it('works out slice 5’s values for cards: XP, Skill tokens and the salary bump (§3, §11.A)', () => {
+  it('works out slice 5’s values for cards: XP, Skill tokens, the salary bump and Human Capital (§3, §11.A, §12)', () => {
     const worked = game!.worked!;
     // A Junior's XP and its Skill tokens, of every colour, are numbers of their own: 2 XP or more raise its salary to $1 (§3, §11.A.3),
     // and a Skill token makes it declarable (§11.C.2).
@@ -1735,6 +1774,9 @@ describe('Startup Simulator (designer language)', () => {
     }
     // The salary still refines the talent table's column.
     expect(worked.salary).toMatchObject({ kind: 'number', refines: true });
+    // What each card adds to the score: a Badge's 2 points, and its Human Capital, which no column of the talent table holds (§12.6).
+    expect(worked['badge points']).toMatchObject({ kind: 'number', refines: false });
+    expect(worked['human capital']).toMatchObject({ kind: 'number', refines: false });
   });
 
   // The next three tests each add to the rules an example that the rules refuse for naming no button alone, and then an example for each
@@ -2271,7 +2313,7 @@ describe('Startup Simulator (designer language)', () => {
         for (const seat of seats) {
           expect(shortOf(runtime, state, seat), `${where}: the colors ${seat} is short of at the score`).toEqual([]);
         }
-        const scores = Object.fromEntries(seats.map((seat) => [seat, scoreOf(state, seat)]));
+        const scores = Object.fromEntries(seats.map((seat) => [seat, scoreOf(runtime, state, seat)]));
         const top = Math.max(...Object.values(scores));
         const winners = seats.filter((seat) => scores[seat] === top);
         expect(state.result, where).toEqual({ scores, winner: winners[0], winners });
@@ -2627,7 +2669,7 @@ describe('Startup Simulator (designer language)', () => {
       expect([neobank, dating, viral].map(offline)).toEqual([false, false, false]);
       expect([wallet, gateway].map(offline)).toEqual([true, true]);
       const { scores } = end.result as { scores: Record<string, number> };
-      expect(scores).toEqual(Object.fromEntries(seats.map((seat) => [seat, scoreOf(end, seat)])));
+      expect(scores).toEqual(Object.fromEntries(seats.map((seat) => [seat, scoreOf(runtime, end, seat)])));
     });
 
     it('reassigns the Growth Hacker from its product to the seat’s other product once on a turn when t % 4 is 1, through the page’s view and without it (§6, §20.B)', () => {
