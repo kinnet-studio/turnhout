@@ -63,6 +63,21 @@
 - **Existing tests.** Only the lines each task names change. If any other existing test fails, stop and report it.
 - **Long runs.** If an invariant shows a wrong rule, fix the rules text. If a required tally stays at 0, change the auto-player (cadences, targets), never the rules; report a key that stays unreachable. If a rule can't be written with plans 4-1 and 5-1's phrases, report it. If the long runs take more than a third longer than at BASE, report the timing.
 - **Pre-flight notes carried from plan 4-2:** take every `shownFlags` / `standIns` pin from HEAD and apply only the change named (a flag read through anything but the card fails closed); never write `For each card … that is X` (a For-each takes no flag test; the lines below use `whose`, `on it` or a zone); a count at 0 may have no key, so the test file reads counts as numbers with missing as 0, never with `hasOwn`.
+- **Controller amendment (pre-flight at `9de36a9`, re-checked at `8e97b41`).** The scan is in the plan's SDD workspace (`preflight.md`; probes in the scratchpad's `pf52a/`, final ruled text `rules-g6.rules`). 77 items read, 4 differ; 13 rulings, 0 gaps; with them every task compiles with `[]`, passes every example, and every invariant holds at 2–5 players. The exact texts are in "Controller amendment texts" at the end of this plan. **N₄ = 156**; the counts become **166, 170, 178, 190, 197, 206** (P1 and P5 add 2 at T1).
+  - **P1 (T1; T5's anchor).** A worked number not named after a column starts at 0, so `goes up by its red xp` gave XP to Juniors not working red. The three output lines read `its working blue/red/green xp`, from three new `Working … xp:` sections (right after `QA output:`); example 7 is replaced and one example is added; T5's anchor becomes `  A card's qa output goes up by its working green xp.`; the values test adds `working blue/red/green xp`.
+  - **P2 (all; forward to 5-2b, 5-3).** 4-3's `countsRead` pairs a count `<colour> <word>` with a product's `<colour> cost`, so `blue xp`/`blue skill` showed phantom cost pairs and broke 15 page tests. The six counts are named `blue/red/green xp tokens` and `blue/red/green skill tokens` (`has 1 blue xp token`, `It gains 1 blue xp token.`, `Its blue skill tokens are more than 0.`); `training xp`, `pending …` and the worked names stay.
+  - **P3 (T3; T4's anchor).** A flag takes no plural: the learner sections are `Learning blue:`/`Learning red:`/`Learning green:` and the Engine lines read `… that are learning blue gain 1 pending blue.` (red; green with `up to its bugs of …`). T4's anchor is "right after the `Learning green:` section".
+  - **P4 (T1, T5, T6).** Flags meant to show, and what a shown value reads, are card-only (5-1's G2): `Experienced:` `  Only if it is a card whose xp is more than 1.`; `Practised:` `  Only if it is a card whose training xp is more than 0.`; the lead lines `    It is a card whose badge points are more than 0.` and `    It is a card whose blue skill tokens are more than 0.` / `… red skill tokens …`. `shownFlags` pins: `['stalled','efficient in ops','experienced']` at T1–T4, plus `'practised'` from T5.
+  - **P5 (T1).** One more example pins the ops-team declaration's 9 lines.
+  - **P6 (T5).** 4-2's Layoff example's last five lines hire the Growth Hacker and the QA Engineer (the Sales Rep now attaches).
+  - **P7 (T3).** No Pending-location invariant at T3 (a Launch then a Recall carries tokens to the bench); T4's narrower one stands.
+  - **P8 (T6, T7).** Agile is checked only where no turn starts in the move (`turnStarted(before, after) === null`, Agile read from `before`); T7 counts its key without requiring it and adds an arranged Agile auto-player test; 5-2b requires the key.
+  - **P9 (T5, T6).** Keep slices 1–4's single-game tallies by steering (4-2's P14); T6's `pmToProject` assigns PMs from the bench only; a key that can't be held without dropping another becomes counted-not-required with an arranged test (4-2's P15), named in the report.
+  - **P10 (T1, T4).** Drop `Experienced:`'s `Only if it is a Junior card.` and `Mentorable:`'s `Only if its pending tokens are more than 0.` (dead guards); drop `Players take turns.` from `Phase: graduation` (the default; research and sourcing omit it).
+  - **P11 (T4).** Example 2 ends `  And the Junior Hardware Eng in p0's ops team is not graduated`; `playtest-fitted.test.tsx`'s Board line for the To-Do List becomes the text below (T4's Files; T7's check 4 prints it).
+  - **P12 (T1).** The modes Hint is the text below (4-3's P7).
+  - **P13 (T7).** The long runs take ≈1.4× BASE (file ≈10.5 s → ≈17 s): report and accept while the file stays under 30 s.
+  - **Kept out, confirmed:** R4's Diva strip and Agile's "in a development team" line are redundant; the Talent Magnet guard belongs to 5-2b.
 - **Style.**
   - 2-space indent, single quotes, comments that say why.
   - Commit prefix `feat(games):` (`docs:` for a README-only commit).
@@ -1640,3 +1655,196 @@ None that needs engine work: every line above is written with plan 4-1's and 5-1
 - "Under 4 XP" is the flag `maxed out` (`its xp is more than 3`), since card numbers have no "less than".
 - R4's Diva line is left out (a Senior holds no token).
 - Agile has no "in a development team" line, and `waiving decay` no Rainmaker line, since no line could fail without them.
+
+---
+
+## Controller amendment texts (pre-flight)
+
+Copied from the pre-flight's rulings; every block below was probed (`pf52a/rules-g6.rules`, 206/206). Use P2's names throughout.
+
+#### P1 (Important; Task 1, T5's anchor): XP is added only in the colour the card works in
+- **Finding:**
+  - A worked number not named after a column starts at 0 (`runtime.ts` `workedValue`). So `A card's red output goes up by its red xp.` gives red output to any card that holds red XP.
+  - That includes a Junior working natively with no mode flag (a QA Tester in QA, a Hardware Eng that reached the Board after the declaration).
+  - T1 example 2 fails (3 red cubes, not 2). The same card would also be a red learner and a red Synergy worker.
+- **Ruling:**
+  - The three XP lines read a per-colour value that only a card working in that colour has:
+
+    ```text
+      A card's blue output goes up by its working blue xp.     (in Blue output:)
+      A card's red output goes up by its working red xp.       (in Red output:)
+      A card's qa output goes up by its working green xp.      (in QA output:)
+    ```
+
+  - Right after `QA output:` add:
+
+    ```text
+    Working blue xp:
+      A software card's working blue xp is its blue xp tokens.
+      A blue mode card's working blue xp is its blue xp tokens.
+
+    Working red xp:
+      A hardware card's working red xp is its red xp tokens.
+      A red mode card's working red xp is its red xp tokens.
+
+    Working green xp:
+      A qa card's working green xp is its green xp tokens.
+      A qa mode card's working green xp is its green xp tokens.
+    ```
+
+  - These are card-only and are no stand-in (none starts `A card's X is its Y.`).
+  - **T1 example 7** gains the blue and green guard. Its exact text is in §6 T1: the Smart Lock with 1 Bug; the Hardware Eng with 1 blue Skill and 1 blue XP; a Software Dev with 1 green Skill and 1 green XP, assigned together; expect 1 red, 1 blue, 1 Bug.
+  - **One new example** pins the three mode lines: "a trained Junior declared in its trained colour adds that colour's Permanent XP (section 11)". Text in §6.
+  - T5's anchor becomes `  A card's qa output goes up by its working green xp.`.
+  - The values test adds `working blue xp`, `working red xp`, `working green xp` (numbers, `refines: false`).
+- **Probe:**
+  - `rules-r1` 165/165 and `m1` 166/166;
+  - `standIns` unchanged; `shownPlayerValues` unchanged (`qa supply` stays card-only);
+  - removal catches every new line (`removal/out-1.txt`).
+- **Numbers:** §11.A.1 and §11.C.3 (+1 per Permanent XP of the colour it works in); Cloud Storage 4/4 (§20.C.1): 1 + 1 Blue, 1 + 1 Red, 3 − 2 Bugs.
+- **Cost if wrong:** 9 rules lines and 1 example.
+
+
+#### P5 (Important; Task 1): pin the ops-team declaration
+- **Finding:** all 9 new or changed lines of `A player may declare a card in their ops team.` survive removal. No example declares a trained Junior in an ops team.
+- **Ruling:** T1 appends this example (exact text; P2's names):
+
+  ```text
+  Example: trained Juniors in the ops team are declared as on a project, and the mode each is in sets the bandwidth and the QA it gives (section 11, section 5)
+    Given p1's ops team has a Junior Hardware Eng, a Junior Software Dev and a Junior QA Tester
+    And the Junior Hardware Eng in p1's ops team has 1 blue skill token
+    And the Junior Software Dev in p1's ops team has 1 red skill token
+    And the Junior Software Dev in p1's ops team has 1 green skill token
+    And the Junior QA Tester in p1's ops team has 1 blue skill token
+    And the turn passes to the left
+    Then the phase is modes
+    When p1 declares the Junior Hardware Eng, choosing blue
+    And p1 declares the Junior Software Dev, choosing qa
+    And p1 declares the Junior QA Tester, choosing blue
+    And p1 confirms their modes
+    Then p1's blue supply is 2
+    And p1's red supply is 0
+    And p1's qa supply is 1
+    When p1 ends their actions
+    And p0 ends their actions
+    Then the phase is modes
+    When p1 declares the Junior Hardware Eng, choosing red
+    And p1 declares the Junior Software Dev, choosing blue
+    And p1 declares the Junior QA Tester, choosing qa
+    And p1 confirms their modes
+    Then p1's blue supply is 1
+    And p1's red supply is 1
+    And p1's qa supply is 1
+    When p1 ends their actions
+    And p0 ends their actions
+    And p1 declares the Junior Software Dev, choosing red
+    And p1 confirms their modes
+    Then p1's blue supply is 0
+    And p1's red supply is 2
+    And p1's qa supply is 1
+  ```
+
+- **Numbers:** a Junior's output is 1 in its mode (§11.A.1, §11.C.2); salary $0 at 0 XP (§3).
+- **Probe:** passes (`m1` 166/166); each of the 9 lines now fails it when removed.
+- **Cost if wrong:** 1 example.
+
+
+#### P6 (Important; Task 5): the 4-2 Layoff example's last hire takes the QA Engineer
+- **Finding:** "cards a Layoff found go on a product only if they attach, the rest join the pool …" fails at T5. The Sales Rep now attaches.
+- **Ruling:** its last five lines become:
+
+  ```text
+    When p0 hires the Growth Hacker and the QA Engineer to the Dating App
+    Then it is accepted
+    And p0 has 0 capital
+    And the Dating App in p0's operations has the Growth Hacker on it
+    And p0's ops team has the Growth Hacker and a QA Engineer
+  ```
+
+  - $5 + $4 = 9 (§20.B).
+  - The earlier refusals stay true.
+  - These are existing lines that T5 names. The count is unchanged.
+- **Probe:** `r5` 196/196 (197 with P5).
+- **Cost if wrong:** 2 lines.
+
+
+#### P8 (Important; Tasks 6–7): Agile is seen only where no turn starts in the move; its tally is counted, not required, in 5-2a, with an arranged test
+- **Finding:**
+  - A reassign or assign spending the last action starts the next turn in the same move, and `No card is onboarding.` clears the token. T6's two invariants as worded fail at 2, 3, 4 and 5 players.
+  - T7's `an onboarding token spared by an Agile PM` counts 62, **every one a false positive**. With the guard it is **0**.
+  - The Agile path is not reachable at the plan's seeds. Only the single $8 Senior PM is Agile in 5-2a (a Badge needs a Tier 2/3 Launch with a Junior PM, which happens 0 times). It reaches a project 3 times, and only once does any card move onto an Agile team.
+  - Five steers were swept: an Agile reassign at the turn's second action (also first in the planned list); `pmToProject` preferring the Senior PM; targeting the first project; and cadence t%1 and t%2. All left the guarded count at 0.
+- **Ruling:**
+  - T6's invariants, and T7's key, apply only when `turnStarted(before, after) === null` and read Agile from `before`.
+  - T7 counts the key without requiring it, beside keep, mentor and promotion.
+  - T7 adds an arranged auto-player test, as 4-2's P15 did for `REASSIGN_TO_PRODUCT`:
+    - `arrange({ 'development-p0': [Dating App], 'agency-row': [Architect, Veteran, Diva, Engineer], 'backlog-p0': [] })`;
+    - two QA Engineers relocated to `ops-team-p0`, and the Senior PM `putOn` the Dating App;
+    - `playTurn(t = 4)` until a `REASSIGN_FROM_OPS`.
+    - Expected: the free dismiss takes the first QA Engineer, action 5 reassigns the second onto the Dating App, it is not onboarding, and the guarded key is seen. The view and the plain run agree.
+  - Forward: 5-2b requires the key once Agile Workshop gives Junior PMs Badges.
+- **Probe:**
+  - `guard0.log` (4 failures as worded) vs `task6` (0);
+  - `arranged.log`: passes through the view and without it, with the guarded tally seen.
+- **Cost if wrong:** test lines only. The anti-goal ("an auto-player that hides a rule that never fires") is met by the arranged test and examples 3–7.
+
+
+#### P11 (Minor; Task 4): pin the graduated reset; the one page Board line
+- **Ruling:**
+  - T4 example 2 ends with `  And the Junior Hardware Eng in p0's ops team is not graduated`. Probe: removal of the reset now fails it.
+  - T4 also changes `playtest-fitted.test.tsx` l.832 to `'operations: To-Do List (tier Tier 1, tag App, sector Concept) [Blue 4/4, Red 0/0] · ops team: Junior Software Dev [1 blue xp token]'`. This is the Files constraint's "pinned as the view now says it", and is reported. T7's check 4 prints it.
+- **Cost if wrong:** 2 lines.
+
+
+#### P12 (Minor; Task 1): the modes Hint (4-3 P7)
+- **Ruling:** `  Hint: Choose what each flex Senior, the Fixer and each Junior with a Skill token work on this turn: Blue, Red or QA. Each keeps its mode until you change it.`
+  - Every page test reads the hint from the compiled game (`hint('modes')`), so nothing pins its words.
+- **Cost if wrong:** 1 line.
+
+
+#### Example texts
+
+T1 example 7, as P1 replaces it:
+
+```text
+Example: a trained Junior that reaches the Board after the declaration works in its native colour (section 11, ruling 24)
+  Given the phase is actions
+  And p0's development has a Smart Lock
+  And the Smart Lock in p0's development has 1 bug
+  And p0's bench has a Junior Hardware Eng and a Junior Software Dev
+  And the Junior Hardware Eng in p0's bench has 1 blue skill token
+  And the Junior Hardware Eng in p0's bench has 1 blue xp token
+  And the Junior Software Dev in p0's bench has 1 green skill token
+  And the Junior Software Dev in p0's bench has 1 green xp token
+  When p0 assigns the Junior Hardware Eng and the Junior Software Dev to the Smart Lock
+  And p0 ends their actions
+  Then the Smart Lock in p0's development has 1 red cube
+  And the Smart Lock in p0's development has 1 blue cube
+  And the Smart Lock in p0's development has 1 bug
+```
+
+P1's new T1 example:
+
+```text
+Example: a trained Junior declared in its trained colour adds that colour's Permanent XP (section 11)
+  Given p1's development has a Cloud Storage
+  And the Cloud Storage in p1's development has 3 bugs
+  And the Cloud Storage in p1's development has a Junior Hardware Eng, a Junior QA Tester and a Junior Software Dev on it
+  And the Junior Hardware Eng in p1's development team has 1 blue skill token
+  And the Junior Hardware Eng in p1's development team has 1 blue xp token
+  And the Junior QA Tester in p1's development team has 1 red skill token
+  And the Junior QA Tester in p1's development team has 1 red xp token
+  And the Junior Software Dev in p1's development team has 1 green skill token
+  And the Junior Software Dev in p1's development team has 1 green xp token
+  And the turn passes to the left
+  Then the phase is modes
+  When p1 declares the Junior Hardware Eng, choosing blue
+  And p1 declares the Junior QA Tester, choosing red
+  And p1 declares the Junior Software Dev, choosing qa
+  And p1 confirms their modes
+  Then the phase is actions
+  When p1 ends their actions
+  Then the Cloud Storage in p1's development has 2 blue cubes
+  And the Cloud Storage in p1's development has 2 red cubes
+  And the Cloud Storage in p1's development has 1 bug
+```
