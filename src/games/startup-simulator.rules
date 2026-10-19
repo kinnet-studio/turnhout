@@ -4008,7 +4008,7 @@ Example: Full Stack Bootcamp asks a Junior QA Tester which colour, gives it the 
   And the Junior Software Dev in p0's bench has 1 red skill token
   And p0 has 0 capital
 
-Example: QA Certification gives a Junior without QA a Green Skill token, and fits no Junior that has QA already (section 20, the slice's ruling b)
+Example: QA Certification gives a Junior without QA a Green Skill token, and fits no Junior that has QA already (section 20, section 20.B)
   Given p0's strategy hand has a QA Certification and a QA Certification
   And p0's bench has a Junior Hardware Eng, a Junior QA Tester and a Junior Software Dev
   And the Junior Software Dev in p0's bench has 1 green skill token
