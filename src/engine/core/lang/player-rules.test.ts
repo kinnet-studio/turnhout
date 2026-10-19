@@ -2,13 +2,18 @@ import { describe, expect, it } from 'vitest';
 import type { GameState } from '../game-state';
 import type { PlayerId } from '../scene';
 import { markOut, withBoardData } from './board-state';
+import { playerFact } from './board-state';
 import { createEngine, initialState, seatsFor } from './build';
+import { flowDefFor } from './build';
 import { compileGame } from './compile';
 import { runExamples } from './examples';
 import { createDefaultLibrary } from './library';
 import { CLAIM_GAME, fixtureEnv, fixtureState, runPhrase } from './testing';
+import { ROUNDS_GAME, STEPS_GAME } from './testing';
 import { clearTurnMarkers, LAST_TURN_KEY, markTurnStarted, PLAYER_FRAME, playersInTurnOrder, TURN_OF_KEY } from './turns';
+import { END_STEPS_KEY, isPlayerRule } from './turns';
 import type { CompiledGame, CompiledTrigger, PhraseRef } from './types';
+import HEARTS from '@/games/hearts.rules?raw';
 import RENT_DAY from '@/games/rent-day.rules?raw';
 
 const lib = createDefaultLibrary();
@@ -156,5 +161,84 @@ describe('a condition said of one player, as a rule about a player', () => {
     for (const rule of ['  When a player has 3 jail turns:', '  When a player is the high bidder:']) {
       expect(ruleOn(game!, lineOf(RENT_DAY, rule))?.when.kind).toBe('who');
     }
+  });
+});
+
+describe('the End waits for rules about a player', () => {
+  /** The crowning rule of CLAIM_GAME, as written for every phase. */
+  const CROWN = [CLAIM_RULE, '    Only if no player is crowned.', '    They are crowned.'].join('\n');
+  /** The End of a game that waits for no rule: its condition alone. */
+  const condOnly = (game: CompiledGame) => [{ when: { name: 'lang:cond', params: game.end!.when }, result: 'lang:result' }];
+  /** Every rule an End of `game` waits for. */
+  const waitedFor = (game: CompiledGame) => (flowDefFor(game, seatsFor(game.players.min)).end ?? []).flatMap(({ when }) => {
+    const params = typeof when === 'string' ? undefined : when.params as { rules?: { trigger: CompiledTrigger }[] } | undefined;
+    return params?.rules ?? [];
+  });
+
+  it('crowns a player whose claim the move that ends the game meets, before the score', () => {
+    // Readying everyone also empties the pile, which ends the game.
+    const emptying = CLAIM_GAME.replace('      Every player is ready.', '      Every player is ready.\n      Move the pile to their list.');
+    expect(examplesOf(emptying, [
+      'Example: a claim met by the move that ends the game is made before the score',
+      '  Given 3 players', "  And it is p1's turn", '  When p1 readies everyone', '  Then the game is over', '  And p1 is crowned',
+    ])).toEqual([expect.objectContaining({ status: 'pass', message: null })]);
+  });
+  it('waits for the rules for every phase about a player', () => {
+    expect(flowDefFor(claim, SEATS).end).toEqual([{
+      when: { name: 'lang:end-when', params: { when: claim.end!.when, rules: [{ phase: null, trigger: ruleOn(claim, claimLine) }] } },
+      result: 'lang:result',
+    }]);
+  });
+  it('(guard) waits for no rule of a game without one, nor for a rule about a player written under a phase', () => {
+    const rounds = compiled(ROUNDS_GAME);
+    expect(flowDefFor(rounds, SEATS).end).toEqual(condOnly(rounds));
+    const underWorking = CLAIM_GAME.replace(`\n${CROWN}`, '')
+      .replace('Phase: working\n  Players take turns.', `Phase: working\n  Players take turns.\n${CROWN}`);
+    const working = compiled(underWorking);
+    expect(working.phases.find((phase) => phase.id === 'working')!.triggers.map((trigger) => trigger.text)).toContain('When a player is ready');
+    expect(flowDefFor(working, SEATS).end).toEqual(condOnly(working));
+  });
+  it.each([['Hearts', HEARTS], ['Rent Day', RENT_DAY]])('(guard) %s ends waiting for no rule about a player', (_name, text) => {
+    expect(waitedFor(compiled(text)).filter(({ trigger }) => isPlayerRule(trigger.when))).toEqual([]);
+  });
+
+  describe('with the steps before the score', () => {
+    const READY = [
+      CLAIM_RULE, '    Only if no player is counting.', '    Only if no player is crowned.', '    They are crowned.', '', 'Phase: working',
+    ].join('\n');
+    /**
+     * STEPS_GAME where each player is counting from the start of their final count until they count, and is then ready: a rule for every
+     * phase crowns a ready player once no player is counting and none is crowned.
+     */
+    const READY_STEPS = STEPS_GAME
+      .replace('  Players pay with coins.', '  Players pay with coins.\n  Players can be ready.\n  Players can be counting.\n  Players can be crowned.')
+      .replace('Phase: final count\n  Players take turns.\n  When this phase starts:\n    They get 1 coin.',
+        'Phase: final count\n  Players take turns.\n  When this phase starts:\n    They get 1 coin.\n    They are counting.')
+      .replace('      They get 2 coins.\n      The final count passes to the left.',
+        '      They get 2 coins.\n      They are not counting.\n      They are ready.\n      The final count passes to the left.')
+      .replace('\nPhase: working', READY);
+    const ready = compiled(READY_STEPS);
+    /** A 3-player engine of READY_STEPS whose turn is p0's in working, so Setup is skipped and p0 is the start player. */
+    const stepsTable = () =>
+      createEngine(ready, lib, 3, withBoardData({ ...initialState(ready, 1), turn: { current: 'p0', phase: 'working' } }, ready, SEATS)).engine;
+    const crownedOf = (state: GameState) => SEATS.filter((seat) => playerFact(state, seat, 'crowned') === true);
+
+    it('crowns the player whose turn ended the round once the last step is taken, before the score', () => {
+      expect(compileGame(READY_STEPS, lib).diagnostics).toEqual([]);
+      const engine = stepsTable();
+      press(engine, 'stop', 'p0', 'p1', 'p2');
+      press(engine, 'count', 'p0', 'p1');
+      expect(crownedOf(engine.getState())).toEqual([]);
+      expect(engine.getState().result).toBeUndefined();
+      press(engine, 'count', 'p2');
+      const state = engine.getState();
+      // In seat order p0 would be crowned.
+      expect(crownedOf(state)).toEqual(['p2']);
+      expect(state.result).toBeDefined();
+      expect(state.data[END_STEPS_KEY]).toBe(true);
+      const replayed = stepsTable();
+      replayed.loadLog([...engine.getLog()]);
+      expect(replayed.getState()).toEqual(state);
+    });
   });
 });

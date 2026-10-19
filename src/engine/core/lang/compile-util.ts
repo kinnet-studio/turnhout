@@ -58,6 +58,8 @@ const NO_HOLDER_NAMED = (head: string) => `“${head}” doesn't name a player. 
 const NO_GROUP_NAMED = (head: string) => `“${head}” doesn't say which cards. Write “For each card in their hand, …” or “For each card on it, …”.`;
 const NOTHING_FOR_EACH = 'Say what happens to each card, like “For each card in their hand, move it to the pile.”';
 const COMMA = /, /g;
+/** Where an If line's condition may be cut in two: see `matchIfCondition`. */
+const AND = / and /g;
 const PHASE_NAME = /^phase\s*:\s*(.*)$/i;
 /**
  * A line that asks the presser to pick a player: group 1 = what is done to the player picked, group 2 = what a player must be to be
@@ -407,10 +409,31 @@ export function innerEffect(ref: PhraseRef): PhraseRef {
   return ref.kind === 'lang' && (ref.phrase === 'if' || ref.phrase === 'for' || ref.phrase === 'for each') ? (ref.args[1] as PhraseRef) : ref;
 }
 
+/** The words cut in two at the first “ and ” where both halves read as conditions; null when no cut does. */
+function conditionPair(text: string, ctx: LineCtx): [string, string] | null {
+  for (const found of text.matchAll(AND)) {
+    const pair: [string, string] = [text.slice(0, found.index), text.slice(found.index + found[0].length)];
+    if (pair.every((part) => canRead('condition', part, ctx))) return pair;
+  }
+  return null;
+}
+
+/**
+ * The condition of an If line: one condition, or two joined by “and” that must both hold. Words that read whole are never cut, since a
+ * condition's own words may hold “and” (“a card in their workshop and their idle”). Words that are neither are reported whole, as one
+ * condition, so that a cut that failed says nothing.
+ */
+function matchIfCondition(text: string, line: number, ctx: LineCtx): PhraseRef {
+  const pair = canRead('condition', text, ctx) ? null : conditionPair(text, ctx);
+  if (!pair) return matchLine('condition', text, line, ctx);
+  return { kind: 'lang', phrase: 'all', args: pair.map((part) => matchLine('condition', part, line, ctx)), line, text: normalizeLine(text) };
+}
+
 /**
  * Reads one effect line. “For each card …, <effect>” runs the effect for each card of a group, and “For …, <effect>” runs it as the
  * player who holds a flag. “If <condition>, <effect>” is tried
- * at every comma, since either part may hold commas; the first comma where both parts are phrases wins. When none does, the
+ * at every comma, since either part may hold commas; the first comma where both parts are phrases wins, two conditions joined by
+ * “and” counting as a condition (see `matchIfCondition`). When none does, the
  * part that needs fixing is the one reported. A button's cost line is reported as one in the wrong place, and kept as a placeholder;
  * so is a choice, which a button's `Then:` reads before this when it may ask one, and one inside any of the frames.
  */
@@ -441,8 +464,9 @@ export function matchEffectLine(text: string, line: number, ctx: LineCtx): Phras
   if (holdsChoice(body)) return refuse(CHOICE_IN_IF);
   const splits = [...body.matchAll(COMMA)].map((m) => ({ condition: body.slice(0, m.index), effect: body.slice(m.index + 2) }));
   const reads = (kind: PhraseKind, part: string) => canRead(kind, part, ctx);
-  const chosen = splits.find((s) => reads('condition', s.condition) && reads('effect', s.effect))
-    ?? splits.find((s) => reads('condition', s.condition))
+  const readsCondition = (part: string) => reads('condition', part) || conditionPair(part, ctx) !== null;
+  const chosen = splits.find((s) => readsCondition(s.condition) && reads('effect', s.effect))
+    ?? splits.find((s) => readsCondition(s.condition))
     ?? splits[0];
   if (!chosen) {
     addProblem(ctx.diagnostics, line, 'Say what happens when the condition is true, like “If the deck is empty, shuffle the deck.”', { kind: 'invalid', text: clean });
@@ -450,8 +474,8 @@ export function matchEffectLine(text: string, line: number, ctx: LineCtx): Phras
   }
 
   // With an unreadable condition that is what to fix first; its effect is only read for the placeholder.
-  const effectCtx = reads('condition', chosen.condition) ? ctx : { ...ctx, diagnostics: [] };
-  const condition = matchLine('condition', chosen.condition, line, ctx);
+  const effectCtx = readsCondition(chosen.condition) ? ctx : { ...ctx, diagnostics: [] };
+  const condition = matchIfCondition(chosen.condition, line, ctx);
   const effect = matchLine('effect', chosen.effect, line, effectCtx);
   return { kind: 'lang', phrase: 'if', args: [condition, effect], line, text: clean };
 }

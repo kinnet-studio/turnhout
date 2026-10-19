@@ -21,6 +21,7 @@ import { RuleError } from './diagnostics';
 import type { PhraseLibrary } from './phrases';
 import { LangRuntime } from './runtime';
 import { usesTurns } from './turns';
+import { isPlayerRule } from './turns';
 import type { CompiledEnd, CompiledGame, CompiledTrigger, PhraseRef } from './types';
 
 /** The phase the engine starts in: it runs the Setup lines, then goes straight to the game's first phase. */
@@ -53,8 +54,8 @@ const phaseEffect = (phase: string, ref: PhraseRef): NamedRef => ({ name: 'lang:
 /** A `When …:` rule and the phase it is written under (null for a rule for every phase), as the flow hands it back to the runtime. */
 type TriggerParams = { phase: string | null; trigger: CompiledTrigger };
 /**
- * The End condition and the rules about a card that it waits for. `afterSteps` is there when the End has steps before the score: it
- * then waits for those instead of its condition, which held when they started.
+ * The End condition and the rules it waits for: those about a card, and those for every phase about a player. `afterSteps` is there when
+ * the End has steps before the score: it then waits for those instead of its condition, which held when they started.
  */
 type EndParams = { when: PhraseRef; rules: TriggerParams[]; afterSteps?: true };
 
@@ -105,17 +106,19 @@ export function flowDefFor(game: CompiledGame, seats: PlayerId[]): FlowDef {
   const triggers = [...endSteps, ...turnStart, ...ruleTriggers];
 
   // A rule about a card tidies the table, and the game is decided on the tidied table: the flow checks End before it fires any
-  // rule, so End would otherwise count a card (at 0 health, say) that such a rule is about to move away. Every rule the flow
-  // fires re-checks End, so End holds as soon as no card rule has a card left. Rules about a player or about nothing in
-  // particular do not tidy anything the winner depends on, so they never hold End back.
-  const cardRules = rules.filter(({ trigger }) => trigger.when.kind === 'which');
+  // rule, so End would otherwise count a card (at 0 health, say) that such a rule is about to move away. A rule for every phase
+  // about a player is waited for too: the move that ends the game, or the last step before the score, may meet what it asks of a
+  // player, and the player has what it gives them before the game is scored. Every rule the flow fires re-checks End, so End holds
+  // as soon as none of these holds. A rule about a player written under a phase, or one about nothing in particular, never holds
+  // End back.
+  const waitedFor = rules.filter(({ phase, trigger }) => trigger.when.kind === 'which' || (phase === null && isPlayerRule(trigger.when)));
   const endWhen = ({ when, steps }: CompiledEnd): NamedRef => {
     if (steps) {
-      const params: EndParams = { when, rules: cardRules, afterSteps: true };
+      const params: EndParams = { when, rules: waitedFor, afterSteps: true };
       return { name: 'lang:end-when', params };
     }
-    if (cardRules.length === 0) return cond(when);
-    const params: EndParams = { when, rules: cardRules };
+    if (waitedFor.length === 0) return cond(when);
+    const params: EndParams = { when, rules: waitedFor };
     return { name: 'lang:end-when', params };
   };
   const end = game.end ? [{ when: endWhen(game.end), result: 'lang:result' }] : [];

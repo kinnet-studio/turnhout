@@ -10,6 +10,11 @@ import { createDefaultLibrary } from './library/index';
 import { TOTALS_GAME, vocabFor } from './testing';
 import { GUILD_GAME } from './testing';
 import { RESTING_GAME } from './testing';
+import { CREW_GAME } from './testing';
+import { createEngine, initialState } from './build';
+import { counterOf } from './board-state';
+import { relocate } from './zones';
+import type { GameState } from '../game-state';
 
 const library = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
   .cards('a deck called {name}', () => ({ kind: 'table', identities: [], start: 'deck', acesHigh: false }))
@@ -366,5 +371,81 @@ describe('a clause that says what a card is, with a test that compares it with a
   it('counts as reading the card of a press when it compares with one, and not when it compares with a value', () => {
     expect(readsPressCard(defaultLibrary, startGuardedBy(CLAUSE))).toBe(true);
     expect(readsPressCard(defaultLibrary, startGuardedBy('they have a card in their workshop that is not resting and whose pay is 1'))).toBe(false);
+  });
+});
+
+describe('an If line with two conditions', () => {
+  const BOTH = '      If it is a Vase card and the scrap is empty, they get 1 coin.';
+  const SCRAP = '      Move it to the scrap.';
+  /** CREW_GAME whose finish button runs `line` before it moves the finished card to the scrap. */
+  const finishing = (line: string) => CREW_GAME.replace(SCRAP, `${line}\n${SCRAP}`);
+  const lineOf = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+  /** `text` compiled, with nothing to report. */
+  const crew = (text: string) => {
+    const { game, diagnostics } = compileGame(text, defaultLibrary);
+    expect(diagnostics).toEqual([]);
+    return game!;
+  };
+  /** The line `line` of the finish button of `text`, as compiled. */
+  const refOf = (text: string, line: string): PhraseRef => {
+    const finish = crew(text).phases[0].actions.find((action) => action.words === 'finish a card in their workshop')!;
+    return finish.effects.find((effect) => effect.line === lineOf(text, line))!;
+  };
+
+  it('reads both, as one condition that holds when both do', () => {
+    const ref = refOf(finishing(BOTH), BOTH);
+    expect(ref).toMatchObject({ kind: 'lang', phrase: 'if' });
+    const [condition] = ref.args as PhraseRef[];
+    expect(condition).toMatchObject({ kind: 'lang', phrase: 'all', text: 'it is a Vase card and the scrap is empty' });
+    expect((condition.args as PhraseRef[]).map((part) => part.phrase)).toEqual(['it is {cardclass}', '{zone} is empty']);
+  });
+  it('runs the effect only when both hold', () => {
+    const game = crew(finishing(BOTH));
+    const setUp = createEngine(game, defaultLibrary, 2, initialState(game, 1)).engine.getState();
+    const named = (name: string) => setUp.cards.find((card) => card.data?.name === name)!.id;
+    /** p0's coins once they finish `name` from their workshop, on the table as `arrange` leaves it after Setup. */
+    const coinsAfter = (name: string, arrange: (state: GameState) => GameState = (state) => state) => {
+      const { engine } = createEngine(game, defaultLibrary, 2, relocate(arrange(setUp), [named(name)], 'workshop-p0', game));
+      expect(engine.dispatch({ type: 'finish a card in their workshop', by: 'p0', cardId: named(name) })).toMatchObject({ ok: true });
+      return counterOf(engine.getState(), 'coins', 'p0');
+    };
+    expect(coinsAfter('Vase')).toBe(10);
+    expect(coinsAfter('Vase', (state) => relocate(state, [named('Statue')], 'scrap', game))).toBe(9);
+    expect(coinsAfter('Statue')).toBe(9);
+  });
+  it('(guard) reads a condition whose own words hold “and” whole', () => {
+    const WHOLE = '      If they have a card in their workshop and their idle whose wage is more than 1, they get 1 coin.';
+    const [condition] = refOf(finishing(WHOLE), WHOLE).args as PhraseRef[];
+    expect(condition).toMatchObject({ kind: 'condition', phrase: 'they have a card in {zones} whose {cardfilter}' });
+  });
+  it('is cut at the comma after both conditions, though the second holds a comma and an “and” of its own', () => {
+    const LISTED = '      If it is a Vase card and they have a card in their workshop, their crew and their idle whose wage is more than 1, they get 1 coin.';
+    const [condition, effect] = refOf(finishing(LISTED), LISTED).args as PhraseRef[];
+    expect((condition.args as PhraseRef[]).map((part) => part.phrase)).toEqual(['it is {cardclass}', 'they have a card in {zones} whose {cardfilter}']);
+    expect(effect).toMatchObject({ kind: 'effect', text: 'they get 1 coin' });
+  });
+  it('tells what is wrong with the effect, as it does after one condition', () => {
+    const COINZ = '      If it is a Vase card and the scrap is empty, they get 1 coinz.';
+    const text = finishing(COINZ);
+    expect(compileGame(text, defaultLibrary).diagnostics).toEqual([
+      expect.objectContaining({ line: lineOf(text, COINZ), message: 'There is no counter called “coinz”.' }),
+    ]);
+  });
+  it('(guard) reads words that read as one condition whole, though each half reads as one too', () => {
+    // A phrase whose own words hold “and”, beside a phrase for each half.
+    const joined = new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])
+      .condition('the bank is empty', () => true).condition('the till is empty', () => true)
+      .condition('the bank is empty and the till is empty', () => true).effect('the bell rings', (env) => env.state);
+    const one = { ...ctx(), library: joined };
+    const [condition] = matchEffectLine('If the bank is empty and the till is empty, the bell rings.', 3, one).args as PhraseRef[];
+    expect(condition).toMatchObject({ kind: 'condition', phrase: 'the bank is empty and the till is empty' });
+    expect(one.diagnostics).toEqual([]);
+  });
+  it('(guard) tells what is wrong once, on its own line, when a condition does not read', () => {
+    const MISSPELT = '      If it is a Vsae card and the scrap is empty, they get 1 coin.';
+    const text = finishing(MISSPELT);
+    expect(compileGame(text, defaultLibrary).diagnostics).toEqual([
+      expect.objectContaining({ line: lineOf(text, MISSPELT), text: 'it is a Vsae card and the scrap is empty' }),
+    ]);
   });
 });
