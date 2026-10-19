@@ -129,6 +129,23 @@ describe('a condition said of one player, as a rule about a player', () => {
     expect(compileGame(claimWhen('  When a player has at least 3 coinz:'), lib).diagnostics)
       .toEqual([expect.objectContaining({ line: claimLine, message: 'There is no counter called “coinz”.' })]);
   });
+  it('quotes the designer’s own words when the condition is refused, never the words said of “they”', () => {
+    const refused: [string, string, string][] = [
+      ['  When a player has no card they could play:', 'a player has no card they could play',
+        '“a player has no card they could play” only makes sense in a rule about a player\'s move.'],
+      ['  When a player picked at most 2 cards:', 'a player picked at most 2 cards',
+        '“a player picked at most 2 cards” only makes sense in a button that picks some cards, like “A player may discard some cards from their hand.”'],
+    ];
+    for (const [when, text, message] of refused) {
+      const { diagnostics } = compileGame(claimWhen(when), lib);
+      expect(diagnostics).toEqual([expect.objectContaining({ line: claimLine, message, text })]);
+      expect(diagnostics[0].message).not.toMatch(/“the(y|ir) /);
+    }
+  });
+  it('keeps a name the game lacks as the message says it, given with the designer’s line', () => {
+    expect(compileGame(claimWhen('  When a player has at least 3 coinz:'), lib).diagnostics)
+      .toEqual([expect.objectContaining({ message: 'There is no counter called “coinz”.', text: 'a player has at least 3 coinz' })]);
+  });
   it('(guard) leaves a line the library has only suggestions for as the designer wrote it', () => {
     expect(compileGame(claimWhen('  When a player sneezes:'), lib).diagnostics)
       .toContainEqual(expect.objectContaining({ line: claimLine, message: '“a player sneezes” isn\'t in the phrase library yet.' }));

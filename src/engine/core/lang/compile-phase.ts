@@ -11,7 +11,8 @@ import { OR_SEPARATORS, splitAtSeparators, splitList } from './phrases';
 import { ontoPlaces } from './declared-moves';
 import { joinOr, misnamedParam, parseParam, secondPersonWords, thirdPerson, thirdPersonWords, VOCAB_TYPES } from './refs';
 import { theyForm } from './refs';
-import { isPlayerRule, PLAYER_FRAME } from './turns';
+import { PLAYER_FRAME } from './turns';
+import type { Diagnostic } from './diagnostics';
 import type {
   ActionCost, CardPick, CompiledMoment, CompiledPhase, CompiledTrigger, CondGroup, DeclaredAction, DeclaredMove, ParamType, PhraseKind, PhraseRef, SpaceClass,
   Vocab, ZoneRef, ZoneSpec,
@@ -629,7 +630,7 @@ const isPhraseOf = (ref: PhraseRef, kind: PhraseKind) => ref.kind === kind || (r
  * its condition holds about), each card, or else what `otherwise` says.
  */
 function aboutOf(when: PhraseRef, ctx: LineCtx, otherwise: LineCtx = ctx): LineCtx {
-  if (isPhraseOf(when, 'who') || isPlayerRule(when)) return { ...ctx, player: true };
+  if (isPhraseOf(when, 'who') || (when.kind === 'lang' && when.phrase === PLAYER_FRAME)) return { ...ctx, player: true };
   return isPhraseOf(when, 'which') ? { ...ctx, card: true } : otherwise;
 }
 
@@ -639,7 +640,9 @@ const SAID_OF_A_PLAYER = /^a player(['‘’]s)? (.+)$/i;
 /**
  * A `When a player …:` line no phrase reads, as the compiler's frame: a condition said of “they” (“a player has …” is “they have …”,
  * “a player's …” is “their …”), asked of each player. Null when a phrase reads the line, or when no phrase matches the condition and it
- * names nothing the game lacks: the line is then read, and reported, in the designer's own words rather than in words they never wrote.
+ * names nothing the game lacks: the line is then read, and reported, as the designer wrote it. What the condition is told is told of the
+ * designer's line: a message that quotes the condition quotes the `When` line instead, and points at it, so it never shows the designer
+ * words they did not write. A name the game lacks is quoted alone, so its message stays as it is.
  */
 function playerFrame(whenText: string, line: number, ctx: LineCtx): PhraseRef | null {
   const text = normalizeLine(whenText);
@@ -648,7 +651,13 @@ function playerFrame(whenText: string, line: number, ctx: LineCtx): PhraseRef | 
   const condition = said[1] ? `their ${said[2]}` : `they ${theyForm(said[2])}`;
   const about: LineCtx = { ...ctx, player: true };
   if (!libraryMatchesOrMisnames('condition', condition, about)) return null;
-  return { kind: 'lang', phrase: PLAYER_FRAME, args: [matchLine('condition', condition, line, about)], line, text };
+  const told: Diagnostic[] = [];
+  const ref = matchLine('condition', condition, line, { ...about, diagnostics: told });
+  const quoted = `“${normalizeLine(condition)}”`;
+  for (const diagnostic of told) {
+    ctx.diagnostics.push({ ...diagnostic, message: diagnostic.message.split(quoted).join(`“${text}”`), text });
+  }
+  return { kind: 'lang', phrase: PLAYER_FRAME, args: [ref], line, text };
 }
 
 /**
