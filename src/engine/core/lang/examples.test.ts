@@ -11,6 +11,7 @@ import { createEngine, initialState } from './build';
 import { namedChoices } from './declared-actions';
 import { relocate } from './zones';
 import type { CompiledGame } from './types';
+import { SORT_GAME } from './testing';
 
 const lib = createDefaultLibrary();
 const LINES = TEST_DUEL.split('\n');
@@ -757,5 +758,38 @@ describe("the words for slice 4's pieces", () => {
     expect(results).toEqual([expect.objectContaining({
       status: 'fail', message: "Expected p0's red load to be 9, but it is 2.", atLine: lineOf(text, "Then p0's red load is 9", true),
     })]);
+  });
+});
+
+describe('a step of choices for each card', () => {
+  const SORTING_EXAMPLES = [
+    'Example: a hand with one mark keeps it with no press, and the step closes by itself',
+    "  Given p0's workshop has a Vase", "  And the Vase in p0's workshop has a Potter on it", "  And the Potter in p0's crew has 1 red mark",
+    '  When p0 finishes the Vase', '  Then the phase is working', "  And the Potter in p0's idle has 1 red star",
+    "  And the Potter in p0's idle has 0 red marks", "  And the Potter in p0's idle is not sorted", '',
+    'Example: a hand with two marks keeps the one picked and loses the other',
+    "  Given p0's workshop has a Vase", "  And the Vase in p0's workshop has a Potter on it", "  And the Potter in p0's crew has 1 red mark",
+    "  And the Potter in p0's crew has 1 gold mark", '  When p0 finishes the Vase', '  Then the phase is sorting', '  When p0 keeps gold on the Potter',
+    '  Then the phase is working', "  And the Potter in p0's idle has 1 gold star", "  And the Potter in p0's idle has 0 red stars",
+    "  And the Potter in p0's idle has 0 red marks", '',
+    'Example: an untired Smith helps one sorted hand keep its other mark, the one colour left filled in',
+    "  Given p0's workshop has a Vase", "  And the Vase in p0's workshop has a Potter and a Smith on it", "  And the Potter in p0's crew has 1 red mark",
+    "  And the Potter in p0's crew has 1 gold mark", '  When p0 finishes the Vase', '  And p0 keeps red on the Potter', '  Then the phase is sorting',
+    '  When p0 helps the Potter', '  Then the phase is working', "  And the Potter in p0's idle has 1 red star",
+    "  And the Potter in p0's idle has 1 gold star", '  And p0 has 0 help', '',
+    "Example: only the finished job's hands are sorted, and an eager Tinker on it turns keen",
+    "  Given p0's workshop has a Vase and a Statue", "  And the Vase in p0's workshop has a Potter on it",
+    "  And the Statue in p0's workshop has a Tinker on it", "  And the Potter in p0's crew has 1 red mark", "  And the Potter in p0's crew has 1 gold mark",
+    "  And the Tinker in p0's crew has 1 red mark", '  When p0 finishes the Statue', "  Then the Tinker in p0's idle has 1 red star",
+    "  And the Tinker in p0's idle is keen", '  And the phase is working',
+  ];
+
+  it('plays through: one mark is kept with no press, two are picked between, a Smith helps, and only the finished job is sorted', () => {
+    const text = [SORT_GAME, '', ...SORTING_EXAMPLES].join('\n');
+    const { game, diagnostics } = compileGame(text, lib);
+    expect(diagnostics).toEqual([]);
+    expect(runExamples(game!, lib).map(({ name, status, message }) => [name, status, message])).toEqual(
+      SORTING_EXAMPLES.filter((line) => line.startsWith('Example: ')).map((line) => [line.slice('Example: '.length), 'pass', null]),
+    );
   });
 });

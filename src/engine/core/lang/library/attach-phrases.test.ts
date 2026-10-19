@@ -13,6 +13,7 @@ import { CREW_GAME, fixtureEnv, runPhrase } from '../testing';
 import { JOIN_GAME } from '../testing';
 import { YARD_GAME } from '../testing';
 import { BOOST_GAME } from '../testing';
+import { SORT_GAME } from '../testing';
 import { relocate } from '../zones';
 import { createDefaultLibrary } from './index';
 
@@ -574,5 +575,66 @@ describe('the card it is on', () => {
     for (const pattern of ['the card it is on is {cardclass}', 'the card it is on is not {cardclass}']) {
       expect([pattern, lib.get('condition', pattern)?.needsCard]).toEqual([pattern, true]);
     }
+  });
+});
+
+describe('a flag set on the cards on a card that are so', () => {
+  /** The text each line of SORT_GAME that adds to CREW_GAME is put after or in place of: every one must be found there. */
+  const ANCHORS = ['  Players pay with coins.', '  Cards can be tired.', '      Every card on it is tired.\n', '      Move it to the scrap.\n', '\nEnd:'];
+  const PATTERN = 'every card on it that is {cardflag} is {cardflag}';
+  const WORKED_SAID = '“helping” is worked out from its lines, so no rule can change it.';
+  const tinker = named('Tinker');
+  /** The Tinker and a Potter on the Vase in p0's crew, the Vase in p0's workshop. */
+  const onVase = putOn(atWork(setUp), [tinker, potter1], 'crew-p0', vase, game);
+  const flagOf = (state: GameState, id: string, flag: string) => state.cards.find((card) => card.id === id)?.data?.[flag];
+  /** What the effect `text` gives, about the Vase, from `state`. */
+  const run = (text: string, state: GameState = onVase) =>
+    runPhrase<GameState>(lib, 'effect', text, crew(atWork, SORT_GAME).runtime.env(state, undefined, undefined, { player: null, space: null, card: vase }));
+
+  it('is built on text CREW_GAME has: each place a line is put is found there', () => {
+    for (const anchor of ANCHORS) expect([anchor, CREW_GAME.includes(anchor)]).toEqual([anchor, true]);
+    expect(SORT_GAME).not.toBe(CREW_GAME);
+  });
+  it('compiles with no problems', () => {
+    expect(compileGame(SORT_GAME, lib).diagnostics).toEqual([]);
+  });
+  it('sets the flag on the cards on it that are eager: the Tinker turns keen and the Potter does not', () => {
+    const after = run('every card on it that is eager is keen');
+    expect([tinker, potter1].map((id) => flagOf(after, id, 'keen'))).toEqual([true, undefined]);
+  });
+  it('reads the first flag as every phrase does: a stored one holds of the cards that have it', () => {
+    const tiredPotter = changeCard(onVase, potter1, { tired: true }, game);
+    const after = run('every card on it that is tired is keen', tiredPotter);
+    expect([tinker, potter1].map((id) => flagOf(after, id, 'keen'))).toEqual([undefined, true]);
+  });
+  it('sets the flag on no card but those on it, and changes nothing else', () => {
+    const after = run('every card on it that is eager is keen');
+    expect(after.cards.filter((card) => card.data?.keen === true).map((card) => card.id)).toEqual([tinker]);
+    expect(run('every card on it that is eager is keen', atWork(setUp))).toEqual(atWork(setUp));
+  });
+  it('refuses a flag the game works out from lines, whether or not a card is on it', () => {
+    for (const state of [onVase, atWork(setUp)]) {
+      expect(() => run('every card on it that is eager is helping', state)).toThrow(new RuleError(WORKED_SAID));
+    }
+  });
+  it('marks the phrase as about a card and as writing its second flag', () => {
+    expect(lib.get('effect', PATTERN)).toMatchObject({ needsCard: true, writes: 1 });
+  });
+  it('is refused at its line when the second flag is worked out from lines', () => {
+    const line = '      Every card on it that is eager is keen.';
+    expect(SORT_GAME).toContain(line);
+    const text = SORT_GAME.replace(line, '      Every card on it that is eager is helping.');
+    expect(messages(text)).toEqual([[at(text, '      Every card on it that is eager is helping.'), WORKED_SAID]]);
+  });
+  it('is read only in a rule about a card', () => {
+    const line = '      Every card on it that is eager is keen.';
+    const text = SORT_GAME.replace('      Their moves go back to 0.', `      Their moves go back to 0.\n${line}`);
+    expect(messages(text)).toEqual([[text.split('\n').lastIndexOf(line) + 1,
+      '“Every card on it that is eager is keen” only makes sense in a rule about a card, such as “When a card …”.']]);
+  });
+  it('reads the button that keeps red as a button on a card in their idle that picks no card to move', () => {
+    const keep = compileGame(SORT_GAME, lib).game!.phases.find((phase) => phase.id === 'sorting')!.actions.find((action) => action.base === 'keep red on')!;
+    expect(keep).toMatchObject({ words: 'keep red on a card in their idle', target: null });
+    expect(keep.pick).toEqual({ some: false, from: { of: { who: 'actor' }, zone: 'idle' }, fromText: 'their idle', to: null, onto: null, ontoText: null });
   });
 });

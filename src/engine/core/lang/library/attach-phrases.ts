@@ -159,6 +159,15 @@ const everyCardOnItIs: EffectFn = (env, [fact]) => {
   return cardsOn(env.state, cardOf(env)).reduce((state, card) => changeCard(state, card.id, { [fact as string]: true }, env.game), env.state);
 };
 
+/**
+ * The second flag is set on each card on it that is the first, read as `cardHasFlag` reads a flag, and on no other: a flag worked out from
+ * lines is refused first, whether or not a card is on it. The cards are those `cardsOn` gives, so one place narrows what a card holds.
+ */
+const cardsOnItThatAreSet: EffectFn = (env, [flag, fact]) => {
+  mustBeKept(env, fact as string);
+  return cardsOnItThatAre(env, flag as string, true).reduce((state, id) => changeCard(state, id, { [fact as string]: true }, env.game), env.state);
+};
+
 // ---- examples ----------------------------------------------------------------------------------
 
 /**
@@ -194,10 +203,11 @@ const cardHasNothingOnItExpected: ExpectFn = (env, [match, zone]) => onItIs(env,
 /**
  * The sentences about cards that sit on cards (R3): whether the card a press is about sits on its target card, or on any card, whether
  * the card it sits on is, or is not, of a kind, and whether any picked card is so; putting it or the picked cards (all, or those that are
- * so) on the target card, and the picked cards that are not so elsewhere; moving or marking every card on it, and moving those that are
- * so along with it, still on it, and those that are not elsewhere. The rules for when a card of a kind joins a card in a zone, which every
- * line that puts cards on a target card tells, and what they do to the card it joins. And the lines of an example that put cards on a
- * card, or check what is on one. A card comes off its card whenever it moves, so a line that puts it on one says so after the move.
+ * so) on the target card, and the picked cards that are not so elsewhere; moving or marking every card on it, marking those that are so,
+ * and moving those that are so along with it, still on it, and those that are not elsewhere. The rules for when a card of a kind joins a
+ * card in a zone, which every line that puts cards on a target card tells, and what they do to the card it joins. And the lines of an
+ * example that put cards on a card, or check what is on one. A card comes off its card whenever it moves, so a line that puts it on one
+ * says so after the move.
  */
 export function registerAttachPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
@@ -213,6 +223,7 @@ export function registerAttachPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('the picked cards that are not {cardflag} go to {zone}', pickedThatAreNotGoTo, { needsCards: true })
     .effect('every card on it goes to {zone}', everyCardOnItGoesTo, { needsCard: true })
     .effect('every card on it is {cardflag}', everyCardOnItIs, { needsCard: true, writes: 0 })
+    .effect('every card on it that is {cardflag} is {cardflag}', cardsOnItThatAreSet, { needsCard: true, writes: 1 })
     .effect('every card on it that is {cardflag} goes to {zone}, staying on it', cardsOnItThatAreStay, { needsCard: true })
     .effect('every card on it that is not {cardflag} goes to {zone}', cardsOnItThatAreNotGoTo, { needsCard: true })
     .moment('{cardclass} joins a card in a {perzone}', joinsACardIn)

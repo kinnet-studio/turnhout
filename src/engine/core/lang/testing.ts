@@ -639,6 +639,40 @@ export const CLAIM_GAME = ROUNDS_GAME
     'Phase: working'].join('\n'))
   .replace('  A player may stop.', '  A player may ready everyone.\n    Then:\n      Every player is ready.\n  A player may stop.');
 
+/**
+ * CREW_GAME where finishing a job starts a sorting step for its hands: a hand with one mark keeps it as a star with no press, a hand with
+ * two keeps the one its owner picks, and an untired Smith on the job lets one sorted hand keep its other mark too; then every mark goes.
+ * A Tinker on a finished job turns keen.
+ */
+export const SORT_GAME = [CREW_GAME
+  .replace('  Players pay with coins.', '  Players pay with coins.\n  Players can have help.')
+  .replace('  Cards can be tired.', ['  Cards can be tired.', '  Cards can be sorted.', '  Cards can be keen.',
+    '  Cards can have red marks, gold marks, red stars and gold stars.'].join('\n'))
+  .replace('      Every card on it is tired.\n', ['      If some card on it is helping, they gain 1 help.',
+    '      Every card on it that is eager is keen.', '      Every card on it is tired.', ''].join('\n'))
+  .replace('      Move it to the scrap.\n', '      Move it to the scrap.\n      The sorting phase starts with them.\n')
+  .replace('\nEnd:', ['', 'Phase: sorting', '  Players take turns.', '  Hint: Keep one mark on each hand that has two.',
+    '  When a card in an idle is single:', '    If its red marks are 1, it gains 1 red star.', '    If its gold marks are 1, it gains 1 gold star.',
+    '    It loses its red marks.', '    It loses its gold marks.', '    It is sorted.',
+    '  A player may keep red on a card in their idle.', '    Only if it is torn.', '    Only if its red marks are 1.', '    Then:',
+    '      It gains 1 red star.', '      It loses its red marks.', '      It is sorted.',
+    '  A player may keep gold on a card in their idle.', '    Only if it is torn.', '    Only if its gold marks are 1.', '    Then:',
+    '      It gains 1 gold star.', '      It loses its gold marks.', '      It is sorted.',
+    '  A player may help a card in their idle.', '    Only if they have 1 help.', '    Only if it is helpable.', '    Then:',
+    '      They choose one:', '        Red:', '          Only if its red marks are 1.', '          It gains 1 red star.',
+    '        Gold:', '          Only if its gold marks are 1.', '          It gains 1 gold star.', '      Their help go back to 0.',
+    '  When no card in their idle is torn:', '    Only if one of:', '      They have 0 help.', '      No card in their idle is helpable.',
+    '    Every card in their idle is not sorted.', '    For each card in their idle, it loses its red marks.',
+    '    For each card in their idle, it loses its gold marks.', '    Their help go back to 0.', '    Go back to the interrupted turn.', '',
+    'End:'].join('\n')), '',
+  'Marks:', "  A card's marks is its red marks.", "  A card's marks goes up by its gold marks.", '',
+  'Single:', '  Only if its marks is 1.', '  Only if it is not sorted.', '',
+  'Torn:', '  Only if its marks is more than 1.', '  Only if it is not sorted.', '',
+  'Helpable:', '  Only if it is sorted.', '  Only if its marks is more than 0.', '',
+  'Helping:', '  Only if it is a Smith card.', '  Only if it is not tired.', '',
+  'Eager:', '  Only if it is a Tinker card.',
+].join('\n');
+
 /** The loop of the board fixtures: a start, two streets, a tax, a station, a utility and two chance spaces. */
 export const FIXTURE_SPACES: SpaceSpec[] = [
   { name: 'Go', attrs: { kind: 'go' } },
