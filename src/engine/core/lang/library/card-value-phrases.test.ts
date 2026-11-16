@@ -435,8 +435,13 @@ describe("lines a flag turns on, any card's number, and a number for each of a c
   const value = (state: GameState, id: string, name: string) => built.runtime.workedValue(state, id, name);
   const charmed = (state: GameState, id: string, charms: number) => changeCard(state, id, { charms }, charm);
 
-  it('works each out from the lines before it, and what a flag turns on only for a card that is so', () => {
-    // A Potter's skill is 1. Hands have no worth, so its worth is nothing, and stays nothing.
+  /** A runtime for three of CHARM_GAME with `lines` after it, or with `edit` made to it. */
+  const reading = (lines: string[], edit = (text: string) => text) =>
+    createEngine(compiled(edit([CHARM_GAME, '', ...lines].join('\n'))), lib, 3, table).runtime;
+
+  it('works each out from the lines before it, and what a flag turns on only for a card that is so; every line is about a card', () => {
+    // A Potter makes 1 red work, has a wage of 1, and every card's bonus is 1. Hands have no worth, so its worth is nothing, and stays
+    // nothing.
     expect(['red work', 'wage', 'bonus', 'worth'].map((name) => value(table, potterHand, name))).toEqual([1, 1, 1, null]);
     // Charmed: red work 1 + 2, wage 1 + 2, bonus 1 + its 1 charm.
     const lucky = charmed(table, potterHand, 1);
@@ -453,11 +458,28 @@ describe("lines a flag turns on, any card's number, and a number for each of a c
     expect([value(table, jar, 'worth'), value(table, jar, 'bonus')]).toEqual([3, 1]);
     const twice = charmed(table, jar, 2);
     expect([value(twice, jar, 'worth'), value(twice, jar, 'bonus')]).toEqual([9, 3]);
+    // A line a flag turns on that takes a value down has no floor: a gusty Potter's drift of 1 goes down by 3, to −2, and a Tinker's
+    // stays 1.
+    const drift = reading(['Drift:', "  A card's drift is 1.", "  A gusty card's drift goes down by 3."]);
+    expect([potterHand, tinkerHand].map((id) => drift.workedValue(gale, id, 'drift'))).toEqual([-2, 1]);
+    for (const pattern of [
+      "a card's {attribute} is {int}", "a card's {attribute} goes up by {int} for each {attribute}",
+      "a {cardflag} card's {attribute} goes up by {int}", "an {cardflag} card's {attribute} goes up by {int}",
+      "a {cardflag} card's {attribute} goes down by {int}", "an {cardflag} card's {attribute} goes down by {int}",
+      "a {cardflag} card's {attribute} goes up by its {attribute}", "an {cardflag} card's {attribute} goes up by its {attribute}",
+    ]) {
+      expect([pattern, lib.get('value', pattern)?.needsCard]).toEqual([pattern, true]);
+    }
   });
 
   it('Review Focus: gives a charmed Vase no wage: jobs have no wage column, and a line a flag turns on gives nothing so far nothing', () => {
     const twice = charmed(table, jar, 2);
     expect(built.runtime.workedFlag(twice, jar, 'charmed')).toBe(true);
     expect(value(twice, jar, 'wage')).toBeNull();
+    // Unlike a line a flag turns on, any card's whole number turns nothing so far into a number: written first, the Vase's wage is 4,
+    // then 4 + 2 once it is charmed.
+    const TINKER_WAGE = "  A Tinker card's wage is 1.";
+    const waged = reading([], (text) => text.replace(TINKER_WAGE, `  A card's wage is 4.\n${TINKER_WAGE}`));
+    expect([waged.workedValue(table, jar, 'wage'), waged.workedValue(twice, jar, 'wage')]).toEqual([4, 6]);
   });
 });
