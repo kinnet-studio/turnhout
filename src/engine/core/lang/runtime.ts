@@ -21,6 +21,7 @@ import type {
   PhraseEnv, PhraseKind, PhraseRef, ScoreFn, Subject, TargetFn, TurnFn, ValueFn, WhichFn, WhoFn, WinnerFn, WorkedValue,
 } from './types';
 import { chooseNext } from './zones';
+import { currentIdOf, RENAMED_KEY } from './cards';
 
 type Checker = (state: GameState, move: Move) => true | string;
 
@@ -148,7 +149,8 @@ export class LangRuntime {
       // The cards are those of the group when the line starts: a card its effect moves in is not one of them, nor is one walked
       // twice for being moved, and each that it moves away is still walked, in its turn.
       const ids = this.cardsFor(ref, group, this.env(state, move, example, about));
-      return ids.reduce((s, card) => this.run(effect, s, undefined, example, { ...about, card }), state);
+      // An earlier card's effect may have renamed this card, or a card the line is about: each is found by the id it has then.
+      return ids.reduce((s, card) => this.run(effect, s, undefined, example, followSubject(state, s, { ...about, card })), state);
     }
     if (ref.kind === 'lang' && ref.phrase === CHOOSE_PLAYER) {
       const [at, , , effect] = ref.args as [number, CondGroup[], PhraseRef, PhraseRef];
@@ -159,9 +161,22 @@ export class LangRuntime {
     if (ref.kind === 'lang' && ref.phrase === CHOOSE_ONE) {
       const [at, , options] = ref.args as [number, CondGroup[], ChoiceOption[]];
       const chosen = options.find((option) => option.label === subject?.choices?.[at]);
-      return chosen === undefined ? state : chosen.effects.reduce((s, effect) => this.run(effect, s, move, example, subject), state);
+      return chosen === undefined ? state : this.runLines(chosen.effects, state, move, example, subject);
     }
     return this.call<EffectFn, GameState>(ref, ['effect', 'given'], (fn) => fn(this.env(state, move, example, subject), ref.args));
+  }
+
+  /**
+   * Runs `refs` in order, each seeing what the one before it did, about the same move and subject: a press's or a card move's Then lines,
+   * a rule's lines, or the lines of the option a press chose. The move and the subject hold cards by id (the card, the card it goes onto,
+   * the picked cards), read in `state`, before the first line. A line that shuffles a card into a pile some seat can't see gives it a
+   * new id (renameCards), so before each line every id they hold is looked up again (currentIdOf, through the dealt id) as the id that
+   * card has then: followed through any number of renames, and left exactly as it is when no rename touched it. No shipped game's
+   * lines rename a card their own run holds; plan 9-1 shuffles such piles in the middle of a press, and its later lines must still find
+   * the card.
+   */
+  runLines(refs: PhraseRef[], state: GameState, move?: MoveInfo, example?: ExampleEnv, subject?: Subject): GameState {
+    return refs.reduce((s, ref) => this.run(ref, s, followMove(state, s, move), example, followSubject(state, s, subject)), state);
   }
 
   /** The player a For line runs as; nobody holding the flag, or several, is a mistake on that line. */
@@ -295,7 +310,7 @@ export class LangRuntime {
   fireTrigger(phaseId: string | null, trigger: CompiledTrigger, state: GameState): GameState {
     const subject = this.triggerSubject(phaseId, trigger, state);
     if (subject === null) throw new Error(`The rule on line ${trigger.line} was run although it does not hold.`);
-    return trigger.effects.reduce((s, ref) => this.run(ref, s, undefined, undefined, subject), state);
+    return this.runLines(trigger.effects, state, undefined, undefined, subject);
   }
 
   /**
@@ -416,7 +431,8 @@ export class LangRuntime {
    * `env.announce`: a piece passed or landed on a space, or a card joined a card. Runs the moment rules for every phase, then the
    * current phase's, in the order written, each seeing what the rules before it did. A pass or a landing is about the piece's player
    * and that space; a join is about the player whose zone the card joined, the card (“it”) and the card it joined (“the card it
-   * joins”). A rule's lines may move a piece or put a card on a card again and so announce again, inside this one.
+   * joins”), each told to a rule by the id it has when that rule is asked, since an earlier rule's lines may have renamed it, as
+   * runLines does for each line. A rule's lines may move a piece or put a card on a card again and so announce again, inside this one.
    */
   readonly announce = (state: GameState, moment: Moment): GameState => {
     const rules = [...(this.game.everyPhase.moments ?? []), ...(this.game.phases.find((p) => p.id === state.turn?.phase)?.moments ?? [])];
@@ -425,9 +441,11 @@ export class LangRuntime {
       : { player: moment.seat, space: moment.space, card: null };
     let s = state;
     for (const rule of rules) {
-      const env = this.env(s, undefined, undefined, subject);
-      const happens = this.call<MomentFn, boolean>(rule.when, ['moment'], (fn) => fn(env, rule.when.args, moment));
-      if (!happens || this.failedGroup(rule.conditions, s, undefined, subject) !== null) continue;
+      const about = followSubject(state, s, subject);
+      const told = followMoment(state, s, moment);
+      const env = this.env(s, undefined, undefined, about);
+      const happens = this.call<MomentFn, boolean>(rule.when, ['moment'], (fn) => fn(env, rule.when.args, told));
+      if (!happens || this.failedGroup(rule.conditions, s, undefined, about) !== null) continue;
       // The rule to blame is the one whose lines moved the piece this time, not whichever rule the move set off first.
       const mover = this.runningMoments.at(-1);
       if (mover && this.runningMoments.length >= MAX_MOMENT_DEPTH) {
@@ -435,7 +453,7 @@ export class LangRuntime {
       }
       this.runningMoments.push(rule);
       try {
-        s = rule.effects.reduce((acc, ref) => this.run(ref, acc, undefined, undefined, subject), s);
+        s = this.runLines(rule.effects, s, undefined, undefined, about);
       } finally {
         // A rule that throws must not leave the runtime thinking it is still that deep.
         this.runningMoments.pop();
@@ -622,4 +640,32 @@ export class LangRuntime {
       this.checking = false;
     }
   };
+}
+
+/** Whether a card was renamed between `before` and `state`: every rename writes a new map. */
+const renamedSince = (before: GameState, state: GameState): boolean => before.data[RENAMED_KEY] !== state.data[RENAMED_KEY];
+
+/** `move` with its card's id as it is in `state`, read in `before`. */
+function followMove(before: GameState, state: GameState, move: MoveInfo | undefined): MoveInfo | undefined {
+  return move === undefined || !renamedSince(before, state) ? move : { ...move, cardId: currentIdOf(before, state, move.cardId) };
+}
+
+/** `subject` with the ids of its card, the card it goes onto and its picked cards as they are in `state`, read in `before`. */
+function followSubject(before: GameState, state: GameState, subject: Subject): Subject;
+function followSubject(before: GameState, state: GameState, subject: Subject | undefined): Subject | undefined;
+function followSubject(before: GameState, state: GameState, subject: Subject | undefined): Subject | undefined {
+  if (subject === undefined || !renamedSince(before, state)) return subject;
+  const now = (id: string) => currentIdOf(before, state, id);
+  return {
+    ...subject,
+    card: subject.card === null ? null : now(subject.card),
+    ...(subject.onto === undefined ? {} : { onto: now(subject.onto) }),
+    ...(subject.cards === undefined ? {} : { cards: subject.cards.map(now) }),
+  };
+}
+
+/** `moment` with the ids of the card that joined and the card it joined as they are in `state`, read in `before`. */
+function followMoment(before: GameState, state: GameState, moment: Moment): Moment {
+  if (moment.kind !== 'join' || !renamedSince(before, state)) return moment;
+  return { ...moment, card: currentIdOf(before, state, moment.card), holder: currentIdOf(before, state, moment.holder) };
 }

@@ -1324,3 +1324,47 @@ describe("a target card in another player's zone", () => {
     expect(engine.getState()).toEqual(before);
   });
 });
+
+import { dealtIdOf } from './cards';
+describe('a press whose lines name its card after a shuffle renamed it', () => {
+  /** TURN_GAME with a cost on each card and a button on a card in their list whose Then lines are `then`. */
+  const withLines = (...then: string[]) => TURN_GAME
+    .replace('| name  | copies |', '| name  | cost | copies |').replace('| Sweep | 6      |', '| Sweep | 2    | 6      |')
+    .replace('| Dust  | 6      |', '| Dust  | 3    | 6      |')
+    .replace('  A player may stop.', ['  A player may tuck a card in their list.', '    Then:', ...then.map((line) => `      ${line}`),
+      '  A player may stop.'].join('\n'));
+  /** p0 to press with a Sweep in their list and 10 coins: the engine, and the Sweep's id. */
+  function tucking(text: string) {
+    const { game: g, diagnostics } = compileGame(text, lib);
+    expect(diagnostics).toEqual([]);
+    const dealt = withBoardData(initialState(g!, 1), g!, ['p0', 'p1']);
+    const sweep = dealt.cards.find((c) => c.data?.name === 'Sweep')!.id;
+    const s = setCounter({ ...relocate(dealt, [sweep], 'list-p0', g!), turn: { current: 'p0', phase: 'working' } }, 'coins', 'p0', 10);
+    return { engine: createEngine(g!, lib, 2, s).engine, sweep };
+  }
+
+  it('moves it on, by its new id', () => {
+    const { engine, sweep } = tucking(withLines('Move it to the pile.', 'Shuffle the pile.', 'Move it to the done pile.'));
+    expect(engine.dispatch({ type: 'tuck a card in their list', by: 'p0', cardId: sweep }).ok).toBe(true);
+    const [done] = zoneCards(engine.getState(), 'done-pile');
+    expect([done?.data?.name, done?.id === sweep, dealtIdOf(engine.getState(), done?.id ?? '')]).toEqual(['Sweep', false, sweep]);
+  });
+  it('reads its number, by its new id', () => {
+    const { engine, sweep } = tucking(withLines('Move it to the pile.', 'Shuffle the pile.', "They pay the card's cost."));
+    expect(engine.dispatch({ type: 'tuck a card in their list', by: 'p0', cardId: sweep }).ok).toBe(true);
+    expect(counterOf(engine.getState(), 'coins', 'p0')).toBe(8);
+  });
+  it('follows it through two shuffles in one press', () => {
+    const { engine, sweep } = tucking(withLines('Move it to the pile.', 'Shuffle the pile.', 'Shuffle the pile.', 'Move it to the done pile.'));
+    expect(engine.dispatch({ type: 'tuck a card in their list', by: 'p0', cardId: sweep }).ok).toBe(true);
+    const [done] = zoneCards(engine.getState(), 'done-pile');
+    expect([done?.data?.name, done?.id === sweep, dealtIdOf(engine.getState(), done?.id ?? '')]).toEqual(['Sweep', false, sweep]);
+  });
+  it('keeps the id of a card the shuffle did not rename', () => {
+    const { engine, sweep } = tucking(withLines('Shuffle the pile.', 'Move it to the done pile.'));
+    expect(engine.dispatch({ type: 'tuck a card in their list', by: 'p0', cardId: sweep }).ok).toBe(true);
+    // The pile's cards were renamed, and the card in their list was not.
+    expect(dealtIdOf(engine.getState(), zoneCards(engine.getState(), 'pile')[0].id)).not.toBe(zoneCards(engine.getState(), 'pile')[0].id);
+    expect(zoneCards(engine.getState(), 'done-pile').map((card) => card.id)).toEqual([sweep]);
+  });
+});

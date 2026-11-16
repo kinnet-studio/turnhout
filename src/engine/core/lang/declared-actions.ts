@@ -376,7 +376,7 @@ export function declaredActionHandler(move: string, runtime: LangRuntime): MoveH
       // Spent first, so that the Then lines see what is left.
       const paid = payCost(action, recorded, by);
       const moved = relocation ? relocate(paid, relocation.ids, relocation.to, runtime.game) : paid;
-      const done = action.effects.reduce((s, ref) => runtime.run(ref, s, info, undefined, subject), moved);
+      const done = runtime.runLines(action.effects, moved, info, undefined, subject);
       // Only a turn of this phase passes: lines that went back to an interrupted turn leave that turn's log as it was.
       return runtime.checkAttachments(endsTurn(phase, move) && done.turn?.phase === phase.id ? clearTurnLog(done) : done, { line: action.line });
     },

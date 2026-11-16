@@ -638,3 +638,36 @@ describe('a flag set on the cards on a card that are so', () => {
     expect(keep.pick).toEqual({ some: false, from: { of: { who: 'actor' }, zone: 'idle' }, fromText: 'their idle', to: null, onto: null, ontoText: null });
   });
 });
+
+import { dealtIdOf } from '../cards';
+describe('a card that joins a card and is then shuffled into a pile no seat can follow', () => {
+  const RULE = '    The card it joins gains 1 dent.';
+  const [smith] = zoneCards(setUp, 'hall').filter((card) => card.data?.name === 'Smith').map((card) => card.id);
+  const potters = zoneCards(setUp, 'hall').filter((card) => card.data?.name === 'Potter').map((card) => card.id);
+  /** Each card in `zone`: its name, whether it kept its id, its dealt id and the card it is on. */
+  const ending = (state: GameState, zone: string) => zoneCards(state, zone)
+    .map((card) => [card.data?.name, potters.includes(card.id) || card.id === smith, dealtIdOf(state, card.id), holderOf(state, card.id) ?? null]);
+
+  it('is still “it” to the next rule about that join', () => {
+    const text = JOIN_GAME.replace(RULE, ['    Move it to the pile.', '    Shuffle the pile.', '  When a Smith card joins a card in a workshop:',
+      '    Move it to their idle.'].join('\n'));
+    const { engine } = crew(atWork, text);
+    const hire: Move = { type: 'hire some cards from the hall to a card in their workshop', by: 'p0', cardIds: [smith], onto: vase };
+    expect(engine.dispatch(hire)).toMatchObject({ ok: true });
+    expect(ending(engine.getState(), 'pile')).toEqual([]);
+    expect(ending(engine.getState(), 'idle-p0')).toEqual([['Smith', false, smith, null]]);
+  });
+  it('is found by its new id when a For each line comes to it, after an earlier card of the line renamed it, once or twice', () => {
+    const text = JOIN_GAME.replace('When a Smith card joins', 'When a Potter card joins').replace(RULE, '    Shuffle the pile.')
+      .replace('  A player may stop.', ['  A player may rally some cards from the hall to a card in their workshop.', '    Then:',
+        '      For each card in the pile, it goes to their crew, on the target card.', '  A player may stop.'].join('\n'));
+    const { engine } = crew((state) => relocate(atWork(state), potters, 'pile', game), text);
+    const rally: Move = { type: 'rally some cards from the hall to a card in their workshop', by: 'p0', cardIds: [smith], onto: vase };
+    expect(engine.dispatch(rally)).toMatchObject({ ok: true });
+    const crewed = ending(engine.getState(), 'crew-p0');
+    expect(ending(engine.getState(), 'pile')).toEqual([]);
+    // The first Potter the line walks joins by the id it was dealt; the second was renamed once, the third twice.
+    expect(crewed.map(([name, kept, , on]) => [name, kept, on])).toEqual([['Potter', true, vase], ['Potter', false, vase], ['Potter', false, vase]]);
+    expect(crewed.map(([, , dealt]) => dealt).sort()).toEqual([...potters].sort());
+  });
+});
