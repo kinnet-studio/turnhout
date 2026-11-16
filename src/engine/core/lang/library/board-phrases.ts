@@ -16,6 +16,7 @@ import type {
 } from '../types';
 import { chooseNext } from '../zones';
 import { itOf, seatOf, theyOf } from './support';
+import { passStep } from './turn-phrases';
 
 const MIN_DICE = 1;
 const MAX_DICE = 10;
@@ -374,7 +375,11 @@ const goesOut: EffectFn = (env) => {
   const they = theyOf(env);
   const out = markOut(env.state, they);
   // The turn moves on only when it was theirs; a player who goes out in someone else's turn leaves it alone.
-  return out.turn?.current === they ? chooseNext(out, nextIn(out, they, env.seats)) : out;
+  if (out.turn?.current !== they) return out;
+  // One who goes out while taking their step, before the score or as a round starts, passes it on as its own words would: the next
+  // seat's start lines run, and after the last seat the steps end rather than come round again.
+  const { phase } = out.turn;
+  return (phase === undefined ? null : passStep(env, out, phase)) ?? chooseNext(out, nextIn(out, they, env.seats));
 };
 
 const returnToBank: EffectFn = (env) => {

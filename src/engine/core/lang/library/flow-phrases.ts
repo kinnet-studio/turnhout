@@ -146,9 +146,10 @@ const holderGoesFirst: EffectFn = (env, args) => {
 
 /**
  * Runs the start lines of `phase` about `seat`, the player whose turn it is, where players take turns, and about no one in
- * particular where everyone acts at once. Each line sees what the line before it did, as an advance's start lines do.
+ * particular where everyone acts at once. Each line sees what the line before it did, as an advance's start lines do. A step a seat
+ * takes, before the score or as a round starts, begins this way too.
  */
-function runStartLines(env: PhraseEnv, state: GameState, phase: string, seat: PlayerId): GameState {
+export function runStartLines(env: PhraseEnv, state: GameState, phase: string, seat: PlayerId): GameState {
   const startLines = env.game.phases.find((p) => p.id === phase)?.onEnter ?? [];
   if (startLines.length === 0) return state;
   const { runLine } = env;

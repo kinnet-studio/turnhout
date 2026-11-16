@@ -123,6 +123,14 @@ const ROUND_STEPS_GO_TO = (phase: string) =>
   `The players take the ${phase} in turn at the start of a round, so it can't go to another phase: pass it on with “The ${phase} passes to the left.”`;
 const ROUND_STEPS_AFTER = (phase: string) =>
   `The players take the ${phase} in turn at the start of a round, so it can't have an After line: pass it on with “The ${phase} passes to the left.”`;
+/** A line under “For each …” runs once for each card, and a round's steps can begin only once in it. */
+const ROUND_STEPS_FOR_EACH = (phase: string) => `The players take the ${phase} once a round, so its line can't be under “For each …”.`;
+/**
+ * A step begins only as the steps do: a game taken into their phase any other way would sit in it outside them, where no line passes a
+ * step on and nothing takes the game out again.
+ */
+const ROUND_STEPS_ENTERED = (phase: string) => `The players take the ${phase} only in turn at the start of a round, so no line can go to it.`;
+const STEPS_ENTERED = (phase: string) => `The players take the ${phase} only in turn before the score, so no line can go to it.`;
 
 type Section = { keyword: string; rest: string; node: OutlineNode };
 /** A section that works out a value for cards: `keyword` is the value's name, and `refines` says it is a column of a card table. */
@@ -704,11 +712,17 @@ const everyPhaseEffects = ({ triggers, roundStarts, turnStarts, moments = [] }: 
   ...roundStarts, ...turnStarts, ...triggers.flatMap((t) => t.effects), ...moments.flatMap((m) => m.effects),
 ];
 
-/** Every line of a phase that does something: its buttons, card moves, rules, start lines and the lines that start a turn in it. */
-const effectsOf = (phase: CompiledPhase): PhraseRef[] => [
+/**
+ * Every line of a phase that does something but the lines that start a turn in it: its buttons, card moves, rules and start lines. These
+ * are the lines of a phase that may run while steps are taken in it, where no turn starts.
+ */
+const effectsInSteps = (phase: CompiledPhase): PhraseRef[] => [
   ...phase.onEnter, ...phase.actions.flatMap((a) => a.effects), ...phase.moves.flatMap((m) => m.effects),
-  ...phase.triggers.flatMap((t) => t.effects), ...phase.moments.flatMap((m) => m.effects), ...phase.turnStarts,
+  ...phase.triggers.flatMap((t) => t.effects), ...phase.moments.flatMap((m) => m.effects),
 ];
+
+/** Every line of a phase that does something: its buttons, card moves, rules, start lines and the lines that start a turn in it. */
+const effectsOf = (phase: CompiledPhase): PhraseRef[] => [...effectsInSteps(phase), ...phase.turnStarts];
 
 /**
  * A phase that is not the first needs something to lead to it, or the game can never reach it: a `go to` in another phase, or a
@@ -745,7 +759,8 @@ function endCondition(body: string, line: number, ctx: LineCtx): PhraseRef {
 /**
  * The phase “Before the score, each player has the …, in turn from the start player.” names, with its line; null when it names no phase
  * of the game, or one where everyone acts at once. A step ends only by being passed on, so a `go to` in that phase, as a rule or as a
- * line of a button, rule or choice (an `If …, go to …` among them), or an After line, is refused on its own line.
+ * line of a button, rule or choice (an `If …, go to …` among them), or an After line, is refused on its own line. A line that goes into
+ * that phase from outside it is refused by `refuseEnteringSteps`.
  */
 function endSteps(name: string, line: number, ctx: LineCtx, phases: CompiledPhase[]): CompiledEnd['steps'] | null {
   const found = parseParam('phase', name, ctx.vocab);
@@ -776,6 +791,23 @@ function refuseLeavingSteps(phase: CompiledPhase | undefined, goTo: string, afte
   if (phase.after) addProblem(diagnostics, phase.after.line, after);
 }
 
+/**
+ * Refuses, each on its own line, what would take the game into `id`, the phase of a round's steps or of the steps before the score, other
+ * than by their beginning: a line anywhere but in that phase that goes to it or starts it (`elsewhere`, Setup's lines, what cards say and
+ * the rules for every phase, and every other phase's lines, choices and `If …, …` or `For …, …` lines read through), another phase's
+ * `go to` rule naming it, and the phase coming first, which starts the game in it.
+ */
+function refuseEnteringSteps(
+  id: string, message: string, elsewhere: PhraseRef[], phases: CompiledPhase[], library: PhraseLibrary, diagnostics: Diagnostic[],
+): void {
+  const others = phases.filter((phase) => phase.id !== id);
+  for (const ref of [...elsewhere, ...others.flatMap(effectsOf)].flatMap(linesDoing)) {
+    if (phaseStartedBy(ref, library) === id) addProblem(diagnostics, ref.line, message);
+  }
+  for (const phase of others) if (phase.goTo?.to === id) addProblem(diagnostics, phase.goTo.line, message);
+  if (phases[0]?.id === id) addProblem(diagnostics, phases[0].line, message);
+}
+
 /** Whether a line begins a round's steps, read through what an `If …, …` or `For …, …` line does. */
 function beginsRoundSteps(ref: PhraseRef): boolean {
   const effect = innerEffect(ref);
@@ -786,8 +818,9 @@ function beginsRoundSteps(ref: PhraseRef): boolean {
  * The phase each player takes in turn as a round starts, before the start player's turn, with the line that names it: the first line
  * that starts a round and begins the steps. Null when none does, or when it names a phase where everyone acts at once. What would leave
  * a round unable to go on is refused on its own line: such a line anywhere but among those that start a round (Setup, what a card says,
- * the rest of `everyPhase` or any phase's lines, choices read through), a second one, other lines after it, and a phase the steps could
- * not finish in, with a `go to` or an After line, or that no line able to run while they do passes on.
+ * the rest of `everyPhase` or any phase's lines, choices read through), a second one, one under “For each …”, other lines after it, and a
+ * phase the steps could not finish in, with a `go to` or an After line, or that no line able to run while they do passes on. A line that
+ * goes into that phase from outside it is refused by `refuseEnteringSteps`.
  */
 function compileRoundSteps(
   everyPhase: EveryPhase, setup: PhraseRef[], says: PhraseRef[], phases: CompiledPhase[], diagnostics: Diagnostic[],
@@ -802,15 +835,18 @@ function compileRoundSteps(
   for (const ref of roundStarts.slice(at + 1)) if (beginsRoundSteps(ref)) addProblem(diagnostics, ref.line, ROUND_STEPS_TWICE);
   if (roundStarts.slice(at + 1).some((ref) => !beginsRoundSteps(ref))) addProblem(diagnostics, first.line, ROUND_STEPS_NOT_LAST);
   const id = innerEffect(first).args[0] as string;
+  // An `If …, …` around it holds or not, once; a `For each …, …` would begin the steps again for each card.
+  if (first.kind === 'lang' && first.phrase === 'for each') addProblem(diagnostics, first.line, ROUND_STEPS_FOR_EACH(id));
   const phase = phases.find((p) => p.id === id);
   if (phase?.actor === 'any') {
     addProblem(diagnostics, first.line, ROUND_STEPS_AT_ONCE(id));
     return null;
   }
   refuseLeavingSteps(phase, ROUND_STEPS_GO_TO(id), ROUND_STEPS_AFTER(id), diagnostics);
-  // Only a line that can run while the steps do passes them on: one of their phase's own, a rule for every phase, or what a card says.
-  // Another phase's lines, those that start a turn and Setup's never run then, and the round's other lines run before the steps begin.
-  const whileTheyRun = [...(phase ? effectsOf(phase) : []), ...everyPhaseRules, ...says].flatMap(linesDoing);
+  // Only a line that can run while the steps do passes them on: one of their phase's own but those that start a turn there, a rule for
+  // every phase, or what a card says. Another phase's lines, those that start a turn and Setup's never run then, and the round's other
+  // lines run before the steps begin.
+  const whileTheyRun = [...(phase ? effectsInSteps(phase) : []), ...everyPhaseRules, ...says].flatMap(linesDoing);
   const passes = (ref: PhraseRef) => ref.kind === 'effect' && ref.phrase === STEP_PASSES_PHRASE && ref.args[0] === id;
   if (!whileTheyRun.some(passes)) addProblem(diagnostics, first.line, STEPS_NEVER_PASS(id));
   return { phase: id, line: first.line };
@@ -963,6 +999,9 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   const roundSteps = compileRoundSteps(everyPhase, setup, Object.values(says).flat(), phases, diagnostics);
   if (roundSteps) everyPhase.roundSteps = roundSteps;
   const elsewhere = [...setup, ...Object.values(says).flat(), ...everyPhaseEffects(everyPhase)];
+  // Either kind of steps is reached only as it begins, never by a line that goes to its phase.
+  if (end?.steps) refuseEnteringSteps(end.steps.phase, STEPS_ENTERED(end.steps.phase), elsewhere, phases, library, diagnostics);
+  if (roundSteps) refuseEnteringSteps(roundSteps.phase, ROUND_STEPS_ENTERED(roundSteps.phase), elsewhere, phases, library, diagnostics);
   const reached = [...(end?.steps ? [end.steps.phase] : []), ...(roundSteps ? [roundSteps.phase] : [])];
   warnUnreachable(phases, elsewhere, library, diagnostics, reached);
   warnStepsNeverPass(end?.steps, [...elsewhere, ...phases.flatMap(effectsOf)], diagnostics);

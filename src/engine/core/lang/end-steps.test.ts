@@ -13,6 +13,7 @@ import type { CompiledGame } from './types';
 import { zoneIdFor } from './zones';
 import HEARTS from '@/games/hearts.rules?raw';
 import RENT_DAY from '@/games/rent-day.rules?raw';
+import { isOut } from './board-state';
 
 const lib = createDefaultLibrary();
 const SEATS = seatsFor(3);
@@ -385,5 +386,56 @@ describe('the steps before the score', () => {
       '  When p1 counts', '  And p2 counts', '  Then the game is over', '  And p2 wins',
     ].join('\n');
     expect(runExamples(compiled(`${STEPS_GAME}\n\n${EXAMPLE}`), lib)).toEqual([expect.objectContaining({ status: 'pass', message: null })]);
+  });
+});
+
+describe('the steps before the score, refused when a line goes into their phase from outside them', () => {
+  const ENTERED = 'The players take the final count only in turn before the score, so no line can go to it.';
+  /** STEPS_GAME's final count phase, written last. */
+  const COUNT_PHASE = STEPS_GAME.slice(STEPS_GAME.indexOf('Phase: final count'));
+  const STOP = '  A player may stop.\n    Then:\n      Their moves go back to 0.';
+
+  it('from a button\'s lines, on that line', () => {
+    const GO_TO = '      Go to final count.';
+    const text = STEPS_GAME.replace(STOP, `${STOP}\n${GO_TO}`);
+    expect(text).not.toBe(STEPS_GAME);
+    expect(errorsOf(text)).toEqual([expect.objectContaining({ line: lineOf(text, GO_TO), message: ENTERED })]);
+  });
+
+  it('by their phase coming first, so the game starts in it, on its Phase line', () => {
+    const text = STEPS_GAME.slice(0, -COUNT_PHASE.length).trimEnd().replace('Phase: working', `${COUNT_PHASE}\n\nPhase: working`);
+    expect(text.indexOf('Phase: final count')).toBeLessThan(text.indexOf('Phase: working'));
+    expect(errorsOf(text)).toEqual([expect.objectContaining({ line: lineOf(text, 'Phase: final count'), message: ENTERED })]);
+  });
+});
+
+describe('the steps before the score, passed on by a seat that goes out in its own step', () => {
+  /** STEPS_GAME where a player may give up in the final count, and goes out. */
+  const GIVE_UP = STEPS_GAME.replace(STEP_STARTS, `${STEP_STARTS}\n  A player may give up.\n    Then:\n      They are out.`);
+
+  it('before the last: the next seat takes its step, and the phase\'s start lines run about them', () => {
+    const engine = table(compiled(GIVE_UP));
+    round(engine);
+    expect(coinsOf(engine.getState())).toEqual([3, 2, 2]);
+    press(engine, 'give up', 'p0');
+    const state = engine.getState();
+    expect(isOut(state, 'p0')).toBe(true);
+    expect(state.turn).toEqual({ current: 'p1', phase: 'final count' });
+    expect(coinsOf(state)).toEqual([3, 3, 2]);
+    expect(state.result).toBeUndefined();
+  });
+
+  it('as the last seat: the steps end and the game is scored, and no seat takes its step twice', () => {
+    const engine = table(compiled(GIVE_UP));
+    round(engine);
+    press(engine, 'count', 'p0', 'p1');
+    expect(engine.getState().turn).toEqual({ current: 'p2', phase: 'final count' });
+    press(engine, 'give up', 'p2');
+    const state = engine.getState();
+    expect(isOut(state, 'p2')).toBe(true);
+    expect(state.data[END_STEPS_KEY]).toBe(true);
+    expect(state.result).toBeDefined();
+    // p0's step's start line ran once.
+    expect(coinsOf(state)).toEqual([5, 5, 3]);
   });
 });

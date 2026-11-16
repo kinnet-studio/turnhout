@@ -8,10 +8,11 @@ import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import { END_STEPS_KEY, START_PLAYER_KEY, START_PLAYER_PHRASE, STEP_PASSES_PHRASE, clearTurnOf } from '../turns';
 import { ROUND_STEPS_KEY, ROUND_STEPS_PHRASE, roundStepsOf, startPlayerOf, type RoundSteps } from '../turns';
-import type { EffectFn, Subject } from '../types';
+import type { EffectFn } from '../types';
 import type { PhraseEnv } from '../types';
 import { chooseNext } from '../zones';
 import { seatOf } from './support';
+import { runStartLines } from './flow-phrases';
 
 const TURN_IN_THE_STEPS = (phase: string) =>
   `The turn does not pass while the players take the ${phase} before the score: write “The ${phase} passes to the left.” instead.`;
@@ -58,47 +59,47 @@ function nextStep(state: GameState, seats: PlayerId[], first: PlayerId, current:
  * `seat` takes its step in the phase `name`: it is handed the turn on `state`, and the phase's start lines run about it, each seeing
  * what the one before did. A start line may pass the step on, and so start the next seat's inside it.
  */
-function takeStep(env: PhraseEnv, name: string, state: GameState, seat: PlayerId): GameState {
-  const chosen = chooseNext(state, seat);
-  const startLines = env.game.phases.find((p) => p.id === name)?.onEnter ?? [];
-  if (startLines.length === 0) return chosen;
-  const { runLine } = env;
-  if (!runLine) throw new Error('This phrase needs to run the start lines of a phase, but nothing is listening.');
-  const about: Subject = { player: seat, space: null, card: null };
-  return startLines.reduce((s, ref) => runLine(s, ref, about), chosen);
-}
+const takeStep = (env: PhraseEnv, name: string, state: GameState, seat: PlayerId): GameState =>
+  runStartLines(env, chooseNext(state, seat), name, seat);
 
 /**
- * A step before the score, or one of a round's steps, ends: the next seat still in takes its step, and the phase's start lines run
- * about them. After the last seat the steps are done. Those before the score go back to the seat that took the first step; a round's
- * go back to it, or to the next seat still in once it is out, in the phase the turn was in, and that turn starts once the flow sees them
- * done (see `LangRuntime.startTurn`). Refused
- * anywhere but in the steps, in the phase the End or the round's start names for them.
+ * `state` once the step its turn takes in the phase `name`, before the score or as a round starts, is passed on: the next seat still in
+ * takes its step, and the phase's start lines run about them. After the last seat the steps are done. Those before the score go back to
+ * the seat that took the first step; a round's go back to it, or to the next seat still in once it is out, in the phase the turn was in,
+ * and that turn starts once the flow sees them done (see `LangRuntime.startTurn`). Null when no step is being taken in that phase.
+ *
+ * “The … passes to the left.” passes a step on this way, and so does the player taking it going out.
  */
-const stepPassesLeft: EffectFn = (env, [phase]) => {
-  const name = phase as string;
-  const { turn } = env.state;
-  const roundSteps = roundStepsOf(env.state);
-  if (roundSteps !== null && roundSteps !== true && roundSteps.phase === name && turn?.phase === name) {
-    const after = nextStep(env.state, env.seats, roundSteps.first, turn.current);
-    if (after !== null) return takeStep(env, name, env.state, after);
+export function passStep(env: PhraseEnv, state: GameState, name: string): GameState | null {
+  const { turn } = state;
+  if (!turn || turn.phase !== name) return null;
+  const roundSteps = roundStepsOf(state);
+  if (roundSteps !== null && roundSteps !== true && roundSteps.phase === name) {
+    const after = nextStep(state, env.seats, roundSteps.first, turn.current);
+    if (after !== null) return takeStep(env, name, state, after);
     // The turn that waits is the one the steps came before, unless its seat went out in them: then it is the next seat's still in, as
     // a turn passed on from it would be. With no seat still in, it stays with the seat that took the first step.
     const { first } = roundSteps;
-    const to = isOut(env.state, first) && playersIn(env.state, env.seats).length > 0 ? nextIn(env.state, first, env.seats) : first;
-    const back = chooseNext(setPhase(env.state, roundSteps.back), to);
+    const to = isOut(state, first) && playersIn(state, env.seats).length > 0 ? nextIn(state, first, env.seats) : first;
+    const back = chooseNext(setPhase(state, roundSteps.back), to);
     return { ...back, data: { ...back.data, [ROUND_STEPS_KEY]: true } };
   }
-  const first = env.state.data[END_STEPS_KEY];
-  if (typeof first !== 'string' || !turn || turn.phase !== name || env.game.end?.steps?.phase !== name) {
-    throw new RuleError(env.game.everyPhase.roundSteps?.phase === name ? ROUND_STEP_OUTSIDE(name) : STEP_OUTSIDE_THE_STEPS(name));
-  }
-  const next = nextStep(env.state, env.seats, first, turn.current);
+  const first = state.data[END_STEPS_KEY];
+  if (typeof first !== 'string' || env.game.end?.steps?.phase !== name) return null;
+  const next = nextStep(state, env.seats, first, turn.current);
   if (next === null) {
-    const back = chooseNext(env.state, first);
+    const back = chooseNext(state, first);
     return { ...back, data: { ...back.data, [END_STEPS_KEY]: true } };
   }
-  return takeStep(env, name, env.state, next);
+  return takeStep(env, name, state, next);
+}
+
+/** A step ends and is passed on (`passStep`). Refused anywhere but in the steps, in the phase the End or the round's start names for them. */
+const stepPassesLeft: EffectFn = (env, [phase]) => {
+  const name = phase as string;
+  const passed = passStep(env, env.state, name);
+  if (passed !== null) return passed;
+  throw new RuleError(env.game.everyPhase.roundSteps?.phase === name ? ROUND_STEP_OUTSIDE(name) : STEP_OUTSIDE_THE_STEPS(name));
 };
 
 /**
