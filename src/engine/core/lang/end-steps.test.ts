@@ -439,3 +439,12 @@ describe('the steps before the score, passed on by a seat that goes out in its o
     expect(coinsOf(state)).toEqual([5, 5, 3]);
   });
 });
+
+describe('the steps before the score, refused when a line of their phase starts a phase with a player', () => {
+  it('on that line, as a “go to” is', () => {
+    const START = '      The working phase starts with them.';
+    const text = STEPS_GAME.replace('      They get 2 coins.\n      The final count passes to the left.', `      They get 2 coins.\n${START}`);
+    expect(text).not.toBe(STEPS_GAME);
+    expect(errorsOf(text)).toEqual([expect.objectContaining({ line: lineOf(text, START), message: GO_TO_REFUSED })]);
+  });
+});

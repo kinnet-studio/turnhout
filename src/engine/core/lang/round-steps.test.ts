@@ -491,3 +491,16 @@ describe('steps when a round starts, refused when their line could run more than
     })]);
   });
 });
+
+describe('steps when a round starts, refused when a line of their phase starts a phase with a player', () => {
+  it('on that line, as a “go to” is', () => {
+    const START = '      The levy phase starts with the player on their left.';
+    const text = LEVY_GAME.replace('Phase: levy\n  Players take turns.',
+      `Phase: levy\n  Players take turns.\n  A player may hand over.\n    Then:\n${START}`);
+    expect(text).not.toBe(LEVY_GAME);
+    expect(errorsOf(text)).toEqual([expect.objectContaining({
+      line: lineOf(text, START),
+      message: 'The players take the levy in turn at the start of a round, so it can\'t go to another phase: pass it on with “The levy passes to the left.”',
+    })]);
+  });
+});

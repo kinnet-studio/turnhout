@@ -8,7 +8,6 @@ import {
   addProblem, attempt, FOR_EVERY_AT_LEAST_ONE, innerEffect, matchEffectLine, matchLine, phaseId, phraseFn, POINTS_FOR_EVERY, rejectChildren, type LineCtx,
 } from './compile-util';
 import type { Diagnostic } from './diagnostics';
-import { GO_TO_PHRASE } from './library/flow-phrases';
 import { parseOutline, type OutlineNode } from './outline';
 import { normalizeLine, suggestNames, vocabFrom, type PhraseLibrary } from './phrases';
 import { canon, parseParam } from './refs';
@@ -774,19 +773,22 @@ function endSteps(name: string, line: number, ctx: LineCtx, phases: CompiledPhas
     addProblem(ctx.diagnostics, line, STEPS_AT_ONCE(id));
     return null;
   }
-  refuseLeavingSteps(phase, STEPS_GO_TO(id), STEPS_AFTER(id), ctx.diagnostics);
+  refuseLeavingSteps(phase, STEPS_GO_TO(id), STEPS_AFTER(id), ctx.library, ctx.diagnostics);
   return { phase: id, line };
 }
 
 /**
  * Refuses, each on its own line, what would take the game out of a phase whose steps end only by being passed on: its `go to`, as a
- * rule or as a line of a button, rule or choice (an `If …, go to …` among them), with `goTo`, and its After line, with `after`.
+ * rule or as a line of a button, rule or choice (an `If …, go to …` among them), and a line that starts a phase with a player, as
+ * `The … phase starts with them.` does, even that phase itself, with `goTo`; and its After line, with `after`.
  */
-function refuseLeavingSteps(phase: CompiledPhase | undefined, goTo: string, after: string, diagnostics: Diagnostic[]): void {
+function refuseLeavingSteps(
+  phase: CompiledPhase | undefined, goTo: string, after: string, library: PhraseLibrary, diagnostics: Diagnostic[],
+): void {
   if (!phase) return;
   if (phase.goTo) addProblem(diagnostics, phase.goTo.line, goTo);
   for (const ref of effectsOf(phase).flatMap(linesDoing)) {
-    if (ref.kind === 'effect' && ref.phrase === GO_TO_PHRASE) addProblem(diagnostics, ref.line, goTo);
+    if (phaseStartedBy(ref, library) !== null) addProblem(diagnostics, ref.line, goTo);
   }
   if (phase.after) addProblem(diagnostics, phase.after.line, after);
 }
@@ -823,7 +825,7 @@ function beginsRoundSteps(ref: PhraseRef): boolean {
  * goes into that phase from outside it is refused by `refuseEnteringSteps`.
  */
 function compileRoundSteps(
-  everyPhase: EveryPhase, setup: PhraseRef[], says: PhraseRef[], phases: CompiledPhase[], diagnostics: Diagnostic[],
+  everyPhase: EveryPhase, setup: PhraseRef[], says: PhraseRef[], phases: CompiledPhase[], library: PhraseLibrary, diagnostics: Diagnostic[],
 ): EveryPhase['roundSteps'] | null {
   const { roundStarts, turnStarts, triggers, moments = [] } = everyPhase;
   const everyPhaseRules = [...triggers.flatMap((t) => t.effects), ...moments.flatMap((m) => m.effects)];
@@ -842,7 +844,7 @@ function compileRoundSteps(
     addProblem(diagnostics, first.line, ROUND_STEPS_AT_ONCE(id));
     return null;
   }
-  refuseLeavingSteps(phase, ROUND_STEPS_GO_TO(id), ROUND_STEPS_AFTER(id), diagnostics);
+  refuseLeavingSteps(phase, ROUND_STEPS_GO_TO(id), ROUND_STEPS_AFTER(id), library, diagnostics);
   // Only a line that can run while the steps do passes them on: one of their phase's own but those that start a turn there, a rule for
   // every phase, or what a card says. Another phase's lines, those that start a turn and Setup's never run then, and the round's other
   // lines run before the steps begin.
@@ -996,7 +998,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   // The End is read with the phases, before any is found unreached: the phase of its steps before the score is reached that way.
   const end = compileEnd(of('end'), ctx, phases);
   // So is the phase of a round's steps. Left out of `everyPhase`, never undefined, when no line begins them.
-  const roundSteps = compileRoundSteps(everyPhase, setup, Object.values(says).flat(), phases, diagnostics);
+  const roundSteps = compileRoundSteps(everyPhase, setup, Object.values(says).flat(), phases, library, diagnostics);
   if (roundSteps) everyPhase.roundSteps = roundSteps;
   const elsewhere = [...setup, ...Object.values(says).flat(), ...everyPhaseEffects(everyPhase)];
   // Either kind of steps is reached only as it begins, never by a line that goes to its phase.

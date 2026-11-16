@@ -170,7 +170,7 @@ function startPhase(env: PhraseEnv, phase: string, next: PlayerId): GameState {
   return runStartLines(env, interruptTurn(env.state, phase, next), phase, next);
 }
 
-/** The phrase that moves the game on to another phase; the compiler looks for it among the lines of the steps before the score. */
+/** The phrase that moves the game on to another phase; the compiler finds it, as any line that enters a phase, by its `entersPhase`. */
 export const GO_TO_PHRASE = 'go to {phase}';
 
 const GO_TO_IN_THE_STEPS = (phase: string) =>
