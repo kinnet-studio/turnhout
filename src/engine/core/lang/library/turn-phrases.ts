@@ -71,7 +71,8 @@ function takeStep(env: PhraseEnv, name: string, state: GameState, seat: PlayerId
 /**
  * A step before the score, or one of a round's steps, ends: the next seat still in takes its step, and the phase's start lines run
  * about them. After the last seat the steps are done. Those before the score go back to the seat that took the first step; a round's
- * go back to it in the phase the turn was in, and its turn starts once the flow sees them done (see `LangRuntime.startTurn`). Refused
+ * go back to it, or to the next seat still in once it is out, in the phase the turn was in, and that turn starts once the flow sees them
+ * done (see `LangRuntime.startTurn`). Refused
  * anywhere but in the steps, in the phase the End or the round's start names for them.
  */
 const stepPassesLeft: EffectFn = (env, [phase]) => {
@@ -81,7 +82,11 @@ const stepPassesLeft: EffectFn = (env, [phase]) => {
   if (roundSteps !== null && roundSteps !== true && roundSteps.phase === name && turn?.phase === name) {
     const after = nextStep(env.state, env.seats, roundSteps.first, turn.current);
     if (after !== null) return takeStep(env, name, env.state, after);
-    const back = chooseNext(setPhase(env.state, roundSteps.back), roundSteps.first);
+    // The turn that waits is the one the steps came before, unless its seat went out in them: then it is the next seat's still in, as
+    // a turn passed on from it would be. With no seat still in, it stays with the seat that took the first step.
+    const { first } = roundSteps;
+    const to = isOut(env.state, first) && playersIn(env.state, env.seats).length > 0 ? nextIn(env.state, first, env.seats) : first;
+    const back = chooseNext(setPhase(env.state, roundSteps.back), to);
     return { ...back, data: { ...back.data, [ROUND_STEPS_KEY]: true } };
   }
   const first = env.state.data[END_STEPS_KEY];

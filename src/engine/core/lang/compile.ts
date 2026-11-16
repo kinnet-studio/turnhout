@@ -785,15 +785,17 @@ function beginsRoundSteps(ref: PhraseRef): boolean {
 /**
  * The phase each player takes in turn as a round starts, before the start player's turn, with the line that names it: the first line
  * that starts a round and begins the steps. Null when none does, or when it names a phase where everyone acts at once. What would leave
- * a round unable to go on is refused on its own line: such a line anywhere but among those that start a round (`elsewhere` is every
- * other line of the game that does something, choices read through), a second one, other lines after it, and a phase the steps could
- * not finish in, with a `go to` or an After line, or that no line of the game passes on.
+ * a round unable to go on is refused on its own line: such a line anywhere but among those that start a round (Setup, what a card says,
+ * the rest of `everyPhase` or any phase's lines, choices read through), a second one, other lines after it, and a phase the steps could
+ * not finish in, with a `go to` or an After line, or that no line able to run while they do passes on.
  */
 function compileRoundSteps(
-  roundStarts: PhraseRef[], elsewhere: PhraseRef[], phases: CompiledPhase[], diagnostics: Diagnostic[],
+  everyPhase: EveryPhase, setup: PhraseRef[], says: PhraseRef[], phases: CompiledPhase[], diagnostics: Diagnostic[],
 ): EveryPhase['roundSteps'] | null {
-  const lines = elsewhere.flatMap(linesDoing);
-  for (const ref of lines) if (beginsRoundSteps(ref)) addProblem(diagnostics, ref.line, ROUND_STEPS_ELSEWHERE(ref.text));
+  const { roundStarts, turnStarts, triggers, moments = [] } = everyPhase;
+  const everyPhaseRules = [...triggers.flatMap((t) => t.effects), ...moments.flatMap((m) => m.effects)];
+  const elsewhere = [...setup, ...says, ...turnStarts, ...everyPhaseRules, ...phases.flatMap(effectsOf)].flatMap(linesDoing);
+  for (const ref of elsewhere) if (beginsRoundSteps(ref)) addProblem(diagnostics, ref.line, ROUND_STEPS_ELSEWHERE(ref.text));
   const at = roundStarts.findIndex(beginsRoundSteps);
   if (at < 0) return null;
   const first = roundStarts[at];
@@ -806,8 +808,11 @@ function compileRoundSteps(
     return null;
   }
   refuseLeavingSteps(phase, ROUND_STEPS_GO_TO(id), ROUND_STEPS_AFTER(id), diagnostics);
+  // Only a line that can run while the steps do passes them on: one of their phase's own, a rule for every phase, or what a card says.
+  // Another phase's lines, those that start a turn and Setup's never run then, and the round's other lines run before the steps begin.
+  const whileTheyRun = [...(phase ? effectsOf(phase) : []), ...everyPhaseRules, ...says].flatMap(linesDoing);
   const passes = (ref: PhraseRef) => ref.kind === 'effect' && ref.phrase === STEP_PASSES_PHRASE && ref.args[0] === id;
-  if (![...lines, ...roundStarts.flatMap(linesDoing)].some(passes)) addProblem(diagnostics, first.line, STEPS_NEVER_PASS(id));
+  if (!whileTheyRun.some(passes)) addProblem(diagnostics, first.line, STEPS_NEVER_PASS(id));
   return { phase: id, line: first.line };
 }
 
@@ -955,12 +960,7 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   // The End is read with the phases, before any is found unreached: the phase of its steps before the score is reached that way.
   const end = compileEnd(of('end'), ctx, phases);
   // So is the phase of a round's steps. Left out of `everyPhase`, never undefined, when no line begins them.
-  const { roundStarts, turnStarts, triggers, moments = [] } = everyPhase;
-  const outsideRoundStarts = [
-    ...setup, ...Object.values(says).flat(), ...turnStarts, ...triggers.flatMap((t) => t.effects), ...moments.flatMap((m) => m.effects),
-    ...phases.flatMap(effectsOf),
-  ];
-  const roundSteps = compileRoundSteps(roundStarts, outsideRoundStarts, phases, diagnostics);
+  const roundSteps = compileRoundSteps(everyPhase, setup, Object.values(says).flat(), phases, diagnostics);
   if (roundSteps) everyPhase.roundSteps = roundSteps;
   const elsewhere = [...setup, ...Object.values(says).flat(), ...everyPhaseEffects(everyPhase)];
   const reached = [...(end?.steps ? [end.steps.phase] : []), ...(roundSteps ? [roundSteps.phase] : [])];

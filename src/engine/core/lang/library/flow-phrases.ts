@@ -6,6 +6,7 @@ import { interruptTurn, isOut, nextIn, playerFact, resumeTurn } from '../board-s
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import { END_STEPS_KEY, phaseTakesTurns } from '../turns';
+import { roundStepsOf } from '../turns';
 import type { CardMatch, ConditionFn, EffectFn, PhraseEnv, ScoreFn, Subject, TurnFn, WinnerFn, ZoneRef } from '../types';
 import { chooseNext, leftOf, matchesCard, relocate, resolveSeat, resolveZoneIds, topCard, zoneIdFor, zoneInfo } from '../zones';
 import { describeZone, soleZone, theyOf, totalOf } from './support';
@@ -144,6 +145,8 @@ export const GO_TO_PHRASE = 'go to {phase}';
 
 const GO_TO_IN_THE_STEPS = (phase: string) =>
   `The players take the ${phase} in turn before the score, so no line can go to another phase until they have all taken it.`;
+const GO_TO_IN_THE_ROUND_STEPS = (phase: string) =>
+  `The players take the ${phase} in turn at the start of a round, so no line can go to another phase until they have all taken it.`;
 
 /**
  * The phases the chain of “go to” effects now running has gone to, outermost first, for each game. The lines of a phase gone to may
@@ -166,6 +169,9 @@ const goToPhase: EffectFn = (env, [phase]) => {
   // card's says, is refused here, on its own line, rather than by whatever line meets the game in the wrong phase.
   const steps = env.game.end?.steps;
   if (steps && typeof env.state.data[END_STEPS_KEY] === 'string') throw new RuleError(GO_TO_IN_THE_STEPS(steps.phase));
+  // So are a round's steps: in another phase no line would pass them on, and the start player's turn would wait for them for ever.
+  const roundSteps = roundStepsOf(env.state);
+  if (roundSteps !== null && roundSteps !== true) throw new RuleError(GO_TO_IN_THE_ROUND_STEPS(roundSteps.phase));
   const name = phase as string;
   const chain = wentThrough.get(env.game) ?? [];
   if (chain.includes(name)) {

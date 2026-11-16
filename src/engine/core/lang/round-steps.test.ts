@@ -11,6 +11,8 @@ import { LEVY_GAME, ROUNDS_GAME } from './testing';
 import { ROUND_KEY, ROUND_STEPS_KEY, TURN_OF_KEY, clearTurnMarkers, roundFinished } from './turns';
 import type { CompiledGame } from './types';
 import { relocate, zoneIdFor } from './zones';
+import { isOut } from './board-state';
+import { END_STEPS_KEY } from './turns';
 
 const lib = createDefaultLibrary();
 const SEATS = seatsFor(3);
@@ -296,5 +298,98 @@ describe('steps when a round starts, forgotten and reached by an example', () =>
       '  And p0 has 1 coin', '  And p1 has 0 coins', '  And p2 has 1 coin',
     ].join('\n');
     expect(runExamples(compiled(`${LEVY_GAME}\n\n${EXAMPLE}`), lib)).toEqual([expect.objectContaining({ status: 'pass', message: null })]);
+  });
+});
+
+describe('steps when a round starts, fix round 1', () => {
+  it('end on the next seat still in when the seat that took the first went out in its step', () => {
+    // A player with no coins and an empty list goes out instead of passing the levy on; going out hands the step to the next seat.
+    const EMPTY = '  When their list is empty:\n    The levy passes to the left.';
+    const text = LEVY_GAME.replace(EMPTY, [
+      '  When their list is empty:', '    Only if they have at least 1 coin.', '    The levy passes to the left.',
+      '  When their list is empty:', '    Only if they have less than 1 coin.', '    They are out.',
+    ].join('\n'));
+    const state = table(compiled(text), coins(0, 1, 1)).getState();
+    expect(isOut(state, 'p0')).toBe(true);
+    // p1 and p2 passed it on unpaid, and p1's turn started with a coin.
+    expect(state.turn).toEqual({ current: 'p1', phase: 'working' });
+    expect(state.data[TURN_OF_KEY]).toBe('p1');
+    expect(state.data[ROUND_KEY]).toBe(1);
+    expect(state.data).not.toHaveProperty(ROUND_STEPS_KEY);
+    expect(coinsOf(state)).toEqual([0, 2, 1]);
+  });
+
+  it('are refused when the only line that passes them on can never run while they do', () => {
+    const NEVER = 'No line passes the levy on to the next player, so the first player\'s levy would never end. '
+      + 'Write “The levy passes to the left.” where a player\'s levy ends.';
+    const RULES = '  When they have at least 2 coins:\n    They pay 2.\n    The levy passes to the left.\n'
+      + '  When their list is empty:\n    The levy passes to the left.';
+    const withoutPasses = LEVY_GAME.replace(RULES, '  When they have at least 2 coins:\n    They pay 2.');
+    // In working's stop button, which never runs in the levy.
+    const inStop = withoutPasses.replace(STOP, `${STOP}\n      The levy passes to the left.`);
+    expect(errorsOf(inStop)).toEqual([expect.objectContaining({ line: lineOf(inStop, STEPS_LINE), severity: 'error', message: NEVER })]);
+    // Among the lines that start a round, before the steps begin.
+    const inRoundStart = withoutPasses.replace(STEPS_LINE, `    The levy passes to the left.\n${STEPS_LINE}`);
+    expect(errorsOf(inRoundStart)).toEqual([
+      expect.objectContaining({ line: lineOf(inRoundStart, STEPS_LINE), severity: 'error', message: NEVER }),
+    ]);
+  });
+
+  it('refuse a “Go to …” from a rule for every phase, on that line, and still end once passed on', () => {
+    const GO_TO = '    Go to tidying.';
+    // A rule for every phase that goes to tidying once the done pile has three cards, and a levy button that adds one.
+    const text = LEVY_GAME.replace('    Move the done pile to the pile.', `    Move the done pile to the pile.\n${GO_TO}`)
+      .replace('  A player may pawn a card in their list.',
+        '  A player may tally.\n    Then:\n      Move the top card of the pile to the done pile.\n  A player may pawn a card in their list.');
+    expect(errorsOf(text)).toEqual([]);
+    const game = compiled(text);
+    // The done pile has 1 card, and the round's start makes it 2: the levy waits for p1, who has too few coins.
+    const toDone = (state: GameState) =>
+      relocate(state, zoneCards(state, zoneIdFor('pile')).slice(0, 1).map((card) => card.id), zoneIdFor('done pile'), game);
+    const engine = table(game, both(toDone, coins(5, 0, 3), toList(2, 'p1')));
+    const before = engine.getState();
+    expect(before.turn).toEqual({ current: 'p1', phase: 'levy' });
+    const error = thrown(() => engine.dispatch({ type: 'tally', by: 'p1' }));
+    expect(error).toBeInstanceOf(RuleError);
+    expect(error).toMatchObject({
+      message: 'The players take the levy in turn at the start of a round, so no line can go to another phase until they have all taken it.',
+      line: lineOf(text, GO_TO),
+    });
+    expect(engine.getState()).toBe(before);
+    // The press was refused and nothing changed, so the levy goes on and ends with p0's turn.
+    pawn(engine, 'p1');
+    pawn(engine, 'p1');
+    const state = engine.getState();
+    expect(state.turn).toEqual({ current: 'p0', phase: 'working' });
+    expect(coinsOf(state)).toEqual([4, 0, 1]);
+    expect(state.data).not.toHaveProperty(ROUND_STEPS_KEY);
+  });
+
+  it('hold back the steps before the score while they run, which start once they are done', () => {
+    const text = `${LEVY_GAME.replace('  The game ends when the pile is empty.', [
+      '  The game ends when the done pile is not empty.',
+      '  Before the score, each player has the final count, in turn from the start player.'].join('\n'))}\n\n${[
+      'Phase: final count', '  Players take turns.', '  When this phase starts:', '    The final count passes to the left.'].join('\n')}`;
+    expect(errorsOf(text)).toEqual([]);
+    // The round's start leaves a card in the done pile, so the game is decided while the levy waits for p1.
+    const engine = table(compiled(text), both(coins(5, 0, 3), toList(2, 'p1')));
+    const waiting = engine.getState();
+    expect(waiting.turn).toEqual({ current: 'p1', phase: 'levy' });
+    expect(waiting.data).not.toHaveProperty(END_STEPS_KEY);
+    expect(waiting.result).toBeUndefined();
+    pawn(engine, 'p1');
+    pawn(engine, 'p1');
+    const state = engine.getState();
+    expect(state.data[END_STEPS_KEY]).toBe(true);
+    expect(state.result).toBeDefined();
+  });
+
+  it('refuse an After line in their phase, on that line', () => {
+    const AFTER = '  After a player pawns, the turn passes to the left.';
+    const text = `${LEVY_GAME}\n${AFTER}`;
+    expect(errorsOf(text)).toEqual([expect.objectContaining({
+      line: lineOf(text, AFTER),
+      message: 'The players take the levy in turn at the start of a round, so it can\'t have an After line: pass it on with “The levy passes to the left.”',
+    })]);
   });
 });
