@@ -222,8 +222,9 @@ export function boardBadges(game: CompiledGame, cards: CardState[], worked?: Wor
 /**
  * The label of each card off a Board (a shared zone, or one of a seat's own that not everyone sees) that keeps a set flag or a lone
  * count: its flags that are set, then its lone counts, joined by ', '. None for a face-down card, none for a card on a Board, and
- * none for a card in a zone the game doesn't declare (the engine's box), which no table draws. The view works nothing out for a card off a Board, so its label is only what the card keeps; and the seat is given a card's face
- * only where it may see it, so a card in another seat's own zone comes here face down and says nothing.
+ * none for a card in a zone the game doesn't declare (the engine's box), which no table draws. The view works nothing out for a
+ * card off a Board, so its label is only what the card keeps; and the seat is given a card's face only where it may see it, so a
+ * card in another seat's own zone comes here face down and says nothing.
  */
 export function keptBadges(game: CompiledGame, cards: CardState[]): { [cardId: string]: string } {
   const badges: { [cardId: string]: string } = {};
