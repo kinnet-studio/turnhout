@@ -5,6 +5,9 @@ import type { Json } from '../table-def';
 import { RuleError } from './diagnostics';
 import type { CardIdentity, CardMatch, CardSetSpec, CardTable, CompiledGame } from './types';
 import { BOX_ZONE, relocate, zoneIdFor } from './zones';
+import { pickName } from './card-facts';
+import { zoneNameOf } from './zones';
+import { holderIdOf } from './attach';
 
 const STANDARD_SUIT_LETTERS = ['S', 'H', 'D', 'C'];
 const STANDARD_RANK_COUNT = 13;
@@ -172,6 +175,12 @@ export function homePileOf(sets: CardSetSpec[], cardId: string): string {
  */
 export const NEXT_CARD_KEY = 'lang:next-card';
 
+/** The number the next card made or renamed takes: the one the state keeps, else one past the cards the sets dealt. */
+function nextCardNumber(state: GameState, game: CompiledGame): number {
+  const kept = state.data[NEXT_CARD_KEY];
+  return typeof kept === 'number' ? kept : game.cards.reduce((total, set) => total + (set.kind === 'endless' ? 0 : set.identities.length), 0);
+}
+
 /**
  * A new card of a set that never runs out, put in `zoneId`: the first identity of the endless sets, in set order, that has every
  * attribute of `match`. Null when no endless set has such a card. Its id is the next number in the state, after the cards the
@@ -181,11 +190,63 @@ export function makeCard(state: GameState, game: CompiledGame, match: CardMatch,
   const identity = game.cards.filter((set) => set.kind === 'endless')
     .flatMap((set) => set.identities).find(({ attrs }) => Object.entries(match).every(([key, value]) => attrs[key] === value));
   if (!identity) return null;
-  const kept = state.data[NEXT_CARD_KEY];
-  const n = typeof kept === 'number' ? kept : game.cards.reduce((total, set) => total + (set.kind === 'endless' ? 0 : set.identities.length), 0);
+  const n = nextCardNumber(state, game);
   const id = `c${n}`;
   // Made in the box and moved from there, so that `relocate` places it and turns it as it does any card.
   const made: CardState = { id, zoneId: BOX_ZONE, faceUp: false, faceKey: identity.faceKey, data: { ...identity.attrs } };
   const withCard: GameState = { ...state, cards: [...state.cards, made], data: { ...state.data, [NEXT_CARD_KEY]: n + 1 } };
   return { id, state: relocate(withCard, [id], zoneId, game) };
+}
+
+/** `{ [id]: the id it was dealt or made with }` for each card given a new one. Written only when cards are renamed; never sent to a seat. */
+export const RENAMED_KEY = 'lang:renamed';
+
+/** The renamed cards' map as the state keeps it; empty before any card is renamed. */
+function renamedOf(state: GameState): { [id: string]: Json } {
+  const kept = state.data[RENAMED_KEY];
+  return kept !== null && typeof kept === 'object' && !Array.isArray(kept) ? kept : {};
+}
+
+/** The id a card was dealt or made with: its id, or the one RENAMED_KEY gives it. */
+export function dealtIdOf(state: GameState, cardId: string): string {
+  const dealt = renamedOf(state)[cardId];
+  return typeof dealt === 'string' ? dealt : cardId;
+}
+
+const NOT_TOLD_APART = (card: string) => `${card} has a card on it, or sits on one, so the others could still tell it apart.`;
+
+/**
+ * Gives each of `ids`, in that order, the next number makeCard would give, and puts them at the end of state.cards in that order, so that
+ * neither a card's id nor its place in the list says which card it was. Everything else about each card stays. RENAMED_KEY maps each new id
+ * to the card's dealt id, and drops the entry of the id it had, so the map never holds more entries than there are cards. NEXT_CARD_KEY
+ * moves on. A card with a card on it, or on a card, is not renamed: RuleError NOT_TOLD_APART.
+ */
+export function renameCards(state: GameState, game: CompiledGame, ids: string[]): GameState {
+  if (ids.length === 0) return state;
+  if (new Set(ids).size !== ids.length) throw new Error(`A card is renamed once at a time: ${ids.join(', ')}.`);
+  const byId = new Map(state.cards.map((card) => [card.id, card] as const));
+  // A card on a card, or one with cards on it, would still be told apart by what it sits on or what sits on it.
+  const holders = new Set(state.cards.map(holderIdOf).filter((holder) => holder !== null));
+  const renaming = ids.map((id) => {
+    const card = byId.get(id);
+    if (card === undefined) throw new Error(`There is no card ${id} to rename.`);
+    if (holderIdOf(card) !== null || holders.has(id)) {
+      throw new RuleError(NOT_TOLD_APART(`The ${pickName(card, game)} in ${zoneNameOf(game, card.zoneId)}`));
+    }
+    return card;
+  });
+  const first = nextCardNumber(state, game);
+  const renamed = { ...renamedOf(state) };
+  const fresh = renaming.map((card, n) => {
+    const id = `c${first + n}`;
+    renamed[id] = dealtIdOf(state, card.id);
+    delete renamed[card.id];
+    return { ...card, id };
+  });
+  const moving = new Set(ids);
+  return {
+    ...state,
+    cards: [...state.cards.filter((card) => !moving.has(card.id)), ...fresh],
+    data: { ...state.data, [RENAMED_KEY]: renamed, [NEXT_CARD_KEY]: first + fresh.length },
+  };
 }

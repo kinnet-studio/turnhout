@@ -3,6 +3,7 @@ import { cardById, zoneCards } from '../zone-index';
 import { pieceAt, setLastDrawn } from '../board-state';
 import { cardName, saysOf } from '../card-facts';
 import { homePileOf } from '../cards';
+import { dealtIdOf } from '../cards';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import type { CardMatch, CompiledGame, ConditionFn, EffectFn, PhraseEnv, ZoneRef } from '../types';
@@ -68,7 +69,8 @@ const keptGoesBack: EffectFn = (env, [match, zone]) => {
     const what = describeCard(match as CardMatch).replace(/^(?:an?|the) /, '');
     throw new RuleError(`There is no ${what} in their ${zone}.`);
   }
-  return toBottom(env.state, found.id, homePileOf(env.game.cards, found.id), env.game);
+  // By the id it was dealt with: a card shuffled into a pile some seat can't see has a new one, which belongs to no set.
+  return toBottom(env.state, found.id, homePileOf(env.game.cards, dealtIdOf(env.state, found.id)), env.game);
 };
 
 /** The sentences of a card that is drawn and does what it says, keeping it instead of putting it back, and using a card kept. */

@@ -8,6 +8,7 @@ import { BOX_ZONE, matchesCard, relocate, resolveZoneIds, toBottom, withoutHolde
 import { describeCard } from './example-phrases';
 import { deal } from './flow-phrases';
 import { shuffleOne } from './flow-phrases';
+import { renameShuffled } from './flow-phrases';
 import { describeZone, soleZone, thePickedCards } from './support';
 
 // Rows that keep their order and queues whose bottom card is the oldest: a zone's cards are in slot order, the first at the bottom.
@@ -74,7 +75,9 @@ const dealUpToShuffling: EffectFn = (env, args) => {
       if (run.length === 0) {
         const spent = zoneCards(state, discard);
         if (spent.length === 0) break;
-        state = shuffleOne(relocate(state, spent.map((card) => card.id), deck, env.game), deck);
+        const ids = spent.map((card) => card.id);
+        // Renamed before the deal goes on, so a card dealt from the new pile can't be followed from the discard it was seen in.
+        state = renameShuffled(env, shuffleOne(relocate(state, ids, deck, env.game), deck), deck, ids);
         run = zoneCards(state, deck).slice(-owed);
       }
       state = relocate(state, run.map((card) => card.id), to, env.game);

@@ -916,3 +916,20 @@ describe("the words for slice 6's pieces", () => {
     })]);
   });
 });
+
+describe('a Given after a reshuffle', () => {
+  it('does not give again a card it gave before the reshuffle renamed it', () => {
+    // The pile keeps a card, so the game does not end; the done pile's six Dusts are every Dust there is, and are shuffled back in.
+    const lines = [
+      'Example: the Dusts shuffled back in are not given again', "  Given it is p0's turn", '  And the pile has a Sweep',
+      '  And the done pile has a Dust, a Dust, a Dust, a Dust, a Dust and a Dust', '  When p0 gathers', "  Then p0's list has 3 cards",
+      '  Given the done pile has a Dust',
+    ];
+    const text = [RESHUFFLE_GAME, '', ...lines].join('\n');
+    const { game: reshuffling, diagnostics } = compileGame(text, lib);
+    expect(diagnostics).toEqual([]);
+    expect(runExamples(reshuffling!, lib)).toEqual([expect.objectContaining({
+      status: 'fail', message: expect.stringContaining('No card matches “a Dust”.'), atLine: lineOf(text, 'Given the done pile has a Dust', true),
+    })]);
+  });
+});

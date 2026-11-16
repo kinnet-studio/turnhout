@@ -223,3 +223,50 @@ describe('endless sets', () => {
     expect(kept?.state.data[NEXT_CARD_KEY]).toBe(21);
   });
 });
+
+import { RENAMED_KEY } from './cards';
+import { dealtIdOf } from './cards';
+import { renameCards } from './cards';
+import { RuleError } from './diagnostics';
+import { putOn } from './attach';
+import { initialState } from './build';
+import { compileGame } from './compile';
+import { createDefaultLibrary } from './library';
+import { CREW_GAME } from './testing';
+import { relocate } from './zones';
+describe('renaming cards', () => {
+  it('gives each the next number makeCard would, puts them last in that order, and maps each new id to the dealt one, once', () => {
+    const GEMS = { columns: ['name', 'cost', 'copies'], rows: [{ cells: ['Ruby', '3', '2'], line: 1 }, { cells: ['Opal', '1', '2'], line: 2 }] };
+    const COUPONS = { columns: ['name', 'cost'], rows: [{ cells: ['Coupon', '0'], line: 3 }] };
+    const sets: CardSetSpec[] = [
+      { kind: 'table', identities: expandCardTable(GEMS), start: 'pile', acesHigh: false },
+      { kind: 'endless', identities: expandCardTable(COUPONS), start: '', acesHigh: false },
+    ];
+    const game = fixtureGame({ zones: [{ name: 'stash', perPlayer: true, layout: 'row', visibility: 'owner' }], cards: sets });
+    const fresh = fixtureState(buildCards(sets, makeRng(1)).cards);
+    const once = renameCards(fresh, game, ['c2', 'c0']);
+    expect(once.cards.map((c) => c.id)).toEqual(['c1', 'c3', 'c4', 'c5']);
+    // Everything but the id stays.
+    expect(once.cards.slice(-2)).toEqual([{ ...fresh.cards[2], id: 'c4' }, { ...fresh.cards[0], id: 'c5' }]);
+    expect(once.data).toEqual({ [RENAMED_KEY]: { c4: 'c2', c5: 'c0' }, [NEXT_CARD_KEY]: 6 });
+    // Renamed again, the card keeps one entry, which gives the id it was dealt with; a card never renamed gives its own.
+    const twice = renameCards(once, game, ['c5']);
+    expect(twice.data[RENAMED_KEY]).toEqual({ c4: 'c2', c6: 'c0' });
+    expect([dealtIdOf(twice, 'c6'), dealtIdOf(twice, 'c4'), dealtIdOf(twice, 'c1'), dealtIdOf(fresh, 'c0')]).toEqual(['c0', 'c2', 'c1', 'c0']);
+    // A card made after them takes the number after theirs.
+    expect(makeCard(twice, game, { name: 'Coupon' }, 'stash-p0')?.id).toBe('c7');
+    expect(renameCards(twice, game, [])).toBe(twice);
+  });
+  it('refuses a card with a card on it, or on a card, naming it as a card in the wrong place is named', () => {
+    const lib = createDefaultLibrary();
+    const crew = compileGame(CREW_GAME, lib).game!;
+    const dealt = initialState(crew, 1);
+    const named = (name: string) => dealt.cards.find((c) => c.data?.name === name)!.id;
+    const [vase, potter] = [named('Vase'), named('Potter')];
+    const state = putOn(relocate(dealt, [vase], 'workshop-p0', crew), [potter], 'crew-p0', vase, crew);
+    const said = (card: string) => `${card} has a card on it, or sits on one, so the others could still tell it apart.`;
+    expect(() => renameCards(state, crew, [vase])).toThrow(RuleError);
+    expect(() => renameCards(state, crew, [vase])).toThrow(said("The Vase in p0's workshop"));
+    expect(() => renameCards(state, crew, [potter])).toThrow(said("The Potter in p0's crew"));
+  });
+});

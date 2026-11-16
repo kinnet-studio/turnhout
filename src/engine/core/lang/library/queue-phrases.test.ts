@@ -500,3 +500,98 @@ describe('a deal that shuffles a discard back in', () => {
     });
   });
 });
+
+import { NEXT_CARD_KEY } from '../cards';
+import { RENAMED_KEY } from '../cards';
+import { dealtIdOf } from '../cards';
+import { deriveScene } from '../../derive-scene';
+import { tableDefFor } from '../build';
+describe('a reshuffling deal no seat can follow', () => {
+  const g = compileGame(RESHUFFLE_GAME, lib).game!;
+  const DEAL = 'deal up to 3 cards from the pile to their list, shuffling the done pile into it when it runs out';
+  const ONE = 'deal up to 1 card from the pile to their list, shuffling the done pile into it when it runs out';
+  /**
+   * The game's 12 cards, c0…c11 (a Sweep below 6, a Dust from 6): `pile` in the pile and `done` in the done pile (face up there), each in
+   * the slot order given, the rest boxed; p0's turn in working.
+   */
+  const arranged = (pile: number[], done: number[]): GameState => fixtureState(Array.from({ length: 12 }, (_, i) => {
+    const name = i < 6 ? 'Sweep' : 'Dust';
+    if (pile.includes(i)) return fixtureCard(`c${i}`, 'pile', { name }, { slot: pile.indexOf(i) });
+    if (done.includes(i)) return fixtureCard(`c${i}`, 'done-pile', { name }, { slot: done.indexOf(i), faceUp: true });
+    return fixtureCard(`c${i}`, BOX_ZONE, { name });
+  }), { turn: { current: 'p0', phase: 'working' } });
+  const envFor = (state: GameState): PhraseEnv => fixtureEnv(state, { game: g, seats, subject: { player: 'p0', space: null, card: null } });
+  const dealing = (state: GameState, text = DEAL) => runPhrase<GameState>(lib, 'effect', text, envFor(state));
+
+  it('renames the cards shuffled back in before the rest of the deal is dealt', () => {
+    const before = arranged([0], [1, 2, 3, 4]);
+    const next = dealing(before);
+    // The done pile's cards in the order the shuffle gives them: the n-th takes the n-th fresh id, from c12 on.
+    const { items } = shuffleWithRng(zoneCards(before, 'done-pile'), before.rng);
+    // The pile's own card was dealt before it ran out and keeps its id; the two dealt after the shuffle have new ones.
+    expect(ids(next, 'list-p0')).toEqual(['c0', 'c14', 'c15']);
+    expect(ids(next, 'pile')).toEqual(['c12', 'c13']);
+    expect(['c12', 'c13', 'c14', 'c15'].map((id) => dealtIdOf(next, id))).toEqual(items.map((c) => c.id));
+    expect(next.data[NEXT_CARD_KEY]).toBe(16);
+    expect(dealtIdOf(next, 'c0')).toBe('c0');
+  });
+  it('Review Focus: no one can follow it, whichever order the done pile was in', () => {
+    // The same table with the done pile's two cards the other way round, and the same random numbers: every seat sees the same ids in
+    // the same places afterwards, and p1, who sees neither the pile nor p0's list, sees exactly the same.
+    const one = dealing(arranged([], [1, 7]), ONE);
+    const two = dealing(arranged([], [7, 1]), ONE);
+    const def = tableDefFor(g, seats);
+    const scene = (state: GameState, viewer: string) => deriveScene(def, { cards: state.cards }, viewer).cards;
+    for (const viewer of seats) {
+      const placed = (state: GameState) => scene(state, viewer).map((c) => [c.id, c.zoneId, c.slot ?? null]);
+      expect(placed(one), viewer).toEqual(placed(two));
+    }
+    expect(scene(one, 'p1')).toEqual(scene(two, 'p1'));
+    // Without the new ids, the shuffle would have put c1 and c7 in different slots in the two.
+    expect(ids(one, 'pile')).toEqual(['c12']);
+    expect(ids(one, 'list-p0')).toEqual(['c13']);
+  });
+  it('keeps one entry for a card renamed twice, which gives the id it was dealt with', () => {
+    const dealt = { ...initialState(g, 1), turn: { current: 'p0', phase: 'working' } };
+    const all = dealt.cards.map((c) => c.id);
+    // Four of the cards as the game dealt them in the done pile, the rest boxed: the deal shuffles them in at once.
+    const before = relocate(relocate(dealt, all.slice(0, 4), 'done-pile', g), all.slice(4), BOX_ZONE, g);
+    const first = dealing(before);
+    expect([...ids(first, 'list-p0'), ...ids(first, 'pile')].sort()).toEqual(['c12', 'c13', 'c14', 'c15']);
+    // All four back to the done pile, and shuffled in again.
+    const back = relocate(first, [...ids(first, 'pile'), ...ids(first, 'list-p0')], 'done-pile', g);
+    const { items } = shuffleWithRng(zoneCards(back, 'done-pile'), back.rng);
+    const second = dealing(back);
+    const renamed = second.data[RENAMED_KEY] as Record<string, string>;
+    expect(Object.keys(renamed).sort()).toEqual(['c16', 'c17', 'c18', 'c19']);
+    expect(second.data[NEXT_CARD_KEY]).toBe(20);
+    // The n-th card of the second shuffle took c16 + n, and gives the id it was dealt with, not the one the first shuffle gave it.
+    items.forEach((card, n) => {
+      expect(card.id).toMatch(/^c1[2-5]$/);
+      expect(dealtIdOf(second, `c${16 + n}`)).toBe(dealtIdOf(first, card.id));
+      expect(all.slice(0, 4)).toContain(dealtIdOf(second, `c${16 + n}`));
+    });
+  });
+  it('Review Focus: replays from its log to the same ids, and undoes to the ids the cards had before', () => {
+    const dealt = { ...initialState(g, 1), turn: { current: 'p0', phase: 'working' } };
+    const all = dealt.cards.map((c) => c.id);
+    const before = relocate(relocate(dealt, all.slice(1, 5), 'done-pile', g), all.slice(5), BOX_ZONE, g);
+    const { engine } = createEngine(g, lib, 2, before);
+    const built = engine.getState();
+    expect(engine.dispatch({ type: 'gather', by: 'p0' })).toMatchObject({ ok: true });
+    const shuffled = engine.getState();
+    expect(engine.dispatch({ type: 'work', by: 'p0' })).toMatchObject({ ok: true });
+    const after = engine.getState();
+    expect(Object.keys(after.data[RENAMED_KEY] as object).sort()).toEqual(['c12', 'c13', 'c14', 'c15']);
+    expect([...ids(after, 'list-p0'), ...ids(after, 'pile')].sort()).toEqual([all[0], 'c12', 'c13', 'c14', 'c15'].sort());
+    const fresh = createEngine(g, lib, 2, before).engine;
+    fresh.loadLog([...engine.getLog()]);
+    expect(fresh.getState()).toEqual(after);
+    engine.undo();
+    expect(engine.getState()).toEqual(shuffled);
+    engine.undo();
+    expect(engine.getState()).toEqual(built);
+    expect(engine.getState().cards.map((c) => c.id)).toEqual(built.cards.map((c) => c.id));
+    expect(engine.getState().data[RENAMED_KEY]).toBeUndefined();
+  });
+});

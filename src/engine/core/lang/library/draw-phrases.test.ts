@@ -249,3 +249,26 @@ describe('using a kept card', () => {
     expect(isOut(s, 'p1')).toBe(true);
   });
 });
+
+import { renameCards } from '../cards';
+describe('a renamed card going back to the pile it came from', () => {
+  const PASS = '| Free Pass | They keep this card in their kept cards. |';
+  const USE = ['  A player may use a Free Pass.', '    Only if their kept cards has a Free Pass.', '    Then:',
+    '      A Free Pass from their kept cards goes to the bottom of the pile it came from.'];
+  const game = decks([HEAD, DIVIDEND, PASS], [HEAD, '| Calm | They get 0 money. |', PASS], USE);
+
+  it('goes under the pile of the set it was dealt from, under its new id', () => {
+    const fate = initialState(game, 1).cards
+      .find((c) => c.data?.name === 'Free Pass' && zoneIdFor(deckOf(game.cards, c.id)!.start) === 'fate-pile')!.id;
+    const kept = started(game, [1, 1], { arrange: (s) => relocate(s, [fate], 'kept-cards-p0', game) }).getState();
+    // As a shuffle into a pile no one can see would rename it: its new id is past every set's, so it says nothing of where it was dealt.
+    const renamed = renameCards(kept, game, [fate]);
+    const newId = renamed.cards.at(-1)!.id;
+    expect(newId).not.toBe(fate);
+    expect(deckOf(game.cards, newId)).toBeNull();
+    const env = fixtureEnv(renamed, { game, seats: ['p0', 'p1'], subject: { player: 'p0', space: null, card: null } });
+    const out = runPhrase<GameState>(lib, 'effect', 'a Free Pass from their kept cards goes to the bottom of the pile it came from', env);
+    expect(zoneCards(out, 'fate-pile')[0].id).toBe(newId);
+    expect(zoneCards(out, 'kept-cards-p0')).toEqual([]);
+  });
+});

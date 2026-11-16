@@ -7,6 +7,7 @@ import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import { END_STEPS_KEY, phaseTakesTurns } from '../turns';
 import { roundStepsOf } from '../turns';
+import { renameCards } from '../cards';
 import type { CardMatch, ConditionFn, EffectFn, PhraseEnv, ScoreFn, Subject, TurnFn, WinnerFn, ZoneRef } from '../types';
 import { chooseNext, leftOf, matchesCard, relocate, resolveSeat, resolveZoneIds, topCard, zoneIdFor, zoneInfo } from '../zones';
 import { describeZone, soleZone, theyOf, totalOf } from './support';
@@ -46,7 +47,28 @@ export function shuffleOne(state: GameState, zoneId: string): GameState {
   };
 }
 
-const shuffle: EffectFn = (env, args) => resolveZoneIds(args[0] as ZoneRef, env).reduce(shuffleOne, env.state);
+/**
+ * The state with `ids`, cards now in `zoneId` in a new order, renamed in their slot order (renameCards) when no seat may follow them: the
+ * zone is not public, and the line runs in one of the game's phases. Setup's lines run in the flow's phase before them, and a table
+ * arranged with no turn is in none, so neither renames.
+ *
+ * A card keeps its id through a shuffle into a pile some seat can't see unless it is renamed: a seat that saw it face up could follow
+ * it into the pile, read the pile's order from the slots, and follow it on into another player's hidden hand. At Setup no seat has seen
+ * a card yet, and buildCards already gave each set its ids in shuffled order; a zone everyone can see shows every face anyway.
+ */
+export function renameShuffled(env: PhraseEnv, state: GameState, zoneId: string, ids: string[]): GameState {
+  const visibility = zoneInfo(env.game, zoneId)?.spec.visibility;
+  if (visibility !== 'secret' && visibility !== 'owner') return state;
+  // As example-phrases' declaredMove reads the phase: Setup's `__setup`, and no turn at all, are none of the game's phases.
+  if (!env.game.phases.some((p) => p.id === state.turn?.phase)) return state;
+  const shuffled = new Set(ids);
+  return renameCards(state, env.game, zoneCards(state, zoneId).filter((card) => shuffled.has(card.id)).map((card) => card.id));
+}
+
+const shuffle: EffectFn = (env, args) => resolveZoneIds(args[0] as ZoneRef, env).reduce((state, zoneId) => {
+  const shuffled = shuffleOne(state, zoneId);
+  return renameShuffled(env, shuffled, zoneId, idsIn(shuffled, zoneId));
+}, env.state);
 
 function notEnoughCards(left: number, from: ZoneRef): RuleError {
   const where = describeZone(from);
@@ -89,7 +111,9 @@ const shuffleRestInto: EffectFn = (env, args) => {
   const from = soleZone(fromRef, env);
   const to = soleZone(toRef, env);
   const { items, rng } = shuffleWithRng(zoneCards(env.state, from).slice(0, -1), env.state.rng);
-  return relocate({ ...env.state, rng }, items.map((c) => c.id), to, env.game);
+  const ids = items.map((c) => c.id);
+  // Only the cards that moved are renamed: the top card stays where everyone saw it, and the cards already there were not shuffled.
+  return renameShuffled(env, relocate({ ...env.state, rng }, ids, to, env.game), to, ids);
 };
 
 const passLeft: EffectFn = (env, args) => {

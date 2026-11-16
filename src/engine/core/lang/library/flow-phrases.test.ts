@@ -584,3 +584,58 @@ describe('each card in a zone scores its number', () => {
     expect(run('score', "each card in a player's idle scores its wage", runtime.env(idle), 'p0')).toBe(4);
   });
 });
+
+import { NEXT_CARD_KEY } from '../cards';
+import { RENAMED_KEY } from '../cards';
+describe('a shuffle no seat can follow', () => {
+  /** A game of 9 cards dealt into the deck, so they took c0…c8 and the next card made or renamed is c9, with a phase of its own. */
+  const nine = fixtureGame({
+    cards: [{ kind: 'table', start: 'deck', acesHigh: false, identities: Array.from({ length: 9 }, (_, i) => ({ attrs: { name: `N${i}` }, faceKey: `n${i}` })) }],
+    phases: [fixturePhase('play', [])],
+  });
+  const card = (i: number, zoneId: string, slot: number, faceUp = false) => fixtureCard(`c${i}`, zoneId, { name: `N${i}` }, { slot, faceUp });
+  /** c0…c3 in `zoneId` in that slot order, and the other five in the trick; the turn in `phase`. */
+  const table = (phase: string, zoneId = 'deck'): GameState => fixtureState(
+    [...[0, 1, 2, 3].map((i) => card(i, zoneId, i)), ...[4, 5, 6, 7, 8].map((i, slot) => card(i, 'trick', slot))],
+    { turn: { current: 'p0', phase } },
+  );
+
+  it('gives the cards of a deck no one can see fresh ids from the counter, in their new slot order, at the end of the list', () => {
+    const before = table('play');
+    expect(before.data[NEXT_CARD_KEY]).toBeUndefined();
+    const out = run<GameState>('effect', 'Shuffle the deck', fixtureEnv(before, { game: nine }));
+    // The deck's cards as the shuffle orders them, with the ids they had: the n-th takes the n-th fresh id.
+    const { items } = shuffleWithRng(zoneCards(before, 'deck'), before.rng);
+    expect(ids(out, 'deck')).toEqual(['c9', 'c10', 'c11', 'c12']);
+    expect(zoneCards(out, 'deck').map((c) => c.slot)).toEqual([0, 1, 2, 3]);
+    expect(out.cards.slice(-4).map((c) => c.id)).toEqual(['c9', 'c10', 'c11', 'c12']);
+    expect(out.data[RENAMED_KEY]).toEqual({ c9: items[0].id, c10: items[1].id, c11: items[2].id, c12: items[3].id });
+    expect(out.data[NEXT_CARD_KEY]).toBe(13);
+    // Everything else about each card stays: its face and its columns are the ones of the card now in its slot.
+    expect(zoneCards(out, 'deck').map((c) => [c.faceKey, c.data?.name])).toEqual(items.map((c) => [c.faceKey, c.data?.name]));
+    expect(ids(out, 'trick')).toEqual(['c4', 'c5', 'c6', 'c7', 'c8']);
+  });
+  it('(guard) keeps every id, and the state’s data, as a Setup line', () => {
+    const before = table('__setup');
+    const out = run<GameState>('effect', 'Shuffle the deck', fixtureEnv(before, { game: nine }));
+    expect(out.cards.map((c) => c.id)).toEqual(before.cards.map((c) => c.id));
+    expect(out.data).toEqual(before.data);
+  });
+  it('(guard) keeps every id, and the state’s data, on a pile everyone can see', () => {
+    const before = table('play', 'discard-pile');
+    const out = run<GameState>('effect', 'Shuffle the discard pile', fixtureEnv(before, { game: nine }));
+    expect(out.cards.map((c) => c.id)).toEqual(before.cards.map((c) => c.id));
+    expect(out.data).toEqual(before.data);
+  });
+  it('renames only the cards shuffled into the deck, in their new order: the discard’s top card and the deck’s own keep their ids', () => {
+    const before = fixtureState([
+      ...[0, 1, 2, 3, 4].map((i) => card(i, 'discard-pile', i, true)), card(5, 'deck', 0), ...[6, 7, 8].map((i, slot) => card(i, 'trick', slot)),
+    ], { turn: { current: 'p0', phase: 'play' } });
+    const out = run<GameState>('effect', 'Shuffle the discard pile, except its top card, into the deck', fixtureEnv(before, { game: nine }));
+    const { items } = shuffleWithRng(zoneCards(before, 'discard-pile').slice(0, -1), before.rng);
+    expect(ids(out, 'discard-pile')).toEqual(['c4']);
+    expect(ids(out, 'deck')).toEqual(['c5', 'c9', 'c10', 'c11', 'c12']);
+    expect(out.data[RENAMED_KEY]).toEqual({ c9: items[0].id, c10: items[1].id, c11: items[2].id, c12: items[3].id });
+    expect(out.data[NEXT_CARD_KEY]).toBe(13);
+  });
+});

@@ -2,6 +2,7 @@ import type { GameState } from '../../game-state';
 import { zoneCards } from '../zone-index';
 import { counterOf, owedTo, ownerOf, playersIn, setOwner, type Creditor } from '../board-state';
 import { homePileOf } from '../cards';
+import { dealtIdOf } from '../cards';
 import { NEEDS_PAYMENT } from '../compile-util';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
@@ -55,7 +56,7 @@ const everythingGoesToCreditor: EffectFn = (env) => {
       state = relocate(state, kept.map((card) => card.id), zoneIdFor(zone.name, to), env.game);
       continue;
     }
-    for (const { id } of kept) state = toBottom(state, id, homePileOf(env.game.cards, id), env.game);
+    for (const { id } of kept) state = toBottom(state, id, homePileOf(env.game.cards, dealtIdOf(state, id)), env.game);
   }
   return state;
 };

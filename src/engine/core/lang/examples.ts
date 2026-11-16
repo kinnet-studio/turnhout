@@ -4,6 +4,7 @@ import type { GameState } from '../game-state';
 import { withBoardData } from './board-state';
 import { checkPlayers, createEngine, initialState, seatsFor } from './build';
 import { makeCard } from './cards';
+import { dealtIdOf } from './cards';
 import { CHOOSING } from './compile-example';
 import { namedChoices } from './declared-actions';
 import { MissingPhraseError, RuleError } from './diagnostics';
@@ -32,14 +33,15 @@ const isChoosing = (ref: PhraseRef): boolean => ref.kind === 'lang' && ref.phras
 /**
  * Hands out each card at most once, the lowest-numbered one that matches first (c3 before c12). A card the table lacks is made
  * from a stack that never runs out, if the game has one with such a card; the made card is in the box, in the state handed back.
+ * A card is known by the id it was dealt or made with, so one a shuffle renamed since it was handed out is not handed out again.
  */
 function claimer(game: CompiledGame): ExampleEnv['claim'] {
   const claimed = new Set<string>();
   return (match, text, state) => {
-    const card = state.cards.filter((c) => !claimed.has(c.id) && matchesCard(c, match)).sort(byCardId)[0];
+    const card = state.cards.filter((c) => !claimed.has(dealtIdOf(state, c.id)) && matchesCard(c, match)).sort(byCardId)[0];
     const claim = card ? { id: card.id, state } : makeCard(state, game, match, BOX_ZONE);
     if (!claim) throw new RuleError(`No card matches “${text}”.`);
-    claimed.add(claim.id);
+    claimed.add(dealtIdOf(claim.state, claim.id));
     return claim;
   };
 }
