@@ -1,24 +1,26 @@
 # Startup Simulator: where the work stands (handoff, paused 2026-10-19; updated 2026-11-16)
 
-Everything below is on `claude/peaceful-curie-rdfkow`; 3658 tests pass. Plan 5-3 finished 2026-11-16 (last code commit `fd0c4a3`).
+Everything below is on `claude/peaceful-curie-rdfkow`; 3774 tests pass. Plan 6-1 finished 2026-11-16 (last code commit `9677b98`); the owner asked to pause after it.
 
 ## Done
 - Slices 1, 3, 4 (all plans), the long-runs speed-up.
 - Slice 5, all four plans: 5-1 (language), 5-2a (talent rules), 5-2b (Strategy, Training, Milestones), 5-3 (the page: the taller fitted table `bbe5c92`, labels for the flags a press reads `cca9bf1`, labels off a Board and slice 5 on the page `db57012`/`99db1ce`/`e21f718`, the browser check and README `ef32883`, final-review fixes `fd0c4a3`). 5-3's ledger: `2026-10-19-startup-5-3-ledger.md`.
+- Slice 6, plan 6-1 (language): targets in another player's zone (`b386c61`), lines a flag turns on (`e3088eb`, `02d7dd3`), the lower of two prices and a game number that goes up (`0df1870`), steps each player takes when a round starts (`772e981`, `2b59c5b`), an example for each piece and the README (`a880885`), fresh ids for cards shuffled into a pile some seat can't see (`24a4264`, `deb140c`, `6ad2a9e`, closing 5-2b's G1), and the final fix wave (`c7edb1a` … `9677b98`: no line can send play into a steps phase from elsewhere, a seat that goes out in its own step passes it on). 6-1's ledger: `2026-11-16-startup-6-1-ledger.md`; its pre-flight: `2026-11-16-startup-6-1-preflight.md`.
 
 ## Next, in order
 1. (done) Plan 5-3.
-2. **Plan 6-1** (language). Before its pre-flight, add a task for 5-2b's gap G1: a reshuffle keeps card ids, so a card seen face up in the public strategy discard can be followed into a hidden Brainstorm or Strategy Hand, and the new deck's order read by slot. Cards shuffled into a pile no one can see take fresh ids from the state's card counter (deterministic, replay exact), pulling forward the re-keying plan 9-1's R1 designs for Face-Down cards (`lang:renamed`) so 9-1 reuses it. The README notes the gap until then.
-3. **A "long runs retune" mini plan, after 6-1 and before 6-2a** (not yet written):
+2. (done) Plan 6-1, with the added Task 6 for 5-2b's G1 (fresh ids on a reshuffle into a hidden pile; 9-1 reuses `lang:renamed`, `dealtIdOf`, `renameCards`, `renameShuffled` and the runners' `currentIdOf`).
+3. **Next to do: a "long runs retune" mini plan, before 6-2a** (not yet written):
    - retune the auto-player so at least 18 of 20 long-run games Launch (5-2b's Brainstorm cadence halved Board play: Launches 45 → 23, games with a Launch 19 → 11), then re-settle the required keys held by one game (ten, six on 3 players seed 4);
-   - keep Startup's test file under its 30 s watch (≈27 s now);
+   - keep Startup's test file under its 30 s watch (≈12–15 s now, after the speed-up);
    - the free-actions call: the actions phase must not end by itself at 0 AP while a free action is possible — rulebook "Free actions … can be done at any time during your Action Phase (Phase C)"; the player ends their actions (the auto-player presses it), and examples that relied on the automatic end gain that line.
-4. Plans 6-1, 6-2a, 6-2b, 6-3; 7-1 … 7-3; 8-1 … 8-3; 9-1 … 9-3; 10-1 … 10-3 (all written; each gets a pre-flight first).
+4. Plans 6-2a, 6-2b, 6-3; 7-1 … 7-3; 8-1 … 8-3; 9-1 … 9-3; 10-1 … 10-3 (all written; each gets a pre-flight first).
 
 ## Notes carried to later pre-flights
 - **6-2a / 6-2b:** the Training money check reads the printed price (Online Course Boom makes it $1); the "only a Training card" guard and its example change once Attributes and Utility can be played.
 - **7:** `some card on the target card is …` / `some card on it is …` read the cards-on zone through `cardsOn`, which `reportHiddenCardReads` doesn't check; slice 7's narrowing of `cardsOn` by owner won't close it — if slice 7 makes an owner-only zone of cards on a public card, fix it in `mayHideFromPresser`/`reportHiddenCardReads`.
-- **9-1:** reuse 6-1's re-keying rather than building it twice.
+- **9-1:** reuse 6-1's re-keying rather than building it twice (what 6-1 built, and two gaps it left — `announceJoins`, `goes into the bottom fifth of` — are in `…-notes-for-9-preflight.md`).
+- **6-2a / 6-2b (from 6-1):** floor every price a discount touches (a price below 0 is paid as given today, so paying it gives coins); write a flag the view should count as `it is a card whose … is more than …` (G4); a `Then:` payment against a hidden target tells its number (G1, park to the first slice that does it). Details in `…-notes-for-6-preflight.md`.
 - **10-3:** its writer's gaps G1–G7 (the Settlement not shown as a number; the Fire Sale price not in the picker; kept turns listed as a count; a long badge possibly covered; …).
 - **Page (later):** milestone faces break names mid-word ("Clean Launc|h"); greyed reasons from `Only if one of:` groups have mid-sentence capitals; 4-3's `countsRead` pairs any count named `<colour> <word>` with a column `<colour> <other>`.
 
@@ -132,8 +134,15 @@ Running list for the final report. Each is a call made under delegation; none bl
 - Timing (5-2b T5): Startup's test file is ≈26.5 s (30.7 s once under load), at the 30 s watch. A speed-up (memoize the shared 2-player runs, ≈4 s per 5-2a's final review) should run before slice 6 adds more.
 - 5-2b final review: the actions phase ended at 0 AP, so a free action (e.g. a Training card drawn by the last Brainstorm) couldn't be taken after the last paid action. The rulebook says free actions can be taken at any time during the Action Phase, so a mini plan before slice 6's rules makes the player end their actions themselves.
 - 5-3 pre-flight gaps parked for a later page plan: milestone faces break names mid-word ('Clean Launc|h'); greyed reasons from 'Only if one of:' groups read with mid-sentence capitals.
+- 6 (plan 6-1 Task 6): a card shuffled into a pile some seat can't see takes a fresh id only during play; Setup's shuffles keep the ids `buildCards` gave (no seat has seen a card yet), and so do shuffles of a pile everyone sees. Renamed cards lie face down. The rename map is flattened (`{ new id: dealt id }`), not 9-1's "the id it had before".
+- 6 (plan 6-1 Task 6): a press, rule or moment follows its own cards through a rename made by one of its lines, so a button that shuffles its card into a hidden pile and then names it again still works.
+- 6 (plan 6-1 Task 4): if the start player goes out during a round's steps, the next seat still in takes the turn; a seat that goes out during its own step passes the step on (also for 4-1's steps before the score); a `Go to` while a round's steps run is refused.
+- 6 (plan 6-1 final review): no line can send play into a steps phase from elsewhere (a `Go to`, a phase's go-to rule, `… phase starts with …`, or the steps phase written first); a steps phase may start a side phase only if that phase comes back with `Go back to the interrupted turn.`.
+- 6 (plan 6-1): a flagged discount can take a price below 0 (no floor, as the plan chose); 6-2 floors the prices its discounts touch.
+- Commit trailer: `a880885` (6-1 Task 5) carries `Co-Authored-By: Claude Sonnet 5.5` (its implementer followed its own environment); accepted rather than rewriting pushed history.
 
 ## Files saved beside this note (the SDD workspace and scratchpad are not kept in git)
 - `2026-10-19-startup-5-3-preflight-task-1.md` and `2026-10-19-startup-5-3-preflight-tasks-2-4.md`: plan 5-3's pre-flight reports. The plan's "Controller amendment" bullets point at their §4 and §6 for exact texts.
-- `2026-10-19-startup-5-3-ledger.md`: plan 5-3's ledger (Task 1 complete; Task 2 not started).
+- `2026-10-19-startup-5-3-ledger.md`: plan 5-3's ledger (complete).
+- `2026-11-16-startup-6-1-preflight.md` and `2026-11-16-startup-6-1-ledger.md`: plan 6-1's pre-flight report and its ledger (complete; the parked findings are its appendix).
 - `2026-10-19-startup-notes-for-<plan>-preflight.md`: the notes carried to each later plan's pre-flight (6, 7, 8, 9, 10, and 5-3's).

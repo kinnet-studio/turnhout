@@ -23,3 +23,10 @@
 - 6-3 (G3): a reshuffle's renamed cards (6-1 Task 6) jump into the deck with no glide — `TableModel.setScene` drops vanished ids and places new ones; `diff.ts`'s `reconcile` isn't wired.
 - G1 (park to the first slice that pays against a hidden target): `They pay the lower of the card's pay and the target card's pay.` against a target in another player's hidden zone tells the presser its number through the coins paid. 6-2 uses it on public targets only.
 - (6-1 Task 2) Flagged value lines (`a charmed card's wage goes up by 2`) keep 'nothing' as nothing: a card with no starting value (no column) gets none. Check 6-2a's Workaholic/Event lines against that (e.g. a salary column every card has).
+
+## From 6-1's final review and fix wave (2026-11-16)
+- 6-2a/6-2b (final review minor 1): a flagged discount can take a price below 0, and paying it then gives coins (`lowerOf` and `transfer` have no floor, as 4-1's `they pay the card's …`). Startup's discounts (Online Course Boom, Chip Shortage) will meet it: floor every price a discount touches (`A card's price is at least 0.`), and pin it.
+- 6-2+: a game whose start player goes out for good never starts another round, so its round steps never run again (pre-existing). Matters only if 6-2+ puts seats out; Startup's bankrupts play on (10-1).
+- 6-2b/7-2a (steps phases such as `event check`): while a round's steps run, a `… phase starts with them` line from a card's says line or a rule for every phase isn't refused at runtime (a `Go to` is). No shipped game reaches it. A line in the steps phase itself that starts another phase is allowed only when that phase has its own `Go back to the interrupted turn.` line; a go-back written only in a rule for every phase, or reached through a further phase, is refused though it would work.
+- 6-2+: a steps phase's own `When a player's turn starts:` lines never run (no turn starts in a steps phase); a warning for them could come later.
+- 6-2+: a seat that goes out inside a sub-phase entered from its own step leaves the resumed step with an out seat, and play stops (4-1's behaviour too).
