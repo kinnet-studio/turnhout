@@ -123,7 +123,8 @@ function linesOf(zones: ZoneSpec[]): { shared: Line[]; strip: Line[]; band: Line
 
 /**
  * The world a fitted table lies in: TABLE_BOUNDS, or one as wide and taller, centred on 0, when the band's lines would be shorter
- * than HANG_ONE. A grown world gives each band line at least HANG_FOUR, its height rounded up to a multiple of 8. A table that
+ * than HANG_ONE. A grown world gives each band line at least HANG_FOUR, its height rounded up to a multiple of 8,
+ * so a canvas that draws it at three quarters, or a half, is a whole number of pixels tall. A table that
  * needs no more room gets the TABLE_BOUNDS object itself, so the page can tell that its canvas is made as before.
  */
 export function fittedBounds(zones: ZoneSpec[]): { min: Vec2; max: Vec2 } {

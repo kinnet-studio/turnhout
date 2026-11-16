@@ -1,7 +1,10 @@
 export const CARD_WIDTH = 100;
 export const CARD_HEIGHT = 140;
 
-/** The fixed world a table canvas fits to its size; every zone of a table lies inside it. */
+/**
+ * The fixed world a table canvas fits to its size; every zone of a table lies inside it, except that a fitted table whose band would
+ * be too short lies in a taller one (`fittedBounds`).
+ */
 export const TABLE_BOUNDS = { min: { x: -800, y: -600 }, max: { x: 800, y: 600 } } as const;
 
 export type LayoutKind = 'pile' | 'fan' | 'row' | 'grid' | 'free';

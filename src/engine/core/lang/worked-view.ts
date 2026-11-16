@@ -146,9 +146,9 @@ function namedByLine(ref: PhraseRef): string[] {
 }
 
 /**
- * The worked flags a button's `Then:` lines name (Call 2) whose lines read only the card, the cards on it and the card it is on, in the
- * order the game works them out: they change what a press does to the cards it moves and the cards they join. Whether one is shown hangs
- * on the rules alone, as for `shownFlags`.
+ * The worked flags a button's `Then:` lines name (in an `If` line's condition, as an effect's flag, or in a group's test) whose lines
+ * read only the card, the cards on it and the card it is on, in the order the game works them out: they change what a press does to the
+ * cards it moves and the cards they join. Whether one is shown hangs on the rules alone, as for `shownFlags`.
  */
 export function pressFlags(game: CompiledGame): string[] {
   const named = new Set(game.phases.flatMap((phase) => phase.actions).flatMap((action) => action.effects).flatMap(namedByLine));
@@ -158,7 +158,7 @@ export function pressFlags(game: CompiledGame): string[] {
 }
 
 /**
- * Those of `pressFlags` whose lines, or the lines of a value they read, read the card it is on (Call 3): a seat that doesn't see the face
+ * Those of `pressFlags` whose lines, or the lines of a value they read, read the card it is on: a seat that doesn't see the face
  * of the card a card sits on is not told such a flag of it.
  */
 export function holderFlags(game: CompiledGame): string[] {

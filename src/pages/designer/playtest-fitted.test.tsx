@@ -1413,10 +1413,10 @@ describe('a fitted table that grows', () => {
     for (const d of own.filter((d) => d.visibility === 'public' && d.layout === 'row')) {
       expect(d.bounds!.height, d.id).toBeGreaterThanOrEqual(HANG_ONE);
     }
-    // The development team's first card hangs clear of the private strip.
+    // Four cards hang from the development team at full steps, the last clear of the private strip.
     const team = placed.find((d) => d.id === `development-team-${viewer}`)!;
     for (const d of own.filter((d) => d.visibility !== 'public')) {
-      expect(team.transform.y + CARD_HEIGHT / 2, d.id).toBeLessThan(d.transform.y - CARD_HEIGHT / 2);
+      expect(team.transform.y + 3 * STACK_STEP + CARD_HEIGHT / 2, d.id).toBeLessThan(d.transform.y - CARD_HEIGHT / 2);
     }
   });
 });
