@@ -131,9 +131,14 @@ export type CompiledPhase = {
 /**
  * The rules of an `In every phase:` section: `When …:` rules that fire whatever the phase, the lines that start each round, about
  * no one, and the lines that start each turn, about the player whose turn it is. `moments` holds its rules for when a card joins a
- * card, the only moments it may have, and is left out when there are none.
+ * card, the only moments it may have, and is left out when there are none. `roundSteps` is the phase each player takes in turn from the
+ * start player as a round starts, before the start player's turn (“Each player has the levy, in turn from the start player.”), with that
+ * line's number; left out when no round-start line gives them.
  */
-export type EveryPhase = { triggers: CompiledTrigger[]; roundStarts: PhraseRef[]; turnStarts: PhraseRef[]; moments?: CompiledMoment[] };
+export type EveryPhase = {
+  triggers: CompiledTrigger[]; roundStarts: PhraseRef[]; turnStarts: PhraseRef[]; moments?: CompiledMoment[];
+  roundSteps?: { phase: string; line: number };
+};
 /**
  * `steps` is the phase each player takes in turn from the start player once the game is decided and before it is scored (“Before the
  * score, each player has the final count, in turn from the start player.”), with that line; left out when the End has no such line.

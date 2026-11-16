@@ -15,6 +15,7 @@ import { cardsIn } from './library/support';
 import type { PhraseLibrary } from './phrases';
 import { END_STEPS_KEY, phaseTakesTurns, ROUND_FRAME, ROUND_KEY, roundFinished, roundOf, startPlayerOf, TURN_OF_KEY } from './turns';
 import { isPlayerRule, LAST_TURN_KEY, playersInTurnOrder } from './turns';
+import { ROUND_STEPS_KEY, roundStepsOf } from './turns';
 import type {
   ActionFn, CardGroup, ColumnFn, CompiledGame, CompiledMoment, CompiledTrigger, CondGroup, ConditionFn, EffectFn, ExampleEnv, ExpectFn, MomentFn, Moment, MoveInfo,
   PhraseEnv, PhraseKind, PhraseRef, ScoreFn, Subject, TargetFn, TurnFn, ValueFn, WhichFn, WhoFn, WinnerFn, WorkedValue,
@@ -303,11 +304,19 @@ export class LangRuntime {
    * A turn that comes back to the same seat starts again only when it passes through “the turn passes to the left”, which forgets
    * whose turn had started; an After line or a “goes next” rule that hands the turn back to that seat starts no new turn. Once the
    * steps before the score have begun no turn starts: the game is decided, and each step starts as it is passed on. Nor does one while
-   * the End waits for its rules (`endWaiting`).
+   * the End waits for its rules (`endWaiting`), or while a round's steps run: the start player's turn waits for them, and starts as
+   * they hand it back.
    */
   turnWaiting(state: GameState): boolean {
     return state.result === undefined && this.inGamePhase(state) && interruptedTurn(state) === null
-      && state.data[TURN_OF_KEY] !== state.turn?.current && state.data[END_STEPS_KEY] === undefined && !this.endWaiting(state);
+      && state.data[TURN_OF_KEY] !== state.turn?.current && state.data[END_STEPS_KEY] === undefined && !this.endWaiting(state)
+      && !this.roundStepsRun(state);
+  }
+
+  /** Whether a round's steps are being taken: they have begun, and not every seat still in has had one. */
+  private roundStepsRun(state: GameState): boolean {
+    const steps = roundStepsOf(state);
+    return steps !== null && steps !== true;
   }
 
   /**
@@ -324,12 +333,13 @@ export class LangRuntime {
 
   /**
    * Whether the steps before the score are to start: the End has them and none has begun, the game goes on in one of its own phases,
-   * and the End's condition holds (waiting for the round to finish when it says so).
+   * no round's steps run, and the End's condition holds (waiting for the round to finish when it says so). A round's steps are in the
+   * middle of the round, and would never be passed on in another phase.
    */
   endStepsDue(state: GameState): boolean {
     const end = this.game.end;
     return end?.steps !== undefined && state.data[END_STEPS_KEY] === undefined && state.result === undefined && this.inGamePhase(state)
-      && this.test(end.when, state);
+      && !this.roundStepsRun(state) && this.test(end.when, state);
   }
 
   /**
@@ -360,6 +370,10 @@ export class LangRuntime {
    * of the phase the turn starts in (C2). Last, the turn counts as started, so that this runs once a turn, and as the one that last
    * started, which the rules about a player ask from.
    *
+   * A round whose last line begins its steps stops there: no turn starts, and the flow's rule for a turn that waits starts this one once
+   * every seat still in has had a step. The round has started by then, so that turn starts no round, whoever's it is, and runs its start
+   * lines once.
+   *
    * The table is checked once the lines have all run, since one may move a card before another moves the cards on it. A table they
    * leave broken is blamed on the line after which it stayed broken: the last one that found it whole.
    */
@@ -373,10 +387,21 @@ export class LangRuntime {
         ran.push({ ref, before: s });
         return this.run(ref, s, undefined, undefined, subject);
       }, from);
+    const checked = (after: GameState) => {
+      if (attachmentProblem(this.game, after) === null) return after;
+      const breaking = [...ran].reverse().find(({ before }) => attachmentProblem(this.game, before) === null);
+      return this.checkAttachments(after, breaking?.ref);
+    };
     let s = state;
-    if (seat === startPlayerOf(s, this.seats)) {
+    if (roundStepsOf(s) === true) {
+      // This is the turn that waited for the round's steps, and the round started before them.
+      const { [ROUND_STEPS_KEY]: _done, ...data } = s.data;
+      s = { ...s, data };
+    } else if (seat === startPlayerOf(s, this.seats)) {
       s = { ...s, data: { ...s.data, [ROUND_KEY]: roundOf(s) + 1 } };
       s = runAll(s, this.game.everyPhase.roundStarts, NO_ONE);
+      // The round's steps have begun (or were all taken at once): the turn waits for them, and none of its numbers or lines are touched.
+      if (s.data[ROUND_STEPS_KEY] !== undefined) return checked(s);
     }
     for (const counter of this.game.board?.counters ?? []) {
       if (counter.perTurn) s = setCounter(s, counter.name, seat, counter.start);
@@ -384,10 +409,7 @@ export class LangRuntime {
     const about: Subject = { player: seat, space: null, card: null };
     const phase = this.game.phases.find((p) => p.id === phaseId);
     s = runAll(s, [...this.game.everyPhase.turnStarts, ...(phase?.turnStarts ?? [])], about);
-    const started: GameState = { ...s, data: { ...s.data, [TURN_OF_KEY]: seat, [LAST_TURN_KEY]: seat } };
-    if (attachmentProblem(this.game, started) === null) return started;
-    const breaking = [...ran].reverse().find(({ before }) => attachmentProblem(this.game, before) === null);
-    return this.checkAttachments(started, breaking?.ref);
+    return checked({ ...s, data: { ...s.data, [TURN_OF_KEY]: seat, [LAST_TURN_KEY]: seat } });
   }
 
   /**

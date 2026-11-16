@@ -23,7 +23,28 @@ export const ROUND_KEY = 'lang:round';
 /** Absent before the steps before the score; while they run, the seat that took the first step; true once every seat still in has had one. */
 export const END_STEPS_KEY = 'lang:end-steps';
 
-/** The line that ends a player's step before the score and hands it on: a game with steps but no such line warns. */
+/** Absent outside a round's steps; while they run, a RoundSteps; true once every seat still in has had one and the waiting turn has not started. */
+export const ROUND_STEPS_KEY = 'lang:round-steps';
+
+/** The last line that starts a round, giving each player a step in the phase it names before the start player's turn. */
+export const ROUND_STEPS_PHRASE = 'each player has the {phase}, in turn from the start player';
+
+/** The phase of a round's steps, the seat that took the first, and the phase the waiting turn starts in. */
+export type RoundSteps = { phase: string; first: PlayerId; back: string };
+
+/** The round's steps as the state keeps them: null outside them, true once they are done and the turn that waits for them has not started. */
+export function roundStepsOf(state: GameState): RoundSteps | true | null {
+  const kept = state.data[ROUND_STEPS_KEY];
+  if (kept === true) return true;
+  if (kept === null || typeof kept !== 'object' || Array.isArray(kept)) return null;
+  const { phase, first, back } = kept;
+  return typeof phase === 'string' && typeof first === 'string' && typeof back === 'string' ? { phase, first, back } : null;
+}
+
+/**
+ * The line that ends a player's step, before the score or as a round starts, and hands it on: a game with steps before the score but no
+ * such line warns, and one whose rounds start with steps is refused.
+ */
 export const STEP_PASSES_PHRASE = 'the {phase} passes to the left';
 
 /** The Setup line that picks the start player. A game that uses turns without it starts with the first seat. */
@@ -73,12 +94,14 @@ export function roundOf(state: GameState): number {
 /**
  * Whether a round is finished and the next has yet to start: one has started, and the turn has passed back to the start player,
  * whose turn has not started again. The turn start that would start the next round waits for the flow to check End, so that is
- * the moment End sees. A turn that is interrupted is in the middle of a round, whoever stands in for it.
+ * the moment End sees. A turn that is interrupted is in the middle of a round, whoever stands in for it. So is a round whose steps
+ * run, or are done with the start player's turn still to start: that round has started, and the turn back with the start player is
+ * the one that waited for the steps.
  */
 export function roundFinished(state: GameState, seats: PlayerId[]): boolean {
   const current = state.turn?.current;
   return roundOf(state) >= 1 && current === startPlayerOf(state, seats) && state.data[TURN_OF_KEY] !== current
-    && interruptedTurn(state) === null;
+    && interruptedTurn(state) === null && state.data[ROUND_STEPS_KEY] === undefined;
 }
 
 /**
@@ -101,12 +124,13 @@ export function clearTurnOf(state: GameState): GameState {
 }
 
 /**
- * The state with no turn started or last started, no round, no start player and no steps before the score, as a game is before its
- * Setup.
+ * The state with no turn started or last started, no round, no start player, no steps before the score and no round's steps, as a
+ * game is before its Setup.
  */
 export function clearTurnMarkers(state: GameState): GameState {
   const {
-    [TURN_OF_KEY]: _turnOf, [LAST_TURN_KEY]: _lastTurn, [ROUND_KEY]: _round, [START_PLAYER_KEY]: _start, [END_STEPS_KEY]: _steps, ...data
+    [TURN_OF_KEY]: _turnOf, [LAST_TURN_KEY]: _lastTurn, [ROUND_KEY]: _round, [START_PLAYER_KEY]: _start, [END_STEPS_KEY]: _steps,
+    [ROUND_STEPS_KEY]: _roundSteps, ...data
   } = state.data;
   return { ...state, data };
 }

@@ -884,3 +884,17 @@ export const PRICE_GAME = [
   'Cheap:', '  Only if it is a Smith card.', '',
   'Bargain:', '  Only if it is a Statue card.', '  Only if the scrap has a Vase.',
 ].join('\n');
+
+/**
+ * ROUNDS_GAME where each round starts with a levy that each player takes in turn from the start player, before the start player's turn: a
+ * player with 2 coins or more pays 2 and passes it on; one with fewer pawns cards from their list back to the pile for 1 coin each until
+ * they can, and passes it on unpaid once their list is empty.
+ */
+export const LEVY_GAME = [
+  ROUNDS_GAME.replace('    Move the top card of the pile to the done pile.\n',
+    '    Move the top card of the pile to the done pile.\n    Each player has the levy, in turn from the start player.\n'), '',
+  'Phase: levy', '  Players take turns.',
+  '  A player may pawn a card in their list.', '    Then:', '      Move it to the pile.', '      They get 1 coin.',
+  '  When they have at least 2 coins:', '    They pay 2.', '    The levy passes to the left.',
+  '  When their list is empty:', '    The levy passes to the left.',
+].join('\n');

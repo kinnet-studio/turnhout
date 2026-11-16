@@ -13,6 +13,7 @@ import { parseOutline, type OutlineNode } from './outline';
 import { normalizeLine, suggestNames, vocabFrom, type PhraseLibrary } from './phrases';
 import { canon, parseParam } from './refs';
 import { ROUND_FRAME, STEP_PASSES_PHRASE, usesTurns } from './turns';
+import { ROUND_STEPS_PHRASE } from './turns';
 import type {
   BankSpec, BoardFn, BoardSpec, CardSetSpec, CardsFn, CardTable, CompiledEnd, CompiledGame, CompiledMoment, CompiledPhase, DeclareFn, EveryPhase, FactSpec,
   PhraseRef, PlayerValue, SpaceSpec, Vocab, WorkedValue, ZoneFn, ZoneSpec,
@@ -108,6 +109,20 @@ const STEPS_AFTER = (phase: string) =>
 const STEPS_NEVER_PASS = (phase: string) =>
   `No line passes the ${phase} on to the next player, so the first player's ${phase} would never end. `
   + `Write “The ${phase} passes to the left.” where a player's ${phase} ends.`;
+/**
+ * A round's steps begin only as the round starts, once, after the round's other lines, and like the steps before the score end only by
+ * being passed on: anything else would leave the round unable to go on.
+ */
+const ROUND_STEPS_ELSEWHERE = (text: string) => `“${text}” only makes sense under “When a round starts:”.`;
+const ROUND_STEPS_TWICE = 'There is already a line giving each player a step at the start of a round.';
+const ROUND_STEPS_NOT_LAST =
+  'The players take their steps once the other lines that start a round have run, so this must be the last line under “When a round starts:”.';
+const ROUND_STEPS_AT_ONCE = (phase: string) =>
+  `The steps at the start of a round are taken in turn, so “${phase}” can't be a phase where everyone acts at once.`;
+const ROUND_STEPS_GO_TO = (phase: string) =>
+  `The players take the ${phase} in turn at the start of a round, so it can't go to another phase: pass it on with “The ${phase} passes to the left.”`;
+const ROUND_STEPS_AFTER = (phase: string) =>
+  `The players take the ${phase} in turn at the start of a round, so it can't have an After line: pass it on with “The ${phase} passes to the left.”`;
 
 type Section = { keyword: string; rest: string; node: OutlineNode };
 /** A section that works out a value for cards: `keyword` is the value's name, and `refines` says it is a column of a card table. */
@@ -699,7 +714,7 @@ const effectsOf = (phase: CompiledPhase): PhraseRef[] => [
  * A phase that is not the first needs something to lead to it, or the game can never reach it: a `go to` in another phase, or a
  * line that starts it, in another phase or `elsewhere` (Setup, what a card says, or a rule for every phase). A phase's own lines
  * run only once it is reached, so they never lead to it.
- * The phases in `reached` are reached all the same: the End's steps before the score start in theirs.
+ * The phases in `reached` are reached all the same: the End's steps before the score start in theirs, and a round's steps in theirs.
  */
 function warnUnreachable(
   phases: CompiledPhase[], elsewhere: PhraseRef[], library: PhraseLibrary, diagnostics: Diagnostic[], reached: string[] = [],
@@ -744,12 +759,56 @@ function endSteps(name: string, line: number, ctx: LineCtx, phases: CompiledPhas
     addProblem(ctx.diagnostics, line, STEPS_AT_ONCE(id));
     return null;
   }
-  if (phase?.goTo) addProblem(ctx.diagnostics, phase.goTo.line, STEPS_GO_TO(id));
-  for (const ref of phase ? effectsOf(phase).flatMap(linesDoing) : []) {
-    if (ref.kind === 'effect' && ref.phrase === GO_TO_PHRASE) addProblem(ctx.diagnostics, ref.line, STEPS_GO_TO(id));
-  }
-  if (phase?.after) addProblem(ctx.diagnostics, phase.after.line, STEPS_AFTER(id));
+  refuseLeavingSteps(phase, STEPS_GO_TO(id), STEPS_AFTER(id), ctx.diagnostics);
   return { phase: id, line };
+}
+
+/**
+ * Refuses, each on its own line, what would take the game out of a phase whose steps end only by being passed on: its `go to`, as a
+ * rule or as a line of a button, rule or choice (an `If …, go to …` among them), with `goTo`, and its After line, with `after`.
+ */
+function refuseLeavingSteps(phase: CompiledPhase | undefined, goTo: string, after: string, diagnostics: Diagnostic[]): void {
+  if (!phase) return;
+  if (phase.goTo) addProblem(diagnostics, phase.goTo.line, goTo);
+  for (const ref of effectsOf(phase).flatMap(linesDoing)) {
+    if (ref.kind === 'effect' && ref.phrase === GO_TO_PHRASE) addProblem(diagnostics, ref.line, goTo);
+  }
+  if (phase.after) addProblem(diagnostics, phase.after.line, after);
+}
+
+/** Whether a line begins a round's steps, read through what an `If …, …` or `For …, …` line does. */
+function beginsRoundSteps(ref: PhraseRef): boolean {
+  const effect = innerEffect(ref);
+  return effect.kind === 'effect' && effect.phrase === ROUND_STEPS_PHRASE;
+}
+
+/**
+ * The phase each player takes in turn as a round starts, before the start player's turn, with the line that names it: the first line
+ * that starts a round and begins the steps. Null when none does, or when it names a phase where everyone acts at once. What would leave
+ * a round unable to go on is refused on its own line: such a line anywhere but among those that start a round (`elsewhere` is every
+ * other line of the game that does something, choices read through), a second one, other lines after it, and a phase the steps could
+ * not finish in, with a `go to` or an After line, or that no line of the game passes on.
+ */
+function compileRoundSteps(
+  roundStarts: PhraseRef[], elsewhere: PhraseRef[], phases: CompiledPhase[], diagnostics: Diagnostic[],
+): EveryPhase['roundSteps'] | null {
+  const lines = elsewhere.flatMap(linesDoing);
+  for (const ref of lines) if (beginsRoundSteps(ref)) addProblem(diagnostics, ref.line, ROUND_STEPS_ELSEWHERE(ref.text));
+  const at = roundStarts.findIndex(beginsRoundSteps);
+  if (at < 0) return null;
+  const first = roundStarts[at];
+  for (const ref of roundStarts.slice(at + 1)) if (beginsRoundSteps(ref)) addProblem(diagnostics, ref.line, ROUND_STEPS_TWICE);
+  if (roundStarts.slice(at + 1).some((ref) => !beginsRoundSteps(ref))) addProblem(diagnostics, first.line, ROUND_STEPS_NOT_LAST);
+  const id = innerEffect(first).args[0] as string;
+  const phase = phases.find((p) => p.id === id);
+  if (phase?.actor === 'any') {
+    addProblem(diagnostics, first.line, ROUND_STEPS_AT_ONCE(id));
+    return null;
+  }
+  refuseLeavingSteps(phase, ROUND_STEPS_GO_TO(id), ROUND_STEPS_AFTER(id), diagnostics);
+  const passes = (ref: PhraseRef) => ref.kind === 'effect' && ref.phrase === STEP_PASSES_PHRASE && ref.args[0] === id;
+  if (![...lines, ...roundStarts.flatMap(linesDoing)].some(passes)) addProblem(diagnostics, first.line, STEPS_NEVER_PASS(id));
+  return { phase: id, line: first.line };
 }
 
 /**
@@ -895,8 +954,17 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   if (phaseNodes.length === 0) addProblem(diagnostics, 1, 'Add at least one Phase: section.');
   // The End is read with the phases, before any is found unreached: the phase of its steps before the score is reached that way.
   const end = compileEnd(of('end'), ctx, phases);
+  // So is the phase of a round's steps. Left out of `everyPhase`, never undefined, when no line begins them.
+  const { roundStarts, turnStarts, triggers, moments = [] } = everyPhase;
+  const outsideRoundStarts = [
+    ...setup, ...Object.values(says).flat(), ...turnStarts, ...triggers.flatMap((t) => t.effects), ...moments.flatMap((m) => m.effects),
+    ...phases.flatMap(effectsOf),
+  ];
+  const roundSteps = compileRoundSteps(roundStarts, outsideRoundStarts, phases, diagnostics);
+  if (roundSteps) everyPhase.roundSteps = roundSteps;
   const elsewhere = [...setup, ...Object.values(says).flat(), ...everyPhaseEffects(everyPhase)];
-  warnUnreachable(phases, elsewhere, library, diagnostics, end?.steps ? [end.steps.phase] : []);
+  const reached = [...(end?.steps ? [end.steps.phase] : []), ...(roundSteps ? [roundSteps.phase] : [])];
+  warnUnreachable(phases, elsewhere, library, diagnostics, reached);
   warnStepsNeverPass(end?.steps, [...elsewhere, ...phases.flatMap(effectsOf)], diagnostics);
 
   const firstStarts = named.length > 0 ? startsLineOf(named[0]) : null;
