@@ -1,13 +1,13 @@
-# Startup Simulator: where the work stands (handoff, paused 2026-10-19)
+# Startup Simulator: where the work stands (handoff, paused 2026-10-19; updated 2026-11-16)
 
-Paused at the owner's request. Everything below is on `claude/peaceful-curie-rdfkow`; HEAD `656d6eb`; 3638 tests pass.
+Everything below is on `claude/peaceful-curie-rdfkow`; 3658 tests pass. Plan 5-3 finished 2026-11-16 (last code commit `fd0c4a3`).
 
 ## Done
 - Slices 1, 3, 4 (all plans), the long-runs speed-up.
-- Slice 5: plan 5-1 (language), 5-2a (talent rules), 5-2b (Strategy, Training, Milestones), 5-3 Task 1 (the taller fitted table, `bbe5c92`).
+- Slice 5, all four plans: 5-1 (language), 5-2a (talent rules), 5-2b (Strategy, Training, Milestones), 5-3 (the page: the taller fitted table `bbe5c92`, labels for the flags a press reads `cca9bf1`, labels off a Board and slice 5 on the page `db57012`/`99db1ce`/`e21f718`, the browser check and README `ef32883`, final-review fixes `fd0c4a3`). 5-3's ledger: `2026-10-19-startup-5-3-ledger.md`.
 
 ## Next, in order
-1. **Plan 5-3 Tasks 2–4** (the page). Its pre-flight rulings R1–R7 are in the plan's Global Constraints ("Controller amendment (Tasks 2–4 pre-flight …)"). Task 2 was dispatched and stopped before it changed any file; start it again from its text with R1 (`IT_IS_FLAGGED` in `fact-phrases.ts`, `it is {cardflag}` card-only) and R5 (`PERCH_GAME` first). Task 4's checks run over `bbe5c92^..bbe5c92` and `656d6eb..HEAD`, starting from 3638 tests.
+1. (done) Plan 5-3.
 2. **Plan 6-1** (language). Before its pre-flight, add a task for 5-2b's gap G1: a reshuffle keeps card ids, so a card seen face up in the public strategy discard can be followed into a hidden Brainstorm or Strategy Hand, and the new deck's order read by slot. Cards shuffled into a pile no one can see take fresh ids from the state's card counter (deterministic, replay exact), pulling forward the re-keying plan 9-1's R1 designs for Face-Down cards (`lang:renamed`) so 9-1 reuses it. The README notes the gap until then.
 3. **A "long runs retune" mini plan, after 6-1 and before 6-2a** (not yet written):
    - retune the auto-player so at least 18 of 20 long-run games Launch (5-2b's Brainstorm cadence halved Board play: Launches 45 → 23, games with a Launch 19 → 11), then re-settle the required keys held by one game (ten, six on 3 players seed 4);
