@@ -17,6 +17,7 @@ import { boardDims, loneCounts } from './board-text';
 import { RESTING_GAME } from '@/engine/core/lang/testing';
 import { HIDDEN_FACE_KEY } from '@/engine/core/derive-scene';
 import { keptBadges } from './board-text';
+import { BOX_ZONE } from '@/engine/core/lang/zones';
 
 const lib = createDefaultLibrary();
 const TIRED = '  Cards can be tired.';
@@ -331,9 +332,13 @@ describe('what a card keeps, off a Board', () => {
 
   it('labels each card off a Board that keeps a set flag or a lone count, in a seat\'s own zone or a shared one, and none on a Board', () => {
     expect([cardOf(laid, potter2).zoneId, cardOf(laid, smith2).zoneId]).toEqual(['stash-p0', 'hall']);
+    // `laid` stands for p0's own scene: p0 sees its stash, so the second Potter keeps its face there (face down means the
+    // HIDDEN_FACE_KEY a seat's scene gives, not the state's faceUp).
     expect(keptBadges(kept, laid.cards)).toEqual({ [potter2]: 'tired, 1 dent', [smith2]: '2 dents' });
     // Neither the dented Vase nor the tired Potter on it has an entry: they are on a Board, where boardBadges labels them.
     expect(boardBadges(kept, laid.cards)).toEqual({ [dented]: '1 dent', [potter]: 'tired' });
+    // Nor a card in the engine's box, a zone the game doesn't declare, which no table draws.
+    expect(keptBadges(kept, [{ ...cardOf(laid, smith2), zoneId: BOX_ZONE }])).toEqual({});
   });
 
   it('Review Focus: labels no face-down card, even if its data were left on it', () => {

@@ -1,8 +1,9 @@
-// What a seat's Board says, as text under its tableau line and as captions, badges and fades on its cards on the canvas. A fitted
-// table draws only the viewer's own zones, so every seat's Board is also listed as text, and the counts a card carries are read against
-// the columns they count up to, or the numbers the rules work out in their place. It works from the game's declared zones, counts
-// and flags alone, from the cards as the viewer sees them, and from what the view says the rules work out: a card the viewer can't
-// see has lost its data before it gets here, a face-down one is never named, and the view works nothing out for either.
+// What a seat's Board says, as text under its tableau line and as captions, badges and fades on its cards on the canvas, and the
+// labels on the cards off a Board whose faces the seat is given. A fitted table draws only the viewer's own zones, so every seat's
+// Board is also listed as text, and the counts a card carries are read against the columns they count up to, or the numbers the rules
+// work out in their place. It works from the game's declared zones, counts and flags alone, from the cards as the viewer sees them,
+// and from what the view says the rules work out: a card the viewer can't see has lost its data before it gets here, a face-down one
+// is never named, and the view works nothing out for either.
 import { HIDDEN_FACE_KEY } from '@/engine/core/derive-scene';
 import { holderIdOf } from '@/engine/core/lang/attach';
 import { cardAttribute, cardFact, pickName } from '@/engine/core/lang/card-facts';
@@ -220,8 +221,8 @@ export function boardBadges(game: CompiledGame, cards: CardState[], worked?: Wor
 
 /**
  * The label of each card off a Board (a shared zone, or one of a seat's own that not everyone sees) that keeps a set flag or a lone
- * count: its flags that are set, then its lone counts, joined by ', '. None for a face-down card, and none for a card on a Board.
- * The view works nothing out for a card off a Board, so its label is only what the card keeps; and the seat is given a card's face
+ * count: its flags that are set, then its lone counts, joined by ', '. None for a face-down card, none for a card on a Board, and
+ * none for a card in a zone the game doesn't declare (the engine's box), which no table draws. The view works nothing out for a card off a Board, so its label is only what the card keeps; and the seat is given a card's face
  * only where it may see it, so a card in another seat's own zone comes here face down and says nothing.
  */
 export function keptBadges(game: CompiledGame, cards: CardState[]): { [cardId: string]: string } {

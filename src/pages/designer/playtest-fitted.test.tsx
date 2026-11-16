@@ -1258,8 +1258,8 @@ describe('modes, Offline and Bugs on the Board', () => {
     expect(boardOf(S)).toContain('[Blue 0/6, Red 0/0, 1 bug]');
   });
 
-  // A guard: this passes before the change too, and pins that neither a badge nor a Bug reaches a card the Board doesn't show:
-  // another seat's backlog is hidden from the seat, and its own backlog is on no Board.
+  // Pins that a seat's own backlog card, whose face it is given, is labelled with its Bugs on the canvas but named in no text (its
+  // backlog is on no Board), and that another seat's backlog, hidden from the seat, gets no label and shows no Bug.
   it("Review Focus: badges a card in a backlog for its owner alone, and never shows another seat's Bugs", () => {
     let state = setUp();
     const theirs = state.cards.find((card) => card.zoneId === `backlog-${O}`)!.id;
