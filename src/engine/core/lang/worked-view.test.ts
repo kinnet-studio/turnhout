@@ -21,6 +21,7 @@ import { shownFlags, standIns } from './worked-view';
 import { dimFlags, gaugePairs, shownPlayerValues } from './worked-view';
 import { holderFlags, pressFlags } from './worked-view';
 import { BOOST_GAME, PERCH_GAME, SORT_GAME, YARD_GAME } from './testing';
+import { CHARM_GAME } from './testing';
 import { HOLDER_PHRASES, registerAttachPhrases } from './library/attach-phrases';
 import { cardsOn } from './attach';
 import { relocate } from './zones';
@@ -139,7 +140,7 @@ describe('what the game says the view may show', () => {
 });
 
 describe('the phrases the view counts as reading only the card', () => {
-  it('are these 22: decide whether a new one reads beyond the card, and add it to CARDS_ON_IT if it reads the cards on it', () => {
+  it('are these 30: decide whether a new one reads beyond the card, and add it to CARDS_ON_IT if it reads the cards on it', () => {
     // Everything these two registrars register is card-only to `worked-view.ts`, but for CARDS_ON_IT, which counts only where every card
     // on a card is public: a new phrase that reads the cards on it and is missing there would show hidden cards to every seat, and one that
     // reads anything else of the table (a zone's cards, a player's numbers) belongs in another registrar.
@@ -167,9 +168,13 @@ describe('the phrases the view counts as reading only the card', () => {
       "value: a card's {attribute} is at least {int}",
       'condition: it is a card whose {cardfilter}', 'condition: it is not a card whose {cardfilter}',
       "value: a card's {attribute} goes up by its {attribute}", "value: a card's {attribute} goes up by its {attribute} times its {attribute}",
+      "value: a card's {attribute} is {int}", "value: a card's {attribute} goes up by {int} for each {attribute}",
       "value: {cardclass}'s {attribute} is its {attribute}", "value: {cardclass}'s {attribute} is {int}",
       "value: a {cardflag} card's {attribute} is {int}", "value: an {cardflag} card's {attribute} is {int}",
       "value: a {cardflag} card's {attribute} is its {attribute}", "value: an {cardflag} card's {attribute} is its {attribute}",
+      "value: a {cardflag} card's {attribute} goes up by {int}", "value: an {cardflag} card's {attribute} goes up by {int}",
+      "value: a {cardflag} card's {attribute} goes down by {int}", "value: an {cardflag} card's {attribute} goes down by {int}",
+      "value: a {cardflag} card's {attribute} goes up by its {attribute}", "value: an {cardflag} card's {attribute} goes up by its {attribute}",
     ]);
     const onIt = CARDS_ON_IT.map((pattern) => `condition: ${pattern}`);
     expect(registered.filter((entry) => entry.includes(' on it '))).toEqual(onIt);
@@ -666,5 +671,35 @@ describe('the flags a press reads', () => {
       expect(theirs[smith]).toEqual({ columns: {}, flags: ['helping'] });
       expect(hidden.view('p0').worked![potter2]).toEqual({ columns: {}, flags: ['perched'] });
     });
+  });
+});
+
+describe('lines a flag turns on', () => {
+  it('shows charmed, which reads the card alone; Review Focus: never gusty, which changes red work but reads the scrap', () => {
+    const charm = compiled(CHARM_GAME);
+    // Gusty turns a line of red work on just as charmed does, so only what its own lines read keeps it off every face.
+    const redWork = charm.worked!['red work'];
+    expect(redWork.kind === 'number' ? redWork.refs : []).toContainEqual(
+      expect.objectContaining({ phrase: "a {cardflag} card's {attribute} goes down by {int}", args: ['gusty', 'red work', 1] }),
+    );
+    expect(shownFlags(charm)).toEqual(['charmed']);
+    // (guard) No section starts from a column, so nothing stands in for one.
+    expect(standIns(charm)).toEqual({});
+  });
+});
+
+describe('Review Focus: a value about a player read through what its owner has where everyone sees', () => {
+  const VALUE = "Job pay:\n  A player's job pay is the total red pay of the cards in their workshop.";
+  const rival = (zone: string, test = 'that is tired') =>
+    [withPay(["  A rival card's red pay is 2."], 'Rival:', `  Only if its owner has a card in their ${zone} ${test}.`), '', VALUE].join('\n');
+  it('shows it when the owner\'s zone is one everyone sees, and the clause reads the card alone', () => {
+    expect(shownPlayerValues(compiled(rival('idle')))).toEqual(['job pay']);
+    expect(shownPlayerValues(compiled(rival('idle', 'that is not tired')))).toEqual(['job pay']);
+  });
+  it('(guard) shows it not when only the owner sees that zone', () => {
+    expect(shownPlayerValues(compiled(rival('stash')))).toEqual([]);
+  });
+  it('(guard) labels the flag on no face: the card-level rule is unchanged', () => {
+    expect(shownFlags(compiled(rival('idle')))).not.toContain('rival');
   });
 });

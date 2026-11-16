@@ -18,6 +18,7 @@ import { FORCE_GAME } from './testing';
 import { MEND_GAME } from './testing';
 import { JOIN_GAME } from './testing';
 import { COUNT_GAME } from './testing';
+import { CHARM_GAME } from './testing';
 
 const lib = createDefaultLibrary();
 const BASE = [
@@ -1487,5 +1488,32 @@ describe('counting cards', () => {
     const line = '  Only if it is a card whose crft is gold.';
     const text = COUNT_GAME.replace('  Only if it is a card whose craft is gold.', line);
     expect(messages(text)).toEqual([[at(text, line), 'There is no card attribute called “crft”.']]);
+  });
+});
+
+describe('lines a flag turns on', () => {
+  const lineOf = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+  const BONUS_LINE = "  A card's bonus is 1.";
+  /** CHARM_GAME with `line` under Bonus:, right after its first line, and that line's number. */
+  const underBonus = (line: string) => {
+    const text = CHARM_GAME.replace(BONUS_LINE, `${BONUS_LINE}\n${line}`);
+    return { text, at: lineOf(text, BONUS_LINE) + 1 };
+  };
+
+  it('compiles CHARM_GAME, keeping the bonus lines and a flag that reads the scrap', () => {
+    const { game, diagnostics } = compileGame(CHARM_GAME, lib);
+    expect(diagnostics).toEqual([]);
+    const bonus = game!.worked!.bonus;
+    expect(bonus.kind === 'number' ? bonus.refs.map((ref) => ref.phrase) : bonus.kind)
+      .toEqual(["a card's {attribute} is {int}", "a {cardflag} card's {attribute} goes up by its {attribute}"]);
+    const gusty = game!.worked!.gusty;
+    expect(gusty.kind === 'flag' ? gusty.conditions[0].refs[0].phrase : gusty.kind).toBe('{sharedzone} has {card}');
+  });
+
+  it('says on its line that a line is about another value, and names a flag the game does not know', () => {
+    const wage = underBonus("  A charmed card's wage goes up by 2.");
+    expect(messages(wage.text)).toEqual([[wage.at, 'This line is about “wage”, but it is under Bonus:.']]);
+    const misspelt = underBonus("  A charmd card's bonus goes up by 2.");
+    expect(messages(misspelt.text)).toEqual([[misspelt.at, 'There is no card fact called “charmd”.']]);
   });
 });

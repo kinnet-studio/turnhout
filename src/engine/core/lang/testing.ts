@@ -476,6 +476,23 @@ export const MEND_GAME = [
   'Rest work:', "  A tired card's rest work is its skill.",
 ].join('\n');
 
+/**
+ * WORKED_GAME where cards gather charms and a Statue in the scrap makes red hands gusty: a charmed card's red work and wage go up by 2, a
+ * gusty one's red work goes down by 1 but never below 0, a job's worth goes up by 3 for each charm, and every card's bonus is 1, plus its
+ * charms when it is charmed.
+ */
+export const CHARM_GAME = [
+  WORKED_GAME
+    .replace('new red and new gold.', 'new red, new gold and charms.')
+    .replace("  A tired card's red work is 0.", ["  A charmed card's red work goes up by 2.", "  A gusty card's red work goes down by 1.",
+      "  A card's red work is at least 0.", "  A tired card's red work is 0."].join('\n'))
+    .replace("  A Tinker card's wage is 1.", "  A Tinker card's wage is 1.\n  A charmed card's wage goes up by 2."), '',
+  'Worth:', "  A card's worth goes up by 3 for each charm.", '',
+  'Bonus:', "  A card's bonus is 1.", "  A charmed card's bonus goes up by its charms.", '',
+  'Charmed:', '  Only if it is a card whose charms are more than 0.', '',
+  'Gusty:', '  Only if the scrap has a Statue.', '  Only if it is a red card.',
+].join('\n');
+
 /** CREW_GAME where a Smith that joins a job in a workshop leaves a dent in it, whatever the phase. */
 export const JOIN_GAME = CREW_GAME
   .replace('  Cards can be tired.', '  Cards can be tired.\n  Cards can have dents.')

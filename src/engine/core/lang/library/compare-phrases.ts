@@ -48,6 +48,9 @@ const anotherPlayerHasACard: ConditionFn = (env, [zone, filter]) => {
   return playersIn(env.state, env.seats).some((seat) => seat !== they && seatHasACard(env, seat, zone as string, filter as CardFilter));
 };
 
+/** Whether its owner has, or has no, card in a zone of theirs that passes a clause: args [the zone each player has, the clause]. */
+export const OWNER_HAS_PHRASES = ['its owner has a card in their {perzone} {cardclause}', 'its owner has no card in their {perzone} {cardclause}'] as const;
+
 /**
  * Whether its owner, the player whose zone it is in, has a card in that zone of theirs that passes the tests of the clause. A card in the
  * center has no owner, and so no owner who has such a card.
@@ -95,6 +98,6 @@ export function registerComparePhrases(lib: PhraseLibrary): PhraseLibrary {
     .condition('the card has no {attribute}', theCardHasNo, { needsMove: true })
     .condition('it has no {attribute}', itHasNo, { needsCard: true })
     .effect('every card on it whose {cardfilter} goes to {zone}', everyCardOnItWhoseGoesTo, { needsCard: true })
-    .condition('its owner has a card in their {perzone} {cardclause}', itsOwnerHas(true), { needsCard: true })
-    .condition('its owner has no card in their {perzone} {cardclause}', itsOwnerHas(false), { needsCard: true });
+    .condition(OWNER_HAS_PHRASES[0], itsOwnerHas(true), { needsCard: true })
+    .condition(OWNER_HAS_PHRASES[1], itsOwnerHas(false), { needsCard: true });
 }

@@ -4,7 +4,8 @@
 // card counts only in a game where everyone sees every card that sits on a card. So a seat that sees a card sees all that its shown
 // values read, however deep the cards on cards go, and whether a value is shown hangs on the rules alone, never on where cards are.
 // So does which values about a player the page may show: a total of cards everyone sees, each read through what reads that card alone,
-// so every seat may know it for every player; with the pairs of them a button waits on, and the flags that leave a card out of one.
+// or what its owner has in a zone everyone sees, so every seat may know it for every player; with the pairs of them a button waits on,
+// and the flags that leave a card out of one.
 // A flag a button's `Then:` lines read is shown too when its lines read only the card, the cards on it and the card it sits on. Which
 // flags those are hangs on the rules alone as well; but the card it sits on may be one a seat doesn't see, so the view works such a flag
 // out for a card only for a seat that sees the card it sits on.
@@ -16,6 +17,7 @@ import { AT_LEAST_THEIRS, PLAYER_TOTAL } from './library/player-value-phrases';
 import { FROM_CARDS_TOTAL, GOES_UP_BY_TOTAL } from './library/total-phrases';
 import { FROM_CARDS_COUNT } from './library/total-phrases';
 import { IT_IS_FLAGGED } from './library/fact-phrases';
+import { OWNER_HAS_PHRASES } from './library/compare-phrases';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
 import type { CardFilter, CardGroup, CompiledGame, PhraseRef, ZoneRef } from './types';
@@ -28,6 +30,7 @@ import type { CardFilter, CardGroup, CompiledGame, PhraseRef, ZoneRef } from './
 const CARD_ONLY = registerCardValuePhrases(registerCardSubjectPhrases(new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])));
 const PARAM = /\{([^{}]+)\}/g;
 const holderPhrases: readonly string[] = HOLDER_PHRASES;
+const ownerHasPhrases: readonly string[] = OWNER_HAS_PHRASES;
 
 const isWorked = (game: CompiledGame, name: string): boolean => game.worked !== undefined && Object.hasOwn(game.worked, name);
 /**
@@ -70,20 +73,32 @@ function cardOnlyNames(game: CompiledGame, ref: PhraseRef): string[] | null {
 }
 
 /**
+ * The names a line that asks what its owner has (`OWNER_HAS_PHRASES`) tests the owner's cards by, when every seat sees that zone of each
+ * player's; null for any other line, and when some seat may not see that zone. A name that is a value worked out is traced in turn, as
+ * `readsOnlyCards` traces every name a line reads.
+ */
+function ownerSeenNames(game: CompiledGame, ref: PhraseRef): string[] | null {
+  if (ref.kind !== 'condition' || !ownerHasPhrases.includes(ref.phrase)) return null;
+  return everyoneSees(game, { each: ref.args[0] as string }) ? (ref.args[1] as CardFilter[]).flatMap(testNames) : null;
+}
+
+/**
  * Whether every line of the value `name` reads only the card and the cards on it, and so does every line of each value they read, all the
  * way down. `seen` holds the values looked at already: one met again is being looked at, and adds no line of its own. With `holder`, a
  * line that reads the card it sits on (`HOLDER_PHRASES`) counts as read too, at every depth; it names no value, as it reads that card's
- * face alone.
+ * face alone. With `owner`, so does a line that asks what its owner has in a zone everyone sees (`ownerSeenNames`), at every depth, when
+ * each value its clause tests reads only cards too. Only a total about a player asks that (`readsTheCardAlone`): the flags and numbers a
+ * face shows keep to the card, the cards on it and the card it sits on.
  */
-function readsOnlyCards(game: CompiledGame, name: string, seen = new Set<string>(), holder = false): boolean {
+function readsOnlyCards(game: CompiledGame, name: string, seen = new Set<string>(), holder = false, owner = false): boolean {
   if (seen.has(name)) return true;
   seen.add(name);
   const value = game.worked![name];
   const refs = value.kind === 'number' ? value.refs : value.conditions.flatMap((group) => group.refs);
   return refs.every((ref) => {
     if (holder && ref.kind === 'condition' && holderPhrases.includes(ref.phrase)) return true;
-    const names = cardOnlyNames(game, ref);
-    return names !== null && names.filter((read) => isWorked(game, read)).every((read) => readsOnlyCards(game, read, seen, holder));
+    const names = cardOnlyNames(game, ref) ?? (owner ? ownerSeenNames(game, ref) : null);
+    return names !== null && names.filter((read) => isWorked(game, read)).every((read) => readsOnlyCards(game, read, seen, holder, owner));
   });
 }
 
@@ -175,8 +190,13 @@ function everyoneSees(game: CompiledGame, zone: ZoneRef): boolean {
   return game.zones.some((spec) => spec.name === name && spec.perPlayer === perPlayer && spec.visibility === 'public');
 }
 
-/** Whether a card's number or flag reads only the card: one a table prints or cards keep, or a value worked out from the card alone. */
-const readsTheCardAlone = (game: CompiledGame, name: string): boolean => !isWorked(game, name) || readsOnlyCards(game, name);
+/**
+ * Whether a card's number or flag reads only the card: one a table prints or cards keep, or a value worked out from the card alone, or
+ * from what its owner has in a zone everyone sees as well (`readsOnlyCards`' `owner`). A total adds up only cards everyone sees, and each
+ * seat sees what their owners have there, so each may know the total for every player.
+ */
+const readsTheCardAlone = (game: CompiledGame, name: string): boolean =>
+  !isWorked(game, name) || readsOnlyCards(game, name, new Set(), false, true);
 
 /**
  * Whether a line of a value about a player adds up, over zones everyone sees, a number read from each card alone, of the cards that pass

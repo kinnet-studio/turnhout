@@ -9,6 +9,7 @@ import { runExamples } from '../examples';
 import { CREW_GAME, WORKED_GAME, fixtureEnv, runPhrase } from '../testing';
 import { MEND_GAME } from '../testing';
 import { BOOST_GAME } from '../testing';
+import { CHARM_GAME } from '../testing';
 import { putOn } from '../attach';
 import type { CompiledGame, MoveInfo, Subject } from '../types';
 import { relocate } from '../zones';
@@ -416,5 +417,47 @@ describe("a card's numbers added and multiplied", () => {
     for (const pattern of ["a card's {attribute} goes up by its {attribute}", "a card's {attribute} goes up by its {attribute} times its {attribute}"]) {
       expect([pattern, lib.get('value', pattern)?.needsCard]).toEqual([pattern, true]);
     }
+  });
+});
+
+describe("lines a flag turns on, any card's number, and a number for each of a count", () => {
+  const charm = compiled(CHARM_GAME);
+  // Setup deals 2 jobs to each stash, more than the pile holds for three: a state with p0's turn set skips it.
+  const built = createEngine(charm, lib, 3, { ...initialState(charm, 1), turn: { current: 'p0', phase: 'working' } });
+  const start = built.engine.getState();
+  const every = (name: string) => start.cards.filter((card) => card.data?.name === name).map((card) => card.id);
+  const [jars, busts, potters, smiths, tinkers] = ['Vase', 'Statue', 'Potter', 'Smith', 'Tinker'].map(every);
+  const [jar, potterHand, otherPotter, smithHand, tinkerHand] = [jars[0], potters[0], potters[1], smiths[0], tinkers[0]];
+  /** Every hand in p0's idle and every job in p0's workshop. */
+  const table = relocate(relocate(start, [...potters, ...smiths, ...tinkers], 'idle-p0', charm), [...jars, ...busts], 'workshop-p0', charm);
+  /** The table with a Statue in the scrap, which makes every red hand gusty. */
+  const gale = relocate(table, [busts[0]], 'scrap', charm);
+  const value = (state: GameState, id: string, name: string) => built.runtime.workedValue(state, id, name);
+  const charmed = (state: GameState, id: string, charms: number) => changeCard(state, id, { charms }, charm);
+
+  it('works each out from the lines before it, and what a flag turns on only for a card that is so', () => {
+    // A Potter's skill is 1. Hands have no worth, so its worth is nothing, and stays nothing.
+    expect(['red work', 'wage', 'bonus', 'worth'].map((name) => value(table, potterHand, name))).toEqual([1, 1, 1, null]);
+    // Charmed: red work 1 + 2, wage 1 + 2, bonus 1 + its 1 charm.
+    const lucky = charmed(table, potterHand, 1);
+    expect(['red work', 'wage', 'bonus'].map((name) => value(lucky, potterHand, name))).toEqual([3, 3, 2]);
+    // With a Statue in the scrap, red hands are gusty: 1 + 2 − 1 for the charmed Potter, 1 − 1 for the other; a Tinker is mixed, so not
+    // gusty, and a Smith makes no red, never below 0.
+    const gusty = charmed(gale, potterHand, 1);
+    expect([potterHand, otherPotter].map((id) => built.runtime.workedFlag(gusty, id, 'gusty'))).toEqual([true, true]);
+    expect(built.runtime.workedFlag(gusty, tinkerHand, 'gusty')).toBe(false);
+    expect([potterHand, otherPotter, tinkerHand, smithHand].map((id) => value(gusty, id, 'red work'))).toEqual([2, 0, 1, 0]);
+    // A tired card's red work is 0, whatever the lines before made of it.
+    expect(value(changeCard(lucky, potterHand, { tired: true }, charm), potterHand, 'red work')).toBe(0);
+    // A Vase's worth is 3 and goes up by 3 for each charm; its bonus is 1 plus its charms once it is charmed.
+    expect([value(table, jar, 'worth'), value(table, jar, 'bonus')]).toEqual([3, 1]);
+    const twice = charmed(table, jar, 2);
+    expect([value(twice, jar, 'worth'), value(twice, jar, 'bonus')]).toEqual([9, 3]);
+  });
+
+  it('Review Focus: gives a charmed Vase no wage: jobs have no wage column, and a line a flag turns on gives nothing so far nothing', () => {
+    const twice = charmed(table, jar, 2);
+    expect(built.runtime.workedFlag(twice, jar, 'charmed')).toBe(true);
+    expect(value(twice, jar, 'wage')).toBeNull();
   });
 });
