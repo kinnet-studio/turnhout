@@ -1260,7 +1260,7 @@ describe('modes, Offline and Bugs on the Board', () => {
 
   // A guard: this passes before the change too, and pins that neither a badge nor a Bug reaches a card the Board doesn't show:
   // another seat's backlog is hidden from the seat, and its own backlog is on no Board.
-  it("Review Focus: badges no card in a backlog, and never shows another seat's Bugs", () => {
+  it("Review Focus: badges a card in a backlog for its owner alone, and never shows another seat's Bugs", () => {
     let state = setUp();
     const theirs = state.cards.find((card) => card.zoneId === `backlog-${O}`)!.id;
     const own = state.cards.find((card) => card.zoneId === `backlog-${S}`)!.id;
@@ -1268,7 +1268,7 @@ describe('modes, Offline and Bugs on the Board', () => {
     mount({ initial: state });
     expect(status()).toMatch(new RegExp(`^seat: ${S} `));
     expect(Object.keys(table!.decor!)).not.toContain(theirs);
-    expect(Object.keys(table!.decor!)).not.toContain(own);
+    expect(table!.decor![own]).toEqual({ badge: '3 bugs' });
     expect(document.body.textContent).not.toContain('2 bugs');
     expect(document.body.textContent).not.toContain('3 bugs');
   });
@@ -1418,5 +1418,258 @@ describe('a fitted table that grows', () => {
     for (const d of own.filter((d) => d.visibility !== 'public')) {
       expect(team.transform.y + CARD_HEIGHT / 2, d.id).toBeLessThan(d.transform.y - CARD_HEIGHT / 2);
     }
+  });
+});
+
+describe('slice 5 on the page', () => {
+  const tab = (name: string) => screen.getByRole('tab', { name });
+  const boardOf = (seat: string) => screen.getByTestId(`board-${seat}`).textContent;
+  const nameOf = (card: CardState) => parseTextFaceKey(card.faceKey)!.name;
+  /** The cards with a ring on them, by id; none while nothing is picked, offered or asked. */
+  const ringed = () => Object.keys(table!.decor ?? {}).filter((id) => table!.decor![id].ring !== undefined);
+  const PLAY = 'Play a card from your strategy hand to a card in your bench, your development team or your ops team';
+  const FLUSH = 'Brainstorm after flushing some cards from your strategy hand';
+  const KEEP_IDEA = 'Keep a card in your brainstorm';
+  const [KEEP_BLUE, KEEP_RED, KEEP_GREEN] = ['blue', 'red', 'green'].map((colour) => `Keep ${colour} on a card in your ops team`);
+  const MENTOR = 'Mentor a card in your ops team';
+  const LAUNCH = 'Launch a card from your development to your operations';
+
+  /**
+   * How the numbers come (Call 4):
+   * - §20.C.2: the Neobank needs 10 Blue and is Tier 2.
+   * - §11.E: a Junior PM on a project is up for its Badge (`pending badge`), and a managing Senior PM is Agile.
+   * - R4: a card the bench lets go of keeps its tokens, so the open job market's Junior Software Dev keeps its 2 Blue XP.
+   */
+  it('Review Focus: labels the tokens and flags on every face the seat is given, on the Board or off it, and on no face it is not', () => {
+    let state = setUp();
+    const hardware = idOf(state, 'Junior Hardware Eng', `bench-${S}`);
+    const market = idOf(state, 'Junior Software Dev', `bench-${O}`);
+    const software = idOf(state, 'Junior Software Dev', `bench-${S}`);
+    const [neobank, pm, senior] = ['Neobank', 'Junior PM', 'Senior PM'].map((name) => idOf(state, name));
+    state = changeCard(state, hardware, { 'red xp tokens': 2, 'blue skill tokens': 1, badged: true }, game);
+    state = changeCard(relocate(state, [market], 'open-job-market', game), market, { 'blue xp tokens': 2 }, game);
+    state = relocate(state, [neobank], `development-${S}`, game);
+    state = putOn(changeCard(state, software, { 'pending blue': 1 }, game), [software, pm], `development-team-${S}`, neobank, game);
+    state = relocate(state, [senior], `ops-team-${S}`, game);
+    const BOARD = 'development: Neobank (tier Tier 2, tag Crypto, requires Commerce, sector FinTech, stalled) [Blue 0/10, Red 0/0] '
+      + 'with Junior Software Dev [1 pending blue] and Junior PM (managing, pending badge) · ops team: Senior PM (managing, agile)';
+
+    mount({ initial: state });
+    expect(status()).toMatch(new RegExp(`^seat: ${S} `));
+    expect([hardware, market, software, pm, senior, neobank].map((id) => table!.decor![id])).toEqual([
+      { badge: 'badged, 2 red xp tokens, 1 blue skill token' },
+      { badge: '2 blue xp tokens' },
+      { badge: '1 pending blue' },
+      { badge: 'managing, pending badge' },
+      { badge: 'managing, agile' },
+      { caption: 'Blue 0/10\nRed 0/0', badge: 'stalled' },
+    ]);
+    expect(boardOf(S)).toBe(BOARD);
+
+    fireEvent.click(tab(O));
+    expect(table!.decor![market].badge).toBe('2 blue xp tokens');
+    expect(cardsIn(`bench-${S}`)).toEqual([]);
+    expect(Object.keys(table!.decor!)).not.toContain(hardware);
+    expect(document.body.textContent).not.toContain('2 red xp');
+    expect(boardOf(S)).toBe(BOARD);
+  });
+
+  /**
+   * How the numbers come:
+   * - §6: Brainstorm costs 1 action and draws 2 with no working PM (ruling 25).
+   * - §3 and §15.C: the hand and the look are seen by their owner alone (the spec's anti-goal).
+   * - R10: the strategy discard is public.
+   */
+  // A guard: this passes before the change, since it reads no label (the strip, the buttons and the choices are 3-2's and 5-2b's);
+  // it pins them for slice 5.
+  it('(guard) Review Focus: shows the Strategy Hand and the Brainstorm to their owner alone, keeps one, and Undo takes it back', () => {
+    const set = setUp();
+    mount({ initial: relocate(set, [idOf(set, 'Hit Piece'), idOf(set, 'Burnout')], `strategy-hand-${S}`, game) });
+    const milestoneRow = table!.tableDef.zones.find((z) => z.id === 'milestone-row')!;
+    const milestones = fittedZone(S, 'milestones');
+    expect(fittedZone(S, 'strategy-hand').transform.y).toBeGreaterThan(milestones.transform.y);
+    expect(fittedZone(S, 'brainstorm').transform.y).toBeGreaterThan(milestones.transform.y);
+    expect(milestoneRow.transform.y).toBeLessThan(fittedZone(S, 'development').transform.y);
+    expect(cardsIn('milestone-row')).toHaveLength(3);
+    expect(inOrder(`strategy-hand-${S}`).map(nameOf)).toEqual(['Hit Piece', 'Burnout']);
+    expect(lineOf(S)).toContain('strategy hand 2 · brainstorm 0 · milestones 0');
+
+    press('Brainstorm');
+    expect(status()).toBe(`seat: ${S} — brainstorm — Your turn — ${hint('brainstorm')}`);
+    expect(inOrder(`brainstorm-${S}`)).toHaveLength(2);
+    const drawn = inOrder(`brainstorm-${S}`).map(nameOf);
+    const [first, second] = inOrder(`brainstorm-${S}`).map((c) => c.id);
+    expect(lineOf(S)).toContain('2 actions');
+    expect(lineOf(S)).toContain('strategy hand 2 · brainstorm 2');
+
+    fireEvent.click(tab(O));
+    expect(lineOf(S)).toContain('strategy hand 2 · brainstorm 2');
+    expect([cardsIn(`brainstorm-${S}`), cardsIn(`strategy-hand-${S}`)]).toEqual([[], []]);
+    for (const name of [...drawn, 'Hit Piece', 'Burnout']) expect(document.body.textContent, name).not.toContain(name);
+
+    fireEvent.click(tab(`${S} — to act`));
+    click(first);
+    expect(offered()).toEqual([[KEEP_IDEA, true]]);
+    choose(KEEP_IDEA);
+    expect(inOrder(`strategy-hand-${S}`)).toHaveLength(3);
+    expect(inOrder(`brainstorm-${S}`)).toEqual([]);
+    expect(inOrder('strategy-discard').map((c) => c.id)).toEqual([second]);
+    expect(status()!.endsWith(hint('actions'))).toBe(true);
+    fireEvent.click(tab(O));
+    expect(inOrder('strategy-discard').map((c) => c.id)).toEqual([second]);
+    expect(inOrder('strategy-discard').map(nameOf)).toEqual([drawn[1]]);
+
+    fireEvent.click(tab(`${S} — to act`));
+    press('Undo');
+    expect(inOrder(`brainstorm-${S}`)).toHaveLength(2);
+    click(first);
+    expect(offered()).toEqual([[KEEP_IDEA, true]]);
+    expect(ring(first)).toBe('chosen');
+    press('Undo');
+    noOffer();
+    expect(ringed()).toEqual([]);
+  });
+
+  /** How the numbers come: §5 Phase D step 7 and ruling 10: the hand's limit is 3, checked after the bench and before the backlog. */
+  // A guard: this passes before the change, since it reads no label (the cleanup and its button are 5-2b's); it pins them on the page.
+  it('(guard) asks for the strategy cleanup when the hand holds more than 3, and passes the turn once it holds 3', () => {
+    const set = setUp();
+    const hand = ['Hit Piece', 'Burnout', 'Visionary', 'Headhunter'].map((name) => idOf(set, name));
+    mount({ initial: relocate(set, hand, `strategy-hand-${S}`, game) });
+    press('End your actions');
+    expect(status()!.endsWith(hint('strategy cleanup'))).toBe(true);
+    expect(seatButtons()).toEqual(['Discard a card in your strategy hand']);
+
+    click(hand[2]);
+    choose('Discard a card in your strategy hand');
+    expect(tab(`${N} — to act`).getAttribute('aria-selected')).toBe('true');
+    expect(lineOf(S)).toContain('strategy hand 3');
+    expect(inOrder('strategy-discard').map(nameOf)).toEqual(['Visionary']);
+  });
+
+  /**
+   * How the numbers come:
+   * - §20.A: the Full Stack Bootcamp costs $3 and 0 AP, and gives a Blue or Red Skill token the Junior lacks; 7 − 3 − 3 = 1.
+   * - R6: the Bootcamp asks for a colour only when both fit.
+   * - Ruling 14: it fits no Specialist.
+   */
+  it("Review Focus: plays Training onto a card in the bench, development team or ops team, and greys a target it doesn't fit", () => {
+    let state = setUp();
+    const [bootcamp, bootcamp2] = state.cards.filter((c) => c.data?.name === 'Full Stack Bootcamp').map((c) => c.id);
+    const [todo, qaEngineer] = [idOf(state, 'To-Do List'), idOf(state, 'QA Engineer')];
+    const software = idOf(state, 'Junior Software Dev', `bench-${S}`);
+    const qa = idOf(state, 'Junior QA Tester', `bench-${S}`);
+    state = relocate(state, [bootcamp, bootcamp2], `strategy-hand-${S}`, game);
+    state = putOn(relocate(state, [todo], `development-${S}`, game), [software], `development-team-${S}`, todo, game);
+    mount({ initial: relocate(state, [qaEngineer], `ops-team-${S}`, game) });
+    const targets = () => within(picker()).getAllByRole('button', { name: /^Pick / })
+      .map((b) => [b.textContent, b.getAttribute('aria-disabled')]);
+
+    click(bootcamp);
+    expect(offered()).toEqual([[PLAY, true], [FLUSH, true]]);
+    choose(PLAY);
+    expect(within(picker()).getByText('Pick where it goes: a card in your bench, your development team or your ops team')).toBeTruthy();
+    expect(targets()).toEqual([
+      ['Junior Hardware Eng', 'false'], ['Junior QA Tester', 'false'], ['Junior Software Dev', 'false'], ['QA Engineer', 'true'],
+    ]);
+
+    click(qa);
+    expect(within(askedGroup()).getByText('Choose one')).toBeTruthy();
+    expect(askedOptions()).toEqual(['Blue', 'Red', 'Cancel']);
+    expect([ring(bootcamp), ring(qa)]).toEqual(['chosen', 'chosen']);
+
+    answerAsked('Red');
+    expect(table!.decor![qa]).toEqual({ badge: '1 red skill token' });
+    expect(lineOf(S)!.startsWith(`${S} 4 capital`), lineOf(S)!).toBe(true);
+    expect(inOrder('strategy-discard').map(nameOf)).toEqual(['Full Stack Bootcamp']);
+    expect(ringed()).toEqual([]);
+
+    press(PLAY);
+    pickNamed('Full Stack Bootcamp');
+    click(qaEngineer);
+    expect(lineOf(S)!.startsWith(`${S} 4 capital`), lineOf(S)!).toBe(true);
+    expect(within(picker()).getByText('Pick where it goes: a card in your bench, your development team or your ops team')).toBeTruthy();
+
+    // Red is the only colour a Junior Software Dev lacks, so no question is asked.
+    click(software);
+    expect(screen.queryByRole('group', { name: 'Choices' })).toBeNull();
+    expect(table!.decor![software]).toEqual({ badge: '1 red skill token' });
+    expect(boardOf(S)).toContain('with Junior Software Dev [1 red skill token]');
+    expect(lineOf(S)!.startsWith(`${S} 1 capital`), lineOf(S)!).toBe(true);
+  });
+
+  /**
+   * How the numbers come:
+   * - §20.C.1: the Cloud Storage needs 4 Blue and 4 Red, and is Tier 1.
+   * - Ruling 7: Launch costs 1 action; 3 − 1 = 2.
+   * - §11.B.2: one Pending token is made Permanent, chosen when there are several, and the rest go back.
+   * - §20.B and ruling 25: a working Veteran mentors a second, different token.
+   * - §3: a Junior with 2 XP is experienced.
+   * - §20.G and ruling 24: Clean Launch goes to the first Launch, and First Mover Advantage needs a Tier 2.
+   */
+  // A guard: this passes before the change, since every label it reads is on S's Board (the launched team stands in the ops team, and
+  // `coaching` is plan 5-3 Task 2's); it pins slice 5's graduation on the page.
+  it('(guard) Review Focus: launches into graduation, keeps and mentors a token, Undo takes the keep back, and claims Clean Launch', () => {
+    let state = setUp();
+    const row = state.cards.filter((c) => c.zoneId === 'milestone-row').map((c) => c.id);
+    state = relocate(state, row, 'box', game);
+    state = relocate(state, [idOf(state, 'Clean Launch'), idOf(state, 'First Mover Advantage')], 'milestone-row', game);
+    const [cloud, veteran] = [idOf(state, 'Cloud Storage'), idOf(state, 'Veteran')];
+    const software = idOf(state, 'Junior Software Dev', `bench-${S}`);
+    const hardware = idOf(state, 'Junior Hardware Eng', `bench-${S}`);
+    state = changeCard(relocate(state, [cloud], `development-${S}`, game), cloud, { 'blue cubes': 4, 'red cubes': 4 }, game);
+    state = putOn(state, [veteran, software, hardware], `development-team-${S}`, cloud, game);
+    state = changeCard(state, software, { 'pending blue': 1 }, game);
+    state = changeCard(state, hardware, {
+      'pending blue': 1, 'pending red': 1, 'pending green': 1, 'blue skill tokens': 1, 'green skill tokens': 1,
+    }, game);
+    const FIVE = '1 blue skill token, 1 green skill token, 1 pending blue, 1 pending red, 1 pending green';
+    mount({ initial: state });
+
+    press(LAUNCH);
+    pickNamed('Cloud Storage');
+    expect(status()!.endsWith(hint('graduation'))).toBe(true);
+    expect(lineOf(S)).toContain('2 actions');
+    expect(lineOf(S)).toContain('milestones 1');
+    expect(inOrder(`milestones-${S}`).map(nameOf)).toEqual(['Clean Launch']);
+    expect(inOrder('milestone-row').map(nameOf)).toEqual(['First Mover Advantage']);
+    expect([software, hardware, veteran].map((id) => table!.decor![id])).toEqual([
+      { badge: '1 blue xp token' }, { badge: FIVE }, { badge: 'coaching' },
+    ]);
+    expect(seatButtons()).toEqual([KEEP_BLUE, KEEP_RED, KEEP_GREEN, MENTOR]);
+
+    click(hardware);
+    expect(offered()).toEqual([[KEEP_BLUE, true], [KEEP_RED, true], [KEEP_GREEN, true], [MENTOR, 'it is mentorable']]);
+    choose(KEEP_RED);
+    expect(table!.decor![hardware].badge)
+      .toBe('graduated, 1 red xp token, 1 blue skill token, 1 green skill token, 1 pending blue, 1 pending green');
+
+    press(MENTOR);
+    pickNamed('Junior Hardware Eng');
+    expect(askedOptions()).toEqual(['Blue', 'Green', 'Cancel']);
+    expect(ring(hardware)).toBe('chosen');
+
+    press('Undo');
+    expect(screen.queryByRole('group', { name: 'Choices' })).toBeNull();
+    expect(ringed()).toEqual([]);
+    expect(table!.decor![hardware].badge).toBe(FIVE);
+    expect(status()!.endsWith(hint('graduation'))).toBe(true);
+
+    click(hardware);
+    choose(KEEP_RED);
+    press(MENTOR);
+    pickNamed('Junior Hardware Eng');
+    answerAsked('Green');
+    expect(status()!.endsWith(hint('actions'))).toBe(true);
+    expect(table!.decor![hardware])
+      .toEqual({ badge: 'experienced, 1 red xp token, 1 green xp token, 1 blue skill token, 1 green skill token' });
+    expect(boardOf(S)).toContain(
+      'ops team: Veteran (coaching); Junior Software Dev [1 blue xp token]; '
+      + 'Junior Hardware Eng (experienced) [1 red xp token, 1 green xp token, 1 blue skill token, 1 green skill token]',
+    );
+    expect(boardOf(S)).toContain('milestones: Clean Launch');
+
+    fireEvent.click(tab(O));
+    expect(boardOf(S)).toContain('milestones: Clean Launch');
   });
 });

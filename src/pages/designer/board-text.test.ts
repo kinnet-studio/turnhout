@@ -15,6 +15,8 @@ import { seatExtras } from '@/engine/core/lang/board-view';
 import { GUILD_GAME, SHOWN } from '@/engine/core/lang/testing';
 import { boardDims, loneCounts } from './board-text';
 import { RESTING_GAME } from '@/engine/core/lang/testing';
+import { HIDDEN_FACE_KEY } from '@/engine/core/derive-scene';
+import { keptBadges } from './board-text';
 
 const lib = createDefaultLibrary();
 const TIRED = '  Cards can be tired.';
@@ -303,5 +305,40 @@ describe('flags kept, counts no column reads, and faded cards', () => {
     it('gives none in a game no shown value leaves a flag out of', () => {
       expect(boardDims(game, cards)).toEqual([]);
     });
+  });
+});
+
+describe('what a card keeps, off a Board', () => {
+  /** CREW with a count no column reads, so a card can keep one wherever it is. */
+  const KEPT = CREW.replace(TIRED, `${TIRED}\n  Cards can have dents.`);
+  const keptCompiled = compileGame(KEPT, lib);
+  const kept = keptCompiled.game!;
+  const base = arrange(kept);
+  const [potter, potter2] = idsOf(base, 'Potter');
+  const [, smith2] = idsOf(base, 'Smith');
+  const [dented] = idsOf(base, 'Vase');
+  /**
+   * arrange(KEPT) with three changes: the second Potter is tired with 1 dent in p0's stash, the second Smith stays in the hall with 2
+   * dents, and the Vase, with the tired Potter on it, has 1 dent.
+   */
+  let laid = changeCard(relocate(base, [potter2], 'stash-p0', kept), potter2, { tired: true, dents: 1 }, kept);
+  laid = changeCard(changeCard(laid, smith2, { dents: 2 }, kept), dented, { dents: 1 }, kept);
+
+  it('compiles KEPT with no problems', () => {
+    expect(KEPT).not.toBe(CREW);
+    expect(keptCompiled.diagnostics).toEqual([]);
+  });
+
+  it('labels each card off a Board that keeps a set flag or a lone count, in a seat\'s own zone or a shared one, and none on a Board', () => {
+    expect([cardOf(laid, potter2).zoneId, cardOf(laid, smith2).zoneId]).toEqual(['stash-p0', 'hall']);
+    expect(keptBadges(kept, laid.cards)).toEqual({ [potter2]: 'tired, 1 dent', [smith2]: '2 dents' });
+    // Neither the dented Vase nor the tired Potter on it has an entry: they are on a Board, where boardBadges labels them.
+    expect(boardBadges(kept, laid.cards)).toEqual({ [dented]: '1 dent', [potter]: 'tired' });
+  });
+
+  it('Review Focus: labels no face-down card, even if its data were left on it', () => {
+    const card = cardOf(laid, potter2);
+    expect(keptBadges(kept, [{ ...card, faceUp: false, faceKey: HIDDEN_FACE_KEY, data: {} }])).toEqual({});
+    expect(keptBadges(kept, [{ ...card, faceUp: false, faceKey: HIDDEN_FACE_KEY }])).toEqual({});
   });
 });

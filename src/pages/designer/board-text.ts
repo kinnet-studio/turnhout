@@ -219,6 +219,22 @@ export function boardBadges(game: CompiledGame, cards: CardState[], worked?: Wor
 }
 
 /**
+ * The label of each card off a Board (a shared zone, or one of a seat's own that not everyone sees) that keeps a set flag or a lone
+ * count: its flags that are set, then its lone counts, joined by ', '. None for a face-down card, and none for a card on a Board.
+ * The view works nothing out for a card off a Board, so its label is only what the card keeps; and the seat is given a card's face
+ * only where it may see it, so a card in another seat's own zone comes here face down and says nothing.
+ */
+export function keptBadges(game: CompiledGame, cards: CardState[]): { [cardId: string]: string } {
+  const badges: { [cardId: string]: string } = {};
+  for (const card of cards) {
+    if (zoneInfo(game, card.zoneId) === null || onABoard(game, card)) continue;
+    const parts = [...flagsOn(card, game), ...loneCounts(card, game)];
+    if (parts.length > 0) badges[card.id] = parts.join(', ');
+  }
+  return badges;
+}
+
+/**
  * The ids of the cards on a Board (`onABoard`) that have a flag of `dimFlags(game)` set, in the order given: a card so marked counts
  * for nothing in a total a seat is shown (`… that are not resting`), so the page draws it faded. A face-down card shows no flag.
  */

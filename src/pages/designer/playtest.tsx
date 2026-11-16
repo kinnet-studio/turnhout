@@ -23,7 +23,7 @@ import { designerFaceRenderer } from '@/engine/pixi/text-faces';
 import { makeInitApp } from '@/utils/init-app';
 import { ActionButtons, BANNER_SLOT, BANNER_STYLE, BUTTON_ROW, MoneyLine, PlayerPicker } from './board-controls';
 import { BoardGrid } from './board-grid';
-import { boardBadges, boardCaptions, boardDims } from './board-text';
+import { boardBadges, boardCaptions, boardDims, keptBadges } from './board-text';
 import { cardDetail } from './card-detail';
 import { CardOffer } from './card-offer';
 import { NOTHING_TAKES, PICK_START, clickCard, liveAt, ringsOf, takersOf, type PickAt, type PickChosen } from './card-pick';
@@ -216,7 +216,8 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
   // Only a game whose buttons pick cards puts anything on its cards or takes clicks on them, so every other game's table draws and
   // plays as it always has. A card on a seat's Board is captioned with its counts, read against what the rules work out, badged
   // with the flags it keeps, the flags worked out that change what it makes or costs and the counts no caption reads, and faded
-  // while a flag leaves it out of a player's total; all of them change only with the view.
+  // while a flag leaves it out of a player's total. A card off a Board whose face the seat is given is labelled with the flags
+  // and counts it keeps. All of them change only with the view.
   const picksCards = game.phases.some((phase) => phase.actions.some((a) => a.pick !== undefined));
   const worked = extras?.worked;
   const captions = useMemo(
@@ -233,7 +234,7 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
       : offered !== null ? { [offered]: 'chosen' }
         : asked !== null ? { [asked.cardId]: 'chosen', ...(asked.onto !== undefined && { [asked.onto]: 'chosen' }) }
           : {};
-    const badges = boardBadges(game, placed, worked);
+    const badges = { ...keptBadges(game, placed), ...boardBadges(game, placed, worked) };
     const dims = new Set(boardDims(game, placed));
     const ids = new Set([...Object.keys(captions), ...Object.keys(rings), ...Object.keys(badges), ...dims]);
     return Object.fromEntries([...ids].map((id) => [id, {
