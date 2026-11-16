@@ -1901,3 +1901,24 @@ describe('the lower of two prices (compiled)', () => {
       "“They pay the lower of the card's pay and the target card's pay” only makes sense in a button that picks a card and the card it goes to, like “A player may stack a card from their hand to a card in the row.”"]]);
   });
 });
+
+describe("the lower of two prices against a target card in another player's zone", () => {
+  const TOAST = '  A player may toast a card from their stash to a card in their idle.';
+  const ONLY_IF = "    Only if they have at least the lower of the card's pay and the target card's pay in coins.";
+  /** PRICE_GAME whose toast picks its target card in `zone`. */
+  const toasting = (zone: string) => {
+    const text = PRICE_GAME.replace(TOAST, TOAST.replace('their idle', zone));
+    expect(text).not.toBe(PRICE_GAME);
+    return text;
+  };
+
+  it("refuses its Only if line when the target's zone is one only its owner sees", () => {
+    const text = toasting("another player's stash");
+    expect(messages(text)).toEqual([[text.split('\n').indexOf(ONLY_IF) + 1,
+      "This line would tell the player what the card is, though they can't see the cards in another player's stash. Check it in the Then: lines, after a reveal."]]);
+  });
+
+  it("(guard) reads it when everyone sees the target's zone", () => {
+    expect(compileGame(toasting("another player's idle"), lib).diagnostics).toEqual([]);
+  });
+});

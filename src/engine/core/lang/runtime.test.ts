@@ -990,3 +990,45 @@ describe('a first phase that starts each turn', () => {
     expect(coinsOf(state)).toEqual([7, 7, 7]);
   });
 });
+
+import { dealtIdOf } from './cards';
+describe('a rule or a chosen option whose lines name their card after a shuffle renamed it', () => {
+  /** TURN_GAME with a cost on each card. */
+  const COSTED = TURN_GAME
+    .replace('| name  | copies |', '| name  | cost | copies |').replace('| Sweep | 6      |', '| Sweep | 2    | 6      |')
+    .replace('| Dust  | 6      |', '| Dust  | 3    | 6      |');
+  /** A 2-player engine of `text` with a Sweep in p0's list, p0 to move in working with 10 coins, as `arrange` leaves it; and the Sweep's id. */
+  function start(text: string, arrange: (state: GameState, sweep: string, game: CompiledGame) => GameState = (state) => state) {
+    const { game: g, diagnostics } = compileGame(text, lib);
+    expect(diagnostics).toEqual([]);
+    const dealt = withBoardData(initialState(g!, 1), g!, ['p0', 'p1']);
+    const sweep = dealt.cards.find((c) => c.data?.name === 'Sweep')!.id;
+    const s = setCounter({ ...relocate(dealt, [sweep], 'list-p0', g!), turn: { current: 'p0', phase: 'working' } }, 'coins', 'p0', 10);
+    return { engine: createEngine(g!, lib, 2, arrange(s, sweep, g!)).engine, sweep };
+  }
+
+  it('a rule about a card: its later line finds the card by its new id', () => {
+    const text = COSTED.replace('    | Dust  | 3    | 6      |', '    | Dust  | 3    | 6      |\n  Cards can be poisoned.')
+      .replace('  When they have less than 1 move, go to tidying.', ['  When they have less than 1 move, go to tidying.',
+        '  When a card in the done pile is poisoned:', '    Move it to the pile.', '    Shuffle the pile.', '    It is not poisoned.'].join('\n'));
+    // The Sweep lies poisoned in the done pile, so the rule fires after the next press.
+    const { engine, sweep } = start(text, (state, card, g) => {
+      const moved = relocate(state, [card], 'done-pile', g);
+      return { ...moved, cards: moved.cards.map((c) => (c.id === card ? { ...c, data: { ...c.data, poisoned: true } } : c)) };
+    });
+    expect(engine.dispatch({ type: 'work', by: 'p0' }).ok).toBe(true);
+    const state = engine.getState();
+    const card = state.cards.find((c) => dealtIdOf(state, c.id) === sweep)!;
+    expect([card.id === sweep, card.zoneId, card.data?.poisoned ?? false]).toEqual([false, 'pile', false]);
+  });
+
+  it('a chosen option: its later line finds the card by its new id', () => {
+    const text = COSTED.replace('  A player may stop.', ['  A player may tuck a card in their list.', '    Then:', '      They choose one:',
+      '        Bury:', '          Move it to the pile.', '          Shuffle the pile.', '          Move it to the done pile.',
+      '        Keep:', '          They get 1 coin.', '  A player may stop.'].join('\n'));
+    const { engine, sweep } = start(text);
+    expect(engine.dispatch({ type: 'tuck a card in their list', by: 'p0', cardId: sweep, choices: ['Bury'] }).ok).toBe(true);
+    const state = engine.getState();
+    expect(zoneCards(state, 'done-pile').map((card) => [card.id === sweep, dealtIdOf(state, card.id)])).toEqual([[false, sweep]]);
+  });
+});

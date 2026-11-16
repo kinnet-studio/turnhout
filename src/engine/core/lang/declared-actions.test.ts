@@ -1368,3 +1368,25 @@ describe('a press whose lines name its card after a shuffle renamed it', () => {
     expect(zoneCards(engine.getState(), 'done-pile').map((card) => card.id)).toEqual([sweep]);
   });
 });
+
+describe('a card move whose Then lines read its card after a shuffle renamed it', () => {
+  it('pays its number, by its new id', () => {
+    // TURN_GAME with a cost on each card, and a card move from their list to the pile that shuffles the pile and then pays the card's cost.
+    const text = TURN_GAME
+      .replace('| name  | copies |', '| name  | cost | copies |').replace('| Sweep | 6      |', '| Sweep | 2    | 6      |')
+      .replace('| Dust  | 6      |', '| Dust  | 3    | 6      |')
+      .replace('  A player may stop.', ['  A player may toss a card from their list to the pile.', '    Then:',
+        '      Shuffle the pile.', "      They pay the card's cost.", '  A player may stop.'].join('\n'));
+    const { game: g, diagnostics } = compileGame(text, lib);
+    expect(diagnostics).toEqual([]);
+    const dealt = withBoardData(initialState(g!, 1), g!, ['p0', 'p1']);
+    const sweep = dealt.cards.find((c) => c.data?.name === 'Sweep')!.id;
+    const s = setCounter({ ...relocate(dealt, [sweep], 'list-p0', g!), turn: { current: 'p0', phase: 'working' } }, 'coins', 'p0', 10);
+    const { engine } = createEngine(g!, lib, 2, s);
+    expect(engine.dispatch({ type: 'toss', by: 'p0', cardId: sweep }).ok).toBe(true);
+    const state = engine.getState();
+    // The Sweep was shuffled into the pile under a new id, and its cost of 2 was still paid.
+    expect(zoneCards(state, 'pile').some((card) => card.id === sweep)).toBe(false);
+    expect(counterOf(state, 'coins', 'p0')).toBe(8);
+  });
+});

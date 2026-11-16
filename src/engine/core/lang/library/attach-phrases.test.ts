@@ -671,3 +671,17 @@ describe('a card that joins a card and is then shuffled into a pile no seat can 
     expect(crewed.map(([, , dealt]) => dealt).sort()).toEqual([...potters].sort());
   });
 });
+
+describe('a join rule whose lines name the joined card after a shuffle renamed it', () => {
+  it('moves it on, by its new id', () => {
+    const [smith] = zoneCards(setUp, 'hall').filter((card) => card.data?.name === 'Smith').map((card) => card.id);
+    // The rule moves the Smith that joined to the pile, shuffles the pile, which renames it, and moves it on to their idle.
+    const text = JOIN_GAME.replace('    The card it joins gains 1 dent.',
+      ['    Move it to the pile.', '    Shuffle the pile.', '    Move it to their idle.'].join('\n'));
+    const { engine } = crew(atWork, text);
+    const hire: Move = { type: 'hire some cards from the hall to a card in their workshop', by: 'p0', cardIds: [smith], onto: vase };
+    expect(engine.dispatch(hire)).toMatchObject({ ok: true });
+    const state = engine.getState();
+    expect(zoneCards(state, 'idle-p0').map((card) => [card.data?.name, card.id === smith, dealtIdOf(state, card.id)])).toEqual([['Smith', false, smith]]);
+  });
+});
