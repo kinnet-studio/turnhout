@@ -8,11 +8,11 @@ import type { ActionFn, CardMatch, CardPick, ConditionFn, DeclaredAction, Effect
 import { BOX_ZONE, matchesCard, relocate, zoneNameOf } from '../zones';
 import { byCardId, describeCard } from './example-phrases';
 import { describeZone, seatOf, soleZone, theTargetCard, thePickedCards } from './support';
-import { ontoPlaces } from '../declared-moves';
 import { cardsOn } from '../attach';
 import { changeCard } from '../card-facts';
 import { changeable } from './card-number-phrases';
 import { cardHasFlag, cardNumber, mustBeKept } from './support';
+import { ontoZoneIds } from '../declared-moves';
 
 // ---- the lines of a button that picks cards ------------------------------------------------------
 
@@ -104,9 +104,11 @@ type Wording = { form: Form; from: string | null; to: string | null };
  */
 type Press = { by: PlayerId; base: string; matches: CardMatch[]; target: CardMatch | null; inPlay: CardState[] };
 
-/** The zones `pick`'s button takes the card its cards go to from, for `by`, in the order written: none if it picks none. */
-const ontoZonesOf = (env: PhraseEnv, by: PlayerId, pick: CardPick): (string | null)[] =>
-  ontoPlaces(pick).map(({ zone }) => moveZoneId(zone, env.seats, by));
+/**
+ * The zones `pick`'s button takes the card its cards go to from, for `by`, in the order written (`ontoZoneIds`): another player's zone is
+ * that zone of each other player still in, from `by`'s left. None if it picks none.
+ */
+const ontoZonesOf = (env: PhraseEnv, by: PlayerId, pick: CardPick): string[] => ontoZoneIds(env.state, env.seats, by, pick);
 
 /** Whether an example with `wording` could mean the button that picks `pick`. */
 function fitsWording(env: PhraseEnv, by: PlayerId, pick: CardPick, { form, from, to }: Wording): boolean {

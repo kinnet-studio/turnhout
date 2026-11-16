@@ -7,17 +7,18 @@ import type { LangRuntime } from './runtime';
 import type { CompiledGame, CompiledPhase, DeclaredMove, MoveInfo, SeatRef, ZoneRef } from './types';
 import type { CardPick } from './types';
 import { otherSeat, relocate, topCard, zoneIdFor, zoneInfo } from './zones';
+import { othersZoneIds } from './zones';
 
 const NOT_ON_TABLE = "That card isn't on the table.";
 
 /**
  * The zone a move line names when `by` makes the move: “their hand” is the mover's own and “the other player's hand” the
- * other seat's. Null when the line names a seat that is not at this table (or several zones, which the compiler does not
- * let a move do).
+ * other seat's. Null when the line names a seat that is not at this table, or several zones (each player's, or another player's,
+ * which only a button's target card is picked in: see `ontoZoneIds`), which the compiler does not let a move do.
  */
 export function moveZoneId(ref: ZoneRef, seats: PlayerId[], by: PlayerId): string | null {
   if ('shared' in ref) return zoneIdFor(ref.shared);
-  if ('each' in ref) return null;
+  if ('each' in ref || 'others' in ref) return null;
   const seat = seatOfMove(ref.of, seats, by);
   return seat !== null && seats.includes(seat) ? zoneIdFor(ref.zone, seat) : null;
 }
@@ -36,6 +37,18 @@ export const yours = (text: string) => text.replace(/^their\s+/i, 'your ');
 export function ontoPlaces(pick: CardPick): { zone: ZoneRef; text: string }[] {
   if (pick.onto === null || pick.ontoText === null) return [];
   return [{ zone: pick.onto, text: pick.ontoText }, ...(pick.ontoAlso ?? [])];
+}
+
+/**
+ * Every zone a pick's target card may be in for `by`: place by place in ontoPlaces' order, an `others` place giving othersZoneIds; [] for
+ * a pick with no target. A place that is no seat's at this table gives none.
+ */
+export function ontoZoneIds(state: GameState, seats: PlayerId[], by: PlayerId, pick: CardPick): string[] {
+  return ontoPlaces(pick).flatMap(({ zone }) => {
+    if ('others' in zone) return othersZoneIds(state, seats, by, zone.others);
+    const zoneId = moveZoneId(zone, seats, by);
+    return zoneId === null ? [] : [zoneId];
+  });
 }
 
 /** Whether the zone is a pile, whose top card is the only one a move may take. */

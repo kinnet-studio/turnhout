@@ -532,6 +532,12 @@ export const COACH_GAME = CREW_GAME
     '      Every picked card is not tired.', '      The picked cards go to their crew, on the target card.',
     '  A player may stop.'].join('\n'));
 
+/** CREW_GAME where a player may jinx another player's job or hand: a card from their stash goes to the scrap, and the card it is played on is tired. */
+export const JINX_GAME = CREW_GAME.replace('  A player may stop.', [
+  "  A player may jinx a card from their stash to a card in another player's workshop or another player's crew.",
+  '    Then:', '      The target card is tired.', '      Move it to the scrap.',
+  '  A player may stop.'].join('\n'));
+
 /** TURN_GAME where a player may gather 3 cards from the pile to their list, shuffling the done pile back into the pile when it runs out. */
 export const RESHUFFLE_GAME = TURN_GAME.replace('  A player may stop.', ['  A player may gather.', '    Then:',
   '      Deal up to 3 cards from the pile to their list, shuffling the done pile into it when it runs out.', '  A player may stop.'].join('\n'));

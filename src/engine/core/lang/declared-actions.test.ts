@@ -28,6 +28,7 @@ import { changeCard } from './card-facts';
 import { COACH_GAME } from './testing';
 import { cardById } from './zone-index';
 import { noCardToGoTo } from './declared-actions';
+import { JINX_GAME } from './testing';
 
 const lib = createDefaultLibrary();
 const game = compileGame(TINY_BOARD, lib).game!;
@@ -1269,5 +1270,57 @@ describe('a target card in several zones', () => {
   it('refuses to rouse hands onto a job a tired hand is on', () => {
     const { engine } = coaching(tired(potter));
     expect(engine.dispatch({ type: ROUSE, by: 'p0', cardIds: [potter2], onto: vase })).toMatchObject({ ok: false, reason: 'no card on the target card is tired' });
+  });
+});
+
+describe("a target card in another player's zone", () => {
+  const JINX = "jinx a card from their stash to a card in another player's workshop or another player's crew";
+  const PROMPT = "Pick where it goes: a card in another player's workshop or another player's crew.";
+  const g = compileGame(JINX_GAME, lib).game!;
+  // CREW_GAME's Setup deals 2 jobs to each stash, more than its 4 jobs at a table of three, so the table is arranged with no Setup.
+  const fresh = initialState(g, 1);
+  const named = (name: string) => fresh.cards.filter((c) => c.data?.name === name).map((c) => c.id);
+  const [statue, statue2] = named('Statue');
+  const [vase, vase2] = named('Vase');
+  const [potter] = named('Potter');
+  /**
+   * A table of three, p0 to act, after `arrange`: p0's stash holds a Statue, p1's workshop a Vase with a Potter on it in their crew, p2's
+   * workshop the other Statue and p0's workshop the other Vase.
+   */
+  const table = (arrange: (s: GameState) => GameState = (s) => s): GameState => {
+    const placed = [[statue, 'stash-p0'], [vase, 'workshop-p1'], [statue2, 'workshop-p2'], [vase2, 'workshop-p0']]
+      .reduce((s, [id, zoneId]) => relocate(s, [id], zoneId, g), fresh);
+    return arrange({ ...putOn(placed, [potter], 'crew-p1', vase, g), turn: { current: 'p0', phase: 'working' } });
+  };
+  const jinxing = (arrange?: (s: GameState) => GameState) => createEngine(g, lib, 3, table(arrange));
+  const jinxAction = g.phases[0].actions.find((a) => a.words === JINX)!;
+  const jinx = (onto: string): Move => ({ type: JINX, by: 'p0', cardId: statue, onto });
+
+  it("names the zones as written, and offers each zone's cards seat by seat from the presser's left, zone after zone", () => {
+    const { engine, runtime } = jinxing();
+    expect(ontoPrompt(jinxAction)).toBe(PROMPT);
+    expect(ontoCandidates(runtime, jinxAction, engine.getState(), 'p0')).toEqual([vase, statue2, potter]);
+    expect(ontoCandidates(runtime, jinxAction, engine.getState(), 'p2')).toEqual([vase2, vase, potter]);
+  });
+
+  it("jinxes onto another player's card, and refuses the presser's own card with the prompt, changing nothing", () => {
+    const own = jinxing().engine;
+    const before = own.getState();
+    expect(own.dispatch(jinx(vase2))).toMatchObject({ ok: false, reason: PROMPT });
+    expect(own.getState()).toEqual(before);
+    const { engine } = jinxing();
+    expect(engine.dispatch(jinx(potter))).toMatchObject({ ok: true });
+    const s = engine.getState();
+    expect(cardById(s, potter)!.data).toMatchObject({ tired: true });
+    expect(cardById(s, vase)!.data).not.toHaveProperty('tired');
+    expect(cardById(s, statue)!.zoneId).toBe('scrap');
+  });
+
+  it('Review Focus: offers no card of a player who is out, and refuses a press onto one with the prompt', () => {
+    const { engine, runtime } = jinxing((s) => markOut(s, 'p1'));
+    const before = engine.getState();
+    expect(ontoCandidates(runtime, jinxAction, before, 'p0')).toEqual([statue2]);
+    expect(engine.dispatch(jinx(vase))).toMatchObject({ ok: false, reason: PROMPT });
+    expect(engine.getState()).toEqual(before);
   });
 });

@@ -8,6 +8,7 @@ import { parseOutline } from './outline';
 import { vocabFrom } from './phrases';
 import { AMOUNT_BOARD, ANY_PLAYER_BOARD, CARD_PICK_GAME, MARK_BOARD, PICK_BOARD, TINY_BOARD_HEAD, TURN_GAME, fixtureBoardGame, vocabFor } from './testing';
 import { COACH_GAME, CREW_GAME, WORKED_GAME } from './testing';
+import { JINX_GAME } from './testing';
 
 const lib = createDefaultLibrary();
 const BASE = [
@@ -1827,5 +1828,64 @@ describe('a target card in several zones', () => {
       '  A player may rouse some cards from the hall to a card in their workshop.', '    Then:', ...onPicked, '  A player may stop.',
     ].join('\n'));
     expect(messages(text)).toEqual([...onTarget, ...onPicked].map((line) => [at(text, line), '“done” is worked out from its lines, so no rule can change it.']));
+  });
+});
+
+describe("a target card in another player's zone", () => {
+  const JINX_LINE = "  A player may jinx a card from their stash to a card in another player's workshop or another player's crew.";
+  const lineOf = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+  /** JINX_GAME with `from` written as `to`, which it must hold. */
+  const swapped = (from: string, to: string) => {
+    const changed = JINX_GAME.replace(from, to);
+    expect(changed).not.toBe(JINX_GAME);
+    return changed;
+  };
+  /** JINX_GAME whose jinx button picks its target card in `zone` instead, and that line of it. */
+  const jinxingIn = (zone: string) => {
+    const line = `  A player may jinx a card from their stash to a card in ${zone}.`;
+    return { text: swapped(JINX_LINE, line), line };
+  };
+  const jinxOf = (text: string) => compileGame(text, lib).game?.phases[0].actions.find((a) => a.base === 'jinx');
+
+  it("reads each zone written “another player's …” as that zone of every other player", () => {
+    expect(compileGame(JINX_GAME, lib).diagnostics).toEqual([]);
+    expect(jinxOf(JINX_GAME)!.pick).toEqual({
+      some: false, from: { of: { who: 'actor' }, zone: 'stash' }, fromText: 'their stash', to: null,
+      onto: { others: 'workshop' }, ontoText: "another player's workshop",
+      ontoAlso: [{ zone: { others: 'crew' }, text: "another player's crew" }],
+    });
+  });
+
+  it("reads the name after “another player's” as “their …” reads it: a misspelt zone, and a shared one, on the button's line", () => {
+    const misspelt = jinxingIn("another player's workshp");
+    expect(compileGame(misspelt.text, lib).diagnostics.map((d) => [d.line, d.message, d.suggestions])).toEqual([
+      [lineOf(misspelt.text, misspelt.line), 'There is no zone called “workshp”.', ['workshop']],
+    ]);
+    const shared = jinxingIn("another player's scrap");
+    expect(messages(shared.text)).toEqual([[lineOf(shared.text, shared.line), '“the scrap” is shared, so it has no owner.']]);
+  });
+
+  it("refuses another player's zone as the zone a card is picked in, and makes no button", () => {
+    const line = "  A player may jinx a card in another player's workshop.";
+    // The target line goes too: this button picks no target card, which it would be told as well.
+    const text = swapped(`${JINX_LINE}\n    Then:\n      The target card is tired.\n`, `${line}\n    Then:\n`);
+    expect(messages(text)).toEqual([[lineOf(text, line),
+      "“another player's workshop” can only name the zone of the card a button's cards go to, as in “… to a card in another player's workshop”."]]);
+    expect(jinxOf(text)).toBeUndefined();
+  });
+
+  it("Review Focus: refuses an Only if line that reads a target card in another player's zone only its owner sees", () => {
+    const { text: stash, line } = jinxingIn("another player's stash");
+    const ONLY_IF = '    Only if the target card is not tired.';
+    const text = stash.replace(`${line}\n`, `${line}\n${ONLY_IF}\n`);
+    expect(text).not.toBe(stash);
+    expect(messages(text)).toEqual([[lineOf(text, ONLY_IF),
+      "This line would tell the player what the card is, though they can't see the cards in another player's stash. Check it in the Then: lines, after a reveal."]]);
+  });
+
+  it("(guard) leaves CREW_GAME's hire picking its target card in the player's own workshop alone", () => {
+    const hire = compileGame(CREW_GAME, lib).game!.phases[0].actions.find((a) => a.base === 'hire')!;
+    expect(hire.pick!.onto).toEqual({ of: { who: 'actor' }, zone: 'workshop' });
+    expect(hire.pick).not.toHaveProperty('ontoAlso');
   });
 });

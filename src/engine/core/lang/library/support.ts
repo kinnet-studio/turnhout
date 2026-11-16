@@ -13,10 +13,11 @@ import { zoneInfo } from '../zones';
 
 const OWNER_WORDS = { actor: 'their', winner: "the winner's", other: "the other player's" };
 
-/** How a designer would say the zone: “the trick”, “each hand”, “their hand”, “the other player's camp”. */
+/** How a designer would say the zone: “the trick”, “each hand”, “another player's crew”, “their hand”, “the other player's camp”. */
 export function describeZone(ref: ZoneRef): string {
   if ('shared' in ref) return `the ${ref.shared}`;
   if ('each' in ref) return `each ${ref.each}`;
+  if ('others' in ref) return `another player's ${ref.others}`;
   if ('seat' in ref.of) return `${ref.of.seat}'s ${ref.zone}`;
   return `${OWNER_WORDS[ref.of.who]} ${ref.zone}`;
 }

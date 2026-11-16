@@ -9,6 +9,7 @@ import { putOn } from '../attach';
 import { RuleError } from '../diagnostics';
 import { COACH_GAME, fixtureCard, fixtureEnv, fixtureState, runPhrase } from '../testing';
 import { cardById } from '../zone-index';
+import { JINX_GAME } from '../testing';
 
 const lib = createDefaultLibrary();
 
@@ -500,5 +501,23 @@ describe('the target card and the picked cards', () => {
         expect(run(TWO_COACHES, example), wording).toEqual(PASSED);
       }
     });
+  });
+});
+
+describe("examples that press a button whose target card is in another player's zone", () => {
+  it('play on the first such card from the left, unless the press names its zone', () => {
+    const example = [
+      "Example: a card played on another player's card goes to the first from the left that holds one, unless the press names its zone",
+      '  Given 3 players',
+      "  And p0's stash has a Statue and a Statue",
+      "  And p1's workshop has a Vase",
+      "  And p2's workshop has a Vase",
+      '  When p0 jinxes the Statue to the Vase',
+      "  Then the Vase in p1's workshop is tired",
+      "  And the Vase in p2's workshop is not tired",
+      "  When p0 jinxes the Statue to the Vase in p2's workshop",
+      "  Then the Vase in p2's workshop is tired",
+    ].join('\n');
+    expect(run(JINX_GAME, example)).toEqual([expect.objectContaining({ status: 'pass', message: null })]);
   });
 });

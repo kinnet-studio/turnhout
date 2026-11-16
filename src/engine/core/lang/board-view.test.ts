@@ -14,6 +14,7 @@ import {
   GUILD_GAME,
 } from './testing';
 import { COACH_GAME, CREW_GAME } from './testing';
+import { JINX_GAME } from './testing';
 import { START_PLAYER_KEY } from './turns';
 import type { CompiledGame } from './types';
 import { relocate, zoneIdFor } from './zones';
@@ -1318,5 +1319,26 @@ describe('a button whose target card may be in any of several zones', () => {
     expect(coach.cards!.onto!.prompt).toBe('Pick where it goes: a card in your workshop, your crew or your idle');
     expect(coach.cards!.cards).toHaveLength(2);
     expect([coach.allowed, ...coach.cards!.cards.map((c) => c.allowed)]).toEqual([none, none, none]);
+  });
+});
+
+describe("a button whose target card is in another player's zone", () => {
+  it("Review Focus: offers a card of another player's that only they see as a face-down card", () => {
+    const JINX_LINE = "  A player may jinx a card from their stash to a card in another player's workshop or another player's crew.";
+    const text = JINX_GAME.replace(JINX_LINE, "  A player may jinx a card from their stash to a card in another player's stash.");
+    expect(text).not.toBe(JINX_GAME);
+    const built = compileGame(text, lib);
+    expect(built.diagnostics).toEqual([]);
+    const jinxing = built.game!;
+    const fresh = initialState(jinxing, 1);
+    const [statue] = fresh.cards.filter((c) => c.data?.name === 'Statue').map((c) => c.id);
+    const [vase] = fresh.cards.filter((c) => c.data?.name === 'Vase').map((c) => c.id);
+    // p0's stash holds a Statue, p1's stash a Vase that only p1 sees; p0 to act.
+    const placed = relocate(relocate(fresh, [statue], 'stash-p0', jinxing), [vase], 'stash-p1', jinxing);
+    const { engine, runtime } = createEngine(jinxing, lib, 2, { ...placed, turn: { current: 'p0', phase: 'working' } });
+    const jinx = seatExtras(engine, runtime, engine.getState(), 'p0').actions.find((a) => a.move.startsWith('jinx '))!;
+    expect(jinx.cards!.onto!.targets[statue]).toEqual([expect.objectContaining({ id: vase, name: 'a face-down card' })]);
+    // Nothing the button shows p0 names the card.
+    expect(JSON.stringify(jinx)).not.toContain('Vase');
   });
 });

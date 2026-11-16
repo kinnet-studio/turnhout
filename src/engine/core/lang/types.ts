@@ -10,7 +10,9 @@ export type PhraseKind =
 export type PhraseRef = { kind: PhraseKind | 'lang'; phrase: string; args: Json[]; line: number; text: string };
 /** `other` is the one player who is not the actor, in a game for two. */
 export type SeatRef = { seat: string } | { who: 'actor' | 'winner' | 'other' };
-export type ZoneRef = { shared: string } | { each: string } | { of: SeatRef; zone: string };
+// `{ others: name }`: that zone of each other player still in, from the left of the player the line is about. Only the zone a
+// button picks its target card in is written so (“… to a card in another player's crew”).
+export type ZoneRef = { shared: string } | { each: string } | { others: string } | { of: SeatRef; zone: string };
 export type CardMatch = { [attr: string]: Json };
 /**
  * One test a card of a group passes: a number above a whole number, a value equal to one written, or equal to a value of the card
@@ -84,7 +86,9 @@ export type ActionCost = { amount: number; counter: string; line: number };
  * written ('their stash'). `to` is the zone the picked cards move to before the `Then:` lines, and `onto` the zone a target card is
  * picked in, with `ontoText` as written. A one-card pick with `to` and `onto` both null was written “a card in {zone}”. A target may be
  * picked in any of several zones (“… to a card in their workshop, their crew or their idle”): `onto` is the first, and `ontoAlso` the
- * ones after it, each with its text as written, in order; it is left out for a target picked in one zone.
+ * ones after it, each with its text as written, in order; it is left out for a target picked in one zone. A target may be picked in
+ * another player's zone (“… to a card in another player's workshop”), `{ others }`: that zone of each other player still in, from the
+ * presser's left. No card is picked in such a zone, nor goes to one.
  */
 export type CardPick = {
   some: boolean; from: ZoneRef; fromText: string; to: ZoneRef | null; onto: ZoneRef | null; ontoText: string | null;

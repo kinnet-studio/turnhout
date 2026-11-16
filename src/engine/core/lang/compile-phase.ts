@@ -140,6 +140,11 @@ const PICK_TO = new RegExp(`${PICKS} (a card|some cards) from (.+?) to (.+)$`, '
 const PICK_SOME = new RegExp(`${PICKS} some cards from (.+)$`, 'i');
 /** group 1 = the base, 2 = the zone the card is picked in */
 const PICK_IN = new RegExp(`${PICKS} a card in (.+)$`, 'i');
+/** group 1 = the zone each player has, of which a button's target card may be picked in any other player's: “another player's crew”. */
+const ANOTHER_PLAYERS = /^another player['‘’]s (.+)$/i;
+/** Another player's zone is several zones, one of each other player still in, so it names only where a target card is picked. */
+const OTHERS_ONLY_AS_TARGET = (text: string) =>
+  `“${text}” can only name the zone of the card a button's cards go to, as in “… to a card in ${text}”.`;
 
 /** group 1 = the verb, group 2 = the zone it takes the card from, group 3 = the zone it puts it in */
 function moveLineFor(vocab: Vocab): RegExp {
@@ -151,9 +156,9 @@ function moveLineFor(vocab: Vocab): RegExp {
   return line;
 }
 
-/** A move goes between zones that are one zone each: not “each hand”, not “the winner's hand”. */
+/** A move goes between zones that are one zone each: not “each hand”, not “another player's hand”, not “the winner's hand”. */
 function isOneZone(ref: ZoneRef): boolean {
-  if ('each' in ref) return false;
+  if ('each' in ref || 'others' in ref) return false;
   if ('shared' in ref) return true;
   return !('who' in ref.of && ref.of.who === 'winner');
 }
@@ -180,6 +185,42 @@ function oneZones(node: OutlineNode, texts: string[], ctx: LineCtx): ZoneRef[] |
   return read;
 }
 
+/**
+ * Reads “another player's <zone>”, a zone a button's target card may be picked in: `<zone>` is read as “their <zone>” is, with that
+ * reading's problems, each naming the zone as the line writes it, and becomes that zone of each other player (`{ others }`). Null when
+ * it can't be read.
+ */
+function othersZone(text: string, line: number, ctx: LineCtx): ZoneRef | null {
+  const name = ANOTHER_PLAYERS.exec(text)?.[1] ?? '';
+  const told: Diagnostic[] = [];
+  const theirs = moveZone(`their ${name}`, line, { ...ctx, diagnostics: told });
+  ctx.diagnostics.push(...told.map((problem) => ({ ...problem, text })));
+  // “their …” reads only as the zone of the player the line is about, `{ of: { who: 'actor' }, zone }`.
+  return theirs !== null && 'of' in theirs ? { others: theirs.zone } : null;
+}
+
+/**
+ * The zones a pick line names, read in order: `own`, the zone its cards are picked in and the zone they go to, if it names one, then
+ * `targets`, each zone the card they go to may be picked in. Each is one zone, as a move's are, but another player's zone, which only a
+ * target may be in (`othersZone`). Null, with the reason given, when one can't be read or can't be there.
+ */
+function pickZones(node: OutlineNode, own: string[], targets: string[], ctx: LineCtx): ZoneRef[] | null {
+  const read = (text: string, target: boolean): ZoneRef | null => {
+    if (!ANOTHER_PLAYERS.test(text)) return moveZone(text, node.line, ctx);
+    if (target) return othersZone(text, node.line, ctx);
+    addProblem(ctx.diagnostics, node.line, OTHERS_ONLY_AS_TARGET(text), { text });
+    return null;
+  };
+  const zones = [...own.map((text) => read(text, false)), ...targets.map((text) => read(text, true))];
+  if (zones.some((zone) => zone === null)) return null;
+  const all = zones as ZoneRef[];
+  if (!all.every((zone) => 'others' in zone || isOneZone(zone))) {
+    addProblem(ctx.diagnostics, node.line, ONE_ZONE, { text: normalizeLine(node.text) });
+    return null;
+  }
+  return all;
+}
+
 /** Whether `text` reads as a zone of the game, though it may be more than one zone. */
 const readsAsZone = (text: string, vocab: Vocab): boolean => {
   const parsed = parseParam('zone', text, vocab);
@@ -187,12 +228,21 @@ const readsAsZone = (text: string, vocab: Vocab): boolean => {
 };
 
 /**
+ * Whether `text` is “another player's <zone>” for a zone the game has: the name after those words must read as “their <name>” does.
+ * `ANOTHER_PLAYERS` alone matches a whole list of such zones, whose name would be “workshop or another player's crew”.
+ */
+const readsAsOthers = (text: string, vocab: Vocab): boolean => {
+  const name = ANOTHER_PLAYERS.exec(text)?.[1];
+  return name !== undefined && readsAsZone(`their ${name}`, vocab);
+};
+
+/**
  * The zones a pick's target card may be picked in, each as written: the whole text when it reads as one zone (`splitList` tries that
  * first), else its parts at the “, or”, “,” and “or” between them when each reads as a zone, else the text cut at every one of those, so
- * that a part that is no zone is told as a move's zone is.
+ * that a part that is no zone is told as a move's zone is. Another player's zone counts as a zone here (`readsAsOthers`).
  */
 function ontoTexts(text: string, vocab: Vocab): string[] {
-  const zones = splitList(text, (part) => (readsAsZone(part, vocab) ? part : null), OR_SEPARATORS);
+  const zones = splitList(text, (part) => (readsAsZone(part, vocab) || readsAsOthers(part, vocab) ? part : null), OR_SEPARATORS);
   // Each part is kept as it is, so the cut always reads.
   return zones ?? splitAtSeparators(text, (part) => part, OR_SEPARATORS)!;
 }
@@ -529,7 +579,8 @@ function compileAction(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx):
  * can't be read or is more than one zone, or its cost line has a problem. Its zones are read as a card move's are, so a misnamed one is
  * told the same way. Its lines are about the player who presses it and, as a card move's are, the one card picked: “it” and “the card”.
  * A set has no one card: its lines read “the picked cards” instead. A button that picks a card for its cards to go to reads it as
- * “the target card”, which may be picked in any of several zones, written as a list with “or” (see `ontoTexts`): each must be one zone.
+ * “the target card”, which may be picked in any of several zones, written as a list with “or” (see `ontoTexts`): each must be one zone,
+ * or another player's zone (“another player's crew”), which a pick names only there (see `pickZones`).
  */
 function compileCardPick(node: OutlineNode, words: PickWords, ctx: LineCtx): DeclaredAction | null {
   const { verb, written, base, anyone, some, fromText, toText, ontoText } = words;
@@ -537,7 +588,7 @@ function compileCardPick(node: OutlineNode, words: PickWords, ctx: LineCtx): Dec
   if (reserved) addProblem(ctx.diagnostics, node.line, `“${RESERVED_VERB}” is reserved; pick another word.`, { text: written.split(' ')[0] });
   // A line names either the zone the cards go to or the zones of the card they go to, never both.
   const ontoParts = ontoText === null ? [] : ontoTexts(ontoText, ctx.vocab);
-  const zones = oneZones(node, [fromText, ...(toText === null ? ontoParts : [toText])], ctx);
+  const zones = pickZones(node, [fromText, ...(toText === null ? [] : [toText])], ontoParts, ctx);
   const onto = ontoText !== null;
   // Only the press of one card, with its target or without, may ask for a choice: the page shows a choice beside the card picked.
   const about: LineCtx = some
@@ -559,10 +610,10 @@ function compileCardPick(node: OutlineNode, words: PickWords, ctx: LineCtx): Dec
 
 /**
  * Whether a zone a pick names may hide its cards from the player who presses: one no one can see, or one only its owner can see that
- * is not the presser's own (another seat's, a seat named by its number, or one in the center).
+ * is not the presser's own (another seat's, as “another player's …” always is, a seat named by its number, or one in the center).
  */
 function mayHideFromPresser(ref: ZoneRef, zones: ZoneSpec[]): boolean {
-  const name = 'shared' in ref ? ref.shared : 'each' in ref ? ref.each : ref.zone;
+  const name = 'shared' in ref ? ref.shared : 'each' in ref ? ref.each : 'others' in ref ? ref.others : ref.zone;
   const spec = zones.find((zone) => zone.name.toLowerCase() === name.toLowerCase());
   if (!spec || spec.visibility === 'public') return false;
   return spec.visibility === 'secret' || !('of' in ref && 'who' in ref.of && ref.of.who === 'actor');

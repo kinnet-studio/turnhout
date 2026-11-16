@@ -166,11 +166,12 @@ export function holderFlags(game: CompiledGame): string[] {
 }
 
 /**
- * Whether everyone sees the cards of a zone a group names: a zone in the center for `{ shared }`, and a zone each player has for `{ each }`
- * and `{ of }`, that everyone can see. Each seat then sees every card the total may add up, whoever's zone it is.
+ * Whether everyone sees the cards of a zone a group names: a zone in the center for `{ shared }`, and a zone each player has for `{ each }`,
+ * `{ others }` and `{ of }`, that everyone can see. Each seat then sees every card the total may add up, whoever's zone it is.
  */
 function everyoneSees(game: CompiledGame, zone: ZoneRef): boolean {
-  const [name, perPlayer] = 'shared' in zone ? [zone.shared, false] : ['each' in zone ? zone.each : zone.zone, true];
+  const [name, perPlayer] = 'shared' in zone ? [zone.shared, false]
+    : ['each' in zone ? zone.each : 'others' in zone ? zone.others : zone.zone, true];
   return game.zones.some((spec) => spec.name === name && spec.perPlayer === perPlayer && spec.visibility === 'public');
 }
 

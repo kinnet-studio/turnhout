@@ -6,6 +6,7 @@ import { addToCounter, clearTurnLog, counterOf, endsTurn, isOut, playersIn, reco
 import { askChoices, choicesOf, fillChoices, type AskedChoice, type ChoiceOption } from './choices';
 import { isPile, isTakeable, moveZoneId, yours } from './declared-moves';
 import { ontoPlaces } from './declared-moves';
+import { ontoZoneIds } from './declared-moves';
 import { RuleError } from './diagnostics';
 import { canon, counted, joinAnd, joinOr, secondPersonWords } from './refs';
 import type { LangRuntime } from './runtime';
@@ -104,7 +105,11 @@ export const noCardToGoTo = (action: DeclaredAction): string => `There is no car
 /** The ids in the zone `zone` names for `seat` that a move may take, in slot order: only the top card of a pile. None for no seat's zone. */
 function takeableIds(runtime: LangRuntime, zone: ZoneRef, state: GameState, seat: PlayerId): string[] {
   const zoneId = moveZoneId(zone, runtime.seats, seat);
-  if (zoneId === null) return [];
+  return zoneId === null ? [] : takeableIn(runtime, state, zoneId);
+}
+
+/** The ids in `zoneId` that a move may take, in slot order: only the top card of a pile. */
+function takeableIn(runtime: LangRuntime, state: GameState, zoneId: string): string[] {
   const ids = zoneCards(state, zoneId).map((card) => card.id);
   return isPile(runtime.game, zoneId) ? ids.slice(-1) : ids;
 }
@@ -119,11 +124,15 @@ export function cardCandidates(runtime: LangRuntime, action: DeclaredAction, sta
 
 /**
  * The cards a button that picks a card for its cards to go to offers `seat` as that card, as `cardCandidates` offers the cards: those of
- * each zone it may be in, in the order the zones are written. Two zones that are one for this seat (“their crew or p0's crew”, for p0)
- * offer its cards once, where they are first offered, so that the picker shows each card once.
+ * each zone it may be in, in the order the zones are written (`ontoZoneIds`): another player's zone is that zone of each other seat still
+ * in, from the seat's left. Two zones that are one for this seat (“their crew or p0's crew”, for p0) offer its cards once, where they are
+ * first offered, so that the picker shows each card once.
  */
 export function ontoCandidates(runtime: LangRuntime, action: DeclaredAction, state: GameState, seat: PlayerId): string[] {
-  return [...new Set(ontoOf(action).flatMap(({ zone }) => takeableIds(runtime, zone, state, seat)))];
+  // Asked of a button that picks no card for its cards to go to, `ontoOf` throws: that caller is a mistake in the code.
+  ontoOf(action);
+  const zoneIds = ontoZoneIds(state, runtime.seats, seat, pickOf(action));
+  return [...new Set(zoneIds.flatMap((zoneId) => takeableIn(runtime, state, zoneId)))];
 }
 
 /**
@@ -175,13 +184,14 @@ function aboutSet(action: DeclaredAction, pick: CardPick, runtime: LangRuntime, 
 /**
  * The press of a button that picks cards: one card or a set, then, for a button that picks a card for them to go to, that card,
  * refused with its own prompt unless `onto` is a card on the table in a zone the button picks it in for `by` (the top card of a pile),
- * other than the cards picked. Its lines read it as “the target card”.
+ * other than the cards picked. Those zones are `ontoZoneIds`': another player's zone is that zone of each other seat still in, so a card
+ * of `by`'s own, or of a seat that is out, is refused. Its lines read it as “the target card”.
  */
 function aboutCards(action: DeclaredAction, pick: CardPick, runtime: LangRuntime, state: GameState, m: Move, by: PlayerId): Press | string {
   const press = (pick.some ? aboutSet : aboutCard)(action, pick, runtime, state, m, by);
-  const places = ontoPlaces(pick);
-  if (typeof press === 'string' || places.length === 0) return press;
-  const target = places.map(({ zone }) => cardIn(runtime, state, zone, by, m.onto)).find((card) => card !== undefined);
+  if (typeof press === 'string' || ontoPlaces(pick).length === 0) return press;
+  const named = typeof m.onto === 'string' ? cardById(state, m.onto) : undefined;
+  const target = named && ontoZoneIds(state, runtime.seats, by, pick).includes(named.zoneId) ? named : undefined;
   const picked = press.subject.cards ?? [press.subject.card];
   if (!target || !isTakeable(runtime.game, state, target) || picked.includes(target.id)) return ontoPrompt(action);
   return { ...press, subject: { ...press.subject, onto: target.id } };

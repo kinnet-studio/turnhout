@@ -9,6 +9,9 @@ import type { CardState } from '../scene';
 import { zoneCards, type GameState } from '../game-state';
 import { fixtureColorGame, fixtureEnv } from './testing';
 import type { CompiledGame, PhraseEnv, ZoneSpec } from './types';
+import { othersZoneIds } from './zones';
+import { markOut } from './board-state';
+import { describeZone } from './library/support';
 
 const TRICK: ZoneSpec = { name: 'trick', perPlayer: false, layout: 'row', visibility: 'public' };
 const DECK: ZoneSpec = { name: 'deck', perPlayer: false, layout: 'pile', visibility: 'secret' };
@@ -327,5 +330,22 @@ describe('a card that moves comes off the card it was on', () => {
     const plain = card('c1', 'deck', 0, { data: { name: 'Ruby' } });
     expect(relocate(stateWith([plain]), ['c1'], 'trick', GAME).cards[0].data).toBe(plain.data);
     expect(toBottom(stateWith([plain]), 'c1', 'trick', GAME).cards[0].data).toBe(plain.data);
+  });
+});
+
+describe("another player's zone", () => {
+  it('is that zone of every seat still in but the player, from their left', () => {
+    const state = stateWith([]);
+    expect(othersZoneIds(state, SEATS, 'p1', 'workshop')).toEqual(['workshop-p2', 'workshop-p0']);
+    expect(othersZoneIds(markOut(state, 'p2'), SEATS, 'p1', 'workshop')).toEqual(['workshop-p0']);
+  });
+
+  it("resolves for the player the line is about, never for no one, and is said “another player's …”", () => {
+    const state = stateWith([]);
+    expect(resolveZoneIds({ others: 'workshop' }, envFor(state), 'p1')).toEqual(['workshop-p2', 'workshop-p0']);
+    const about = fixtureEnv(state, { game: GAME, seats: SEATS, subject: { player: 'p1', space: null, card: null } });
+    expect(resolveZoneIds({ others: 'workshop' }, about)).toEqual(['workshop-p2', 'workshop-p0']);
+    expect(() => resolveZoneIds({ others: 'workshop' }, envFor(state))).toThrow("“another player's workshop” needs a player, but none is being judged.");
+    expect(describeZone({ others: 'crew' })).toBe("another player's crew");
   });
 });

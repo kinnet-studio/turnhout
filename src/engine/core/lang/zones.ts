@@ -2,6 +2,7 @@ import type { GameState } from '../game-state';
 import { zoneCards } from './zone-index';
 import type { CardState, PlayerId } from '../scene';
 import { clearTurnLog } from './board-state';
+import { playersIn } from './board-state';
 import { RuleError } from './diagnostics';
 import type { CardMatch, CompiledGame, PhraseEnv, SeatRef, ZoneRef, ZoneSpec } from './types';
 
@@ -117,9 +118,27 @@ export function resolveSeat(ref: SeatRef, env: PhraseEnv, actor?: PlayerId): Pla
   return winner;
 }
 
+/** The zone `name` of every seat still in but `by`, from `by`'s left. */
+export function othersZoneIds(state: GameState, seats: PlayerId[], by: PlayerId, name: string): string[] {
+  const at = seats.indexOf(by);
+  // Round the table from the seat to `by`'s left, back to the seat on its right.
+  const fromLeft = [...seats.slice(at + 1), ...seats.slice(0, Math.max(at, 0))];
+  return playersIn(state, fromLeft).map((seat) => zoneIdFor(name, seat));
+}
+
+/**
+ * The ids of the zones `ref` names: “their …” for `actor`, else as `resolveSeat` says. Another player's zone is that of each other
+ * player still in, from the left of `actor`, else of the player the rule is about; only a button's target card is picked in one, and
+ * its press is always about the player who presses it, so asking it of no one is a mistake in the code.
+ */
 export function resolveZoneIds(ref: ZoneRef, env: PhraseEnv, actor?: PlayerId): string[] {
   if ('shared' in ref) return [zoneIdFor(ref.shared)];
   if ('each' in ref) return env.seats.map((seat) => zoneIdFor(ref.each, seat));
+  if ('others' in ref) {
+    const by = actor ?? env.subject?.player;
+    if (by === undefined || by === null) throw new Error(`“another player's ${ref.others}” needs a player, but none is being judged.`);
+    return othersZoneIds(env.state, env.seats, by, ref.others);
+  }
   return [zoneIdFor(ref.zone, resolveSeat(ref.of, env, actor))];
 }
 
