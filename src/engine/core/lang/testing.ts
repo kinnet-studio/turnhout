@@ -898,3 +898,24 @@ export const LEVY_GAME = [
   '  When they have at least 2 coins:', '    They pay 2.', '    The levy passes to the left.',
   '  When their list is empty:', '    The levy passes to the left.',
 ].join('\n');
+
+/**
+ * LEVY_GAME where each round reveals an omen: the round's start moves the last omen to its discard, deals the next (shuffling the discard
+ * back when the deck runs out), sets the fee to 1, puts it up by 2 while the Gale is shown, and calls the levy only as the Toll is revealed.
+ * Taking a card from the pile costs the fee.
+ */
+export const OMEN_GAME = LEVY_GAME
+  .replace('  Players pay with coins.', '  Players pay with coins.\n  The game has a fee of 1.')
+  .replace('    | Dust  | 6      |', ['    | Dust  | 6      |', '  A deck called omens, starting in the omen deck:',
+    '    | name | copies |', '    | Gale | 1      |', '    | Toll | 1      |'].join('\n'))
+  .replace('  Each player has a list row that only they can see.', ['  Each player has a list row that only they can see.',
+    '  The omen deck is a pile in the center that no one can see.', '  The omen is a row in the center that everyone can see.',
+    '  The omen discard is a pile in the center that everyone can see.'].join('\n'))
+  .replace('  The start player is chosen at random.', '  The start player is chosen at random.\n  Shuffle the omen deck.')
+  .replace('    Each player has the levy, in turn from the start player.', ['    Move the omen to the omen discard.',
+    '    Deal up to 1 card from the omen deck to the omen, shuffling the omen discard into it when it runs out.',
+    '    The fee is 1.', '    If the omen has the Gale, the fee goes up by 2.',
+    '    If the omen has the Toll, each player has the levy, in turn from the start player.'].join('\n'))
+  .replace('    Only if they have at least 1 move.\n    Then:\n      They spend 1 move.\n  A player may stop.',
+    '    Only if they have at least 1 move.\n    Only if they have at least the fee in coins.\n    Then:\n      They spend 1 move.\n'
+    + '      They pay the fee.\n  A player may stop.');

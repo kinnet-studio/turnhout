@@ -851,3 +851,68 @@ describe("the words for slice 5's pieces", () => {
     })]);
   });
 });
+
+import { CHARM_GAME, LEVY_GAME, OMEN_GAME, PRICE_GAME } from './testing';
+
+describe("the words for slice 6's pieces", () => {
+  function runOn(rules: string, ...example: string[]) {
+    const text = [rules, '', ...example].join('\n');
+    const { game, diagnostics } = compileGame(text, lib);
+    expect(diagnostics).toEqual([]);
+    return { text, results: runExamples(game!, lib) };
+  }
+  const PASSED = [expect.objectContaining({ status: 'pass', message: null })];
+  const TOAST = [
+    'Example: a toast pays the lower of the two pays, never both off', "  Given p0's stash has a Statue and a Statue",
+    "  And p0's idle has a Smith and a Potter", '  And the scrap has a Vase', '  When p0 toasts the Statue to the Smith', '  Then p0 has 8 coins',
+    '  When p0 toasts the Statue to the Potter', '  Then p0 has 7 coins',
+  ];
+
+  it('works the charm lines: flags read the scrap and the cards, and the numbers they raise', () => {
+    const example = [
+      'Example: a charmed hand works 2 more and earns 2 more, and works 1 less while a Statue lies in the scrap',
+      "  Given p0's idle has a Potter and a Tinker", "  And the Potter in p0's idle has 1 charm", "  And p0's workshop has a Vase",
+      "  And the Vase in p0's workshop has 2 charms", '  And the scrap has a Statue', "  Then the Potter in p0's idle has 2 red work",
+      "  And the Potter in p0's idle has 3 wage", "  And the Potter in p0's idle has 2 bonus", "  And the Tinker in p0's idle has 1 red work",
+      "  And the Vase in p0's workshop has 9 worth",
+    ];
+    expect(runOn(CHARM_GAME, ...example).results).toEqual(PASSED);
+  });
+
+  it('pays the lower of two pays in a toast', () => {
+    expect(runOn(PRICE_GAME, ...TOAST).results).toEqual(PASSED);
+  });
+
+  it('calls the levy as the Toll is revealed, and sets the fee for the round', () => {
+    const example = [
+      'Example: the Toll, as it is revealed, calls the levy once, and the fee goes back to 1', '  Given 3 players', '  And the omen deck has the Toll',
+      '  And the omen discard has the Gale', '  And the fee is 3', '  And p1 has 2 coins', "  And it is p2's turn", '  When p2 stops',
+      '  Then the omen has the Toll', '  And the omen discard has the Gale', '  And the fee is 1', '  And p1 has 0 coins',
+      '  And the phase is working', "  And it is p0's turn",
+    ];
+    // Each .replace in OMEN_GAME must have found its text.
+    expect(OMEN_GAME).not.toBe(LEVY_GAME);
+    for (const line of ['The game has a fee of 1.', 'A deck called omens', 'The omen discard is a pile', 'Shuffle the omen deck.',
+      'If the omen has the Toll,', 'They pay the fee.', 'Only if they have at least the fee in coins.']) expect(OMEN_GAME).toContain(line);
+    expect(OMEN_GAME).not.toContain('    Each player has the levy, in turn from the start player.\n');
+    expect(runOn(OMEN_GAME, ...example).results).toEqual(PASSED);
+  });
+
+  it('calls no levy while the Gale is shown, and the fee is 3', () => {
+    const example = [
+      'Example: while the Gale is shown the fee is 3, and no levy is called', '  Given 3 players', '  And the omen deck has the Gale',
+      '  And p1 has 2 coins', "  And it is p2's turn", '  When p2 stops', '  Then the omen has the Gale', '  And the omen discard is empty',
+      '  And the fee is 3', '  And p1 has 2 coins', "  And it is p0's turn",
+    ];
+    expect(runOn(OMEN_GAME, ...example).results).toEqual(PASSED);
+  });
+
+  it('fails a toast example whose coins are wrong, on that line', () => {
+    const wrong = TOAST.slice();
+    wrong.splice(6, 0, '  Then p0 has 9 coins');
+    const { text, results } = runOn(PRICE_GAME, ...wrong);
+    expect(results).toEqual([expect.objectContaining({
+      status: 'fail', message: 'Expected p0 to have 9 coins, but they have 8.', atLine: lineOf(text, '  Then p0 has 9 coins'),
+    })]);
+  });
+});
