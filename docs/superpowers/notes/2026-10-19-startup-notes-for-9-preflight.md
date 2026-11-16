@@ -9,3 +9,6 @@
 
 ## From 5-2b's pre-flight G1
 - Plan 6-1 will build fresh-id re-keying for cards shuffled into a pile no one can see, pulling forward 9-1 R1's machinery. 9-1 should consume it (Face-Down Greenlight re-keying) rather than build it again — re-check 9-1's tasks against what 6-1 built.
+
+## From 5-3 Task 2's review (m4)
+- `seesFace` goes through `isRevealed` (`derive-scene.ts:10–17`), which returns true for any card in a public zone whatever its `faceUp`. So 5-3's holder gate (a flag read through the card a card sits on is worked out only for a seat that `seesFace` the holder) does not yet hide a face-down card in a public zone. Plan 5-3's forward note (l.760, "slice 9 R3 needs nothing more") overclaims. When slice 9 puts face-down projects in a public row, make `seesFace` false for a face-down card in a public zone (or gate on `faceUp` beside it), and test the holder gate on such a card.
