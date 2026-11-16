@@ -137,6 +137,19 @@ The evidence is `builder-check-startup-6.md` in the session scratchpad. Plans 4-
   - `README.md` and an appended test in `src/games/startup-simulator.test.ts` change;
   - card ids after an in-play shuffle into a pile some seat can't see change in every game, Color Match's included. Setup's ids don't change.
 
+- **Controller amendment (pre-flight at `49258d6`, 2026-11-16).** The scan is in the plan's SDD workspace (`preflight.md`, kept as `docs/superpowers/notes/2026-11-16-startup-6-1-preflight.md`; probes in the scratchpad's `pf61*/`). With the ten rulings applied in a probe copy, all six tasks pass: 3726 tests (3658 + 68), typecheck clean, the constraint checks clean, Startup's 243 and Rent Day's 108 examples and the long-run tallies unchanged. Exact replacement texts: `preflight.md` §4 and §6. Rulings:
+  - **R1 (High, Task 6).** Setup is told apart by the turn's phase, not by the Setup runner: a shuffle renames only while `state.turn.phase` is one of the game's own phases (Setup runs in `'__setup'`; fixtures and the examples' Setup run with no turn). The helper is `renameShuffled(env, state, zoneId, ids)`, exported from `flow-phrases.ts`. The "Setup runner" file bullet goes. The four existing shuffle tests pass unchanged.
+  - **R2 (Medium, Task 1).** A list of other players' zones is split before it is read: a part counts as a zone if it matches `ANOTHER_PLAYERS` and `their <name>` reads as a zone (`readsAsOthers`).
+  - **R3 (Medium, Task 2).** `CHARM_GAME`'s `Charmed:` line reads `Only if it is a card whose charms are more than 0.` (card-number comparisons are not card-only to the view).
+  - **R4 (Medium, Task 4).** While the steps run, p0's `work` is refused with `move work not allowed in phase levy`, and p0 pawning a card of `list-p1` with `not p0's turn`.
+  - **R5 (Medium, Task 2; the notes' 6-1 item).** A player's total may read a flag that asks what its owner has in a zone everyone sees: `readsOnlyCards(…, owner = false)`, `owner = true` only from `readsTheCardAlone`; `OWNER_HAS_PHRASES` exported from `compare-phrases.ts`; three appended tests; a README sentence in Task 5.
+  - **R6 (Low, Task 1).** Test and setup fixes (an arranged 3-player table; the OTHERS_ONLY_AS_TARGET case without the target line), `worked-view.ts` added to Files (`everyoneSees` reads `others`), `ontoZonesOf`.
+  - **R7 (Low, Task 4).** The at-once case asserted with `toContainEqual`; `back` is a `string`; copy only the helpers used.
+  - **R8 (Low, Task 6).** Test specifics (the examples test leaves a card in the pile; the Startup test plays `playGame(2, 4, watch)` in its own describe with a 120 s timeout; "Refused" names `The <name> in <zone>`).
+  - **R9 (Low, Task 3).** Build the toasting table with `withBoardData` before `setCounter`.
+  - **R10 (Low, plan text).** `GO_TO_PHRASE`, `ontoZonesOf` in the Assumed list.
+  - **Gaps, parked:** G1 (a payment against a hidden target tells its number) to the slice that first pays against one; G2 (5-2b's hidden-zone test not given ids) accepted, Task 6's Startup test covers it; G3 (no glide for a reshuffle's renamed cards) to 6-3; G4 (card-number comparisons not card-only: write 6-2a's shown flags as `it is a card whose …`) to 6-2a; G5 (NOT_TOLD_APART names a card in a hidden pile) to slice 9.
+
 ## Review Focus
 
 - **A round's steps when every seat's step passes at once, when a seat is out, or when a step's own start lines pass it on.**
