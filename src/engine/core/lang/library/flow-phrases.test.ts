@@ -639,3 +639,19 @@ describe('a shuffle no seat can follow', () => {
     expect(out.data[NEXT_CARD_KEY]).toBe(13);
   });
 });
+
+describe('a card shuffled into a pile no seat can follow', () => {
+  it('lies face down there, under its new id, whatever it was before', () => {
+    const game = fixtureGame({
+      cards: [{ kind: 'table', start: 'deck', acesHigh: false, identities: Array.from({ length: 3 }, (_, i) => ({ attrs: { name: `N${i}` }, faceKey: `n${i}` })) }],
+      phases: [fixturePhase('play', [])],
+    });
+    // c1 lies face up in the deck, as a card drawn to do what it says lies there while it is read.
+    const before = fixtureState([0, 1, 2].map((i) => fixtureCard(`c${i}`, 'deck', { name: `N${i}` }, { slot: i, faceUp: i === 1 })), {
+      turn: { current: 'p0', phase: 'play' },
+    });
+    const out = run<GameState>('effect', 'Shuffle the deck', fixtureEnv(before, { game }));
+    expect(zoneCards(out, 'deck').map((c) => [c.id, c.faceUp])).toEqual([['c3', false], ['c4', false], ['c5', false]]);
+    expect(zoneCards(out, 'deck').some((c) => c.data?.name === 'N1')).toBe(true);
+  });
+});

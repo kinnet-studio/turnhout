@@ -4,6 +4,7 @@ import { pieceAt, setLastDrawn } from '../board-state';
 import { cardName, saysOf } from '../card-facts';
 import { homePileOf } from '../cards';
 import { dealtIdOf } from '../cards';
+import { currentIdOf } from '../cards';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import type { CardMatch, CompiledGame, ConditionFn, EffectFn, PhraseEnv, ZoneRef } from '../types';
@@ -43,10 +44,13 @@ const theyDraw: EffectFn = (env, [zone]) => {
   }
   let s = setLastDrawn(env.state, { seat: they, zone: pileAsSaid(env.game, pile), name: cardName(card, env.game), says });
   s = turnOver(toBottom(s, card.id, pile, env.game), card.id, true);
+  // A sentence that shuffles the pile gives the card a new id, so each sentence, and the turn back face down, find it by the id it has then.
+  const drawn = s;
   for (const line of env.game.says[says]) {
-    s = env.runLine(s, line, { player: they, space: pieceAt(s, they), card: card.id });
+    s = env.runLine(s, line, { player: they, space: pieceAt(s, they), card: currentIdOf(drawn, s, card.id) });
   }
-  return cardById(s, card.id)?.zoneId === pile ? turnOver(s, card.id, false) : s;
+  const now = currentIdOf(drawn, s, card.id);
+  return cardById(s, now)?.zoneId === pile ? turnOver(s, now, false) : s;
 };
 
 /** The card that was just drawn goes to the player's own zone, face up when that zone is one everyone can see. */

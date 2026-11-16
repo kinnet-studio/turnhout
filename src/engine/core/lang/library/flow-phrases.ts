@@ -62,7 +62,12 @@ export function renameShuffled(env: PhraseEnv, state: GameState, zoneId: string,
   // As example-phrases' declaredMove reads the phase: Setup's `__setup`, and no turn at all, are none of the game's phases.
   if (!env.game.phases.some((p) => p.id === state.turn?.phase)) return state;
   const shuffled = new Set(ids);
-  return renameCards(state, env.game, zoneCards(state, zoneId).filter((card) => shuffled.has(card.id)).map((card) => card.id));
+  const moved = zoneCards(state, zoneId).filter((card) => shuffled.has(card.id)).map((card) => card.id);
+  if (moved.length === 0) return state;
+  const renamed = renameCards(state, env.game, moved);
+  // A card just shuffled into a pile some seat can't see lies face down there, as one moved there does, even one that lay face up in it.
+  const fresh = new Set(renamed.cards.slice(-moved.length).map((card) => card.id));
+  return { ...renamed, cards: renamed.cards.map((card) => (card.faceUp && fresh.has(card.id) ? { ...card, faceUp: false } : card)) };
 }
 
 const shuffle: EffectFn = (env, args) => resolveZoneIds(args[0] as ZoneRef, env).reduce((state, zoneId) => {

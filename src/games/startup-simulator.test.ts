@@ -4140,12 +4140,13 @@ describe('Review Focus: a reshuffle no seat can follow (plan 6-1, Task 6)', () =
     playGame(2, 4, (before, move, after) => {
       if (![BRAINSTORM, BRAINSTORM_FLUSHING].includes(move.type)) return;
       // A Brainstorm leaves the discard empty only when it shuffled the discard, and the cards it flushed there, into the deck (§15.C).
-      const flushed = ((move.cardIds ?? []) as string[]).length;
-      if (zoneCards(after, 'strategy-discard').length > 0 || zoneCards(before, 'strategy-discard').length + flushed === 0) return;
+      const flushed = (move.cardIds ?? []) as string[];
+      if (zoneCards(after, 'strategy-discard').length > 0 || zoneCards(before, 'strategy-discard').length + flushed.length === 0) return;
       reshuffles += 1;
       for (const viewer of seats) {
-        const seen = new Set(deriveScene(def, { cards: before.cards }, viewer).cards
-          .filter((c) => c.zoneId === 'strategy-discard' && c.faceKey !== HIDDEN_FACE_KEY).map((c) => c.id));
+        // The cards it flushed count as seen too: the presser held them face up, and the press named them going to the public discard.
+        const seen = new Set([...deriveScene(def, { cards: before.cards }, viewer).cards
+          .filter((c) => c.zoneId === 'strategy-discard' && c.faceKey !== HIDDEN_FACE_KEY).map((c) => c.id), ...flushed]);
         checked += seen.size;
         const followed = deriveScene(def, { cards: after.cards }, viewer).cards.filter((c) => hidden.has(c.zoneId) && seen.has(c.id));
         expect(followed.map((c) => `${c.id} in ${c.zoneId}`), `${viewer} after ${move.by}'s move ${move.type}`).toEqual([]);

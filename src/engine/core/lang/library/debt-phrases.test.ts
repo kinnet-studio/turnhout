@@ -124,3 +124,19 @@ describe('debt phrases', () => {
     });
   });
 });
+
+import { renameCards } from '../cards';
+import { dealtIdOf } from '../cards';
+describe('a renamed card handed to the bank', () => {
+  it('goes under the pile of the set it was dealt from, under its new id', () => {
+    // Both Free Passes renamed, as a shuffle into a pile some seat can't see renames a card: their new ids belong to no set.
+    const owed = owing('bank');
+    const renamed = renameCards(owed, game, [passOf('fate-pile'), passOf('lucky-pile')]);
+    const [fate, lucky] = renamed.cards.slice(-2).map((c) => c.id);
+    expect([deckOf(game.cards, fate), deckOf(game.cards, lucky)]).toEqual([null, null]);
+    const s = handOver(renamed);
+    expect([zoneCards(s, 'lucky-pile')[0].id, zoneCards(s, 'fate-pile')[0].id]).toEqual([lucky, fate]);
+    expect([dealtIdOf(s, lucky), dealtIdOf(s, fate)]).toEqual([passOf('lucky-pile'), passOf('fate-pile')]);
+    expect(zoneCards(s, 'kept-cards-p0')).toEqual([]);
+  });
+});

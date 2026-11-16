@@ -272,3 +272,38 @@ describe('a renamed card going back to the pile it came from', () => {
     expect(zoneCards(out, 'kept-cards-p0')).toEqual([]);
   });
 });
+
+import { dealtIdOf } from '../cards';
+import { tableDefFor } from '../build';
+import { HIDDEN_FACE_KEY, deriveScene } from '../../derive-scene';
+describe('a drawn card whose words shuffle the pile it lies face up in', () => {
+  const FINE = '| Fine | They pay 15. |';
+  /** p0 rolls 2 from Go onto Lucky, with `top` on the lucky pile: the state after, and the drawn card's id before. */
+  function drawing(row: string, top: string) {
+    const game = decks([HEAD, DIVIDEND, FINE, row]);
+    const engine = started(game, [1, 1], { top: [top] });
+    const drawn = zoneCards(engine.getState(), LUCKY).at(-1)!;
+    expect(drawn.data?.name).toBe(top);
+    expect(rollDice(engine).ok).toBe(true);
+    return { game, before: engine.getState(), drawn: drawn.id };
+  }
+
+  it('ends face down, renamed with the rest of the pile, so no seat sees its face', () => {
+    const { game, before: s, drawn } = drawing('| Mixer | Shuffle the lucky pile. |', 'Mixer');
+    expect(lastDrawn(s)?.name).toBe('Mixer');
+    const pile = zoneCards(s, LUCKY);
+    expect(pile.map((c) => [dealtIdOf(s, c.id) === c.id, c.faceUp])).toEqual(pile.map(() => [false, false]));
+    expect(pile.find((c) => dealtIdOf(s, c.id) === drawn)?.data?.name).toBe('Mixer');
+    const def = tableDefFor(game, seatsFor(2));
+    for (const viewer of seatsFor(2)) {
+      const shown = deriveScene(def, { cards: s.cards }, viewer).cards.filter((c) => c.zoneId === LUCKY);
+      expect(shown.map((c) => [c.faceKey, c.faceUp ?? false]), viewer).toEqual(pile.map(() => [HIDDEN_FACE_KEY, false]));
+    }
+  });
+  it('is still “this card” to the words after the shuffle', () => {
+    const { before: s, drawn } = drawing('| Keeper | Shuffle the lucky pile. They keep this card in their kept cards. |', 'Keeper');
+    const [kept] = zoneCards(s, 'kept-cards-p0');
+    expect([kept?.data?.name, kept?.faceUp, dealtIdOf(s, kept?.id ?? '')]).toEqual(['Keeper', true, drawn]);
+    expect(zoneCards(s, LUCKY).every((c) => !c.faceUp)).toBe(true);
+  });
+});

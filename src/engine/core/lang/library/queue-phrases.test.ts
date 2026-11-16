@@ -550,6 +550,11 @@ describe('a reshuffling deal no seat can follow', () => {
     // Without the new ids, the shuffle would have put c1 and c7 in different slots in the two.
     expect(ids(one, 'pile')).toEqual(['c12']);
     expect(ids(one, 'list-p0')).toEqual(['c13']);
+    // The order mattered: the two hold different cards in the pile and in p0's list, under the same ids.
+    const names = (state: GameState, zoneId: string) => zoneCards(state, zoneId).map((c) => c.data?.name);
+    expect(names(one, 'pile')).not.toEqual(names(two, 'pile'));
+    expect(names(one, 'list-p0')).not.toEqual(names(two, 'list-p0'));
+    expect([...names(one, 'pile'), ...names(one, 'list-p0')].sort()).toEqual(['Dust', 'Sweep']);
   });
   it('keeps one entry for a card renamed twice, which gives the id it was dealt with', () => {
     const dealt = { ...initialState(g, 1), turn: { current: 'p0', phase: 'working' } };

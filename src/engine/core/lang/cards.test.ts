@@ -270,3 +270,19 @@ describe('renaming cards', () => {
     expect(() => renameCards(state, crew, [potter])).toThrow(said("The Potter in p0's crew"));
   });
 });
+
+import { currentIdOf } from './cards';
+describe('the id a card has now', () => {
+  it('follows a card through renames, once or twice, and gives an id no rename moved as it is', () => {
+    const PEBBLES = { columns: ['name', 'copies'], rows: [{ cells: ['Pebble', '4'], line: 1 }] };
+    const sets: CardSetSpec[] = [{ kind: 'table', identities: expandCardTable(PEBBLES), start: 'pile', acesHigh: false }];
+    const game = fixtureGame({ cards: sets });
+    const fresh = fixtureState(buildCards(sets, makeRng(1)).cards);
+    const once = renameCards(fresh, game, ['c2', 'c0']);
+    const twice = renameCards(once, game, ['c5']);
+    // c2 became c4; c0 became c5 and then c6.
+    expect(['c0', 'c1', 'c2', 'c3'].map((id) => currentIdOf(fresh, twice, id))).toEqual(['c6', 'c1', 'c4', 'c3']);
+    expect(['c4', 'c5'].map((id) => currentIdOf(once, twice, id))).toEqual(['c4', 'c6']);
+    expect(['c0', 'c1'].map((id) => currentIdOf(fresh, fresh, id))).toEqual(['c0', 'c1']);
+  });
+});

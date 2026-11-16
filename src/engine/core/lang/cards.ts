@@ -213,6 +213,17 @@ export function dealtIdOf(state: GameState, cardId: string): string {
   return typeof dealt === 'string' ? dealt : cardId;
 }
 
+/**
+ * The id `cardId`, read in `before`, has now in `state`: the card whose dealt id is the same, or `cardId` if no rename moved it. A run of
+ * lines that holds a card by id from before it began finds the card by this, after a line that renamed it, once or more.
+ */
+export function currentIdOf(before: GameState, state: GameState, cardId: string): string {
+  if (state.cards.some((card) => card.id === cardId)) return cardId; // an id is never handed out again, so the card is still this one
+  const dealt = dealtIdOf(before, cardId);
+  const renamed = renamedOf(state);
+  return Object.keys(renamed).find((id) => renamed[id] === dealt) ?? cardId;
+}
+
 const NOT_TOLD_APART = (card: string) => `${card} has a card on it, or sits on one, so the others could still tell it apart.`;
 
 /**
