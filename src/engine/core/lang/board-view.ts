@@ -24,7 +24,8 @@ import type { LangRuntime } from './runtime';
 import { startPlayerOf, usesTurns } from './turns';
 import type { CompiledGame, DeclaredAction } from './types';
 import { zoneIdFor, zoneInfo } from './zones';
-import { shownFlags, shownPlayerValues, standIns } from './worked-view';
+import { holderFlags, pressFlags, shownFlags, shownPlayerValues, standIns } from './worked-view';
+import { holderIdOf } from './attach';
 
 /**
  * `color` is the space's color when it is written as text; `details` is every other thing the table says about it. `facts` is
@@ -103,8 +104,9 @@ export type ActionView = {
   cards?: CardPickView; choices?: ChoiceView[];
 };
 /**
- * What the rules work out for a card on a Board, the same for every seat: the number worked out in place of each of its columns, by
- * column, and the shown flags that hold for it, in the order the game works them out.
+ * What the rules work out for a card on a Board: the number worked out in place of each of its columns, by column, and the shown flags
+ * and the flags a press reads that hold for it, in the order the game works them out. Every seat is given the same, but for a flag read
+ * through the card it sits on, which only a seat that sees that card is given.
  */
 export type WorkedCard = { columns: { [column: string]: number }; flags: string[] };
 /** Each card on a Board with something worked out to show, by id. */
@@ -460,8 +462,8 @@ function actionViews(engine: GameEngine, runtime: LangRuntime, state: GameState,
 }
 
 /**
- * A card's numbers worked out in place of the columns it holds as numbers (`columns`, a `standIns` entry each), and the shown flags that
- * hold for it, in order; null when it has neither.
+ * A card's numbers worked out in place of the columns it holds as numbers (`columns`, a `standIns` entry each), and the flags of `flags`
+ * that hold for it, in order; null when it has neither.
  */
 function workedCard(runtime: LangRuntime, state: GameState, card: CardState, columns: [string, string][], flags: string[]): WorkedCard | null {
   const worked: WorkedCard = { columns: {}, flags: flags.filter((flag) => runtime.workedFlag(state, card.id, flag)) };
@@ -475,21 +477,29 @@ function workedCard(runtime: LangRuntime, state: GameState, card: CardState, col
 
 /**
  * What the rules work out for each card on a Board whose face `seat` sees (a per-player zone everyone can see, cards on cards too), by id;
- * null when no card has anything to show. Every seat gets the same values, since `standIns` and `shownFlags` keep only values that read the
- * card and the cards on it, and those only where everyone sees every card on a card; so what sits on a card never decides whether it is
- * here. A card the runtime throws at is left out (a value worked out from itself is found only when asked), so that one card's mistake
- * leaves every view whole.
+ * null when no card has anything to show. Its flags are those `shownFlags` or `pressFlags` keep, in the order the game works them out.
+ * Every seat gets the same values, since those keep only values that read the card and the cards on it, and those only where everyone sees
+ * every card on a card; so what sits on a card never decides whether it is here. The one exception is a flag read through the card a card
+ * sits on (`holderFlags`): it is worked out for that card only when the seat sees the face of the card it sits on, so a seat is never told
+ * a flag read from a card hidden from it. A card the runtime throws at is left out (a value worked out from itself is found only when
+ * asked), so that one card's mistake leaves every view whole.
  */
 function workedView(runtime: LangRuntime, state: GameState, seat: PlayerId): WorkedView | null {
   const { game } = runtime;
   const columns = Object.entries(standIns(game));
-  const flags = shownFlags(game);
+  const kept = new Set([...shownFlags(game), ...pressFlags(game)]);
+  const flags = Object.keys(game.worked ?? {}).filter((name) => kept.has(name));
   if (columns.length === 0 && flags.length === 0) return null;
+  const throughHolder = new Set(holderFlags(game));
+  const withoutHolder = flags.filter((flag) => !throughHolder.has(flag));
   const view: WorkedView = {};
   for (const card of Object.values(cardsKept(runtime, state)).flat()) {
     if (!seesFace(game, card, seat)) continue;
+    const holderId = holderIdOf(card);
+    const holder = holderId === null ? undefined : cardById(state, holderId);
+    const holderSeen = holderId === null || (holder !== undefined && seesFace(game, holder, seat));
     try {
-      const worked = workedCard(runtime, state, card, columns, flags);
+      const worked = workedCard(runtime, state, card, columns, holderSeen ? flags : withoutHolder);
       if (worked !== null) view[card.id] = worked;
     } catch {
       // Left out, as said above.

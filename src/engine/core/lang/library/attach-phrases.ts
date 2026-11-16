@@ -64,6 +64,12 @@ const pickedGoOnTarget: EffectFn = (env, [zone]) => {
 /** Whether it, the card the rule is about, sits on any card. */
 const isOnACard: ConditionFn = (env) => holderIdOf(itCard(env)) !== null;
 
+/**
+ * The conditions that read the card a card sits on: the page shows a flag read through them only to a seat that sees that card (see
+ * `holderFlags` in `worked-view.ts`).
+ */
+export const HOLDER_PHRASES = ['the card it is on is {cardclass}', 'the card it is on is not {cardclass}'] as const;
+
 /** Whether the card it sits on is, or is not, of that kind. A card on no card is on no card of any kind, so neither holds of it. */
 const theCardItIsOnIs = (wanted: boolean): ConditionFn => (env, [match]) => {
   const holderId = holderIdOf(itCard(env));
@@ -214,8 +220,8 @@ export function registerAttachPhrases(lib: PhraseLibrary): PhraseLibrary {
     .condition('it is on the target card', isOnTarget(true), { needsCard: true, needsOnto: true })
     .condition('it is not on the target card', isOnTarget(false), { needsCard: true, needsOnto: true })
     .condition('it is on a card', isOnACard, { needsCard: true })
-    .condition('the card it is on is {cardclass}', theCardItIsOnIs(true), { needsCard: true })
-    .condition('the card it is on is not {cardclass}', theCardItIsOnIs(false), { needsCard: true })
+    .condition(HOLDER_PHRASES[0], theCardItIsOnIs(true), { needsCard: true })
+    .condition(HOLDER_PHRASES[1], theCardItIsOnIs(false), { needsCard: true })
     .condition('no picked card is {cardflag}', noPickedCardIs, { needsCards: true })
     .effect('it goes to {zone}, on the target card', itGoesOnTarget, { needsCard: true, needsOnto: true })
     .effect('the picked cards go to {zone}, on the target card', pickedGoOnTarget, { needsCards: true, needsOnto: true })

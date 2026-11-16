@@ -684,6 +684,14 @@ export const SORT_GAME = [CREW_GAME
   'Eager:', '  Only if it is a Tinker card.',
 ].join('\n');
 
+/** SORT_GAME where a Potter on a job that is not a Vase is perched, and finishing a job crowns every perched card on it. */
+export const PERCH_GAME = [SORT_GAME
+  .replace('  Cards can be keen.', '  Cards can be keen.\n  Cards can be crowned.')
+  .replace('      Every card on it that is eager is keen.\n',
+    '      Every card on it that is eager is keen.\n      Every card on it that is perched is crowned.\n'), '',
+  'Perched:', '  Only if it is a Potter card.', '  Only if the card it is on is not a Vase card.',
+].join('\n');
+
 /** The loop of the board fixtures: a start, two streets, a tax, a station, a utility and two chance spaces. */
 export const FIXTURE_SPACES: SpaceSpec[] = [
   { name: 'Go', attrs: { kind: 'go' } },

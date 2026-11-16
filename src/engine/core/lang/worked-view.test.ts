@@ -19,6 +19,10 @@ import type { CompiledGame } from './types';
 import type { ZoneSpec } from './types';
 import { shownFlags, standIns } from './worked-view';
 import { dimFlags, gaugePairs, shownPlayerValues } from './worked-view';
+import { holderFlags, pressFlags } from './worked-view';
+import { BOOST_GAME, PERCH_GAME, SORT_GAME, YARD_GAME } from './testing';
+import { HOLDER_PHRASES, registerAttachPhrases } from './library/attach-phrases';
+import { cardsOn } from './attach';
 import { relocate } from './zones';
 import COLOR_MATCH from '@/games/color-match.rules?raw';
 import HEARTS from '@/games/hearts.rules?raw';
@@ -522,5 +526,145 @@ describe("a card's numbers added and multiplied, what its owner has, and the car
     expect(shownFlags(compiled(watched))).toEqual(['busy']);
     const perched = withPay(["  A perched card's red pay is 2."], 'Perched:', '  Only if the card it is on is a Statue card.');
     expect(shownFlags(compiled(perched))).toEqual(['busy']);
+  });
+});
+
+describe('the flags a press reads', () => {
+  const EAGER_LINE = '      Every card on it that is eager is keen.\n';
+  /** SORT_GAME with `lines` after its eager line, in the finish button's `Then:`, then `sections`. */
+  const finishing = (lines: string[], ...sections: string[]) =>
+    [SORT_GAME.replace(EAGER_LINE, [EAGER_LINE, ...lines.map((line) => `      ${line}\n`)].join('')), '', ...sections].join('\n');
+  const WATCHED = ['Watched:', '  Only if its owner has a card in their stash that is tired.'];
+  const perch = compiled(PERCH_GAME);
+
+  it('PERCH_GAME compiles with no problems, with the crowned flag and the line that crowns written in', () => {
+    expect(compileGame(PERCH_GAME, lib).diagnostics).toEqual([]);
+    // Each `.replace` found its text.
+    expect(PERCH_GAME).toContain('\n  Cards can be keen.\n  Cards can be crowned.\n');
+    expect(PERCH_GAME).toContain(`\n${EAGER_LINE}      Every card on it that is perched is crowned.\n`);
+  });
+
+  it('labels helping, eager and perched, which finishing a job reads, and no flag only an Only if line or a When rule reads', () => {
+    expect(pressFlags(perch)).toEqual(['helping', 'eager', 'perched']);
+    // Perched reads the card it is on: only a seat that sees that card is told it.
+    expect(holderFlags(perch)).toEqual(['perched']);
+    // No value line turns a flag on, so the view's other flag rule shows none, as before.
+    expect(shownFlags(perch)).toEqual([]);
+    // Torn and helpable are read only by the keep and help buttons' Only if lines, and single only by a When rule: each is a verdict of
+    // a button, or no press's at all. An option's own Only if line is a verdict too.
+    for (const name of ['torn', 'helpable', 'single']) expect(perch.worked![name]?.kind, name).toBe('flag');
+    const GOLD = '        Gold:\n';
+    const guarded = PERCH_GAME.replace(GOLD, `${GOLD}          Only if it is torn.\n`);
+    expect(guarded).not.toBe(PERCH_GAME);
+    expect(pressFlags(compiled(guarded))).toEqual(['helping', 'eager', 'perched']);
+    // Torn reads `its marks is more than 1`, which the view doesn't count as reading the card alone, so it is left out wherever it is
+    // named. Single reads the card alone, so a Then: line naming it labels it; guarding the help button and its Gold option by it does not.
+    const named = PERCH_GAME.replace(EAGER_LINE, `${EAGER_LINE}      Every card on it that is single is keen.\n`);
+    expect(pressFlags(compiled(named))).toEqual(['single', 'helping', 'eager', 'perched']);
+    const HELP = '  A player may help a card in their idle.\n';
+    const single = PERCH_GAME.replace(GOLD, `${GOLD}          Only if it is single.\n`).replace(HELP, `${HELP}    Only if it is single.\n`);
+    expect(single.split('Only if it is single.')).toHaveLength(3);
+    expect(pressFlags(compiled(single))).toEqual(['helping', 'eager', 'perched']);
+  });
+
+  it('labels a flag an effect names, one a group of cards in an effect or a For each line is tested by, and none that no button reads', () => {
+    // YARD_GAME's post and ship lines move the picked cards, and the cards on a job, that are clinging.
+    expect(pressFlags(compiled(YARD_GAME))).toEqual(['clinging']);
+    const grouped = SORT_GAME.replace(EAGER_LINE, '      The cards on it that are eager gain 1 red mark.\n');
+    expect(grouped).not.toBe(SORT_GAME);
+    expect(pressFlags(compiled(grouped))).toEqual(['helping', 'eager']);
+    // The cards a For each line walks are a group too: its effect names only keen, which cards keep.
+    const walked = SORT_GAME.replace(EAGER_LINE, '      For each card on it that are eager, it is keen.\n');
+    expect(walked).not.toBe(SORT_GAME);
+    expect(pressFlags(compiled(walked))).toEqual(['helping', 'eager']);
+    // BOOST_GAME's high is read by no button.
+    expect(pressFlags(compiled(BOOST_GAME))).toEqual([]);
+  });
+
+  it('labels a flag read through another flag of the card, and not one read through a flag that reads what its owner has', () => {
+    // Proud reads helping (`it is helping`), which reads only the card; nosy reads watched, which reads a stash only its owner sees.
+    const game = compiled(finishing(
+      ['Every card on it that is proud is keen.', 'Every card on it that is nosy is keen.'],
+      'Proud:', '  Only if it is helping.', '', ...WATCHED, '', 'Nosy:', '  Only if it is watched.',
+    ));
+    expect(pressFlags(game)).toEqual(['helping', 'eager', 'proud']);
+    expect(shownFlags(game)).toEqual([]);
+    // Lofty reads perched, which reads the card it is on: so lofty reads that card too, and is told only where perched is.
+    const PERCHED_LINE = '      Every card on it that is perched is crowned.\n';
+    const lofty = PERCH_GAME.replace(PERCHED_LINE, `${PERCHED_LINE}      Every card on it that is lofty is crowned.\n`);
+    expect(lofty).not.toBe(PERCH_GAME);
+    const loftyGame = compiled([lofty, '', 'Lofty:', '  Only if it is perched.'].join('\n'));
+    expect([pressFlags(loftyGame), holderFlags(loftyGame)]).toEqual([['helping', 'eager', 'perched', 'lofty'], ['perched', 'lofty']]);
+  });
+
+  it('Review Focus: labels no flag a press reads whose lines read beyond the card, such as what its owner has', () => {
+    const watched = compiled(finishing(['Every card on it that is watched is keen.'], ...WATCHED));
+    expect(watched.worked!.watched?.kind).toBe('flag');
+    expect(pressFlags(watched)).toEqual(['helping', 'eager']);
+  });
+
+  it('labels no flag in SHOWN, whose buttons name none worked out, so the view gives what it gave before', () => {
+    // CREW_GAME's finish names only tired, which cards keep.
+    expect(pressFlags(shown)).toEqual([]);
+    expect(holderFlags(shown)).toEqual([]);
+  });
+
+  it('counts these two phrases as reading the card it is on: the view works a flag read through them out only for a seat that sees that card', () => {
+    const conditions = vi.spyOn(PhraseLibrary.prototype, 'condition');
+    let registered: string[] = [];
+    try {
+      registerAttachPhrases(new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES]));
+      registered = conditions.mock.calls.map(([pattern]) => pattern);
+    } finally {
+      conditions.mockRestore();
+    }
+    expect(registered.filter((pattern) => pattern.startsWith('the card it is on'))).toEqual([...HOLDER_PHRASES]);
+  });
+
+  describe('PERCH_GAME arranged', () => {
+    /**
+     * PERCH_GAME for two at seed 1, with p0's workshop holding the first Vase and the first Statue, the first Potter on the Vase and the
+     * second Potter and the first Smith on the Statue, in p0's crew, and the first Tinker in p0's idle. `arrange` has the last say, told
+     * the Smith and the Statue.
+     */
+    function perching(arrange: (state: GameState, smith: string, statue: string) => GameState = (state) => state) {
+      const start = createEngine(perch, lib, 2, initialState(perch, 1)).engine.getState();
+      const named = (name: string) => start.cards.filter((card) => card.data?.name === name).map((card) => card.id);
+      const [[vase], [statue], [potter1, potter2], [smith], [tinker]] = ['Vase', 'Statue', 'Potter', 'Smith', 'Tinker'].map(named);
+      let state = relocate(start, [vase, statue], 'workshop-p0', perch);
+      state = putOn(state, [potter1], 'crew-p0', vase, perch);
+      state = putOn(state, [potter2, smith], 'crew-p0', statue, perch);
+      state = relocate(state, [tinker], 'idle-p0', perch);
+      const { engine, runtime } = createEngine(perch, lib, 2, arrange(state, smith, statue));
+      const view = (seat: string) => seatExtras(engine, runtime, engine.getState(), seat);
+      return { engine, runtime, view, statue, potter2, smith, tinker };
+    }
+    const { view, potter2, smith, tinker } = perching();
+    const worked = {
+      [potter2]: { columns: {}, flags: ['perched'] }, [smith]: { columns: {}, flags: ['helping'] }, [tinker]: { columns: {}, flags: ['eager'] },
+    };
+
+    it('gives every seat the flags a press reads of each card on a Board: a Potter on a Statue is perched, a Smith helping, a Tinker eager', () => {
+      // The first Potter is on the Vase, so not perched, and has nothing to show.
+      for (const seat of ['p0', 'p1']) expect(view(seat).worked, seat).toEqual(worked);
+      // A tired Smith is not helping.
+      const tired = perching((state, tiredSmith) => changeCard(state, tiredSmith, { tired: true }, perch));
+      const { [smith]: _helping, ...rest } = worked;
+      for (const seat of ['p0', 'p1']) expect(tired.view(seat).worked, seat).toEqual(rest);
+    });
+
+    it("Review Focus: works a flag read through the card it is on out only for a seat that sees that card, and the others for every seat", () => {
+      // The Statue goes to p0's stash, which only p0 sees, with the second Potter and the Smith still on it. The Potter is perched still,
+      // which p1 may not be told: it says the hidden card is no Vase.
+      const hidden = perching((state, _smith, statue) => relocate(state, [statue], 'stash-p0', perch));
+      const state = hidden.engine.getState();
+      expect(cardsOn(state, hidden.statue).map((card) => card.id)).toEqual([potter2, smith]);
+      expect(hidden.runtime.workedFlag(state, potter2, 'perched')).toBe(true);
+      const theirs = hidden.view('p1').worked!;
+      expect(Object.keys(theirs)).not.toContain(potter2);
+      expect(JSON.stringify(theirs)).not.toMatch(/perched/);
+      expect(theirs[smith]).toEqual({ columns: {}, flags: ['helping'] });
+      expect(hidden.view('p0').worked![potter2]).toEqual({ columns: {}, flags: ['perched'] });
+    });
   });
 });

@@ -5,21 +5,29 @@
 // values read, however deep the cards on cards go, and whether a value is shown hangs on the rules alone, never on where cards are.
 // So does which values about a player the page may show: a total of cards everyone sees, each read through what reads that card alone,
 // so every seat may know it for every player; with the pairs of them a button waits on, and the flags that leave a card out of one.
+// A flag a button's `Then:` lines read is shown too when its lines read only the card, the cards on it and the card it sits on. Which
+// flags those are hangs on the rules alone as well; but the card it sits on may be one a seat doesn't see, so the view works such a flag
+// out for a card only for a seat that sees the card it sits on.
+import { CHOOSE_ONE, CHOOSE_PLAYER, type ChoiceOption } from './choices';
+import { HOLDER_PHRASES } from './library/attach-phrases';
 import { CARDS_ON_IT, FROM_COLUMN, registerCardSubjectPhrases } from './library/card-subject-phrases';
 import { FLAGGED_VALUES, registerCardValuePhrases } from './library/card-value-phrases';
 import { AT_LEAST_THEIRS, PLAYER_TOTAL } from './library/player-value-phrases';
 import { FROM_CARDS_TOTAL, GOES_UP_BY_TOTAL } from './library/total-phrases';
 import { FROM_CARDS_COUNT } from './library/total-phrases';
+import { IT_IS_FLAGGED } from './library/fact-phrases';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
 import type { CardFilter, CardGroup, CompiledGame, PhraseRef, ZoneRef } from './types';
 
 /**
  * The phrases about the card a value is worked out for and the cards on it: what kind of card it is, its own numbers and flags, its zone
- * and the flags of the cards on it. Asked by kind and pattern, as a line's ref names its phrase.
+ * and the flags of the cards on it. Asked by kind and pattern, as a line's ref names its phrase. `it is {cardflag}` reads the card alone
+ * too, as its twin `it is not {cardflag}` here does, but is registered among the facts, beside `it is {spaceflag}`.
  */
 const CARD_ONLY = registerCardValuePhrases(registerCardSubjectPhrases(new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES])));
 const PARAM = /\{([^{}]+)\}/g;
+const holderPhrases: readonly string[] = HOLDER_PHRASES;
 
 const isWorked = (game: CompiledGame, name: string): boolean => game.worked !== undefined && Object.hasOwn(game.worked, name);
 /**
@@ -44,7 +52,8 @@ const testNames = (filter: CardFilter): string[] =>
 function cardOnlyNames(game: CompiledGame, ref: PhraseRef): string[] | null {
   // A value that is a total, goes up by one or is a count reads only the card when its group is the cards on it.
   const total = ref.kind === 'value' && (ref.phrase === FROM_CARDS_TOTAL || ref.phrase === GOES_UP_BY_TOTAL || ref.phrase === FROM_CARDS_COUNT);
-  if (!total && (ref.kind === 'lang' || CARD_ONLY.get(ref.kind, ref.phrase) === undefined)) return null;
+  const flagged = ref.kind === 'condition' && ref.phrase === IT_IS_FLAGGED;
+  if (!total && !flagged && (ref.kind === 'lang' || CARD_ONLY.get(ref.kind, ref.phrase) === undefined)) return null;
   if ((total || cardsOnIt.includes(ref.phrase)) && !cardsOnCardsArePublic(game)) return null;
   const names: string[] = [];
   for (const [i, [, type]] of [...ref.phrase.matchAll(PARAM)].entries()) {
@@ -62,16 +71,19 @@ function cardOnlyNames(game: CompiledGame, ref: PhraseRef): string[] | null {
 
 /**
  * Whether every line of the value `name` reads only the card and the cards on it, and so does every line of each value they read, all the
- * way down. `seen` holds the values looked at already: one met again is being looked at, and adds no line of its own.
+ * way down. `seen` holds the values looked at already: one met again is being looked at, and adds no line of its own. With `holder`, a
+ * line that reads the card it sits on (`HOLDER_PHRASES`) counts as read too, at every depth; it names no value, as it reads that card's
+ * face alone.
  */
-function readsOnlyCards(game: CompiledGame, name: string, seen = new Set<string>()): boolean {
+function readsOnlyCards(game: CompiledGame, name: string, seen = new Set<string>(), holder = false): boolean {
   if (seen.has(name)) return true;
   seen.add(name);
   const value = game.worked![name];
   const refs = value.kind === 'number' ? value.refs : value.conditions.flatMap((group) => group.refs);
   return refs.every((ref) => {
+    if (holder && ref.kind === 'condition' && holderPhrases.includes(ref.phrase)) return true;
     const names = cardOnlyNames(game, ref);
-    return names !== null && names.filter((read) => isWorked(game, read)).every((read) => readsOnlyCards(game, read, seen));
+    return names !== null && names.filter((read) => isWorked(game, read)).every((read) => readsOnlyCards(game, read, seen, holder));
   });
 }
 
@@ -105,6 +117,52 @@ export function shownFlags(game: CompiledGame): string[] {
   );
   return Object.entries(worked).filter(([name, value]) => value.kind === 'flag' && turnedOn.has(name) && readsOnlyCards(game, name))
     .map(([name]) => name);
+}
+
+/**
+ * The names a `Then:` line tests cards by, its own and those of the lines it holds: each flag it names, and the tests of each group of
+ * cards and each clause (`… that are eager`). The condition of an `If` line counts, both halves of one joined by “and”, and so do the
+ * cards a `For each card` line walks. A button's `Only if` lines never do, an option's own included, and nor does the clause a picked
+ * player must meet: those are the button's verdicts, which the page shows already.
+ */
+function namedByLine(ref: PhraseRef): string[] {
+  if (ref.kind === 'lang') {
+    switch (ref.phrase) {
+      case 'if': return [...namedByLine(ref.args[0] as PhraseRef), ...namedByLine(ref.args[1] as PhraseRef)];
+      case 'all': return (ref.args as PhraseRef[]).flatMap(namedByLine);
+      case 'for': return namedByLine(ref.args[1] as PhraseRef);
+      case 'for each': return [...((ref.args[0] as CardGroup).whose ?? []).flatMap(testNames), ...namedByLine(ref.args[1] as PhraseRef)];
+      case CHOOSE_ONE: return (ref.args[2] as ChoiceOption[]).flatMap((option) => option.effects.flatMap(namedByLine));
+      case CHOOSE_PLAYER: return namedByLine(ref.args[3] as PhraseRef);
+      default: return [];
+    }
+  }
+  return [...ref.phrase.matchAll(PARAM)].flatMap(([, type], i) => {
+    if (type === 'cardflag') return [ref.args[i] as string];
+    if (type === 'cardclause') return (ref.args[i] as CardFilter[]).flatMap(testNames);
+    if (type === 'cardgroup') return ((ref.args[i] as CardGroup).whose ?? []).flatMap(testNames);
+    return [];
+  });
+}
+
+/**
+ * The worked flags a button's `Then:` lines name (Call 2) whose lines read only the card, the cards on it and the card it is on, in the
+ * order the game works them out: they change what a press does to the cards it moves and the cards they join. Whether one is shown hangs
+ * on the rules alone, as for `shownFlags`.
+ */
+export function pressFlags(game: CompiledGame): string[] {
+  const named = new Set(game.phases.flatMap((phase) => phase.actions).flatMap((action) => action.effects).flatMap(namedByLine));
+  return Object.entries(game.worked ?? {})
+    .filter(([name, value]) => value.kind === 'flag' && named.has(name) && readsOnlyCards(game, name, new Set(), true))
+    .map(([name]) => name);
+}
+
+/**
+ * Those of `pressFlags` whose lines, or the lines of a value they read, read the card it is on (Call 3): a seat that doesn't see the face
+ * of the card a card sits on is not told such a flag of it.
+ */
+export function holderFlags(game: CompiledGame): string[] {
+  return pressFlags(game).filter((name) => !readsOnlyCards(game, name));
 }
 
 /**

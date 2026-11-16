@@ -106,6 +106,12 @@ export function itCard(env: PhraseEnv): CardState {
   return card;
 }
 
+/**
+ * The condition that the card a rule is about has a flag. It reads that card alone, as its twin `it is not {cardflag}` does, so
+ * `worked-view.ts` counts it among the lines a flag the page may show is read by.
+ */
+export const IT_IS_FLAGGED = 'it is {cardflag}';
+
 const itIsFlagged: ConditionFn = (env, [fact]) => cardHasFlag(env, itCard(env), fact as string);
 
 const theCardIsFlagged: ConditionFn = (env, [fact]) => cardHasFlag(env, movedCard(env), fact as string);
@@ -501,7 +507,7 @@ export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
     .condition('it has fewer than {int} {spacenumber}', hasFewer, { needsSpace: true })
     .condition('it is {spaceflag}', hasFlag, { needsSpace: true })
     .condition('it is not {spaceflag}', hasNoFlag, { needsSpace: true })
-    .condition('it is {cardflag}', itIsFlagged, { needsCard: true })
+    .condition(IT_IS_FLAGGED, itIsFlagged, { needsCard: true })
     .condition('the card is {cardflag}', theCardIsFlagged, { needsMove: true })
     .condition('some space is {spaceflag}', someSpaceIs, { needsBoard: true })
     .condition('some card is {cardflag}', someCardIs)

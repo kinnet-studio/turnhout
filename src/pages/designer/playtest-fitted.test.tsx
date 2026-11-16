@@ -1366,7 +1366,7 @@ describe('a Growth Hacker hangs under its product', () => {
     state = relocate(state, [junior], `ops-team-${S}`, game);
     return { state, dating, hacker, junior };
   };
-  const BOARD_LINE = 'operations: Dating App (tier Tier 1, tag Social, sector Consumer) [Blue 0/6, Red 0/0] with Growth Hacker · ops team: Junior Software Dev';
+  const BOARD_LINE = 'operations: Dating App (tier Tier 1, tag Social, sector Consumer) [Blue 0/6, Red 0/0] with Growth Hacker (attaching) · ops team: Junior Software Dev';
 
   it('draws the Growth Hacker under the product it sits on, and the rest of the ops team in its row', () => {
     const { state, dating, hacker, junior } = arranged();

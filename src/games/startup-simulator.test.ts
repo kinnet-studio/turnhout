@@ -24,6 +24,7 @@ import type { Move } from '@/engine/core/moves';
 import type { CardState, PlayerId } from '@/engine/core/scene';
 import { changeCard } from '@/engine/core/lang/card-facts';
 import { dimFlags, gaugePairs, shownFlags, shownPlayerValues, standIns } from '@/engine/core/lang/worked-view';
+import { holderFlags, pressFlags } from '@/engine/core/lang/worked-view';
 import { parseTextFaceKey } from '@/engine/core/lang/cards';
 
 // The long runs check every rule after every move, thousands of checks a game, and an `expect` costs vitest far more to build than the
@@ -4078,5 +4079,53 @@ describe('what the view says about each player', () => {
     };
     expect(valuesOfN(switched)).toEqual(seats.map(() => declared));
     expect(valuesOfN(changeCard(switched, lock, { bugs: 2 }, game!)).map((theirs) => theirs['bug load'])).toEqual([2, 2, 2]);
+  });
+});
+
+describe('what the page shows of slice 5', () => {
+  it('labels Managing, Agile, Coaching, the pending Badge and Attaching, the flags a press reads, and reads the pending Badge through the project it is on', () => {
+    // In the rules' order, each read by a button's Then: lines. Managing: Brainstorm's third card. Agile: the Onboarding token an Agile PM
+    // spares at Assign and Reassign (§11.E.3). Coaching: the working Veteran's Mentor at Launch (§20). The pending Badge: made Permanent
+    // at Launch (§11.E.2). Attaching: the Growth Hacker and the Sales Rep, which a hire, an Assign and Launch put on a product (§20.B).
+    expect(pressFlags(game!)).toEqual(['managing', 'agile', 'coaching', 'pending badge', 'attaching']);
+    // The pending Badge reads the project's Tier: a seat that can't see that project is not told it.
+    expect(holderFlags(game!)).toEqual(['pending badge']);
+  });
+
+  it('(guard) shows the same flags beside a value, and the same values about each player, as before (Call 5)', () => {
+    expect(shownFlags(game!)).toEqual(['stalled', 'efficient in ops', 'experienced', 'practised']);
+    // Operational revenue reads its owner's ops team through each product's rev, and active tags is a count: neither is shown.
+    expect(shownPlayerValues(game!)).toEqual([
+      'blue supply', 'red supply', 'blue demand', 'red demand', 'blue load', 'red load', 'qa supply', 'bug load', 'qa spent',
+    ]);
+  });
+
+  it('gives every seat a Junior PM’s Synergy and pending Badge on a Tier 2 project, a Senior PM’s Agile Synergy, and the project Stalled (3 players, seed 1)', () => {
+    // §20.B: the Junior PM is Synergy and the Senior PM Agile Synergy. §20.C.2: the Neobank is Tier 2, and with no Senior on it to lead
+    // its 10 Blue, it is Stalled. §11.E.2: a Junior PM on a Tier 2 or 3 project carries a pending Badge, and a badged one none. §11.E.3:
+    // Agile is a Senior PM, or any badged PM, at work. Ruling 8: an onboarding PM gives nothing.
+    const start = setUp(3, 1);
+    const seats = seatsFor(3);
+    const S = startPlayerOf(start, seats);
+    const N = seats[(seats.indexOf(S) + 1) % seats.length];
+    const [neobank, juniorPm, seniorPm] = ['Neobank', 'Junior PM', 'Senior PM'].map(idOf);
+    let state = relocate(start, [neobank], zoneIdFor('development', N), game!);
+    state = putOn(state, [juniorPm], zoneIdFor('development team', N), neobank, game!);
+    state = relocate(state, [seniorPm], zoneIdFor('ops team', N), game!);
+    /** The flags each seat is given of `card` in `table`, seat by seat. */
+    const flagsOf = (table: GameState, card: string) => {
+      const { engine, runtime } = createEngine(game!, lib, 3, table);
+      return seats.map((viewer) => seatExtras(engine, runtime, engine.getState(), viewer).worked?.[card]?.flags);
+    };
+    const everySeat = (flags: string[]) => seats.map(() => flags);
+    expect(flagsOf(state, juniorPm)).toEqual(everySeat(['managing', 'pending badge']));
+    expect(flagsOf(state, seniorPm)).toEqual(everySeat(['managing', 'agile']));
+    expect(flagsOf(state, neobank)).toEqual(everySeat(['stalled']));
+    expect(flagsOf(changeCard(state, juniorPm, { onboarding: true }, game!), juniorPm)).toEqual(everySeat(['pending badge']));
+    expect(flagsOf(changeCard(state, juniorPm, { badged: true }, game!), juniorPm)).toEqual(everySeat(['managing', 'agile']));
+    // Review Focus: with the Neobank in N's backlog, which only N sees, its Tier is hidden from the rivals, and so is the pending Badge
+    // read from it. The rules never put a team on a backlog card; slice 9's face-down projects will hide a Tier so.
+    const hidden = putOn(relocate(start, [neobank], zoneIdFor('backlog', N), game!), [juniorPm], zoneIdFor('development team', N), neobank, game!);
+    expect(flagsOf(hidden, juniorPm)).toEqual(seats.map((viewer) => (viewer === N ? ['managing', 'pending badge'] : ['managing'])));
   });
 });
