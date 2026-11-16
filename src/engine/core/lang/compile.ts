@@ -8,6 +8,7 @@ import {
   addProblem, attempt, FOR_EVERY_AT_LEAST_ONE, innerEffect, matchEffectLine, matchLine, phaseId, phraseFn, POINTS_FOR_EVERY, rejectChildren, type LineCtx,
 } from './compile-util';
 import type { Diagnostic } from './diagnostics';
+import { GO_BACK_PHRASE, GO_TO_PHRASE } from './library/flow-phrases';
 import { parseOutline, type OutlineNode } from './outline';
 import { normalizeLine, suggestNames, vocabFrom, type PhraseLibrary } from './phrases';
 import { canon, parseParam } from './refs';
@@ -773,22 +774,28 @@ function endSteps(name: string, line: number, ctx: LineCtx, phases: CompiledPhas
     addProblem(ctx.diagnostics, line, STEPS_AT_ONCE(id));
     return null;
   }
-  refuseLeavingSteps(phase, STEPS_GO_TO(id), STEPS_AFTER(id), ctx.library, ctx.diagnostics);
+  refuseLeavingSteps(phase, STEPS_GO_TO(id), STEPS_AFTER(id), ctx.library, ctx.diagnostics, phases);
   return { phase: id, line };
 }
 
 /**
- * Refuses, each on its own line, what would take the game out of a phase whose steps end only by being passed on: its `go to`, as a
- * rule or as a line of a button, rule or choice (an `If …, go to …` among them), and a line that starts a phase with a player, as
- * `The … phase starts with them.` does, even that phase itself, with `goTo`; and its After line, with `after`.
+ * Refuses, each on its own line, what would take the game out of a phase whose steps end only by being passed on, with `goTo`: its
+ * `go to`, as a rule or as a line of a button, rule or choice (an `If …, go to …` among them), and a line that starts a phase with a
+ * player, as `The … phase starts with them.` does, unless it starts another phase with a line that goes back to the interrupted turn.
+ * Such a phase only interrupts the step, which goes on once it goes back. A phase with no way back would never return to the steps, and
+ * their own phase started again would leave the step it interrupted waiting for good. Its After line is refused with `after`.
  */
 function refuseLeavingSteps(
-  phase: CompiledPhase | undefined, goTo: string, after: string, library: PhraseLibrary, diagnostics: Diagnostic[],
+  phase: CompiledPhase | undefined, goTo: string, after: string, library: PhraseLibrary, diagnostics: Diagnostic[], phases: CompiledPhase[],
 ): void {
   if (!phase) return;
   if (phase.goTo) addProblem(diagnostics, phase.goTo.line, goTo);
+  const goesBack = (ref: PhraseRef) => ref.kind === 'effect' && ref.phrase === GO_BACK_PHRASE;
+  const comesBack = (id: string) => phases.some((p) => p.id === id && effectsOf(p).flatMap(linesDoing).some(goesBack));
   for (const ref of effectsOf(phase).flatMap(linesDoing)) {
-    if (phaseStartedBy(ref, library) !== null) addProblem(diagnostics, ref.line, goTo);
+    const started = phaseStartedBy(ref, library);
+    const isGoTo = ref.kind === 'effect' && ref.phrase === GO_TO_PHRASE;
+    if (started !== null && (isGoTo || started === phase.id || !comesBack(started))) addProblem(diagnostics, ref.line, goTo);
   }
   if (phase.after) addProblem(diagnostics, phase.after.line, after);
 }
@@ -844,7 +851,7 @@ function compileRoundSteps(
     addProblem(diagnostics, first.line, ROUND_STEPS_AT_ONCE(id));
     return null;
   }
-  refuseLeavingSteps(phase, ROUND_STEPS_GO_TO(id), ROUND_STEPS_AFTER(id), library, diagnostics);
+  refuseLeavingSteps(phase, ROUND_STEPS_GO_TO(id), ROUND_STEPS_AFTER(id), library, diagnostics, phases);
   // Only a line that can run while the steps do passes them on: one of their phase's own but those that start a turn there, a rule for
   // every phase, or what a card says. Another phase's lines, those that start a turn and Setup's never run then, and the round's other
   // lines run before the steps begin.

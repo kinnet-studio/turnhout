@@ -448,3 +448,71 @@ describe('the steps before the score, refused when a line of their phase starts 
     expect(errorsOf(text)).toEqual([expect.objectContaining({ line: lineOf(text, START), message: GO_TO_REFUSED })]);
   });
 });
+
+describe('the steps before the score, with a line of their phase that starts a phase: fine when that phase comes back to the interrupted turn', () => {
+  /** A phase a step is interrupted for: its button gives the player 2 coins and goes back to the step. */
+  const BARGAINING = ['', 'Phase: bargaining', '  Players take turns.',
+    '  A player may agree.', '    Then:', '      They get 2 coins.', '      Go back to the interrupted turn.'].join('\n');
+  const GO_BACK = '      Go back to the interrupted turn.';
+  /** STEPS_GAME where a player may haggle in the final count, which starts `bargaining` with `who`. */
+  const haggling = (who: string, bargaining = BARGAINING) =>
+    STEPS_GAME.replace(STEP_STARTS, `${STEP_STARTS}\n  A player may haggle.\n    Then:\n      The bargaining phase starts with ${who}.`) + bargaining;
+
+  it('with them: it compiles with nothing to report, and their step goes on once that phase goes back to it', () => {
+    const text = haggling('them');
+    expect(compileGame(text, lib).diagnostics).toEqual([]);
+    const engine = table(compiled(text));
+    round(engine);
+    expect(engine.getState().turn).toEqual({ current: 'p0', phase: 'final count' });
+    expect(coinsOf(engine.getState())).toEqual([3, 2, 2]);
+    press(engine, 'haggle', 'p0');
+    expect(engine.getState().turn).toEqual({ current: 'p0', phase: 'bargaining' });
+    press(engine, 'agree', 'p0');
+    expect(engine.getState().turn).toEqual({ current: 'p0', phase: 'final count' });
+    expect(coinsOf(engine.getState())).toEqual([5, 2, 2]);
+    press(engine, 'count', 'p0', 'p1', 'p2');
+    const state = engine.getState();
+    expect(state.data[END_STEPS_KEY]).toBe(true);
+    expect(state.result).toBeDefined();
+    expect(coinsOf(state)).toEqual([7, 5, 5]);
+  });
+
+  it('with the player on their left: it compiles with nothing to report, and the step goes on once that phase goes back to it', () => {
+    const text = haggling('the player on their left');
+    expect(compileGame(text, lib).diagnostics).toEqual([]);
+    const engine = table(compiled(text));
+    round(engine);
+    press(engine, 'haggle', 'p0');
+    expect(engine.getState().turn).toEqual({ current: 'p1', phase: 'bargaining' });
+    press(engine, 'agree', 'p1');
+    expect(engine.getState().turn).toEqual({ current: 'p0', phase: 'final count' });
+    expect(coinsOf(engine.getState())).toEqual([3, 4, 2]);
+    press(engine, 'count', 'p0', 'p1', 'p2');
+    const state = engine.getState();
+    expect(state.data[END_STEPS_KEY]).toBe(true);
+    expect(state.result).toBeDefined();
+    expect(coinsOf(state)).toEqual([5, 7, 5]);
+  });
+
+  it('that goes back by a rule: it compiles with nothing to report', () => {
+    const text = haggling('them', BARGAINING.replace(GO_BACK, '  When they have at least 2 coins:\n    Go back to the interrupted turn.'));
+    expect(text).toContain('  When they have at least 2 coins:\n    Go back to the interrupted turn.');
+    expect(compileGame(text, lib).diagnostics).toEqual([]);
+  });
+
+  it('refused, on that line, when that phase has no line that goes back to the interrupted turn', () => {
+    const text = haggling('them', BARGAINING.replace(`\n${GO_BACK}`, ''));
+    expect(text).not.toContain(GO_BACK);
+    expect(errorsOf(text)).toEqual([
+      expect.objectContaining({ line: lineOf(text, '      The bargaining phase starts with them.'), message: GO_TO_REFUSED }),
+    ]);
+  });
+
+  it('refused, on that line, when it starts their phase itself, even with a line of theirs that goes back to the interrupted turn', () => {
+    const START = '      The final count phase starts with the player on their left.';
+    const text = STEPS_GAME.replace(STEP_STARTS,
+      `${STEP_STARTS}\n  A player may hand over.\n    Then:\n${START}\n  A player may leave.\n    Then:\n${GO_BACK}`);
+    expect(text).not.toBe(STEPS_GAME);
+    expect(errorsOf(text)).toEqual([expect.objectContaining({ line: lineOf(text, START), message: GO_TO_REFUSED })]);
+  });
+});

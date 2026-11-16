@@ -170,8 +170,10 @@ function startPhase(env: PhraseEnv, phase: string, next: PlayerId): GameState {
   return runStartLines(env, interruptTurn(env.state, phase, next), phase, next);
 }
 
-/** The phrase that moves the game on to another phase; the compiler finds it, as any line that enters a phase, by its `entersPhase`. */
+/** The phrase that moves the game on to another phase, with no way back: the compiler refuses it among the lines of a steps phase. */
 export const GO_TO_PHRASE = 'go to {phase}';
+/** The phrase that ends an interruption; a line of a steps phase may start another phase only when a line of that phase says it. */
+export const GO_BACK_PHRASE = 'go back to the interrupted turn';
 
 const GO_TO_IN_THE_STEPS = (phase: string) =>
   `The players take the ${phase} in turn before the score, so no line can go to another phase until they have all taken it.`;
@@ -318,7 +320,7 @@ export function registerFlowPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('the {phase} phase starts with the player on their left', phaseStartsOnTheirLeft, { needsPlayer: true, entersPhase: true })
     .effect('the {phase} phase starts with them', phaseStartsWithThem, { needsPlayer: true, entersPhase: true })
     .effect(GO_TO_PHRASE, goToPhase, { entersPhase: true })
-    .effect('go back to the interrupted turn', goBackToTheTurn)
+    .effect(GO_BACK_PHRASE, goBackToTheTurn)
     .turn('the turn passes to the left', passesLeft)
     .turn('the turn passes to the next player on the left who is {playerflag}', passesToNextWhoIs)
     .score("each {cardclass} in a player's {perzone} scores {int} point(s)", everyCardScores)

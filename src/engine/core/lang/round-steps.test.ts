@@ -504,3 +504,73 @@ describe('steps when a round starts, refused when a line of their phase starts a
     })]);
   });
 });
+
+describe('steps when a round starts, with a line of their phase that starts a phase: fine when that phase comes back to the interrupted turn', () => {
+  const GO_TO_REFUSED =
+    'The players take the levy in turn at the start of a round, so it can\'t go to another phase: pass it on with “The levy passes to the left.”';
+  /** A phase a step is interrupted for: its button gives the player 2 coins and goes back to the step. */
+  const BARGAINING = ['', 'Phase: bargaining', '  Players take turns.',
+    '  A player may agree.', '    Then:', '      They get 2 coins.', '      Go back to the interrupted turn.'].join('\n');
+  const GO_BACK = '      Go back to the interrupted turn.';
+  /** LEVY_GAME, over once a round is finished, where a player may haggle in the levy, which starts `bargaining` with `who`. */
+  const haggling = (who: string, bargaining = BARGAINING) => LEVY_GAME
+    .replace('  The game ends when the pile is empty.', '  The game ends when the done pile is not empty and the round is finished.')
+    .replace('Phase: levy\n  Players take turns.',
+      `Phase: levy\n  Players take turns.\n  A player may haggle.\n    Then:\n      The bargaining phase starts with ${who}.`) + bargaining;
+  /** p0 has no coins and a card to pawn, so the levy waits for them; p1 and p2 have none, so theirs pass at once. */
+  const waiting = both(coins(0, 0, 0), toList(1, 'p0'));
+
+  it('with them: it compiles with nothing to report, and their step goes on once that phase goes back to it', () => {
+    const text = haggling('them');
+    expect(compileGame(text, lib).diagnostics).toEqual([]);
+    const engine = table(compiled(text), waiting);
+    expect(engine.getState().turn).toEqual({ current: 'p0', phase: 'levy' });
+    expect(engine.dispatch({ type: 'haggle', by: 'p0' }).reason).toBeUndefined();
+    expect(engine.getState().turn).toEqual({ current: 'p0', phase: 'bargaining' });
+    expect(engine.dispatch({ type: 'agree', by: 'p0' }).reason).toBeUndefined();
+    // Back in their step, p0 pays the levy with those 2 coins, the steps end and the start player's turn starts with a coin.
+    expect(engine.getState().turn).toEqual({ current: 'p0', phase: 'working' });
+    expect(coinsOf(engine.getState())).toEqual([1, 0, 0]);
+    round(engine);
+    expect(engine.getState().result).toBeDefined();
+  });
+
+  it('with the player on their left: it compiles with nothing to report, and the step goes on once that phase goes back to it', () => {
+    const text = haggling('the player on their left');
+    expect(compileGame(text, lib).diagnostics).toEqual([]);
+    const engine = table(compiled(text), waiting);
+    expect(engine.dispatch({ type: 'haggle', by: 'p0' }).reason).toBeUndefined();
+    expect(engine.getState().turn).toEqual({ current: 'p1', phase: 'bargaining' });
+    expect(engine.dispatch({ type: 'agree', by: 'p1' }).reason).toBeUndefined();
+    expect(engine.getState().turn).toEqual({ current: 'p0', phase: 'levy' });
+    expect(coinsOf(engine.getState())).toEqual([0, 2, 0]);
+    // p0 pawns their card for a coin, which empties their list; p1 then pays the levy with the 2 coins.
+    pawn(engine, 'p0');
+    expect(engine.getState().turn).toEqual({ current: 'p0', phase: 'working' });
+    expect(coinsOf(engine.getState())).toEqual([2, 0, 0]);
+    round(engine);
+    expect(engine.getState().result).toBeDefined();
+  });
+
+  it('that goes back by a rule: it compiles with nothing to report', () => {
+    const text = haggling('them', BARGAINING.replace(GO_BACK, '  When they have at least 2 coins:\n    Go back to the interrupted turn.'));
+    expect(text).toContain('  When they have at least 2 coins:\n    Go back to the interrupted turn.');
+    expect(compileGame(text, lib).diagnostics).toEqual([]);
+  });
+
+  it('refused, on that line, when that phase has no line that goes back to the interrupted turn', () => {
+    const text = haggling('them', BARGAINING.replace(`\n${GO_BACK}`, ''));
+    expect(text).not.toContain(GO_BACK);
+    expect(errorsOf(text)).toEqual([
+      expect.objectContaining({ line: lineOf(text, '      The bargaining phase starts with them.'), message: GO_TO_REFUSED }),
+    ]);
+  });
+
+  it('refused, on that line, when it starts their phase itself, even with a line of theirs that goes back to the interrupted turn', () => {
+    const START = '      The levy phase starts with the player on their left.';
+    const text = LEVY_GAME.replace('Phase: levy\n  Players take turns.',
+      `Phase: levy\n  Players take turns.\n  A player may hand over.\n    Then:\n${START}\n  A player may leave.\n    Then:\n${GO_BACK}`);
+    expect(text).not.toBe(LEVY_GAME);
+    expect(errorsOf(text)).toEqual([expect.objectContaining({ line: lineOf(text, START), message: GO_TO_REFUSED })]);
+  });
+});
