@@ -675,7 +675,7 @@ describe('the flags a press reads', () => {
 });
 
 describe('lines a flag turns on', () => {
-  it('shows charmed, which reads the card alone; Review Focus: never gusty, which changes red work but reads the scrap', () => {
+  it('shows a flag that reads only the card (charmed); Review Focus: never one that turns a line on but reads the scrap (gusty)', () => {
     const charm = compiled(CHARM_GAME);
     // Gusty turns a line of red work on just as charmed does, so only what its own lines read keeps it off every face.
     const redWork = charm.worked!['red work'];
@@ -688,18 +688,18 @@ describe('lines a flag turns on', () => {
   });
 });
 
-describe('Review Focus: a value about a player read through what its owner has where everyone sees', () => {
+describe('Review Focus: a player\'s total read through a flag that asks what the card\'s owner has in a zone', () => {
   const VALUE = "Job pay:\n  A player's job pay is the total red pay of the cards in their workshop.";
   const rival = (zone: string, test = 'that is tired') =>
     [withPay(["  A rival card's red pay is 2."], 'Rival:', `  Only if its owner has a card in their ${zone} ${test}.`), '', VALUE].join('\n');
-  it('shows it when the owner\'s zone is one everyone sees, and the clause reads the card alone', () => {
+  it('is shown when everyone sees that zone, whatever the flag asks of the card there, tired or not', () => {
     expect(shownPlayerValues(compiled(rival('idle')))).toEqual(['job pay']);
     expect(shownPlayerValues(compiled(rival('idle', 'that is not tired')))).toEqual(['job pay']);
   });
-  it('(guard) shows it not when only the owner sees that zone', () => {
+  it('(guard) is not shown when only the owner sees that zone', () => {
     expect(shownPlayerValues(compiled(rival('stash')))).toEqual([]);
   });
-  it('(guard) labels the flag on no face: the card-level rule is unchanged', () => {
+  it('(guard) leaves the flag itself off every face, as a flag that asks what the owner has always is', () => {
     expect(shownFlags(compiled(rival('idle')))).not.toContain('rival');
   });
 });

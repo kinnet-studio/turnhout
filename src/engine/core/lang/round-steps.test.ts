@@ -301,7 +301,7 @@ describe('steps when a round starts, forgotten and reached by an example', () =>
   });
 });
 
-describe('steps when a round starts, fix round 1', () => {
+describe('steps when a round starts, with their first seat gone out, a pass that can never run, a line that would leave them, or the steps before the score', () => {
   it('end on the next seat still in when the seat that took the first went out in its step', () => {
     // A player with no coins and an empty list goes out instead of passing the levy on; going out hands the step to the next seat.
     const EMPTY = '  When their list is empty:\n    The levy passes to the left.';

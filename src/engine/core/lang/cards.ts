@@ -170,7 +170,7 @@ export function homePileOf(sets: CardSetSpec[], cardId: string): string {
 }
 
 /**
- * The `state.data` key holding the number the next card made will take: new cards are numbered on from the ones the sets
+ * The `state.data` key holding the number the next card made or renamed will take: new cards are numbered on from the ones the sets
  * dealt, and the state keeps the count, so a game replayed from its log makes the same cards with the same ids.
  */
 export const NEXT_CARD_KEY = 'lang:next-card';

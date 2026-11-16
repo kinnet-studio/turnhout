@@ -420,7 +420,7 @@ describe("a card's numbers added and multiplied", () => {
   });
 });
 
-describe("lines a flag turns on, any card's number, and a number for each of a count", () => {
+describe("lines a flag turns on, “A card's … is …”, and “A card's … goes up by … for each …”", () => {
   const charm = compiled(CHARM_GAME);
   // Setup deals 2 jobs to each stash, more than the pile holds for three: a state with p0's turn set skips it.
   const built = createEngine(charm, lib, 3, { ...initialState(charm, 1), turn: { current: 'p0', phase: 'working' } });
@@ -439,7 +439,7 @@ describe("lines a flag turns on, any card's number, and a number for each of a c
   const reading = (lines: string[], edit = (text: string) => text) =>
     createEngine(compiled(edit([CHARM_GAME, '', ...lines].join('\n'))), lib, 3, table).runtime;
 
-  it('works each out from the lines before it, and what a flag turns on only for a card that is so; every line is about a card', () => {
+  it('work out each value line by line, a flagged line only for a card with the flag and with no floor, and each needs a card', () => {
     // A Potter makes 1 red work, has a wage of 1, and every card's bonus is 1. Hands have no worth, so its worth is nothing, and stays
     // nothing.
     expect(['red work', 'wage', 'bonus', 'worth'].map((name) => value(table, potterHand, name))).toEqual([1, 1, 1, null]);
@@ -472,7 +472,7 @@ describe("lines a flag turns on, any card's number, and a number for each of a c
     }
   });
 
-  it('Review Focus: gives a charmed Vase no wage: jobs have no wage column, and a line a flag turns on gives nothing so far nothing', () => {
+  it('Review Focus: a flagged line leaves a value of nothing so far at nothing (a charmed Vase has no wage), and “A card\'s wage is 4.” gives it one', () => {
     const twice = charmed(table, jar, 2);
     expect(built.runtime.workedFlag(twice, jar, 'charmed')).toBe(true);
     expect(value(twice, jar, 'wage')).toBeNull();

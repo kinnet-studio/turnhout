@@ -171,9 +171,9 @@ export class LangRuntime {
    * a rule's lines, or the lines of the option a press chose. The move and the subject hold cards by id (the card, the card it goes onto,
    * the picked cards), read in `state`, before the first line. A line that shuffles a card into a pile some seat can't see gives it a
    * new id (renameCards), so before each line every id they hold is looked up again (currentIdOf, through the dealt id) as the id that
-   * card has then: followed through any number of renames, and left exactly as it is when no rename touched it. No shipped game's
-   * lines rename a card their own run holds; plan 9-1 shuffles such piles in the middle of a press, and its later lines must still find
-   * the card.
+   * card has then: followed through any number of renames, and left exactly as it is when no rename touched it. No shipped game reads a
+   * card again after its run renamed it; plan 9-1 shuffles such piles in the middle of a press, and its later lines must still find the
+   * card.
    */
   runLines(refs: PhraseRef[], state: GameState, move?: MoveInfo, example?: ExampleEnv, subject?: Subject): GameState {
     return refs.reduce((s, ref) => this.run(ref, s, followMove(state, s, move), example, followSubject(state, s, subject)), state);

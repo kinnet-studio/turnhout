@@ -72,7 +72,10 @@ const goesUpByItsTimes: ValueFn = (env, [, first, second], value) => {
   return value + cardNumber(env, card, first as string) * cardNumber(env, card, second as string);
 };
 
-/** Any card has the whole number, whatever the lines before made of it, nothing so far among them: a card of a kind does so too. */
+/**
+ * The whole number, whatever the lines before made the value, nothing so far included: “A card's bonus is 1.” A line about a kind of card
+ * or a flag (“A charmed card's bonus is 1.”) gives it only to the cards it is about.
+ */
 const isNumber: ValueFn = (_env, [, n]) => n as number;
 
 /**

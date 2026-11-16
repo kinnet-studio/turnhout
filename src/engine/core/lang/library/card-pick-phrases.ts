@@ -59,7 +59,10 @@ const movePickedTo: EffectFn = (env, [zone]) => relocate(env.state, thePickedCar
 const NEITHER_HAS = (card: string, target: string) => (card === target
   ? `Neither the card nor the target card has a ${card}.` : `The card has no ${card}, and the target card has no ${target}.`);
 
-/** The lower of the card's number and the target card's, each read as `numberIfAny` reads it: a side with none is left out. */
+/**
+ * The lower of the card's number and the target card's, each read as `numberIfAny` reads it: a side with none is left out. Both are read
+ * before anything moves, so the payment that follows can't change which is lower.
+ */
 function lowerOf(env: PhraseEnv, cardName: string, targetName: string): number {
   const sides = [numberIfAny(env, movedCard(env), cardName), numberIfAny(env, theTargetCard(env), targetName)]
     .filter((n): n is number => n !== null);

@@ -173,7 +173,10 @@ function moveZone(text: string, line: number, ctx: LineCtx): ZoneRef | null {
   return null;
 }
 
-/** The zones a move line or a pick line names, read in order, or null (with the reason given) when they cannot be a move's. */
+/**
+ * The zones a move line names, read in order, or null (with the reason given) when one can't be read or is not one zone. A pick line's
+ * are read by `pickZones`, which also takes another player's zone as the zone of its target card.
+ */
 function oneZones(node: OutlineNode, texts: string[], ctx: LineCtx): ZoneRef[] | null {
   const zones = texts.map((text) => moveZone(text, node.line, ctx));
   if (zones.some((zone) => zone === null)) return null;
@@ -187,16 +190,19 @@ function oneZones(node: OutlineNode, texts: string[], ctx: LineCtx): ZoneRef[] |
 
 /**
  * Reads “another player's <zone>”, a zone a button's target card may be picked in: `<zone>` is read as “their <zone>” is, with that
- * reading's problems, each naming the zone as the line writes it, and becomes that zone of each other player (`{ others }`). Null when
- * it can't be read.
+ * reading's problems, each naming the zone as the line writes it, in its words and its message, and becomes that zone of each other
+ * player (`{ others }`). Null when it can't be read.
  */
 function othersZone(text: string, line: number, ctx: LineCtx): ZoneRef | null {
   const name = ANOTHER_PLAYERS.exec(text)?.[1] ?? '';
+  const theirWords = `their ${name}`;
   const told: Diagnostic[] = [];
-  const theirs = moveZone(`their ${name}`, line, { ...ctx, diagnostics: told });
-  ctx.diagnostics.push(...told.map((problem) => ({ ...problem, text })));
+  const theirs = moveZone(theirWords, line, { ...ctx, diagnostics: told });
+  ctx.diagnostics.push(...told.map((problem) => ({ ...problem, message: problem.message.replaceAll(theirWords, text), text })));
+  if (theirs === null) return null;
   // “their …” reads only as the zone of the player the line is about, `{ of: { who: 'actor' }, zone }`.
-  return theirs !== null && 'of' in theirs ? { others: theirs.zone } : null;
+  if (!('of' in theirs)) throw new Error(`“${theirWords}” was read as a zone of no player.`);
+  return { others: theirs.zone };
 }
 
 /**

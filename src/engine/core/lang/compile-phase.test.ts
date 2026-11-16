@@ -1922,3 +1922,14 @@ describe("the lower of two prices against a target card in another player's zone
     expect(compileGame(toasting("another player's idle"), lib).diagnostics).toEqual([]);
   });
 });
+
+describe("another player's zone that can't be read, told in the line's words", () => {
+  it("names it “another player's …” in the message, as the line writes it", () => {
+    const JINX_LINE = "  A player may jinx a card from their stash to a card in another player's workshop or another player's crew.";
+    const line = "  A player may jinx a card from their stash to a card in another player's workshop and their crew.";
+    const text = JINX_GAME.replace(JINX_LINE, line);
+    expect(text).not.toBe(JINX_GAME);
+    expect(compileGame(text, lib).diagnostics.map((d) => [d.line, d.message, d.text])).toEqual([[text.split('\n').indexOf(line) + 1,
+      "I don't understand “another player's workshop and their crew” here.", "another player's workshop and their crew"]]);
+  });
+});

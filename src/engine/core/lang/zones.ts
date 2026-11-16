@@ -118,11 +118,12 @@ export function resolveSeat(ref: SeatRef, env: PhraseEnv, actor?: PlayerId): Pla
   return winner;
 }
 
-/** The zone `name` of every seat still in but `by`, from `by`'s left. */
+/** The zone `name` of every seat still in but `by`, from `by`'s left; none for a `by` not at the table, who has no left. */
 export function othersZoneIds(state: GameState, seats: PlayerId[], by: PlayerId, name: string): string[] {
   const at = seats.indexOf(by);
+  if (at < 0) return [];
   // Round the table from the seat to `by`'s left, back to the seat on its right.
-  const fromLeft = [...seats.slice(at + 1), ...seats.slice(0, Math.max(at, 0))];
+  const fromLeft = [...seats.slice(at + 1), ...seats.slice(0, at)];
   return playersIn(state, fromLeft).map((seat) => zoneIdFor(name, seat));
 }
 

@@ -349,3 +349,9 @@ describe("another player's zone", () => {
     expect(describeZone({ others: 'crew' })).toBe("another player's crew");
   });
 });
+
+describe("another player's zone, for a player not at the table", () => {
+  it('is no zone at all', () => {
+    expect(othersZoneIds(stateWith([]), SEATS, 'p9', 'workshop')).toEqual([]);
+  });
+});
