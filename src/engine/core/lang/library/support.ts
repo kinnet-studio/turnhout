@@ -137,7 +137,7 @@ export function cardNumber(env: PhraseEnv, card: CardState, name: string): numbe
  * The number a card has under a name, as `cardNumber` reads it, or null when it has none: what a rule about many cards reads, since a
  * blank cell is no number and a group may well hold cards of several kinds. A value that is no number is still the rule's mistake.
  */
-function numberIfAny(env: PhraseEnv, card: CardState, name: string): number | null {
+export function numberIfAny(env: PhraseEnv, card: CardState, name: string): number | null {
   const value = cardValueOf(env, card, name);
   if (value !== null && typeof value !== 'number') throw new RuleError(`This card's ${name} isn't a number.`);
   return value;

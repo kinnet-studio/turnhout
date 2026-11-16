@@ -521,3 +521,55 @@ describe("examples that press a button whose target card is in another player's 
     expect(run(JINX_GAME, example)).toEqual([expect.objectContaining({ status: 'pass', message: null })]);
   });
 });
+
+import { PRICE_GAME } from '../testing';
+import { createEngine, initialState } from '../build';
+import { relocate } from '../zones';
+import { counterOf, setCounter, withBoardData } from '../board-state';
+import { LangRuntime } from '../runtime';
+
+describe('the lower of two prices', () => {
+  const TOAST = 'toast a card from their stash to a card in their idle';
+  const g = compileGame(PRICE_GAME, lib).game!;
+  const fresh = initialState(g, 1);
+  const ids = (name: string) => fresh.cards.filter((c) => c.data?.name === name).map((c) => c.id);
+  const [statue] = ids('Statue');
+  const [vase, vase2] = ids('Vase');
+  const [potter] = ids('Potter');
+  const [smith] = ids('Smith');
+  const table = (coins = 9, more: (s: GameState) => GameState = (s) => s) => {
+    let s = relocate(relocate(relocate(fresh, [statue, vase], 'stash-p0', g), [potter], 'idle-p0', g), [smith], 'idle-p0', g);
+    s = withBoardData({ ...s, turn: { current: 'p0', phase: 'working' } }, g, ['p0', 'p1']);
+    s = setCounter(setCounter(s, 'coins', 'p0', coins), 'coins', 'p1', 9);
+    return createEngine(g, lib, 2, more(s)).engine;
+  };
+  const toast = (cardId: string, onto: string) => ({ type: TOAST, by: 'p0', cardId, onto });
+  const coins = (e: ReturnType<typeof table>) => counterOf(e.getState(), 'coins', 'p0');
+  const withVase = (s: GameState) => relocate(s, [vase2], 'scrap', g);
+
+  it('pays the side that has a number, the lower of two, and both discounts never come to less', () => {
+    expect(compileGame(PRICE_GAME, lib).diagnostics).toEqual([]);
+    const a = table(); expect(a.dispatch(toast(statue, potter))).toMatchObject({ ok: true }); expect(coins(a)).toBe(7);
+    expect(cardById(a.getState(), statue)!.zoneId).toBe('scrap');
+    const b = table(); b.dispatch(toast(statue, smith)); expect(coins(b)).toBe(8);
+    const c = table(); c.dispatch(toast(vase, potter)); expect(coins(c)).toBe(8);
+    const d = table(9, withVase); d.dispatch(toast(statue, potter)); expect(coins(d)).toBe(8);
+    const e = table(9, withVase); e.dispatch(toast(statue, smith)); expect(coins(e)).toBe(8);
+  });
+  it('Review Focus: lets a player with only the lower amount pay it', () => {
+    const a = table(1); expect(a.dispatch(toast(statue, smith))).toMatchObject({ ok: true }); expect(coins(a)).toBe(0);
+    const b = table(1);
+    expect(b.dispatch(toast(statue, potter))).toMatchObject({ ok: false, reason: "they have at least the lower of the card's pay and the target card's pay in coins" });
+  });
+  it('Review Focus: says neither side has the number', () => {
+    const rt = new LangRuntime(g, lib, ['p0', 'p1']);
+    const env = (cardId: string, onto: string) => fixtureEnv(fresh, {
+      game: g, seats: ['p0', 'p1'], move: { verb: 'toast', by: 'p0', cardId, from: 'stash-p0', to: 'stash-p0' },
+      subject: { player: 'p0', space: null, card: cardId, onto }, workedValue: rt.workedValue, workedFlag: rt.workedFlag,
+    });
+    expect(() => runPhrase(lib, 'effect', "they pay the lower of the card's wage and the target card's pay", env(statue, potter)))
+      .toThrow(new RuleError('The card has no wage, and the target card has no pay.'));
+    expect(() => runPhrase(lib, 'effect', "they pay the lower of the card's worth and the target card's worth", env(potter, ids('Potter')[1])))
+      .toThrow(new RuleError('Neither the card nor the target card has a worth.'));
+  });
+});

@@ -865,3 +865,22 @@ export function unreachableZones(defs: ZoneDef[], handSize: number): string[] {
   }
   return problems;
 }
+
+/**
+ * CREW_GAME where a player may toast a job from their stash to a hand in their idle, paying the lower of the job's pay and the hand's: only
+ * a Smith has a pay (1, it is cheap), and a Statue's pay is 1 while the scrap holds a Vase (it is a bargain), so the two never come to less
+ * than 1. Raising the fee, a game number that starts at 1, puts it up by 2.
+ */
+export const PRICE_GAME = [
+  CREW_GAME
+    .replace('  Players pay with coins.', '  Players pay with coins.\n  The game has a fee of 1.')
+    .replace('  A player may stop.', [
+      '  A player may toast a card from their stash to a card in their idle.',
+      "    Only if they have at least the lower of the card's pay and the target card's pay in coins.", '    Then:',
+      "      They pay the lower of the card's pay and the target card's pay.", '      Move it to the scrap.',
+      '  A player may raise the fee.', '    Then:', '      The fee goes up by 2.',
+      '  A player may stop.'].join('\n')), '',
+  'Pay:', "  A cheap card's pay is 1.", "  A bargain card's pay is 1.", '',
+  'Cheap:', '  Only if it is a Smith card.', '',
+  'Bargain:', '  Only if it is a Statue card.', '  Only if the scrap has a Vase.',
+].join('\n');

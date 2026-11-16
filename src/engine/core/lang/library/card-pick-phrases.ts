@@ -13,6 +13,9 @@ import { changeCard } from '../card-facts';
 import { changeable } from './card-number-phrases';
 import { cardHasFlag, cardNumber, mustBeKept } from './support';
 import { ontoZoneIds } from '../declared-moves';
+import { movedCard, numberIfAny, theyOf } from './support';
+import { counterOf } from '../board-state';
+import { transfer } from './board-phrases';
 
 // ---- the lines of a button that picks cards ------------------------------------------------------
 
@@ -52,6 +55,24 @@ const pickedAtMost: ConditionFn = (env, [most]) => thePickedCards(env).length <=
 
 /** In the press's order, so that the card picked last ends on top of a pile. */
 const movePickedTo: EffectFn = (env, [zone]) => relocate(env.state, thePickedCards(env), soleZone(zone as ZoneRef, env), env.game);
+
+const NEITHER_HAS = (card: string, target: string) => (card === target
+  ? `Neither the card nor the target card has a ${card}.` : `The card has no ${card}, and the target card has no ${target}.`);
+
+/** The lower of the card's number and the target card's, each read as `numberIfAny` reads it: a side with none is left out. */
+function lowerOf(env: PhraseEnv, cardName: string, targetName: string): number {
+  const sides = [numberIfAny(env, movedCard(env), cardName), numberIfAny(env, theTargetCard(env), targetName)]
+    .filter((n): n is number => n !== null);
+  if (sides.length === 0) throw new RuleError(NEITHER_HAS(cardName, targetName));
+  return Math.min(...sides);
+}
+
+const haveTheLower: ConditionFn = (env, [cardName, targetName, counter]) =>
+  counterOf(env.state, counter as string, theyOf(env)) >= lowerOf(env, cardName as string, targetName as string);
+
+/** Paid to the bank, as “they pay the card's …” is: one that leaves them below 0 notes the debt. */
+const payTheLower: EffectFn = (env, [cardName, targetName]) =>
+  transfer(env, theyOf(env), null, lowerOf(env, cardName as string, targetName as string));
 
 // ---- examples: action --------------------------------------------------------------------------
 
@@ -275,6 +296,10 @@ export function registerCardPickPhrases(lib: PhraseLibrary): PhraseLibrary {
     .condition('the target card is not {cardflag}', targetIsFlagged(false), { needsOnto: true })
     .condition('some card on the target card is {cardflag}', someCardOnTargetIs(true), { needsOnto: true })
     .condition('no card on the target card is {cardflag}', someCardOnTargetIs(false), { needsOnto: true })
+    .condition("they have at least the lower of the card's {attribute} and the target card's {attribute} in {counter}", haveTheLower,
+      { needsMove: true, needsOnto: true, needsPlayer: true })
+    .effect("they pay the lower of the card's {attribute} and the target card's {attribute}", payTheLower,
+      { needsMove: true, needsOnto: true, needsPayment: true })
     .effect('move the picked cards to {zone}', movePickedTo, { needsCards: true })
     .effect('the target card gains {int} {attribute}', targetGains, { needsOnto: true, writes: 1 })
     .effect('the target card is {cardflag}', targetBecomes(true), { needsOnto: true, writes: 0 })

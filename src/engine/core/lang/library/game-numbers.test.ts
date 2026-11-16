@@ -123,3 +123,24 @@ describe('a number of the game and the player a press picked', () => {
     ]]);
   });
 });
+
+import { PRICE_GAME } from '../testing';
+import { runExamples } from '../examples';
+
+describe('a game number that goes up', () => {
+  const price = compileGame(PRICE_GAME, lib).game!;
+  it('puts the number up', () => {
+    const state = setGameNumber(initialState(price, 1), 'fee', 1);
+    const s = runPhrase<GameState>(lib, 'effect', 'the fee goes up by 2', fixtureEnv(state, { game: price, seats: ['p0', 'p1'] }));
+    expect(gameNumber(s, price, 'fee')).toBe(3);
+  });
+  it('names a game number it does not know', () => {
+    const text = PRICE_GAME.replace('      The fee goes up by 2.', '      The fea goes up by 2.');
+    expect(compileGame(text, lib).diagnostics.map((d) => d.message)).toEqual(['There is no game number called “fea”.']);
+  });
+  it('raises the fee in an example', () => {
+    const { game: g, diagnostics } = compileGame(`${PRICE_GAME}\n\nExample: raising the fee puts it up by 2\n  When p0 raises the fee\n  Then the fee is 3\n`, lib);
+    expect(diagnostics).toEqual([]);
+    expect(runExamples(g!, lib).map((r) => [r.status, r.message])).toEqual([['pass', null]]);
+  });
+});

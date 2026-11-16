@@ -1889,3 +1889,15 @@ describe("a target card in another player's zone", () => {
     expect(hire.pick).not.toHaveProperty('ontoAlso');
   });
 });
+
+import { PRICE_GAME } from './testing';
+
+describe('the lower of two prices (compiled)', () => {
+  it('reads the lower of two prices only in a button that picks a target card', () => {
+    const line = "      They pay the lower of the card's pay and the target card's pay.";
+    const text = PRICE_GAME.replace('  A player may start a card in their stash.\n    Then:\n', `  A player may start a card in their stash.\n    Then:\n${line}\n`);
+    expect(text).not.toBe(PRICE_GAME);
+    expect(messages(text)).toEqual([[text.split('\n').indexOf(line) + 1,
+      "“They pay the lower of the card's pay and the target card's pay” only makes sense in a button that picks a card and the card it goes to, like “A player may stack a card from their hand to a card in the row.”"]]);
+  });
+});

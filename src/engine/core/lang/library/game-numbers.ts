@@ -22,6 +22,9 @@ const theyHaveTimesTheNumber: ConditionFn = (env, [times, name, counter]) =>
 
 const numberIs: EffectFn = (env, [name, n]) => setGameNumber(env.state, name as string, n as number);
 
+const numberGoesUp: EffectFn = (env, [name, n]) =>
+  setGameNumber(env.state, name as string, gameNumber(env.state, env.game, name as string) + (n as number));
+
 /** Paid to the bank from the counter players pay with, so that a payment that takes them below 0 notes the debt as any other does. */
 const theyPayNumber: EffectFn = (env, [name]) => transfer(env, theyOf(env), null, gameNumber(env.state, env.game, name as string));
 
@@ -54,6 +57,7 @@ export function registerGameNumberPhrases(lib: PhraseLibrary): PhraseLibrary {
     .condition('they have at least the {gamenumber} in {counter}', theyHaveTheNumber, { needsPlayer: true })
     .condition('they have at least {int} times the {gamenumber} in {counter}', theyHaveTimesTheNumber, { needsPlayer: true })
     .effect('the {gamenumber} is {int}', numberIs)
+    .effect('the {gamenumber} goes up by {int}', numberGoesUp)
     .effect('they pay the {gamenumber}', theyPayNumber, { needsPlayer: true, needsPayment: true })
     .effect('they pay the {gamenumber} to {holder}', theyPayNumberTo, { needsPlayer: true, needsPayment: true })
     .effect('they pay the {gamenumber} to that player', theyPayNumberToThatPlayer, { needsPlayer: true, needsPick: true, needsPayment: true })
