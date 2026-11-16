@@ -12,7 +12,7 @@ All of it is tested with fixtures in general words. Startup Simulator's text doe
 
 **Architecture:**
 - **This is plan 6-1 of three.** Plan 6-2 writes the rules text and the long runs; plan 6-3 the page. Nothing here touches `src/games/**` or `src/pages/**`.
-- **Five tasks.** The spec's "What the language gains" maps onto them like this:
+- **Six tasks** (Task 6 added by the controller, see the amendment). The spec's "What the language gains" maps onto them like this:
   1. **Targets in another player's zone** (item 1, the Debuffs' "an opponent's Board staff").
   2. **Value lines a flag turns on, any card's number, and a number for each of a count** (items 1 and 2: Workaholic, the Events' modifiers, Hype).
   3. **The lower of two prices, and a game number that goes up** (item 4, plus Chip Shortage and Intern Season on the University).
@@ -132,6 +132,11 @@ The evidence is `builder-check-startup-6.md` in the session scratchpad. Plans 4-
   - `lineOf(text, line)` is `text.split('\n').indexOf(line) + 1`; define it locally where needed.
 - **Fixture words** (general, never Startup's): jinx, charm, charmed, gusty, bonus, toast, cheap, bargain, fee, raise, levy, pawn, omen, omen deck, omen discard, Gale, Toll.
 
+- **Controller amendment (2026-11-16, before the pre-flight).** Task 6 is added for 5-2b's pre-flight gap G1. It widens three constraints above for Task 6 only:
+  - `lang:renamed` is a second new `state.data` key;
+  - `README.md` and an appended test in `src/games/startup-simulator.test.ts` change;
+  - card ids after an in-play shuffle into a pile some seat can't see change in every game, Color Match's included. Setup's ids don't change.
+
 ## Review Focus
 
 - **A round's steps when every seat's step passes at once, when a seat is out, or when a step's own start lines pass it on.**
@@ -157,6 +162,11 @@ The evidence is `builder-check-startup-6.md` in the session scratchpad. Plans 4-
     - with both, the lower is paid, never less;
     - the player can afford the lower amount.
   - Tests: Task 3.
+
+- **A card seen face up, then shuffled into a pile some seat can't see** (Task 6, 5-2b's G1).
+  - Expected: no seat other than one that sees the pile can tell, from ids or slots, where the card went or the pile's new order.
+  - Expected: replay and undo stay exact, a card sent back to its pile finds it, and examples don't take a renamed card again.
+  - Tests: Task 6.
 
 ## Assumed from earlier plans (check before Task 1)
 
@@ -831,6 +841,82 @@ feat(lang): an example for each of slice 6's pieces and a card revealed at a rou
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC
 EOF
+```
+
+---
+
+### Task 6: Cards shuffled into a pile some seat can't see take fresh ids
+
+**Why (5-2b's pre-flight G1, a controller ruling added 2026-11-16).** A shuffle keeps each card's id and only changes its slot. A seat that saw a card face up in a public discard can still name it after the discard is shuffled into a hidden deck. It can read the new deck's order from the slots, and follow the card into another player's hidden hand. Plan 9-1's R1 designs re-keying for face-down cards (`lang:renamed`, fresh ids from the game's counter). This task builds that machinery now, and 9-1 reuses it.
+
+Before starting: re-check `NEXT_CARD_KEY`, `makeCard`, `buildCards`, `deckOf`, `homePileOf` and its two callers (`keptGoesBack` in `draw-phrases.ts`, the creditor lines in `debt-phrases.ts`), `claimer` (`examples.ts`), `shuffleOne` and `shuffle` and `shuffleRestInto` (`flow-phrases.ts`), the reshuffling deal in `queue-phrases.ts` (~:77), `zoneInfo` (`zones.ts`), `isRevealed` (`derive-scene.ts`), `HOLDER_KEY`, and how Setup's lines are run (`runtime.ts`). Also list every `lang:*` key in `state.data` whose keys or values are card ids.
+
+**Files:**
+- Modify:
+  - `src/engine/core/lang/cards.ts`: `RENAMED_KEY`, `dealtIdOf`, `renameCards`; `makeCard` takes its number through the helper that `renameCards` uses.
+  - `library/flow-phrases.ts` and `library/queue-phrases.ts`: the three shuffles.
+  - `examples.ts`: `claimer`.
+  - `library/draw-phrases.ts` and `library/debt-phrases.ts`: `homePileOf` of `dealtIdOf`.
+  - The Setup runner: it tells the effects it runs that they run in Setup.
+  - `README.md`: line ~152, the "Until plan 6-1, a reshuffle keeps each card's id …" sentence.
+- Test (all appended): `cards.test.ts`, `library/flow-phrases.test.ts`, `library/queue-phrases.test.ts` (or the file that tests the reshuffling deal), `examples.test.ts`, `src/games/startup-simulator.test.ts`.
+
+**Interfaces** (9-1's R1 names, built here; plan 9-1 consumes them):
+
+```ts
+// cards.ts
+/** `{ [id]: the id it was dealt or made with }` for each card given a new one. Written only when cards are renamed; never sent to a seat. */
+export const RENAMED_KEY = 'lang:renamed';
+/** The id a card was dealt or made with: its id, or the one RENAMED_KEY gives it. */
+export function dealtIdOf(state: GameState, cardId: string): string;
+/**
+ * Gives each of `ids`, in that order, the next number makeCard would give, and puts them at the end of state.cards in that order, so that
+ * neither a card's id nor its place in the list says which card it was. Everything else about each card stays. RENAMED_KEY maps each new id
+ * to the card's dealt id, and drops the entry of the id it had, so the map never holds more entries than there are cards. NEXT_CARD_KEY
+ * moves on. A card with a card on it, or on a card, is not renamed: RuleError NOT_TOLD_APART.
+ */
+export function renameCards(state: GameState, game: CompiledGame, ids: string[]): GameState;
+const NOT_TOLD_APART = (card: string) => `${card} has a card on it, or sits on one, so the others could still tell it apart.`;
+```
+
+- **Which shuffles rename.** Three effects shuffle: `shuffle {zone}`, `shuffle {zone}, except its top card, into {zone}`, and the deal that shuffles a zone back in when it runs out. Each renames the cards it put in a new order, in their new slot order. It does so only when the zone they end in is not public (its `visibility` is `secret` or `owner`), and not while Setup's lines run.
+  - **Setup keeps ids.** No seat has seen a card yet, and `buildCards` already gives each set its ids in shuffled order. So every game's ids at the start stay as they are.
+  - **A public zone keeps ids.** Every seat sees its faces.
+- **The flattened map** differs from 9-1's wording "the id it had before". Here each entry gives the dealt id directly, so `dealtIdOf` is one lookup, and a card renamed twice leaves one entry. Plan 9-1's pre-flight adopts this.
+- **Other card-id keys.** Any `lang:*` key in the "Before starting" list that can name a card lying in a shuffled pile is renamed with it, or the card is refused as NOT_TOLD_APART. Say which in the report.
+- **`state.data`.** `lang:renamed` is the second new key in this plan, after Task 4's `lang:round-steps`.
+
+- [ ] **Step 1: Write the failing tests.**
+  - **Renamed** (`flow-phrases.test.ts`, `describe('a shuffle no seat can follow')`).
+    - On a table whose deck is `secret`, holding 4 cards dealt as `c0`–`c3`, with `NEXT_CARD_KEY` unset and 9 cards dealt in all, run `Shuffle the deck.` outside Setup. Then:
+      - the deck holds `c9`–`c12`, in slots 0–3;
+      - they are the last four entries of `state.cards`;
+      - `data[RENAMED_KEY]` maps each to the `c0`–`c3` card now in its slot;
+      - `data[NEXT_CARD_KEY]` is 13.
+    - The same line run as a Setup line leaves every id and `state.data` as they were (guard of Setup).
+    - On a `public` pile, the same line leaves the ids (guard).
+  - **Shuffled into** (same describe). `Shuffle the discard pile, except its top card, into the deck.` renames only the cards that moved, in their new order. The top card of the discard and the deck's own cards keep their ids.
+  - **The reshuffling deal** (on `RESHUFFLE_GAME`, `describe('a reshuffling deal no seat can follow')`). When the pile runs out and the done pile is shuffled back in, the shuffled cards are renamed before the rest of the deal is dealt. A card dealt after the shuffle has a new id, and `dealtIdOf` gives the id it had in the done pile.
+  - **No one can follow it** (Review Focus). The same table is shuffled twice, once from a state where the done pile holds A, B and once where it holds B, A (two arranged states with equal rng). For every seat other than one that sees the pile, `deriveScene` of the two results shows the same ids in the same slots.
+  - **Replay and undo** (Review Focus). On `RESHUFFLE_GAME`, an engine plays up to and past a reshuffle. A fresh engine given `loadLog(engine.getLog())` equals it, and `undo()` gives back the ids the cards had before.
+  - **Twice renamed.** After two reshuffles, a card has one `RENAMED_KEY` entry, and `dealtIdOf` gives the id `buildCards` gave it.
+  - **Refused.** `renameCards` of a card with a card on it throws `NOT_TOLD_APART`, naming the card as `attachmentProblem` does.
+  - **Back to its pile** (`draw-phrases.test.ts` or `debt-phrases.test.ts`, whichever tests `keptGoesBack`). A renamed card sent back to the pile it came from goes to its dealt set's pile. Before the change, the press threw `A card made from a stack that never runs out has no pile to go back to.`
+  - **Examples** (`examples.test.ts`). A Given after a reshuffle does not take a renamed card again: an example that reshuffles a done pile, then gives a card that only the renamed card matches, fails with `No card matches “…”.`
+  - **Startup Simulator** (`startup-simulator.test.ts`, appended, Review Focus). Use the 2-player seed 4 long run, which holds a reshuffle. After the reshuffle, no card id that a seat saw face up in the strategy discard just before it is in the strategy deck, or in any player's Strategy Hand or Brainstorm, in that seat's scene. The game's tallies are unchanged.
+- [ ] **Step 2: Run** the new tests. Expected: FAIL. The Setup and public guards pass.
+- [ ] **Step 3: Implement** the interfaces. Then rewrite the README sentence to say what now holds. For example: "A card shuffled into a pile some seat can't see, by a `Shuffle` line or a reshuffling deal, takes a fresh id from the game's counter, so no seat can follow it from the discard it was seen in, or read the new pile's order; Setup's shuffles keep the ids `buildCards` gave."
+- [ ] **Step 4: Run** `bun run test` and `bun run typecheck`.
+  - Hearts, Color Match, Venom and Rent Day pass unchanged, and Rent Day has 108 examples. Color Match's in-play `Shuffle the discard pile, except its top card, into the draw pile.` now renames the cards it moves. If a test of the four games pins an id after such a shuffle, stop and report it.
+  - Startup Simulator's examples pass in the same number, and its long-run tallies are unchanged.
+  - Re-run Task 5's Step 5 checks over `BASE..HEAD`. "Nothing outside the language" now prints `README.md` and `src/games/startup-simulator.test.ts` (appended lines only).
+- [ ] **Step 5: Commit** the files above by pathspec, with the message:
+
+```text
+feat(lang): a card shuffled into a pile some seat can't see takes a fresh id from the game's counter, so no seat can follow it from the discard it was seen in; decks and examples still know where it was dealt
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC
 ```
 
 ---
