@@ -529,6 +529,9 @@ export const RATE_GAME = [
   '', 'Rate:', "  A player's rate is the total pay of the cards in their workshop.",
 ].join('\n');
 
+/** RATE_GAME where each stake in a player's holdings scores 5, and their own stakes, kept in their purse, score nothing. */
+export const HELD_GAME = RATE_GAME.replace('  The highest score wins.', "  Each Stake in a player's holdings scores 5 points.\n  The highest score wins.");
+
 /**
  * CREW_GAME with five more rows in the center, three more rows only their owner sees and two more everyone sees: three shared lines,
  * two private lines and two band lines, more than the table's height holds.

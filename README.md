@@ -295,6 +295,33 @@ Phase: playing
 - **In the playtest,** targets are listed with their place (`Vase (p1's workshop)`, two of the same name in one place told apart by the card each sits on, then by its label); a centre flag is never labelled, though the values it changes show on the Board lines and the gauges (a card's own worked cost or price is not shown yet; its face and hover line give the printed one); the card in play has its line above the table; prices a button pays show at 0; and the tabs follow each player's step at a round's start.
 - **Startup Simulator** plays slice 6 this way: its Debuff button's `… to a card in another player's development team or another player's ops team.`; `A losing blue card's blue made goes down by 1.`; `They pay the lower of the card's price and the target card's price.`; `If the event in play has the Chip Shortage, the hardware junior price goes up by 3.`; and `If some card in the event in play is acting once, each player has the event check, in turn from the start player.` In the playtest, the Event in play's effect is written out above the table, the University's prices show on the bank line, Attributes and Hype are labelled on their cards, a Debuff lists each rival card with its seat and zone, and the event check is played under the buttons of the seat it waits on.
 
+**Cards that name a player, cards on other players' cards, lookups, and answering an action before it goes ahead.** Written in fixture words:
+
+- **Cards that name a player.**
+  - `Cards can name a maker.` declares the fact. `2 new Stake cards go to each purse, each naming its owner as its maker.` makes them, p0's first.
+  - Tests: `whose maker is them`, `whose maker is the target card's owner`, and in the answering phase `whose maker is the player acting`.
+  - Examples write `a Stake whose maker is p0`, which takes such a card from the table or makes one.
+- **Another player's zone as a button's own.** `A player may buy a card in another player's purse.` is offered seat by seat from the left; `When p0 buys the Stake from p2's purse`.
+- **Through the player a card names.**
+  - `They pay its maker's rate to its owner.`, `They get its maker's rate from its maker.`, `Its owner gets its maker's rate.` (from the bank), `Its maker gets 3 coins.` and `They pay 5 to its owner.`
+  - `its owner has at least 2 cards in their purse`, `they are not the card's maker` and `Move it to its maker's purse.`
+  - `another player tied to them by a card in their holdings has a card in their workshop whose name is Statue`: two players are tied when either holds a card naming the other.
+  - `The answer phase starts with its owner.` and `Hand the answer phase to another player of their choice who is not the card's maker.` interrupt the turn as `The trade phase starts with them.` does.
+- **Lookups.**
+  - `A player's rate is 5.`, `A player's rate is 10 if their top worth is at least 3.` (the last line that applies wins).
+  - `A player's top worth is the highest worth of the cards in their workshop.` (0 when none has one).
+  - `A player's reach goes up by the total wage of the cards in their crew.`
+- **Cards on other players' cards.**
+  - `…, where some cards are on other players' cards` keeps a card in its owner's zone while it sits on a card of another player's, which must stay in a zone everyone sees of the player it sat on when placed. Moving it elsewhere is refused with the cards named.
+  - "The cards on it" are always the card's own player's. `the other players' cards on it` reads the others, and `The other players' cards on it go to their owners' holdings.` sends them back. `Every other player's card on it is not lit.` clears a flag on them first.
+  - Examples write `the Stake in p1's holdings is on the Vase in p0's workshop` and `… is on no card`.
+- **Answering an action.**
+  - The line under `In every phase:`, the phase's buttons, and `The objection passes to the left.` / `The action does not go ahead.`
+  - Only a button with a cost is answered. An answered action has spent its cost and done nothing else; one that goes ahead does exactly what the press would have.
+  - Every seat sees who pressed it and its label, choices and cards, a card it can't see as a face-down card.
+  - Lines that would leave a player unable to answer, or let the clause read what not everyone sees, are refused when the rules are read.
+- **Scoring held cards.** `Each Stake in a player's holdings scores 5 points.` A player's own stakes are kept in their purse, so they score nothing.
+
 **A table too big for one screen.** When a game's zones don't fit the table, the playtest shows one seat at a time, with a tab for each seat:
 
 - **The tabs.** A tab reads `p1`, or `p1 — to act` for the seat that must act. The tabs jump to the seat that must act when the turn moves on, Undo included; in between, any seat's tab can be opened to look at its table.

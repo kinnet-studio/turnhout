@@ -933,3 +933,116 @@ describe('a Given after a reshuffle', () => {
     })]);
   });
 });
+
+import { HELD_GAME, LOOKUP_GAME, OBJECT_GAME, RATE_GAME, RIVAL_GAME } from './testing';
+
+describe("the words for slice 7's pieces", () => {
+  /** The fixture with `examples` appended: it must compile with no problems. */
+  const run = (fixture: string, examples: string[]) => {
+    const { game, diagnostics } = compileGame([fixture, '', ...examples].join('\n'), lib);
+    expect(diagnostics).toEqual([]);
+    return runExamples(game!, lib);
+  };
+  const passes = (results: ReturnType<typeof runExamples>) => {
+    expect(results.length).toBeGreaterThan(0);
+    for (const result of results) expect(result, result.name).toMatchObject({ status: 'pass', message: null });
+  };
+  const HELD = [
+    "Example: each stake held scores 5, and a player's own stakes score nothing",
+    "  Given p1's holdings has a Stake whose maker is p0 and a Stake whose maker is p2",
+    "  And p0's purse has a Stake whose maker is p0",
+    '  And the scrap has a Vase, a Vase, a Statue and a Statue',
+    '  When p0 stops',
+    '  Then p1 scores 10',
+    '  And p0 scores 0',
+  ];
+
+  it('finds the text HELD_GAME replaces', () => {
+    expect(RATE_GAME).toContain('  The highest score wins.');
+    expect(HELD_GAME).not.toBe(RATE_GAME);
+    expect(HELD_GAME).toContain("  Each Stake in a player's holdings scores 5 points.\n  The highest score wins.");
+  });
+
+  it('RATE_GAME: buying at a rate, the last stake kept, and a stake asked back', () => passes(run(RATE_GAME, [
+    "Example: a stake costs its maker's rate, paid to its owner, and the last one in a purse can't be bought",
+    '  Given 3 players',
+    "  And p1's purse has a Stake whose maker is p1 and a Stake whose maker is p1",
+    "  And p1's workshop has a Statue",
+    '  When p0 buys the Stake whose maker is p1',
+    '  Then p0 has 7 coins',
+    '  And p1 has 11 coins',
+    '  When p0 buys the Stake whose maker is p1',
+    '  Then it is rejected because "its owner has at least 2 cards in their purse"',
+    '',
+    "Example: a stake asked back is sold back at its maker's rate, with its owner's consent",
+    '  Given 3 players',
+    "  And p0's holdings has a Stake whose maker is p1",
+    "  And p1's workshop has a Statue",
+    "  And it is p1's turn",
+    '  When p1 asks back the Stake whose maker is p1',
+    '  Then the phase is answer',
+    "  And it is p0's turn",
+    '  When p0 sells back the Stake whose maker is p1',
+    '  Then p0 has 11 coins',
+    '  And p1 has 7 coins',
+    "  And p1's purse has a Stake whose maker is p1",
+    '  And the phase is working',
+    "  And it is p1's turn",
+  ])));
+
+  it('LOOKUP_GAME: a rate and a yield are read off their steps', () => passes(run(LOOKUP_GAME, [
+    'Example: a rate and a yield are read off their steps',
+    "  Given p0's workshop has a Vase and a Statue",
+    "  Then p0's rate is 15",
+    "  And p0's yield is 2",
+    "  And p0's top worth is 4",
+  ])));
+
+  it('RIVAL_GAME: a lit stake on another player\'s job lifts its crew wage, and goes back to its holdings when the job is finished', () => passes(run(RIVAL_GAME, [
+    "Example: a lit stake on another player's job lifts its crew wage, and goes back to its holdings when the job is finished",
+    "  Given p1's holdings has a Stake whose maker is p0",
+    "  And p0's workshop has a Vase",
+    "  And the Vase in p0's workshop has a Potter on it",
+    "  And the Stake in p1's holdings is on the Vase in p0's workshop",
+    "  And the Stake in p1's holdings is lit",
+    "  Then the Vase in p0's workshop has 2 crew wage",
+    "  And p0's reach is 2",
+    '  When p0 finishes the Vase',
+    "  Then the Stake in p1's holdings is on no card",
+    "  And p1's holdings has a Stake whose maker is p0",
+  ])));
+
+  it('HELD_GAME: each stake held scores 5, and a player\'s own stakes score nothing', () => passes(run(HELD_GAME, HELD)));
+
+  it('OBJECT_GAME: the maker answers a trade of their own stake, and a button with no cost asks no one', () => passes(run(OBJECT_GAME, [
+    "Example: holding the seller's stake, a stake's maker may stop its sale",
+    '  Given 3 players',
+    "  And p0's holdings has a Stake whose maker is p1",
+    "  And p1's holdings has a Stake whose maker is p0",
+    "  And it is p1's turn",
+    '  When p1 sells the Stake whose maker is p0',
+    "  Then it is p0's turn",
+    '  When p0 objects with the Stake whose maker is p1',
+    "  Then p1's purse has a Stake whose maker is p1",
+    "  And p1's holdings has a Stake whose maker is p0",
+    "  And it is p1's turn",
+    '',
+    'Example: a button with no cost goes ahead at once',
+    '  Given 3 players',
+    "  And p1's holdings has a Stake whose maker is p0",
+    "  And p0's stash has a Vase",
+    '  When p0 starts the Vase',
+    "  Then p0's workshop has a Vase",
+    '  And the phase is working',
+  ])));
+
+  it('fails a held-score example whose score is wrong, on that line', () => {
+    const wrong = [...HELD.slice(0, -1), '  And p0 scores 5'];
+    const text = [HELD_GAME, '', ...wrong].join('\n');
+    const { game, diagnostics } = compileGame(text, lib);
+    expect(diagnostics).toEqual([]);
+    expect(runExamples(game!, lib)).toEqual([expect.objectContaining({
+      status: 'fail', atLine: lineOf(text, '  And p0 scores 5'),
+    })]);
+  });
+});
