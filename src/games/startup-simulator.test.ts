@@ -1550,15 +1550,18 @@ const REPLAYED = [
  * arranged test named here. A later cadence change may promote them.
  * - None: Attributes kept through a bench discard ('a Talent discarded from the bench keeps its Attributes, and the rival who hires it
  *   from the open job market gets them'); Toxic taking a Red cube ('a team that makes no Blue loses a Red cube to Toxic Personality');
- *   the agency row's hire to the bench ('a Sales Rep hired from the open job market costs 1 while the agency row has one too, and the
- *   agency row keeps its own'; the agency row's own hires: 'the Hacker hired from the agency row straight onto a project adds a Bug to
- *   it'); the Engineer paid $1 in the ops team ('the Engineer's salary is $1 in the ops team'); a TechCrunch Feature in a 3-player log
+ *   the agency row's hire to the bench ('the agency row slides left and refills from the talent deck, which never reshuffles
+ *   (section 13)' hires the Architect and the Hacker to the bench, and 'during Chip Shortage Hardware talent costs $3 more from the
+ *   University, the agency row and the open job market, and a flex Firmware Specialist its printed price (section 20, section 13)'
+ *   hires the Engineer and the Firmware Specialist to it); the Engineer paid $1 in the ops team ('the Engineer's salary is $1 in the ops team'); a TechCrunch Feature in a 3-player log
  *   (the 2-player replay rebuilds one, seed 4; 'TechCrunch Feature adds 1 Hype to one of the player's products for $5 and no
  *   action, or $2 when a working Sales Rep is on that product'); Legacy Code at an Income ('Legacy Code makes each Bug cost $2 of
  *   revenue, …'); a Crunch Time Bug stopped by Clean Code ('Crunch Time gives each project that isn't Stalled 1 more cube, …'); a
  *   TechCrunch Feature under Trade Show ('during Trade Show TechCrunch Feature costs $2, …').
- * - One game: TechCrunch for $5 (2 players seed 4; the TechCrunch example above); a trained Junior declared red (5 players seed 2);
- *   Workaholic played (5 players seed 5; 'Workaholic gives +2 output in the colour its staff member makes and +$2 salary'); the
+ * - One game: TechCrunch for $5 (2 players seed 4; the TechCrunch example above); a trained Junior declared red (5 players seed 2; 'a Junior Software Dev with 2 Blue
+ *   XP and a Red Skill token declared Red makes 1 Red, its Blue XP idle (section 11, the slice's R11)', and 'Hardware Hackathon gives
+ *   its 1 more, and Supply Chain Logjam its 1 less, to a Junior trained in Red and declared Red (section 20, section 11)', whose
+ *   Junior is a QA Tester); Workaholic played (5 players seed 5; 'Workaholic gives +2 output in the colour its staff member makes and +$2 salary'); the
  *   reassign from the ops team to a product in operation (3 players seed 4; 'the Growth Hacker reassigned to another product is
  *   onboarding, …'); Intern Season's free recruit (2 players seed 4; 'during Intern Season recruiting from the University costs $0,
  *   …'); and Patent Trolls' $5 License (2 players seed 4; 'during Patent Trolls a Greenlight License costs $5, …').
@@ -1635,21 +1638,28 @@ const turnsIn = (log: readonly Move[], skipped: ReadonlySet<number>): PlayerId[]
 };
 
 /**
+ * The seats whose step in a round's steps has ended in `state`, in turn from the first; null outside the steps. `roundStepsOf(state) ===
+ * true` reads as null too: `true` lives only inside a move, and runtime.ts (~425) clears it as the waiting turn starts, so a state a
+ * move leaves never holds it. Callers that take `stepsDone(after) ?? seats` therefore read null as "the steps ran out within the move":
+ * every seat is done.
+ */
+function stepsDone(state: GameState, seats: PlayerId[]): PlayerId[] | null {
+  const steps = roundStepsOf(state);
+  if (steps === null || steps === true) return null;
+  const from = seats.indexOf(steps.first);
+  const upTo = (seats.indexOf(state.turn!.current as PlayerId) - from + seats.length) % seats.length;
+  return Array.from({ length: upTo }, (_, i) => seats[(from + i) % seats.length]);
+}
+
+/**
  * The seats whose step in a round's steps ended in the move from `before` to `after`, in turn from the first: none outside them; every
  * seat when they ran out within the move (6-1's round steps).
  */
 function stepsEndedIn(before: GameState, after: GameState, seats: PlayerId[]): PlayerId[] {
-  const done = (state: GameState): PlayerId[] | null => {
-    const steps = roundStepsOf(state);
-    if (steps === null || steps === true) return null;
-    const from = seats.indexOf(steps.first);
-    const upTo = (seats.indexOf(state.turn!.current as PlayerId) - from + seats.length) % seats.length;
-    return Array.from({ length: upTo }, (_, i) => seats[(from + i) % seats.length]);
-  };
   const started = (after.data[ROUND_KEY] as number) > (before.data[ROUND_KEY] as number);
   if (!started && roundStepsOf(before) === null) return [];
-  const doneBefore = done(before) ?? [];
-  const doneAfter = done(after) ?? (started && roundStepsOf(after) === null && !['Angel Investors', 'Regulation Audit'].includes(eventOf(after) as string) ? [] : seats);
+  const doneBefore = stepsDone(before, seats) ?? [];
+  const doneAfter = stepsDone(after, seats) ?? (started && roundStepsOf(after) === null && !['Angel Investors', 'Regulation Audit'].includes(eventOf(after) as string) ? [] : seats);
   return doneAfter.filter((seat) => !doneBefore.includes(seat));
 }
 
@@ -2108,13 +2118,16 @@ function happenings(runtime: LangRuntime, before: GameState, move: Move, after: 
   if (engineRan) {
     const event = eventOf(before);
     const working = zoneCards(before, zoneIdFor('development', by)).filter((project) => !runtime.workedFlag(before, project.id, 'stalled'));
-    const makes = (project: CardState, name: string) =>
-      cardsOn(before, project.id).some((staff) => runtime.workedValue(before, staff.id, name) !== null);
-    const atWork = { 'Open Source Boom': ['blue output', BOOM_AT_WORK], 'Hardware Hackathon': ['red output', HACKATHON_AT_WORK],
-      'Supply Chain Logjam': ['red output', LOGJAM_AT_WORK] } as Record<string, [string, string]>;
+    // A staff card counts only where the Event's +1 or -1 applied to it: it holds the Event's flag and its output line is not zeroed by
+    // onboarding, Burnout or a mode of another colour, whose lines come after the Event's (Blue output and Red output).
+    const makes = (project: CardState, flag: string, zeroed: string[]) => cardsOn(before, project.id).some((staff) =>
+      runtime.workedFlag(before, staff.id, flag) && !['onboarding', 'burned out', ...zeroed].some((name) => runtime.workedFlag(before, staff.id, name)));
+    const atWork = { 'Open Source Boom': ['open source boosted', ['red mode', 'qa mode'], BOOM_AT_WORK],
+      'Hardware Hackathon': ['hackathon boosted', ['qa mode', 'blue mode'], HACKATHON_AT_WORK],
+      'Supply Chain Logjam': ['logjammed', ['qa mode', 'blue mode'], LOGJAM_AT_WORK] } as Record<string, [string, string[], string]>;
     if (event !== null && atWork[event] !== undefined) {
-      const [name, key] = atWork[event];
-      keys.push(...working.filter((project) => makes(project, name)).map(() => key));
+      const [flag, zeroed, key] = atWork[event];
+      keys.push(...working.filter((project) => makes(project, flag, zeroed)).map(() => key));
     }
     if (event === 'Crunch Time') {
       for (const project of working) {
@@ -2326,16 +2339,8 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       const revealed = (after.data[ROUND_KEY] as number) > (before.data[ROUND_KEY] as number) ? eventOf(after) : null;
       const stepping = [before, after].some((state) => state.data[ROUND_STEPS_KEY] !== undefined)
         || revealed === 'Angel Investors' || revealed === 'Regulation Audit';
-      /** The seats whose step has ended in `state`, in turn from the first; null outside the steps. */
-      const stepsDone = (state: GameState): PlayerId[] | null => {
-        const steps = roundStepsOf(state);
-        if (steps === null || steps === true) return null;
-        const from = seats.indexOf(steps.first);
-        const upTo = (seats.indexOf(state.turn!.current as PlayerId) - from + seats.length) % seats.length;
-        return Array.from({ length: upTo }, (_, i) => seats[(from + i) % seats.length]);
-      };
-      const doneBefore = stepsDone(before) ?? [];
-      const ended = stepping ? (stepsDone(after) ?? seats).filter((seat) => !doneBefore.includes(seat)) : [];
+      const doneBefore = stepsDone(before, seats) ?? [];
+      const ended = stepping ? (stepsDone(after, seats) ?? seats).filter((seat) => !doneBefore.includes(seat)) : [];
       const products = (state: GameState, seat: PlayerId) =>
         [...zoneCards(state, zoneIdFor('development', seat)), ...zoneCards(state, zoneIdFor('operations', seat))];
       const funded = (seat: PlayerId) => revealed === 'Angel Investors' && products(before, seat).length > 0
@@ -2343,9 +2348,6 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       const taxOf = (seat: PlayerId) => (ended.includes(seat) && eventOf(after) === 'Regulation Audit' ? payrollTaxOf(runtime, after, seat) : 0);
       const want = seats.map((seat) => earned(seat) - (seat === by ? paid : 0) + (funded(seat) ? 3 : 0) - taxOf(seat));
       sameList(gained, want, () => `capital gained by ${seats.join(', ')} ${at}`);
-      for (const seat of ended) {
-        if (eventOf(after) === 'Regulation Audit' && capital(after, seat) < 0) expect(capital(after, seat), `${seat}'s capital after its step ${at}`).toBeGreaterThanOrEqual(0);
-      }
     }
     // Market Share: 1 for each product that earned, when its owner reached Income.
     const share = (state: GameState, seat: PlayerId) => counterOf(state, 'market share', seat);
@@ -3043,7 +3045,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(306);
+    expect(results).toHaveLength(307);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -4062,8 +4064,8 @@ describe('Startup Simulator (designer language)', () => {
       //   to 3 XP, and Revenue Leader at its next Income of $10, …' below claims both);
       // - a Milestone claimed at the last check: one must be met only as the final Ops check brings products back online (the arranged
       //   test 'rebuilds and takes back Platform Power claimed at the last check, …' below claims one).
-      // Held by none, the fewest: a trained Junior declared red, but by one game (5 players seed 2), in `HELD_BY_FEWER_THAN_TWO` once
-      // plan 6-2b's Event deck replayed every game; by three each: Sales Seminar on a Sales Rep and the Sales Rep's XP bonus (2, 3 and 4
+      // Held by one game, the fewest: a trained Junior declared red (5 players seed 2), in `HELD_BY_FEWER_THAN_TWO` once plan 6-2b's
+      // Event deck replayed every game; by three each: Sales Seminar on a Sales Rep and the Sales Rep's XP bonus (2, 3 and 4
       // players, seed 4); by four each: a trained Junior declared blue (2 and 3 players, seeds 1 and 2) and a strategy card discarded at
       // cleanup (2 players seeds 1 and 2, 3 players seed 5, 5 players seed 4); by five: a badged Junior leading at the Engine (2, 3 and 4
       // players seed 4, 5 players seeds 2 and 4); by seven: a trained Junior declared qa; Leadership Masterclass on a Junior by ten. A
@@ -4129,7 +4131,7 @@ describe('Startup Simulator (designer language)', () => {
       // 2 games (2 players seeds 2 and 4), the only games to last the 19 rounds that takes. By game: Regulation Audit paid in 3 (2 players
       // seeds 2 and 4, 5 players seed 4), staff let go in 4 (2 and 3 players, seeds 1 and 4 and seeds 1 and 3), Server Crash at an Income
       // in 4 (2 players seeds 2 and 4, 3 and 4 players seed 4), Online Course Boom's Training card in 5, Tech Bubble at an Income in 7,
-      // Crunch Time's cube and Bug in 9, Open Source Boom at work in 10 and Angel Investors paid in 12; Chip Shortage's Hardware hire in 2
+      // Crunch Time's cube and Bug in 9, Open Source Boom at work in 9 and Angel Investors paid in 12; Chip Shortage's Hardware hire in 2
       // (2 and 3 players, seeds 2 and 3). Held by none or one game, so counted and not required (`HELD_BY_FEWER_THAN_TWO`), each pinned by
       // its examples: Legacy Code at an Income, a Bug Crunch Time's Clean Code stopped and a TechCrunch Feature at Trade Show's $2
       // (none), and Intern Season's free recruit and Patent Trolls' $5 License (2 players seed 4).

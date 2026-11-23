@@ -1368,7 +1368,7 @@ Phase: research
     Go back to the interrupted turn.
 
 Phase: sourcing
-  Hint: Hire any of the cards you found at their printed cost, to your bench or straight onto your board. The rest go to the agency row.
+  Hint: Hire any of the cards you found at their cost, to your bench or straight onto your board. The rest go to the agency row.
   A player may hire some cards from their scouting to their bench.
     Only if they have at least the total cost of the picked cards in capital.
     Then:
@@ -5500,6 +5500,23 @@ Example: during Chip Shortage a player with $3 can't recruit a Junior Hardware E
   When p0 recruits a junior qa tester
   Then it is rejected because "they have at least the junior price in capital"
   And p0 has 2 actions
+
+Example: during Chip Shortage the Diva a Layoff found costs $8, the $5 printed price plus $3, while a Junior Software Dev costs no more (section 20, section 13)
+  Given the event deck has the Chip Shortage
+  And the agency row has the Hacker, the Architect, the Veteran and the Engineer
+  And the talent deck has the Diva
+  And it is p1's turn
+  When p1 ends their actions
+  Then the event in play has the Chip Shortage
+  Given the phase is actions
+  And p0 has 8 capital
+  And p0's bench has a Junior Software Dev
+  When p0 lays off the Junior Software Dev
+  Then p0's scouting has the Diva
+  When p0 hires the Diva to p0's bench
+  Then it is accepted
+  And p0 has 0 capital
+  And p0's bench has the Diva
 
 Example: Crunch Time gives each project that isn't Stalled 1 more cube, staffed or not, Blue while it still needs Blue and else Red, and a Bug unless a working Clean Code unit is on it (section 20, the spec's call)
   Given the event in play has the Crunch Time
