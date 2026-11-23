@@ -7,6 +7,7 @@ import { askChoices, choicesOf, fillChoices, type AskedChoice, type ChoiceOption
 import { isPile, isTakeable, moveZoneId, yours } from './declared-moves';
 import { ontoPlaces } from './declared-moves';
 import { ontoZoneIds } from './declared-moves';
+import { fromZoneIds } from './declared-moves';
 import { RuleError } from './diagnostics';
 import { canon, counted, joinAnd, joinOr, secondPersonWords } from './refs';
 import type { LangRuntime } from './runtime';
@@ -102,10 +103,12 @@ export const noCardIn = (zoneText: string): string => `There is no card in ${you
 /** Why a button that picks a card for its cards to go to can't be pressed while none of the zones it may be in holds one, naming each. */
 export const noCardToGoTo = (action: DeclaredAction): string => `There is no card in ${ontoZonesSaid(action)}.`;
 
-/** The ids in the zone `zone` names for `seat` that a move may take, in slot order: only the top card of a pile. None for no seat's zone. */
-function takeableIds(runtime: LangRuntime, zone: ZoneRef, state: GameState, seat: PlayerId): string[] {
-  const zoneId = moveZoneId(zone, runtime.seats, seat);
-  return zoneId === null ? [] : takeableIn(runtime, state, zoneId);
+/**
+ * The ids in the zones a pick's own card may be in for `seat` that a move may take, zone by zone (another player's from the seat's
+ * left) and in slot order: only the top card of a pile. None for no seat's zone.
+ */
+function takeableIds(runtime: LangRuntime, pick: CardPick, state: GameState, seat: PlayerId): string[] {
+  return fromZoneIds(state, runtime.seats, seat, pick).flatMap((zoneId) => takeableIn(runtime, state, zoneId));
 }
 
 /** The ids in `zoneId` that a move may take, in slot order: only the top card of a pile. */
@@ -119,7 +122,7 @@ function takeableIn(runtime: LangRuntime, state: GameState, zoneId: string): str
  * pile. None when that zone is no seat's at this table (“the other player's stash” at a table of three).
  */
 export function cardCandidates(runtime: LangRuntime, action: DeclaredAction, state: GameState, seat: PlayerId): string[] {
-  return takeableIds(runtime, pickOf(action).from, state, seat);
+  return takeableIds(runtime, pickOf(action), state, seat);
 }
 
 /**
@@ -141,11 +144,10 @@ export function ontoCandidates(runtime: LangRuntime, action: DeclaredAction, sta
  */
 type Press = { subject: Subject; info?: MoveInfo; relocation?: { ids: string[]; to: string } };
 
-/** The card `id` names, when it is on the table in the zone `zone` names for `by`. */
-function cardIn(runtime: LangRuntime, state: GameState, zone: ZoneRef, by: PlayerId, id: unknown): CardState | undefined {
+/** The card `id` names, when it is on the table in a zone the pick's own card may be in for `by` (`fromZoneIds`). */
+function cardIn(runtime: LangRuntime, state: GameState, pick: CardPick, by: PlayerId, id: unknown): CardState | undefined {
   const card = typeof id === 'string' ? cardById(state, id) : undefined;
-  const zoneId = moveZoneId(zone, runtime.seats, by);
-  return card && zoneId !== null && card.zoneId === zoneId ? card : undefined;
+  return card && fromZoneIds(state, runtime.seats, by, pick).includes(card.zoneId) ? card : undefined;
 }
 
 /** Why the button can't put cards in its zone: the zone is no seat's at this table, which no card the player could pick would change. */
@@ -157,7 +159,7 @@ const nowhere = (action: DeclaredAction, pick: CardPick) => `You can't ${secondP
  * move makes, from where it is to where the button puts it (the zone it is in, for a button that puts it nowhere), and “it” is the card.
  */
 function aboutCard(action: DeclaredAction, pick: CardPick, runtime: LangRuntime, state: GameState, m: Move, by: PlayerId): Press | string {
-  const card = cardIn(runtime, state, pick.from, by, m.cardId);
+  const card = cardIn(runtime, state, pick, by, m.cardId);
   if (!card) return cardPrompt(action);
   if (!isTakeable(runtime.game, state, card)) return `You can only take the top card of ${yours(pick.fromText)}.`;
   const to = pick.to === null ? card.zoneId : moveZoneId(pick.to, runtime.seats, by);
@@ -173,7 +175,7 @@ function aboutCard(action: DeclaredAction, pick: CardPick, runtime: LangRuntime,
 function aboutSet(action: DeclaredAction, pick: CardPick, runtime: LangRuntime, state: GameState, m: Move, by: PlayerId): Press | string {
   const { cardIds } = m;
   const named = Array.isArray(cardIds) && cardIds.length > 0 && new Set(cardIds).size === cardIds.length;
-  const cards = named ? cardIds.map((id) => cardIn(runtime, state, pick.from, by, id)) : [];
+  const cards = named ? cardIds.map((id) => cardIn(runtime, state, pick, by, id)) : [];
   if (cards.length === 0 || !cards.every((card) => card !== undefined && isTakeable(runtime.game, state, card))) return cardPrompt(action);
   const ids = (cards as CardState[]).map((card) => card.id);
   const to = pick.to === null ? null : moveZoneId(pick.to, runtime.seats, by);

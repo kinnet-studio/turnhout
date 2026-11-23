@@ -9,6 +9,10 @@ import { vocabFrom } from './phrases';
 import { AMOUNT_BOARD, ANY_PLAYER_BOARD, CARD_PICK_GAME, MARK_BOARD, PICK_BOARD, TINY_BOARD_HEAD, TURN_GAME, fixtureBoardGame, vocabFor } from './testing';
 import { COACH_GAME, CREW_GAME, WORKED_GAME } from './testing';
 import { JINX_GAME } from './testing';
+import { BUY_GAME } from './testing';
+import { createEngine, initialState } from './build';
+import { makeCard } from './cards';
+import { relocate } from './zones';
 
 const lib = createDefaultLibrary();
 const BASE = [
@@ -1865,13 +1869,12 @@ describe("a target card in another player's zone", () => {
     expect(messages(shared.text)).toEqual([[lineOf(shared.text, shared.line), '“the scrap” is shared, so it has no owner.']]);
   });
 
-  it("refuses another player's zone as the zone a card is picked in, and makes no button", () => {
+  it("reads another player's zone as the zone a card is picked in", () => {
     const line = "  A player may jinx a card in another player's workshop.";
     // The target line goes too: this button picks no target card, which it would be told as well.
     const text = swapped(`${JINX_LINE}\n    Then:\n      The target card is tired.\n`, `${line}\n    Then:\n`);
-    expect(messages(text)).toEqual([[lineOf(text, line),
-      "“another player's workshop” can only name the zone of the card a button's cards go to, as in “… to a card in another player's workshop”."]]);
-    expect(jinxOf(text)).toBeUndefined();
+    expect(messages(text)).toEqual([]);
+    expect(jinxOf(text)?.pick).toMatchObject({ from: { others: 'workshop' }, to: null });
   });
 
   it("Review Focus: refuses an Only if line that reads a target card in another player's zone only its owner sees", () => {
@@ -1931,5 +1934,55 @@ describe("another player's zone that can't be read, told in the line's words", (
     expect(text).not.toBe(JINX_GAME);
     expect(compileGame(text, lib).diagnostics.map((d) => [d.line, d.message, d.text])).toEqual([[text.split('\n').indexOf(line) + 1,
       "I don't understand “another player's workshop and their crew” here.", "another player's workshop and their crew"]]);
+  });
+});
+
+describe("a card picked in another player's zone", () => {
+  const lineOf = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+  const buttons = (text: string) => compileGame(text, lib).game?.phases[0].actions.map((a) => a.base) ?? [];
+  const withButton = (lines: string[]) => BUY_GAME.replace('  A player may stop.', [...lines, '  A player may stop.'].join('\n'));
+  it('reads the buy button', () => {
+    const { game, diagnostics } = compileGame(BUY_GAME, lib);
+    expect(diagnostics).toEqual([]);
+    const buy = game!.phases[0].actions.find((a) => a.base === 'buy')!;
+    expect(buy.pick).toEqual({ some: false, from: { others: 'purse' }, fromText: "another player's purse", to: null, onto: null, ontoText: null });
+  });
+  it("refuses another player's zone as where a button puts its cards", () => {
+    const line = "  A player may give a card from their stash to another player's purse.";
+    const text = withButton([line, '    It costs 1 move.', '    Then:', '      It is tired.']);
+    expect(messages(text)).toEqual([[lineOf(text, line), "“another player's purse” can't be where a button puts its cards: say whose zone it is, as in “their purse”."]]);
+    expect(buttons(text)).not.toContain('give');
+  });
+  it("refuses some cards from another player's zone", () => {
+    const line = "  A player may take some cards from another player's purse to their holdings.";
+    const text = withButton([line, '    It costs 1 move.']);
+    expect(messages(text)).toEqual([[lineOf(text, line), "A button picks one card in another player's purse: write “a card in another player's purse”."]]);
+  });
+  it("refuses a card move from another player's zone", () => {
+    const line = "  A player may pass a card from another player's purse to their holdings.";
+    const text = withButton([line]);
+    expect(messages(text)).toEqual([[lineOf(text, line),
+      "A card is dragged only from the player's own zones or the center. To pick one in another player's purse, make the line a button with a cost line, or write “a card in another player's purse”."]]);
+    expect(compileGame(text, lib).game?.phases[0].moves.map((m) => m.verb) ?? []).not.toContain('pass');
+  });
+  it("Review Focus: refuses an Only if that reads a card picked in a zone the presser can't see", () => {
+    const text = withButton(["  A player may peek a card in another player's stash.", '    It costs 1 move.', '    Only if it is a Vase card.']);
+    expect(messages(text)).toEqual([[lineOf(text, '    Only if it is a Vase card.'),
+      "This line would tell the player what the card is, though they can't see the cards in another player's stash. Check it in the Then: lines, after a reveal."]]);
+  });
+  it("reads a pick whose two zones are both another player's", () => {
+    const text = withButton(["  A player may place a card from another player's purse to a card in another player's workshop.", '    It costs 1 move.',
+      '    Then:', '      Move it to their holdings.']);
+    const { game, diagnostics } = compileGame(text, lib);
+    expect(diagnostics).toEqual([]);
+    const place = game!.phases[0].actions.find((a) => a.base === 'place')!;
+    expect(place.pick).toMatchObject({ from: { others: 'purse' }, to: null, onto: { others: 'workshop' } });
+    const fresh = initialState(game!, 1);
+    const vase = fresh.cards.find((c) => c.data?.name === 'Vase')!.id;
+    const staked = (['p0', 'p0', 'p1', 'p1', 'p2', 'p2'] as const).reduce((st, seat) => makeCard(st, game!, { name: 'Stake', maker: seat }, `purse-${seat}`)!.state, fresh);
+    const { engine } = createEngine(game!, lib, 3, { ...relocate(staked, [vase], 'workshop-p1', game!), turn: { current: 'p0', phase: 'working' } });
+    const outcome = engine.dispatch({ type: "place a card from another player's purse to a card in another player's workshop", by: 'p0', cardId: 'c13', onto: vase });
+    expect(outcome.reason).toBeUndefined();
+    expect(engine.getState().cards.find((c) => c.id === 'c13')!.zoneId).toBe('holdings-p0');
   });
 });

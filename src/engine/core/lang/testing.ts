@@ -438,6 +438,11 @@ export const MAKER_GAME = CREW_GAME
   .replace('  Deal 2 cards from the pile to each stash.',
     '  Deal 2 cards from the pile to each stash.\n  2 new Stake cards go to each purse, each naming its owner as its maker.');
 
+/** MAKER_GAME where a player may buy a card in another player's purse for 1 move, into their holdings. */
+export const BUY_GAME = MAKER_GAME.replace('  A player may stop.', [
+  "  A player may buy a card in another player's purse.", '    It costs 1 move.', '    Then:', '      Move it to their holdings.',
+  '  A player may stop.'].join('\n'));
+
 /**
  * CREW_GAME with five more rows in the center, three more rows only their owner sees and two more everyone sees: three shared lines,
  * two private lines and two band lines, more than the table's height holds.

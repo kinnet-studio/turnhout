@@ -142,9 +142,15 @@ const PICK_SOME = new RegExp(`${PICKS} some cards from (.+)$`, 'i');
 const PICK_IN = new RegExp(`${PICKS} a card in (.+)$`, 'i');
 /** group 1 = the zone each player has, of which a button's target card may be picked in any other player's: “another player's crew”. */
 const ANOTHER_PLAYERS = /^another player['‘’]s (.+)$/i;
-/** Another player's zone is several zones, one of each other player still in, so it names only where a target card is picked. */
-const OTHERS_ONLY_AS_TARGET = (text: string) =>
-  `“${text}” can only name the zone of the card a button's cards go to, as in “… to a card in ${text}”.`;
+/**
+ * Another player's zone is several zones, one of each other player still in: a button picks one card in it, its own or its target, and
+ * never puts cards in it, nor does a card move drag from it.
+ */
+const OTHERS_NOT_WHERE_IT_GOES = (text: string) =>
+  `“${text}” can't be where a button puts its cards: say whose zone it is, as in “their ${text.replace(ANOTHER_PLAYERS, '$1')}”.`;
+const OTHERS_IN_A_MOVE = (text: string) =>
+  `A card is dragged only from the player's own zones or the center. To pick one in ${text}, make the line a button with a cost line, or write “a card in ${text}”.`;
+const SOME_FROM_OTHERS = (text: string) => `A button picks one card in ${text}: write “a card in ${text}”.`;
 
 /** group 1 = the verb, group 2 = the zone it takes the card from, group 3 = the zone it puts it in */
 function moveLineFor(vocab: Vocab): RegExp {
@@ -210,14 +216,15 @@ function othersZone(text: string, line: number, ctx: LineCtx): ZoneRef | null {
  * `targets`, each zone the card they go to may be picked in. Each is one zone, as a move's are, but another player's zone, which only a
  * target may be in (`othersZone`). Null, with the reason given, when one can't be read or can't be there.
  */
-function pickZones(node: OutlineNode, own: string[], targets: string[], ctx: LineCtx): ZoneRef[] | null {
-  const read = (text: string, target: boolean): ZoneRef | null => {
+function pickZones(node: OutlineNode, own: string[], targets: string[], ctx: LineCtx, some = false): ZoneRef[] | null {
+  // `own` is the zone the cards are picked in, then the zone they go to, if named.
+  const read = (text: string, at: 'from' | 'to' | 'target'): ZoneRef | null => {
     if (!ANOTHER_PLAYERS.test(text)) return moveZone(text, node.line, ctx);
-    if (target) return othersZone(text, node.line, ctx);
-    addProblem(ctx.diagnostics, node.line, OTHERS_ONLY_AS_TARGET(text), { text });
+    if (at === 'target' || (at === 'from' && !some)) return othersZone(text, node.line, ctx);
+    addProblem(ctx.diagnostics, node.line, at === 'to' ? OTHERS_NOT_WHERE_IT_GOES(text) : SOME_FROM_OTHERS(text), { text });
     return null;
   };
-  const zones = [...own.map((text) => read(text, false)), ...targets.map((text) => read(text, true))];
+  const zones = [...own.map((text, i) => read(text, i === 0 ? 'from' : 'to')), ...targets.map((text) => read(text, 'target'))];
   if (zones.some((zone) => zone === null)) return null;
   const all = zones as ZoneRef[];
   if (!all.every((zone) => 'others' in zone || isOneZone(zone))) {
@@ -255,6 +262,10 @@ function ontoTexts(text: string, vocab: Vocab): string[] {
 
 /** The zones of a move line, or null (with the reason given) when they cannot be a move's. */
 function moveZones(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx): { from: ZoneRef; to: ZoneRef } | null {
+  if (ANOTHER_PLAYERS.test(found[2])) {
+    addProblem(ctx.diagnostics, node.line, OTHERS_IN_A_MOVE(found[2]), { text: found[2] });
+    return null;
+  }
   const zones = oneZones(node, [found[2], found[3]], ctx);
   return zones && { from: zones[0], to: zones[1] };
 }
@@ -594,7 +605,7 @@ function compileCardPick(node: OutlineNode, words: PickWords, ctx: LineCtx): Dec
   if (reserved) addProblem(ctx.diagnostics, node.line, `“${RESERVED_VERB}” is reserved; pick another word.`, { text: written.split(' ')[0] });
   // A line names either the zone the cards go to or the zones of the card they go to, never both.
   const ontoParts = ontoText === null ? [] : ontoTexts(ontoText, ctx.vocab);
-  const zones = pickZones(node, [fromText, ...(toText === null ? [] : [toText])], ontoParts, ctx);
+  const zones = pickZones(node, [fromText, ...(toText === null ? [] : [toText])], ontoParts, ctx, some);
   const onto = ontoText !== null;
   // Only the press of one card, with its target or without, may ask for a choice: the page shows a choice beside the card picked.
   const about: LineCtx = some

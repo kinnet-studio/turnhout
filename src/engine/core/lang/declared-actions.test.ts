@@ -29,6 +29,8 @@ import { COACH_GAME } from './testing';
 import { cardById } from './zone-index';
 import { noCardToGoTo } from './declared-actions';
 import { JINX_GAME } from './testing';
+import { BUY_GAME } from './testing';
+import { makeCard } from './cards';
 
 const lib = createDefaultLibrary();
 const game = compileGame(TINY_BOARD, lib).game!;
@@ -1388,5 +1390,41 @@ describe('a card move whose Then lines read its card after a shuffle renamed it'
     // The Sweep was shuffled into the pile under a new id, and its cost of 2 was still paid.
     expect(zoneCards(state, 'pile').some((card) => card.id === sweep)).toBe(false);
     expect(counterOf(state, 'coins', 'p0')).toBe(8);
+  });
+});
+
+describe("a card bought in another player's purse", () => {
+  const g = compileGame(BUY_GAME, lib).game!;
+  const BUY = "buy a card in another player's purse";
+  const buyAction = g.phases[0].actions.find((a) => a.words === BUY)!;
+  // Each seat's purse holds 2 Stakes naming that seat: c11 and c12 for p0, c13 and c14 for p1, c15 and c16 for p2. No Setup.
+  const table = (arrange: (s: GameState) => GameState = (s) => s): GameState => {
+    const fresh = initialState(g, 1);
+    const staked = (['p0', 'p0', 'p1', 'p1', 'p2', 'p2'] as const)
+      .reduce((st, seat) => makeCard(st, g, { name: 'Stake', maker: seat }, `purse-${seat}`)!.state, fresh);
+    return arrange({ ...staked, turn: { current: 'p0', phase: 'working' } });
+  };
+  const buying = (arrange?: (s: GameState) => GameState) => createEngine(g, lib, 3, table(arrange));
+  it('prompts with the zone as written', () => {
+    expect(cardPrompt(buyAction)).toBe("Pick a card in another player's purse to buy.");
+  });
+  it("offers each other seat's cards, from the presser's left", () => {
+    const { runtime, engine } = buying();
+    expect(cardCandidates(runtime, buyAction, engine.getState(), 'p0')).toEqual(['c13', 'c14', 'c15', 'c16']);
+    expect(cardCandidates(runtime, buyAction, engine.getState(), 'p2')).toEqual(['c11', 'c12', 'c13', 'c14']);
+  });
+  it('buys a card from another player, and refuses one of their own', () => {
+    const { engine } = buying();
+    expect(engine.dispatch({ type: BUY, by: 'p0', cardId: 'c15' }).reason).toBeUndefined();
+    const state = engine.getState();
+    expect(zoneCards(state, 'holdings-p0').map((c) => c.id)).toEqual(['c15']);
+    expect(zoneCards(state, 'purse-p2').map((c) => c.id)).toEqual(['c16']);
+    expect(counterOf(state, 'moves', 'p0')).toBe(2);
+    expect(engine.dispatch({ type: BUY, by: 'p0', cardId: 'c11' }).reason).toBe(cardPrompt(buyAction));
+  });
+  it('Review Focus: offers nothing of a seat that is out', () => {
+    const { runtime, engine } = buying((s) => markOut(s, 'p1'));
+    expect(cardCandidates(runtime, buyAction, engine.getState(), 'p0')).toEqual(['c15', 'c16']);
+    expect(engine.dispatch({ type: BUY, by: 'p0', cardId: 'c13' }).reason).toBe(cardPrompt(buyAction));
   });
 });

@@ -13,6 +13,7 @@ import { changeCard } from '../card-facts';
 import { changeable } from './card-number-phrases';
 import { cardHasFlag, cardNumber, mustBeKept } from './support';
 import { ontoZoneIds } from '../declared-moves';
+import { fromZoneIds } from '../declared-moves';
 import { movedCard, numberIfAny, theyOf } from './support';
 import { ownerOf } from './support';
 import { itCard } from './fact-phrases';
@@ -135,10 +136,12 @@ type Press = { by: PlayerId; base: string; matches: CardMatch[]; target: CardMat
  * that zone of each other player still in, from `by`'s left. None if it picks none.
  */
 const ontoZonesOf = (env: PhraseEnv, by: PlayerId, pick: CardPick): string[] => ontoZoneIds(env.state, env.seats, by, pick);
+/** The zones `pick`'s button takes its own card from, for `by` (`fromZoneIds`): another player's zone from `by`'s left. */
+const fromZonesOf = (env: PhraseEnv, by: PlayerId, pick: CardPick): string[] => fromZoneIds(env.state, env.seats, by, pick);
 
 /** Whether an example with `wording` could mean the button that picks `pick`. */
 function fitsWording(env: PhraseEnv, by: PlayerId, pick: CardPick, { form, from, to }: Wording): boolean {
-  if (from !== null && moveZoneId(pick.from, env.seats, by) !== from) return false;
+  if (from !== null && !fromZonesOf(env, by, pick).includes(from)) return false;
   if (form === 'to card') return pick.onto !== null && (to === null || ontoZonesOf(env, by, pick).includes(to));
   if (form === 'alone') return pick.onto === null;
   return pick.to !== null && moveZoneId(pick.to, env.seats, by) === to;
@@ -156,7 +159,9 @@ function buttonsFor(env: PhraseEnv, { by, base, matches, target, inPlay }: Press
   const holds = (zoneId: string | null, wanted: CardMatch[]) => holdsEach(inPlay.filter((card) => card.zoneId === zoneId), wanted);
   // A zone the example names is one of the button's (`fitsWording` asked), and the only one it may take the card from.
   const ontoZones = (pick: CardPick) => (wording.to === null ? ontoZonesOf(env, by, pick) : [wording.to]);
-  const takers = fits.filter(({ action, here }) => here && holds(moveZoneId(action.pick!.from, env.seats, by), matches)
+  // A zone the example names is the only one the cards may come from; else any of the button's.
+  const fromZones = (pick: CardPick) => (wording.from === null ? fromZonesOf(env, by, pick) : [wording.from]);
+  const takers = fits.filter(({ action, here }) => here && fromZones(action.pick!).some((zoneId) => holds(zoneId, matches))
     && (target === null || ontoZones(action.pick!).some((zoneId) => holds(zoneId, [target]))));
   return { fits, takers };
 }
@@ -167,14 +172,12 @@ function buttonsFor(env: PhraseEnv, { by, base, matches, target, inPlay }: Press
  * may be in, in the order written.
  */
 function wordingsOf(env: PhraseEnv, by: PlayerId, pick: CardPick): Wording[] {
-  const from = moveZoneId(pick.from, env.seats, by);
+  const froms = fromZonesOf(env, by, pick);
   const form: Form = pick.onto !== null ? 'to card' : pick.to === null ? 'alone' : 'to zone';
   const tos = (pick.onto !== null ? ontoZonesOf(env, by, pick) : [pick.to === null ? null : moveZoneId(pick.to, env.seats, by)])
     .filter((to): to is string => to !== null);
-  const whence: Wording[] = from === null ? [] : [{ form: form === 'to zone' ? 'alone' : form, from, to: null }];
-  return [
-    ...whence, ...tos.map((to): Wording => ({ form, from: null, to })), ...(from === null ? [] : tos.map((to): Wording => ({ form, from, to }))),
-  ];
+  const whence: Wording[] = froms.map((from) => ({ form: form === 'to zone' ? 'alone' : form, from, to: null }));
+  return [...whence, ...tos.map((to): Wording => ({ form, from: null, to })), ...froms.flatMap((from) => tos.map((to): Wording => ({ form, from, to })))];
 }
 
 /**
@@ -213,7 +216,11 @@ function sayWording(env: PhraseEnv, { form, from, to }: Wording, target: CardMat
  */
 function tellApart(env: PhraseEnv, press: Press, takers: DeclaredAction[], cardIn: string | null): string {
   const { by, target } = press;
-  const takenFrom = takers.map((action) => moveZoneId(action.pick!.from, env.seats, by));
+  // A button that picks in another player's zone takes from several zones: it is told apart by the first that holds the cards.
+  const takenFrom = takers.map((action) => {
+    const zones = fromZonesOf(env, by, action.pick!);
+    return zones.find((zoneId) => press.inPlay.some((card) => card.zoneId === zoneId && matchesCard(card, press.matches[0]))) ?? zones[0] ?? null;
+  });
   if (allDifferent(takenFrom)) {
     const [form, to]: [Form, string | null] = target === null ? ['alone', null] : ['to card', cardIn];
     const named = takenFrom.flatMap((zoneId) => (zoneId === null ? [] : [sayWording(env, { form, from: zoneId, to }, target)]));
@@ -272,9 +279,12 @@ const pressesCardButton = (form: Form, saysFrom = false): ActionFn => (env, args
   }
   const button = (takers[0] ?? fits[0]).action;
   const pick = button.pick!;
-  const fromZone = moveZoneId(pick.from, env.seats, by);
+  // The cards come from the zone the press names, else from the first of the button's zones, in order, that holds one not taken.
+  const fromZones = wording.from === null ? fromZonesOf(env, by, pick) : [wording.from];
   const taken = new Set<string>();
   const ids = matches.map((match) => {
+    const fromZone = fromZones.find((zoneId) => press.inPlay.some((card) => card.zoneId === zoneId && !taken.has(card.id) && matchesCard(card, match)))
+      ?? fromZones[0] ?? null;
     const id = cardFor(press.inPlay, match, fromZone, taken, by, base);
     taken.add(id);
     return id;

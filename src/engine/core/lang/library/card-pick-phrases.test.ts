@@ -11,6 +11,7 @@ import { COACH_GAME, fixtureCard, fixtureEnv, fixtureState, runPhrase } from '..
 import { cardById } from '../zone-index';
 import { JINX_GAME } from '../testing';
 import { MAKER_GAME } from '../testing';
+import { BUY_GAME } from '../testing';
 import { makeCard } from '../cards';
 
 const lib = createDefaultLibrary();
@@ -589,5 +590,19 @@ describe("the target card's owner", () => {
     expect(holds(vases[1])).toBe(false);
     // The maker's own Vase, once in the scrap, has no owner.
     expect(holds(vases[0], relocate(made.state, [vases[0]], 'scrap', maker))).toBe(false);
+  });
+});
+
+describe("a card bought from another player's purse, in examples", () => {
+  it('takes the first from the left that matches, unless the press names the zone', () => {
+    const lib = createDefaultLibrary();
+    const text = [BUY_GAME, '',
+      "Example: a card bought from another player's purse is the first from the left that matches, unless the press names the zone",
+      '  Given 3 players', "  And p1's purse has a Stake whose maker is p1", "  And p2's purse has a Stake whose maker is p2",
+      '  When p0 buys the Stake', "  Then p0's holdings has a Stake whose maker is p1", "  When p0 buys the Stake from p2's purse",
+      "  Then p0's holdings has a Stake whose maker is p1 and a Stake whose maker is p2", "  And p2's purse is empty"].join('\n');
+    const { game, diagnostics } = compileGame(text, lib);
+    expect(diagnostics).toEqual([]);
+    expect(runExamples(game!, lib).map((r) => [r.status, r.message])).toEqual([['pass', null]]);
   });
 });

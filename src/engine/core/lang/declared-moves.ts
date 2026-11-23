@@ -51,6 +51,13 @@ export function ontoZoneIds(state: GameState, seats: PlayerId[], by: PlayerId, p
   });
 }
 
+/** Every zone a pick's own card may be in for `by`: othersZoneIds for an `others` zone, else the one zone moveZoneId gives ([] for none). */
+export function fromZoneIds(state: GameState, seats: PlayerId[], by: PlayerId, pick: CardPick): string[] {
+  if ('others' in pick.from) return othersZoneIds(state, seats, by, pick.from.others);
+  const zoneId = moveZoneId(pick.from, seats, by);
+  return zoneId === null ? [] : [zoneId];
+}
+
 /** Whether the zone is a pile, whose top card is the only one a move may take. */
 export const isPile = (game: CompiledGame, zoneId: string): boolean => zoneInfo(game, zoneId)?.spec.layout === 'pile';
 

@@ -15,6 +15,7 @@ import {
 } from './testing';
 import { COACH_GAME, CREW_GAME } from './testing';
 import { JINX_GAME } from './testing';
+import { BUY_GAME } from './testing';
 import { START_PLAYER_KEY } from './turns';
 import type { CompiledGame } from './types';
 import { relocate, zoneIdFor } from './zones';
@@ -1369,5 +1370,19 @@ describe('prices', () => {
 
   it('(guard) Review Focus: leaves any other number at 0 off', () => {
     expect(atZero(price)).toEqual([]);
+  });
+});
+
+describe("a card picked in another player's zone the seat can't see", () => {
+  it('Review Focus: is offered face down, with its id', () => {
+    const lib = createDefaultLibrary();
+    const text = BUY_GAME.replace('  A player may stop.', ["  A player may peek a card in another player's stash.", '    It costs 1 move.', '  A player may stop.'].join('\n'));
+    const { game, diagnostics } = compileGame(text, lib);
+    expect(diagnostics).toEqual([]);
+    const fresh = initialState(game!, 1);
+    const vase = fresh.cards.find((c) => c.data?.name === 'Vase')!.id;
+    const { engine, runtime } = createEngine(game!, lib, 3, { ...relocate(fresh, [vase], 'stash-p1', game!), turn: { current: 'p0', phase: 'working' } });
+    const peek = seatExtras(engine, runtime, engine.getState(), 'p0').actions.find((a) => a.label.startsWith('peek') || a.move.startsWith('peek'))!;
+    expect(peek.cards!.cards).toContainEqual(expect.objectContaining({ id: vase, name: 'a face-down card' }));
   });
 });
