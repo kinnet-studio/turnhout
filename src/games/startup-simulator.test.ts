@@ -163,6 +163,9 @@ const debuffZones = (seats: PlayerId[], by: PlayerId): string[] => {
   const others = [...seats.slice(at + 1), ...seats.slice(0, at)];
   return [...others.map((seat) => zoneIdFor('development team', seat)), ...others.map((seat) => zoneIdFor('ops team', seat))];
 };
+/** What a project's team makes once Toxic Personality's cube is off, and what each ops-team card adds to its owner's supplies (R1). */
+const MADE = ['blue made', 'red made', 'qa made'] as const;
+const POOL = ['pool blue', 'pool red', 'pool qa'] as const;
 /** The Attribute counts a card holds. */
 const attributesOn = (card: CardState) => Object.values(ATTRIBUTES).filter((count) => tokenOn(card, count) > 0);
 /** The rows that keep only their 5 newest cards, letting the oldest go to the box. */
@@ -2250,6 +2253,33 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     noneOf(after.cards.filter((c) => staffZones.has(c.zoneId) && runtime.workedFlag(after, c.id, 'overworked')
       && ((runtime.workedValue(after, c.id, 'salary') as number | undefined) ?? 0) < 2).map((c) => `${c.id} (${nameOf(c)})`),
       () => `overworked staff paid less than $2 ${at}`);
+    // Burnout (R3): its staff member makes nothing in any colour and gives no Synergy. Toxic Personality (R1): a team's made value is its
+    // team value or one less, never below 0, and no supply is below 0.
+    const toxicity: string[] = [];
+    for (const c of after.cards) {
+      if (staffZones.has(c.zoneId) && tokenOn(c, 'burnout') > 0) {
+        for (const name of ['blue output', 'red output', 'qa output']) {
+          const value = runtime.workedValue(after, c.id, name) as number | null;
+          if (value !== null && value !== 0) toxicity.push(`${c.id} (${nameOf(c)}) burned out with ${name} ${value}`);
+        }
+        if (runtime.workedFlag(after, c.id, 'giving synergy')) toxicity.push(`${c.id} (${nameOf(c)}) burned out giving synergy`);
+      }
+      // Only a team with a Toxic card on it can make less than its team value, so only such a project is worked out (time).
+      if (zoneInfo(game!, c.zoneId)?.spec.name === 'development' && cardsOn(after, c.id).some((on) => tokenOn(on, 'toxic personality') > 0)) {
+        MADE.forEach((name, i) => {
+          const made = runtime.workedValue(after, c.id, name) as number;
+          const team = runtime.workedValue(after, c.id, ['blue team output', 'red team output', 'qa team output'][i]) as number;
+          if (made < 0 || made > team || made < team - 1) toxicity.push(`${c.id} (${nameOf(c)}) ${name} ${made} against ${team}`);
+        });
+      }
+    }
+    for (const seat of seats.filter((s) => zoneCards(after, zoneIdFor('ops team', s)).some((on) => tokenOn(on, 'toxic personality') > 0))) {
+      for (const name of ['blue supply', 'red supply', 'qa supply']) {
+        const supply = runtime.playerValue(after, seat, name);
+        if (supply < 0) toxicity.push(`${seat}'s ${name} ${supply}`);
+      }
+    }
+    noneOf(toxicity, () => `Toxic Personality and Burnout ${at}`);
     // The Hacker with Clean Coder adds no Bug to a project he joins (§20.B "unless he has Clean Code himself").
     if ([...REASSIGNS, ...HIRES, ASSIGN_TO_PROJECT].includes(move.type)) {
       for (const c of after.cards) {
@@ -2442,7 +2472,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(260);
+    expect(results).toHaveLength(269);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -2549,6 +2579,11 @@ describe('Startup Simulator (designer language)', () => {
     for (const flag of ['egotistic', 'holding attributes']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
     // Workaholic's overwork, Clean Code from the Architect's trait or a Clean Coder count, and a pooled one guarding every product (§20.A, §20.B).
     for (const flag of ['overworked', 'overworked in blue', 'overworked in red', 'overworked in qa', 'clean coding', 'guarding the pool']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
+    // Toxic Personality's cube off a team's made values and off the ops pool, and Burnout (§20.A, the slice's R1 and R3).
+    for (const name of [...MADE, ...POOL]) expect(worked[name], name).toMatchObject({ kind: 'number', refines: false });
+    for (const flag of ['burned out', 'giving synergy', 'poisoning', 'losing blue', 'losing red', 'losing qa', 'pool losing blue', 'pool losing red', 'pool losing qa']) {
+      expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
+    }
   });
 
   // The next three tests each add to the rules an example that the rules refuse for naming no button alone, and then an example for each
@@ -3920,6 +3955,35 @@ describe('Startup Simulator (designer language)', () => {
       expect(new Set(targets).size).toBe(2);
     });
 
+    it('takes Toxic Personality’s cube only from a colour its team makes, so no made value or supply is ever below 0 (§20.A, the slice’s R1)', () => {
+      const start = setUp(2, 1);
+      const seats = seatsFor(2);
+      const S = startPlayerOf(start, seats);
+      const runtime = new LangRuntime(game!, lib, seats);
+      const benched = (name: string) => zoneCards(start, zoneIdFor('bench', S)).find((card) => nameOf(card) === name)!.id;
+      const toxic = (state: GameState, id: string) => changeCard(state, id, { 'toxic personality': 1 }, game!);
+      const onProject = (projectName: string, staff: string[], toxicId: string) => {
+        const project = idOf(projectName);
+        let state = relocate(start, [project], zoneIdFor('development', S), game!);
+        state = toxic(putOn(state, staff, zoneIdFor('development team', S), project, game!), toxicId);
+        return MADE.map((name) => runtime.workedValue(state, project, name));
+      };
+      expect(onProject('Smart Lock', [idOf('Engineer')], idOf('Engineer'))).toEqual([0, 2, 0]);
+      expect(onProject('Dating App', [benched('Junior QA Tester'), idOf('QA Engineer')], idOf('QA Engineer'))).toEqual([0, 0, 1]);
+      expect(onProject('To-Do List', [idOf('Junior PM')], idOf('Junior PM'))).toEqual([0, 0, 0]);
+      // A team that makes Blue or Red and cleans Bugs loses the one cube, not a cleaning too.
+      expect(onProject('Dating App', [benched('Junior Software Dev'), benched('Junior QA Tester')], benched('Junior QA Tester'))).toEqual([0, 0, 1]);
+      expect(onProject('Smart Lock', [benched('Junior Hardware Eng'), benched('Junior QA Tester')], benched('Junior QA Tester'))).toEqual([0, 0, 1]);
+      const supplies = (staff: string[]) => {
+        const state = toxic(relocate(start, staff, zoneIdFor('ops team', S), game!), idOf('Junior PM'));
+        return ['blue supply', 'red supply', 'qa supply'].map((name) => runtime.playerValue(state, S, name));
+      };
+      expect(supplies([benched('Junior Software Dev'), benched('Junior QA Tester'), idOf('Junior PM')])).toEqual([0, 0, 1]);
+      expect(supplies([benched('Junior Hardware Eng'), benched('Junior QA Tester'), idOf('Junior PM')])).toEqual([0, 0, 1]);
+      // A pool that makes nothing loses nothing.
+      expect(supplies([idOf('Junior PM')])).toEqual([0, 0, 0]);
+    });
+
     it('claims First Mover Advantage, Platform Power and Full Stack Founder at one auto-player Launch of a Tier 2 card, which promotes its Junior PM, through the page’s view and without it (§11.F, §12.5, §20.G)', () => {
       // The long runs never Launch a Tier 2 card while First Mover Advantage is revealed, nor run 3 Tags or both sides of the stack (plan
       // 5-2b's P8). So this arranges a complete Neobank, Crypto (§20.C.2), led by the Architect with a Junior PM on it, beside a Smart
@@ -4293,7 +4357,7 @@ describe('what the view says the rules work out', () => {
     // Every line of each reads only the card and the cards on it: its Tier, its need, the leads on it, its trait, its zone, its xp and
     // its training xp. A lead's Badge and Skill lines read the card alone too (`it is a card whose …`), so Stalled still shows. Decaying
     // reads its owner's ops team, so it is not shown.
-    expect(shownFlags(game!)).toEqual(['overworked', 'overworked in blue', 'overworked in red', 'overworked in qa', 'stalled', 'efficient in ops', 'experienced', 'practised']);
+    expect(shownFlags(game!)).toEqual(['overworked', 'overworked in blue', 'overworked in red', 'overworked in qa', 'burned out', 'stalled', 'efficient in ops', 'experienced', 'practised']);
   });
 
   it('gives a seat the needs and the flags of the cards on a Board, and nothing of a backlog (Review Focus: 3 players, seed 1)', () => {
@@ -4372,7 +4436,7 @@ describe('what the page shows of slice 5', () => {
   });
 
   it('(guard) shows the same flags beside a value, and the same values about each player, as before (Call 5)', () => {
-    expect(shownFlags(game!)).toEqual(['overworked', 'overworked in blue', 'overworked in red', 'overworked in qa', 'stalled', 'efficient in ops', 'experienced', 'practised']);
+    expect(shownFlags(game!)).toEqual(['overworked', 'overworked in blue', 'overworked in red', 'overworked in qa', 'burned out', 'stalled', 'efficient in ops', 'experienced', 'practised']);
     // Operational revenue reads its owner's ops team through each product's rev, and active tags is a count: neither is shown.
     expect(shownPlayerValues(game!)).toEqual([
       'blue supply', 'red supply', 'blue demand', 'red demand', 'blue load', 'red load', 'qa supply', 'bug load', 'qa spent',

@@ -184,6 +184,7 @@ Blue output:
   A red mode card's blue output is 0.
   A qa mode card's blue output is 0.
   An onboarding card's blue output is 0.
+  A burned out card's blue output is 0.
 
 Red output:
   A hardware card's red output is its output.
@@ -193,6 +194,7 @@ Red output:
   A qa mode card's red output is 0.
   A blue mode card's red output is 0.
   An onboarding card's red output is 0.
+  A burned out card's red output is 0.
 
 QA output:
   A qa card's qa output is its output.
@@ -204,6 +206,7 @@ QA output:
   A red mode card's qa output is 0.
   A blue mode card's qa output is 0.
   An onboarding card's qa output is 0.
+  A burned out card's qa output is 0.
 
 Working blue xp:
   A software card's working blue xp is its blue xp tokens.
@@ -233,7 +236,7 @@ QA team output:
   A stalled card's qa team output is 0.
 
 PM count:
-  A card's pm count is the number of the cards on it that are managing.
+  A card's pm count is the number of the cards on it that are giving synergy.
 
 Blue workers:
   A card's blue workers is the number of the cards on it whose blue output is more than 0.
@@ -244,11 +247,35 @@ Red workers:
 QA workers:
   A card's qa workers is the number of the cards on it whose qa output is more than 0.
 
+Blue made:
+  A card's blue made is its blue team output.
+  A losing blue card's blue made goes down by 1.
+
+Red made:
+  A card's red made is its red team output.
+  A losing red card's red made goes down by 1.
+
+QA made:
+  A card's qa made is its qa team output.
+  A losing qa card's qa made goes down by 1.
+
 Blue bandwidth:
   A card's blue bandwidth is its blue output.
 
 Red bandwidth:
   A card's red bandwidth is its red output.
+
+Pool blue:
+  A card's pool blue goes up by its blue bandwidth.
+  A pool losing blue card's pool blue goes down by 1.
+
+Pool red:
+  A card's pool red goes up by its red bandwidth.
+  A pool losing red card's pool red goes down by 1.
+
+Pool qa:
+  A card's pool qa goes up by its qa output.
+  A pool losing qa card's pool qa goes down by 1.
 
 Blue need:
   A card's blue need is its blue cost.
@@ -396,6 +423,47 @@ Clean coding:
 Guarding the pool:
   Only if it is clean coding.
   Only if it is not attaching.
+
+Burned out:
+  Only if it is a card whose burnout is more than 0.
+
+Giving synergy:
+  Only if it is managing.
+  Only if it is not burned out.
+
+Poisoning:
+  Only if it is a card whose toxic personality is more than 0.
+  Only if it is not onboarding.
+
+Losing blue:
+  Only if some card on it is poisoning.
+  Only if its blue team output is more than 0.
+
+Losing red:
+  Only if some card on it is poisoning.
+  Only if its blue team output is 0.
+  Only if its red team output is more than 0.
+
+Losing qa:
+  Only if some card on it is poisoning.
+  Only if its blue team output is 0.
+  Only if its red team output is 0.
+  Only if its qa team output is more than 0.
+
+Pool losing blue:
+  Only if it is poisoning.
+  Only if its owner has a card in their ops team that is not onboarding and whose blue bandwidth is more than 0.
+
+Pool losing red:
+  Only if it is poisoning.
+  Only if its owner has no card in their ops team that is not onboarding and whose blue bandwidth is more than 0.
+  Only if its owner has a card in their ops team that is not onboarding and whose red bandwidth is more than 0.
+
+Pool losing qa:
+  Only if it is poisoning.
+  Only if its owner has no card in their ops team that is not onboarding and whose blue bandwidth is more than 0.
+  Only if its owner has no card in their ops team that is not onboarding and whose red bandwidth is more than 0.
+  Only if its owner has a card in their ops team that is not onboarding and whose qa output is more than 0.
 
 Stalled:
   Only if it is in a development.
@@ -560,10 +628,10 @@ Feature complete:
   Only if its red cubes are at least its red need.
 
 Blue supply:
-  A player's blue supply is the total blue bandwidth of the cards in their ops team.
+  A player's blue supply is the total pool blue of the cards in their ops team.
 
 Red supply:
-  A player's red supply is the total red bandwidth of the cards in their ops team.
+  A player's red supply is the total pool red of the cards in their ops team.
 
 Blue demand:
   A player's blue demand is the total blue maint of the cards in their operations that are not offline.
@@ -578,7 +646,7 @@ Red load:
   A player's red load is the total red maint of the cards in their operations.
 
 QA supply:
-  A player's qa supply is the total qa output of the cards in their ops team.
+  A player's qa supply is the total pool qa of the cards in their ops team.
 
 Bug load:
   A player's bug load is the total bugs of the cards in their operations.
@@ -1230,12 +1298,12 @@ Phase: brainstorm
 Phase: engine
   Hint: Your ops team's QA can't fix every Bug on your products. Clean one Bug at a time from the products you choose.
   When this phase starts:
-    For each card in their development, its new blue cubes go up by its blue team output.
-    For each card in their development, its new red cubes go up by its red team output.
+    For each card in their development, its new blue cubes go up by its blue made.
+    For each card in their development, its new red cubes go up by its red made.
     For each card in their development whose blue team output is more than 0, the cards on it that are learning blue gain 1 pending blue.
     For each card in their development whose red team output is more than 0, the cards on it that are learning red gain 1 pending red.
     For each card in their development whose qa team output is more than 0, up to its bugs of the cards on it that are learning green gain 1 pending green, first card first.
-    For each card in their development, its bugs go down by its qa team output.
+    For each card in their development, its bugs go down by its qa made.
   A player may clean a card in their operations.
     Only if its bugs are more than 0.
     Only if their qa supply is more than their qa spent.
@@ -4712,3 +4780,107 @@ Example: Workaholic's +2 follows the mode a unit works in: a flex Senior makes B
   And the Genetics Kit in p0's development has 0 blue cubes
   And the Dating App in p0's development has 0 bugs
   And the Dating App in p0's development has 0 blue cubes
+
+Example: Burnout makes its staff member produce nothing in any colour, so it learns nothing and is no working teammate for Synergy (section 20, the slice's R3)
+  Given p1's development has a Cloud Storage
+  And the Cloud Storage in p1's development has 2 bugs
+  And the Cloud Storage in p1's development has a Junior PM, a Junior Software Dev, the Hacker, a Junior Hardware Eng and a Junior QA Tester on it
+  And the Hacker in p1's development team has 1 burnout
+  And the Junior Hardware Eng in p1's development team has 1 burnout
+  And the Junior QA Tester in p1's development team has 1 burnout
+  And the turn passes to the left
+  Then the phase is income
+  When p1 pays salaries
+  Then p1 has 4 capital
+  When p1 ends their actions
+  Then the Cloud Storage in p1's development has 2 blue cubes
+  And the Cloud Storage in p1's development has 0 red cubes
+  And the Cloud Storage in p1's development has 2 bugs
+  And the Junior Hardware Eng in p1's development team has 0 pending red
+
+Example: a Junior PM with Burnout gives no Synergy, though it still gives Brainstorm its third card (section 20, section 6, the Rust engine's PM bonus)
+  Given p1's development has a Dating App
+  And the strategy deck has a Headhunter, a Hit Piece and a Visionary
+  And the Dating App in p1's development has a Junior PM and a Junior Software Dev on it
+  And the Junior PM in p1's development team has 1 burnout
+  And the turn passes to the left
+  When p1 pays salaries
+  And p1 brainstorms
+  Then p1's brainstorm has 3 cards
+  When p1 keeps the Visionary
+  And p1 ends their actions
+  Then the Dating App in p1's development has 1 blue cube
+
+Example: Toxic Personality takes one cube off its team's total after Synergy, Blue first, though the Toxic staff member makes nothing itself (section 20, ruling 25, the slice's R1)
+  Given the phase is actions
+  And p0's development has a Cloud Storage
+  And the Cloud Storage in p0's development has a Junior PM, a Junior Software Dev and a Junior Hardware Eng on it
+  And the Junior PM in p0's development team has 1 toxic personality
+  When p0 ends their actions
+  Then the Cloud Storage in p0's development has 1 blue cube
+  And the Cloud Storage in p0's development has 2 red cubes
+
+Example: a Toxic staff member onboarding this turn takes nothing off its new team (ruling 8, the slice's R1)
+  Given the phase is actions
+  And p0's development has a Cloud Storage and a Dating App
+  And the Cloud Storage in p0's development has a Junior Software Dev on it
+  And the Dating App in p0's development has the Hacker on it
+  And the Hacker in p0's development team has 1 toxic personality
+  When p0 reassigns the Hacker to the Cloud Storage
+  And p0 ends their actions
+  Then the Cloud Storage in p0's development has 1 blue cube
+  And the Cloud Storage in p0's development has 1 bug
+
+Example: a team that makes no Blue loses a Red cube to Toxic Personality (section 20, the slice's R1)
+  Given the phase is actions
+  And p0's development has a Smart Lock
+  And the Smart Lock in p0's development has the Engineer on it
+  And the Engineer in p0's development team has 1 toxic personality
+  When p0 ends their actions
+  Then the Smart Lock in p0's development has 2 red cubes
+  And the Smart Lock in p0's development has 0 blue cubes
+
+Example: a team that makes neither Blue nor Red cleans one Bug fewer for Toxic Personality (section 20, the slice's R1)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And the Dating App in p0's development has 3 bugs
+  And the Dating App in p0's development has a Junior QA Tester and a QA Engineer on it
+  And the QA Engineer in p0's development team has 1 toxic personality
+  When p0 ends their actions
+  Then the Dating App in p0's development has 2 bugs
+
+Example: in the ops team Toxic Personality takes one off the Blue bandwidth first, though the Toxic PM makes nothing, so a product goes offline (section 20, section 5, the slice's R1)
+  Given p1's operations has a Dating App and a Smart Lock
+  And p1's ops team has a Junior Software Dev, a Junior Hardware Eng and a Junior PM
+  And the Junior PM in p1's ops team has 1 toxic personality
+  And the turn passes to the left
+  Then the phase is ops check
+  And p1's blue supply is 0
+  And p1's red supply is 1
+  When p1 switches off the Dating App
+  And p1 confirms the products online
+  Then the phase is income
+  And p1 has 9 capital
+
+Example: an ops team that makes no Blue loses a Red to Toxic Personality, and its Blue stays at none (section 20, section 5, the slice's R1)
+  Given p1's operations has a Smart Lock, a Smart Thermostat and a Smart Toy
+  And p1's ops team has the Engineer
+  And the Engineer in p1's ops team has 1 toxic personality
+  And the turn passes to the left
+  Then the phase is ops check
+  And p1's red supply is 2
+  And p1's blue supply is 0
+  When p1 switches off the Smart Toy
+  And p1 confirms the products online
+  Then p1 has 11 capital
+
+Example: an ops team that makes neither Blue nor Red cleans one Bug fewer for Toxic Personality (section 20, section 5, the slice's R1)
+  Given the phase is actions
+  And p0's operations has a Dating App
+  And p0's ops team has a Junior QA Tester and a QA Engineer
+  And the Dating App in p0's operations has 2 bugs
+  And the QA Engineer in p0's ops team has 1 toxic personality
+  Then p0's qa supply is 1
+  And p0's red supply is 0
+  When p0 ends their actions
+  Then the Dating App in p0's operations has 1 bug
