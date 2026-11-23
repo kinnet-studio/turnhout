@@ -697,43 +697,44 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  * - **Free moves** come first in the actions phase, each at most once a turn. While its development has fewer than 3, it greenlights
  *   the first backlog card whose press is allowed, Tier 2 and 3 included, but an idea Domain Expertise cuts before any other. Then it
  *   plays the first card of its Strategy Hand that has a target the rules take, in its bench, development team or ops team, of the
- *   Training cards on any turn and of the Buffs too on a turn when `t % 3 === 0`: a Leadership Masterclass on the first such target of
- *   the kind `t % 3` names (a Junior, a QA Engineer or a Sales Rep), else on the first such target; a Workaholic on the first that makes
- *   some colour, a Clean Coder on the Hacker, else on an attaching card in the ops team, and a Visionary on a Junior on a Stalled
- *   project, each else on the one at `t` (mod how many) among them, as any other card is (see `training`, §20.A). Then it plays the first
- *   Debuff of its Strategy Hand that has a target the rules take, on the rival card at `t` (mod how many) among them (see `debuffing`).
- *   Then one Utility card at most: a TechCrunch Feature it can pay for, on its first product a working Sales Rep pitches when it can pay
- *   for that one, else on its product at `t` (mod how many) among those it can pay for; else, on a turn when `t % 3 === 0`, a Design
- *   Sprint (see `utility`). It dismisses the ops team's first card it can spare when `t % 9 === 4` and the development team's first
- *   when `t % 9 === 8`. In the last round, with the Market Crash in the crash pile, it dismisses on an even `t` the ops team's first
- *   card that gives Blue or Red bandwidth, once a turn (see `lastRound`): a path-driver, not play, that sends a seat short so that the
- *   final check has a choice to make (see below).
+ *   Training cards and the Workaholic on any turn and of the other Buffs too on a turn when `t % 3 === 0` (the second retune's D3): a
+ *   Leadership Masterclass on the first such target of the kind `t % 3` names (a Junior, a QA Engineer or a Sales Rep), else on the
+ *   first such target; a Workaholic on the first that makes some colour, a Clean Coder on the Hacker, else on an attaching card in the
+ *   ops team, and a Visionary on a Junior on a Stalled project, each else on the one at `t` (mod how many) among them, as any other
+ *   card is (see `training`, §20.A). Then it plays the first Debuff of its Strategy Hand that has a target the rules take, on the rival
+ *   card at `t` (mod how many) among them (see `debuffing`). Then one Utility card at most: a TechCrunch Feature it can pay for, on its
+ *   first product a working Sales Rep pitches when it can pay for that one, else on its product at `t` (mod how many) among those it
+ *   can pay for; else, on a turn when `t % 3 === 0`, a Design Sprint (see `utility`). It dismisses the ops team's first card it can
+ *   spare when `t % 9 === 4` and the development team's first when `t % 9 === 8`. In the last round, with the Market Crash in the crash
+ *   pile, it dismisses on an even `t` the ops team's first card that gives Blue or Red bandwidth, once a turn (see `lastRound`): a
+ *   path-driver, not play, that sends a seat short so that the final check has a choice to make (see below).
  * - **The first action** launches the first project the engine takes (see `launch`), else it is an Ideation. A seat that researches and
- *   runs no product yet first researches the seed deck, else drafts the seed market's first card, since a Tier 1 card is what it can build
- *   (the retune's D2). Else the Ideation goes by `t % 4`: a growth idea (0 and 2), draft from the growth market (1), or (3) by
- *   `⌊t / 4⌋ % 3` research the seed deck, draft from the seed market or draft the open idea pool's first card. A growth idea researches
- *   the growth deck when the `style` researches, and drafts from the growth market when it drafts. A draft from a market takes a hybrid
- *   Domain Expertise cuts, else an idea it cuts, else the market's first. When the rules refuse that, it tries researching the growth
- *   deck, drafting from the growth market, researching the seed deck and drafting from the seed market, in that order, and with none
- *   allowed it recruits instead.
- * - **Each later action** first tries to reassign the Diva while she works for the seat, which her Ego refuses at no cost
- *   (§20.B.1). Then it launches the first project the engine takes, which a Tier 2 or 3 project needs to be fully led for as well as
- *   complete (P11), so that the Diva may go to the ops team with her team. Else it puts QA on its first project with Bugs that no QA
- *   on it cleans and that isn't Stalled, since a project with Bugs can't Launch (§6): the bench's first card that would clean them
- *   (see `qaForBugs`). Else, when the action by `(t + a) % 9` below is 0, the recruit, it hires instead the agency row's first
- *   attaching card it can pay for, the Growth Hacker or a Sales Rep, onto its first product in operation (see `hireGrowthHacker`).
- *   Else it hires the Hacker from the agency row, when it can pay for him, onto its first project that needs blue cubes and no red
- *   (see `hireHacker`). Else, once a turn when `t % 4 === 1`, it reassigns the first card of its ops team that sits on a product to
- *   its first other product (see `moveGrowthHacker`). Else, when `t % 3 === 1`, it assigns the bench's first PM to its project with
- *   the most cards on it (see `pmToProject`). Else it pivots the project the Diva is on, which fires her (ruling 9), and it
- *   assigns her from the bench to the ops team, where her Ego refuses a reassign too. Else it hires the agency row's Diva onto its first
- *   project when it can pay for her (see `hireDiva`). Else it assigns the bench's makers of a colour its first open project lacks, a
- *   project with a cut first, to that project (see `makersToProject`). Else, when `(t + a) % 5 === 2`, it Brainstorms (see
- *   `brainstorming`). With none of those, it assigns the bench's makers of a color its first Tier 1 project with a cut lacks to that
- *   project (see `buildCut`), else it finds a lead for its first Stalled project (§3): the bench's first Senior Developer who would lead a
- *   colour it needs, assigned to it, else the agency row's first such Senior it can pay for, hired onto it, else the open job market's
- *   first, hired when it has the $1 the hire costs, else a Layoff of the bench's first card, which digs the talent deck for one. With no
- *   Stalled project, it is one by `(t + a) % 9`:
+ *   runs no product yet first researches the seed deck, else drafts the seed market's first card, since a Tier 1 card is what it can
+ *   build (the first retune's D2). Else the Ideation goes by `t % 4`: a growth idea (0 and 2), draft from the growth market (1), or (3)
+ *   by `⌊t / 4⌋ % 3` research the seed deck, draft from the seed market or draft the open idea pool's first card. A growth idea
+ *   researches the growth deck when the `style` researches, and drafts from the growth market when it drafts. A draft from a market
+ *   takes a hybrid Domain Expertise cuts, else an idea it cuts, else the market's first. When the rules refuse that, it tries
+ *   researching the growth deck, drafting from the growth market, researching the seed deck and drafting from the seed market, in that
+ *   order, and with none allowed it recruits instead.
+ * - **Each later action** first tries to reassign the Diva while she works for the seat, which her Ego refuses at no cost (§20.B.1).
+ *   Then it launches the first project the engine takes, which a Tier 2 or 3 project needs to be fully led for as well as complete
+ *   (P11), so that the Diva may go to the ops team with her team. Else, as its last action while Intern Season makes a recruit free, it
+ *   recruits the Junior a recruit below would (see `internRecruit`, the second retune's D1). Else it puts QA on its first project with
+ *   Bugs that no QA on it cleans and that isn't Stalled, since a project with Bugs can't Launch (§6): the bench's first card that would
+ *   clean them (see `qaForBugs`). Else, when the action by `(t + a) % 9` below is 0, the recruit, it hires instead the agency row's
+ *   first attaching card it can pay for, the Growth Hacker or a Sales Rep, onto its first product in operation (see
+ *   `hireGrowthHacker`). Else it hires the Hacker from the agency row, when it can pay for him, onto its first project that needs blue
+ *   cubes and no red (see `hireHacker`). Else, once a turn when `⌊t / n⌋` is odd, n the seats, it reassigns the first card of its ops
+ *   team that sits on a product to its first other product (see `moveGrowthHacker`). Else, when `t % 3 === 1`, it assigns the bench's
+ *   first PM to its project with the most cards on it (see `pmToProject`). Else it pivots the project the Diva is on, which fires her
+ *   (ruling 9), and it assigns her from the bench to the ops team, where her Ego refuses a reassign too. Else it hires the agency row's
+ *   Diva onto its first project when it can pay for her (see `hireDiva`). Else it assigns the bench's makers of a colour its first open
+ *   project lacks, a project with a cut first, to that project (see `makersToProject`). Else, when `(t + a) % 5 === 2`, it Brainstorms
+ *   (see `brainstorming`). With none of those, it assigns the bench's makers of a color its first Tier 1 project with a cut lacks to
+ *   that project (see `buildCut`), else it finds a lead for its first Stalled project (§3): the bench's first Senior Developer who
+ *   would lead a colour it needs, assigned to it, else the agency row's first such Senior it can pay for, hired onto it, else the open
+ *   job market's first, hired when it has the $1 the hire costs, else a Layoff of the bench's first card, which digs the talent deck
+ *   for one. With no Stalled project, it is one by `(t + a) % 9`:
  *   0. recruit the Junior of kind `(t + ⌊t / 9⌋) % 3` (`(t + a) % 3` is 0 whenever `(t + a) % 9` is);
  *   1. hire the first agency Senior Developer it can pay for, else the first agency card it can pay for, to its bench, its first
  *      project or its ops team, by `(t + ⌊t / 9⌋) % 3`; to the ops team by its first product's button when the card attaches or
@@ -769,10 +770,10 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *   When the rules refuse that, or it has nothing to pick, it tries the next of those places in that order, and with none it passes
  *   on the rest (see `sourcing`).
  * - In research it keeps a hybrid Domain Expertise cuts, else an idea it cuts, else the research row's card at `t` (mod the row's
- *   length). In the brainstorm step it keeps the row's first card the runs play (a Training card, an Attribute, a TechCrunch Feature or
- *   a Design Sprint: see `isPlayable`), else the row's card at `t` (mod the row's length) (§6). In the backlog cleanup it discards the
- *   first card Domain Expertise doesn't cut, else the row's first; in the strategy cleanup, the first card the runs don't play, else
- *   the row's first; in the bench cleanup, the row's first.
+ *   length). In the brainstorm step it keeps a TechCrunch Feature (the second retune's D2), else the row's first card the runs play (a
+ *   Training card, an Attribute or a Design Sprint: see `isPlayable`), else the row's card at `t` (mod the row's length) (§6). In the
+ *   backlog cleanup it discards the first card Domain Expertise doesn't cut, else the row's first; in the strategy cleanup, the first
+ *   card the runs don't play, else the row's first; in the bench cleanup, the row's first.
  *
  * A hire's place goes by `(t + ⌊t / 9⌋) % 3`, not `t % 3`: the action that hires from the agency row comes only when `t % 9` is 0
  * or 8, and the Layoff before a sourcing only when it is 6 or 7, so `t % 3` would never send either to one of its three places.
@@ -1063,15 +1064,18 @@ function playTurn(
   /** What a Masterclass looks for in a target: a Junior by its role, else the card's name (§20.A). */
   const kindOf = (card: CardState) => (card.data?.role === 'Junior' ? 'Junior' : nameOf(card));
   /**
-   * The play of the Strategy Hand's first Training card, or on a turn when `t % 3 === 0` its first Training card or Buff, that has a
-   * target the rules take, in the seat's bench, development team or ops team (§20.A). A Leadership Masterclass goes on the first taken
-   * target of the kind `t % 3` names, a Junior, a QA Engineer or a Sales Rep, else on the first taken target; a Buff on the first taken
-   * target where it pays (see below), else on the taken target at `t` (mod how many), as any other card is. The choice a Bootcamp asks
-   * of a Junior both colours fit is answered as any press's is, by `t`.
+   * The play of the Strategy Hand's first Training card or Workaholic, or on a turn when `t % 3 === 0` its first Training card or Buff,
+   * that has a target the rules take, in the seat's bench, development team or ops team (§20.A). A Leadership Masterclass goes on the
+   * first taken target of the kind `t % 3` names, a Junior, a QA Engineer or a Sales Rep, else on the first taken target; a Buff on the
+   * first taken target where it pays (see below), else on the taken target at `t` (mod how many), as any other card is. The choice a
+   * Bootcamp asks of a Junior both colours fit is answered as any press's is, by `t`.
    */
   const training = (): Move | null => {
     const zones = TRAINING_TARGETS.map(own);
-    const fits = (card: CardState) => (isTraining(card) || (BUFFS.includes(nameOf(card) as string) && t % 3 === 0))
+    // The Workaholic on any turn (the second retune's D3): at 3 players `t % 3` is a seat's, so the first seat alone played Buffs, and
+    // the Workaholic is the Buff that pays at once, +2 output in its card's colour (§20.A).
+    const fits = (card: CardState) => (isTraining(card) || nameOf(card) === 'Workaholic'
+      || (BUFFS.includes(nameOf(card) as string) && t % 3 === 0))
       && zones.some((zoneId) => cards(zoneId).some((target) => takes(card, target)));
     return pick(PLAY_TRAINING, own('strategy hand'), (row) => row.find(fits), {
       zoneId: zones,
@@ -1188,6 +1192,13 @@ function playTurn(
     const color = unfinished === undefined ? undefined : lacks(unfinished)[(t + a) % lacks(unfinished).length];
     return color === undefined ? recruit(a) : press(RECRUITS[color === 'blue' ? 0 : 1]);
   };
+  /**
+   * As the turn's last action while Intern Season is in play, which makes a recruit free (§20.D), the Junior `recruitMaker` picks: a
+   * free Junior is worth an action, and the Event seldom finds the seat with the $2 a recruit costs otherwise. The last action, so that
+   * the turn's other plans keep theirs (the second retune's D1). Null otherwise.
+   */
+  const internRecruit = (a: number): Move | null =>
+    (eventOf(engine.getState()) === 'Intern Season' && counterOf(engine.getState(), 'actions', by) === 1 ? recruitMaker(a) : null);
   /** Whether the seat can pay for `card`. */
   const canPay = (card: CardState) => (card.data?.cost as number) <= capital();
   /** The first card of a row the seat can pay for. */
@@ -1279,12 +1290,14 @@ function playTurn(
   /** Whether this turn has moved a card from one product to another. */
   let movedOnProducts = false;
   /**
-   * On a `t` with `t % 4 === 1`, once a turn, the ops team's first card that sits on a product reassigned to the seat's first other
-   * product, when it has one (§6, §20.B). Null otherwise.
+   * Once a turn, on a turn when `⌊t / n⌋` is odd, n the seats, the ops team's first card that sits on a product reassigned to the seat's
+   * first other product, when it has one (§6, §20.B). Null otherwise. Every other turn of the seat's own, not `t % 4 === 1`, which
+   * gave the move to one seat alone at 4 players, and at 2 players to one seat alone on every other round (the second retune's D4).
    */
   const moveGrowthHacker = (): Move | null => {
     const sitting = cards(own('ops team')).find((card) => typeof card.data?.[HOLDER_KEY] === 'string');
-    if (t % 4 !== 1 || movedOnProducts || sitting === undefined || cards(own('operations')).length < 2) return null;
+    const ownTurn = Math.floor(t / runtime.seats.length);
+    if (ownTurn % 2 !== 1 || movedOnProducts || sitting === undefined || cards(own('operations')).length < 2) return null;
     return pick(REASSIGN_TO_PRODUCT, own('ops team'), (row) => row.find((card) => card.id === sitting.id),
       onProduct((products, card) => products.find((product) => product.id !== card.data?.[HOLDER_KEY])));
   };
@@ -1460,8 +1473,8 @@ function playTurn(
         ? [press(RESEARCH_SEED), first(DRAFT_SEED, 'seed-market'), ...ideation()]
         : ideation());
       const planned = a === 0 ? [launch(), ...ideas()] : [
-        reassignDiva(), launch(), qaForBugs(), hireGrowthHacker(action), hireHacker(), moveGrowthHacker(), pmToProject(), pivotDiva(),
-        divaToOps(), hireDiva(), makersToProject(), brainstorming(a), ...board(),
+        reassignDiva(), launch(), internRecruit(a), qaForBugs(), hireGrowthHacker(action), hireHacker(), moveGrowthHacker(), pmToProject(),
+        pivotDiva(), divaToOps(), hireDiva(), makersToProject(), brainstorming(a), ...board(),
       ];
       const move = choose([...planned, recruitMaker(a), press(END_ACTIONS)]);
       if (move.type === REASSIGN_TO_PRODUCT) movedOnProducts = true;
@@ -1470,7 +1483,12 @@ function playTurn(
     } else if (phase === 'research') {
       play(engine, choose([pick(KEEP, own('research'), (row) => cutIdea(row) ?? row[t % row.length])]), watch);
     } else if (phase === 'brainstorm') {
-      play(engine, choose([pick(KEEP_STRATEGY, own('brainstorm'), (row) => row.find(isPlayable) ?? row[t % row.length])]), watch);
+      // A TechCrunch Feature first (the second retune's D2): its Hype scores 5 on an Active product, for $5 or $2 and no action (§12,
+      // §20.A), and a seat that kept the row's first playable card passed it over in most games that drew it.
+      const techCrunch = (card: CardState) => nameOf(card) === 'TechCrunch Feature';
+      play(engine, choose([
+        pick(KEEP_STRATEGY, own('brainstorm'), (row) => row.find(techCrunch) ?? row.find(isPlayable) ?? row[t % row.length]),
+      ]), watch);
     } else if (phase === 'sourcing') {
       play(engine, choose([...sourcing(), press(PASS_ON_THE_REST)]), watch);
     } else if (phase === GRADUATION) {
@@ -1549,39 +1567,31 @@ const REPLAYED = [
 /**
  * Paths (tally keys, and `REPLAYED` counts of the replay tests) that fewer than 2 of the long runs' 20 games hold once the Event deck
  * replays every seeded game (plan 6-2b): counted, not required, as plan 6-2a's precedent has it, each pinned by its examples or the
- * arranged test named here. A later cadence change may promote them.
- * - None: Attributes kept through a bench discard ('a Talent discarded from the bench keeps its Attributes, and the rival who hires it
- *   from the open job market gets them'); Toxic taking a Red cube ('a team that makes no Blue loses a Red cube to Toxic Personality');
- *   the agency row's hire to the bench ('the agency row slides left and refills from the talent deck, which never reshuffles
- *   (section 13)' hires the Architect and the Hacker to the bench, and 'during Chip Shortage Hardware talent costs $3 more from the
- *   University, the agency row and the open job market, and a flex Firmware Specialist its printed price (section 20, section 13)'
- *   hires the Engineer and the Firmware Specialist to it); the Engineer paid $1 in the ops team ('the Engineer's salary is $1 in the ops team'); a TechCrunch Feature in a 3-player log
- *   (the 2-player replay rebuilds one, seed 4; 'TechCrunch Feature adds 1 Hype to one of the player's products for $5 and no
- *   action, or $2 when a working Sales Rep is on that product'); Legacy Code at an Income ('Legacy Code makes each Bug cost $2 of
- *   revenue, …'); a Crunch Time Bug stopped by Clean Code ('Crunch Time gives each project that isn't Stalled 1 more cube, …'); a
- *   TechCrunch Feature under Trade Show ('during Trade Show TechCrunch Feature costs $2, …').
- * - One game: TechCrunch for $5 (2 players seed 4; the TechCrunch example above); a trained Junior declared red (5 players seed 2; 'a Junior Software Dev with 2 Blue
- *   XP and a Red Skill token declared Red makes 1 Red, its Blue XP idle (section 11, the slice's R11)', and 'Hardware Hackathon gives
- *   its 1 more, and Supply Chain Logjam its 1 less, to a Junior trained in Red and declared Red (section 20, section 11)', whose
- *   Junior is a QA Tester); Workaholic played (5 players seed 5; 'Workaholic gives +2 output in the colour its staff member makes and +$2 salary'); the
- *   reassign from the ops team to a product in operation (3 players seed 4; 'the Growth Hacker reassigned to another product is
- *   onboarding, …'); Intern Season's free recruit (2 players seed 4; 'during Intern Season recruiting from the University costs $0,
- *   …'); and Patent Trolls' $5 License (2 players seed 4; 'during Patent Trolls a Greenlight License costs $5, …').
+ * arranged test named here. A later cadence change may promote them, as the second retune promoted six: TechCrunch for $5, a TechCrunch
+ * Feature in a 3-player log and one at Trade Show's $2, Workaholic played, the reassign from the ops team to a product in operation and
+ * Intern Season's free recruit.
+ * - None: Toxic taking a Red cube ('a team that makes no Blue loses a Red cube to Toxic Personality'); the Engineer paid $1 in the ops
+ *   team ('the Engineer's salary is $1 in the ops team'); Legacy Code at an Income ('Legacy Code makes each Bug cost $2 of revenue,
+ *   …'); a Crunch Time Bug stopped by Clean Code ('Crunch Time gives each project that isn't Stalled 1 more cube, …'); a trained Junior
+ *   declared red, which 5 players seed 2 held until the second retune's Intern Season recruit changed that game ('a Junior Software Dev
+ *   with 2 Blue XP and a Red Skill token declared Red makes 1 Red, its Blue XP idle (section 11, the slice's R11)', and 'Hardware
+ *   Hackathon gives its 1 more, and Supply Chain Logjam its 1 less, to a Junior trained in Red and declared Red (section 20, section
+ *   11)', whose Junior is a QA Tester).
+ * - One game: Attributes kept through a bench discard (2 players seed 2; 'a Talent discarded from the bench keeps its Attributes, and
+ *   the rival who hires it from the open job market gets them'); the agency row's hire to the bench (4 players seed 2; 'the agency row
+ *   slides left and refills from the talent deck, which never reshuffles (section 13)' hires the Architect and the Hacker to the
+ *   bench, and 'during Chip Shortage Hardware talent costs $3 more from the University, the agency row and the open job market, and a
+ *   flex Firmware Specialist its printed price (section 20, section 13)' hires the Engineer and the Firmware Specialist to it); and
+ *   Patent Trolls' $5 License (2 players seed 4; 'during Patent Trolls a Greenlight License costs $5, …').
  */
 const HELD_BY_FEWER_THAN_TWO = new Set<string>([
   'Attributes kept through a bench discard',
   'Toxic: a Red cube taken',
   'hire a card from the agency row to their bench',
   'the Engineer paid 1 in the ops team',
-  'TechCrunch Features',
   'Legacy Code at an Income',
   'Crunch Time: a Bug stopped by Clean Code',
-  'Trade Show: a TechCrunch Feature for $2',
-  'TechCrunch for $5',
   'a trained Junior declared red',
-  'an Attribute played: Workaholic',
-  'reassign a card from their ops team to a card in their operations',
-  'Intern Season: a free recruit',
   'Patent Trolls: a $5 License',
 ]);
 
@@ -3940,23 +3950,24 @@ describe('Startup Simulator (designer language)', () => {
       //   products in operation ('cleans the Bug the auto-player picks when ops QA can’t clean them all, …');
       // - the graduation step's keep and Mentor presses: a Junior earns a Pending token of a second colour only by working in it, which
       //   takes a Skill token, and it must then Launch with it (P8) ('makes the graduation choices the auto-player picks, …');
-      // - the bench's discard: the retuned seats put their makers on projects first, so no bench overflows (the retune's D3) ('discards
-      //   the bench’s first card at the bench cleanup once it ends its actions with more than 5 there, …');
+      // - the bench's discard: the retuned seats put their makers on projects first, so no bench overflows (the first retune's D3)
+      //   ('discards the bench’s first card at the bench cleanup once it ends its actions with more than 5 there, …');
       // - the agency row's hire to the ops team: a seat with a product hires onto it, and the cycle seldom comes to the hire while one
-      //   without has a Senior's price (the retune's D3) ('hires the agency row’s first Senior it can pay for to the ops team when it
-      //   can’t go to a product, …');
-      // - the scouting's hire to the ops team: the Buffs' spending leaves it to two games (3 and 4 players seed 4; it was held by three)
-      //   under every Buff cadence that keeps the other tests (plan 6-2a's pre-flight) ('hires the card a Layoff found to the ops team
-      //   while it has a product, …').
-      // Held by none, the fewest: the agency row's hire to the bench, and by one game: the reassign from one product to another (3
-      // players seed 4), both in `HELD_BY_FEWER_THAN_TWO` once plan 6-2b's Event deck replayed every game; by two games: the TechCrunch
-      // Feature (2 and 4 players, seed 4); by three each: the scouting's hire onto a product (2, 4 and 5 players seed 4) and the agency
-      // row's hire onto a product (3, 4 and 5 players seed 4); by four each: the strategy cleanup's discard (2 players seeds 1 and 2, 3
-      // players seed 5, 5 players seed 4) and a let-go in the event check (2 players seeds 1 and 4, 3 players seeds 1 and 3); by five
-      // each: the assign onto a product (2 and 3 players seed 4, 4 players seeds 1, 2 and 4) and the ops team's let go (2 players seeds 2
-      // and 4, 3 players seeds 2 and 5, 4 players seed 4); by six each: the assign to the ops team and the ops check's switch on; by eight
-      // each: the scouting's hire to the bench and the ops check's confirm; the Design Sprint by ten, the flushing Brainstorm by thirteen
-      // and the Debuff by fourteen. A failure here means a cadence moved: retune the auto-player, never the rules.
+      //   without has a Senior's price (the first retune's D3) ('hires the agency row’s first Senior it can pay for to the ops team
+      //   when it can’t go to a product, …');
+      // - the scouting's hire to the ops team: the Buffs' spending left it to two games under every Buff cadence that kept the other
+      //   tests (plan 6-2a's pre-flight), and the second retune's seats make it in three (2 players seed 2, 4 players seeds 2 and 4)
+      //   ('hires the card a Layoff found to the ops team while it has a product, …').
+      // Held by one game, the fewest: the agency row's hire to the bench (4 players seed 2), in `HELD_BY_FEWER_THAN_TWO` once plan
+      // 6-2b's Event deck replayed every game; by three: the reassign from one product to another (2 players seeds 2 and 4, 3 players
+      // seed 4), which the second retune promoted; by four each: the strategy cleanup's discard (2 players seed 1, 3 players seeds 4
+      // and 5, 5 players seed 4) and the scouting's hire onto a product (2 players seeds 2 and 4, 4 and 5 players seed 4); by five
+      // each: the agency row's hire onto a product (3 players seed 4, 4 and 5 players seeds 2 and 4) and the ops team's declaration (2
+      // and 3 players, seeds 2 and 4, 4 players seed 4); by six each: a let-go in the event check (2 players seeds 1, 2 and 4, 3
+      // players seeds 1, 2 and 3) and the ops team's let go (2 players seeds 2 and 4, 3 players seeds 2 and 5, 4 players seeds 2 and
+      // 4); by seven: the assign onto a product; by eight each: the assign to the ops team and the ops check's switch on and confirm;
+      // by nine: the TechCrunch Feature; by ten each: the scouting's hire to the bench and the Design Sprint; the flushing Brainstorm
+      // by thirteen and the Debuff by fifteen. A failure here means a cadence moved: retune the auto-player, never the rules.
       expect(every.filter((key) => !(tally[key] > 0) && !HELD_BY_FEWER_THAN_TWO.has(key)), `never made or seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
@@ -3971,28 +3982,28 @@ describe('Startup Simulator (designer language)', () => {
       expect(Object.keys(played).filter((what) => !(played[what as keyof typeof played] > 0)), JSON.stringify(played)).toEqual([]);
     });
 
-    it('played slice 3 in those runs: Tier 2 and 3 greenlit and launched, Licenses paid to the only provider, the cut filled in and chosen three ways and launched, Stalled projects at the Engine, the Diva refused a reassign from a project and fired by a pivot, and the Engineer paid $1 in the ops team', () => {
+    it('played slice 3 in those runs: Tier 2 and 3 greenlit and launched, Licenses paid to the only provider and to a chosen one, the cut filled in and chosen three ways and launched, Stalled projects at the Engine, the Diva refused a reassign from a project and fired by a pivot, and the Engineer paid $1 in the ops team', () => {
       const paths = [
-        GROWTH_GREENLIT, GROWTH_LAUNCHED, LICENSE_TO_THE_ONLY_PROVIDER,
+        GROWTH_GREENLIT, GROWTH_LAUNCHED, LICENSE_TO_THE_ONLY_PROVIDER, LICENSE_TO_A_CHOSEN_PROVIDER,
         CUT_FILLED_IN, CUT_CHOSEN, 'the cut: Cut 2 blue', 'the cut: Cut 2 red', 'the cut: Cut 1 of each', CUT_LAUNCHED,
         STALLED_AT_THE_ENGINE, DIVA_REFUSED[REASSIGN_FROM_PROJECT], DIVA_PIVOTED, ENGINEER_IN_OPS,
       ];
-      // Two Licenses in one Greenlight takes a Tier 3 card whose both Tags the mover lacks; it is counted, but not required, and examples
-      // pin it. So are these two, each pinned by its examples and by the arranged test below of the auto-player's press named here:
-      // - LICENSE_TO_A_CHOSEN_PROVIDER, a License paid to a provider chosen among several: two rivals must run products of the Tag a
-      //   seat's Greenlight lacks, and the Strategy deck's shuffle at Setup replayed every game from plan 5-2b's Task 1 on (P7) ('names
-      //   the provider it pays a License to by t when two rivals provide the Tag, …');
-      // - DIVA_REFUSED[REASSIGN_FROM_OPS], the Diva refused a reassign from the ops team: she must reach the ops team, from the bench or
-      //   with her project's Launch, and the Milestones' shuffle at Setup replayed every game again at plan 5-2b's Task 3 (P7) ('tries
-      //   the Diva’s reassign from the ops team before each later action, …').
-      // Held by none, the fewest: the Engineer paid $1 in the ops team (in `HELD_BY_FEWER_THAN_TWO` once plan 6-2b's Event deck replayed
-      // every game); by two games each: a Tier 2 or 3 card launched (2 and 3 players, seed 4); by three: a project launched with a cut
-      // (2 players seeds 2 and 4, 3 players seed 4); by four each: the Diva refused a reassign from a project and fired by a pivot (every
-      // player count, seed 3); by five each: Cut 2 red (2 players seeds 2 and 4, 4 players seed 4, 5 players seeds 2 and 4), Cut 2 blue
-      // (2 players seed 4, 3 players seeds 2 and 4, 4 players seed 4, 5 players seed 5) and the cut filled in (the same games as Cut 2
-      // blue); by six: Cut 1 of each (2 players seed 2, 3 players seeds 4 and 5, 4 players seed 5, 5 players seeds 2 and 4); by nine
-      // each: a cut chosen among options and a License paid to the only provider. A failure here means a cadence moved: retune the
-      // auto-player, never the rules.
+      // Two Licenses in one Greenlight takes a Tier 3 card whose both Tags the mover lacks; it is counted, but not required, and
+      // examples pin it. So is DIVA_REFUSED[REASSIGN_FROM_OPS], the Diva refused a reassign from the ops team, pinned by its examples
+      // and by the arranged test 'tries the Diva’s reassign from the ops team before each later action, …' below: she must reach the
+      // ops team, from the bench or with her project's Launch, and the Milestones' shuffle at Setup replayed every game again at plan
+      // 5-2b's Task 3 (P7). LICENSE_TO_A_CHOSEN_PROVIDER, a License paid to a provider chosen among several, was counted too while one
+      // game held it (two rivals must run products of the Tag a seat's Greenlight lacks); the second retune's seats pay one in two
+      // games, so it is required, and the arranged test 'names the provider it pays a License to by t when two rivals provide the Tag,
+      // …' below still answers its choice each way.
+      // Held by none, the fewest: the Engineer paid $1 in the ops team (in `HELD_BY_FEWER_THAN_TWO` once plan 6-2b's Event deck
+      // replayed every game); by two: a License paid to a chosen provider (3 players seed 2, 4 players seed 4); by three: a project
+      // launched with a cut (2 players seeds 2 and 4, 3 players seed 4); by four each: the Diva refused a reassign from a project and
+      // fired by a pivot (every player count, seed 3) and the cut filled in (2, 3 and 4 players seed 4, 5 players seed 5); by six each:
+      // a Tier 2 or 3 card launched (2 and 3 players, seeds 2 and 4, 4 and 5 players seed 2), Cut 2 red (2, 4 and 5 players, seeds 2
+      // and 4), Cut 2 blue (2 players seed 4, 3 players seeds 2 and 4, 4 players seed 4, 5 players seeds 2 and 5) and Cut 1 of each (2
+      // players seed 2, 3 players seeds 2, 4 and 5, 4 players seeds 2 and 5); by ten: a cut chosen among options; by twelve: a License
+      // paid to the only provider. A failure here means a cadence moved: retune the auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0) && !HELD_BY_FEWER_THAN_TWO.has(key)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
@@ -4015,46 +4026,48 @@ describe('Startup Simulator (designer language)', () => {
       // - EARNING_LESS, a product earning less for its Bugs;
       // - GROWTH_HACKER_EARNED, the Growth Hacker's $3 earned;
       // - CLEANED_IN_OPS, a Bug cleaned in operations by itself.
-      // Held by five games, the fewest: a mode forgotten on a bench (2 players seeds 1 and 4, 3 players seeds 1 and 2, 4 players seed 4);
-      // by eight each: a mode declared QA (2 players seeds 1, 4 and 5, 3 players seeds 2, 4 and 5, 5 players seeds 3 and 4), a Bug cleaned
-      // on a project and an offline product at Income; by nine each: a mode declared Red and a Bug added to a project; a product switched
-      // off at the final check by twelve. A failure here means a cadence moved: retune the auto-player, never the rules.
+      // Held by five games, the fewest: a mode forgotten on a bench (2 and 3 players, seeds 1 and 2, 4 players seed 4); by eight each:
+      // a Bug cleaned on a project and an offline product at Income; by nine each: a mode declared QA (2 players seeds 1, 2, 4 and 5, 3
+      // players seeds 2, 4 and 5, 5 players seeds 3 and 4), a mode declared Red and a Bug added to a project; a product switched off at
+      // the final check by twelve. A failure here means a cadence moved: retune the auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0) && !HELD_BY_FEWER_THAN_TWO.has(key)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
-    it('played slice 5’s talent in those runs: Pending tokens gained and graduated, returned by pivots and stripped from fired staff, Synergy and the Sales Rep’s bonus', () => {
+    it('played slice 5’s talent in those runs: Pending tokens gained and graduated, returned by pivots and stripped from fired staff, Synergy, the Sales Rep’s bonus and a Junior PM promoted at a Launch', () => {
       const paths = [
         ...PENDING.map((name) => `${PENDING_GAINED}: ${name.slice('pending '.length)}`), GRADUATED, PIVOT_RETURNED, STRIPPED, SYNERGY,
-        SALES_BONUS, EXPERIENCED_PAID,
+        SALES_BONUS, EXPERIENCED_PAID, PROMOTED,
       ];
       // Counted, but not required, each pinned by its examples and by the arranged test below of the auto-player's presses named here:
       // - a token kept by choice and the Mentor's second token: a Junior gains a Pending token of a second colour only by working in it,
       //   which takes a Skill token from Training, and it must then Launch holding both (plan 5-2b's P8) ('makes the graduation choices
       //   the auto-player picks, …');
-      // - a Junior PM promoted at a Launch: a Junior PM must be on a Tier 2 or 3 team that Launches ('claims First Mover Advantage,
-      //   Platform Power and Full Stack Founder at one auto-player Launch of a Tier 2 card, which promotes its Junior PM, …');
       // - the Agile spare: only the one Senior PM is Agile until Agile Workshop badges a Junior PM, which no run plays (P8), and none of
       //   the runs moves a card onto a team it manages in a move that starts no turn ('reassigns a spare QA Engineer from the ops team
       //   onto the project the Senior PM manages, …').
-      // A Bug cleaned by a QA Engineer is counted too: a QA Engineer must be on a project with Bugs. Examples pin it.
-      // Held by three games, the fewest: an experienced Junior paid (2 players seeds 2 and 4, 3 players seed 4); by four: the Sales Rep's
-      // bonus (every player count 2 to 5, seed 4); by six: Pending tokens returned by a pivot (2 players seeds 1 and 3, 3 players seeds 1
-      // and 2, 4 players seeds 2 and 3); Synergy at the Engine by eight. A failure here means a cadence moved: retune the auto-player,
-      // never the rules.
+      // A Bug cleaned by a QA Engineer is counted too: a QA Engineer must be on a project with Bugs (three games held one before the
+      // second retune; none now). Examples pin it. A Junior PM promoted at a Launch, counted while no game held one (a Junior PM must
+      // be on a Tier 2 or 3 team that Launches), is required since the second retune's seats promote one in two games.
+      // Held by two games, the fewest: a Junior PM promoted at a Launch (2 and 3 players, seed 2); by five: an experienced Junior paid
+      // (2 and 3 players, seeds 2 and 4, 4 players seed 2); by seven each: the Sales Rep's bonus (2 players seeds 2 and 4, 3 players
+      // seed 4, 4 and 5 players seeds 2 and 4) and Pending tokens returned by a pivot (2 players seeds 1, 2 and 3, 3 players seeds 1
+      // and 2, 4 players seed 3, 5 players seed 2); Synergy at the Engine by nine. A failure here means a cadence moved: retune the
+      // auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0) && !HELD_BY_FEWER_THAN_TWO.has(key)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
-    it('played slice 5’s Strategy and Milestones in those runs: Brainstorms of 2, a reshuffle and the cleanup, Training on Juniors and on a Sales Rep, trained Juniors declared in each colour they lacked, the Sales Rep’s XP bonus, and Clean Launch claimed', () => {
+    it('played slice 5’s Strategy and Milestones in those runs: Brainstorms of 2, a reshuffle and the cleanup, Training on Juniors and on a Sales Rep, trained Juniors declared in each colour they lacked, the Sales Rep’s XP bonus, and Clean Launch and Platform Power claimed', () => {
       const paths = [
         `${BRAINSTORM_DRAWING} 2`, DISCARDED_AT_CLEANUP,
         ...['Full Stack Bootcamp', 'QA Certification', 'Leadership Masterclass'].map((name) => `${TRAINING_ON}: ${name} on a Junior`),
         `${TRAINING_ON}: Sales Seminar on a Sales Rep`,
         ...['blue', 'red', 'qa'].map((answer) => `${TRAINED_DECLARED} ${answer}`),
-        BADGED_LEADING, SALES_XP_BONUS, `${CLAIMED}: Clean Launch`,
+        BADGED_LEADING, SALES_XP_BONUS, `${CLAIMED}: Clean Launch`, `${CLAIMED}: Platform Power`,
       ];
       // Counted, but not required, each pinned by its examples (plan 5-2b's P8):
-      // - the reshuffle: only 2, 4 and 5 players seed 4 run their Strategy deck dry, once each, and 'leaves no id a seat saw face up in the
-      //   strategy discard in the strategy deck, …' below pins the reshuffle at 2 players seed 4 (the retune's D3);
+      // - the reshuffle: only five games run their Strategy deck dry, once each (2 players seeds 2 and 4, 3 players seed 2, 4 and 5
+      //   players seed 4), and 'leaves no id a seat saw face up in the strategy discard in the strategy deck, …' below pins the
+      //   reshuffle at 2 players seed 4 (the first retune's D3);
       // - a Brainstorm drawing 3: a PM must be working on the seat's Board, and a seat seldom keeps one there;
       // - a single Strategy card kept at once: the deck and its discard must hold one card between them;
       // - QA Certification and Leadership Masterclass on a QA Engineer, the Masterclass on a Sales Rep, and Agile Workshop on a Junior
@@ -4062,21 +4075,24 @@ describe('Startup Simulator (designer language)', () => {
       //   or a Masterclass first, so the arranged test 'plays its %s at t = %i on the %s the target rule picks, …' below plays each;
       // - Bug Decay stopped by a QA Engineer or waived by a VP of Sales: each needs one Training card, or two, on one card that then works
       //   where it matters;
-      // - First Mover Advantage, Platform Power and Full Stack Founder: held by two games (2 and 3 players seed 4), one (2 players seed 2)
-      //   and four (2 players seeds 2 and 4, 4 players seed 4, 5 players seed 2) (the arranged test 'claims First Mover Advantage,
-      //   Platform Power and Full Stack Founder at one auto-player Launch of a Tier 2 card, …' below claims all three, and 'claims
-      //   Platform Power only once the seat has chosen which products its ops check runs, …' Platform Power again);
+      // - First Mover Advantage and Full Stack Founder: held by two games (2 and 3 players, seed 4) and four (2 players seed 4, 3
+      //   players seed 2, 4 players seeds 2 and 4) (the arranged test 'claims First Mover Advantage, Platform Power and Full Stack
+      //   Founder at one auto-player Launch of a Tier 2 card, …' below claims all three, and 'claims Platform Power only once the seat
+      //   has chosen which products its ops check runs, …' Platform Power again). Platform Power was counted with them while one game
+      //   held it (2 players seed 2); the second retune's seats claim it in two, so it is required;
       // - Revenue Leader and Talent Magnet: no run claims either now (an Income comes to $10 seldom, and Setup reveals no Talent Magnet at
       //   seeds 1 to 5) (the arranged test 'claims Talent Magnet and Clean Launch at an auto-player Launch that graduates a second Junior
       //   to 3 XP, and Revenue Leader at its next Income of $10, …' below claims both);
       // - a Milestone claimed at the last check: one must be met only as the final Ops check brings products back online (the arranged
       //   test 'rebuilds and takes back Platform Power claimed at the last check, …' below claims one).
-      // Held by one game, the fewest: a trained Junior declared red (5 players seed 2), in `HELD_BY_FEWER_THAN_TWO` once plan 6-2b's
-      // Event deck replayed every game; by three each: Sales Seminar on a Sales Rep and the Sales Rep's XP bonus (2, 3 and 4
-      // players, seed 4); by four each: a trained Junior declared blue (2 and 3 players, seeds 1 and 2) and a strategy card discarded at
-      // cleanup (2 players seeds 1 and 2, 3 players seed 5, 5 players seed 4); by five: a badged Junior leading at the Engine (2, 3 and 4
-      // players seed 4, 5 players seeds 2 and 4); by seven: a trained Junior declared qa; Leadership Masterclass on a Junior by ten. A
-      // failure here means a cadence moved: retune the auto-player, never the rules.
+      // Held by none, the fewest: a trained Junior declared red (in `HELD_BY_FEWER_THAN_TWO` once plan 6-2b's Event deck replayed every
+      // game; one game, 5 players seed 2, held it until the second retune's Intern Season recruit changed that game); by two: Platform
+      // Power claimed (3 and 4 players, seed 2); by three each: Sales Seminar on a Sales Rep and the Sales Rep's XP bonus (2, 3 and 4
+      // players, seed 4) and a trained Junior declared blue (2 players seeds 1 and 2, 3 players seed 1); by four: a strategy card
+      // discarded at cleanup (2 players seed 1, 3 players seeds 4 and 5, 5 players seed 4); by six each: a badged Junior leading at the
+      // Engine (2 players seeds 2 and 4, 3 players seed 3, 4 players seed 4, 5 players seeds 2 and 4) and Full Stack Bootcamp on a
+      // Junior; by seven: a trained Junior declared qa; Leadership Masterclass on a Junior by ten. A failure here means a cadence
+      // moved: retune the auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0) && !HELD_BY_FEWER_THAN_TWO.has(key)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
@@ -4084,43 +4100,42 @@ describe('Startup Simulator (designer language)', () => {
       const paths = [
         ...[...BUFFS, ...DEBUFFS].map((name) => `${ATTRIBUTE_PLAYED}: ${name}`), BUFF_ON_BENCH, BUFF_ON_BOARD, DEBUFF_ON_DEV, DEBUFF_ON_OPS,
         ATTRIBUTES_FIRED, ATTRIBUTES_KEPT, TOXIC_RED, BURNOUT_IDLE, TECHCRUNCH_5, HYPE_SCORED, SPRINT_5, SPRINT_FEWER,
+        WORKAHOLIC_AT_ENGINE, TOXIC_OPS,
       ];
-      // Counted, but not required, each held by one game or none, and each pinned by its examples or by the arranged test named here. Each
-      // needs a card played on the one kind of target it works on, or a Talent holding Attributes to take one road out, and the runs play
-      // few such cards: the Buffs only on turns with t % 3 === 0, the Debuffs on the rival card t picks, a TechCrunch Feature on a pitched
-      // product only when a Sales Rep sits on one. Retargeting them cost other tests' keys in plan 6-2a's pre-flight.
+      // Counted, but not required, each held by one game or none, and each pinned by its examples or by the arranged test named here.
+      // Each needs a card played on the one kind of target it works on, or a Talent holding Attributes to take one road out, and the
+      // runs play few such cards: the Buffs but the Workaholic only on turns with t % 3 === 0, the Debuffs on the rival card t picks, a
+      // TechCrunch Feature on a pitched product only when a Sales Rep sits on one. Retargeting them cost other tests' keys in plan
+      // 6-2a's pre-flight. (A Workaholic's +2 at the Engine and Toxic Personality in the ops team were counted so too, until the second
+      // retune's seats held them in five games and two: they are required now.)
       // - Attributes rehired (none): the example 'a Talent discarded from the bench keeps its Attributes, and the rival who hires it from
       //   the open job market gets them, …';
-      // - Attributes boxed with an evicted Talent (none): 'Talents evicted from the open job market take their Attributes to
-      //   the box, …' and 'a Talent evicted with Flight Risk takes it to the box, …';
-      // - a Workaholic's +2 at the Engine (none): 'Workaholic gives +2 output in the colour its staff member makes and +$2
-      //   salary, …', 'a Workaholic Junior PM gets only the +$2 salary, …' and 'Workaholic's +2 follows the mode a unit works in: …';
+      // - Attributes boxed with an evicted Talent (2 players seed 2): 'Talents evicted from the open job market take their Attributes
+      //   to the box, …' and 'a Talent evicted with Flight Risk takes it to the box, …';
       // - Clean Coder stopping the Hacker's Bug (none): 'the Hacker with Clean Coder adds no Bug to the projects he joins, …';
       // - Clean Coder shielding a viral product (none): 'a Sales Rep with Clean Coder shields only the product it is on, …' and
       //   'a Sales Rep with Clean Coder on the Growth Hacker's own product stops its Bug, …';
-      // - a Visionary leading (3 players seed 4): 'a Junior with Visionary leads in both colours, …' and 'Visionary makes any unit a
+      // - a Visionary leading (none): 'a Junior with Visionary leads in both colours, …' and 'Visionary makes any unit a
       //   lead, …';
-      // - Toxic Personality taking a Blue cube (2 and 3 players, seed 4) and leaving a Bug (none): 'Toxic Personality takes one cube off its
+      // - Toxic Personality taking a Blue cube (2 players seed 4) and leaving a Bug (none): 'Toxic Personality takes one cube off its
       //   team's total after Synergy, Blue first, …' and 'a team that makes neither Blue nor Red cleans one Bug fewer for Toxic
       //   Personality, …';
-      // - Toxic Personality in the ops team (2 players seed 4): 'in the ops team Toxic Personality takes one off the Blue bandwidth first, …',
-      //   'an ops team that makes no Blue loses a Red to Toxic Personality, …' and 'an ops team that makes neither Blue nor Red cleans
-      //   one Bug fewer for Toxic Personality, …';
       // - Burnout on a PM giving no Synergy (none): 'a Junior PM with Burnout gives no Synergy, …';
       // - TechCrunch for $2 with a Sales Rep (4 players seed 4; a Trade Show play at $2 on a product no Sales Rep pitches is no longer
       //   counted as one): 'TechCrunch Feature adds 1 Hype to one of the player's products for $5 and no action,
       //   or $2 when a working Sales Rep is on that product, …', and the arranged test 'plays a TechCrunch Feature the auto-player holds
       //   on the product a working Sales Rep pitches, …' below.
-      // Held by none, the fewest: Attributes kept through a bench discard and Toxic Personality taking a Red cube; by one game each:
-      // Workaholic played (5 players seed 5) and TechCrunch for $5 (2 players seed 4), both in `HELD_BY_FEWER_THAN_TWO` once plan
-      // 6-2b's Event deck replayed every game; by two games each: a Buff on a bench card (4 and 5 players, seed 5), Hype scored (2 and 4
-      // players, seed 4) and a Debuff on an ops team card (2 players seed 4, 3 players seed 2); by three: Toxic Personality played (2
-      // players seed 4, 3 players seeds 1 and 4); by four each: Clean Coder played (2 players seeds 2 and 4, 3 players seed 3, 4
-      // players seed 4), Attributes discarded with a fired Talent (2 players seed 4, 3 players seed 5, 4 players seed 2, 5 players seed
-      // 4) and a Design Sprint dealing fewer than 5 (2 and 3 players seed 5, 4 players seeds 4 and 5); by six: Visionary played; by seven:
-      // a Design Sprint dealing 5; by eight each: a Buff on a Board card, Burnout played and Burnout leaving a unit idle; Flight Risk
-      // played by ten and a Debuff on a development team card by fourteen. A failure here means a cadence moved: retune the auto-player,
-      // never the rules.
+      // Held by none, the fewest: Toxic Personality taking a Red cube; by one game: Attributes kept through a bench discard (2 players
+      // seed 2), both in `HELD_BY_FEWER_THAN_TWO` once plan 6-2b's Event deck replayed every game; by two: Toxic Personality in the ops
+      // team (2 and 3 players, seed 4); by three each: Visionary played (2 players seed 1, 4 players seeds 2 and 5) and a Debuff on an
+      // ops team card (3 players seed 4, 5 players seeds 2 and 4); by four each: Toxic Personality played (2 players seed 4, 3 players
+      // seeds 1 and 4, 4 players seed 2) and a Design Sprint dealing fewer than 5 (2 and 3 players seed 5, 4 players seeds 4 and 5); by
+      // five each: Clean Coder played (2 players seeds 2 and 4, 3 players seed 3, 4 players seed 4, 5 players seed 2), a Buff on a
+      // bench card (3 players seeds 3 and 5, 4 players seeds 2 and 5, 5 players seed 5) and a Workaholic's +2 at the Engine (2 players
+      // seed 1, 3 players seeds 1, 3 and 5, 4 players seed 5); by six each: Hype scored and Burnout leaving a unit idle; by seven: a
+      // Design Sprint dealing 5; by eight each: TechCrunch for $5, Workaholic played and a Buff on a Board card; by nine each: Burnout
+      // played and Attributes discarded with a fired Talent; Flight Risk played by ten and a Debuff on a development team card by
+      // twelve. A failure here means a cadence moved: retune the auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0) && !HELD_BY_FEWER_THAN_TWO.has(key)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
@@ -4133,15 +4148,17 @@ describe('Startup Simulator (designer language)', () => {
         CRUNCH_CUBE, CRUNCH_BUG, CRUNCH_STOPPED,
       ];
       // Setup reveals the first Event, so a reveal is counted from the second round on. Each Event is revealed in 2 games or more; the
-      // fewest are Intern Season (2 players seed 4, 3 players seed 4) and Venture Capital Rain (2 players seeds 2 and 4), then Trade Show
-      // (5 games) and Open Source Boom and Server Crash (6 each); Tech Bubble is revealed in 18. The discard shuffled into the event deck in
-      // 2 games (2 players seeds 2 and 4), the only games to last the 19 rounds that takes. By game: Regulation Audit paid in 3 (2 players
-      // seeds 2 and 4, 5 players seed 4), staff let go in 4 (2 and 3 players, seeds 1 and 4 and seeds 1 and 3), Server Crash at an Income
-      // in 4 (2 players seeds 2 and 4, 3 and 4 players seed 4), Online Course Boom's Training card in 5, Tech Bubble at an Income in 7,
-      // Crunch Time's cube and Bug in 9, Open Source Boom at work in 9 and Angel Investors paid in 12; Chip Shortage's Hardware hire in 2
-      // (2 and 3 players, seeds 2 and 3). Held by none or one game, so counted and not required (`HELD_BY_FEWER_THAN_TWO`), each pinned by
-      // its examples: Legacy Code at an Income, a Bug Crunch Time's Clean Code stopped and a TechCrunch Feature at Trade Show's $2
-      // (none), and Intern Season's free recruit and Patent Trolls' $5 License (2 players seed 4).
+      // fewest are Venture Capital Rain (2 players seeds 2 and 4) and Intern Season (2 players seeds 2 and 4, 3 players seed 4), then
+      // Open Source Boom, Server Crash and Trade Show (6 each); Tech Bubble is revealed in 18. The discard shuffled into the event deck
+      // in 2 games (2 players seeds 2 and 4), the only games to last the 19 rounds that takes. By game: Chip Shortage's Hardware hire
+      // in 2 (2 players seed 2, 3 players seed 3), a TechCrunch Feature at Trade Show's $2 in 2 (2 and 3 players, seed 2), Regulation
+      // Audit paid in 3 (2 players seed 4, 3 players seed 2, 5 players seed 4), Server Crash at an Income in 4 (2 players seeds 2 and
+      // 4, 3 and 4 players seed 4), Online Course Boom's Training card in 4 (2 players seeds 1, 2 and 5, 3 players seed 2), staff let
+      // go in 6 (2 players seeds 1, 2 and 4, 3 players seeds 1, 2 and 3), Intern Season's free recruit in 6 (2 and 3 players, seeds 2
+      // and 4, 4 and 5 players seed 2), Tech Bubble at an Income in 7, Crunch Time's cube and Bug in 9, Open Source Boom at work in 8
+      // and Angel Investors paid in 10. Held by none or one game, so counted and not required (`HELD_BY_FEWER_THAN_TWO`), each pinned
+      // by its examples: Legacy Code at an Income and a Bug Crunch Time's Clean Code stopped (none), and Patent Trolls' $5 License (2
+      // players seed 4).
       // A failure here means a cadence moved: retune the auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0) && !HELD_BY_FEWER_THAN_TWO.has(key)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
@@ -4259,7 +4276,8 @@ describe('Startup Simulator (designer language)', () => {
       const board = (log: readonly Move[]) => made(log, [ASSIGN_TO_PROJECT, ASSIGN_TO_OPS]) && made(log, [LAUNCH]) && made(log, [PIVOT])
         && made(log, [REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS]);
       const states: GameState[] = [];
-      // Seed 2 makes all four by its 83rd move, the soonest of the 3-player seeds 1 to 5 (seed 5 takes 90, and seed 1 launches nothing).
+      // Seed 2 makes all four by its 69th move, the soonest of the 3-player seeds 1 to 5 (seeds 5 and 4 take 78 and 79, seeds 3 and 1
+      // 137 and 140).
       const engine = playGame(3, 2, (_before, _move, after) => states.push(after), { until: board });
       const log = [...engine.getLog()];
       expect(board(log), `the moves made: ${[...new Set(log.map((move) => move.type))].join(', ')}`).toBe(true);
@@ -4299,8 +4317,8 @@ describe('Startup Simulator (designer language)', () => {
       /** Whether some Greenlight has paid a License, some chose among several answers, and some had every answer filled in. */
       const everyKind = () => Object.values(seen).every((times) => times > 0);
       // Each game stops at its first such Greenlight, and the seeds run from 1 until a game of each kind has been seen, which takes the
-      // games up to seed 4 since plan 6-2a's Strategy cards replayed every game again; a seed past 30 means the auto-player or the rules
-      // moved too far for this to be a seed's matter.
+      // games up to seed 6 since the second retune (up to seed 10 before it); a seed past 30 means the auto-player or the rules moved
+      // too far for this to be a seed's matter.
       const lastSeed = 30;
       let seed = 1;
       for (; seed <= lastSeed && !everyKind(); seed++) {
@@ -4452,14 +4470,15 @@ describe('Startup Simulator (designer language)', () => {
       expect(scores).toEqual(Object.fromEntries(seats.map((seat) => [seat, scoreOf(end, seat)])));
     });
 
-    it('reassigns the Growth Hacker from its product to the seat’s other product once on a turn when t % 4 is 1, through the page’s view and without it (§6, §20.B)', () => {
+    it('reassigns the Growth Hacker from its product to the seat’s other product once on a turn when ⌊t / n⌋ is odd, through the page’s view and without it (§6, §20.B)', () => {
       // The long runs seldom see a seat with two products while its Growth Hacker sits on one, so this arranges it: the Architect
       // runs both products and stops the Growth Hacker's Bug.
       const [dating, todo, growthHacker] = ['Dating App', 'To-Do List', 'Growth Hacker'].map(idOf);
       const arranged = arrange({ 'operations-p0': [dating, todo], 'ops-team-p0': [idOf('Architect')] }).getState();
       const state = putOn(arranged, [growthHacker], 'ops-team-p0', dating, game!);
       const seats = seatsFor(2);
-      for (const t of [0, 1, 4, 5]) {
+      // At 2 players p0's own turn `⌊t / 2⌋` is odd at t = 2 and 3, and even at t = 0, 1, 4 and 5.
+      for (const t of [0, 1, 2, 3, 4, 5]) {
         const logs = [false, true].map((throughView) => {
           const { engine, runtime } = createEngine(game!, lib, 2, state);
           playTurn(engine, t, 'researches', keepsTheRules(seats, runtime), () => false, runtime, throughView);
@@ -4467,7 +4486,7 @@ describe('Startup Simulator (designer language)', () => {
         });
         const reassigns = logs[0].filter((move) => move.type === REASSIGN_TO_PRODUCT);
         const onto = { type: REASSIGN_TO_PRODUCT, by: 'p0', cardId: growthHacker, onto: todo };
-        expect(reassigns, `turn ${t}`).toEqual(t % 4 === 1 ? [onto] : []);
+        expect(reassigns, `turn ${t}`).toEqual(Math.floor(t / 2) % 2 === 1 ? [onto] : []);
         expect(logs[1], `turn ${t}`).toEqual(logs[0]);
       }
     });
@@ -4492,26 +4511,27 @@ describe('Startup Simulator (designer language)', () => {
         replayed.undo();
         expect(replayed.getState(), `${where}: the game with its last move, ${log.at(-1)!.type}, taken back`).toEqual(beforeLast);
       }
-      // Some log declared a mode, switched a product off, added a Bug to a project, raised a Pending token at the Engine, graduated one at
-      // a Launch, shuffled the strategy discard into the deck, played a Training card that asked a choice or had it filled in, claimed
-      // a Milestone, played a Debuff, discarded a fired Talent's Attributes and played a TechCrunch Feature, shuffled the event discard into
-      // the event deck and let staff go in an event check that waited, so the replays rebuilt each of them. Every log reveals Events. The
-      // declarations are in seeds 1, 2, 4 and 5, the Debuffs in seeds 2 to 5, the reshuffle, the strips and the TechCrunch Feature in seed
-      // 4 only, the Event reshuffle in seeds 2 and 4 (only 2-player games last the 19 rounds a reshuffle takes) and a let-go in the event check in seeds 1 and 4. The last move taken back is the end of the
-      // actions in seeds 1 to 3, a final-check switch-off in seed 4 and a backlog cleanup's discard in seed 5. No log holds a clean press, so the test
-      // 'Review Focus: cleans no more Bugs than its QA when one product is left with Bugs partway through the step (R3)' above replays one;
-      // none a keep or Mentor press, so 'makes the graduation choices the auto-player picks, …' below replays those; none moves a card
-      // onto an Agile PM's team (P8), so 'reassigns a spare QA Engineer from the ops team onto the project the Senior PM manages, …'
-      // below replays the Agile spare; and none claims a Milestone at the last check, so 'rebuilds and takes back Platform Power claimed
-      // at the last check, …' below replays one.
+      // Some log declared a mode, switched a product off, added a Bug to a project, raised a Pending token at the Engine, graduated one
+      // at a Launch, shuffled the strategy discard into the deck, played a Training card that asked a choice or had it filled in,
+      // claimed a Milestone, played a Debuff, discarded a fired Talent's Attributes and played a TechCrunch Feature, shuffled the event
+      // discard into the event deck and let staff go in an event check that waited, so the replays rebuilt each of them. Every log
+      // reveals Events. The declarations are in seeds 1, 2, 4 and 5, the Debuffs in seeds 2 to 5, the reshuffle and the TechCrunch
+      // Feature in seeds 2 and 4, the strips in seeds 1, 2 and 4, the Event reshuffle in seeds 2 and 4 (only 2-player games last the 19
+      // rounds a reshuffle takes) and a let-go in the event check in seeds 1, 2 and 4. The last move taken back is the end of the
+      // actions in seeds 1 and 3, a final-check switch-off in seed 2 and a backlog cleanup's discard in seeds 4 and 5. No log holds a
+      // clean press, so the test 'Review Focus: cleans no more Bugs than its QA when one product is left with Bugs partway through the
+      // step (R3)' above replays one; none a keep or Mentor press, so 'makes the graduation choices the auto-player picks, …' below
+      // replays those; none moves a card onto an Agile PM's team (P8), so 'reassigns a spare QA Engineer from the ops team onto the
+      // project the Senior PM manages, …' below replays the Agile spare; and none claims a Milestone at the last check, so 'rebuilds
+      // and takes back Platform Power claimed at the last check, …' below replays one.
       expect(Object.entries(seen).filter(([what, times]) => times === 0 && !HELD_BY_FEWER_THAN_TWO.has(what)), JSON.stringify(seen)).toEqual([]);
     }, 120_000);
 
-    it('takes back the last move and rebuilds whole games from their logs, through Attribute plays, strips, a TechCrunch Feature and a Design Sprint (Review Focus: 3 players, seeds 1 to 5)', () => {
+    it('takes back the last move and rebuilds whole games from their logs, through Attribute plays, strips, TechCrunch Features and a Design Sprint (Review Focus: 3 players, seeds 1 to 5)', () => {
       // The games are the long run's (see `keptGames`), with what each counted as it was played. A Debuff is in every seed's log, the
-      // strips (Attributes discarded with a fired Talent) in seed 5 only, no TechCrunch Feature in any (plan 6-2b's Event deck left it to
-      // one game, 2 players seed 4: `HELD_BY_FEWER_THAN_TWO`, replayed by the 2-player test above) and a Design Sprint in seeds 2 and 5.
-      // The last move taken back is a final-check switch-off in seeds 1, 2, 3 and 5 and a backlog cleanup's discard in seed 4.
+      // strips (Attributes discarded with a fired Talent) in seeds 1, 2 and 5, a TechCrunch Feature in seeds 1, 2 and 4 (none before
+      // the second retune kept the TechCrunch Feature first) and a Design Sprint in seeds 2 and 5. The last move taken back is a
+      // final-check switch-off in every seed.
       const seen = { Debuffs: 0, strips: 0, 'TechCrunch Features': 0, 'Design Sprints': 0 };
       for (let seed = 1; seed <= 5; seed++) {
         const where = `3 players, seed ${seed}`;
@@ -4528,10 +4548,10 @@ describe('Startup Simulator (designer language)', () => {
     }, 120_000);
 
     it('makes the graduation choices the auto-player picks, through the page’s view and without it (§11.B.2, ruling 25)', () => {
-      // The long runs press a button of the graduation step once (a keep, at 3 players seed 2): a Junior earns a Pending token of a second
-      // colour only by working in it, which takes a Skill token from Training, and it must then Launch holding both (plan 5-2b's P8). So
-      // this arranges a Launch with two Juniors holding two Pending tokens each, one in a colour their Skill token lets them work in, and
-      // the Veteran on the team to coach them.
+      // The long runs press no button of the graduation step (one keep, at 3 players seed 2, before the second retune): a Junior earns
+      // a Pending token of a second colour only by working in it, which takes a Skill token from Training, and it must then Launch
+      // holding both (plan 5-2b's P8). So this arranges a Launch with two Juniors holding two Pending tokens each, one in a colour
+      // their Skill token lets them work in, and the Veteran on the team to coach them.
       const start = setUp(2, 1);
       const seats = seatsFor(2);
       const S = startPlayerOf(start, seats);
@@ -4844,7 +4864,7 @@ describe('Startup Simulator (designer language)', () => {
     });
 
     it('claims Talent Magnet and Clean Launch at an auto-player Launch that graduates a second Junior to 3 XP, and Revenue Leader at its next Income of $10, through the page’s view and without it (§12.5, §20.G, ruling 25)', () => {
-      // Setup reveals no Talent Magnet at seeds 1 to 5, and an Income in the long runs comes to $10 only at 2 and 4 players seed 4, so
+      // Setup reveals no Talent Magnet at seeds 1 to 5, and an Income in the long runs comes to $10 only at 3 players seed 4, so
       // this arranges both, as their examples do: the seat's bench holds a Junior Software Dev of 3 XP, and its complete Smart Lock a
       // Junior Hardware Eng of 2 XP with 1 Pending token, which the Launch graduates to 3 (§11.B.2). Then its App Store, Trading Bot and
       // Smart Lock earn $4, $4 and $2 (§20.C.1), which the Architect's Blue and the Junior's Red run. The other three Milestones go back
@@ -5113,10 +5133,10 @@ describe('Startup Simulator (designer language)', () => {
 
     it('hires the card a Layoff found to the ops team while it has a product, by the product’s button when ⌊t / 9⌋ is odd, through the page’s view and without it (§13.B)', () => {
       // No accepted example presses the scouting's hire to the ops team (the rules' only example of it refuses it), and the long runs
-      // make it in one game (5 players seed 3). Here the seat runs a To-Do List, lays off its HR Manager and finds the Veteran, who
-      // doesn't attach, for $6 of its $7; the agency row is full, so no refill draws him. While the seat has a product its hire goes to
-      // the ops team first: on t = 0 by the ops team's button, and on t = 9, ⌊t / 9⌋ odd, by the button of its first product, which
-      // sends a card that doesn't attach to the ops team as well (see `sourcing`).
+      // make it in three games (2 players seed 2, 4 players seeds 2 and 4). Here the seat runs a To-Do List, lays off its HR Manager
+      // and finds the Veteran, who doesn't attach, for $6 of its $7; the agency row is full, so no refill draws him. While the seat has
+      // a product its hire goes to the ops team first: on t = 0 by the ops team's button, and on t = 9, ⌊t / 9⌋ odd, by the button of
+      // its first product, which sends a card that doesn't attach to the ops team as well (see `sourcing`).
       const seats = seatsFor(2);
       const [toDo, hr, veteran] = ['To-Do List', 'HR Manager', 'Veteran'].map(idOf);
       const arranged = arrange({
