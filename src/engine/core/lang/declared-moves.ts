@@ -26,6 +26,8 @@ export function moveZoneId(ref: ZoneRef, seats: PlayerId[], by: PlayerId): strin
 /** The seat a zone's owner words name for a move by `by`; null for the winner, and for “the other player” where there is not exactly one. */
 function seatOfMove(of: SeatRef, seats: PlayerId[], by: PlayerId): PlayerId | null {
   if ('seat' in of) return of.seat;
+  // The player a card names is known only from the card, which a zone of a move is never read about.
+  if ('named' in of) return null;
   if (of.who === 'actor') return by;
   return of.who === 'other' && seats.length === 2 && seats.includes(by) ? otherSeat(seats, by) : null;
 }

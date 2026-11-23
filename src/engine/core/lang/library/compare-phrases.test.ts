@@ -14,6 +14,7 @@ import type { CompiledGame } from '../types';
 import { HOLDER_KEY, relocate } from '../zones';
 import { createDefaultLibrary } from './index';
 import { MAKER_GAME, fixtureEnv } from '../testing';
+import { RATE_GAME } from '../testing';
 import { makeCard } from '../cards';
 
 const lib = createDefaultLibrary();
@@ -270,5 +271,33 @@ describe('tests by the player a card names', () => {
     expect(holds("they are not the card's maker", about('p1', { cardId: held }))).toBe(true);
     expect(holds("they are the card's maker", about('p0', { cardId: potter }))).toBe(false);
     expect(holds("they are not the card's maker", about('p0', { cardId: potter }))).toBe(true);
+  });
+});
+
+describe('players tied by a card', () => {
+  const rate = compiled(RATE_GAME);
+  const fresh = initialState(rate, 1);
+  const statues = fresh.cards.filter((c) => c.data?.name === 'Statue').map((c) => c.id);
+  const vases = fresh.cards.filter((c) => c.data?.name === 'Vase').map((c) => c.id);
+  // c13 names p1; each workshop holds a Statue (the third a Vase renamed, as CREW_GAME has two Statues).
+  const base = (() => {
+    const staked = ['p0', 'p0', 'p1', 'p1', 'p2', 'p2'].reduce((st, seat) => makeCard(st, rate, { name: 'Stake', maker: seat }, `purse-${seat}`)!.state, fresh);
+    const placed = relocate(relocate(staked, [statues[0]], 'workshop-p0', rate), [statues[1]], 'workshop-p1', rate);
+    const third = changeCard(relocate(placed, [vases[0]], 'workshop-p2', rate), vases[0], { name: 'Statue' }, rate);
+    return relocate(third, ['c13'], 'holdings-p0', rate);
+  })();
+  const TIED = 'another player tied to them by a card in their holdings has a card in their workshop whose name is Statue';
+  const NONE = 'no other player tied to them by a card in their holdings has a card in their workshop whose name is Statue';
+  const about = (state: GameState, player: PlayerId) => fixtureEnv(state, { game: rate, seats: SEATS, subject: { player, space: null, card: null } });
+  const holds = (text: string, state: GameState, player: PlayerId) => runPhrase<boolean>(lib, 'condition', text, about(state, player));
+  it('holds about each of the two tied, both ways, and not about a third', () => {
+    expect(SEATS.map((seat) => holds(TIED, base, seat))).toEqual([true, true, false]);
+    expect(SEATS.map((seat) => holds(NONE, base, seat))).toEqual([false, false, true]);
+  });
+  it('Review Focus: a tied player without the card, a tied player out, and a card in another zone', () => {
+    expect(holds(TIED, relocate(base, [statues[1]], 'scrap', rate), 'p0')).toBe(false);
+    expect(holds(TIED, markOut(base, 'p1'), 'p0')).toBe(false);
+    const elsewhere = relocate(base, ['c13'], 'purse-p0', rate);
+    expect([holds(TIED, elsewhere, 'p0'), holds(TIED, elsewhere, 'p1')]).toEqual([false, false]);
   });
 });

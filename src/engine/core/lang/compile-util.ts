@@ -152,6 +152,15 @@ function mentionsActor(value: Json): boolean {
   return false;
 }
 
+/** Whether an argument holds a zone of the player a card names (“its maker's purse”), which only a rule about a card can read. */
+function namesSeatOfCard(value: Json): boolean {
+  if (Array.isArray(value)) return value.some(namesSeatOfCard);
+  if (value === null || typeof value !== 'object') return false;
+  const { of } = value;
+  if (of !== null && typeof of === 'object' && !Array.isArray(of) && typeof of.named === 'string') return true;
+  return Object.values(value).some(namesSeatOfCard);
+}
+
 /** The library's answer for a line; a phrase or type that throws counts as an invalid line. */
 function tryMatch(kind: PhraseKind, text: string, ctx: LineCtx): MatchResult {
   try {
@@ -264,7 +273,9 @@ function unmetNeed(entry: RegisteredOpts | undefined, args: Json[], clean: strin
   }
   if (!aboutPlayer && args.some(mentionsActor)) return `“${clean}” only makes sense in a rule about a player's move.`;
   if (!ctx.space && entry?.needsSpace) return `“${clean}” only makes sense in a rule about a space, such as an action or a “lands on” rule.`;
-  if (!ctx.card && (entry?.needsCard || readsItsCard(cards))) return `“${clean}” only makes sense in a rule about a card, such as “When a card …”.`;
+  if (!ctx.card && (entry?.needsCard || readsItsCard(cards) || args.some(namesSeatOfCard))) {
+    return `“${clean}” only makes sense in a rule about a card, such as “When a card …”.`;
+  }
   if (!ctx.drawn && entry?.needsDrawnCard) return `“${clean}” only makes sense in a card's says column.`;
   if (!ctx.amount && entry?.needsAmount) return NEEDS_AMOUNT(clean);
   if (!ctx.picked && entry?.needsPick) return NEEDS_PICK(clean);

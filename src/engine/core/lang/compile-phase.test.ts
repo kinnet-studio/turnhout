@@ -10,6 +10,7 @@ import { AMOUNT_BOARD, ANY_PLAYER_BOARD, CARD_PICK_GAME, MARK_BOARD, PICK_BOARD,
 import { COACH_GAME, CREW_GAME, WORKED_GAME } from './testing';
 import { JINX_GAME } from './testing';
 import { BUY_GAME } from './testing';
+import { MAKER_GAME } from './testing';
 import { createEngine, initialState } from './build';
 import { makeCard } from './cards';
 import { relocate } from './zones';
@@ -1984,5 +1985,31 @@ describe("a card picked in another player's zone", () => {
     const outcome = engine.dispatch({ type: "place a card from another player's purse to a card in another player's workshop", by: 'p0', cardId: 'c13', onto: vase });
     expect(outcome.reason).toBeUndefined();
     expect(engine.getState().cards.find((c) => c.id === 'c13')!.zoneId).toBe('holdings-p0');
+  });
+});
+
+describe("the zone of the player a card names, where it can't be read", () => {
+  const lineOf = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+  it('needs a card', () => {
+    const text = MAKER_GAME.replace('      Their moves go back to 0.', "      Their moves go back to 0.\n      Move it to its maker's purse.");
+    expect(messages(text)).toEqual([[lineOf(text, "      Move it to its maker's purse."),
+      "“Move it to its maker's purse” only makes sense in a rule about a card, such as “When a card …”."]]);
+  });
+  it('is refused as where a button puts its cards', () => {
+    const line = "  A player may give a card from their stash to its maker's purse.";
+    const text = MAKER_GAME.replace('  A player may stop.', [line, '    It costs 1 move.', '  A player may stop.'].join('\n'));
+    expect(messages(text)).toEqual([[lineOf(text, line), "“its maker's purse” can't be where a button picks or puts its cards: say whose zone it is, as in “their purse”."]]);
+  });
+});
+
+describe("the zone of the player a card names, in a card move (amendment)", () => {
+  const lineOf = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+  it.each([
+    ["  A player may give a card from their stash to its maker's purse.", "its maker's purse"],
+    ["  A player may give a card from its maker's purse to their stash.", "its maker's purse"],
+  ])('refuses %s', (line, zone) => {
+    const text = MAKER_GAME.replace('  A player may stop.', [line, '  A player may stop.'].join('\n'));
+    expect(messages(text)).toEqual([[lineOf(text, line), `“${zone}” can't be where a card is dragged from or to: say whose zone it is, as in “their purse”.`]]);
+    expect(compileGame(text, lib).game?.phases[0].moves ?? []).toEqual([]);
   });
 });

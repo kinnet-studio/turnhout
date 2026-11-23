@@ -9,7 +9,7 @@ export type PhraseKind =
 /** kind 'lang' = compiler built-ins: all | any | phase | always | if | for | for each | round | missing | choose player | choose one | choosing */
 export type PhraseRef = { kind: PhraseKind | 'lang'; phrase: string; args: Json[]; line: number; text: string };
 /** `other` is the one player who is not the actor, in a game for two. */
-export type SeatRef = { seat: string } | { who: 'actor' | 'winner' | 'other' };
+export type SeatRef = { seat: string } | { who: 'actor' | 'winner' | 'other' } | { named: string };  // “its maker's purse”: the seat it names
 // `{ others: name }`: that zone of each other player still in, from the left of the player the line is about. Only the zone a
 // button picks its target card in is written so (“… to a card in another player's crew”).
 export type ZoneRef = { shared: string } | { each: string } | { others: string } | { of: SeatRef; zone: string };

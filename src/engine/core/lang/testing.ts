@@ -444,6 +444,37 @@ export const BUY_GAME = MAKER_GAME.replace('  A player may stop.', [
   '  A player may stop.'].join('\n'));
 
 /**
+ * MAKER_GAME where a player's rate is the total pay of their jobs. Buying another player's stake costs its maker's rate, paid to its owner,
+ * while its owner keeps 2 or more, and pays its maker 3 more while the scrap has a Vase. A maker may ask a stake back (its owner answers)
+ * or sue for it; a holder may offer one to anyone but its maker, who answers; and a maker may pay every holder of theirs their rate.
+ */
+export const RATE_GAME = [
+  MAKER_GAME
+    .replace('  Cards can name a maker.', '  Cards can name a maker.\n  Cards can be wanted.')
+    .replace('  A player may stop.', [
+      "  A player may buy a card in another player's purse.", '    It costs 1 move.',
+      '    Only if its owner has at least 2 cards in their purse.', "    Only if they have at least its maker's rate in coins.", '    Then:',
+      "      They pay its maker's rate to its owner.", '      If the scrap has a Vase, its maker gets 3 coins.', '      Move it to their holdings.',
+      "  A player may ask back a card in another player's holdings.", '    It costs 1 move.', '    Only if it is a card whose maker is them.',
+      '    Then:', '      It is wanted.', '      The answer phase starts with its owner.',
+      '  A player may offer a card in their holdings.', '    It costs 1 move.', "    Only if some other player is not the card's maker.",
+      '    Then:', '      It is wanted.', "      Hand the answer phase to another player of their choice who is not the card's maker.",
+      "  A player may sue a card in another player's holdings.", '    Only if it is a card whose maker is them.', '    Then:',
+      '      They pay 5 to its owner.', '      Move it to their purse.',
+      '  A player may cash in.', '    Then:', "      For each card in each holdings whose maker is them, its owner gets its maker's rate.",
+      '  A player may stop.'].join('\n'))
+    .replace('End:', ['Phase: answer', '  Players take turns.',
+      '  A player may sell back a card in their holdings.', '    Only if it is wanted.', '    Then:',
+      "      They get its maker's rate from its maker.", '      It is not wanted.', "      Move it to its maker's purse.",
+      '      Go back to the interrupted turn.',
+      "  A player may take a card in another player's holdings.", '    Only if it is wanted.', '    Then:',
+      "      They pay its maker's rate to its owner.", '      It is not wanted.', '      Move it to their holdings.',
+      '      Go back to the interrupted turn.',
+      '  A player may refuse.', '    Then:', '      No card is wanted.', '      Go back to the interrupted turn.', '', 'End:'].join('\n')),
+  '', 'Rate:', "  A player's rate is the total pay of the cards in their workshop.",
+].join('\n');
+
+/**
  * CREW_GAME with five more rows in the center, three more rows only their owner sees and two more everyone sees: three shared lines,
  * two private lines and two band lines, more than the table's height holds.
  */

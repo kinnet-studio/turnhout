@@ -17,6 +17,10 @@ import type {
 import { chooseNext } from '../zones';
 import { itOf, seatOf, theyOf } from './support';
 import { passStep } from './turn-phrases';
+import { ownerOf as cardOwnerOf, playerValueOf } from './support';
+import { itCard } from './fact-phrases';
+import { NAMES_NO } from '../zones';
+import type { CardState } from '../../scene';
 
 const MIN_DICE = 1;
 const MAX_DICE = 10;
@@ -145,6 +149,49 @@ export function transfer(env: PhraseEnv, from: PlayerId, to: PlayerId | null, am
   const settled = to === null ? paid : addToCounter(paid, counter, to, amount);
   return amount > 0 && counterOf(settled, counter, from) < 0 ? recordDebt(settled, from, to ?? 'bank') : settled;
 }
+
+/** Why a line about the owner of a card in no player's zone can't run. */
+export const NO_OWNER = 'It is in no player\'s zone, so it has no owner.';
+
+/** The seat a card names under a fact; a card naming no player at this table is a mistake in the rule, said as one. */
+function namedSeat(env: PhraseEnv, card: CardState, fact: string): PlayerId {
+  const named = card.data?.[fact];
+  if (typeof named !== 'string' || !env.seats.includes(named)) throw new RuleError(NAMES_NO(fact));
+  return named;
+}
+
+/** The owner of the card the rule is about: the player whose zone it is in. A card in the center is a mistake in the rule, said as one. */
+function itsOwner(env: PhraseEnv): PlayerId {
+  const owner = cardOwnerOf(env, itCard(env));
+  if (owner === null) throw new RuleError(NO_OWNER);
+  return owner;
+}
+
+/** They pay the value worked out for the player the card names to the card's owner. */
+const payNamedValueToOwner: EffectFn = (env, [fact, value]) => {
+  const owner = itsOwner(env);
+  return transfer(env, theyOf(env), owner, playerValueOf(env, namedSeat(env, itCard(env), fact as string), value as string));
+};
+
+/** They get the value worked out for the player the card names, from that player. */
+const getNamedValueFromNamed: EffectFn = (env, [fact, value, from]) => {
+  const named = namedSeat(env, itCard(env), fact as string);
+  const payer = namedSeat(env, itCard(env), from as string);
+  return transfer(env, payer, theyOf(env), playerValueOf(env, named, value as string));
+};
+
+/** The card's owner gets the value worked out for the player the card names, from the bank. */
+const ownerGetsNamedValue: EffectFn = (env, [fact, value]) => {
+  const owner = itsOwner(env);
+  return addToCounter(env.state, payCounter(env), owner, playerValueOf(env, namedSeat(env, itCard(env), fact as string), value as string));
+};
+
+/** The player the card names gets n of a counter, from the bank. */
+const namedGets: EffectFn = (env, [fact, n, counter]) =>
+  addToCounter(env.state, counter as string, namedSeat(env, itCard(env), fact as string), n as number);
+
+/** They pay n to the card's owner. */
+const payToOwner: EffectFn = (env, [n]) => transfer(env, theyOf(env), itsOwner(env), n as number);
 
 // ---- conditions ------------------------------------------------------------------------------
 
@@ -573,6 +620,12 @@ export function registerBoardPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('they pay {int} {counter}', paysAmountOf, { needsPlayer: true, needsPayment: true })
     .effect('they pay its {spaceattr}', paysBank, { needsPlayer: true, needsSpace: true, needsPayment: true })
     .effect('they pay its {spaceattr} to its owner', paysOwner, { needsPlayer: true, needsSpace: true, needsPayment: true })
+    .effect("they pay its {cardplayer}'s {playervalue} to its owner", payNamedValueToOwner, { needsCard: true, needsPlayer: true, needsPayment: true })
+    .effect("they get its {cardplayer}'s {playervalue} from its {cardplayer}", getNamedValueFromNamed,
+      { needsCard: true, needsPlayer: true, needsPayment: true })
+    .effect("its owner gets its {cardplayer}'s {playervalue}", ownerGetsNamedValue, { needsCard: true, needsPayment: true })
+    .effect('its {cardplayer} gets {int} {counter}', namedGets, { needsCard: true })
+    .effect('they pay {int} to its owner', payToOwner, { needsCard: true, needsPlayer: true, needsPayment: true })
     .effect('they pay {int} times the roll to its owner', paysRollToOwner, { needsPlayer: true, needsSpace: true, needsPayment: true, needsDice: true })
     .effect('they pay {int} {counter} to each other player', paysEachOther, { needsPlayer: true })
     .effect('they get {int} {counter} from each other player', getsFromEachOther, { needsPlayer: true })

@@ -7,6 +7,9 @@ import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import { END_STEPS_KEY, phaseTakesTurns } from '../turns';
 import { roundStepsOf } from '../turns';
+import { ownerOf, thePick } from './support';
+import { itCard } from './fact-phrases';
+import { NO_OWNER } from './board-phrases';
 import { renameCards } from '../cards';
 import type { CardMatch, ConditionFn, EffectFn, PhraseEnv, ScoreFn, Subject, TurnFn, WinnerFn, ZoneRef } from '../types';
 import { chooseNext, leftOf, matchesCard, relocate, resolveSeat, resolveZoneIds, topCard, zoneIdFor, zoneInfo } from '../zones';
@@ -228,6 +231,16 @@ const phaseStartsOnTheirLeft: EffectFn = (env, [phase]) => startPhase(env, phase
  */
 const phaseStartsWithThem: EffectFn = (env, [phase]) => startPhase(env, phase as string, theyOf(env));
 
+/** The phase starts with the owner of the card the rule is about; a card in no player's zone is a mistake in the rule, said as one. */
+const phaseStartsWithItsOwner: EffectFn = (env, [phase]) => {
+  const owner = ownerOf(env, itCard(env));
+  if (owner === null) throw new RuleError(NO_OWNER);
+  return startPhase(env, phase as string, owner);
+};
+
+/** The phase starts with the player the press picked (“Hand the answer phase to another player of their choice who …”). */
+const handPhaseToPicked: EffectFn = (env, [phase]) => startPhase(env, phase as string, thePick(env));
+
 /**
  * Goes back to the interrupted turn. Whether a button's lines or a `When` rule after a press go back, the flow then judges that
  * press by the After line of the phase gone back to, so a button whose wording both phases' After lines name passes the turn
@@ -319,6 +332,8 @@ export function registerFlowPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('the player holding {card} goes first', holderGoesFirst)
     .effect('the {phase} phase starts with the player on their left', phaseStartsOnTheirLeft, { needsPlayer: true, entersPhase: true })
     .effect('the {phase} phase starts with them', phaseStartsWithThem, { needsPlayer: true, entersPhase: true })
+    .effect('the {phase} phase starts with its owner', phaseStartsWithItsOwner, { needsCard: true, entersPhase: true })
+    .effect('hand the {phase} phase to that player', handPhaseToPicked, { needsPick: true, entersPhase: true })
     .effect(GO_TO_PHRASE, goToPhase, { entersPhase: true })
     .effect(GO_BACK_PHRASE, goBackToTheTurn)
     .turn('the turn passes to the left', passesLeft)

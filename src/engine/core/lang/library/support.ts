@@ -19,6 +19,7 @@ export function describeZone(ref: ZoneRef): string {
   if ('each' in ref) return `each ${ref.each}`;
   if ('others' in ref) return `another player's ${ref.others}`;
   if ('seat' in ref.of) return `${ref.of.seat}'s ${ref.zone}`;
+  if ('named' in ref.of) return `its ${ref.of.named}'s ${ref.zone}`;
   return `${OWNER_WORDS[ref.of.who]} ${ref.zone}`;
 }
 

@@ -11,6 +11,8 @@ import { CREW_GAME, INTERRUPT_BOARD, TURN_GAME, WORKED_GAME, fixtureBoardGame, f
 import type { CompiledGame, PhraseKind, PhraseEnv } from '../types';
 import { WINNER_KEY, relocate } from '../zones';
 import { createDefaultLibrary } from './index';
+import { RATE_GAME } from '../testing';
+import { makeCard } from '../cards';
 
 const lib = createDefaultLibrary();
 const run = <T = unknown>(kind: PhraseKind, text: string, env: PhraseEnv, ...extra: unknown[]) => runPhrase<T>(lib, kind, text, env, ...extra);
@@ -653,5 +655,76 @@ describe('a card shuffled into a pile no seat can follow', () => {
     const out = run<GameState>('effect', 'Shuffle the deck', fixtureEnv(before, { game }));
     expect(zoneCards(out, 'deck').map((c) => [c.id, c.faceUp])).toEqual([['c3', false], ['c4', false], ['c5', false]]);
     expect(zoneCards(out, 'deck').some((c) => c.data?.name === 'N1')).toBe(true);
+  });
+});
+
+/**
+ * A RATE_GAME table, turn p0 in working: each purse holds 2 Stakes naming its seat (c11 and c12 for p0, c13 and c14 for p1, c15 and c16
+ * for p2); at three, p1's workshop holds a Statue (pay 2) and p2's a Vase (pay 1). No Setup.
+ */
+function rateTable(game: CompiledGame, arrange: (s: GameState) => GameState = (s) => s, players = 3): GameState {
+  const fresh = initialState(game, 1);
+  const seats = ['p0', 'p1', 'p2'].slice(0, players);
+  const staked = seats.flatMap((seat) => [seat, seat])
+    .reduce((st, seat) => makeCard(st, game, { name: 'Stake', maker: seat }, `purse-${seat}`)!.state, fresh);
+  const statue = fresh.cards.find((c) => c.data?.name === 'Statue')!.id;
+  const vase = fresh.cards.find((c) => c.data?.name === 'Vase')!.id;
+  const placed = players === 3 ? relocate(relocate(staked, [statue], 'workshop-p1', game), [vase], 'workshop-p2', game) : staked;
+  return arrange({ ...placed, turn: { current: 'p0', phase: 'working' } });
+}
+
+describe("a phase handed to a card's owner or a chosen player", () => {
+  const lib = createDefaultLibrary();
+  const game = compileGame(RATE_GAME, lib).game!;
+  const ASK = "ask back a card in another player's holdings";
+  const OFFER = 'offer a card in their holdings';
+  const coins = (state: GameState, seat: string) => counterOf(state, 'coins', seat);
+  const wanted = (state: GameState, id: string) => state.cards.find((c) => c.id === id)!.data?.wanted === true;
+  const zoneOf = (state: GameState, id: string) => state.cards.find((c) => c.id === id)!.zoneId;
+  const p1Asks = (s: GameState) => ({ ...relocate(s, ['c13'], 'holdings-p0', game), turn: { current: 'p1', phase: 'working' } });
+  it('asks a stake back: its owner answers, and selling it back pays its maker', () => {
+    const { engine } = createEngine(game, lib, 3, rateTable(game, p1Asks));
+    expect(engine.dispatch({ type: ASK, by: 'p1', cardId: 'c13' }).reason).toBeUndefined();
+    let state = engine.getState();
+    expect(wanted(state, 'c13')).toBe(true);
+    expect(state.turn).toMatchObject({ phase: 'answer', current: 'p0' });
+    expect(interruptedTurn(state)).toMatchObject({ phase: 'working', current: 'p1' });
+    expect(counterOf(state, 'moves', 'p1')).toBe(2);
+    expect(engine.dispatch({ type: 'sell back a card in their holdings', by: 'p0', cardId: 'c13' }).reason).toBeUndefined();
+    state = engine.getState();
+    expect([coins(state, 'p0'), coins(state, 'p1')]).toEqual([11, 7]);
+    expect(zoneOf(state, 'c13')).toBe('purse-p1');
+    expect(wanted(state, 'c13')).toBe(false);
+    expect(state.turn).toMatchObject({ phase: 'working', current: 'p1' });
+  });
+  it("refuses asking back another maker's stake", () => {
+    const { engine } = createEngine(game, lib, 3, rateTable(game, (s) => p1Asks(relocate(s, ['c15'], 'holdings-p0', game))));
+    expect(engine.dispatch({ type: ASK, by: 'p1', cardId: 'c15' }).reason).toContain('it is a card whose maker is them');
+  });
+  it('offers a stake to the one player who is not its maker, who takes it or refuses', () => {
+    const offered = () => {
+      const { engine } = createEngine(game, lib, 3, rateTable(game, (s) => relocate(s, ['c13'], 'holdings-p0', game)));
+      expect(engine.dispatch({ type: OFFER, by: 'p0', cardId: 'c13' }).reason).toBeUndefined();
+      expect(engine.getState().turn).toMatchObject({ phase: 'answer', current: 'p2' });
+      return engine;
+    };
+    const taking = offered();
+    expect(taking.dispatch({ type: "take a card in another player's holdings", by: 'p2', cardId: 'c13' }).reason).toBeUndefined();
+    let state = taking.getState();
+    expect([coins(state, 'p2'), coins(state, 'p0')]).toEqual([7, 11]);
+    expect(zoneOf(state, 'c13')).toBe('holdings-p2');
+    expect(wanted(state, 'c13')).toBe(false);
+    expect(state.turn).toMatchObject({ phase: 'working', current: 'p0' });
+    const refusing = offered();
+    expect(refusing.dispatch({ type: 'refuse', by: 'p2' }).reason).toBeUndefined();
+    state = refusing.getState();
+    expect(zoneOf(state, 'c13')).toBe('holdings-p0');
+    expect(wanted(state, 'c13')).toBe(false);
+  });
+  it("Review Focus: refuses an offer when the only other player is the card's maker", () => {
+    const { engine } = createEngine(game, lib, 2, rateTable(game, (s) => relocate(s, ['c13'], 'holdings-p0', game), 2));
+    const before = engine.getState();
+    expect(engine.dispatch({ type: OFFER, by: 'p0', cardId: 'c13' }).reason).toContain("some other player is not the card's maker");
+    expect(engine.getState()).toEqual(before);
   });
 });

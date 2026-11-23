@@ -151,6 +151,11 @@ const OTHERS_NOT_WHERE_IT_GOES = (text: string) =>
 const OTHERS_IN_A_MOVE = (text: string) =>
   `A card is dragged only from the player's own zones or the center. To pick one in ${text}, make the line a button with a cost line, or write “a card in ${text}”.`;
 const SOME_FROM_OTHERS = (text: string) => `A button picks one card in ${text}: write “a card in ${text}”.`;
+const NAMED_ZONE_IN_MOVE = (text: string) =>
+  `“${text}” can't be where a card is dragged from or to: say whose zone it is, as in “their ${text.replace(/^its .+?['‘’]s /i, '')}”.`;
+/** The player a card names is known only from that card, so a pick can't take its own card, put it, or find its target there. */
+const NAMED_ZONE_IN_PICK = (text: string) =>
+  `“${text}” can't be where a button picks or puts its cards: say whose zone it is, as in “their ${text.replace(/^its .+?['‘’]s /i, '')}”.`;
 
 /** group 1 = the verb, group 2 = the zone it takes the card from, group 3 = the zone it puts it in */
 function moveLineFor(vocab: Vocab): RegExp {
@@ -227,6 +232,12 @@ function pickZones(node: OutlineNode, own: string[], targets: string[], ctx: Lin
   const zones = [...own.map((text, i) => read(text, i === 0 ? 'from' : 'to')), ...targets.map((text) => read(text, 'target'))];
   if (zones.some((zone) => zone === null)) return null;
   const all = zones as ZoneRef[];
+  const named = all.findIndex((zone) => 'of' in zone && 'named' in zone.of);
+  if (named >= 0) {
+    const text = [...own, ...targets][named];
+    addProblem(ctx.diagnostics, node.line, NAMED_ZONE_IN_PICK(text), { text });
+    return null;
+  }
   if (!all.every((zone) => 'others' in zone || isOneZone(zone))) {
     addProblem(ctx.diagnostics, node.line, ONE_ZONE, { text: normalizeLine(node.text) });
     return null;
@@ -267,6 +278,12 @@ function moveZones(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx): { f
     return null;
   }
   const zones = oneZones(node, [found[2], found[3]], ctx);
+  // The player a card names is known only from that card, and a move's zones are read before it is dragged: refused, as in a pick.
+  const named = zones?.findIndex((zone) => 'of' in zone && 'named' in zone.of) ?? -1;
+  if (named >= 0) {
+    addProblem(ctx.diagnostics, node.line, NAMED_ZONE_IN_MOVE(found[2 + named]), { text: found[2 + named] });
+    return null;
+  }
   return zones && { from: zones[0], to: zones[1] };
 }
 

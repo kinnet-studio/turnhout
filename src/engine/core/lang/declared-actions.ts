@@ -312,9 +312,12 @@ function misnamedPlayers(players: string[], payees: AskedChoice[], among: AskedC
  * prompt, as a press that names it would be. Null when nothing is named, and when the button refuses the press before its choices are
  * asked: the move is then sent as it is, for the game to say why. An example is told when it names choices for a move that presses no
  * button, players that fit its choices neither way, or an option that no block it asks has, since a value for a choice that is not
- * asked would be ignored.
+ * asked would be ignored. `fromChoosing` says the players were read from “, choosing” (with `option` the words as written): they fill the
+ * player choices as “, paying” would when the press asks a player and has no named options; otherwise they are dropped and `option` is read.
  */
-export function namedChoices(runtime: LangRuntime, state: GameState, move: Move, players: string[], option: string | null): (string | null)[] | null {
+export function namedChoices(
+  runtime: LangRuntime, state: GameState, move: Move, players: string[], option: string | null, fromChoosing = false,
+): (string | null)[] | null {
   if (players.length === 0 && option === null) return null;
   if (!runtime.game.phases.some((phase) => phase.actions.some((action) => action.words === move.type))) throw new RuleError(NO_BUTTON);
   const press = pressUpToChoices(move.type, runtime, state, move);
@@ -322,19 +325,23 @@ export function namedChoices(runtime: LangRuntime, state: GameState, move: Move,
   const asked = askChoices(runtime, press.action, state, press.info, press.subject);
   const choices: (string | null)[] = Array.from({ length: choicesOf(press.action).length }, () => null);
   const payees = asked.filter((choice) => choice.kind === 'player');
+  // Players read from “, choosing” fill the player choices only when the press asks a player and has no named options; else it is an option.
+  const asPlayers = fromChoosing && payees.length > 0 && !asked.some((choice) => choice.kind === 'option');
+  const named = fromChoosing && !asPlayers ? [] : players;
+  const wanted = asPlayers ? null : option;
   const among = payees.filter((choice) => choice.options.length > 1);
-  const named = players.length <= among.length ? among : players.length === payees.length ? payees : null;
-  if (named === null) throw new RuleError(misnamedPlayers(players, payees, among));
-  players.forEach((seat, i) => { choices[named[i].at] = seat; });
-  if (option === null) return choices;
+  const slots = named.length <= among.length ? among : named.length === payees.length ? payees : null;
+  if (slots === null) throw new RuleError(misnamedPlayers(named, payees, among));
+  named.forEach((seat, i) => { choices[slots[i].at] = seat; });
+  if (wanted === null) return choices;
   const blocks = asked.filter((choice) => choice.kind === 'option');
-  if (blocks.length === 0) throw new RuleError(`“${option}” isn't a choice here: this press chooses nothing.`);
+  if (blocks.length === 0) throw new RuleError(`“${wanted}” isn't a choice here: this press chooses nothing.`);
   // Every option of an asked block, as written, whether or not it holds for this press.
   const labelsOf = ({ at }: AskedChoice): string[] =>
     (choicesOf(press.action).find((ref) => ref.args[0] === at)!.args[2] as ChoiceOption[]).map((choice) => choice.label);
-  const has = (label: string) => canon(label) === canon(option);
+  const has = (label: string) => canon(label) === canon(wanted);
   const block = blocks.find((choice) => labelsOf(choice).some(has));
-  if (!block) throw new RuleError(`“${option}” isn't a choice here. The choices are: ${joinOr(blocks.flatMap(labelsOf))}.`);
+  if (!block) throw new RuleError(`“${wanted}” isn't a choice here. The choices are: ${joinOr(blocks.flatMap(labelsOf))}.`);
   choices[block.at] = labelsOf(block).find(has)!;
   return choices;
 }

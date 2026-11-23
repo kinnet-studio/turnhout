@@ -11,6 +11,8 @@ import { GUILD_GAME, vocabFor } from './testing';
 import { RESTING_GAME } from './testing';
 import type { Vocab } from './types';
 import { MAKER_GAME } from './testing';
+import { describeZone } from './library/support';
+import type { ZoneRef } from './types';
 
 const V: Vocab = {
   ...emptyVocab(),
@@ -1165,5 +1167,14 @@ describe('tests by the player a card names', () => {
     expect(parseParam('card', 'a Stake whose maker is p1', vocab)).toEqual({ value: { name: 'Stake', maker: 'p1' } });
     expect(parseParam('cardlist', 'a Stake whose maker is p1 and a Stake whose maker is p0', vocab))
       .toEqual({ value: [{ name: 'Stake', maker: 'p1' }, { name: 'Stake', maker: 'p0' }] });
+  });
+});
+
+describe('the zone of the player a card names', () => {
+  it("reads its maker's purse and says it back", () => {
+    const vocab = vocabFor(compileGame(MAKER_GAME, createDefaultLibrary()).game!);
+    const parsed = parseParam('zone', "its maker's purse", vocab);
+    expect(parsed).toEqual({ value: { of: { named: 'maker' }, zone: 'purse' } });
+    expect(describeZone((parsed as { value: ZoneRef }).value)).toBe("its maker's purse");
   });
 });

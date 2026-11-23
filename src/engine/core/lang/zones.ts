@@ -98,7 +98,17 @@ export function otherSeat(seats: PlayerId[], seat: PlayerId): PlayerId {
 /** Who “their” and “the other player” mean: who was asked for, else whoever makes the move, else whoever the rule is about. */
 const actorOf = (env: PhraseEnv, actor?: PlayerId): PlayerId | undefined => actor ?? env.move?.by ?? env.subject?.player ?? undefined;
 
+/** Why a line reading the player a card names can't run: the card names no such player at this table. */
+export const NAMES_NO = (fact: string) => `It names no ${fact}.`;
+
 export function resolveSeat(ref: SeatRef, env: PhraseEnv, actor?: PlayerId): PlayerId {
+  if ('named' in ref) {
+    // The player the card the rule is about names under the fact.
+    const id = env.subject?.card;
+    const named = id === undefined || id === null ? undefined : env.state.cards.find((card) => card.id === id)?.data?.[ref.named];
+    if (typeof named !== 'string' || !env.seats.includes(named)) throw new RuleError(NAMES_NO(ref.named));
+    return named;
+  }
   if ('seat' in ref) {
     if (!env.seats.includes(ref.seat)) throw new RuleError(`There is no player ${ref.seat} at this table.`);
     return ref.seat;

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { canPlay, compileGame } from './compile';
 import { createDefaultLibrary } from './library';
 import { GUILD_GAME } from './testing';
+import { RATE_GAME } from './testing';
+import { runExamples } from './examples';
 
 const lib = createDefaultLibrary();
 const BASE = [
@@ -205,5 +207,33 @@ describe('examples that name choices', () => {
     const named = compileGame(guild('When p0 opns the Statue, paying p2'), lib).diagnostics;
     expect(named).not.toEqual([]);
     expect(named).toEqual(compileGame(guild('When p0 opns the Statue'), lib).diagnostics);
+  });
+
+  describe('a player named after “, choosing”', () => {
+    const OFFER = [
+      'Example: an offer to p2', '  Given 3 players', "  And p0's holdings has a Stake whose maker is p1", '  When p0 offers the Stake, choosing p2',
+      '  Then the phase is answer', "  And it is p2's turn", '  When p2 takes the Stake', "  Then p2's holdings has a Stake whose maker is p1",
+    ];
+    const rate = () => [RATE_GAME, '', ...OFFER].join('\n');
+    const compiled = (text: string) => compileGame(text, lib);
+    const whenOf = (game: ReturnType<typeof compiled>['game']) => game!.examples[0].steps.find((step) => step.keyword === 'when')!.ref;
+    it('reads them as the players, and passes just as “, paying” does', () => {
+      const choosing = compiled(rate());
+      const paying = compiled(rate().replace(', choosing p2', ', paying p2'));
+      expect(choosing.diagnostics).toEqual([]);
+      expect(paying.diagnostics).toEqual([]);
+      expect(whenOf(choosing.game).args).toEqual([expect.objectContaining({ kind: 'action', text: 'p0 offers the Stake' }), ['p2'], 'p2', true]);
+      expect(whenOf(paying.game).args).toEqual([expect.objectContaining({ kind: 'action', text: 'p0 offers the Stake' }), ['p2'], null]);
+      expect(runExamples(choosing.game!, lib)).toEqual([expect.objectContaining({ status: 'pass' })]);
+      expect(runExamples(paying.game!, lib)).toEqual([expect.objectContaining({ status: 'pass' })]);
+    });
+    it('reports a player the game does not have on the line, as “, paying” does', () => {
+      const text = rate().replace(', choosing p2', ', choosing p9');
+      expect(messages(text)).toEqual([[text.split('\n').findIndex((line) => line.includes('choosing p9')) + 1, 'This game only has players p0 to p2.']]);
+    });
+    it('still reads words that are no players as an option', () => {
+      const text = rate().replace(', choosing p2', ', choosing trim 2 gold');
+      expect(whenOf(compiled(text).game).args.slice(1)).toEqual([[], 'trim 2 gold']);
+    });
   });
 });

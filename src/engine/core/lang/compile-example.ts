@@ -10,7 +10,8 @@ const STEP = /^(given|when|then|and|but)\s+(.+)$/i;
 const PLAYER_COUNT = '{int} players';
 /**
  * A When step that names the choices of its press: its args are the action before them, the players named after “, paying” (none when
- * it names none) and the option named after “, choosing”, as written (null when it names none).
+ * it names none) and the option named after “, choosing”, as written (null when it names none). When there is no “, paying” and the
+ * words after “, choosing” read as players, the players are those words and a fourth argument, true, says they were read from “, choosing”.
  */
 export const CHOOSING = 'choosing';
 /** group 1 = the press, group 2 = the players it pays, group 3 = the option it chooses; at least one of the last two is there. */
@@ -34,6 +35,14 @@ function readWhen(text: string, line: number, ctx: LineCtx): PhraseRef {
   const clean = normalizeLine(text);
   const [, head, paying, choosing] = NAMES_CHOICES.exec(clean)!;
   if (paying === undefined && choosing === undefined) return matchLine('action', clean, line, ctx);
+  // With no “, paying”, words after “, choosing” that read as players name them (a press that asks a player, as “, paying” does).
+  const chosen = paying === undefined ? parseParam('players', choosing!, ctx.vocab) : null;
+  if (chosen !== null) {
+    const action = matchLine('action', head, line, ctx);
+    if ('value' in chosen) return { kind: 'lang', phrase: CHOOSING, args: [action, chosen.value, choosing!, true], line, text: clean };
+    addProblem(ctx.diagnostics, line, chosen.error, { kind: 'invalid', text: clean });
+    return missingRef('action', clean, line);
+  }
   const players = paying === undefined ? { value: [] } : parseParam('players', paying, ctx.vocab);
   const misnamed = players === null ? misnamedParam('players', paying, ctx.vocab) : null;
   // Words after “, paying” that are not even shaped like players belong to some other press.

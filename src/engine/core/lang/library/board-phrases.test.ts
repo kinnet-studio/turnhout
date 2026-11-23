@@ -15,6 +15,13 @@ import type { DeclaredAction, Moment } from '../types';
 import { chooseNext } from '../zones';
 import { isDouble } from './board-phrases';
 import { createDefaultLibrary } from './index';
+import { RATE_GAME, fixtureEnv as rateEnv, runPhrase as ratePhrase } from '../testing';
+import { makeCard } from '../cards';
+import { relocate } from '../zones';
+import { counterOf as coinsOf, withBoardData } from '../board-state';
+import type { CompiledGame } from '../types';
+import { zoneCards } from '../zone-index';
+import { HOLDER_KEY } from '../zones';
 import { itOf, theyOf } from './support';
 
 const lib = createDefaultLibrary();
@@ -983,5 +990,82 @@ describe('a budget each turn', () => {
     expect(engine.dispatch({ type: 'rest', by: 'p0' }).ok).toBe(true);
     expect(counterOf(engine.getState(), 'moves', 'p0')).toBe(0);
     expect(engine.dispatch({ type: 'rest', by: 'p0' })).toMatchObject({ ok: false, reason: 'they have at least 1 move' });
+  });
+});
+
+/**
+ * A 3-player RATE_GAME table, turn p0 in working: each purse holds 2 Stakes naming its seat (c11 and c12 for p0, c13 and c14 for p1,
+ * c15 and c16 for p2); p1's workshop holds a Statue (pay 2) and p2's a Vase (pay 1). No Setup.
+ */
+function rateTable(game: CompiledGame, arrange: (s: GameState) => GameState = (s) => s, players = 3): GameState {
+  const fresh = initialState(game, 1);
+  const seats = ['p0', 'p1', 'p2'].slice(0, players);
+  const staked = seats.flatMap((seat) => [seat, seat])
+    .reduce((st, seat) => makeCard(st, game, { name: 'Stake', maker: seat }, `purse-${seat}`)!.state, fresh);
+  const statue = fresh.cards.find((c) => c.data?.name === 'Statue')!.id;
+  const vase = fresh.cards.find((c) => c.data?.name === 'Vase')!.id;
+  const placed = players === 3 ? relocate(relocate(staked, [statue], 'workshop-p1', game), [vase], 'workshop-p2', game) : staked;
+  return arrange({ ...placed, turn: { current: 'p0', phase: 'working' } });
+}
+
+describe("what a card's players pay and get", () => {
+  const lib = createDefaultLibrary();
+  const game = compileGame(RATE_GAME, lib).game!;
+  const BUY = "buy a card in another player's purse";
+  const engineOf = (arrange?: (s: GameState) => GameState) => createEngine(game, lib, 3, rateTable(game, arrange)).engine;
+  const coins = (state: GameState, seat: string) => coinsOf(state, 'coins', seat);
+  const ids = (state: GameState, zoneId: string) => zoneCards(state, zoneId).map((c) => c.id);
+  it('compiles with no problem', () => {
+    expect(compileGame(RATE_GAME, lib).diagnostics).toEqual([]);
+  });
+  it("buys at its maker's rate, paid to its owner, while its owner keeps 2", () => {
+    const engine = engineOf();
+    expect(engine.dispatch({ type: BUY, by: 'p0', cardId: 'c13' }).reason).toBeUndefined();
+    const state = engine.getState();
+    expect([coins(state, 'p0'), coins(state, 'p1')]).toEqual([7, 11]);
+    expect(ids(state, 'holdings-p0')).toEqual(['c13']);
+    expect(ids(state, 'purse-p1')).toEqual(['c14']);
+    expect(coinsOf(state, 'moves', 'p0')).toBe(2);
+    expect(engine.dispatch({ type: BUY, by: 'p0', cardId: 'c14' }).reason).toContain('its owner has at least 2 cards in their purse');
+  });
+  it("buys from another seat at that maker's rate", () => {
+    const engine = engineOf();
+    expect(engine.dispatch({ type: BUY, by: 'p0', cardId: 'c15' }).reason).toBeUndefined();
+    const state = engine.getState();
+    expect([coins(state, 'p0'), coins(state, 'p2')]).toEqual([8, 10]);
+  });
+  it("Review Focus: refuses a buyer short of the maker's rate", () => {
+    const engine = engineOf((s) => setCounter(withBoardData(s, game, ['p0', 'p1', 'p2']), 'coins', 'p0', 1));
+    expect(engine.dispatch({ type: BUY, by: 'p0', cardId: 'c13' }).reason).toContain("they have at least its maker's rate in coins");
+  });
+  it('pays the maker 3 more while the scrap has a Vase', () => {
+    const engine = engineOf((s) => relocate(s, [s.cards.filter((c) => c.data?.name === 'Vase')[1].id], 'scrap', game));
+    expect(engine.dispatch({ type: BUY, by: 'p0', cardId: 'c13' }).reason).toBeUndefined();
+    const state = engine.getState();
+    expect([coins(state, 'p1'), coins(state, 'p0')]).toEqual([14, 7]);
+  });
+  it("pays every holder of the maker's stakes their rate, from the bank", () => {
+    const engine = engineOf((s) => ({ ...relocate(relocate(s, ['c13'], 'holdings-p0', game), ['c14'], 'holdings-p2', game), turn: { current: 'p1', phase: 'working' } }));
+    expect(engine.dispatch({ type: 'cash in', by: 'p1' }).reason).toBeUndefined();
+    const state = engine.getState();
+    expect([coins(state, 'p0'), coins(state, 'p2'), coins(state, 'p1')]).toEqual([11, 11, 9]);
+  });
+  it('sues for a stake: pays 5 to its owner and takes it back', () => {
+    const engine = engineOf((s) => ({ ...relocate(s, ['c13'], 'holdings-p0', game), turn: { current: 'p1', phase: 'working' } }));
+    expect(engine.dispatch({ type: "sue a card in another player's holdings", by: 'p1', cardId: 'c13' }).reason).toBeUndefined();
+    const state = engine.getState();
+    expect([coins(state, 'p1'), coins(state, 'p0')]).toEqual([4, 14]);
+    const card = state.cards.find((c) => c.id === 'c13')!;
+    expect(card.zoneId).toBe('purse-p1');
+    expect(card.data?.[HOLDER_KEY]).toBeUndefined();
+  });
+  it("Review Focus: a card naming no maker, or with no owner, can't be paid through", () => {
+    const fresh = rateTable(game);
+    const potter = fresh.cards.find((c) => c.data?.name === 'Potter')!.id;
+    const env = (card: string, state = fresh) => rateEnv(state, { game, seats: ['p0', 'p1', 'p2'], subject: { player: 'p0', space: null, card } });
+    expect(() => ratePhrase(lib, 'effect', "move it to its maker's purse", env(potter))).toThrow(new RuleError('It names no maker.'));
+    const scrapped = relocate(fresh, ['c13'], 'scrap', game);
+    expect(() => ratePhrase(lib, 'effect', "its owner gets its maker's rate", env('c13', scrapped)))
+      .toThrow(new RuleError("It is in no player's zone, so it has no owner."));
   });
 });

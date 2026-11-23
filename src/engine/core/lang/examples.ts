@@ -95,9 +95,9 @@ function runExample(game: CompiledGame, library: PhraseLibrary, example: Compile
       if (keyword === 'when') {
         const before = engine.getState();
         // A step that names the choices of its press acts its press, then adds the choices.
-        const [action, players, option] = isChoosing(ref) ? ref.args as [PhraseRef, string[], string | null] : [ref, [], null];
+        const [action, players, option, fromChoosing] = isChoosing(ref) ? ref.args as [PhraseRef, string[], string | null, boolean?] : [ref, [], null];
         const { by, move } = runtime.act(action, before, env);
-        const choices = namedChoices(runtime, before, { ...move, by }, players, option);
+        const choices = namedChoices(runtime, before, { ...move, by }, players, option, fromChoosing === true);
         const outcome = engine.dispatch({ ...move, by, ...(choices === null ? {} : { choices }) });
         env.last = {
           ok: outcome.ok,

@@ -233,8 +233,13 @@ const zoneTable = (vocab: Vocab): ZoneTable =>
 
 const zoneSource = (vocab: Vocab): string => {
   const names = anyOf([...vocab.sharedZones, ...vocab.playerZones]);
-  return `(?:(?:the |their |each |every )?${names}|the (?:winner|other player)${APOSTROPHE}s ${names}|p\\d+${APOSTROPHE}s ${names})`;
+  // “its maker's purse”: the zone of the player the card the rule is about names, when cards can name one.
+  const named = factNames('card', 'player')(vocab).length === 0 ? '' : `|its ${CARDPLAYER.source(vocab)}${APOSTROPHE}s ${names}`;
+  return `(?:(?:the |their |each |every )?${names}|the (?:winner|other player)${APOSTROPHE}s ${names}|p\\d+${APOSTROPHE}s ${names}${named})`;
 };
+
+/** group 1 = the fact naming a player, 2 = the zone name */
+const NAMED_OWNER = /^its (.+)'s (.+)$/;
 
 /** group 1 = the whole prefix, group 2 = a seat ('p2'), group 3 = the zone name */
 const OWNER_PREFIX = /^(the winner's|the other player's|(p\d+)'s|the|their|each|every) (.+)$/;
@@ -245,6 +250,14 @@ function resolveZone(text: string, vocab: Vocab): Parsed {
   let prefix = '';
   let seat: string | undefined;
   let key = t;
+  const named = table.names.has(t) ? null : NAMED_OWNER.exec(t);
+  if (named !== null && table.names.has(named[2])) {
+    const fact = factNames('card', 'player')(vocab).find((name) => canon(name) === named[1]);
+    const zone = table.names.get(named[2]) as string;
+    if (fact === undefined) return unknownText(text);
+    if (!table.player.has(named[2])) return { error: `“the ${zone}” is shared, so it has no owner.` };
+    return { value: { of: { named: fact }, zone } };
+  }
   if (!table.names.has(t)) {
     const m = OWNER_PREFIX.exec(t);
     if (!m || !table.names.has(m[3])) return unknownText(text);
