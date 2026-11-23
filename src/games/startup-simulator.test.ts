@@ -567,12 +567,14 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *   last round, with the Market Crash in the crash pile, it dismisses on an even `t` the ops team's first card that gives Blue or Red
  *   bandwidth, once a turn (see `lastRound`): a path-driver, not play, that sends a seat short so that the final check has a choice
  *   to make (see below).
- * - **The first action** is an Ideation, by `t % 4`: a growth idea (0 and 2), draft from the growth market (1), or (3) by
- *   `⌊t / 4⌋ % 3` research the seed deck, draft from the seed market or draft the open idea pool's first card. A growth idea
- *   researches the growth deck when the `style` researches, and drafts from the growth market when it drafts. A draft from a market
- *   takes a hybrid Domain Expertise cuts, else an idea it cuts, else the market's first. When the rules refuse that, it tries
- *   researching the growth deck, drafting from the growth market, researching the seed deck and drafting from the seed market, in that
- *   order, and with none allowed it recruits instead.
+ * - **The first action** launches the first project the engine takes (see `launch`), else it is an Ideation. A seat that researches and
+ *   runs no product yet first researches the seed deck, else drafts the seed market's first card, since a Tier 1 card is what it can build
+ *   (the retune's D2). Else the Ideation goes by `t % 4`: a growth idea (0 and 2), draft from the growth market (1), or (3) by
+ *   `⌊t / 4⌋ % 3` research the seed deck, draft from the seed market or draft the open idea pool's first card. A growth idea researches
+ *   the growth deck when the `style` researches, and drafts from the growth market when it drafts. A draft from a market takes a hybrid
+ *   Domain Expertise cuts, else an idea it cuts, else the market's first. When the rules refuse that, it tries researching the growth
+ *   deck, drafting from the growth market, researching the seed deck and drafting from the seed market, in that order, and with none
+ *   allowed it recruits instead.
  * - **Each later action** first tries to reassign the Diva while she works for the seat, which her Ego refuses at no cost
  *   (§20.B.1). Then it launches the first project the engine takes, which a Tier 2 or 3 project needs to be fully led for as well as
  *   complete (P11), so that the Diva may go to the ops team with her team. Else it puts QA on its first project with Bugs that no QA
@@ -583,14 +585,15 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *   (see `hireHacker`). Else, once a turn when `t % 4 === 1`, it reassigns the first card of its ops team that sits on a product to
  *   its first other product (see `moveGrowthHacker`). Else, when `t % 3 === 1`, it assigns the bench's first PM to its project with
  *   the most cards on it (see `pmToProject`). Else it pivots the project the Diva is on, which fires her (ruling 9), and it
- *   assigns her from the bench to the ops team, where her Ego refuses a reassign too. Else, when `(t + a) % 5 === 2`, it
- *   Brainstorms (see `brainstorming`). With
- *   none of those, it assigns the bench's makers of a color its first Tier 1 project with a cut lacks to that project (see
- *   `buildCut`), else it finds a lead for its first Stalled project (§3): the bench's first Senior Developer who would lead a colour
- *   it needs, assigned to it, else the agency row's first such Senior it can pay for, hired onto it, else the open job market's
- *   first, hired when it has the $1 the hire costs, else a Layoff of the bench's first card, which digs the talent deck for one. With
- *   no Stalled project, it is one by `(t + a) % 9`:
- *   0. recruit the Junior of kind `(t + a) % 3`;
+ *   assigns her from the bench to the ops team, where her Ego refuses a reassign too. Else it hires the agency row's Diva onto its first
+ *   project when it can pay for her (see `hireDiva`). Else it assigns the bench's makers of a colour its first open project lacks, a
+ *   project with a cut first, to that project (see `makersToProject`). Else, when `(t + a) % 5 === 2`, it Brainstorms (see
+ *   `brainstorming`). With none of those, it assigns the bench's makers of a color its first Tier 1 project with a cut lacks to that
+ *   project (see `buildCut`), else it finds a lead for its first Stalled project (§3): the bench's first Senior Developer who would lead a
+ *   colour it needs, assigned to it, else the agency row's first such Senior it can pay for, hired onto it, else the open job market's
+ *   first, hired when it has the $1 the hire costs, else a Layoff of the bench's first card, which digs the talent deck for one. With no
+ *   Stalled project, it is one by `(t + a) % 9`:
+ *   0. recruit the Junior of kind `(t + ⌊t / 9⌋) % 3` (`(t + a) % 3` is 0 whenever `(t + a) % 9` is);
  *   1. hire the first agency Senior Developer it can pay for, else the first agency card it can pay for, to its bench, its first
  *      project or its ops team, by `(t + ⌊t / 9⌋) % 3`; to the ops team by its first product's button when the card attaches or
  *      `⌊t / 9⌋` is odd (see `toAProduct`);
@@ -610,7 +613,7 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *   it can (see `boardMovesAfter`); with none, it recruits a Junior QA Tester while a project that isn't Stalled has Bugs no QA on it
  *   cleans and the bench has no card that would, else a Junior who makes a color the first unfinished project lacks, or with none
  *   lacking the Junior of kind `(t + a) % 3`, else ends its actions. At 0 actions the rules refuse every press but the free ones and
- *   the end, and it ends its actions there at once: the phase no longer ends by itself (rulebook l.172–173).
+ *   the end, so once the free moves are made it ends its actions there: the phase no longer ends by itself (rulebook l.172–173).
  * - **Engine.** While the Engine waits on it, its ops team's QA short of the Bugs on its products in operation, it cleans the
  *   product at `t % n` among its n products in operation with Bugs, in slot order (§5 Phase D, R3).
  * - **Final check**, as the seat whose step it is (§12, ruling 25). When `t % 3 === 0` and it has switched nothing on in this step, it
@@ -1029,10 +1032,10 @@ function playTurn(
   const attachingFor = (row: CardState[]) => row.find((card) => attaching(card) && canPay(card));
   /**
    * The agency row's first attaching card the seat can pay for, the Growth Hacker or a Sales Rep, onto the seat's first product in
-   * operation, when the seat has a product and `action`, the cycle's action this turn (see `playTurn`), is 0, the recruit's (§3,
-   * §20.B, ruling 19). Null otherwise. Only in the recruit's place: the three Sales Reps attach as well as the one Growth Hacker, and a
-   * seat hiring one at any action it could would take a Sales Rep where the agency row's hire to the ops team takes a QA Engineer (3
-   * players seed 4, 4 players seed 3), and would lead 2 players seed 4 off the long runs' only Cut 2 red (plan 5-2a's P9). Every
+   * operation, when the seat has a product and `action`, the cycle's action this turn (see `playTurn`), is 0, the recruit's (§3, §20.B,
+   * ruling 19). Null otherwise. Only in the recruit's place: the three Sales Reps attach as well as the one Growth Hacker, and a seat
+   * hiring one at any action it could would take a Sales Rep where the agency row's hire to the ops team takes a QA Engineer (3 players
+   * seed 4, 4 players seed 3), and would lead 2 players seed 4 off what was then the long runs' only Cut 2 red (plan 5-2a's P9). Every
    * Growth Hacker the long runs hired before the Sales Reps attached came at action 0, so those hires stay as they were.
    */
   const hireGrowthHacker = (action: number): Move | null => {
@@ -1050,6 +1053,29 @@ function playTurn(
     const blueOnly = (project: CardState) => needing(runtime, engine.getState(), project).join() === 'blue';
     if (hacker(cards('agency-row')) === undefined || !cards(own('development')).some(blueOnly)) return null;
     return pick(HIRE_AGENCY_TO_PROJECT, 'agency-row', hacker, onProject((projects) => projects.find(blueOnly)));
+  };
+  /**
+   * The agency row's Diva, hired onto the seat's first project when it can pay for her: the cheapest Senior (§20.B.1), whom the cycle's
+   * hire seldom reaches, so the Diva's Ego and her firing by a pivot are seen in more than one game (D3).
+   */
+  const hireDiva = (): Move | null => {
+    const diva = (row: CardState[]) => row.find((card) => isDiva(card) && canPay(card));
+    if (diva(cards('agency-row')) === undefined || cards(own('development')).length === 0) return null;
+    return pick(HIRE_AGENCY_TO_PROJECT, 'agency-row', diva, onProject());
+  };
+  /**
+   * The bench's makers of a colour the seat's first open project lacks, assigned to it: a project with a cut first, else the first one,
+   * passing over a Stalled project, whose makers make nothing until it has its leads (§3). An Efficient card stays on the bench. Null with
+   * no such project or no such maker (D2: a project left waiting for its makers is what kept Launches down).
+   */
+  const makersToProject = (): Move | null => {
+    const open = (project: CardState) => lacks(project).length > 0 && runtime.workedFlag(engine.getState(), project.id, 'stalled') !== true;
+    const projects = cards(own('development'));
+    const project = projects.find((candidate) => open(candidate) && isCut(candidate)) ?? projects.find(open);
+    if (project === undefined) return null;
+    const makes = (card: CardState) => !efficient(card) && lacks(project).includes(COLOR_OF_SKILL[card.data?.skill as string]);
+    return pickSome(ASSIGN_TO_PROJECT, own('bench'), (bench) => bench.filter(makes),
+      onProject((targets) => targets.find((target) => target.id === project.id)));
   };
   /** Whether this turn has moved a card from one product to another. */
   let movedOnProducts = false;
@@ -1123,13 +1149,13 @@ function playTurn(
     if (t % 2 === 1 && flushed(cards(own('strategy hand'))).length > 0) return pickSome(BRAINSTORM_FLUSHING, own('strategy hand'), flushed);
     return press(BRAINSTORM);
   };
-  /** The move the action numbered `action` makes as the turn's action `a`, or null when it has nothing to pick (see above). */
-  const boardAction = (action: number, a: number): Move | null => {
+  /** The move the action numbered `action` makes, or null when it has nothing to pick (see above). */
+  const boardAction = (action: number): Move | null => {
     const projects = cards(own('development'));
     const holderOf = (card: CardState) => card.data?.[HOLDER_KEY];
     switch (action) {
       case 0:
-        return recruit(a);
+        return press(RECRUITS[(t + Math.floor(t / 9)) % 3]);
       case 1: {
         const hired = seniorFirst(cards('agency-row'));
         return [
@@ -1220,19 +1246,22 @@ function playTurn(
     } else if (phase === 'actions') {
       // Each press below spends an action or ends them, so a seat still in its actions after 3 presses and the end didn't end them.
       if (a > ACTIONS_EACH_TURN) throw new Error(`${by} at t = ${t}: still in its actions after ${a} presses`);
-      // At 0 actions it ends them at once, as the phase used to by itself, so the games are the ones played before (Task 1).
-      const free = counterOf(engine.getState(), 'actions', by) > 0 ? freeMove() : null;
+      const free = freeMove();
       if (free !== null) {
         play(engine, free, watch);
         continue;
       }
       const action = (t + a) % 9;
       const board = () => [
-        buildCut() ?? leadForStalled() ?? boardAction(action, a), ...boardMovesAfter(action).map((next) => boardAction(next, a)),
+        buildCut() ?? leadForStalled() ?? boardAction(action), ...boardMovesAfter(action).map((next) => boardAction(next)),
       ];
-      const planned = a === 0 ? ideation() : [
+      // A seat that researches takes a seed idea first until it runs a product: a Tier 1 card is the one it can build (D2).
+      const ideas = () => (style === 'researches' && cards(own('operations')).length === 0
+        ? [press(RESEARCH_SEED), first(DRAFT_SEED, 'seed-market'), ...ideation()]
+        : ideation());
+      const planned = a === 0 ? [launch(), ...ideas()] : [
         reassignDiva(), launch(), qaForBugs(), hireGrowthHacker(action), hireHacker(), moveGrowthHacker(), pmToProject(), pivotDiva(),
-        divaToOps(), brainstorming(a), ...board(),
+        divaToOps(), hireDiva(), makersToProject(), brainstorming(a), ...board(),
       ];
       const move = choose([...planned, recruitMaker(a), press(END_ACTIONS)]);
       if (move.type === REASSIGN_TO_PRODUCT) movedOnProducts = true;
@@ -3076,16 +3105,16 @@ describe('Startup Simulator (designer language)', () => {
       const every = [
         // Slice 1a's.
         ...RECRUITS, HIRE_AGENCY, HIRE_MARKET, DRAFT_SEED, DRAFT_GROWTH, DRAFT_POOL,
-        RESEARCH_SEED, RESEARCH_GROWTH, KEEP, END_ACTIONS, DISCARD_BENCH, DISCARD_BACKLOG,
+        RESEARCH_SEED, RESEARCH_GROWTH, KEEP, END_ACTIONS, DISCARD_BACKLOG,
         // The Board's.
-        HIRE_AGENCY_TO_PROJECT, HIRE_AGENCY_TO_OPS, GREENLIGHT, ASSIGN_TO_PROJECT, ASSIGN_TO_OPS,
+        HIRE_AGENCY_TO_PROJECT, GREENLIGHT, ASSIGN_TO_PROJECT, ASSIGN_TO_OPS,
         REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS, RECALL, DISMISS_FROM_PROJECT, DISMISS_FROM_OPS,
         // Income's, Launch, Pivot, Layoff and Source.
         ...Object.values(LET_GO), PAY_SALARIES, LAUNCH, PIVOT, LAY_OFF, scoutedToBench, scoutedToOps, scoutedToProject, PASS_ON_THE_REST,
         // Slice 4's: the declaration of modes, the ops check and the final check's switches, and the buttons that put a card on a
-        // product in operation.
+        // product in operation, and the reassign and the scouting's hire onto one.
         ...Object.values(DECLARE), CONFIRM_MODES, SWITCH_OFF, SWITCH_ON, CONFIRM_ONLINE,
-        ASSIGN_TO_PRODUCT, HIRE_AGENCY_TO_PRODUCT,
+        ASSIGN_TO_PRODUCT, HIRE_AGENCY_TO_PRODUCT, REASSIGN_TO_PRODUCT, HIRE_SCOUTED_TO_PRODUCT,
         // Plan 5-2b's: Brainstorm, plain and flushing, its keep, the strategy cleanup and Training.
         BRAINSTORM, BRAINSTORM_FLUSHING, KEEP_STRATEGY, DISCARD_STRATEGY, PLAY_TRAINING,
         // What the rules make happen on their own.
@@ -3093,20 +3122,21 @@ describe('Startup Simulator (designer language)', () => {
         'the Market Crash reaches the crash pile from the growth market', 'the Market Crash reaches the crash pile from a research row',
       ];
       // Counted, but not required, each pinned by its examples and by the arranged test below of the auto-player's press named here:
-      // - the reassign from one product to another: a seat almost never holds two products while its Growth Hacker sits on one ('reassigns
-      //   the Growth Hacker from its product to the seat’s other product once on a turn when t % 4 is 1, …');
       // - the clean button: the Engine waits on it only when ops QA can't clean every Bug, and only the one Growth Hacker brings Bugs to
       //   products in operation ('cleans the Bug the auto-player picks when ops QA can’t clean them all, …');
-      // - HIRE_SCOUTED_TO_PRODUCT, the scouting's hire onto a product: a Layoff must find a card the seat can pay for while it has a
-      //   product, and the Strategy deck's shuffle at Setup replayed every game from plan 5-2b's Task 1 on (P7) ('hires the card a Layoff
-      //   found onto its first product while it has one, …');
       // - the graduation step's keep and Mentor presses: a Junior earns a Pending token of a second colour only by working in it, which
-      //   takes a Skill token, and it must then Launch with it (P8) ('makes the graduation choices the auto-player picks, …').
-      // Held by one game each: the agency row's hire to the ops team (2 players, seed 4), the scouting's hire to the ops team (5 players,
-      // seed 2) and the assign to the ops team (3 players, seed 4); by two each: the agency row's hire onto a product (2 players seed 1,
-      // 3 players seed 4), the scouting's hire to the bench (5 players, seeds 1 and 4), the ops team's let go (2 players seed 2, 3
-      // players seed 4) and the ops check's switch on and confirm (2 players, seeds 2 and 4). A failure here means a cadence moved:
-      // retune the auto-player, never the rules.
+      //   takes a Skill token, and it must then Launch with it (P8) ('makes the graduation choices the auto-player picks, …');
+      // - the bench's discard: the retuned seats put their makers on projects first, so no bench overflows (the retune's D3) ('discards
+      //   the bench’s first card at the bench cleanup once it ends its actions with more than 5 there, …');
+      // - the agency row's hire to the ops team: a seat with a product hires onto it, and the cycle seldom comes to the hire while one
+      //   without has a Senior's price (the retune's D3) ('hires the agency row’s first Senior it can pay for to the ops team when it
+      //   can’t go to a product, …').
+      // Held by two games each, the fewest: the agency row's hire to the bench (3 players seed 3, 4 players seed 4) and the scouting's
+      // hire onto a product (2 players, seeds 1 and 4); by three each: the scouting's hire to the ops team (2 and 3 players seed 4, 5
+      // players seed 3) and the reassign from one product to another (2 players seed 1, 3 players seeds 2 and 4); by four: the scouting's
+      // hire to the bench (3 players seeds 2 and 4, 4 players seed 2, 5 players seed 4); by five each: the assign to the ops team, the
+      // assign onto a product and the agency row's hire onto a product; the ops team's let go by eight, and the ops check's switch on by
+      // seven and its confirm by thirteen. A failure here means a cadence moved: retune the auto-player, never the rules.
       expect(every.filter((key) => !(tally[key] > 0)), `never made or seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
@@ -3135,10 +3165,11 @@ describe('Startup Simulator (designer language)', () => {
       // - DIVA_REFUSED[REASSIGN_FROM_OPS], the Diva refused a reassign from the ops team: she must reach the ops team, from the bench or
       //   with her project's Launch, and the Milestones' shuffle at Setup replayed every game again at plan 5-2b's Task 3 (P7) ('tries
       //   the Diva’s reassign from the ops team before each later action, …').
-      // Held by one game each: a Tier 2 or 3 card launched and the Engineer paid $1 in the ops team (both 3 players, seed 4); by two each:
-      // a project launched with a cut (3 players seed 4, 5 players seed 2) and Cut 2 red (2 players seed 3, 3 players seed 2); by three
-      // each: the Diva refused a reassign from a project and fired by a pivot (3, 4 and 5 players, seed 1). A failure here means a
-      // cadence moved: retune the auto-player, never the rules.
+      // Held by two games each, the fewest: a Tier 2 or 3 card launched and a project launched with a cut (2 and 3 players, seed 4), and
+      // the Engineer paid $1 in the ops team (2 and 4 players, seed 4); by three: Cut 2 red (2 players seed 4, 3 and 4 players seed 2); by
+      // four: Cut 1 of each (2 and 3 players seed 4, 4 players seeds 2 and 4); by six each: a cut chosen among options (2 players seeds 1
+      // and 4, 3 and 4 players seeds 2 and 4) and the Diva refused a reassign from a project and fired by a pivot (2 and 3 players seeds 1
+      // and 3, 4 and 5 players seed 3). A failure here means a cadence moved: retune the auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
@@ -3161,16 +3192,16 @@ describe('Startup Simulator (designer language)', () => {
       // - EARNING_LESS, a product earning less for its Bugs;
       // - GROWTH_HACKER_EARNED, the Growth Hacker's $3 earned;
       // - CLEANED_IN_OPS, a Bug cleaned in operations by itself.
-      // Held by two games, the fewest: an offline product at Income (2 players, seeds 2 and 4); by four each: a mode declared QA (2
-      // players seed 2, 3 players seed 2, 4 players seed 1, 5 players seed 2) and a mode forgotten on a bench (3 players seeds 1 and 3, 4
-      // players seeds 1 and 2). A failure here means a cadence moved: retune the auto-player, never the rules.
+      // Held by three games, the fewest: a mode forgotten on a bench (2, 3 and 4 players, seed 2); by six: a mode declared QA (2 players
+      // seeds 2 and 4, 3 players seeds 3 and 4, 4 and 5 players seed 2); an offline product at Income by thirteen. A failure here means a
+      // cadence moved: retune the auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
     it('played slice 5’s talent in those runs: Pending tokens gained and graduated, returned by pivots and stripped from fired staff, Synergy and the Sales Rep’s bonus', () => {
       const paths = [
         ...PENDING.map((name) => `${PENDING_GAINED}: ${name.slice('pending '.length)}`), GRADUATED, PIVOT_RETURNED, STRIPPED, SYNERGY,
-        SALES_BONUS,
+        SALES_BONUS, EXPERIENCED_PAID,
       ];
       // Counted, but not required, each pinned by its examples and by the arranged test below of the auto-player's presses named here:
       // - a token kept by choice and the Mentor's second token: a Junior gains a Pending token of a second colour only by working in it,
@@ -3178,52 +3209,53 @@ describe('Startup Simulator (designer language)', () => {
       //   the auto-player picks, …');
       // - a Junior PM promoted at a Launch: a Junior PM must be on a Tier 2 or 3 team that Launches ('claims First Mover Advantage,
       //   Platform Power and Full Stack Founder at one auto-player Launch of a Tier 2 card, which promotes its Junior PM, …');
-      // - the Agile spare: only the one Senior PM is Agile until Agile Workshop badges a Junior PM, which the runs never play (P8), and
-      //   none of the runs moves a card onto a team it manages in a move that starts no turn ('reassigns a spare QA Engineer from the ops
-      //   team onto the project the Senior PM manages, …');
-      // - EXPERIENCED_PAID, an experienced Junior paid: a Junior keeps one token at each Launch, so it reaches 2 XP only at its second
-      //   Launch, and it must then still be on the Board at an Income; the Strategy deck's shuffle at Setup replayed every game from plan
-      //   5-2b's Task 1 on (P7) ('pays an experienced Junior’s salary of $1 at Income, …').
+      // - the Agile spare: only the one Senior PM is Agile until Agile Workshop badges a Junior PM, which the runs play once (4 players
+      //   seed 2, P8), and none of the runs moves a card onto a team it manages in a move that starts no turn ('reassigns a spare QA
+      //   Engineer from the ops team onto the project the Senior PM manages, …').
       // A Bug cleaned by a QA Engineer is counted too: a QA Engineer must be on a project with Bugs. Examples pin it.
-      // Held by one game each: Synergy at the Engine (5 players, seed 2) and the Sales Rep's bonus (3 players, seed 4). A failure here
-      // means a cadence moved: retune the auto-player, never the rules.
+      // Held by two games, the fewest: Synergy at the Engine (2 and 4 players, seed 2); by three: an experienced Junior paid (3 players
+      // seed 2, 4 players seed 5, 5 players seed 4); the Sales Rep's bonus by six. A failure here means a cadence moved: retune the
+      // auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
     it('played slice 5’s Strategy and Milestones in those runs: Brainstorms of 2, a reshuffle and the cleanup, Training on Juniors and on a Sales Rep, trained Juniors declared in each colour they lacked, the Sales Rep’s XP bonus, and Clean Launch claimed', () => {
       const paths = [
-        `${BRAINSTORM_DRAWING} 2`, RESHUFFLED, DISCARDED_AT_CLEANUP,
+        `${BRAINSTORM_DRAWING} 2`, DISCARDED_AT_CLEANUP,
         ...['Full Stack Bootcamp', 'QA Certification', 'Leadership Masterclass'].map((name) => `${TRAINING_ON}: ${name} on a Junior`),
         `${TRAINING_ON}: Sales Seminar on a Sales Rep`,
         ...['blue', 'red', 'qa'].map((answer) => `${TRAINED_DECLARED} ${answer}`),
-        SALES_XP_BONUS, `${CLAIMED}: Clean Launch`,
+        BADGED_LEADING, SALES_XP_BONUS, `${CLAIMED}: Clean Launch`,
       ];
       // Counted, but not required, each pinned by its examples (plan 5-2b's P8):
+      // - the reshuffle: only 2 players seed 4 runs its Strategy deck dry, and 'leaves no id a seat saw face up in the strategy discard in
+      //   the strategy deck, …' below pins its one reshuffle there (the retune's D3);
       // - a Brainstorm drawing 3: a PM must be working on the seat's Board, and a seat seldom keeps one there;
       // - a single Strategy card kept at once: the deck and its discard must hold one card between them;
       // - QA Certification and Leadership Masterclass on a QA Engineer, the Masterclass on a Sales Rep, and Agile Workshop on a Junior
       //   PM: a seat seldom holds the Specialist a card fits as it plays it, and a Junior is nearly always there to take a Certification
       //   or a Masterclass first, so the arranged test 'plays its %s at t = %i on the %s the target rule picks, …' below plays each;
-      // - a badged Junior leading at the Engine, Bug Decay stopped by a QA Engineer or waived by a VP of Sales: each needs one Training
-      //   card, or two, on one card that then works where it matters;
+      // - Bug Decay stopped by a QA Engineer or waived by a VP of Sales: each needs one Training card, or two, on one card that then works
+      //   where it matters;
       // - First Mover Advantage, Platform Power and Full Stack Founder: no Tier 2 Launch meets a revealed First Mover, no seat runs 3
-      //   Tags, and none both sides of the stack (the arranged test 'claims First Mover Advantage, Platform Power and Full Stack Founder
-      //   at one auto-player Launch of a Tier 2 card, …' below claims all three, and 'claims Platform Power only once the seat has chosen
-      //   which products its ops check runs, …' Platform Power again);
+      //   Tags, and only 2 players seed 4 runs both sides of the stack (Full Stack Founder, once) (the arranged test 'claims First Mover
+      //   Advantage, Platform Power and Full Stack Founder at one auto-player Launch of a Tier 2 card, …' below claims all three, and
+      //   'claims Platform Power only once the seat has chosen which products its ops check runs, …' Platform Power again);
       // - Revenue Leader and Talent Magnet: an Income comes to $9 at most, and Setup reveals no Talent Magnet at seeds 1 to 5 (the
       //   arranged test 'claims Talent Magnet and Clean Launch at an auto-player Launch that graduates a second Junior to 3 XP, and
       //   Revenue Leader at its next Income of $10, …' below claims both);
       // - a Milestone claimed at the last check: one must be met only as the final Ops check brings products back online (the arranged
       //   test 'rebuilds and takes back Platform Power claimed at the last check, …' below claims one).
-      // Held by one game each: the reshuffle (2 players, seed 4), and Sales Seminar on a Sales Rep with the Sales Rep's XP bonus (both 3
-      // players, seed 4); by two: a trained Junior declared red (3 players seed 2, 4 players seed 2). A failure here means a cadence
-      // moved: retune the auto-player, never the rules.
+      // Held by two games each, the fewest: Sales Seminar on a Sales Rep and the Sales Rep's XP bonus (2 and 4 players, seed 4); by three:
+      // a trained Junior declared red (2 players seed 3, 5 players seeds 1 and 3); by five: a badged Junior leading at the Engine (2
+      // players seeds 1 and 4, 3 players seed 4, 4 players seed 1, 5 players seed 5). A failure here means a cadence moved: retune the
+      // auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
     it('plays the same game through the page’s view as without it (2 players, seed 2)', () => {
-      // Seed 2 is the first 2-player game with a Greenlight that asks a choice since the Milestones' shuffle replayed every game
-      // (plan 5-2b's P9). The game played without the view is the long run's, which plays seed 2 so.
+      // Seed 2 has a Greenlight that asks a choice (a cut, Cut 2 blue), which the view must list for the card. The game played without
+      // the view is the long run's, which plays seed 2 so.
       const plain = twoPlayerGame(2);
       const viewed = playGame(2, 2, () => {}, { throughView: true });
       expect(plain.end.result).toBeDefined();
@@ -3304,10 +3336,13 @@ describe('Startup Simulator (designer language)', () => {
 
     it('takes back every move with undo, and rebuilds the game from its log, through recruits and research (3 players, seed 1)', () => {
       const states: GameState[] = [];
-      const engine = playGame(3, 1, (_before, _move, after) => states.push(after), { moves: 40 });
+      // The retuned seats put their makers on projects before they recruit, so the first recruit comes at move 52 (it was within 40).
+      const both = (log: readonly Move[]) => log.some((move) => RECRUITS.includes(move.type))
+        && log.some((move) => move.type === RESEARCH_SEED || move.type === RESEARCH_GROWTH);
+      const engine = playGame(3, 1, (_before, _move, after) => states.push(after), { until: both });
       const log = [...engine.getLog()];
-      expect(log).toHaveLength(40);
-      expect(states).toHaveLength(40);
+      expect(log).toHaveLength(52);
+      expect(states).toHaveLength(52);
       // A recruit makes a Junior whose id comes from the state, and a research deals and keeps a card, so both must replay.
       expect(log.some((move) => RECRUITS.includes(move.type))).toBe(true);
       expect(log.some((move) => move.type === RESEARCH_SEED || move.type === RESEARCH_GROWTH)).toBe(true);
@@ -3331,8 +3366,7 @@ describe('Startup Simulator (designer language)', () => {
       const board = (log: readonly Move[]) => made(log, [ASSIGN_TO_PROJECT, ASSIGN_TO_OPS]) && made(log, [LAUNCH]) && made(log, [PIVOT])
         && made(log, [REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS]);
       const states: GameState[] = [];
-      // Seed 2 is the first 3-player game to make all four before it ends since the Milestones' shuffle replayed every game (plan
-      // 5-2b's P9).
+      // Seed 2 makes all four by its 83rd move, the soonest of the 3-player seeds 1 to 5 (seed 1 takes 116).
       const engine = playGame(3, 2, (_before, _move, after) => states.push(after), { until: board });
       const log = [...engine.getLog()];
       expect(board(log), `the moves made: ${[...new Set(log.map((move) => move.type))].join(', ')}`).toBe(true);
@@ -3557,15 +3591,15 @@ describe('Startup Simulator (designer language)', () => {
         replayed.undo();
         expect(replayed.getState(), `${where}: the game with its last move, ${log.at(-1)!.type}, taken back`).toEqual(beforeLast);
       }
-      // Some log declared a mode, switched a product off, added a Bug to a project, raised a Pending token at the Engine, graduated one
-      // at a Launch, shuffled the strategy discard into the deck, played a Training card that asked a choice or had it filled in, and
-      // claimed a Milestone, so the replays rebuilt each of them. The declarations are in seeds 2, 4 and 5, the reshuffle in seed 4
-      // only, and a final-check switch-off is the last move taken back in seed 3. No log holds a clean press, so the test 'Review Focus:
-      // cleans no more Bugs than its QA when one product is left with Bugs partway through the step (R3)' above replays one; none a keep
-      // or Mentor press, so 'makes the graduation choices the auto-player picks, …' below replays those; none moves a card onto an Agile
-      // PM's team (P8), so 'reassigns a spare QA Engineer from the ops team onto the project the Senior PM manages, …' below replays the
-      // Agile spare; and none claims a Milestone at the last check, so 'rebuilds and takes back Platform Power claimed at the last
-      // check, …' below replays one.
+      // Some log declared a mode, switched a product off, added a Bug to a project, raised a Pending token at the Engine, graduated one at
+      // a Launch, shuffled the strategy discard into the deck, played a Training card that asked a choice or had it filled in, and claimed
+      // a Milestone, so the replays rebuilt each of them. The declarations are in every seed, the reshuffle in seed 4 only, and a
+      // final-check switch-off is the last move taken back in seeds 1 to 3. No log holds a clean press, so the test 'Review Focus: cleans
+      // no more Bugs than its QA when one product is left with Bugs partway through the step (R3)' above replays one; none a keep or
+      // Mentor press, so 'makes the graduation choices the auto-player picks, …' below replays those; none moves a card onto an Agile PM's
+      // team (P8), so 'reassigns a spare QA Engineer from the ops team onto the project the Senior PM manages, …' below replays the Agile
+      // spare; and none claims a Milestone at the last check, so 'rebuilds and takes back Platform Power claimed at the last check, …'
+      // below replays one.
       expect(Object.entries(seen).filter(([, times]) => times === 0), JSON.stringify(seen)).toEqual([]);
     }, 120_000);
 
@@ -3648,7 +3682,7 @@ describe('Startup Simulator (designer language)', () => {
       const qaEngineers = fresh().cards.filter((card) => nameOf(card) === 'QA Engineer').slice(0, 2).map((card) => card.id);
       const arranged = arrange({
         'development-p0': [dating],
-        'agency-row': ['Architect', 'Veteran', 'Diva', 'Engineer'].map(idOf),
+        'agency-row': ['Architect', 'Veteran', 'Fixer', 'Engineer'].map(idOf),
         'backlog-p0': [],
       }).getState();
       const state = putOn(relocate(arranged, qaEngineers, 'ops-team-p0', game!), [seniorPm], 'development-team-p0', dating, game!);
@@ -3748,10 +3782,10 @@ describe('Startup Simulator (designer language)', () => {
       ['Leadership Masterclass', 0, 'Junior QA Tester'], ['Leadership Masterclass', 1, 'QA Engineer'], ['Leadership Masterclass', 2, 'Sales Rep'],
       ['QA Certification', 1, 'QA Engineer'], ['Agile Workshop', 0, 'Junior PM'],
     ] as const)('plays its %s at t = %i on the %s the target rule picks, through the page’s view and without it (§20.A)', (name, t, target) => {
-      // The long runs spend their QA Certifications and Masterclasses on Juniors, which are nearly always there to take them, and no seat
-      // holds a Junior PM as an Agile Workshop comes (plan 5-2b's P8). Here the seat's bench holds a Junior QA Tester, a QA Engineer, a
-      // Sales Rep and a Junior PM: a Masterclass goes on the kind `t % 3` names, and a QA Certification or an Agile Workshop on the one
-      // target it fits.
+      // The long runs spend their QA Certifications and Masterclasses on Juniors, which are nearly always there to take them (a
+      // Masterclass reaches a QA Engineer once, at 4 players seed 4), and a seat seldom holds a Junior PM as an Agile Workshop comes
+      // (once, at 4 players seed 2; plan 5-2b's P8). Here the seat's bench holds a Junior QA Tester, a QA Engineer, a Sales Rep and a
+      // Junior PM: a Masterclass goes on the kind `t % 3` names, and a QA Certification or an Agile Workshop on the one target it fits.
       const seats = seatsFor(2);
       const start = setUp(2, 1);
       const S = startPlayerOf(start, seats);
@@ -3979,6 +4013,44 @@ describe('Startup Simulator (designer language)', () => {
       expect(runs[0].paid).toEqual([EXPERIENCED_PAID]);
       expect(runs[0].spent).toBe(1);
       expect(runs[1].log).toEqual(runs[0].log);
+    });
+
+    it('hires the agency row’s first Senior it can pay for to the ops team when it can’t go to a product, through the page’s view and without it (§13.A, ruling 20)', () => {
+      // The retuned long runs never make this hire (D3). Here t = 8, so the turn's third action, a = 2, is action 1 at place 2 with
+      // ⌊t / 9⌋ even, and the seat runs a To-Do List, which the Veteran doesn't attach to, with $13, no project and an empty bench.
+      const seats = seatsFor(2);
+      const veteran = idOf('Veteran');
+      const arranged = arrange({
+        'operations-p0': [idOf('To-Do List')], 'backlog-p0': [], 'development-p0': [], 'bench-p0': [],
+        'agency-row': ['Veteran', 'Architect', 'Engineer', 'Fixer'].map(idOf),
+      }).getState();
+      const state = setCounter(arranged, 'capital', 'p0', 13);
+      const logs = [false, true].map((throughView) => {
+        const { engine, runtime } = createEngine(game!, lib, 2, state);
+        playTurn(engine, 8, 'drafts', keepsTheRules(seats, runtime), (log) => log.some((move) => move.type === HIRE_AGENCY_TO_OPS), runtime,
+          throughView);
+        return engine.getLog();
+      });
+      expect(logs[0].map((move) => move.type)).toEqual([DRAFT_GROWTH, RECRUITS[2], HIRE_AGENCY_TO_OPS]);
+      expect(logs[0].at(-1)).toEqual({ type: HIRE_AGENCY_TO_OPS, by: 'p0', cardId: veteran });
+      expect(logs[1]).toEqual(logs[0]);
+    });
+
+    it('discards the bench’s first card at the bench cleanup once it ends its actions with more than 5 there, through the page’s view and without it (rulings 10 and 12)', () => {
+      // The retuned long runs never overflow a bench (D3). Here the bench holds 6 cards and the seat has no project, so at t = 2 it
+      // drafts its idea, recruits twice and ends its actions with 8 on the bench.
+      const seats = seatsFor(2);
+      const bench = ['Hacker', 'Architect', 'Veteran', 'Engineer', 'Fixer', 'HR Manager'].map(idOf);
+      const state = arrange({ 'bench-p0': bench, 'backlog-p0': [], 'development-p0': [] }).getState();
+      const logs = [false, true].map((throughView) => {
+        const { engine, runtime } = createEngine(game!, lib, 2, state);
+        playTurn(engine, 2, 'drafts', keepsTheRules(seats, runtime), (log) => log.some((move) => move.type === DISCARD_BENCH), runtime,
+          throughView);
+        return engine.getLog();
+      });
+      expect(logs[0].map((move) => move.type)).toEqual([DRAFT_GROWTH, RECRUITS[0], RECRUITS[1], END_ACTIONS, DISCARD_BENCH]);
+      expect(logs[0].at(-1)).toEqual({ type: DISCARD_BENCH, by: 'p0', cardId: bench[0] });
+      expect(logs[1]).toEqual(logs[0]);
     });
 
     it('hires the card a Layoff found onto its first product while it has one, through the page’s view and without it (§13.B, §20.B)', () => {
