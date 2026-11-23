@@ -16,6 +16,7 @@ import { LangRuntime } from '@/engine/core/lang/runtime';
 import type { ZoneRef } from '@/engine/core/lang/types';
 import { markTurnStarted, ROUND_KEY, ROUND_STEPS_KEY, roundStepsOf, START_PLAYER_KEY, startPlayerOf, TURN_OF_KEY } from '@/engine/core/lang/turns';
 import { HOLDER_KEY, relocate, zoneIdFor, zoneInfo } from '@/engine/core/lang/zones';
+import { ON_SEAT_KEY } from '@/engine/core/lang/zones';
 import { HIDDEN_FACE_KEY, deriveScene } from '@/engine/core/derive-scene';
 import type { GameState } from '@/engine/core/game-state';
 import { cardById, zoneCards } from '@/engine/core/lang/zone-index';
@@ -112,6 +113,9 @@ const RESEARCH_SEED = 'research the seed deck';
 const RESEARCH_GROWTH = 'research the growth deck';
 const END_ACTIONS = 'end their actions';
 const INVEST = "invest in a card in another player's equity";
+const INVEST_PLACING = "invest in a card from another player's equity to a card in another player's development or another player's operations";
+/** The three colours a Consultant is placed in, by its choice's option (§17.B.4). */
+const CONSULTANT_COLOURS: Record<string, string> = { Blue: 'blue consultant', Red: 'red consultant', QA: 'qa consultant' };
 // The buttons that pick a card: one for each zone a card is hired, drafted, kept or discarded from.
 const HIRE_AGENCY = 'hire a card from the agency row to their bench';
 const HIRE_MARKET = 'hire a card from the open job market to their bench';
@@ -194,6 +198,12 @@ const debuffZones = (seats: PlayerId[], by: PlayerId): string[] => {
   const at = seats.indexOf(by);
   const others = [...seats.slice(at + 1), ...seats.slice(0, at)];
   return [...others.map((seat) => zoneIdFor('development team', seat)), ...others.map((seat) => zoneIdFor('ops team', seat))];
+};
+/** Where a placement may go for `by`: every other seat's development and operations, in ontoCandidates' order, as `debuffZones` has it. */
+const foundersBoards = (seats: PlayerId[], by: PlayerId): string[] => {
+  const at = seats.indexOf(by);
+  const others = [...seats.slice(at + 1), ...seats.slice(0, at)];
+  return [...others.map((seat) => zoneIdFor('development', seat)), ...others.map((seat) => zoneIdFor('operations', seat))];
 };
 /** What a project's team makes once Toxic Personality's cube is off, and what each ops-team card adds to its owner's supplies (R1). */
 const MADE = ['blue made', 'red made', 'qa made'] as const;
@@ -1391,7 +1401,17 @@ function playTurn(
   const investing = (a: number): Move | null => {
     if ((t + a) % 7 !== 3) return null;
     const keeps = (card: CardState) => capital() - sharePriceOf(runtime, engine.getState(), founderOf(card)!) >= 2;
-    return pick(INVEST, equitiesFrom(runtime.seats, by), (row, pressing) => row.find((card) => pressing.allows(card) && keeps(card)));
+    const plain = pick(INVEST, equitiesFrom(runtime.seats, by), (row, pressing) => row.find((card) => pressing.allows(card) && keeps(card)));
+    if (plain === null || t % 2 !== 0) return plain;
+    // On an even t, it places the token on its founder's first product, in `foundersBoards` order, when the founder has one (§17.B.4).
+    const founder = founderOf(cardById(engine.getState(), plain.cardId as string)!)!;
+    const products = [...cards(zoneIdFor('development', founder)), ...cards(zoneIdFor('operations', founder))];
+    if (products.length === 0) return plain;
+    const onFounders: Onto = {
+      zoneId: foundersBoards(runtime.seats, by),
+      which: (targets, card) => targets.find((target) => [zoneIdFor('development', founderOf(card)!), zoneIdFor('operations', founderOf(card)!)].includes(target.zoneId)),
+    };
+    return pick(INVEST_PLACING, equitiesFrom(runtime.seats, by), (row) => row.find((card) => card.id === plain.cardId), onFounders);
   };
   /** The move the action numbered `action` makes, or null when it has nothing to pick (see above). */
   const boardAction = (action: number): Move | null => {
@@ -2364,9 +2384,9 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
             : move.type === PAY_SALARIES ? payrollOf(runtime, before, by)
               : [PLAY_TRAINING, PLAY_DEBUFF].includes(move.type) ? (runtime.workedValue(before, move.cardId as string, 'price') as number)
                 : move.type === PLAY_TO_PRODUCT ? techCrunchPrice(runtime, before, move.cardId as string, move.onto as string)
-                  : move.type === INVEST ? sharePriceOf(runtime, before, founderOf(card!)!) : 0;
+                  : [INVEST, INVEST_PLACING].includes(move.type) ? sharePriceOf(runtime, before, founderOf(card!)!) : 0;
     // An Invest pays its price to the token's Founder, and Venture Capital Rain adds $3 from the bank (§17.A, §20.D 1).
-    const investedIn = move.type === INVEST ? founderOf(card!) : undefined;
+    const investedIn = [INVEST, INVEST_PLACING].includes(move.type) ? founderOf(card!) : undefined;
     const proceeds = (seat: PlayerId) => (seat === investedIn ? paid + (eventOf(before) === 'Venture Capital Rain' ? 3 : 0) : 0);
     // A Founder's Income also pays every other seat the Founder's dividend for each of their tokens it holds, from the bank (§9.B).
     const dividendsTo = (seat: PlayerId) => (income === null || seat === income ? 0
@@ -2583,10 +2603,24 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       const which = () => `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
       const holder = c.data?.[HOLDER_KEY];
       const holderZone = typeof holder === 'string' ? cardById(after, holder)?.zoneId : undefined;
-      if (holder !== undefined && (!holdersOf.has(c.zoneId) || holderZone !== holdersOf.get(c.zoneId))) {
+      // A Consultant (R1): a card in a portfolio that sits on a card names its Founder F, sits on a card in F's development or operations,
+      // keeps F as the seat it was placed in, and is never on its own Investor's product (§17.B.4).
+      const investor = seats.find((seat) => c.zoneId === zoneIdFor('portfolio', seat));
+      if (investor !== undefined && holder !== undefined) {
+        const founder = founderOf(c);
+        const onFounders = founder !== undefined && [zoneIdFor('development', founder), zoneIdFor('operations', founder)].includes(holderZone!);
+        if (!onFounders || c.data?.[ON_SEAT_KEY] !== founder || founder === investor) {
+          board.push(`${which()} is on ${JSON.stringify(holder)}, in ${holderZone}, placed in ${JSON.stringify(c.data?.[ON_SEAT_KEY])}`);
+        }
+        const colours = Object.values(CONSULTANT_COLOURS).filter((flag) => c.data?.[flag] === true);
+        if (colours.length !== 1) board.push(`${which()} sits on ${JSON.stringify(holder)} with the colours ${JSON.stringify(colours)}`);
+      } else if (founderOf(c) !== undefined && Object.values(CONSULTANT_COLOURS).some((flag) => c.data?.[flag] === true)) {
+        // An unplaced token keeps no colour: the Pivot's return clears it (7-1's R8), and the page labels no stale one (7-3's G1).
+        board.push(`${which()} sits on no card with a colour`);
+      } else if (holder !== undefined && (!holdersOf.has(c.zoneId) || holderZone !== holdersOf.get(c.zoneId))) {
         board.push(`${which()} is on ${JSON.stringify(holder)}, in ${holderZone}`);
       }
-      if (holder !== undefined && !projectsOf.has(c.zoneId) && !runtime.workedFlag(after, c.id, 'attaching')) {
+      if (holder !== undefined && investor === undefined && !projectsOf.has(c.zoneId) && !runtime.workedFlag(after, c.id, 'attaching')) {
         board.push(`${which()} is on ${JSON.stringify(holder)} but is not attaching`);
       }
       if (holder === undefined && projectsOf.has(c.zoneId)) board.push(`${which()} is on no card`);
@@ -2620,6 +2654,18 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       const was = cardById(before, c.id);
       const rose = ['blue', 'red'].some((color) => cubesOn(c, `${color} cubes`) > (was === undefined ? 0 : cubesOn(was, `${color} cubes`)));
       if (rose && runtime.workedFlag(atGenerate(), c.id, 'stalled')) board.push(`${which()} gained cubes while it was stalled`);
+    }
+    // An Equity card's place on a card changes only by the placing Invest of it, or by the Pivot of the card it sat on, which leaves it in
+    // the same portfolio on no card; a Launch leaves every Equity card on the launched product (Review Focus 1, R1, §17.B.4).
+    for (const c of after.cards) {
+      if (founderOf(c) === undefined) continue;
+      const was = cardById(before, c.id);
+      const on = c.data?.[HOLDER_KEY];
+      const wasOn = was?.data?.[HOLDER_KEY];
+      if (on === wasOn) continue;
+      const placed = move.type === INVEST_PLACING && move.cardId === c.id && on === move.onto;
+      const returned = move.type === PIVOT && wasOn === move.cardId && on === undefined && c.zoneId === was?.zoneId;
+      if (!placed && !returned) board.push(`${c.id} (${nameOf(c)}) in ${c.zoneId} went from ${JSON.stringify(wasOn)} to ${JSON.stringify(on)}`);
     }
     noneOf(board, () => `the Board ${at}`);
     // The Diva's Ego keeps her where she works: no reassign the rules take moves her (§6, §20.B.1).
@@ -2843,7 +2889,10 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
         ? cardsOn(after, c.id).find((on) => tokenOn(on, 'toxic personality') > 0) : undefined;
       if (toxic !== undefined) {
         const read = (names: readonly string[]) => names.map((name) => runtime.workedValue(after, c.id, name) as number);
-        toxicity.push(...toxicCube(`${c.id} (${nameOf(c)})`, read(TEAM), read(MADE), toxic.data?.onboarding !== true));
+        // A QA Consultant on it adds its Bug removed to what it makes, outside the team, and Toxic Personality never takes it (§17.B.4).
+        const consulted = (runtime.workedValue(after, c.id, 'consultant qa') as number | null) ?? 0;
+        const made = read(MADE).map((value, i) => (MADE[i] === 'qa made' ? value - consulted : value));
+        toxicity.push(...toxicCube(`${c.id} (${nameOf(c)})`, read(TEAM), made, toxic.data?.onboarding !== true));
       }
     }
     // An ops team's supplies likewise, from the Blue and Red bandwidth and the QA output its cards give, which is all a supply adds up
@@ -2854,7 +2903,11 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       if (toxic === undefined) continue;
       const given = ['blue bandwidth', 'red bandwidth', 'qa output']
         .map((name) => team.reduce((total, on) => total + ((runtime.workedValue(after, on.id, name) as number | null) ?? 0), 0));
-      const supplies = ['blue supply', 'red supply', 'qa supply'].map((name) => runtime.playerValue(after, seat, name));
+      // The Consultants on its products add to its supplies too, outside the team, and Toxic Personality never takes their cube (§17.B.4).
+      const products = zoneCards(after, zoneIdFor('operations', seat));
+      const consulted = ['consultant blue', 'consultant red', 'consultant qa']
+        .map((name) => products.reduce((total, on) => total + ((runtime.workedValue(after, on.id, name) as number | null) ?? 0), 0));
+      const supplies = ['blue supply', 'red supply', 'qa supply'].map((name, i) => runtime.playerValue(after, seat, name) - consulted[i]);
       toxicity.push(...toxicCube(`${seat}'s ops team`, given, supplies, toxic.data?.onboarding !== true));
     }
     noneOf(toxicity, () => `Toxic Personality and Burnout ${at}`);
@@ -3132,7 +3185,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(321);
+    expect(results).toHaveLength(329);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -3182,6 +3235,8 @@ describe('Startup Simulator (designer language)', () => {
     // (§9.A, §20.G). Their active tags are the different Tags of their products online, which Platform Power reads (§20.G, ruling 5).
     // A card's tier number, which a player's top tier reads for the Share Price (§17.A).
     expect(worked['tier number']).toMatchObject({ kind: 'number', refines: false });
+    // A product's Consultants of each colour, the other players' cards on it, which add to its output and its owner's supplies (§17.B.4).
+    for (const name of ['consultant blue', 'consultant red', 'consultant qa']) expect(worked[name], name).toMatchObject({ kind: 'number', refines: false });
     expect(Object.keys(game!.playerValues!)).toEqual([
       'blue supply', 'red supply', 'blue demand', 'red demand', 'blue load', 'red load', 'qa supply', 'bug load', 'qa spent', 'bugged products',
       'operational revenue', 'top tier', 'share price', 'dividend', 'active tags',
@@ -5511,13 +5566,13 @@ describe('what the page shows of slice 5', () => {
 });
 
 describe('Review Focus: a reshuffle no seat can follow (plan 6-1, Task 6)', () => {
-  it('leaves no id a seat saw face up in the strategy discard in the strategy deck, a Strategy Hand or a Brainstorm, at 2 players seed 4', () => {
+  it('leaves no id a seat saw face up in the strategy discard in the strategy deck, a Strategy Hand or a Brainstorm, at 2 players seed 2', () => {
     const seats = seatsFor(2);
     const def = tableDefFor(game!, seats);
     const hidden = new Set(['strategy-deck', ...seats.flatMap((seat) => [zoneIdFor('strategy hand', seat), zoneIdFor('brainstorm', seat)])]);
     let reshuffles = 0;
     let checked = 0;
-    playGame(2, 4, (before, move, after) => {
+    playGame(2, 2, (before, move, after) => {
       if (![BRAINSTORM, BRAINSTORM_FLUSHING].includes(move.type)) return;
       // A Brainstorm leaves the discard empty only when it shuffled the discard, and the cards it flushed there, into the deck (§15.C).
       const flushed = (move.cardIds ?? []) as string[];

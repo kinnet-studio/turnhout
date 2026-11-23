@@ -161,12 +161,12 @@ describe('DesignerPage', () => {
   });
 
   // Running every example takes 4 to 4.5 s alone, near the 5 s default, so it has room to run beside the other files (plan 5-2b's P15).
-  it('loads Startup Simulator with no problems, all 321 examples passing, 2 to 5 players and Play on', () => {
+  it('loads Startup Simulator with no problems, all 329 examples passing, 2 to 5 players and Play on', () => {
     render(<DesignerPage />);
     loadSample('Startup Simulator');
     expect(rules().value).toBe(SAMPLES.find((s) => s.name === 'Startup Simulator')!.text);
     expect(screen.getByText('No problems found.')).toBeTruthy();
-    expect(screen.getByText('321 of 321 examples pass')).toBeTruthy();
+    expect(screen.getByText('329 of 329 examples pass')).toBeTruthy();
     const select = screen.getByLabelText('Players') as HTMLSelectElement;
     expect([...select.options].map((o) => o.value)).toEqual(['2', '3', '4', '5']);
     expect(playButton().disabled).toBe(false);
