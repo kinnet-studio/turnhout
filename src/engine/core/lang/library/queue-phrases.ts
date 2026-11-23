@@ -13,6 +13,12 @@ import { describeZone, soleZone, thePickedCards } from './support';
 
 // Rows that keep their order and queues whose bottom card is the oldest: a zone's cards are in slot order, the first at the bottom.
 
+/**
+ * The test of what a shared zone holds. The view reads it as it reads the card itself when everyone sees that zone, so it is named here,
+ * where it is registered.
+ */
+export const CENTRE_HAS = '{sharedzone} has {card}';
+
 /** Whether some card in the shared zone is that kind of card. */
 const sharedZoneHas: ConditionFn = (env, args) => {
   const [zone, match] = args as [string, CardMatch];
@@ -132,7 +138,7 @@ const goesIntoBottomFifth: EffectFn = (env, args) => {
  */
 export function registerQueuePhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
-    .condition('{sharedzone} has {card}', sharedZoneHas)
+    .condition(CENTRE_HAS, sharedZoneHas)
     .effect('move the bottom card of {zone} to {zone}', moveBottom)
     .effect('move {card} from {zone} to {zone}', moveNamed)
     .effect('deal up to {int} cards from {zone} to {zone}', dealUpTo)

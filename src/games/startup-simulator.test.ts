@@ -26,6 +26,7 @@ import { changeCard } from '@/engine/core/lang/card-facts';
 import { dimFlags, gaugePairs, shownFlags, shownPlayerValues, standIns } from '@/engine/core/lang/worked-view';
 import { holderFlags, pressFlags } from '@/engine/core/lang/worked-view';
 import { parseTextFaceKey } from '@/engine/core/lang/cards';
+import { inPlayZones } from '@/engine/core/lang/worked-view';
 
 // The long runs check every rule after every move, thousands of checks a game, and an `expect` costs vitest far more to build than the
 // check costs to make. So the checks that run after every move make theirs first and ask vitest only when it fails, with the same matcher
@@ -5050,4 +5051,17 @@ describe('Review Focus: a reshuffle no seat can follow (plan 6-1, Task 6)', () =
     expect(reshuffles).toBe(1);
     expect(checked).toBeGreaterThan(0);
   }, 120_000);
+});
+
+describe('what the view reads in the centre', () => {
+  it('reads the Event in play as every seat sees it, labels no flag that tests it, and names no new press flag (plan 6-3, Task 1)', () => {
+    // Run ahead of plan 6-2b's Task 2 (6-3's G1), no worked value reads the Event in play yet; 6-2b's Task 2 makes this ['event in play'].
+    expect(inPlayZones(game!)).toEqual([]);
+    expect(pressFlags(game!)).toEqual(['managing', 'agile', 'egotistic', 'coaching', 'pending badge', 'attaching']);
+    expect(holderFlags(game!)).toEqual(['pending badge']);
+    const eventFlags = ['bubbly', 'legacy', 'open source boosted', 'hackathon boosted', 'server crashed', 'logjammed', 'chip short',
+      'course priced', 'show priced', 'blue covered', 'crunching blue', 'crunching red', 'crunched', 'acting once', 'angel funded',
+      'past tier 1', 'taxed'];
+    expect(shownFlags(game!).filter((flag) => eventFlags.includes(flag))).toEqual([]);
+  });
 });

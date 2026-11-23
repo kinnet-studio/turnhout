@@ -29,6 +29,9 @@ import COLOR_MATCH from '@/games/color-match.rules?raw';
 import HEARTS from '@/games/hearts.rules?raw';
 import RENT_DAY from '@/games/rent-day.rules?raw';
 import VENOM from '@/games/venom.rules?raw';
+import { inPlayZones } from './worked-view';
+import { GALE_GAME } from './testing';
+import { CENTRE_HAS, registerQueuePhrases } from './library/queue-phrases';
 
 const lib = createDefaultLibrary();
 
@@ -701,5 +704,90 @@ describe('Review Focus: a player\'s total read through a flag that asks what the
   });
   it('(guard) leaves the flag itself off every face, as a flag that asks what the owner has always is', () => {
     expect(shownFlags(compiled(rival('idle')))).not.toContain('rival');
+  });
+});
+
+describe('a card in the centre', () => {
+  const WINDY = '  Only if the scrap has a Vase.';
+  const gale = compiled(GALE_GAME);
+  /** GALE_GAME whose windy reads the pile, which no one sees. */
+  const hidden = compiled(GALE_GAME.replace(WINDY, '  Only if the pile has a Vase.'));
+  const charmFlags = shownFlags(compiled(CHARM_GAME));
+
+  it('builds the fixture: each replace finds its text', () => {
+    expect(GALE_GAME).toContain("  A heavy card's bonus goes up by 2.");
+    expect(GALE_GAME).toContain(WINDY);
+    expect(Object.keys(hidden.worked!)).toContain('windy');
+  });
+
+  it('shows what reads a shared zone everyone sees, and never labels a flag that tests it itself', () => {
+    expect(standIns(gale)).toEqual({ 'red need': 'red left' });
+    expect(shownPlayerValues(gale)).toEqual(['red force', 'red load']);
+    // Gusty and windy test the scrap themselves, so neither is labelled; heavy reads it only through red left.
+    expect(charmFlags).toEqual(['charmed']);
+    expect(shownFlags(gale)).toEqual([...charmFlags, 'heavy']);
+    expect(inPlayZones(gale)).toEqual(['scrap']);
+  });
+
+  it('Review Focus: shows nothing read through a centre no one sees', () => {
+    expect(standIns(hidden)).toEqual({});
+    expect(shownPlayerValues(hidden)).toEqual(['red force']);
+    expect(shownFlags(hidden)).toEqual(charmFlags);
+    expect(inPlayZones(hidden)).toEqual(['scrap']);
+  });
+
+  describe('the view', () => {
+    function arranged(arrange: (state: GameState, ids: (name: string) => string[]) => GameState) {
+      const start = createEngine(gale, lib, 2, initialState(gale, 1)).engine.getState();
+      const ids = (name: string) => start.cards.filter((card) => card.data?.name === name).map((card) => card.id);
+      const [[vase, vase2], [potter]] = [ids('Vase'), ids('Potter')];
+      let state = relocate(start, [vase], 'workshop-p0', gale);
+      state = putOn(state, [potter], 'crew-p0', vase, gale);
+      state = relocate(state, [vase2], 'scrap', gale);
+      const { engine, runtime } = createEngine(gale, lib, 2, arrange(state, ids));
+      return { vase, potter, view: (seat: string) => seatExtras(engine, runtime, engine.getState(), seat) };
+    }
+
+    it('works a stand-in, a flag and the values about each player out through the card in the scrap, for every seat', () => {
+      const { vase, view } = arranged((state) => state);
+      for (const seat of ['p0', 'p1']) {
+        const seen = view(seat);
+        expect(seen.worked![vase].columns['red need'], seat).toBe(3);
+        expect(seen.worked![vase].flags, seat).toContain('heavy');
+        expect(seen.playerValues, seat).toEqual({ p0: { 'red force': 1, 'red load': 3 }, p1: { 'red force': 0, 'red load': 0 } });
+      }
+      const piled = arranged((state, ids) => relocate(state, [ids('Vase')[1]], 'pile', gale));
+      for (const seat of ['p0', 'p1']) {
+        const seen = piled.view(seat);
+        expect(seen.worked![piled.vase].columns['red need'], seat).toBe(2);
+        expect(seen.worked![piled.vase].flags, seat).not.toContain('heavy');
+        expect(seen.playerValues!.p0['red load'], seat).toBe(2);
+      }
+      const gusty = arranged((state, ids) => relocate(state, [ids('Statue')[0]], 'scrap', gale));
+      for (const seat of ['p0', 'p1']) {
+        const seen = gusty.view(seat);
+        expect(seen.playerValues!.p0['red force'], seat).toBe(0);
+        expect(Object.keys(seen.worked ?? {}), seat).not.toContain(gusty.potter);
+      }
+    });
+  });
+
+  it('counts the conditions the queue phrases register: a new one there is judged here first', () => {
+    const spy = vi.spyOn(PhraseLibrary.prototype, 'condition');
+    try {
+      registerQueuePhrases(new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES]));
+      expect(spy.mock.calls.map(([pattern]) => pattern)).toEqual([CENTRE_HAS]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('(guard) reads no centre in the four games, the crew game and the force game', () => {
+    for (const text of [HEARTS, COLOR_MATCH, VENOM, RENT_DAY, CREW_GAME, FORCE_GAME]) {
+      const game = compiled(text);
+      expect(shownFlags(game)).toEqual([]);
+      expect(standIns(game)).toEqual({});
+      expect(inPlayZones(game)).toEqual([]);
+    }
   });
 });

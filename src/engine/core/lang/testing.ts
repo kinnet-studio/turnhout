@@ -919,3 +919,17 @@ export const OMEN_GAME = LEVY_GAME
   .replace('    Only if they have at least 1 move.\n    Then:\n      They spend 1 move.\n  A player may stop.',
     '    Only if they have at least 1 move.\n    Only if they have at least the fee in coins.\n    Then:\n      They spend 1 move.\n'
     + '      They pay the fee.\n  A player may stop.');
+
+/**
+ * CHARM_GAME with FORCE_GAME's two values about each player, where a job's red left is its red need and 1 more while a Vase lies in the
+ * scrap (windy), and a job whose red left is 3 is heavy and gets 2 more bonus.
+ */
+export const GALE_GAME = [
+  CHARM_GAME.replace("  A charmed card's bonus goes up by its charms.",
+    "  A charmed card's bonus goes up by its charms.\n  A heavy card's bonus goes up by 2."), '',
+  'Red force:', "  A player's red force is the total red work of the cards in their crew.", '',
+  'Red load:', "  A player's red load is the total red left of the cards in their workshop.", '',
+  'Red left:', "  A card's red left is its red need.", "  A windy card's red left goes up by 1.", '',
+  'Windy:', '  Only if the scrap has a Vase.', '',
+  'Heavy:', '  Only if its red left is 3.',
+].join('\n');

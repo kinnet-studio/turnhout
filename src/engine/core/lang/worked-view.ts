@@ -18,9 +18,10 @@ import { FROM_CARDS_TOTAL, GOES_UP_BY_TOTAL } from './library/total-phrases';
 import { FROM_CARDS_COUNT } from './library/total-phrases';
 import { IT_IS_FLAGGED } from './library/fact-phrases';
 import { OWNER_HAS_PHRASES } from './library/compare-phrases';
+import { CENTRE_HAS } from './library/queue-phrases';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
-import type { CardFilter, CardGroup, CompiledGame, PhraseRef, ZoneRef } from './types';
+import type { CardFilter, CardGroup, CompiledGame, PhraseRef, WorkedValue, ZoneRef } from './types';
 
 /**
  * The phrases about the card a value is worked out for and the cards on it: what kind of card it is, its own numbers and flags, its zone
@@ -83,22 +84,32 @@ function ownerSeenNames(game: CompiledGame, ref: PhraseRef): string[] | null {
 }
 
 /**
+ * Whether a line tests what a shared zone everyone can see holds (`CENTRE_HAS`): every seat sees that card as surely as the card itself,
+ * so with `readsOnlyCards`' `centre` it reads no name and counts as read. A zone some seat can't see (a deck) is never read so.
+ */
+const readsSeenCentre = (game: CompiledGame, ref: PhraseRef): boolean => ref.kind === 'condition' && ref.phrase === CENTRE_HAS
+  && game.zones.some((zone) => zone.name === ref.args[0] && !zone.perPlayer && zone.visibility === 'public');
+
+/**
  * Whether every line of the value `name` reads only the card and the cards on it, and so does every line of each value they read, all the
  * way down. `seen` holds the values looked at already: one met again is being looked at, and adds no line of its own. With `holder`, a
  * line that reads the card it sits on (`HOLDER_PHRASES`) counts as read too, at every depth; it names no value, as it reads that card's
  * face alone. With `owner`, so does a line that asks what its owner has in a zone everyone sees (`ownerSeenNames`), at every depth, when
  * each value its clause tests reads only cards too. Only a total about a player asks that (`readsTheCardAlone`): the flags and numbers a
- * face shows keep to the card, the cards on it and the card it sits on.
+ * face shows keep to the card, the cards on it and the card it sits on. With `centre`, a line that tests what a shared zone everyone sees
+ * holds (`readsSeenCentre`) counts as read too, at every depth.
  */
-function readsOnlyCards(game: CompiledGame, name: string, seen = new Set<string>(), holder = false, owner = false): boolean {
+function readsOnlyCards(game: CompiledGame, name: string, seen = new Set<string>(), holder = false, owner = false, centre = false): boolean {
   if (seen.has(name)) return true;
   seen.add(name);
   const value = game.worked![name];
   const refs = value.kind === 'number' ? value.refs : value.conditions.flatMap((group) => group.refs);
   return refs.every((ref) => {
     if (holder && ref.kind === 'condition' && holderPhrases.includes(ref.phrase)) return true;
+    if (centre && readsSeenCentre(game, ref)) return true;
     const names = cardOnlyNames(game, ref) ?? (owner ? ownerSeenNames(game, ref) : null);
-    return names !== null && names.filter((read) => isWorked(game, read)).every((read) => readsOnlyCards(game, read, seen, holder, owner));
+    return names !== null && names.filter((read) => isWorked(game, read))
+      .every((read) => readsOnlyCards(game, read, seen, holder, owner, centre));
   });
 }
 
@@ -113,7 +124,7 @@ export function standIns(game: CompiledGame): { [column: string]: string } {
     const first = value.kind === 'number' ? value.refs[0] : undefined;
     if (first?.phrase !== FROM_COLUMN) continue;
     const column = first.args[1] as string;
-    if (!Object.hasOwn(found, column) && readsOnlyCards(game, name)) found[column] = name;
+    if (!Object.hasOwn(found, column) && readsOnlyCards(game, name, new Set(), false, false, true)) found[column] = name;
   }
   return found;
 }
@@ -130,8 +141,22 @@ export function shownFlags(game: CompiledGame): string[] {
     Object.values(worked).flatMap((value) => (value.kind === 'number' ? value.refs : []))
       .filter((ref) => flagged.includes(ref.phrase)).map((ref) => ref.args[0] as string),
   );
-  return Object.entries(worked).filter(([name, value]) => value.kind === 'flag' && turnedOn.has(name) && readsOnlyCards(game, name))
+  // A flag that tests the centre itself holds for every card alike, so the card there says it once and no face is labelled with it.
+  const testsCentre = (value: WorkedValue) => value.kind === 'flag' && value.conditions.some((group) => group.refs.some((ref) => ref.phrase === CENTRE_HAS));
+  return Object.entries(worked).filter(([name, value]) => value.kind === 'flag' && turnedOn.has(name)
+    && readsOnlyCards(game, name, new Set(), false, false, true) && !testsCentre(value))
     .map(([name]) => name);
+}
+
+/**
+ * The shared zones everyone can see that a line of a worked value or flag reads with `CENTRE_HAS`, in Table order: the cards there change
+ * what the rules work out for every card, so the page writes them out.
+ */
+export function inPlayZones(game: CompiledGame): string[] {
+  const read = new Set(Object.values(game.worked ?? {})
+    .flatMap((value) => (value.kind === 'number' ? value.refs : value.conditions.flatMap((group) => group.refs)))
+    .filter((ref) => readsSeenCentre(game, ref)).map((ref) => ref.args[0] as string));
+  return game.zones.filter((zone) => read.has(zone.name) && !zone.perPlayer).map((zone) => zone.name);
 }
 
 /**
@@ -196,7 +221,7 @@ function everyoneSees(game: CompiledGame, zone: ZoneRef): boolean {
  * seat sees what their owners have there, so each may know the total for every player.
  */
 const readsTheCardAlone = (game: CompiledGame, name: string): boolean =>
-  !isWorked(game, name) || readsOnlyCards(game, name, new Set(), false, true);
+  !isWorked(game, name) || readsOnlyCards(game, name, new Set(), false, true, true);
 
 /**
  * Whether a line of a value about a player adds up, over zones everyone sees, a number read from each card alone, of the cards that pass
