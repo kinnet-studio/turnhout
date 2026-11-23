@@ -412,14 +412,31 @@ function valuesResult(tokens: string[], vocab: Vocab): Parsed {
   return { value: Object.fromEntries([...found].map(([attribute, { value }]) => [attribute, value])) };
 }
 
+/** “ whose maker is p0” after a card: the player a card names, when the game has cards that name one. */
+const namingSource = (vocab: Vocab): string =>
+  (factNames('card', 'player')(vocab).length === 0 ? '' : `(?: whose ${CARDPLAYER.source(vocab)} is p\\d+)?`);
+/** group 1 = the card; 2 = the fact naming a player; 3 = the seat */
+const NAMING = /^(.+) whose (.+) is (p\d+)$/i;
+
 function cardSource(vocab: Vocab): string {
   const forms: string[] = [];
   if (vocab.standardDeck) forms.push(STANDARD_SOURCE);
-  if (vocab.cardValues.length > 0) forms.push(`(?:a|an|the) ${valuesSource(vocab)}`);
+  if (vocab.cardValues.length > 0) forms.push(`(?:a|an|the) ${valuesSource(vocab)}${namingSource(vocab)}`);
   return forms.length === 0 ? NEVER : `(?:${forms.join('|')})`;
 }
 
 function resolveCard(text: string, vocab: Vocab): Parsed {
+  const naming = factNames('card', 'player')(vocab).length > 0 ? NAMING.exec(text) : null;
+  if (naming !== null) {
+    const [, card, fact, seat] = naming;
+    const named = parseParam('cardplayer', fact, vocab) ?? unknownText(fact);
+    if ('error' in named) return named;
+    const player = seatResult(seat, vocab);
+    if ('error' in player) return player;
+    const found = resolveCard(card, vocab);
+    if ('error' in found) return found;
+    return { value: { ...(found.value as { [k: string]: Json }), [named.value as string]: player.value } };
+  }
   const standard = vocab.standardDeck ? STANDARD_CARD.exec(canon(text)) : null;
   if (standard) return { value: { suit: STANDARD_SUITS[standard[2]], rank: STANDARD_RANKS[standard[1]] } };
   const article = /^(?:a|an|the) (.+)$/i.exec(text);
@@ -543,7 +560,9 @@ const NOT_WRITTEN = `(?!more than |the card${APOSTROPHE}s |its )`;
  */
 const cardFilterSource = (vocab: Vocab): string => {
   const attribute = ATTRIBUTE.source(vocab);
-  return `${attribute} (?:(?:is|are) more than -?\\d+|is the card${APOSTROPHE}s ${attribute}|is its ${attribute}|is ${NOT_WRITTEN}${ANY_TEXT})`;
+  const written = `${attribute} (?:(?:is|are) more than -?\\d+|is the card${APOSTROPHE}s ${attribute}|is its ${attribute}|is ${NOT_WRITTEN}${ANY_TEXT})`;
+  // A fact naming a player is tested against them, or the target card's owner.
+  return `(?:${written}|${CARDPLAYER.source(vocab)} is (?:them|the target card${APOSTROPHE}s owner))`;
 };
 
 /** group 1 = the attribute tested; then one of: 2 = the number to be more than, 3 = an attribute of the card, 4 = one of it, 5 = a value */
@@ -566,7 +585,20 @@ function writtenValue(attribute: string, text: string, vocab: Vocab): Parsed {
   return found ? { value: found.value } : { error: `No card has “${text}” as its ${attribute}.` };
 }
 
+/** group 1 = the fact naming a player; 2 = whom it is compared with */
+const PLAYER_TEST = new RegExp(`^(.+) is (them|the target card${APOSTROPHE}s owner)$`, 'i');
+const playerFacts = (vocab: Vocab): string[] => factNames('card', 'player')(vocab);
+
 function resolveCardFilter(text: string, vocab: Vocab): Parsed {
+  const player = PLAYER_TEST.exec(text);
+  if (player !== null) {
+    const fact = playerFacts(vocab).find((name) => canon(name) === canon(player[1]));
+    if (fact !== undefined) return { value: { names: fact, player: canon(player[2]) === 'them' ? 'them' : 'target owner' } };
+    // A test of whom a card names, by a fact no card has: told as a fact naming a player, not as a value.
+    if (playerFacts(vocab).length > 0 && !vocab.attributes.some((a) => canon(a) === canon(player[1]))) {
+      return { error: missing('card fact', player[1], closestOrFirst(player[1], playerFacts(vocab))).message };
+    }
+  }
   const found = filterParts(vocab).exec(text);
   if (!found) return unknownText(text);
   const [, tested, above, theCards, its, written] = found;
@@ -582,6 +614,8 @@ function resolveCardFilter(text: string, vocab: Vocab): Parsed {
 
 /** “mod is grumpy” or “mark is the card's wnats”: an attribute on either side that the game never defined, as the attribute type says it. */
 function misnamedCardFilter(text: string, vocab: Vocab): NameProblem | null {
+  const player = PLAYER_TEST.exec(text);
+  if (player !== null && playerFacts(vocab).length > 0) return misnamedParam('cardplayer', player[1], vocab);
   const found = LOOSE_FILTER.exec(text);
   if (!found) return null;
   const [, tested, other = found[3]] = found;
@@ -859,6 +893,8 @@ const factNames = (on: FactSpec['on'], kind: FactSpec['kind']) => (vocab: Vocab)
 const SPACEFLAG = declaredWord('spaceflag', '[space fact]', 'space fact', factNames('space', 'flag'), false);
 const SPACENUMBER = declaredWord('spacenumber', '[space fact]', 'space fact', factNames('space', 'number'), true);
 const CARDFLAG = declaredWord('cardflag', '[card fact]', 'card fact', factNames('card', 'flag'), false);
+/** A fact on cards that names a player (“Cards can name a maker.”): its value is a seat. */
+const CARDPLAYER = declaredWord('cardplayer', '[card player]', 'card fact', factNames('card', 'player'), false);
 const PLAYERFLAG = declaredWord('playerflag', '[player fact]', 'player fact', factNames('player', 'flag'), false);
 const PLAYERNUMBER = declaredWord('playernumber', '[player fact]', 'player fact', factNames('player', 'number'), true);
 const GAMENUMBER = declaredWord('gamenumber', '[game number]', 'game number', factNames('game', 'number'), false);
@@ -996,7 +1032,7 @@ const DONE: ParamType = {
 export const VOCAB_TYPES: ParamType[] = [
   ZONE, ZONES, PERZONE, SHAREDZONE, PLAYER, PLAYERS, PHASE, MOVE, ATTRIBUTE, CARD, CARDLIST, CARDCLASS, SPACE, SPACECLASS, SPACEATTR, COUNTER, ACTION,
   TARGETACTION, AMOUNTACTION, PICKACTION, CARDACTION, DONE, SPACEKIND, SPACEFLAG, SPACENUMBER, CARDFLAG, PLAYERFLAG, PLAYERNUMBER, GAMENUMBER, BANKED,
-  HOLDER, CARDGROUP, CARDFILTER, PLAYERVALUE, CARDCLAUSE,
+  HOLDER, CARDGROUP, CARDFILTER, PLAYERVALUE, CARDCLAUSE, CARDPLAYER,
 ];
 
 const TYPES_BY_NAME = new Map(VOCAB_TYPES.map((t) => [t.name, t] as const));

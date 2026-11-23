@@ -44,8 +44,24 @@ const cardsOnCardsArePublic = (game: CompiledGame): boolean => game.zones.every(
 const cardsOnIt: readonly string[] = CARDS_ON_IT;
 
 /** The names a test reads a card by: the flag of a flag test, else the number or value it tests and the one it compares that with. */
-const testNames = (filter: CardFilter): string[] =>
-  ('flag' in filter ? [filter.flag] : [filter.attribute, ...('sameAs' in filter ? [filter.sameAs.attribute] : [])]);
+const testNames = (filter: CardFilter): string[] => {
+  if ('flag' in filter) return [filter.flag];
+  // A test of the player a card names reads a player, not the card alone: `cardOnlyNames` refuses it before it gets here.
+  if ('names' in filter) return [filter.names];
+  return [filter.attribute, ...('sameAs' in filter ? [filter.sameAs.attribute] : [])];
+};
+/** Whether a test reads a player (the player a card names), so the line reads more than the card. */
+const readsAPlayer = (filter: CardFilter): boolean => 'names' in filter;
+
+/** Every card test among a line's args: a lone test, a clause's and a group's. */
+function filtersOf(ref: PhraseRef): CardFilter[] {
+  return [...ref.phrase.matchAll(PARAM)].flatMap(([, type], i) => {
+    if (type === 'cardfilter') return [ref.args[i] as CardFilter];
+    if (type === 'cardclause') return ref.args[i] as CardFilter[];
+    if (type === 'cardgroup') return (ref.args[i] as CardGroup).whose ?? [];
+    return [];
+  });
+}
 
 /**
  * The names a line reads a card's numbers and flags by, each of which may be a value worked out in turn, when the line reads only the card
@@ -61,6 +77,8 @@ function cardOnlyNames(game: CompiledGame, ref: PhraseRef): string[] | null {
   if (!total && !flagged && (ref.kind === 'lang' || CARD_ONLY.get(ref.kind, ref.phrase) === undefined)) return null;
   if ((total || cardsOnIt.includes(ref.phrase)) && !cardsOnCardsArePublic(game)) return null;
   const names: string[] = [];
+  // A card test of a player reads beyond the card (fail closed).
+  if (filtersOf(ref).some(readsAPlayer)) return null;
   for (const [i, [, type]] of [...ref.phrase.matchAll(PARAM)].entries()) {
     if (type === 'attribute' || type === 'cardflag') names.push(ref.args[i] as string);
     // No card-only phrase takes a clause yet; one that does has its tests traced like a group's.
@@ -249,7 +267,7 @@ function totalSeenByAll(game: CompiledGame, ref: PhraseRef): boolean {
   const group = ref.args[2] as CardGroup;
   if (group.kind !== 'in' || !group.zones.every((zone) => everyoneSees(game, zone))) return false;
   return readsTheCardAlone(game, ref.args[1] as string) && (group.whose ?? []).every((filter) =>
-    !('sameAs' in filter) && readsTheCardAlone(game, 'flag' in filter ? filter.flag : filter.attribute));
+    !('sameAs' in filter) && !('names' in filter) && readsTheCardAlone(game, 'flag' in filter ? filter.flag : filter.attribute));
 }
 
 /**

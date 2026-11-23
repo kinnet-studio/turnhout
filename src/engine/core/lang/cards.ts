@@ -5,6 +5,7 @@ import type { Json } from '../table-def';
 import { RuleError } from './diagnostics';
 import type { CardIdentity, CardMatch, CardSetSpec, CardTable, CompiledGame } from './types';
 import { BOX_ZONE, relocate, zoneIdFor } from './zones';
+import { changeCard } from './card-facts';
 import { pickName } from './card-facts';
 import { zoneNameOf } from './zones';
 import { holderIdOf } from './attach';
@@ -192,15 +193,19 @@ function nextCardNumber(state: GameState, game: CompiledGame): number {
  * other sets dealt, so it belongs to no deck (see `deckOf`).
  */
 export function makeCard(state: GameState, game: CompiledGame, match: CardMatch, zoneId: string): { id: string; state: GameState } | null {
+  // A fact naming a player is no attribute of the table: the identity is found by the rest, and the made card names whom the match says.
+  const players = new Set(game.facts.filter((fact) => fact.on === 'card' && fact.kind === 'player').map((fact) => fact.name));
+  const named = Object.entries(match).filter(([key]) => players.has(key));
   const identity = game.cards.filter((set) => set.kind === 'endless')
-    .flatMap((set) => set.identities).find(({ attrs }) => Object.entries(match).every(([key, value]) => attrs[key] === value));
+    .flatMap((set) => set.identities).find(({ attrs }) => Object.entries(match).every(([key, value]) => players.has(key) || attrs[key] === value));
   if (!identity) return null;
   const n = nextCardNumber(state, game);
   const id = `c${n}`;
   // Made in the box and moved from there, so that `relocate` places it and turns it as it does any card.
   const made: CardState = { id, zoneId: BOX_ZONE, faceUp: false, faceKey: identity.faceKey, data: { ...identity.attrs } };
   const withCard: GameState = { ...state, cards: [...state.cards, made], data: { ...state.data, [NEXT_CARD_KEY]: n + 1 } };
-  return { id, state: relocate(withCard, [id], zoneId, game) };
+  const naming = named.length === 0 ? withCard : changeCard(withCard, id, Object.fromEntries(named), game);
+  return { id, state: relocate(naming, [id], zoneId, game) };
 }
 
 /** `{ [id]: the id it was dealt or made with }` for each card given a new one. Written only when cards are renamed; never sent to a seat. */

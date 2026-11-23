@@ -9,7 +9,7 @@ import { joinAnd } from '../refs';
 import type { CardMatch, ConditionFn, EffectFn, ExpectFn, MomentFn, PhraseEnv, ZoneRef } from '../types';
 import { matchesCard, relocate, zoneInfo } from '../zones';
 import { changeable } from './card-number-phrases';
-import { claimCards, coversExactly, describeCard, describeCards } from './example-phrases';
+import { claimCards, coversExactly, describeCard, describeCards, namingFacts } from './example-phrases';
 import { itCard, namedCardIn, noCardIn, theCard } from './fact-phrases';
 import { cardHasFlag, cardNumber, cardOf, describeZone, mustBeKept, soleZone, theTargetCard, thePickedCards } from './support';
 
@@ -202,7 +202,7 @@ function onItIs(env: PhraseEnv, named: CardMatch, where: ZoneRef, wanted: CardMa
 }
 
 const cardHasOnItExpected: ExpectFn = (env, [match, zone, wanted]) =>
-  onItIs(env, match as CardMatch, zone as ZoneRef, wanted as CardMatch[], joinAnd((wanted as CardMatch[]).map(describeCard)));
+  onItIs(env, match as CardMatch, zone as ZoneRef, wanted as CardMatch[], joinAnd((wanted as CardMatch[]).map((w) => describeCard(w, namingFacts(env.game)))));
 
 const cardHasNothingOnItExpected: ExpectFn = (env, [match, zone]) => onItIs(env, match as CardMatch, zone as ZoneRef, [], 'no cards');
 

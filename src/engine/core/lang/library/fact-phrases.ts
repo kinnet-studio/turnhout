@@ -24,6 +24,9 @@ const declares = (on: ThingFact['on']): DeclareFn => ([facts]) => (facts as Fact
 /** A card or a space that "can be" something has a yes/no, which starts at no, with no count. */
 const isFlagOn = (on: ThingFact['on']): DeclareFn => ([name]) => [{ name: name as string, on, kind: 'flag' }];
 
+/** A card that “can name a maker” has a fact whose value is a seat: the player it names, set when the card is made. */
+const namesAPlayer: DeclareFn = ([name]) => [{ name: name as string, on: 'card', kind: 'player' }];
+
 /**
  * The board a phrase plays on. Each phrase that calls this says `needsBoard`, so the compiler only lets it into a game with
  * one: a missing board is a bug.
@@ -497,6 +500,8 @@ export function registerFactPhrases(lib: PhraseLibrary): PhraseLibrary {
     .declare('spaces can have {factlist}', declares('space'))
     .declare('cards can have {factlist}', declares('card'))
     .declare('cards can be {name}', isFlagOn('card'))
+    .declare('cards can name a {name}', namesAPlayer)
+    .declare('cards can name an {name}', namesAPlayer)
     .declare('spaces can be {name}', isFlagOn('space'))
     .condition('it has a {spaceflag}', hasFlag, { needsSpace: true })
     .condition('it has an {spaceflag}', hasFlag, { needsSpace: true })

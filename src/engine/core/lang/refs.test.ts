@@ -10,6 +10,7 @@ import { FIXTURE_SPACES, fixtureBoardGame } from './testing';
 import { GUILD_GAME, vocabFor } from './testing';
 import { RESTING_GAME } from './testing';
 import type { Vocab } from './types';
+import { MAKER_GAME } from './testing';
 
 const V: Vocab = {
   ...emptyVocab(),
@@ -53,6 +54,7 @@ describe('vocabulary types', () => {
       ['spacekind', '[kind of space]'], ['spaceflag', '[space fact]'], ['spacenumber', '[space fact]'], ['cardflag', '[card fact]'],
       ['playerflag', '[player fact]'], ['playernumber', '[player fact]'], ['gamenumber', '[game number]'], ['banked', '[bank item]'],
       ['holder', '[the player who is …]'], ['cardgroup', '[cards]'], ['cardfilter', '[test]'], ['playervalue', '[player value]'], ['cardclause', '[that is …]'],
+      ['cardplayer', '[card player]'],
     ]);
     const order = Object.fromEntries(VOCAB_TYPES.filter((t) => t.stubOrder !== undefined).map((t) => [t.name, t.stubOrder]));
     // A stub never turns words into a space: a name like "Go To Jail" would swallow the words of an ordinary sentence.
@@ -1143,5 +1145,25 @@ describe('what a card is said to be, with “that is”', () => {
     expect(misnamedParam('cardclause', 'that is not restng', RESTING)).toEqual(misnamedParam('cardflag', 'restng', RESTING));
     expect(misnamedParam('cardclause', 'that is resting and whose pya is 1', RESTING)).toEqual(misnamedParam('attribute', 'pya', RESTING));
     expect(misnamedParam('cardclause', 'that is resting and whose pay is 1', RESTING)).toBeNull();
+  });
+});
+
+
+describe('tests by the player a card names', () => {
+  const vocab = vocabFor(compileGame(MAKER_GAME, createDefaultLibrary()).game!);
+  it('reads a group of cards whose maker is them', () => {
+    expect(parseParam('cardgroup', 'the cards in each holdings whose maker is them', vocab))
+      .toEqual({ value: { kind: 'in', zones: [{ each: 'holdings' }], whose: [{ names: 'maker', player: 'them' }] } });
+  });
+  it("reads a test against the target card's owner", () => {
+    expect(parseParam('cardfilter', "maker is the target card's owner", vocab)).toEqual({ value: { names: 'maker', player: 'target owner' } });
+  });
+  it('explains a misnamed fact as a card fact', () => {
+    expect(misnamedParam('cardfilter', 'makr is them', vocab)?.message).toBe('There is no card fact called “makr”.');
+  });
+  it('reads a card whose maker is a seat, alone and in a list', () => {
+    expect(parseParam('card', 'a Stake whose maker is p1', vocab)).toEqual({ value: { name: 'Stake', maker: 'p1' } });
+    expect(parseParam('cardlist', 'a Stake whose maker is p1 and a Stake whose maker is p0', vocab))
+      .toEqual({ value: [{ name: 'Stake', maker: 'p1' }, { name: 'Stake', maker: 'p0' }] });
   });
 });

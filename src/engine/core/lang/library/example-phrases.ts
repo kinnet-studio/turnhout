@@ -38,14 +38,20 @@ function lastMove(env: PhraseEnv): NonNullable<ExampleEnv['last']> {
 const RANK_NAMES = new Map(Object.entries(STANDARD_RANKS).map(([name, rank]) => [rank, name] as const));
 const SUIT_NAMES = new Map(Object.entries(STANDARD_SUITS).map(([name, letter]) => [letter, name] as const));
 
-/** “the queen of spades”, “a red 7”. */
-export function describeCard(match: CardMatch): string {
+/** The game's facts by which a card names a player (“maker”), so a card is told “a Stake whose maker is p1”. */
+export const namingFacts = (game: CompiledGame | undefined): string[] =>
+  (game?.facts ?? []).filter((fact) => fact.on === 'card' && fact.kind === 'player').map((fact) => fact.name);
+
+/** “the queen of spades”, “a red 7”, and with the game's naming facts “a Stake whose maker is p1”. */
+export function describeCard(match: CardMatch, naming: readonly string[] = []): string {
   const rank = RANK_NAMES.get(match.rank as number);
   const suit = SUIT_NAMES.get(match.suit as string);
   if (rank !== undefined && suit !== undefined && Object.keys(match).length === 2) return `the ${rank} of ${suit}`;
-  const words = Object.values(match).join(' ');
-  if (words === '') return 'a card';
-  return `${/^[aeiou]/i.test(words) ? 'an' : 'a'} ${words}`;
+  const named = Object.entries(match).filter(([key]) => naming.includes(key));
+  const words = Object.entries(match).filter(([key]) => !naming.includes(key)).map(([, value]) => value).join(' ');
+  const whose = named.map(([key, seat]) => ` whose ${key} is ${seat}`).join('');
+  if (words === '') return `a card${whose}`;
+  return `${/^[aeiou]/i.test(words) ? 'an' : 'a'} ${words}${whose}`;
 }
 
 const joinAnd = (items: string[]) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`);
@@ -57,10 +63,11 @@ const countOf = (n: number) => `${n} ${n === 1 ? 'card' : 'cards'}`;
  * left out too: a card is named by its name, not by its rules.
  */
 export function describeCards(cards: CardState[], game: CompiledGame): string {
+  const naming = namingFacts(game);
   const keys = [...new Set(game.cards.flatMap((set) => set.identities.flatMap((i) => Object.keys(i.attrs))))].filter((key) => !isSaysColumn(key));
   return joinAnd(cards.map((card) => describeCard(Object.fromEntries(
-    keys.flatMap((key) => (card.data?.[key] === undefined ? [] : [[key, card.data[key] as Json]])),
-  ))));
+    [...keys, ...naming].flatMap((key) => (card.data?.[key] === undefined ? [] : [[key, card.data[key] as Json]])),
+  ), naming)));
 }
 
 /** Can each wanted card be matched to a different card, using up all of them? A general match may stand for a particular card. */
@@ -228,7 +235,7 @@ const zoneHasExactly: ExpectFn = (env, args) => {
   const cards = zoneCards(env.state, soleZone(ref, env));
   if (coversExactly(cards, wanted)) return true;
   const actual = cards.length === 0 ? 'it is empty' : `it has ${describeCards(cards, env.game)}`;
-  return `Expected ${describeZone(ref)} to have ${joinAnd(wanted.map(describeCard))}, but ${actual}.`;
+  return `Expected ${describeZone(ref)} to have ${joinAnd(wanted.map((w) => describeCard(w, namingFacts(env.game))))}, but ${actual}.`;
 };
 
 /** The zone's cards from the bottom are as many as the wanted ones and each is the kind wanted in its place. */
@@ -237,7 +244,7 @@ const zoneHasInOrder: ExpectFn = (env, args) => {
   const cards = zoneCards(env.state, soleZone(ref, env));
   if (cards.length === wanted.length && cards.every((card, at) => matchesCard(card, wanted[at]))) return true;
   const actual = cards.length === 0 ? 'it is empty' : `it has ${describeCards(cards, env.game)}`;
-  return `Expected ${describeZone(ref)} to have ${joinAnd(wanted.map(describeCard))}, in that order, but ${actual}.`;
+  return `Expected ${describeZone(ref)} to have ${joinAnd(wanted.map((w) => describeCard(w, namingFacts(env.game))))}, in that order, but ${actual}.`;
 };
 
 /** Whether the first card of that kind, counted from the bottom, is within the bottom few cards of the zone. */

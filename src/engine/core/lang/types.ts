@@ -23,7 +23,10 @@ export type CardFilter =
   | { attribute: string; above: number }
   | { attribute: string; is: Json }
   | { attribute: string; sameAs: { of: 'the card' | 'it'; attribute: string } }
-  | { flag: string; wanted: boolean };
+  | { flag: string; wanted: boolean }
+  | { names: string; player: PlayerWho };
+/** Whom a card's test compares the player it names with: the player the line is about, or the target card's owner (Task 7 adds 'acting'). */
+export type PlayerWho = 'them' | 'target owner';
 /**
  * Some cards a rule adds up or walks through: those in the zones, slot by slot; those on “it”, the card the rule is about; or the set a
  * button's press picked. Of any of them, only the cards that pass every test of `whose`, when there are some: a group written “that
@@ -63,7 +66,7 @@ export type BoardSpec = {
   payWith: string | null; bank: BankSpec[];
 };
 /** A fact the game keeps about every space, card or player: a count, or something that is either so or not. */
-export type ThingFact = { name: string; on: 'space' | 'card' | 'player'; kind: 'number' | 'flag' };
+export type ThingFact = { name: string; on: 'space' | 'card' | 'player'; kind: 'number' | 'flag' | 'player' };  // 'player': on 'card' only
 /** A number that belongs to the game itself, to no player and no space, and the value it starts at. */
 export type GameNumber = { name: string; on: 'game'; kind: 'number'; start: number };
 export type FactSpec = ThingFact | GameNumber;

@@ -13,6 +13,8 @@ import { changeCard } from '../card-facts';
 import type { CompiledGame } from '../types';
 import { HOLDER_KEY, relocate } from '../zones';
 import { createDefaultLibrary } from './index';
+import { MAKER_GAME, fixtureEnv } from '../testing';
+import { makeCard } from '../cards';
 
 const lib = createDefaultLibrary();
 
@@ -234,5 +236,39 @@ describe('what its owner has', () => {
     for (const pattern of ['its owner has a card in their {perzone} {cardclause}', 'its owner has no card in their {perzone} {cardclause}']) {
       expect([pattern, lib.get('condition', pattern)?.needsCard]).toEqual([pattern, true]);
     }
+  });
+});
+
+describe('tests by the player a card names', () => {
+  const maker = compiled(MAKER_GAME);
+  const stake = (state: GameState, zoneId: string, by: string) => makeCard(state, maker, { name: 'Stake', maker: by }, zoneId)!;
+  const base = initialState(maker, 1);
+  const vases = base.cards.filter((card) => card.data?.name === 'Vase').map((card) => card.id);
+  const potter = base.cards.find((card) => card.data?.name === 'Potter')!.id;
+  const first = stake(relocate(relocate(base, [vases[0]], 'workshop-p0', maker), [vases[1]], 'workshop-p2', maker), 'holdings-p1', 'p0');
+  const second = stake(first.state, 'holdings-p2', 'p1');
+  const state = second.state;
+  const held = first.id;
+  const about = (player: PlayerId, extra: Partial<{ onto: string; cardId: string }> = {}) => fixtureEnv(state, {
+    game: maker, seats: SEATS, subject: { player, space: null, card: null, onto: extra.onto },
+    move: extra.cardId === undefined ? undefined : { verb: 'buy', by: player, cardId: extra.cardId, from: 'holdings-p1', to: 'holdings-p1' },
+  });
+  const holds = (text: string, env: ReturnType<typeof fixtureEnv>) => runPhrase<boolean>(lib, 'condition', text, env);
+
+  it('reads whose maker is them', () => {
+    expect(holds('they have a card in each holdings whose maker is them', about('p0'))).toBe(true);
+    expect(holds('they have a card in each holdings whose maker is them', about('p2'))).toBe(false);
+  });
+  it("reads whose maker is the target card's owner", () => {
+    expect(holds("they have no card in their holdings whose maker is the target card's owner", about('p1', { onto: vases[0] }))).toBe(false);
+    expect(holds("they have no card in their holdings whose maker is the target card's owner", about('p1', { onto: vases[1] }))).toBe(true);
+  });
+  it("reads whether they are the card's maker", () => {
+    expect(holds("they are the card's maker", about('p0', { cardId: held }))).toBe(true);
+    expect(holds("they are the card's maker", about('p1', { cardId: held }))).toBe(false);
+    expect(holds("they are not the card's maker", about('p0', { cardId: held }))).toBe(false);
+    expect(holds("they are not the card's maker", about('p1', { cardId: held }))).toBe(true);
+    expect(holds("they are the card's maker", about('p0', { cardId: potter }))).toBe(false);
+    expect(holds("they are not the card's maker", about('p0', { cardId: potter }))).toBe(true);
   });
 });

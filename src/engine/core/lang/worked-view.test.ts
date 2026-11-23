@@ -22,6 +22,7 @@ import { dimFlags, gaugePairs, shownPlayerValues } from './worked-view';
 import { holderFlags, pressFlags } from './worked-view';
 import { BOOST_GAME, PERCH_GAME, SORT_GAME, YARD_GAME } from './testing';
 import { CHARM_GAME } from './testing';
+import { MAKER_GAME } from './testing';
 import { HOLDER_PHRASES, registerAttachPhrases } from './library/attach-phrases';
 import { cardsOn } from './attach';
 import { relocate } from './zones';
@@ -789,5 +790,13 @@ describe('a card in the centre', () => {
       expect(standIns(game)).toEqual({});
       expect(inPlayZones(game)).toEqual([]);
     }
+  });
+});
+
+describe('cards that name a player', () => {
+  it('(guard) shows no flag and no stand-in', () => {
+    const game = compileGame(MAKER_GAME, createDefaultLibrary()).game!;
+    expect(shownFlags(game)).toEqual([]);
+    expect(standIns(game)).toEqual({});
   });
 });

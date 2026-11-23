@@ -10,6 +10,8 @@ import type { ExampleEnv, PhraseEnv, PhraseKind } from '../types';
 import { BOX_ZONE, matchesCard } from '../zones';
 import { normalizeReason } from './example-phrases';
 import { createDefaultLibrary } from './index';
+import { MAKER_GAME } from '../testing';
+import { runExamples } from '../examples';
 
 const lib = createDefaultLibrary();
 const run = <T = unknown>(kind: PhraseKind, text: string, env: PhraseEnv) => runPhrase<T>(lib, kind, text, env);
@@ -661,5 +663,30 @@ describe('the default library', () => {
   it('leaves other example lines to the condition and effect phrases', () => {
     expect(lib.match('expect', 'p1’s won pile has 4 cards', vocab).status).toBe('unknown');
     expect(lib.match('given', 'hearts are broken', vocab).status).toBe('unknown');
+  });
+});
+
+describe('cards that name a player, in examples', () => {
+  const EXAMPLES = [
+    '', 'Example: a card naming a player is made for an example that skips Setup', "  Given p1's holdings has a Stake whose maker is p0",
+    "  Then p1's holdings has a Stake whose maker is p0", '',
+    'Example: after Setup, an example takes the card made then', '  Given the game is set up', "  And p1's holdings has a Stake whose maker is p0",
+    "  Then p0's purse has a Stake whose maker is p0", "  And p1's purse has a Stake whose maker is p1 and a Stake whose maker is p1",
+  ];
+  const lib = createDefaultLibrary();
+  it('makes, takes and finds them', () => {
+    const { game, diagnostics } = compileGame([MAKER_GAME, ...EXAMPLES].join('\n'), lib);
+    expect(diagnostics).toEqual([]);
+    expect(runExamples(game!, lib).map((r) => [r.status, r.message])).toEqual([['pass', null], ['pass', null]]);
+  });
+  it('fails on a card naming another player', () => {
+    const text = [MAKER_GAME, ...EXAMPLES.slice(0, -1), "  And p1's purse has a Stake whose maker is p1 and a Stake whose maker is p2"].join('\n');
+    const { game } = compileGame(text, lib);
+    const results = runExamples(game!, lib);
+    expect(results[1].status).toBe('fail');
+    expect(results[1].atLine).toBe(text.split('\n').length);
+    expect(results[1].message).toBe(
+      "Expected p1's purse to have a Stake whose maker is p1 and a Stake whose maker is p2, but it has a Stake whose maker is p1 and a Stake whose maker is p1.",
+    );
   });
 });

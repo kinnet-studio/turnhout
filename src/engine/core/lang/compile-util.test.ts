@@ -11,6 +11,7 @@ import { TOTALS_GAME, vocabFor } from './testing';
 import { GUILD_GAME } from './testing';
 import { RESTING_GAME } from './testing';
 import { CREW_GAME } from './testing';
+import { MAKER_GAME } from './testing';
 import { createEngine, initialState } from './build';
 import { counterOf } from './board-state';
 import { relocate } from './zones';
@@ -484,5 +485,27 @@ describe('an If line with two conditions', () => {
       line: lineOf(text, WAGEE), message: 'There is no card attribute called “wagee”.',
       text: 'they have a card in their workshop and their idle whose wagee is more than 1',
     })]);
+  });
+});
+
+describe('a test of the player a card names, refused where it cannot be known', () => {
+  const lib = createDefaultLibrary();
+  const lineOf = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+  const errorsOf = (text: string) => compileGame(text, lib).diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message]);
+  it("refuses the target card's owner in a button that picks no target", () => {
+    const line = "    Only if they have a card in their holdings whose maker is the target card's owner.";
+    const text = MAKER_GAME.replace('  A player may stop.\n', `  A player may stop.\n${line}\n`);
+    expect(errorsOf(text)).toEqual([[lineOf(text, line), expect.stringContaining('only makes sense in a button that picks a card and the card it goes to')]]);
+  });
+  it('refuses them in a rule about no player', () => {
+    const text = `${MAKER_GAME}\n\nBacked:\n  Only if it is a card whose maker is them.`;
+    expect(errorsOf(text)).toEqual([[lineOf(text, '  Only if it is a card whose maker is them.'),
+      '“it is a card whose maker is them” only makes sense in a rule about a player, such as a move, an action or a “When a player …” rule.']]);
+  });
+  it("counts a test of the target card's owner as reading the press's card", () => {
+    const game = compileGame(MAKER_GAME, lib).game!;
+    const line = "they have a card in their holdings whose maker is the target card's owner";
+    const ctx: LineCtx = { vocab: vocabFor(game), library: lib, gameName: 'Crew', diagnostics: [], inMove: true, player: true, space: false, card: true, drawn: false, amount: false, picked: false, onto: true };
+    expect(readsPressCard(lib, { mode: 'all', refs: [matchLine('condition', line, 4, ctx)], text: line, line: 4 })).toBe(true);
   });
 });

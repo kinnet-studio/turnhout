@@ -86,6 +86,9 @@ const everyCardOnItWhoseGoesTo: EffectFn = (env, [filter, zone]) => {
  * or has no, card in a zone of theirs that is, or is not, so. A test that compares with “the card's” value needs a card move and one that
  * compares with “its” needs a card; the compiler asks that of the test itself, in a clause as well.
  */
+/** Whether the card a press moves names the player the line is about: a card that names no one names nobody. */
+const theyAreNamed = (wanted: boolean): ConditionFn => (env, [fact]) => (movedCard(env).data?.[fact as string] === theyOf(env)) === wanted;
+
 export function registerComparePhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
     .condition('they have a card in {zones} whose {cardfilter}', theyHaveACard(true), { needsPlayer: true })
@@ -95,6 +98,8 @@ export function registerComparePhrases(lib: PhraseLibrary): PhraseLibrary {
     .condition('they have no card in {zones} {cardclause}', theyHaveACardThatIs(false), { needsPlayer: true })
     .condition('some player has a card in their {perzone} whose {cardfilter}', somePlayerHasACard)
     .condition('another player has a card in their {perzone} whose {cardfilter}', anotherPlayerHasACard, { needsPlayer: true })
+    .condition("they are the card's {cardplayer}", theyAreNamed(true), { needsMove: true, needsPlayer: true })
+    .condition("they are not the card's {cardplayer}", theyAreNamed(false), { needsMove: true, needsPlayer: true })
     .condition('the card has no {attribute}', theCardHasNo, { needsMove: true })
     .condition('it has no {attribute}', itHasNo, { needsCard: true })
     .effect('every card on it whose {cardfilter} goes to {zone}', everyCardOnItWhoseGoesTo, { needsCard: true })

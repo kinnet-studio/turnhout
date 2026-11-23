@@ -14,6 +14,8 @@ import { changeable } from './card-number-phrases';
 import { cardHasFlag, cardNumber, mustBeKept } from './support';
 import { ontoZoneIds } from '../declared-moves';
 import { movedCard, numberIfAny, theyOf } from './support';
+import { ownerOf } from './support';
+import { itCard } from './fact-phrases';
 import { counterOf } from '../board-state';
 import { transfer } from './board-phrases';
 
@@ -290,11 +292,19 @@ const pressesCardButton = (form: Form, saysFrom = false): ActionFn => (env, args
  * button (“A player may buy a card from the shop to their stash.”), naming the cards after the button's base, and where they come from,
  * where they go or both when several buttons could take them, with the zone of the card they go to when cards in two zones have its name.
  */
+/** Whether the target card is in the zone of the player the card the rule is about names: false when it names no one, or the target is no player's. */
+const targetOwnerIsNamed: ConditionFn = (env, [fact]) => {
+  const named = itCard(env).data?.[fact as string];
+  const owner = ownerOf(env, theTargetCard(env));
+  return typeof named === 'string' && owner !== null && named === owner;
+};
+
 export function registerCardPickPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
     .condition('the target card is {cardclass}', targetIs(true), { needsOnto: true })
     .condition('the target card is not {cardclass}', targetIs(false), { needsOnto: true })
     .condition('they picked at most {int} card(s)', pickedAtMost, { needsCards: true })
+    .condition("the target card's owner is its {cardplayer}", targetOwnerIsNamed, { needsCard: true, needsOnto: true })
     .condition('the target card is {cardflag}', targetIsFlagged(true), { needsOnto: true })
     .condition('the target card is not {cardflag}', targetIsFlagged(false), { needsOnto: true })
     .condition('some card on the target card is {cardflag}', someCardOnTargetIs(true), { needsOnto: true })

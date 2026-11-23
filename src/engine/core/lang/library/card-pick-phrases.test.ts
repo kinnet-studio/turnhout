@@ -10,6 +10,8 @@ import { RuleError } from '../diagnostics';
 import { COACH_GAME, fixtureCard, fixtureEnv, fixtureState, runPhrase } from '../testing';
 import { cardById } from '../zone-index';
 import { JINX_GAME } from '../testing';
+import { MAKER_GAME } from '../testing';
+import { makeCard } from '../cards';
 
 const lib = createDefaultLibrary();
 
@@ -571,5 +573,23 @@ describe('the lower of two prices', () => {
       .toThrow(new RuleError('The card has no wage, and the target card has no pay.'));
     expect(() => runPhrase(lib, 'effect', "they pay the lower of the card's worth and the target card's worth", env(potter, ids('Potter')[1])))
       .toThrow(new RuleError('Neither the card nor the target card has a worth.'));
+  });
+});
+
+describe("the target card's owner", () => {
+  const maker = compileGame(MAKER_GAME, createDefaultLibrary()).game!;
+  const base = initialState(maker, 1);
+  const vases = base.cards.filter((card) => card.data?.name === 'Vase').map((card) => card.id);
+  const scrapped = base.cards.filter((c) => c.data?.name === 'Statue')[0].id;
+  const placed = relocate(relocate(relocate(base, [vases[0]], 'workshop-p0', maker), [vases[1]], 'workshop-p2', maker), [scrapped], 'scrap', maker);
+  const made = makeCard(placed, maker, { name: 'Stake', maker: 'p0' }, 'holdings-p1')!;
+  const about = (onto: string) => fixtureEnv(made.state, {
+    game: maker, seats: ['p0', 'p1', 'p2'], subject: { player: 'p1', space: null, card: made.id, onto },
+  });
+  const holds = (onto: string) => runPhrase<boolean>(createDefaultLibrary(), 'condition', "the target card's owner is its maker", about(onto));
+  it('holds for the maker\'s card, not another player\'s, nor one in the center', () => {
+    expect(holds(vases[0])).toBe(true);
+    expect(holds(vases[1])).toBe(false);
+    expect(holds(scrapped)).toBe(false);
   });
 });

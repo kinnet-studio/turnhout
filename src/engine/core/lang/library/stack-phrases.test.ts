@@ -9,6 +9,8 @@ import { VOCAB_TYPES } from '../refs';
 import { COUNTER_GAME, fixtureCard, fixtureEnv, fixtureState, runPhrase, vocabFor } from '../testing';
 import type { CardsFn, PhraseEnv } from '../types';
 import { createDefaultLibrary } from './index';
+import { MAKER_GAME } from '../testing';
+import { parseTextFaceKey } from '../cards';
 import { registerSetupPhrases } from './setup-phrases';
 import { registerStackPhrases } from './stack-phrases';
 
@@ -152,5 +154,39 @@ describe('a game with a stack that never runs out', () => {
       expect(ids(rebuilt.getState(), 'stash-p0')).toEqual(['c8', 'c10', 'c11']);
       expect(ids(rebuilt.getState(), 'stash-p1')).toEqual(['c9', 'c12']);
     });
+  });
+});
+
+describe('cards that name a player', () => {
+  const made = compileGame(MAKER_GAME, lib);
+  const lineOf = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+  const NAMING = '  2 new Stake cards go to each purse, each naming its owner as its maker.';
+  it('declares the fact and compiles', () => {
+    expect(made.diagnostics).toEqual([]);
+    expect(made.game!.facts).toContainEqual({ name: 'maker', on: 'card', kind: 'player' });
+    expect(vocabFor(made.game!).facts).toContainEqual({ name: 'maker', on: 'card', kind: 'player' });
+  });
+  it('makes two Stakes in each purse at Setup, each naming its owner, shown on its face', () => {
+    const state = createEngine(made.game!, lib, 2, initialState(made.game!, 1)).engine.getState();
+    expect(ids(state, 'purse-p0')).toEqual(['c11', 'c12']);
+    expect(ids(state, 'purse-p1')).toEqual(['c13', 'c14']);
+    for (const [id, seat] of [['c11', 'p0'], ['c12', 'p0'], ['c13', 'p1'], ['c14', 'p1']]) {
+      expect(state.cards.find((c) => c.id === id)!.data).toEqual({ name: 'Stake', maker: seat });
+    }
+    expect(parseTextFaceKey(state.cards.find((c) => c.id === 'c11')!.faceKey)).toEqual({ name: 'Stake', maker: 'p0' });
+  });
+  it('names a misspelt fact', () => {
+    const text = MAKER_GAME.replace(NAMING, '  2 new Stake cards go to each purse, each naming its owner as its makr.');
+    const { diagnostics } = compileGame(text, lib);
+    const errors = diagnostics.filter((d) => d.severity === 'error');
+    expect(errors).toHaveLength(1);
+    expect(errors[0].line).toBe(lineOf(text, '  2 new Stake cards go to each purse, each naming its owner as its makr.'));
+    expect(errors[0].message).toContain('“makr”');
+  });
+  it('names a kind of card no stack has', () => {
+    const text = MAKER_GAME.replace(NAMING, '  2 new Stoke cards go to each purse, each naming its owner as its maker.');
+    const { diagnostics } = compileGame(text, lib);
+    const errors = diagnostics.filter((d) => d.severity === 'error');
+    expect(errors.map((d) => d.message)).toEqual([expect.stringContaining('Stoke')]);
   });
 });

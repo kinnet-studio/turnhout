@@ -75,8 +75,10 @@ export function pickName(card: CardState, game: CompiledGame): string {
  * How a fact that is set shows on a card's face: a flag that is true says `yes` and a number that is not 0 says its
  * value. A flag that is false, a number of 0 and a fact never set leave the face as it was.
  */
-function shownFact(kind: 'number' | 'flag', value: Json | undefined): Json | null {
+function shownFact(kind: 'number' | 'flag' | 'player', value: Json | undefined): Json | null {
   if (kind === 'flag') return value === true ? 'yes' : null;
+  // A fact naming a player shows the seat it names.
+  if (kind === 'player') return typeof value === 'string' ? value : null;
   return typeof value === 'number' && value !== 0 ? value : null;
 }
 

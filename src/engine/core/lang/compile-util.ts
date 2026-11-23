@@ -224,6 +224,9 @@ const comparesWith = (of: 'the card' | 'it') => (filter: CardFilter): boolean =>
 const readsItsCard = ({ groups, filters }: CardArgs): boolean => groups.some((group) => group.kind === 'on it') || filters.some(comparesWith('it'));
 const readsMovedCard = ({ filters }: CardArgs): boolean => filters.some(comparesWith('the card'));
 const readsPickedCards = ({ groups }: CardArgs): boolean => groups.some((group) => group.kind === 'picked');
+/** Whether a test compares the player a card names with the player the line is about, or with the target card's owner. */
+const testsPlayer = (who: 'them' | 'target owner') => ({ filters }: CardArgs): boolean =>
+  filters.some((filter) => 'names' in filter && filter.player === who);
 
 /**
  * Whether a line of the group reads a card a press is about: the card a move makes, or “it”, the picked cards of a set, or the
@@ -238,7 +241,7 @@ export function readsPressCard(library: PhraseLibrary, group: CondGroup): boolea
     if (entry === undefined) return false;
     const cards = cardArgsOf(ref.phrase, ref.args);
     return entry.needsMove || entry.needsCard || entry.needsCards || entry.needsOnto
-      || readsItsCard(cards) || readsMovedCard(cards) || readsPickedCards(cards);
+      || readsItsCard(cards) || readsMovedCard(cards) || readsPickedCards(cards) || testsPlayer('target owner')(cards);
   });
 }
 
@@ -256,7 +259,7 @@ function unmetNeed(entry: RegisteredOpts | undefined, args: Json[], clean: strin
   if (entry?.needsTwoDice && ctx.vocab.diceCount !== 2) return NEEDS_TWO_DICE;
   const aboutPlayer = ctx.inMove || ctx.player;
   if (!ctx.inMove && (entry?.needsMove || readsMovedCard(cards))) return `“${clean}” only makes sense in a rule about a player's move.`;
-  if (!aboutPlayer && entry?.needsPlayer) {
+  if (!aboutPlayer && (entry?.needsPlayer || testsPlayer('them')(cards))) {
     return `“${clean}” only makes sense in a rule about a player, such as a move, an action or a “When a player …” rule.`;
   }
   if (!aboutPlayer && args.some(mentionsActor)) return `“${clean}” only makes sense in a rule about a player's move.`;
@@ -266,7 +269,7 @@ function unmetNeed(entry: RegisteredOpts | undefined, args: Json[], clean: strin
   if (!ctx.amount && entry?.needsAmount) return NEEDS_AMOUNT(clean);
   if (!ctx.picked && entry?.needsPick) return NEEDS_PICK(clean);
   if (!ctx.cards && (entry?.needsCards || readsPickedCards(cards))) return NEEDS_CARDS(clean);
-  if (!ctx.onto && entry?.needsOnto) return NEEDS_ONTO(clean);
+  if (!ctx.onto && (entry?.needsOnto || testsPlayer('target owner')(cards))) return NEEDS_ONTO(clean);
   if (entry?.needsPayment && ctx.vocab.payWith === null) return NEEDS_PAYMENT;
   return null;
 }

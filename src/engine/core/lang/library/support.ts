@@ -188,6 +188,12 @@ function sameValue(have: Json | null, wanted: Json | null): boolean {
 export function passes(env: PhraseEnv, card: CardState, filters: CardFilter[]): boolean {
   return filters.every((filter) => {
     if ('flag' in filter) return cardHasFlag(env, card, filter.flag) === filter.wanted;
+    if ('names' in filter) {
+      // A card that names no one, or a target card in no player's zone, never passes.
+      const named = card.data?.[filter.names];
+      const whom = filter.player === 'them' ? theyOf(env) : ownerOf(env, theTargetCard(env));
+      return typeof named === 'string' && whom !== null && named === whom;
+    }
     if ('above' in filter) {
       const have = numberIfAny(env, card, filter.attribute);
       return have !== null && have > filter.above;
