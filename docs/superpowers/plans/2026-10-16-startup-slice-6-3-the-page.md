@@ -17,7 +17,7 @@
 - **Nothing in shared code knows Startup Simulator.**
   - Core: `queue-phrases.ts` exports `CENTRE_HAS`; `worked-view.ts` gains a `centre` reading, `inPlayZones` and `thenRefs`; `game-numbers.ts` exports `PAY_NUMBER`; `board-view.ts` gains `paidNumbers`; `cards.ts` gains `isSentence`.
   - Rendering: `text-faces.ts` leaves a sentence off a face.
-  - Page: `tableaux.tsx` gains `inPlayLines`; `card-pick.ts` gains `placesOf`; `CardPicker` gains `places`; `playtest.tsx` names the label on the hover line, passes the places and keeps decor to drawn cards.
+  - Page: `tableaux.tsx` gains `inPlayLines`; `card-pick.ts` gains `placesOf`; `CardPicker` gains `places`; `card-detail.ts` leaves off a card's facts that its label says, `board-text.ts` gains `labelledFacts`, `playtest.tsx` names the label on the hover line, passes the places and keeps decor to drawn cards.
 - **Calls this plan makes** (the spec leaves "how the Event and Attributes look" to the builder):
   1. **Modifiers from the card in play are never labelled, but what they change is shown.**
      - A flag whose own lines test a card in the centre (`Only if the event in play has the Server Crash.`) holds for every card alike; the card in play's line says it once. So `shownFlags` never labels one, as 6-1's README already promises.
@@ -25,14 +25,18 @@
      - A zone no one sees (a deck) is never read so: the value fails closed, as before.
   2. **The card in play gets a line of its own.** A shared zone everyone can see that a worked value or flag reads with `CENTRE_HAS` (`inPlayZones`: the event in play) is written out first in the tableaux, each card in full: `event in play: Tech Bubble — effect All Active Maintenance Products generate +$1 Revenue this round.` It changes with the view.
   3. **The Event's text.** The Event table gains an `effect` column with §20.D's text, shortened only where the rulebook adds flavour. The four Events whose systems come later end `Not in effect yet.`, and Patent Trolls says only its Greenlight License is. A face has no room for a sentence, so a face leaves off any value that is one (`isSentence`); the hover line and the card in play's line give it.
-  4. **Prices.** A game number a button pays to the bank (`They pay the junior price.`) is a price, and the bank line shows it even at 0: `license 3 · junior price 0 · hardware junior price 0` under Intern Season. Other numbers at 0 stay off the line as before, so Rent Day's `high bid` and cash numbers are unchanged.
-  5. **Counts and Hype** are 4-3's and 5-3's labels (lone counts on a Board, kept counts off it): `1 workaholic`, `2 hype`. R2's "badges under the Talent's face" is that corner label, which shows in a stack's strip where a caption would be covered. A label longer than the strip shows is named in full on the hover line, for example `Junior Software Dev — cost 2 · skill software · output 1 · salary 0 — 1 workaholic, 1 burnout`.
+  4. **Prices.** A game number a button or a card move pays to the bank (`They pay the junior price.`) is a price, and the bank line shows it even at 0: `license 3 · junior price 0 · hardware junior price 0` under Intern Season. Other numbers at 0 stay off the line as before, so Rent Day's `high bid` and cash numbers are unchanged.
+  5. **Counts and Hype** are 4-3's and 5-3's labels (lone counts on a Board, kept counts off it): `1 workaholic`, `2 hype`. R2's "badges under the Talent's face" is that corner label, which shows in a stack's strip where a caption would be covered. A label longer than the strip shows is named in full on the hover line, for example `Junior Software Dev — cost 2 · skill software · output 1 · salary 0 · role Junior — 1 workaholic, 1 burnout`. The line leaves off the facts its label says (the flags and counts the card carries), so nothing is said twice.
   6. **The Debuff picker.** A rival's cards are not drawn on the one-seat table, so they are picked from the list under the buttons. A card in another seat's zone is listed with its place: `Engineer (p1's development team)`. A click on the canvas still offers the Debuff for the card in hand. The decor keeps only the cards this canvas draws, so no ring is set for a card it doesn't.
   7. **The seat switcher** needs no new code: `seatToAct` reads `turn.current`, which the round's steps move seat by seat. Task 4 pins it.
   8. **The attributes in play** is a shared pile, drawn on the shared table by `fittedLayout` with its cards face up. It needs no code; Task 3 pins it.
   9. **Slice 6's buttons name no new press flag** (5-3's forward note): their `Then:` lines test card kinds, not worked flags. Task 1 pins `pressFlags` unchanged.
+  10. **A press flag stays a label even when nothing can change it:** 5-3's press labels are decided by the rules alone. (6-2a's "decide at 6-3" item (a): the Diva's permanent `egotistic` shows on the Board line as `Diva (egotistic)`, as a corner label and on the hover line.)
+  11. **Every button a card can be pressed with shows, greyed with its reason** (3-2's convention). (6-2a's item (b): every Strategy card shows all four Strategy buttons, three greyed with reasons, plus the Brainstorm flush.)
+  - Changing either needs a new shared rule in `pressFlags`, or a way to tell a card-kind guard from any other `Only if`.
 - **Parked:** the card in play's line on a page that fits one table; clicking a rival's card on its Board line.
 - **Controller amendment (pre-flight 2026-11-23):** the pre-flight (`docs/superpowers/notes/2026-11-23-startup-6-2b-preflight.md`) built Task 1 in its probe, run ahead inside 6-2b's sequence; its findings S1–S4 are applied in this text. Task 1 runs inside 6-2b's sequence, after its Task 1 and before its Task 2.
+- **Controller amendment (pre-flight 2026-11-23, Tasks 2–5, `2026-11-23-startup-6-3-preflight.md`):** R1–R4 and R6–R12 applied as fix-in-plan; R5 option B; R13 as Calls 10–11. Gaps 1–3 go to the next page plan (7-3). The mini plan 'long-runs retune 2 and speed-up 3' lands before Task 2: re-check Task 2's appended test's anchors, Step 4's example count (307 at 0e16d25), R4's `card-alone.ts` sentence, and record BASE2 after it.
 
 **Tech Stack:** TypeScript (strict), Bun, Vitest + happy-dom, React 19, PixiJS 8; Playwright (global install, Chromium in `/opt/pw-browsers`) for the browser check.
 
@@ -80,7 +84,7 @@ It sits under `docs/superpowers/specs/2026-10-16-startup-simulator-overview-desi
 - **Page copy (exact):**
   - **The card in play:** `{zone}: {card}; {card}`, each card as the hover line gives it (`cardDetail`), in slot order, in `<div data-testid="in-play-{zone id}">`, first in the tableaux, in `#d1d5db`. A zone with no card has no line.
   - **A place in the picker:** `{name} ({seat}'s {zone})`, on the button and in its aria-label `Pick {name} ({seat}'s {zone})`.
-  - **The hover line with a label:** `{cardDetail} — {label}`.
+  - **The hover line with a label:** `{cardDetail less the label's facts} — {label}`.
   - **The bank line:** as before, with a price at 0 written `junior price 0`.
 - **Commands.**
   - Single file: `bunx vitest run <path>`. Full suite: `bun run test`. Types: `bun run typecheck`.
@@ -221,7 +225,8 @@ Before starting: re-check Task 1's `inPlayZones`, 5-3's walk of a button's `Then
 
 **Files:**
 - Modify: `src/engine/core/lang/cards.ts` (`isSentence`), `src/engine/pixi/text-faces.ts` (`detailsOf`)
-- Modify: `src/engine/core/lang/library/game-numbers.ts` (export `PAY_NUMBER`), `src/engine/core/lang/worked-view.ts` (export `thenRefs`), `src/engine/core/lang/board-view.ts` (`paidNumbers`; `gameNumbersIn`)
+- Modify: `src/engine/core/lang/library/game-numbers.ts` (export `PAY_NUMBER`), `src/engine/core/lang/worked-view.ts` (export `thenRefs`; the `readsOnlyCards` wording, R4), `src/engine/core/lang/board-view.ts` (`paidNumbers`; `gameNumbersIn`)
+- Modify: `src/engine/core/lang/card-alone.ts` (its header comment only)
 - Modify: `src/pages/designer/tableaux.tsx` (`inPlayLines`; the lines first)
 - Modify: `src/games/startup-simulator.rules` (the Event table)
 - Test (all append): `src/engine/core/lang/cards.test.ts`, `src/engine/pixi/text-faces.test.ts`, `src/engine/core/lang/board-view.test.ts`, `src/pages/designer/tableaux.test.ts`, `src/pages/designer/playtest-fitted.test.tsx`, `src/games/startup-simulator.test.ts`
@@ -238,10 +243,10 @@ export function isSentence(value: string): boolean;
 // game-numbers.ts: used in its own registration
 export const PAY_NUMBER = 'they pay the {gamenumber}';
 // worked-view.ts: 5-3's walk, exported; pressFlags reads through it
-/** Every ref a button's Then: lines can run: into an if's condition and effect, a for's and a for each's effect, each CHOOSE_ONE option's effects and a CHOOSE_PLAYER's effect. */
-export function thenRefs(action: DeclaredAction): PhraseRef[];
+/** Every ref a button's or a card move's Then: lines can run: into an if's condition and effect, a for's and a for each's effect, each CHOOSE_ONE option's effects and a CHOOSE_PLAYER's effect. */
+export function thenRefs(action: Pick<DeclaredAction, 'effects'>): PhraseRef[];
 // board-view.ts
-/** The game numbers a button pays to the bank (an effect ref with the phrase PAY_NUMBER), in the order declared: prices (Call 4). */
+/** The game numbers a button or a card move pays to the bank (an effect ref with the phrase PAY_NUMBER, walked over `[...phase.actions, ...phase.moves]`), in the order declared: prices (Call 4). */
 export function paidNumbers(game: CompiledGame): string[];
 // gameNumbersIn keeps a number at 0 when paidNumbers names it; every other number at 0 is left out as before.
 // tableaux.tsx
@@ -259,6 +264,11 @@ const bankText = () => within(screen.getByTestId('tableaux')).getByText(/^licens
 ```
 
 - **`Tableaux`** renders `inPlayLines(game, cards)` first, one `<div>` each (Page copy), before the seats' lines.
+- **`worked-view.ts` and `card-alone.ts` wording (pre-flight Minors 8–9; no behaviour changes).**
+  - The file header, `standIns` and `shownFlags` say a shown value reads "the card, the cards on it and what a shared zone everyone can see holds". `shownFlags` adds "or one that tests such a zone itself".
+  - `readsOnlyCards(game, name, reads: Reads = {}, seen = new Set<string>())`, with `type Reads = { holder?: boolean; owner?: boolean; centre?: boolean }`. Callers pass `{ centre: true }`, `{ holder: true }` or `{ owner: true, centre: true }`. Its doc adds "card-alone.ts never reads so: what such a zone holds changes while the card stays as it is."
+  - Wrap the `testsCentre` line after `value.kind === 'flag'`.
+  - `card-alone.ts`'s header gains: "Nor does a line that tests what a shared zone holds, which `readsOnlyCards` counts with `centre`: the card in play changes while this one stays as it is."
 - **The Event table** (§20.D). In `  A deck called events, starting in the event deck:`, the table becomes, exact copy:
 
 ```text
@@ -293,7 +303,7 @@ const bankText = () => within(screen.getByTestId('tableaux')).getByText(/^licens
   - **(guards)** "the faces of the four games" and "lists only the first three detail lines" pass unchanged.
 
   In `board-view.test.ts`, append `describe('prices')`:
-  - `paidNumbers(OMEN_GAME)` is `['fee']`; `paidNumbers(PRICE_GAME)` is `[]` (raising the fee pays nothing); `paidNumbers` of Rent Day is `[]` (its `They pay the high bid.` is a rule's, and its cash numbers are paid to a player).
+  - `paidNumbers(OMEN_GAME)` is `['fee']` (its `They pay the fee.` sits in a card move's `Then:`); `paidNumbers(PRICE_GAME)` is `[]` (raising the fee pays nothing); `paidNumbers` of Rent Day is `[]` (its `They pay the high bid.` is a rule's, and its cash numbers are paid to a player).
   - A 2-player `OMEN_GAME` engine with `setGameNumber(state, 'fee', 0)`: p0's `board.gameNumbers` is `[{ name: 'fee', value: 0 }]`.
   - **Review Focus (guard).** The same for `PRICE_GAME`: `[]`. Rent Day's existing bank-line tests pass unchanged.
 
@@ -314,7 +324,7 @@ const bankText = () => within(screen.getByTestId('tableaux')).getByText(/^licens
   In `playtest-fitted.test.tsx`, define the module-level helpers above, then append `describe('the Event in play and the prices on the page')`, with `tab` local and `hover`/`detail` as the hover describe defines them:
   - **A reveal through the page.** Mount `onTop(inPlay(setUpTwo(), 'Whistleblower Protection Act'), 'Intern Season')` with `players: 2`.
     - `inPlayLine()` is `event in play: Whistleblower Protection Act — effect The Bank Reward for a successful Audit (Settlement) is doubled to $8. Not in effect yet.`, and `bankText()` is `license 3 · junior price 2 · hardware junior price 2`.
-    - Press `End your actions` twice (FIRST2's, then SECOND2's):
+    - Press `End your actions` (FIRST2's): `tab(`${SECOND2} — to act`)` is selected, and `inPlayLine()` still names the Whistleblower Protection Act. Press `End your actions` again (SECOND2's):
       - `tab(`${FIRST2} — to act`)` is selected;
       - `inPlayLine()` is `event in play: Intern Season — effect Recruiting from the University costs $0 this round.`;
       - `bankText()` is `license 3 · junior price 0 · hardware junior price 0`;
@@ -330,7 +340,7 @@ const bankText = () => within(screen.getByTestId('tableaux')).getByText(/^licens
     - §20.D: each round start resets the License to $3 and the University to $2;
     - §20.B: a Junior Software Dev's output is 1 Blue; §20.C.1: the Dating App's maintenance is 1 Blue / 0 Red;
     - §20.D 11: Server Crash takes 1 Bandwidth from each Software staff member in Ops; §20.A and R1: Toxic Personality takes one cube, Blue first, off its team's total, here the ops pool.
-- [ ] **Step 2: Run** `bunx vitest run src/engine/core/lang/cards.test.ts src/engine/pixi/text-faces.test.ts src/engine/core/lang/board-view.test.ts src/pages/designer/tableaux.test.ts src/pages/designer/playtest-fitted.test.tsx src/games/startup-simulator.test.ts`. Expected: the new tests FAIL, except the gauge tests, which pass after Task 1 and are guards; every existing test passes.
+- [ ] **Step 2: Run** `bunx vitest run src/engine/core/lang/cards.test.ts src/engine/pixi/text-faces.test.ts src/engine/core/lang/board-view.test.ts src/pages/designer/tableaux.test.ts src/pages/designer/playtest-fitted.test.tsx src/games/startup-simulator.test.ts`. Expected: the new tests FAIL, except the Whistleblower Protection Act and Toxic Personality gauge tests, which pass after Task 1 and are guards. The Server Crash gauge test fails only on its in-play line. Every existing test passes.
 - [ ] **Step 3: Implement** the interfaces and change the Event table.
   - If a Startup line now reads two ways (an `ambiguous` diagnostic from the new column's words), stop and report it.
 - [ ] **Step 4: Run** `bunx vitest run src/engine src/pages src/games`, then `bun run test` and `bun run typecheck`.
@@ -340,7 +350,7 @@ const bankText = () => within(screen.getByTestId('tableaux')).getByText(/^licens
 
 ```bash
 git add src/engine/core/lang/cards.ts src/engine/pixi/text-faces.ts src/engine/core/lang/library/game-numbers.ts \
-  src/engine/core/lang/worked-view.ts src/engine/core/lang/board-view.ts src/pages/designer/tableaux.tsx src/games/startup-simulator.rules \
+  src/engine/core/lang/worked-view.ts src/engine/core/lang/card-alone.ts src/engine/core/lang/board-view.ts src/pages/designer/tableaux.tsx src/games/startup-simulator.rules \
   src/engine/core/lang/cards.test.ts src/engine/pixi/text-faces.test.ts src/engine/core/lang/board-view.test.ts \
   src/pages/designer/tableaux.test.ts src/pages/designer/playtest-fitted.test.tsx src/games/startup-simulator.test.ts
 git commit -F - <<'EOF'
@@ -358,19 +368,51 @@ EOF
 Before starting: re-check Task 2's `inPlay` and the module-level helpers, 4-3's `boardBadges` and 5-3's `keptBadges` and decor merge, and 6-2a's buttons, counts and prices at HEAD. Read 6-2a's labels for the Strategy buttons from the view (`offered()`), as below.
 
 **Files:**
-- Modify: `src/pages/designer/playtest.tsx` (the hover line)
-- Test: `src/pages/designer/playtest-fitted.test.tsx` (append)
+- Modify: `src/pages/designer/playtest.tsx` (the hover line), `src/pages/designer/card-detail.ts` (`leaveOff`), `src/pages/designer/board-text.ts` (`labelledFacts`)
+- Test: `src/pages/designer/playtest-fitted.test.tsx` (append), `src/pages/designer/board-text.test.ts` (append)
 
 **Interfaces:**
-- Consumes: `cardDetail`; the decor's `badge`; Task 2's `inPlay`.
-- Produces: in `playtest.tsx`, the hover line is `cardDetail(faceKey)`, then ` — {label}` when the decor gives the card a label (Call 5). No new export.
-- **Second-person labels used below** (re-check each against the view):
+- Consumes: `cardDetail`; the decor's `badge`; `flagsOn` and `countsRead` (board-text.ts's own readers); Task 2's `inPlay`.
+- Produces:
+
+```ts
+// card-detail.ts
+/** `cardDetail(faceKey)` less the named facts: the label says them (Call 5). */
+export function cardDetail(faceKey: string, leaveOff: string[] = []): string;
+// board-text.ts
+/**
+ * The facts a card's label says: the `flagsOn` flags, then the counts that no column reads and that are not 0.
+ * `[]` for a face-down card.
+ */
+export function labelledFacts(card: CardState, game: CompiledGame): string[];
+```
+
+- **The hover line** in `playtest.tsx` is `cardDetail(faceKey, label === undefined ? [] : labelledFacts(card, game))`, then ` — {label}` when the decor gives the card a label (Call 5).
+- **Second-person labels used below**, defined in Task 3's describe (re-check each against the view):
   - `PLAY` = `Play a card from your strategy hand to a card in your bench, your development team or your ops team`;
   - `DEBUFF` = `Play a card from your strategy hand to a card in another player's development team or another player's ops team`;
   - `TO_PRODUCT` = `Play a card from your strategy hand to a card in your operations`;
-  - `ALONE` = `Play a card in your strategy hand`.
+  - `ALONE` = `Play a card in your strategy hand`;
+  - `FLUSH` = `Brainstorm after flushing some cards from your strategy hand`.
+- **Helpers** in Task 3's describe: `faceOf(id)`, the placed card's `faceKey`; `nameOf(card)` = `parseTextFaceKey(card.faceKey)!.name`.
 
-- [ ] **Step 1: Write the tests.** Append `describe('Attributes, Utility cards and Hype on the page')`, with `hover`/`detail` as the hover describe defines them, `tab` and `boardOf` local:
+- [ ] **Step 1: Write the tests.**
+
+  In `board-text.test.ts`, import `labelledFacts` on a line of its own, `import { labelledFacts } from './board-text';`, and add this inside `describe('flags kept, counts no column reads, and faded cards')`, beside its `potter`, `laid`, `dented` and `marked` fixtures (the pre-flight probe's test, `pf63/work` `ac3ed8a`):
+
+```ts
+describe('labelledFacts', () => {
+  it("names the flags set and the counts no column reads, which a label says, and never a count a column reads", () => {
+    const card = cardOf(withCounts(potter, { dents: 1, 'fixed dents': 2 }), potter);
+    expect(labelledFacts(card, marked)).toEqual(['tired', 'dents', 'fixed dents']);
+    expect(cardOf(laid, dented).data).toMatchObject({ 'red done': 1, 'new red done': 3 });
+    expect(labelledFacts(cardOf(laid, dented), marked)).toEqual([]);
+    expect(labelledFacts({ ...card, faceUp: false, faceKey: 'back' }, marked)).toEqual([]);
+  });
+});
+```
+
+  Then append `describe('Attributes, Utility cards and Hype on the page')` to `playtest-fitted.test.tsx`, with `hover`/`detail` as the hover describe defines them, `tab` and `boardOf` local:
   - **The arrangement:** `inPlay(setUp(), 'Whistleblower Protection Act')`, with:
     - the first Workaholic, TechCrunch Feature and Design Sprint in `strategy-hand-${S}`;
     - a To-Do List in `development-${S}`, with S's Junior Software Dev `putOn` it in `development-team-${S}`;
@@ -378,33 +420,34 @@ Before starting: re-check Task 2's `inPlay` and the module-level helpers, 4-3's 
     - the first Junior QA Tester not S's in `open-job-market`, with `'clean coder': 1`;
     - N's bench Junior Hardware Eng with `burnout: 1`.
   - **Mounted, on S's tab:**
-    - the market QA Tester's decor is `{ badge: '1 clean coder' }`, on O's tab too (a count rides with its Talent, R2);
+    - the market QA Tester's decor is `{ badge: '1 clean coder' }`, on O's tab too (a count rides with its Talent, R2), then back to `tab(`${S} — to act`)`;
     - `fittedLayout(game.zones, S)` has a shared `attributes-in-play` pile, and `inOrder('attributes-in-play')` is `[]`;
     - **Review Focus:** `document.body.textContent` doesn't contain `1 burnout` (N's bench is hidden from S).
-  - **A Buff.** `click(workaholic)`: `offered()` contains `[PLAY, true]`; pin the whole list as the view gives it. `choose(PLAY)`, then `click(junior)` (S's Junior on the To-Do List, drawn hanging under it):
-    - the Junior's label ends with `1 workaholic`; pin it whole as the view gives it (4-3's order: kept flags, shown flags, lone counts) and report it;
-    - `boardOf(S)` contains `` `with Junior Software Dev${bracket} [1 workaholic]` ``, where `bracket` is ` (…)` with the label's flags, or empty when it has none;
+  - **A Buff.** `click(workaholic)`: `offered()` is `[[PLAY, true], [DEBUFF, "There is no card in another player's development team or another player's ops team."], [TO_PRODUCT, 'the card is a TechCrunch Feature'], [ALONE, 'it is a Design Sprint card'], [FLUSH, true]]`. `choose(PLAY)`, then `click(junior)` (S's Junior on the To-Do List, drawn hanging under it):
+    - the Junior's label is `overworked, overworked in blue, 1 workaholic` (4-3's order: kept flags, shown flags, lone counts);
+    - `boardOf(S)` contains `with Junior Software Dev (overworked, overworked in blue) [1 workaholic]`;
     - `lineOf(S)` starts `` `${S} 5 capital, 3 actions` ``;
-    - `inOrder('attributes-in-play')` names `['Workaholic']`, face up, on O's tab too.
-  - **The hover line names the label.** `hover(junior)`: `detail()` is `` `${cardDetail(faceKey)} — ${label}` ``. `hover(dating)` before any Hype: `detail()` is `cardDetail(faceKey)` alone.
+    - `inOrder('attributes-in-play')` names `['Workaholic']`, face up, on O's tab too, then back to `tab(`${S} — to act`)`.
+  - **The hover line names the label, and leaves off the facts it says.** `hover(junior)`: `detail()` is `` `Junior Software Dev — cost 2 · skill software · output 1 · salary 0 · role Junior — ${label}` `` (no `workaholic 1` among the columns). `hover(dating)` before any Hype: `detail()` is `cardDetail(faceKey)` alone.
   - **TechCrunch Feature and Hype.** `click(techcrunch)`, `choose(TO_PRODUCT)`, `pickNamed('Dating App')`:
-    - the Dating App's label is `1 hype`, and its caption is unchanged;
+    - the Dating App's decor is `{ caption: 'Blue 0/6\nRed 0/0', badge: '1 hype' }`;
     - `boardOf(S)` contains `Dating App (tier Tier 1, tag Social, sector Consumer) [Blue 0/6, Red 0/0, 1 hype]`;
-    - `lineOf(S)` starts `` `${S} 0 capital, 3 actions` ``; on N's tab, `boardOf(S)` reads the same.
+    - `lineOf(S)` starts `` `${S} 0 capital, 3 actions` ``; on N's tab, `boardOf(S)` reads the same, then back to `tab(`${S} — to act`)`.
   - **Design Sprint.** Press `ALONE`, `pickNamed('Design Sprint')`: `lineOf(S)` contains `backlog 6`; on O's tab, `cardsIn(`backlog-${S}`)` is `[]` and `lineOf(S)` contains `backlog 6`.
-  - **A full label in a stack** (Call 5). Arranged on `inPlay(setUp(), 'Whistleblower Protection Act')`: a Cloud Storage in `development-${N}`, with N's Junior Software Dev (`{ 'blue xp': 1, workaholic: 1, burnout: 1 }`) and then N's Junior Hardware Eng `putOn` it. On N's tab:
-    - the Software Dev's label ends with `1 blue xp, 1 workaholic, 1 burnout`; pin it whole;
-    - `hover(softwareDev)`: `detail()` ends with `` ` — ${label}` ``.
+  - **A full label in a stack** (Call 5). Arranged on `inPlay(setUp(), 'Whistleblower Protection Act')`: a Cloud Storage in `development-${N}`, with N's Junior Software Dev (`{ 'blue xp tokens': 1, workaholic: 1, burnout: 1 }`) and then N's Junior Hardware Eng `putOn` it. On N's tab:
+    - the Software Dev's label is `overworked, overworked in blue, burned out, 1 blue xp token, 1 workaholic, 1 burnout`;
+    - `hover(softwareDev)`: `detail()` is `` `Junior Software Dev — cost 2 · skill software · output 1 · salary 0 · role Junior — ${label}` ``.
   - **How the numbers come** (§20.A, ruling 23, R2): Workaholic $2, TechCrunch Feature $5, Design Sprint $0, each 0 AP: 7 − 2 − 5 = 0; Design Sprint deals 5 Seed cards to a backlog of 1; a TechCrunch Feature adds 1 Hype; Attributes ride with their Talent into the open job market (R2).
-- [ ] **Step 2: Run** `bunx vitest run src/pages/designer/playtest-fitted.test.tsx`. Expected: the hover-line checks of a labelled card FAIL. The rest pass already (4-3's and 5-3's labels, 3-2's picker and offer) and are guards; say so in the report.
-- [ ] **Step 3: Implement** the hover line. If a guard fails for a reason other than the hover line, stop and report it: it is a page gap, not something to work around.
+- [ ] **Step 2: Run** `bunx vitest run src/pages/designer/playtest-fitted.test.tsx src/pages/designer/board-text.test.ts`. Expected: the `labelledFacts` tests and the hover-line checks of a labelled card FAIL. The rest pass already (4-3's and 5-3's labels, 3-2's picker and offer) and are guards; say so in the report.
+- [ ] **Step 3: Implement** the interfaces. If a guard fails for a reason other than the hover line, stop and report it: it is a page gap, not something to work around.
 - [ ] **Step 4: Run** `bunx vitest run src/pages/designer src/engine src/games`, then `bun run test` and `bun run typecheck`. The hover describe's existing tests pass unchanged.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/pages/designer/playtest.tsx src/pages/designer/playtest-fitted.test.tsx
+git add src/pages/designer/playtest.tsx src/pages/designer/card-detail.ts src/pages/designer/board-text.ts \
+  src/pages/designer/playtest-fitted.test.tsx src/pages/designer/board-text.test.ts
 git commit -F - <<'EOF'
-feat(designer): the hover line names a card's whole label, and Attributes, TechCrunch Feature's Hype and Design Sprint are pinned through the page
+feat(designer): the hover line names a card's whole label and leaves off the facts it says, and Attributes, TechCrunch Feature's Hype and Design Sprint are pinned through the page
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC
@@ -422,7 +465,7 @@ Before starting: re-check 6-1's `othersZoneIds` order, `JINX_GAME`, `ROUND_STEPS
 - Test (all append): `src/pages/designer/card-pick.test.ts`, `src/pages/designer/card-picker.test.tsx`, `src/pages/designer/playtest-fitted.test.tsx`
 
 **Interfaces:**
-- Consumes: `zoneInfo`; 6-1's `JINX_GAME`; Tasks 2–3's helpers and labels.
+- Consumes: `zoneInfo`; 6-1's `JINX_GAME`; Tasks 2–3's helpers and labels; `setCounter`, imported beside Task 2's `setGameNumber`: `import { setCounter, setGameNumber } from '@/engine/core/lang/board-state'`.
 - Produces:
 
 ```ts
@@ -439,16 +482,16 @@ places?: { [cardId: string]: string };   // a card with a place reads `{name} ({
 
 - [ ] **Step 1: Write the failing tests.**
 
-  In `card-pick.test.ts`, append `describe('placesOf')`, on a 3-player `JINX_GAME` engine: p1's workshop holds a Vase with a Potter on it in `crew-p1`, p2's workshop a Statue, p0's workshop a Vase, and the hall its hands.
+  In `card-pick.test.ts`, append `describe('placesOf')`, on `initialState(jinx, 1)` with no Setup (as 6-1's JINX tests arrange), `jinx` the 3-player `JINX_GAME` engine (its Setup would deal from a pile that is too short): p1's workshop holds a Vase with a Potter `putOn` it in `crew-p1`, p2's workshop a Statue, p0's workshop a Vase, p1's stash the other Statue, and the hall its hands. `placesOf` is imported on a line of its own, `import { placesOf } from './card-pick';`.
   - For p0: p1's Vase is `p1's workshop`, the Potter `p1's crew`, p2's Statue `p2's workshop`; p0's Vase and every hall card have none.
-  - **Review Focus.** A face-down copy of a card in `stash-p1` (`faceUp: false`, `faceKey: HIDDEN_FACE_KEY`, `data: {}`) is `p1's stash`: its place, never its name.
+  - **Review Focus.** A face-down copy of that stashed Statue in `stash-p1` (`faceUp: false`, `faceKey: HIDDEN_FACE_KEY`, `data: {}`) is `p1's stash`: its place, never its name.
 
   In `card-picker.test.tsx`, append `describe('places')`, with a `CardPickView` whose one card `s` (`Statue`) goes onto `c1` and `c2`, both named `Vase`, and `places: { c1: "p1's workshop", c2: "p2's workshop" }`:
   - after picking `s`, the buttons read `Vase (p1's workshop)` and `Vase (p2's workshop)`, with aria-labels `Pick Vase (p1's workshop)` and `Pick Vase (p2's workshop)`;
   - pressing the second sends `{ cardId: 's', onto: 'c2' }`;
   - **(guard)** without `places`, the existing tests pass unchanged.
 
-  In `playtest-fitted.test.tsx`, append `describe("a Debuff on another seat's staff, and the steps as a round starts")`, with `T = after(N, 3)` (the third seat, since the file's `O` may be N), `tab` and `boardOf` local:
+  In `playtest-fitted.test.tsx`, append `describe("a Debuff on another seat's staff, and the steps as a round starts")`, with `T = after(N, 3)` (the third seat, since the file's `O` may be N), `DEBUFF` defined as in Task 3, `tab` and `boardOf` local:
   - **A Debuff from the list.** Arranged on `inPlay(setUp(), 'Whistleblower Protection Act')`:
     - the first Burnout in `strategy-hand-${S}`;
     - a Smart Lock in `development-${N}`, with the Engineer `putOn` it;
@@ -463,10 +506,10 @@ places?: { [cardId: string]: string };   // a card with a place reads `{name} ({
     - **Review Focus.** `click(sJunior)` (S's own Junior): nothing is sent (`inOrder('attributes-in-play')` is still `[]`), the notice reads `Pick where it goes: a card in another player's development team or another player's ops team.`, and the picker stays open.
     - `pickNamed(`Engineer (${N}'s development team)`)`:
       - `inOrder('attributes-in-play')` names `['Burnout']`, and `lineOf(S)` starts `` `${S} 7 capital, 3 actions` ``;
-      - `boardOf(N)` contains `` `with Engineer${bracket} [1 burnout]` ``, where `bracket` is ` (…)` with the flags of the Engineer's label, or empty when it has none;
+      - `boardOf(N)` contains `with Engineer (burned out) [1 burnout]`;
       - the picker is gone and no card has a ring;
-      - on N's tab, the Engineer's label ends with `1 burnout`.
-  - **The event check on the page** (Review Focus). Arranged on `onTop(inPlay(setUpTwo(), 'Whistleblower Protection Act'), 'Regulation Audit')`, with the Engineer and the Diva in `ops-team-${SECOND2}` and SECOND2's capital set to 4. Mount with `players: 2`.
+      - on N's tab, the Engineer's label is `burned out, 1 burnout`.
+  - **The event check on the page** (Review Focus). Arranged on `onTop(inPlay(setUpTwo(), 'Whistleblower Protection Act'), 'Regulation Audit')`, with the Engineer and the Diva in `ops-team-${SECOND2}` and SECOND2's capital set to 3. Mount with `players: 2`.
     - Press `End your actions` (FIRST2's). On SECOND2's tab the status ends with `hint('income')` (an ops check with no product passes by itself; if it waits, stop and report). Press `Pay salaries`: `lineOf(SECOND2)` starts `` `${SECOND2} 1 capital` ``. Press `End your actions`:
       - `tab(`${SECOND2} — to act`)` is selected, though FIRST2 starts the round: the steps passed FIRST2 at once;
       - `status()` is `` `seat: ${SECOND2} — Your turn — ${hint('event check')}` ``;
@@ -483,7 +526,7 @@ places?: { [cardId: string]: string };   // a card with a place reads `{name} ({
     - `inPlayLine()` starts `event in play: Angel Investors — effect When revealed,`.
   - **How the numbers come:**
     - §20.A: Burnout costs $0 and 0 AP and goes on an opponent's Board staff (Development or Ops); R2: its card waits in the attributes in play;
-    - §20.B: the Engineer's salary is $2 and the Diva's $1; §5 Phase B: 4 − 3 = 1 at Income;
+    - §20.B: the Diva's salary is $1, and the Engineer's $2 but $1 in Ops (Efficient); §5 Phase B: 3 − 2 = 1 at Income;
     - §20.D 6: $1 for each Board employee whose salary is above $0, from the Start Player; FIRST2 has none; SECOND2 owes $2 with $1, lets the Diva go, then owes and pays $1;
     - §20.D 4: $3 to a player with a Tier 1 product and none of Tier 2 or 3, counting Development, 7 + 3 = 10; none to a player with no product.
 - [ ] **Step 2: Run** `bunx vitest run src/pages/designer`. Expected: `placesOf`, the places on the picker's buttons and the decor check FAIL; the event check and Angel tests pass already (6-1's and 6-2b's steps, and 3-2's tabs) and are guards.
@@ -548,6 +591,7 @@ EOF
     - Use Chromium with `['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader']` and a viewport of `1600 × 3200`.
     - Expect no `pageerror` and no console error.
     - Load the Startup Simulator sample, fill `Rules` with the probe's text, choose `2` and press `Play`.
+    - With the probe's rules the page reads `305 of 307 examples pass`; Play stays enabled. Carry on.
   - **Screenshots.** Each must show what is listed after it.
     1. **`01-table.png`:**
        - the in-play line reads `event in play: Intern Season — effect Recruiting from the University costs $0 this round.`, above p0's line;
@@ -556,8 +600,8 @@ EOF
        - `board-p1` names the Dating App with `2 hype`;
        - on the canvas, the Intern Season stands in the event in play with its name alone on its face, and the attributes in play is an empty pile on the shared lines.
     2. **`02-hover.png`.** Hover the Intern Season (`rowCard(event in play, 0, 1, STRIP)`): the hover line reads `Intern Season — effect Recruiting from the University costs $0 this round.`
-    3. **`03-buff.png`.** Press `Assign some cards from your bench to a card in your development`, pick the Hacker, the Veteran and the Architect, `Confirm` and `Pick To-Do List`. Click the Workaholic in the strategy hand (`rowCard(strategy hand p0, 0, 3, STRIP)`), choose `Play a card from your strategy hand to a card in your bench, your development team or your ops team`, and pick p0's Junior Software Dev on the bench:
-       - the Junior is labelled `1 workaholic` on the bench;
+    3. **`03-buff.png`.** Press `Assign some cards from your bench to a card in your development`, pick the Hacker, the Veteran and the Architect, `Confirm` and `Pick To-Do List`. Click the Workaholic in the strategy hand (`rowCard(strategy hand p0, 0, 3, STRIP)`), choose `Play a card from your strategy hand to a card in your bench, your development team or your ops team`, and pick the Hacker (in the development team, under the To-Do List):
+       - the Hacker is labelled `overworked, overworked in blue, 1 workaholic`, and `board-p0` contains `with Hacker (overworked, overworked in blue) [1 workaholic]`; the Veteran hanging over it covers the label after `overworked in blue`; hovering its strip shows the whole label;
        - p0's line starts `p0 5 capital`;
        - the attributes in play shows the Workaholic face up.
     4. **`04-picker.png`.** Click the Toxic Personality (`rowCard(strategy hand p0, 0, 2, STRIP)`) and choose `Play a card from your strategy hand to a card in another player's development team or another player's ops team`:
@@ -594,13 +638,13 @@ EOF
     - §20.B: the Junior Software Dev makes 1 Blue, the Diva 3 Red; §20.C.1: the Dating App needs 1 Blue / 0 Red;
     - §20.A: Workaholic $2, Toxic Personality $3, Burnout $0, each 0 AP: 7 − 2 − 3 − 0 = 2; R1: Toxic takes the pool's Blue; R3: Burnout makes 0;
     - §5 Phase B: the Dating App offline earns nothing, and the Diva's $1 salary leaves 7 − 1 = 6;
-    - §20.D 6: p0 owes $3 for the Hacker, the Veteran and the Architect (each $2 salary) with $2, lets the Veteran go and pays $2; p1 pays $1 for the Diva: 6 − 1 = 5.
+    - §20.D 6: p0 owes $3 for the Hacker, the Veteran and the Architect (each salary above $0; the Hacker's is $4 with the Workaholic) with $2, lets the Veteran go and pays $2; p1 pays $1 for the Diva: 6 − 1 = 5.
 - [ ] **Step 3: Update the README.**
   - **"A table too big for one screen", `The other seats`.** Add:
     - above the players' lines, a line for each zone in the centre whose cards change what the rules work out (`Only if the event in play has the Tech Bubble.`), with each card in full: `event in play: Tech Bubble — effect All Active Maintenance Products generate +$1 Revenue this round.`;
-    - a price a button pays (`They pay the junior price.`) stays on the bank line at 0.
+    - a price a button or a card move pays (`They pay the junior price.`) stays on the bank line at 0.
   - **`The Board`.** Add:
-    - the hover line names a card's whole label after its columns, for a label that a card hanging over it covers;
+    - the hover line names a card's whole label after its columns, for a label that a card hanging over it covers; the flags and counts the label says are left off the columns;
     - a flag that tests a card in the centre is never a label, though the values it changes are shown, gauges included.
   - **"Buttons that pick cards", `In the playtest`.** Add: a card in another player's zone is listed with its place, `Vase (p1's workshop)`, since the table shows one seat at a time.
   - **"Cards that say what they do".** Add: a value that is a sentence is left off the card's face; the hover line gives it.
