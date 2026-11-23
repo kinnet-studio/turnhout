@@ -105,7 +105,7 @@ describe('Playtest of a game too big for one table', () => {
   it("lists every player's tableau", () => {
     mount();
     for (const seat of seatsOf(3)) {
-      expect(lineOf(seat)).toBe(`${seat} 7 capital, 3 actions, 0 market share · bench 3 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0 · strategy hand 0 · brainstorm 0 · milestones 0${seat === S ? ' · start player' : ''}`);
+      expect(lineOf(seat)).toBe(`${seat} 7 capital, 3 actions, 0 market share · bench 3 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0 · strategy hand 0 · brainstorm 0 · milestones 0 · equity 3 · portfolio 0${seat === S ? ' · start player' : ''}`);
     }
   });
 
@@ -241,7 +241,7 @@ describe('a round played through the page', () => {
   it('recruits from every source, drafts, researches, discards and passes the turn', () => {
     mount();
     for (let i = 0; i < 3; i++) press('Recruit a junior software dev');
-    expect(lineOf(S)).toBe(`${S} 1 capital, 0 actions, 0 market share · bench 6 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0 · strategy hand 0 · brainstorm 0 · milestones 0 · start player`);
+    expect(lineOf(S)).toBe(`${S} 1 capital, 0 actions, 0 market share · bench 6 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0 · strategy hand 0 · brainstorm 0 · milestones 0 · equity 3 · portfolio 0 · start player`);
     // At 0 actions the turn waits on the seat, which may still take a free action, until it ends its actions (rulebook l.172–173).
     expect(status()).toBe(`seat: ${S} — Your turn — ${hint('actions')}`);
     press('End your actions');
@@ -396,12 +396,14 @@ describe("the Board's place on the table", () => {
     expect(get('brainstorm').transform).toEqual({ x: 420, y: 650 });
   });
 
-  it('puts the Board in two lines between the shared lines and the strip, the milestones alone on the second, each slot 418 tall', () => {
+  it('puts the Board in two lines between the shared lines and the strip, the milestones, the equity and the portfolio on the second, each slot 418 tall', () => {
     expect(get('development').transform).toEqual({ x: -420, y: -266 });
     expect(get('operations').transform).toEqual({ x: 0, y: -266 });
     expect(get('ops-team').transform).toEqual({ x: 420, y: -266 });
-    expect(get('milestones').transform).toEqual({ x: 0, y: 192 });
-    for (const zone of ['development', 'operations', 'ops-team', 'milestones']) expect(get(zone).bounds?.height, zone).toBe(418);
+    expect(get('milestones').transform).toEqual({ x: -420, y: 192 });
+    expect(get('equity').transform).toEqual({ x: 0, y: 192 });
+    expect(get('portfolio').transform).toEqual({ x: 420, y: 192 });
+    for (const zone of ['development', 'operations', 'ops-team', 'milestones', 'equity', 'portfolio']) expect(get(zone).bounds?.height, zone).toBe(418);
   });
 
   it('hangs the development team under the development, as a free zone last in the list', () => {
@@ -448,7 +450,7 @@ describe('the Board on the page', () => {
   const todo = idOf(BUILT, 'To-Do List');
   const junior = idOf(BUILT, 'Junior Software Dev', `development-team-${S}`);
   const architect = idOf(BUILT, 'Architect');
-  const BOARD = `development: Dating App (tier Tier 1, tag Social, sector Consumer) [Blue 4/6, Red 0/0] with Junior Software Dev and Architect · operations: To-Do List (tier Tier 1, tag App, sector Concept) [Blue 0/4, Red 0/0] · ops team: QA Engineer`;
+  const BOARD = `development: Dating App (tier Tier 1, tag Social, sector Consumer) [Blue 4/6, Red 0/0] with Junior Software Dev and Architect · operations: To-Do List (tier Tier 1, tag App, sector Concept) [Blue 0/4, Red 0/0] · ops team: QA Engineer · equity: Equity; Equity; Equity`;
 
   it('hangs the staff under their card on the canvas, and captions each card with its counts', () => {
     mount({ initial: BUILT });
@@ -466,7 +468,8 @@ describe('the Board on the page', () => {
   it("lists every seat's Board as text, whichever seat is looked at", () => {
     mount({ initial: BUILT });
     expect(boardOf(S)).toBe(BOARD);
-    expect(screen.queryByTestId(`board-${O}`)).toBeNull();
+    // A seat with nothing on its Board still lists its Equity supply, a public row of its own (§17, plan 7-2a).
+    expect(boardOf(O)).toBe('equity: Equity; Equity; Equity');
     fireEvent.click(tab(O));
     expect(cardsIn(`development-${S}`)).toEqual([]);
     expect(boardOf(S)).toBe(BOARD);
@@ -603,7 +606,7 @@ describe('picking cards by clicking them', () => {
     expect(team.map((c) => c.data?.['lang:on'])).toEqual([greenlit, greenlit]);
     expect(lineOf(S)).toContain('2 actions');
     expect(boardOf(S)).toBe(
-      `development: ${attrs.name} (tier ${attrs.tier}, tag ${attrs.tag}, sector ${attrs.sector}) [Blue 0/${attrs['blue cost']}, Red 0/${attrs['red cost']}] with Junior Software Dev and Junior Hardware Eng`,
+      `development: ${attrs.name} (tier ${attrs.tier}, tag ${attrs.tag}, sector ${attrs.sector}) [Blue 0/${attrs['blue cost']}, Red 0/${attrs['red cost']}] with Junior Software Dev and Junior Hardware Eng · equity: Equity; Equity; Equity`,
     );
     expect(screen.queryByRole('group', { name: 'Pick cards' })).toBeNull();
   });
@@ -680,7 +683,7 @@ describe('picking cards by clicking them', () => {
     fireEvent.click(within(offer()).getByRole('button', { name: 'Cancel' }));
     click(dating);
     choose(LAUNCH);
-    expect(boardOf(S)).toBe('development: Smart Lock (tier Tier 1, tag IoT, sector Deep Tech) [Blue 0/1, Red 0/5] · operations: Dating App (tier Tier 1, tag Social, sector Consumer) [Blue 6/6, Red 0/0] · ops team: Junior Software Dev · milestones: Clean Launch');
+    expect(boardOf(S)).toBe('development: Smart Lock (tier Tier 1, tag IoT, sector Deep Tech) [Blue 0/1, Red 0/5] · operations: Dating App (tier Tier 1, tag Social, sector Consumer) [Blue 6/6, Red 0/0] · ops team: Junior Software Dev · milestones: Clean Launch · equity: Equity; Equity; Equity');
     expect(lineOf(S)).toContain('2 actions');
   });
 
@@ -845,7 +848,7 @@ describe('the Board played by clicking', () => {
 
     click(todo);
     choose('Launch a card from your development to your operations');
-    expect(screen.getByTestId(`board-${S}`).textContent).toBe('operations: To-Do List (tier Tier 1, tag App, sector Concept) [Blue 4/4, Red 0/0] · ops team: Junior Software Dev [1 blue xp token] · milestones: Clean Launch');
+    expect(screen.getByTestId(`board-${S}`).textContent).toBe('operations: To-Do List (tier Tier 1, tag App, sector Concept) [Blue 4/4, Red 0/0] · ops team: Junior Software Dev [1 blue xp token] · milestones: Clean Launch · equity: Equity; Equity; Equity');
 
     // Income: the To-Do List's rev of 1 is paid, and its rev earns 1 market share.
     for (const seat of [S, N, T]) {
@@ -1000,6 +1003,7 @@ describe('what the rules work out, on the Board', () => {
     'Viral Video App (tier Tier 1, tag Social, sector Consumer) [Blue 1/4 +2 cut, Red 0/0]',
     '· operations: Search Engine (tier Tier 2, tag AI, requires Platform, sector Infra) [Blue 0/12, Red 0/0]',
     '· ops team: Engineer (efficient in ops)',
+    '· equity: Equity; Equity; Equity',
   ].join(' ');
 
   it('captions each card with its need after the cut, and badges a card with a flag that changes what it makes or costs', () => {
@@ -1181,7 +1185,7 @@ describe('modes, Offline and Bugs on the Board', () => {
     choose('Assign some cards from your bench to a card in your development');
     click(todo);
     expect(table!.decor![todo]).toEqual({ caption: 'Blue 0/4\nRed 0/0', badge: '1 bug' });
-    expect(boardOf(S)).toBe('development: To-Do List (tier Tier 1, tag App, sector Concept) [Blue 0/4, Red 0/0, 1 bug] with Hacker');
+    expect(boardOf(S)).toBe('development: To-Do List (tier Tier 1, tag App, sector Concept) [Blue 0/4, Red 0/0, 1 bug] with Hacker · equity: Equity; Equity; Equity');
   });
 
   it('labels a card with the mode declared for it, and takes the label off for Blue', () => {
@@ -1372,7 +1376,7 @@ describe('a Growth Hacker hangs under its product', () => {
     state = relocate(state, [junior], `ops-team-${S}`, game);
     return { state, dating, hacker, junior };
   };
-  const BOARD_LINE = 'operations: Dating App (tier Tier 1, tag Social, sector Consumer) [Blue 0/6, Red 0/0] with Growth Hacker (attaching) · ops team: Junior Software Dev';
+  const BOARD_LINE = 'operations: Dating App (tier Tier 1, tag Social, sector Consumer) [Blue 0/6, Red 0/0] with Growth Hacker (attaching) · ops team: Junior Software Dev · equity: Equity; Equity; Equity';
 
   it('draws the Growth Hacker under the product it sits on, and the rest of the ops team in its row', () => {
     const { state, dating, hacker, junior } = arranged();
@@ -1461,7 +1465,7 @@ describe('slice 5 on the page', () => {
     state = putOn(changeCard(state, software, { 'pending blue': 1 }, game), [software, pm], `development-team-${S}`, neobank, game);
     state = relocate(state, [senior], `ops-team-${S}`, game);
     const BOARD = 'development: Neobank (tier Tier 2, tag Crypto, requires Commerce, sector FinTech, stalled) [Blue 0/10, Red 0/0] '
-      + 'with Junior Software Dev [1 pending blue] and Junior PM (managing, pending badge) · ops team: Senior PM (managing, agile)';
+      + 'with Junior Software Dev [1 pending blue] and Junior PM (managing, pending badge) · ops team: Senior PM (managing, agile) · equity: Equity; Equity; Equity';
 
     mount({ initial: state });
     expect(status()).toMatch(new RegExp(`^seat: ${S} `));

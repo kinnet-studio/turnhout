@@ -153,6 +153,9 @@ Cards:
     | Online Course Boom           | Every Training card costs $1 instead of its printed price this round. | 1 |
     | Whistleblower Protection Act | The Bank Reward for a successful Audit (Settlement) is doubled to $8. Not in effect yet. | 1 |
     | Trade Show                   | TechCrunch Feature costs $2 instead of $5 this round; it doesn't stack with the Sales Rep perk. | 1 |
+  A stack called equity tokens that never runs out:
+    | name   |
+    | Equity |
   Cards can be onboarding.
   Cards can be red mode.
   Cards can be qa mode.
@@ -169,6 +172,7 @@ Cards:
   Cards can have bugs and fixed bugs.
   Cards can have workaholic, clean coder, visionary, toxic personality, burnout and flight risk.
   Cards can have hype.
+  Cards can name a founder.
 
 Table:
   The talent deck is a pile in the center that no one can see.
@@ -200,6 +204,8 @@ Table:
   Each player has a strategy hand row that only they can see.
   Each player has a brainstorm row that only they can see.
   Each player has a milestones row that everyone can see.
+  Each player has an equity row that everyone can see.
+  Each player has a portfolio row that everyone can see, where some cards are on other players' cards.
 
 Blue output:
   A software card's blue output is its output.
@@ -821,6 +827,7 @@ Setup:
   A new Junior Software Dev goes to each bench.
   A new Junior Hardware Eng goes to each bench.
   A new Junior QA Tester goes to each bench.
+  3 new Equity cards go to each equity, each naming its owner as its founder.
   Deal 1 card from the seed deck to each backlog.
 
 In every phase:
@@ -1570,6 +1577,7 @@ End:
   Each player scores 1 point for every 5 capital.
   Each card in a player's operations scores its portfolio points.
   Each player scores 2 points for each market share.
+  Each Equity in a player's portfolio scores 5 points.
   Each card in a player's bench scores its human capital.
   Each card in a player's development team scores its human capital.
   Each card in a player's ops team scores its human capital.
@@ -5630,3 +5638,22 @@ Example: Regulation Audit lets a player go only of the staff it taxes, in the op
   Then it is p0's turn
   And the open job market has the Diva
   And p1's ops team has a Junior QA Tester
+
+Example: each player starts with 3 Equity tokens of their own in their supply, and holds none (section 2, section 4)
+  Given the game is set up
+  Then p0's equity has an Equity whose founder is p0, an Equity whose founder is p0 and an Equity whose founder is p0
+  And p1's equity has an Equity whose founder is p1, an Equity whose founder is p1 and an Equity whose founder is p1
+  And p0's portfolio is empty
+  And p1's portfolio is empty
+
+Example: each rival's Equity token held scores 5 points, and a player's own tokens score nothing (section 12, ruling 16)
+  Given 3 players
+  And the crash pile has the Market Crash
+  And it is p2's turn
+  And p1's portfolio has an Equity whose founder is p0 and an Equity whose founder is p2
+  And p0's equity has an Equity whose founder is p0
+  When p2 ends their actions
+  Then the game is over
+  And p1 scores 11
+  And p0 scores 1
+  And p2 scores 1

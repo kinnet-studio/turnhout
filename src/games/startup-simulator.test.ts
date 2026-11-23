@@ -153,6 +153,13 @@ const EVENTS = [
 ] as const;
 /** The three zones the Events move between (§15.D). */
 const EVENT_ZONES = ['event-deck', 'event-in-play', 'event-discard'];
+
+/** Each player's Equity tokens (§2, §4.4). */
+const EQUITY_TOKENS = 3;
+/** The seat an Equity token names, or undefined for any other card. */
+const founderOf = (card: CardState): PlayerId | undefined => card.data?.founder as PlayerId | undefined;
+/** The Equity tokens in `seat`'s portfolio: the stakes it holds in other players (§17). */
+const portfolioOf = (state: GameState, seat: PlayerId): CardState[] => zoneCards(state, zoneIdFor('portfolio', seat));
 /** The values the outputs check reads of each Board card, the Blue and Red outputs first (see `keepsTheRules`). */
 const OUTPUT_NAMES = ['blue output', 'red output', 'qa output', 'blue bandwidth'] as const;
 /** The name of the Event in play, or null before the first Round Start (§5 Phase A). */
@@ -2195,7 +2202,9 @@ function scoreOf(state: GameState, seat: PlayerId): number {
     total + scored.reduce((tokens, name) => tokens + tokenOn(card, name), 0) + (card.data?.badged === true ? 2 : 0), 0);
   const milestones = sum(zoneCards(state, zoneIdFor('milestones', seat)), 'vp');
   const capital = Math.floor(counterOf(state, 'capital', seat) / 5);
-  return capital + val + 2 * counterOf(state, 'market share', seat) + milestones + human - vaporware;
+  // Each rival's Equity token held scores 5 (§12.4, ruling 16).
+  const portfolio = 5 * portfolioOf(state, seat).length;
+  return capital + val + 2 * counterOf(state, 'market share', seat) + milestones + human - vaporware + portfolio;
 }
 
 /**
@@ -2421,6 +2430,24 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     const inTheDeck = new Set(zoneCards(before, 'strategy-deck').map((c) => c.id));
     const newInTheDeck = zoneCards(after, 'strategy-deck').filter((c) => !inTheDeck.has(c.id)).map((c) => `${c.id} (${nameOf(c)})`);
     noneOf([BRAINSTORM, BRAINSTORM_FLUSHING].includes(move.type) ? [] : newInTheDeck, () => `cards new in the strategy deck ${at}`);
+
+    // Equity (the spec's Proof 2 and anti-goal): each Founder's 3 tokens are in their supply or a rival's portfolio, no other card is in
+    // either, and no Founder sells their last (§2, §4.4, §17.D; slice 8's Vest and CTO will change the last line). A game arranged
+    // without Setup, as the arranged tests below are, has none, as it has no Milestone out of the deck; no move changes how many.
+    const equityProblems = seats.flatMap((founder) => {
+      const named = after.cards.filter((c) => founderOf(c) === founder);
+      const was = before.cards.filter((c) => founderOf(c) === founder).length;
+      const misplaced = named.filter((c) => c.zoneId !== zoneIdFor('equity', founder)
+        && !seats.some((holder) => holder !== founder && c.zoneId === zoneIdFor('portfolio', holder)));
+      return [
+        ...([EQUITY_TOKENS, 0].includes(named.length) && named.length === was ? [] : [`${was} then ${named.length} tokens name ${founder}`]),
+        ...misplaced.map((c) => `${c.id} names ${founder} in ${c.zoneId}`),
+        ...(named.length === 0 || zoneCards(after, zoneIdFor('equity', founder)).length > 0 ? [] : [`${founder}'s equity is empty`]),
+      ];
+    });
+    const stray = seats.flatMap((seat) => [...zoneCards(after, zoneIdFor('equity', seat)), ...portfolioOf(after, seat)])
+      .filter((c) => founderOf(c) === undefined).map((c) => `${c.id} (${nameOf(c)}) in ${c.zoneId}`);
+    noneOf([...equityProblems, ...stray], () => `the Equity tokens ${at}`);
 
     // The Milestones: Setup revealed 3 and boxed the rest (§4.3), and a revealed one is claimed into a milestones row for good, only at
     // its moment or once its seat meets it (§12.5, §20.G).
@@ -3061,7 +3088,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(307);
+    expect(results).toHaveLength(309);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -3404,7 +3431,8 @@ describe('Startup Simulator (designer language)', () => {
 
     it('has the three University stacks, which never run out (§20.B.2)', () => {
       const endless = game!.cards.filter((set) => set.kind === 'endless');
-      expect(endless.map((set) => set.identities.map((identity) => identity.attrs.name))).toEqual(JUNIORS.map((name) => [name]));
+      // And §17's Equity tokens, 3 made per player at Setup after the Juniors (§2, §4.4).
+      expect(endless.map((set) => set.identities.map((identity) => identity.attrs.name))).toEqual([...JUNIORS.map((name) => [name]), ['Equity']]);
     });
 
     it('has the Strategy deck of §20.A: 30 cards, 8 of them Training, with their prices', () => {
@@ -3492,11 +3520,14 @@ describe('Startup Simulator (designer language)', () => {
       ['strategy-hand', true, 'row', 'owner'],
       ['brainstorm', true, 'row', 'owner'],
       ['milestones', true, 'row', 'public'],
+      ['equity', true, 'row', 'public'],
+      ['portfolio', true, 'row', 'public'],
     ]);
     // Staff on a project sit on it (§3); the ops team is a pool that runs every product in operation, where only a card that attaches,
     // the Growth Hacker, sits on a product (§20.B).
     const marked = game!.zones.filter((zone) => zone.onCards !== undefined).map(({ name, onCards, holders }) => [name, onCards, holders]);
-    expect(marked).toEqual([['development team', 'every', 'development'], ['ops team', 'some', 'operations']]);
+    // A held Equity token sits in its Investor's portfolio, on one of its Founder's products when placed as a Consultant (§17.B.4, R1).
+    expect(marked).toEqual([['development team', 'every', 'development'], ['ops team', 'some', 'operations'], ['portfolio', 'some', undefined]]);
   });
 
   describe('where the buttons of the actions phase move staff', () => {
@@ -3552,6 +3583,10 @@ describe('Startup Simulator (designer language)', () => {
           expect(zoneCards(state, `milestones-p${p}`), `${at}, p${p}'s milestones`).toEqual([]);
           const counters = state.data[COUNTERS_KEY] as Record<string, Record<string, number>>;
           expect(counters['market share']?.[`p${p}`], `${at}, p${p}'s market share`).toBe(0);
+          // Each player starts with 3 Equity tokens naming them in their supply, and holds none (§2, §4.4).
+          const equity = zoneCards(state, `equity-p${p}`);
+          expect(equity.map(founderOf), `${at}, p${p}'s equity`).toEqual(Array(EQUITY_TOKENS).fill(`p${p}`));
+          expect(portfolioOf(state, `p${p}`), `${at}, p${p}'s portfolio`).toEqual([]);
         }
         expect(zoneCards(state, 'agency-row'), at).toHaveLength(4);
         expect(zoneCards(state, 'seed-market'), at).toHaveLength(2);
@@ -3572,7 +3607,12 @@ describe('Startup Simulator (designer language)', () => {
       const state = setUp(3, 1);
       const ids = [0, 1, 2].flatMap((p) => zoneCards(state, `bench-p${p}`)).map((card) => Number(card.id.slice(1)));
       expect(ids.sort((a, b) => a - b)).toEqual(Array.from({ length: 9 }, (_, i) => 141 + i));
-      expect(state.data[NEXT_CARD_KEY]).toBe(150);
+      expect(state.data[NEXT_CARD_KEY]).toBe(159);
+      // Then each player's 3 Equity tokens, zone by zone in seat order (§4.4; 7-1's cards made per player).
+      for (const p of [0, 1, 2]) {
+        expect(zoneCards(state, `equity-p${p}`).map((card) => [card.id, card.data]), `p${p}'s equity`).toEqual(
+          [0, 1, 2].map((i) => [`c${150 + 3 * p + i}`, { name: 'Equity', founder: `p${p}` }]));
+      }
     });
 
     it('chooses the start player at random', () => {
