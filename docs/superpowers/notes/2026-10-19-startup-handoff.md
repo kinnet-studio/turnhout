@@ -1,6 +1,6 @@
 # Startup Simulator: where the work stands (handoff, paused 2026-10-19; updated 2026-11-23)
 
-Everything below is on `claude/peaceful-curie-rdfkow`; 3817 tests pass. Plan 6-2b finished 2026-11-23 (last code commit `8aedd05`), with plan 6-3's Task 1 inside it (`92408f7`). The long-runs speed-up 2 finished 2026-11-23 (last code commit `f7d21d4`). Plan 6-2a finished 2026-11-23 (last code commit `850550f`). Plan 6-1 finished 2026-11-16 (last code commit `9677b98`); the owner asked to pause after it. The long-runs retune finished 2026-11-23 (`989b9e0`, `e824269`).
+Everything below is on `claude/peaceful-curie-rdfkow`; 3833 tests pass. The mini plan "long-runs retune 2 and speed-up 3" finished 2026-11-23 (last code commit `1e64298`). Plan 6-2b finished 2026-11-23 (last code commit `8aedd05`), with plan 6-3's Task 1 inside it (`92408f7`). The long-runs speed-up 2 finished 2026-11-23 (last code commit `f7d21d4`). Plan 6-2a finished 2026-11-23 (last code commit `850550f`). Plan 6-1 finished 2026-11-16 (last code commit `9677b98`); the owner asked to pause after it. The long-runs retune finished 2026-11-23 (`989b9e0`, `e824269`).
 
 ## Done
 - Slices 1, 3, 4 (all plans), the long-runs speed-up.
@@ -14,6 +14,14 @@ Everything below is on `claude/peaceful-curie-rdfkow`; 3817 tests pass. Plan 6-2
 
 - Slice 6, plan 6-2b (the Event deck, §20): the event deck, its reveal at each round start and its reshuffle (`258f812`); the output lines (Open Source Boom, Hardware Hackathon, Supply Chain Logjam, Server Crash, Legacy Code, Tech Bubble and the rest), placed above the mode and Burnout zeros (`e87e5b1`, `ffe851b`); the prices an Event sets for its round, back to printed at the next round start (Patent Trolls, Chip Shortage, Intern Season, Online Course Boom, Trade Show; `169b076`); Crunch Time's added cube and Bug (`e059c7f`); Angel Investors' and Regulation Audit's `event check` steps (`b6eb33f`); the long runs reveal all 18 Events at 2–5 players with every path tallied and whole games rebuilt from their logs (`a526ffe`); the final fix wave (`872a6b0`, `8aedd05`). 307 examples. Plan 6-3's Task 1 ran inside it (`92408f7`: the view can read a public shared zone; `inPlayZones`). Its pre-flight: `2026-11-23-startup-6-2b-preflight.md`; its ledger: `2026-11-23-startup-6-2b-ledger.md` (the final review is its appendix). Startup's test file ≈26.0 s best (`tests`), from ≈20.6 s: under the 30 s watch; the next mini plan wins it back.
 
+- The long-runs retune 2 and speed-up 3 (plan `2026-11-23-startup-long-runs-retune-2-speed-3.md`, from the probes `2026-11-23-startup-speed-3-proposal.md` and `2026-11-23-startup-retune-2-proposal.md`):
+  - the runtime keeps a value that reads its card and what shared zones hold, keyed by the cards those zones hold, and `cardsOn` reads an index kept per cards array (`1dcbf99`);
+  - the advice tests run only the examples they add, and the outputs check reads each value once (`12e0ac7`). Both are byte-identical, with the same failure text under four rules mutations;
+  - the auto-player recruits for free in Intern Season, keeps TechCrunch Features first, plays the Workaholic on any turn and reassigns its Growth Hacker on alternate turns, so 6 of the 14 `HELD_BY_FEWER_THAN_TWO` paths and 5 other counted keys are held by 2+ games and required (`60f5308`);
+  - the final fix wave pins the shared-zone test's code (`1e64298`).
+
+  Startup's test file is best ≈21.6 s (`tests`), from 26.2 s. Its ledger: `2026-11-23-startup-retune-2-speed-3-ledger.md`.
+
 ## Next, in order
 1. (done) Plan 5-3.
 2. (done) Plan 6-1, with the added Task 6 for 5-2b's G1 (fresh ids on a reshuffle into a hidden pile; 9-1 reuses `lang:renamed`, `dealtIdOf`, `renameCards`, `renameShuffled` and the runners' `currentIdOf`).
@@ -25,11 +33,12 @@ Everything below is on `claude/peaceful-curie-rdfkow`; 3817 tests pass. Plan 6-2
 4. (done 2026-11-23) Plan 6-2a: 18 new required keys, each held by 2+ games; 11 new keys and the old scouting-to-ops key counted, not required, each with a named pin; Startup's test file ≈27.1 s best (`tests`), from ≈20.1 s, under the 30 s watch but with single runs over it under load.
 5. (done 2026-11-23) The long-runs speed-up 2: Startup's test file ≈21.9 s best, from 28.6 s on the same machine; the card-alone classifier is a shared-engine cache every later plan must respect (see Notes).
 6. (done 2026-11-23) Plan 6-2b, with 6-3's Task 1. 14 required paths the Event deck's replay leaves to fewer than 2 of the 20 games are counted, not required (`HELD_BY_FEWER_THAN_TWO`, each with a named pin; ruling R4(a)).
-7. The mini plan "long-runs retune 2 and speed-up 3" (to write; its probes measure first): aim the auto-player at the 14 `HELD_BY_FEWER_THAN_TWO` paths and the older counted keys 6-2b's games no longer reach (Revenue Leader, Leadership Masterclass on a Sales Rep, keep red in the ops team), and win back 6-2b's +27% (the final review puts the largest avoidable cost in the test's per-move outputs invariant, ≈10% of the long runs; engine-side, a cache keyed by the card and the shared zone's cards).
-8. Plan 6-3, Tasks 2–5 (Task 1 done, `92408f7`; pre-flight first).
+7. (done 2026-11-23) The mini plan "long-runs retune 2 and speed-up 3": 8 paths stay counted, not required, each with its pin: Toxic Red, the Engineer's $1 in Ops, Legacy Code at an Income, Crunch stopped by Clean Code, a trained Junior declared red, Attributes kept through a bench discard, the agency row to the bench, Patent Trolls' $5 License. Revenue Leader, Leadership Masterclass on a Sales Rep and keep red in the ops team are also still counted. Five required keys are held by exactly 2 games, and their comments name them: Trade Show's $2 TechCrunch, Platform Power, a License to a chosen provider, a Junior PM promoted, and Toxic in the ops team.
+8. Plan 6-3, Tasks 2–5 (Task 1 done, `92408f7`; pre-flight done, `2026-11-23-startup-6-3-preflight.md`, its findings applied to the plan; R4's `card-alone.ts` sentence dropped after speed-up 3).
 9. Plans 7-1 … 7-3; 8-1 … 8-3; 9-1 … 9-3; 10-1 … 10-3 (all written; each gets a pre-flight first).
 
 ## Notes carried to later pre-flights
+- **Every later plan (from speed-up 3):** the runtime also keeps a value whose lines test what a shared zone holds (`CENTRE_HAS`), by the cards that zone holds; `card-alone.test.ts` pins `sharedZoneHas`'s code text, so a change to what it reads fails until someone checks the kept values. A new phrase that tests a shared zone is not trusted unless it is added there.
 - **Every later plan (from the speed-up 2):** a phrase added to the card-number, card-value or card-subject library (or `it is {cardflag}`) is trusted by the card-alone classifier only if `card-alone.test.ts`'s pinned list says so; a phrase that reads more than its card (the cards on it, its holder, its owner, a player, a game number, the round) must be excluded in `card-alone.ts`. The pin test fails until someone decides. Details in `…-notes-for-6-preflight.md`.
 - **6-2b (applied in 6-2b):** 6-2a moved the Strategy money check to the worked `price` and retitled the "only a Training card" example; Online Course Boom's $1 Training and Chip Shortage need the price floor below. Burnout's `… output is 0.` lines stay last in each output block (6-2a's fix wave pins it; add a line-order probe for the Event lines). The README heading moves to "(slice 6)".
 - **6-3 (from 6-2b):** S4 is 6-3 Task 5's; `inPlayZones` now gives `['event in play']`; in its edit of `worked-view.ts` (Task 2), fix 6-2b's final review Minors 8–9: the header, `standIns` and `shownFlags` comments still say a shown value reads only its card and the cards on it (it may now read a public shared zone), `card-alone.ts`'s header must say it never follows the centre path, `readsOnlyCards`' three positional booleans want an options object, and the `testsCentre` line wants wrapping. Details in `…-notes-for-6-preflight.md`.
@@ -132,6 +141,7 @@ Running list for the final report. Each is a call made under delegation; none bl
 - 6 (plan 6-2a): Pending XP reads the team before Toxic Personality's cube is taken.
 - 6 (plan 6-2b): Angel Investors and Regulation Audit run as one "event check" step at Round Start; a player short of the tax chooses which taxed staff to let go.
 - 6 (plan 6-2b): the four Events whose effects belong to later slices are revealed but do nothing until those slices.
+- 6 (mini plan retune 2): the auto-player recruits for free as its last action in Intern Season, keeps a TechCrunch Feature first at the Brainstorm, plays the Workaholic on any turn, and reassigns its Growth Hacker on turns where ⌊t/n⌋ is odd (rule 4-2's steering); a key the retune newly brings to 2+ games becomes required, Platform Power among them, while First Mover Advantage and Full Stack Founder keep their earlier counted status.
 - 6 (plan 6-2b, R4(a)): the Event deck replays every seeded long run, so 14 paths fell under 2 of the 20 games; they are counted, not required, each pinned by a named example or test (`HELD_BY_FEWER_THAN_TWO`), rather than retuning the auto-player inside a rules plan. The next mini plan retunes for them.
 - perf watch: Startup test file ~14 s after 4-2 Task 1 (BASE 10 s); if it passes 30 s or 2× its pre-slice time, schedule an engine speed-up (zone lookups per state)
 - 6 (plan 6-3): the Event in play shows its §20.D text above the table; a card value that is a sentence stays off the face (shown on hover); a price a button pays shows on the bank line even at 0.
@@ -175,5 +185,7 @@ Running list for the final report. Each is a call made under delegation; none bl
 - `2026-11-23-startup-retune-preflight.md` and `2026-11-23-startup-retune-ledger.md`: the long-runs retune's pre-flight report and its ledger.
 - `2026-11-23-startup-6-2a-preflight.md` and `2026-11-23-startup-6-2a-ledger.md`: plan 6-2a's pre-flight report and its ledger (the final review is its appendix).
 - `2026-11-23-startup-speed-2-proposal.md` and `2026-11-23-startup-speed-2-ledger.md`: the speed-up 2's profile and proposal, and its ledger (the final review's findings are its appendix).
+- `2026-11-23-startup-speed-3-proposal.md`, `2026-11-23-startup-retune-2-proposal.md` and `2026-11-23-startup-retune-2-speed-3-ledger.md`: the mini plan's two probes and its ledger (the final review is its appendix).
+- `2026-11-23-startup-6-3-preflight.md`: plan 6-3's pre-flight for Tasks 2–5.
 - `2026-11-23-startup-6-2b-preflight.md` and `2026-11-23-startup-6-2b-ledger.md`: plan 6-2b's pre-flight report and its ledger (the final review and the fix wave's brief are its appendices).
 - `2026-10-19-startup-notes-for-<plan>-preflight.md`: the notes carried to each later plan's pre-flight (6, 7, 8, 9, 10, and 5-3's).
