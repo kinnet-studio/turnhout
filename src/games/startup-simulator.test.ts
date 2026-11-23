@@ -607,7 +607,6 @@ const payrollOf = (runtime: LangRuntime, state: GameState, seat: PlayerId) =>
 const payrollTaxOf = (runtime: LangRuntime, state: GameState, seat: PlayerId) =>
   [...zoneCards(state, zoneIdFor('development team', seat)), ...zoneCards(state, zoneIdFor('ops team', seat))]
     .reduce((total, card) => total + ((runtime.workedValue(state, card.id, 'payroll tax') as number | null) ?? 0), 0);
-/** A seat's Share Price as the rules work it out (§17.A). */
 /**
  * How many Consultants of a colour sit on a product, counted from card data: the cards on it with that colour flag, and 0 on a
  * Stalled project, where the rules give none (§17.B.4, §3), so that no check reads the rules' own `consultant blue`.
@@ -615,6 +614,7 @@ const payrollTaxOf = (runtime: LangRuntime, state: GameState, seat: PlayerId) =>
 const consultantsOn = (runtime: LangRuntime, state: GameState, id: string, colour: keyof typeof CONSULTANT_COLOURS): number =>
   runtime.workedFlag(state, id, 'stalled') ? 0
     : othersOn(state, id).filter((token) => token.data?.[CONSULTANT_COLOURS[colour]] === true).length;
+/** A seat's Share Price as the rules work it out (§17.A). */
 const sharePriceOf = (runtime: LangRuntime, state: GameState, seat: PlayerId): number => runtime.playerValue(state, seat, 'share price');
 /** The dividend each of a Founder's Equity tokens pays at their Income, by their Operational Revenue, as the rules work it out (§9.B, §17.B.1). */
 const dividendOf = (runtime: LangRuntime, state: GameState, seat: PlayerId): number => runtime.playerValue(state, seat, 'dividend');
@@ -4416,10 +4416,9 @@ describe('Startup Simulator (designer language)', () => {
       // Power claimed (3 and 4 players, seed 2); by three each: Sales Seminar on a Sales Rep and the Sales Rep's XP bonus (2, 3 and 4
       // players, seed 4) and a trained Junior declared blue (held by fewer since plan 7-2a; see HELD_BY_FEWER_THAN_TWO); by four: a
       // strategy card discarded at cleanup (2 players seed 1, 3 players seeds 4 and 5, 5 players seed 4); by six each: a badged Junior
-      // leading at the
-      // Engine (2 players seeds 2 and 4, 3 players seed 3, 4 players seed 4, 5 players seeds 2 and 4) and Full Stack Bootcamp on a
-      // Junior; by seven: a trained Junior declared qa; Leadership Masterclass on a Junior by ten. A failure here means a cadence
-      // moved: retune the auto-player, never the rules.
+      // leading at the Engine (2 players seeds 2 and 4, 3 players seed 3, 4 players seed 4, 5 players seeds 2 and 4) and Full Stack
+      // Bootcamp on a Junior; by seven: a trained Junior declared qa; Leadership Masterclass on a Junior by ten. A failure here means a
+      // cadence moved: retune the auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0) && !HELD_BY_FEWER_THAN_TWO.has(key)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
