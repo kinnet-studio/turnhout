@@ -608,6 +608,13 @@ const payrollTaxOf = (runtime: LangRuntime, state: GameState, seat: PlayerId) =>
   [...zoneCards(state, zoneIdFor('development team', seat)), ...zoneCards(state, zoneIdFor('ops team', seat))]
     .reduce((total, card) => total + ((runtime.workedValue(state, card.id, 'payroll tax') as number | null) ?? 0), 0);
 /** A seat's Share Price as the rules work it out (§17.A). */
+/**
+ * How many Consultants of a colour sit on a product, counted from card data: the cards on it with that colour flag, and 0 on a
+ * Stalled project, where the rules give none (§17.B.4, §3), so that no check reads the rules' own `consultant blue`.
+ */
+const consultantsOn = (runtime: LangRuntime, state: GameState, id: string, colour: keyof typeof CONSULTANT_COLOURS): number =>
+  runtime.workedFlag(state, id, 'stalled') ? 0
+    : othersOn(state, id).filter((token) => token.data?.[CONSULTANT_COLOURS[colour]] === true).length;
 const sharePriceOf = (runtime: LangRuntime, state: GameState, seat: PlayerId): number => runtime.playerValue(state, seat, 'share price');
 /** The dividend each of a Founder's Equity tokens pays at their Income, by their Operational Revenue, as the rules work it out (§9.B, §17.B.1). */
 const dividendOf = (runtime: LangRuntime, state: GameState, seat: PlayerId): number => runtime.playerValue(state, seat, 'dividend');
@@ -1988,7 +1995,6 @@ function happenings(runtime: LangRuntime, before: GameState, move: Move, after: 
     if (growth) keys.push(GROWTH_LAUNCHED);
     if (cubesOn(card!, 'cut blue cubes') + cubesOn(card!, 'cut red cubes') > 0) keys.push(CUT_LAUNCHED);
   }
-  const consulting = (state: GameState, id: string, value: string) => (runtime.workedValue(state, id, value) as number | null) ?? 0;
   if (ranTheEngine(before, after, by)) {
     const generating = atTheEngine(before, move, after);
     const stalled = zoneCards(generating, zoneIdFor('development', by)).filter((project) => runtime.workedFlag(generating, project.id, 'stalled'));
@@ -1999,9 +2005,10 @@ function happenings(runtime: LangRuntime, before: GameState, move: Move, after: 
         if (othersOn(generating, project.id).length > 0) keys.push(CONSULTANT_STALLED);
         continue;
       }
-      if (consulting(generating, project.id, 'consultant blue') + consulting(generating, project.id, 'consultant red') > 0) keys.push(CONSULTANT_CUBE);
+      const cubes = consultantsOn(runtime, generating, project.id, 'Blue') + consultantsOn(runtime, generating, project.id, 'Red');
+      if (cubes > 0) keys.push(CONSULTANT_CUBE);
       const had = cardById(before, project.id);
-      if (consulting(generating, project.id, 'consultant qa') > 0 && had !== undefined && bugsOn(had) > 0) keys.push(CONSULTANT_BUG);
+      if (consultantsOn(runtime, generating, project.id, 'QA') > 0 && had !== undefined && bugsOn(had) > 0) keys.push(CONSULTANT_BUG);
     }
   }
   if (move.type === PIVOT) {
@@ -2339,12 +2346,13 @@ function happenings(runtime: LangRuntime, before: GameState, move: Move, after: 
   }
   if (reached !== null) {
     const bandwidth = operationsOf(after, reached)
-      .reduce((total, product) => total + consulting(after, product.id, 'consultant blue') + consulting(after, product.id, 'consultant red'), 0);
+      .reduce((total, product) => total + consultantsOn(runtime, after, product.id, 'Blue') + consultantsOn(runtime, after, product.id, 'Red'),
+        0);
     if (bandwidth > 0) keys.push(CONSULTANT_BANDWIDTH);
   }
   for (const seat of seats) {
     if (!ranTheEngine(before, after, seat)) continue;
-    const qa = operationsOf(before, seat).reduce((total, product) => total + consulting(before, product.id, 'consultant qa'), 0);
+    const qa = operationsOf(before, seat).reduce((total, product) => total + consultantsOn(runtime, before, product.id, 'QA'), 0);
     if (qa > 0 && ((runtime.playerValue(before, seat, 'bug load') as number | null) ?? 0) > 0) keys.push(CONSULTANT_OPS_QA);
   }
   if ((move.type === LAUNCH || move.type === PIVOT) && othersOn(before, move.cardId as string).length > 0) {
@@ -2511,6 +2519,13 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     // and rehire price, which the Event in play may raise (§20.D 9, 14).
     const workedOf = (id: string, name: string) => runtime.workedValue(before, id, name) as number;
     const costOf = (ids: string[]) => ids.reduce((total, id) => total + workedOf(id, 'cost'), 0);
+    // The Invest price is worked out here from the Founder's online products' tiers, not read from the rules' share price: $5 with no
+    // Active Tier 2 or 3 product, $10 with a Tier 2, $15 with a Tier 3 (§17.A).
+    const investPriceOf = (state: GameState, founder: PlayerId) => {
+      const tiers = operationsOf(state, founder).filter((product) => product.data?.offline !== true)
+        .map((product) => Number(/\d+/.exec(String(product.data?.tier))?.[0] ?? 0));
+      return Math.max(...tiers) >= 3 ? 15 : Math.max(...tiers) >= 2 ? 10 : 5;
+    };
     const paid = move.type === RECRUITS[1] ? gameNumber(before, game!, 'hardware junior price')
       : RECRUITS.includes(move.type) ? gameNumber(before, game!, 'junior price')
       : AGENCY_HIRES.includes(move.type) ? workedOf(card!.id, 'cost')
@@ -2519,7 +2534,7 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
             : move.type === PAY_SALARIES ? payrollOf(runtime, before, by)
               : [PLAY_TRAINING, PLAY_DEBUFF].includes(move.type) ? (runtime.workedValue(before, move.cardId as string, 'price') as number)
                 : move.type === PLAY_TO_PRODUCT ? techCrunchPrice(runtime, before, move.cardId as string, move.onto as string)
-                  : [INVEST, INVEST_PLACING].includes(move.type) ? sharePriceOf(runtime, before, founderOf(card!)!) : 0;
+                  : [INVEST, INVEST_PLACING].includes(move.type) ? investPriceOf(before, founderOf(card!)!) : 0;
     // An Invest pays its price to the token's Founder, and Venture Capital Rain adds $3 from the bank (§17.A, §20.D 1).
     const investedIn = [INVEST, INVEST_PLACING].includes(move.type) ? founderOf(card!) : undefined;
     const proceeds = (seat: PlayerId) => (seat === investedIn ? paid + (eventOf(before) === 'Venture Capital Rain' ? 3 : 0) : 0);
@@ -3046,7 +3061,7 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       if (toxic !== undefined) {
         const read = (names: readonly string[]) => names.map((name) => runtime.workedValue(after, c.id, name) as number);
         // A QA Consultant on it adds its Bug removed to what it makes, outside the team, and Toxic Personality never takes it (§17.B.4).
-        const consulted = (runtime.workedValue(after, c.id, 'consultant qa') as number | null) ?? 0;
+        const consulted = consultantsOn(runtime, after, c.id, 'QA');
         const made = read(MADE).map((value, i) => (MADE[i] === 'qa made' ? value - consulted : value));
         toxicity.push(...toxicCube(`${c.id} (${nameOf(c)})`, read(TEAM), made, toxic.data?.onboarding !== true));
       }
@@ -3061,8 +3076,8 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
         .map((name) => team.reduce((total, on) => total + ((runtime.workedValue(after, on.id, name) as number | null) ?? 0), 0));
       // The Consultants on its products add to its supplies too, outside the team, and Toxic Personality never takes their cube (§17.B.4).
       const products = zoneCards(after, zoneIdFor('operations', seat));
-      const consulted = ['consultant blue', 'consultant red', 'consultant qa']
-        .map((name) => products.reduce((total, on) => total + ((runtime.workedValue(after, on.id, name) as number | null) ?? 0), 0));
+      const consulted = (['Blue', 'Red', 'QA'] as const)
+        .map((colour) => products.reduce((total, on) => total + consultantsOn(runtime, after, on.id, colour), 0));
       const supplies = ['blue supply', 'red supply', 'qa supply'].map((name, i) => runtime.playerValue(after, seat, name) - consulted[i]);
       toxicity.push(...toxicCube(`${seat}'s ops team`, given, supplies, toxic.data?.onboarding !== true));
     }
