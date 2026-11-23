@@ -1614,7 +1614,9 @@ const REPLAYED = [
  *   bench, and 'during Chip Shortage Hardware talent costs $3 more from the University, the agency row and the open job market, and a
  *   flex Firmware Specialist its printed price (section 20, section 13)' hires the Engineer and the Firmware Specialist to it); and
  *   Patent Trolls' $5 License (2 players seed 4; 'during Patent Trolls a Greenlight License costs $5, …').
- * - Plan 7-2a: a License paid to a provider chosen among several, which 3 players seed 2 alone held once the seats invested and no game held once Partners waived the License (two rivals must run products of the Tag a seat's Greenlight lacks, and neither may be its Partner); the arranged test 'names the provider it pays a License to by t when two rivals provide the Tag, …' pins it.
+ * - Plan 7-2a: a License paid to a provider chosen among several, which 3 players seed 2 alone held once the seats invested and no
+ *   game held once Partners waived the License (two rivals must run products of the Tag a seat's Greenlight lacks, and neither may be
+ *   its Partner); the arranged test 'names the provider it pays a License to by t when two rivals provide the Tag, …' pins it.
  */
 const HELD_BY_FEWER_THAN_TWO = new Set<string>([
   'Attributes kept through a bench discard',
@@ -2242,9 +2244,9 @@ function scoreOf(state: GameState, seat: PlayerId): number {
  *   reached its Income in the move (see `enteredIncome`) earns the total rev of its products in operation, as the rules work it out,
  *   and no one else earns anything.
  * - A Greenlight pays a License for each Tag the card requires that neither the mover's operations nor those of a seat tied to the
- *   mover provide, and pays it to the other seats, never a tied one: the mover pays the license times the Tags missing, each other seat gains a whole number of Licenses, no more than the
- *   missing Tags its operations provided, and together they gain what the mover paid. Some seat provided every Tag the card
- *   requires (§6, §14.B.2).
+ *   mover provide, and pays it to the other seats, never a tied one: the mover pays the license times the Tags missing, each other
+ *   seat gains a whole number of Licenses, no more than the missing Tags its operations provided, and together they gain what the
+ *   mover paid. Some seat provided every Tag the card requires (§6, §14.B.2, §17.B.3).
  * - Market Share changes only for the seat that reached its Income, which gains 1 for each of its products in operation that earned.
  * - No zone holds more than it may: the agency row 4, each market 2, each pool 5 and the crash pile 1; the bench of a player
  *   whose turn it is not 5, their backlog 3 and their research nothing; the player whose turn it is holds at most 4 in their
@@ -2373,10 +2375,10 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       (seat === income ? operationsOf(after, seat).reduce((total, product) => total + revOf(runtime, after, product), 0) : 0) + dividendsTo(seat);
     const gained = seats.map((seat) => capital(after, seat) - capital(before, seat));
     if (move.type === GREENLIGHT) {
-      // A License for each Tag the mover lacks, paid to the seats that provide it, read as the rules hold the license (§6, §14.B.2).
+      // A License for each Tag neither the mover nor a Partner of theirs provides, paid to the seats that provide it, never to a Partner,
+      // read as the rules hold the license (§6, §14.B.2, §17.B.3, ruling 11).
       const license = gameNumber(before, game!, 'license');
       const required = requirementsOf(card!);
-      // A Partner's Tag is free, and a Partner is never paid (§17.B.3, ruling 11).
       const partners = seats.filter((seat) => seat !== by && tiedTo(before, by, seat));
       const missing = required.filter((tag) => !tagsOf(before, by).has(tag) && !partners.some((seat) => tagsOf(before, seat).has(tag)));
       noneOf(required.filter((tag) => !seats.some((seat) => tagsOf(before, seat).has(tag))), () => `Tags no seat provides ${at}`);
