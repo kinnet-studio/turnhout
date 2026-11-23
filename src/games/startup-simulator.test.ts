@@ -146,6 +146,23 @@ const MILESTONES = ['First Mover Advantage', 'Talent Magnet', 'Platform Power', 
 const PLAY_TRAINING = 'play a card from their strategy hand to a card in their bench, their development team or their ops team';
 /** The rows a Training card's target is picked in, in the order the button names them (§20.A: Bench or Board). */
 const TRAINING_TARGETS = ['bench', 'development team', 'ops team'];
+const PLAY_DEBUFF = "play a card from their strategy hand to a card in another player's development team or another player's ops team";
+/** Each Attribute card by name, with the count it puts on a Talent (§20.A, the slice's R2). */
+const ATTRIBUTES: Record<string, string> = {
+  Workaholic: 'workaholic', 'Clean Coder': 'clean coder', Visionary: 'visionary',
+  'Toxic Personality': 'toxic personality', Burnout: 'burnout', 'Flight Risk': 'flight risk',
+};
+const BUFFS = ['Workaholic', 'Clean Coder', 'Visionary'];
+const DEBUFFS = ['Toxic Personality', 'Burnout', 'Flight Risk'];
+/** A Strategy card a button of slices 5 and 6 plays: Training, an Attribute, TechCrunch Feature or Design Sprint (§20.A). */
+const isPlayable = (card: CardState): boolean =>
+  isTraining(card) || card.data?.kind === 'Attribute' || ['TechCrunch Feature', 'Design Sprint'].includes(nameOf(card) as string);
+/** The zones a Debuff's target is offered in for `by`, as 6-1 orders them: each other seat's development team from `by`'s left, then each one's ops team. */
+const debuffZones = (seats: PlayerId[], by: PlayerId): string[] => {
+  const at = seats.indexOf(by);
+  const others = [...seats.slice(at + 1), ...seats.slice(0, at)];
+  return [...others.map((seat) => zoneIdFor('development team', seat)), ...others.map((seat) => zoneIdFor('ops team', seat))];
+};
 /** The rows that keep only their 5 newest cards, letting the oldest go to the box. */
 const POOLS = ['open-job-market', 'open-idea-pool'];
 /** The rows each player has that only they can see: their hands, the rows a step deals into, and the Brainstorm look (§3, §15.C). */
@@ -925,7 +942,8 @@ function playTurn(
    */
   const training = (): Move | null => {
     const zones = TRAINING_TARGETS.map(own);
-    const fits = (card: CardState) => isTraining(card) && zones.some((zoneId) => cards(zoneId).some((target) => takes(card, target)));
+    const fits = (card: CardState) => (isTraining(card) || (BUFFS.includes(nameOf(card) as string) && t % 3 === 0))
+      && zones.some((zoneId) => cards(zoneId).some((target) => takes(card, target)));
     return pick(PLAY_TRAINING, own('strategy hand'), (row) => row.find(fits), {
       zoneId: zones,
       which: (targets, card) => {
@@ -934,6 +952,22 @@ function playTurn(
           const kind = ['Junior', 'QA Engineer', 'Sales Rep'][t % 3];
           return taken.find((target) => kindOf(target) === kind) ?? taken[0];
         }
+        return taken.length === 0 ? undefined : taken[t % taken.length];
+      },
+    });
+  };
+  /** Whether the rules take Debuff `card` played on `target`: the press is refused for none of their reasons before its choices. */
+  const takesDebuff = (card: CardState, target: CardState) =>
+    typeof pressChoices(runtime, engine.getState(), { type: PLAY_DEBUFF, by, cardId: card.id, onto: target.id }) !== 'string';
+  /** The play of the Strategy Hand's first Debuff that has a target the rules take, on the taken target at `t` (mod how many) (§20.A). */
+  const debuffing = (): Move | null => {
+    const zones = debuffZones(runtime.seats, by);
+    const fits = (card: CardState) => DEBUFFS.includes(nameOf(card) as string)
+      && zones.some((zoneId) => cards(zoneId).some((target) => takesDebuff(card, target)));
+    return pick(PLAY_DEBUFF, own('strategy hand'), (row) => row.find(fits), {
+      zoneId: zones,
+      which: (targets, card) => {
+        const taken = targets.filter((target) => takesDebuff(card, target));
         return taken.length === 0 ? undefined : taken[t % taken.length];
       },
     });
@@ -950,6 +984,7 @@ function playTurn(
         return allowed.find((card) => asks(card).some(({ at }) => cutAt(at))) ?? allowed[0];
       }) : null,
       made.has(PLAY_TRAINING) ? null : training(),
+      made.has(PLAY_DEBUFF) ? null : debuffing(),
       dismiss !== null && !made.has(dismiss)
         ? pick(dismiss, own(fromOps ? 'ops team' : 'development team'), (row) => (fromOps ? spare(row) : row)[0])
         : null,
@@ -1145,7 +1180,7 @@ function playTurn(
    */
   const brainstorming = (a: number): Move | null => {
     if ((t + a) % 5 !== 2) return null;
-    const flushed = (hand: CardState[]) => hand.filter((card) => !isTraining(card));
+    const flushed = (hand: CardState[]) => hand.filter((card) => !isPlayable(card));
     if (t % 2 === 1 && flushed(cards(own('strategy hand'))).length > 0) return pickSome(BRAINSTORM_FLUSHING, own('strategy hand'), flushed);
     return press(BRAINSTORM);
   };
@@ -1270,7 +1305,7 @@ function playTurn(
     } else if (phase === 'research') {
       play(engine, choose([pick(KEEP, own('research'), (row) => cutIdea(row) ?? row[t % row.length])]), watch);
     } else if (phase === 'brainstorm') {
-      play(engine, choose([pick(KEEP_STRATEGY, own('brainstorm'), (row) => row.find(isTraining) ?? row[t % row.length])]), watch);
+      play(engine, choose([pick(KEEP_STRATEGY, own('brainstorm'), (row) => row.find(isPlayable) ?? row[t % row.length])]), watch);
     } else if (phase === 'sourcing') {
       play(engine, choose([...sourcing(), press(PASS_ON_THE_REST)]), watch);
     } else if (phase === GRADUATION) {
@@ -1289,7 +1324,7 @@ function playTurn(
       const cleanup = CLEANUPS[phase!];
       if (cleanup === undefined) throw new Error(`The long runs don't play the ${phase} phase.`);
       // A backlog keeps the ideas Domain Expertise cuts, and a Strategy Hand its Training cards, the only kind this slice plays.
-      const kept = (card: CardState) => (cleanup.row === 'backlog' && expertIn(card)) || (cleanup.row === 'strategy hand' && isTraining(card));
+      const kept = (card: CardState) => (cleanup.row === 'backlog' && expertIn(card)) || (cleanup.row === 'strategy hand' && isPlayable(card));
       play(engine, choose([pick(cleanup.discard, own(cleanup.row), (row) => row.find((card) => !kept(card)) ?? row[0])]), watch);
     }
   }
@@ -1355,7 +1390,7 @@ function keepingForReplay(runtime: LangRuntime) {
     seen['Bugs added to a project'] += keys.filter((key) => key === BUG_ON_PROJECT).length;
     seen.reshuffles += keys.filter((key) => key === RESHUFFLED).length;
     // A Training press asks the colour a Full Stack Bootcamp gives when it fits both, and fills in the one it fits alone (§20.A).
-    const asked = move.type === PLAY_TRAINING ? pressChoices(runtime, before, move) : [];
+    const asked = move.type === PLAY_TRAINING && isTraining(cardById(before, move.cardId as string)!) ? pressChoices(runtime, before, move) : [];
     if (typeof asked !== 'string' && asked.length > 0) seen['Training that asked a choice or had it filled in'] += 1;
     seen['Milestone claims'] += keys.filter((key) => key.startsWith(`${CLAIMED}: `)).length;
     const gained = (c: CardState, names: readonly string[]) => {
@@ -1652,7 +1687,7 @@ function happenings(runtime: LangRuntime, before: GameState, move: Move, after: 
     if ([...zoneCards(after, 'strategy-deck'), ...drawn].some((c) => !inTheDeck.has(c.id))) keys.push(RESHUFFLED);
   }
   if (move.type === DISCARD_STRATEGY) keys.push(DISCARDED_AT_CLEANUP);
-  if (move.type === PLAY_TRAINING) {
+  if (move.type === PLAY_TRAINING && isTraining(card!)) {
     const target = cardById(before, move.onto as string)!;
     keys.push(`${TRAINING_ON}: ${nameOf(card!)} on a ${target.data?.role === 'Junior' ? 'Junior' : nameOf(target)}`);
   }
@@ -1840,7 +1875,7 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
         : move.type === HIRE_MARKET ? 1
           : SOURCE_HIRES.includes(move.type) ? costOf(move.cardIds as string[])
             : move.type === PAY_SALARIES ? payrollOf(runtime, before, by)
-              : move.type === PLAY_TRAINING ? (card!.data?.price as number) : 0;
+              : [PLAY_TRAINING, PLAY_DEBUFF].includes(move.type) ? (runtime.workedValue(before, move.cardId as string, 'price') as number) : 0;
     const earned = (seat: PlayerId) =>
       (seat === income ? operationsOf(after, seat).reduce((total, product) => total + revOf(runtime, after, product), 0) : 0);
     const gained = seats.map((seat) => capital(after, seat) - capital(before, seat));
@@ -1909,7 +1944,8 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     const strategyZones = [
       'strategy-deck', 'strategy-discard', ...seats.flatMap((seat) => [zoneIdFor('strategy hand', seat), zoneIdFor('brainstorm', seat)]),
     ];
-    const strategy = nameCounts(strategyZones.flatMap((zoneId) => zoneCards(after, zoneId)));
+    const boxedStrategy = zoneCards(after, 'box').filter((c) => Object.hasOwn(STRATEGY_CARDS, nameOf(c) as string));
+    const strategy = nameCounts([...[...strategyZones, 'attributes-in-play'].flatMap((zoneId) => zoneCards(after, zoneId)), ...boxedStrategy]);
     if (Object.keys({ ...strategy, ...STRATEGY_CARDS }).some((name) => strategy[name] !== STRATEGY_CARDS[name])) {
       expect(strategy, `the Strategy cards ${at}`).toEqual(STRATEGY_CARDS);
     }
@@ -2118,7 +2154,7 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     noneOf(tokens, () => `the XP and Skill tokens ${at}`);
     // Training plays only a Training card, which goes to the strategy discard, and changes nothing but its target's Skill tokens, Training
     // XP or Badge (§6, §20.A): never XP tokens, which rise only as a Junior graduates, nor any other card's tokens.
-    if (move.type === PLAY_TRAINING) {
+    if (move.type === PLAY_TRAINING && isTraining(card!)) {
       const hands = new Set(seats.map((seat) => zoneIdFor('strategy hand', seat)));
       const played = after.cards.filter((c) => c.zoneId === 'strategy-discard' && hands.has(wasById.get(c.id)?.zoneId as string));
       sameList(played.map((c) => c.id), [move.cardId], () => `the cards that left a Strategy Hand for the strategy discard ${at}`);
@@ -2142,6 +2178,30 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
         sameAs(what, 'one Skill token, one Training XP or the Badge', () => `what ${move.cardId} gave its target ${move.onto} ${at}`);
       }
     }
+    // The Attributes (§15.C, §20.A, the slice's R2): each Attribute card is in the attributes in play exactly when its count is 1 on some
+    // card not in the box; no card holds more than 1 of any; only staff hold one; a count rises only on the target of a press of that
+    // Attribute, by 1, and a Debuff's target is in another seat.
+    const attributes: string[] = [];
+    const inPlay = new Set(zoneCards(after, 'attributes-in-play').map((c) => nameOf(c) as string));
+    for (const [name, count] of Object.entries(ATTRIBUTES)) {
+      const held = after.cards.some((c) => tokenOn(c, count) === 1);
+      if (inPlay.has(name) !== held) attributes.push(`${name} ${inPlay.has(name) ? 'is' : 'is not'} in the attributes in play, ${held ? '' : 'not '}held`);
+    }
+    const pressed = [PLAY_TRAINING, PLAY_DEBUFF].includes(move.type) ? ATTRIBUTES[nameOf(card!) as string] : undefined;
+    for (const c of after.cards) {
+      const was = wasById.get(c.id);
+      for (const count of Object.values(ATTRIBUTES)) {
+        const now = tokenOn(c, count);
+        if (now > 1) attributes.push(`${c.id} (${nameOf(c)}) holds ${now} ${count}`);
+        if (now > 0 && !['Senior Developer', 'Specialist', 'Junior'].includes(c.data?.role as string)) attributes.push(`${c.id} (${nameOf(c)}) holds ${count}`);
+        const rose = now - (was === undefined ? 0 : tokenOn(was, count));
+        if (rose > 0 && !(c.id === move.onto && count === pressed && rose === 1)) attributes.push(`${c.id} (${nameOf(c)}) gained ${rose} ${count}`);
+      }
+    }
+    if (move.type === PLAY_DEBUFF && zoneInfo(game!, cardById(before, move.onto as string)!.zoneId)?.seat === by) {
+      attributes.push(`a Debuff on ${move.onto}, in ${by}'s own zone`);
+    }
+    noneOf(attributes, () => `the Attributes ${at}`);
     // A card holds one Pending token of each colour at most, and gains one only as its owner's Engine runs, while it sits on a project
     // in their development that was not Stalled as the Engine generated, since a Stalled team makes nothing (see `atTheEngine`) (§3, §5
     // Phase D, §11.B, ruling 1). Only a Junior learns, so only a Junior holds one (§11.B). It holds one only in a development team, or in
@@ -2322,7 +2382,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(243);
+    expect(results).toHaveLength(246);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -2693,6 +2753,7 @@ describe('Startup Simulator (designer language)', () => {
       ['crash-pile', false, 'pile', 'public'],
       ['strategy-deck', false, 'pile', 'secret'],
       ['strategy-discard', false, 'pile', 'public'],
+      ['attributes-in-play', false, 'pile', 'public'],
       ['milestone-deck', false, 'pile', 'secret'],
       ['milestone-row', false, 'row', 'public'],
       ['box', false, 'pile', 'secret'],
@@ -3743,6 +3804,56 @@ describe('Startup Simulator (designer language)', () => {
         expect(skill, `turn ${t}: the QA Tester's blue and red Skill tokens`).toEqual(t === 0 ? [1, 0] : [0, 1]);
         expect(runs[1].getLog(), `turn ${t}`).toEqual(log);
       }
+    });
+
+    it('offers a Debuff only another seat’s Board staff, development teams first, seat by seat from the presser’s left (§20.A, plan 6-1)', () => {
+      const seats = seatsFor(3);
+      let state: GameState = { ...setUp(3, 1), turn: { current: 'p0', phase: 'actions' } };
+      const benched = (seat: PlayerId, name: string) => zoneCards(state, zoneIdFor('bench', seat)).find((card) => nameOf(card) === name)!.id;
+      state = relocate(state, [idOf('Burnout')], zoneIdFor('strategy hand', 'p0'), game!);
+      const projects = ['Dating App', 'To-Do List', 'Flashlight App'].map(idOf);
+      const products = ['Basic Website', 'USB Gadget'].map(idOf);
+      seats.forEach((seat, i) => {
+        state = relocate(state, [projects[i]], zoneIdFor('development', seat), game!);
+        state = putOn(state, [benched(seat, 'Junior Software Dev')], zoneIdFor('development team', seat), projects[i], game!);
+      });
+      (['p1', 'p2'] as const).forEach((seat, i) => {
+        state = relocate(state, [products[i]], zoneIdFor('operations', seat), game!);
+        state = relocate(state, [benched(seat, 'Junior QA Tester')], zoneIdFor('ops team', seat), game!);
+      });
+      const runtime = new LangRuntime(game!, lib, seats);
+      const ids = (seat: PlayerId, row: string) => zoneCards(state, zoneIdFor(row, seat)).map((card) => card.id);
+      const offered = ontoCandidates(runtime, buttonOf(state, PLAY_DEBUFF)!, state, 'p0');
+      expect(offered).toEqual([...ids('p1', 'development team'), ...ids('p2', 'development team'), ...ids('p1', 'ops team'), ...ids('p2', 'ops team')]);
+      for (const seat of seats) expect(offered.filter((id) => ids(seat, 'bench').includes(id))).toEqual([]);
+      expect(offered.filter((id) => [...ids('p0', 'development team'), ...ids('p0', 'ops team')].includes(id))).toEqual([]);
+      expect(offered).toHaveLength(4);
+    });
+
+    it('plays a Debuff the auto-player holds on the rival card picked by t, through the page’s view and without it (§20.A)', () => {
+      const start = setUp(2, 1);
+      const seats = seatsFor(2);
+      const S = startPlayerOf(start, seats);
+      const O = seats.find((seat) => seat !== S)!;
+      const benched = (name: string) => zoneCards(start, zoneIdFor('bench', O)).find((card) => nameOf(card) === name)!.id;
+      const burnout = idOf('Burnout');
+      const project = idOf('Gig Economy');
+      let state = relocate(start, [burnout], zoneIdFor('strategy hand', S), game!);
+      state = relocate(state, [project], zoneIdFor('development', O), game!);
+      state = putOn(state, [benched('Junior Software Dev'), benched('Junior Hardware Eng')], zoneIdFor('development team', O), project, game!);
+      const targets: string[] = [];
+      for (const t of [0, 1]) {
+        const runs = [false, true].map((throughView) => {
+          const { engine, runtime } = createEngine(game!, lib, 2, state);
+          playTurn(engine, t, 'researches', keepsTheRules(seats, runtime), (log) => log.some((move) => move.type === PLAY_DEBUFF), runtime, throughView);
+          return engine;
+        });
+        const played = runs[0].getLog().filter((move) => move.type === PLAY_DEBUFF);
+        expect(played.map(({ cardId }) => cardId), `turn ${t}`).toEqual([burnout]);
+        targets.push(played[0].onto as string);
+        expect(runs[1].getLog(), `turn ${t}`).toEqual(runs[0].getLog());
+      }
+      expect(new Set(targets).size).toBe(2);
     });
 
     it('claims First Mover Advantage, Platform Power and Full Stack Founder at one auto-player Launch of a Tier 2 card, which promotes its Junior PM, through the page’s view and without it (§11.F, §12.5, §20.G)', () => {

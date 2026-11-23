@@ -145,6 +145,7 @@ Cards:
   Cards can have blue cubes, red cubes, new blue cubes and new red cubes.
   Cards can have cut blue cubes and cut red cubes.
   Cards can have bugs and fixed bugs.
+  Cards can have workaholic, clean coder, visionary, toxic personality, burnout and flight risk.
 
 Table:
   The talent deck is a pile in the center that no one can see.
@@ -158,6 +159,7 @@ Table:
   The crash pile is a pile in the center that everyone can see.
   The strategy deck is a pile in the center that no one can see.
   The strategy discard is a pile in the center that everyone can see.
+  The attributes in play is a pile in the center that everyone can see.
   The milestone deck is a pile in the center that no one can see.
   The milestone row is a row in the center that everyone can see.
   The box is a pile in the center that no one can see.
@@ -838,7 +840,11 @@ Phase: actions
           It gains 1 cut red cube.
       Move it to their development.
   A player may play a card from their strategy hand to a card in their bench, their development team or their ops team.
-    Only if the card is a Training card.
+    Only if one of:
+      The card is a Training card.
+      The card is a Workaholic.
+      The card is a Clean Coder.
+      The card is a Visionary.
     Only if they have at least the card's price in capital.
     Only if one of:
       The card is not a Full Stack Bootcamp.
@@ -883,7 +889,29 @@ Phase: actions
             The card is a Leadership Masterclass.
             The card is an Agile Workshop.
           The target card is badged.
-      Move it to the strategy discard.
+        Workaholic:
+          Only if the card is a Workaholic.
+          The target card gains 1 workaholic.
+        Clean Coder:
+          Only if the card is a Clean Coder.
+          The target card gains 1 clean coder.
+        Visionary:
+          Only if the card is a Visionary.
+          The target card gains 1 visionary.
+      If the card is a Training card, move it to the strategy discard.
+      If the card is an Attribute card, move it to the attributes in play.
+  A player may play a card from their strategy hand to a card in another player's development team or another player's ops team.
+    Only if one of:
+      The card is a Toxic Personality.
+      The card is a Burnout.
+      The card is a Flight Risk.
+    Only if they have at least the card's price in capital.
+    Then:
+      They pay the card's price.
+      If the card is a Toxic Personality, the target card gains 1 toxic personality.
+      If the card is a Burnout, the target card gains 1 burnout.
+      If the card is a Flight Risk, the target card gains 1 flight risk.
+      Move it to the attributes in play.
   A player may assign some cards from their bench to a card in their development.
     It costs 1 action.
     Then:
@@ -4128,11 +4156,11 @@ Example: Training is refused without its printed price, and nothing changes (sec
   And p0 has 2 capital
   And p0's strategy hand has a Full Stack Bootcamp
 
-Example: only a Training card can be played in this slice: a Hit Piece waits in the hand (the spec's call, section 20)
+Example: a Warfare card waits in the hand for slice 8: a Hit Piece is refused on one of the player's own staff (the spec's call, section 20)
   Given p0's strategy hand has a Hit Piece
   And p0's bench has a Junior Software Dev
   When p0 plays the Hit Piece to the Junior Software Dev
-  Then it is rejected because "the card is a Training card"
+  Then it is rejected because "the card is a Training card or the card is a Workaholic or the card is a Clean Coder or the card is a Visionary"
 
 Example: setup reveals 3 of the 6 Milestones and puts the rest in the box (section 4, section 20)
   Given the game is set up
@@ -4338,3 +4366,67 @@ Example: the game-end Ops check claims nothing while a player is still choosing 
   And p0 switches off the Mobile Wallet
   Then the game is over
   And p0's milestones is empty
+
+Example: a Buff goes on one of the player's own staff, on the bench or the Board, for its printed price and no action, and its card waits in the attributes in play (section 20, section 15, the slice's R2)
+  Given the phase is actions
+  And p0 has 9 capital
+  And p0's strategy hand has a Workaholic, a Clean Coder and a Visionary
+  And p0's bench has the Hacker
+  And p0's development has a Dating App
+  And p0's operations has a To-Do List
+  And p0's ops team has a Junior QA Tester
+  And the Dating App in p0's development has a Junior Software Dev on it
+  When p0 plays the Clean Coder to the Hacker
+  Then it is accepted
+  And p0 has 6 capital
+  And p0 has 3 actions
+  And the Hacker in p0's bench has 1 clean coder
+  When p0 plays the Workaholic to the Junior Software Dev
+  And p0 plays the Visionary to the Junior QA Tester
+  Then p0 has 1 capital
+  And the Junior Software Dev in p0's development team has 1 workaholic
+  And the Junior QA Tester in p0's ops team has 1 visionary
+  And the attributes in play has a Clean Coder, a Workaholic and a Visionary
+  And p0's strategy hand is empty
+
+Example: a Debuff goes on a rival's staff on a project or in the ops team for its printed price, one Talent may hold several, and none goes on the player's own staff (section 20, section 15, the slice's R2)
+  Given p0 has 4 capital
+  And p0's strategy hand has a Toxic Personality, a Burnout and a Flight Risk
+  And p0's bench has a Junior Software Dev
+  And p1's development has a Smart Lock
+  And p1's operations has a Dating App
+  And p1's ops team has a Junior QA Tester
+  And the Smart Lock in p1's development has the Engineer on it
+  When p0 plays the Burnout to the Junior Software Dev
+  Then it is rejected because "the card is a Training card or the card is a Workaholic or the card is a Clean Coder or the card is a Visionary"
+  When p0 plays the Toxic Personality to the Engineer
+  Then it is accepted
+  And p0 has 1 capital
+  And p0 has 3 actions
+  And the Engineer in p1's development team has 1 toxic personality
+  When p0 plays the Flight Risk to the Engineer
+  Then it is rejected because "they have at least the card's price in capital"
+  And p0 has 1 capital
+  And p0's strategy hand has a Burnout and a Flight Risk
+  When p0 plays the Burnout to the Junior QA Tester
+  Then the Junior QA Tester in p1's ops team has 1 burnout
+  And p0 has 1 capital
+  Given p0 has 2 capital
+  When p0 plays the Flight Risk to the Engineer
+  Then the Engineer in p1's development team has 1 flight risk
+  And p0 has 0 capital
+  And the attributes in play has a Toxic Personality, a Burnout and a Flight Risk
+
+Example: only a Debuff goes on a rival's staff, and a Cease & Desist waits in the hand for slice 8's poaching (section 20, the spec's call)
+  Given p0's strategy hand has a Workaholic and a Cease & Desist
+  And p0's bench has a Junior Software Dev
+  And p1's development has a Smart Lock
+  And the Smart Lock in p1's development has the Engineer on it
+  When p0 plays the Workaholic to the Engineer
+  Then it is rejected because "the card is a Toxic Personality or the card is a Burnout or the card is a Flight Risk"
+  When p0 plays the Cease & Desist to the Engineer
+  Then it is rejected because "the card is a Toxic Personality or the card is a Burnout or the card is a Flight Risk"
+  When p0 plays the Cease & Desist to the Junior Software Dev
+  Then it is rejected because "the card is a Training card or the card is a Workaholic or the card is a Clean Coder or the card is a Visionary"
+  And p0 has 7 capital
+  And p0's strategy hand has a Workaholic and a Cease & Desist
