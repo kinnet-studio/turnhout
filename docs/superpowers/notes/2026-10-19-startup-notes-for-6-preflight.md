@@ -30,3 +30,11 @@
 - 6-2b/7-2a (steps phases such as `event check`): while a round's steps run, a `… phase starts with them` line from a card's says line or a rule for every phase isn't refused at runtime (a `Go to` is). No shipped game reaches it. A line in the steps phase itself that starts another phase is allowed only when that phase has its own `Go back to the interrupted turn.` line; a go-back written only in a rule for every phase, or reached through a further phase, is refused though it would work.
 - 6-2+: a steps phase's own `When a player's turn starts:` lines never run (no turn starts in a steps phase); a warning for them could come later.
 - 6-2+: a seat that goes out inside a sub-phase entered from its own step leaves the resumed step with an out seat, and play stops (4-1's behaviour too).
+
+## From 6-2a's pre-flight (2026-11-23)
+- 6-3: the Diva now carries a permanent `egotistic` press label (6-2a R5): its Ego firing line isn't a library phrase, so the flag stays. Decide whether the page shows it.
+- 6-3: every Strategy card shows all four Strategy buttons (Training/Buff, Debuff, to a product, alone), three greyed with reasons (6-2a R4; pinned at playtest-fitted's 'plays Training onto a card in the bench …'). Decide whether only the buttons that card's kind can use should show.
+- 6-3: 6-2a's new shown flags are `overworked`, `overworked in blue/red/qa`, `burned out` and `pitched`; `losing …` isn't shown. The view keeps its output stand-ins and supplies because 6-2a writes its flags in G4 form (`it is a card whose … is more than …`).
+- 6-2b: the price floor above still applies to Online Course Boom and Chip Shortage; 6-2a's only discount (TechCrunch: the lower of $5 and $2) can't go below 0.
+- Long-runs follow-up: 6-2a requires only the 18 new keys held by 2+ games; 11 new keys and the old `hire some cards from their scouting to their ops team` (3 games → 1 under every Buff cadence that keeps the other tests) are counted-not-required with arranged pins. A later cadence change may promote them.
+- Speed: the Startup file's `tests` figure goes from ~20.1 s to ~27.5 s (best) in 6-2a; ceiling 30 s (the watch). A speed-up mini plan follows 6-2a, before 6-2b.
