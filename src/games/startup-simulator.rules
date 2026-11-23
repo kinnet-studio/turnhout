@@ -726,7 +726,7 @@ Phase: income
 
 Phase: actions
   Players take turns.
-  Hint: Spend 3 actions on hiring, drafting, research and your board. Greenlighting and dismissing cost no actions, though a product may need Licenses. Press a button, then pick the cards.
+  Hint: Spend 3 actions on hiring, drafting, research and your board. Greenlighting, Training and dismissing cost no actions, though a product may need Licenses. Press a button, then pick the cards. End your actions when you are done.
   A player may recruit a junior software dev.
     It costs 1 action.
     Only if they have at least 2 capital.
@@ -1007,7 +1007,7 @@ Phase: actions
   A player may end their actions.
     Then:
       Their actions go back to 0.
-  When they have less than 1 action, go to engine.
+      Go to engine.
 
 Phase: research
   Hint: Keep one of the cards you drew. The rest go to the open idea pool.
@@ -1234,14 +1234,26 @@ Example: setting up (ruling 25)
   And the open job market is empty
   And the open idea pool is empty
 
-Example: a turn has 3 actions
+Example: a turn has 3 actions, and at 0 the free actions are still there until the player ends their actions (section 6)
   Given p0's bench has a QA Engineer, a QA Engineer and a Sales Rep
+  And p0's backlog has a Dating App
   When p0 recruits a junior software dev
   And p0 recruits a junior hardware eng
   And p0 recruits a junior qa tester
   Then it is accepted
   And p0 has 0 actions
   And p0 has 1 capital
+  And the phase is actions
+  And it is p0's turn
+  When p0 recruits a junior software dev
+  Then it is rejected because "they have at least 1 action"
+  When p0 greenlights the Dating App
+  Then it is accepted
+  And p0 has 0 actions
+  And p0's development has a Dating App
+  And the phase is actions
+  When p0 ends their actions
+  Then it is accepted
   And the phase is bench cleanup
   And it is p0's turn
   And p0's bench has a QA Engineer, a QA Engineer, a Sales Rep, a Junior Software Dev, a Junior Hardware Eng and a Junior QA Tester
@@ -1392,7 +1404,10 @@ Example: research with the last action keeps a card, then the turn goes on throu
   And p0's backlog has a Dating App
   And the open idea pool has a Smart Lock and a Mobile Wallet, in that order
   And p0's research is empty
-  And it is p1's turn
+  And the phase is actions
+  And it is p0's turn
+  When p0 ends their actions
+  Then it is p1's turn
   And the phase is actions
   And p1 has 3 actions
 
@@ -1434,7 +1449,8 @@ Example: the open idea pool costs 2 actions (section 14)
   Then it is accepted
   And p0's backlog has a Smart Lock
   And p0 has 0 actions
-  And it is p1's turn
+  When p0 ends their actions
+  Then it is p1's turn
 
 Example: ideation stops at a fourth backlog card (section 14)
   Given p0's backlog has a To-Do List, a Smart Lock, a Dating App and a Mobile Wallet
@@ -1869,7 +1885,9 @@ Example: sourcing from an empty talent deck with the last action reveals nothing
   And the talent deck is empty
   When p0 lays off the Junior Software Dev
   Then it is accepted
-  And it is p1's turn
+  And it is p0's turn
+  When p0 ends their actions
+  Then it is p1's turn
   And p1 has 3 actions
   And p0's scouting is empty
   And the open job market has a Junior Software Dev

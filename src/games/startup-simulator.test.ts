@@ -609,7 +609,8 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *   When the rules refuse that, or it has nothing to pick, it makes the first of the Board moves 3 to 7 after it in the cycle that
  *   it can (see `boardMovesAfter`); with none, it recruits a Junior QA Tester while a project that isn't Stalled has Bugs no QA on it
  *   cleans and the bench has no card that would, else a Junior who makes a color the first unfinished project lacks, or with none
- *   lacking the Junior of kind `(t + a) % 3`, else ends its actions.
+ *   lacking the Junior of kind `(t + a) % 3`, else ends its actions. At 0 actions the rules refuse every press but the free ones and
+ *   the end, and it ends its actions there at once: the phase no longer ends by itself (rulebook l.172–173).
  * - **Engine.** While the Engine waits on it, its ops team's QA short of the Bugs on its products in operation, it cleans the
  *   product at `t % n` among its n products in operation with Bugs, in slot order (§5 Phase D, R3).
  * - **Final check**, as the seat whose step it is (§12, ruling 25). When `t % 3 === 0` and it has switched nothing on in this step, it
@@ -1217,7 +1218,10 @@ function playTurn(
         play(engine, choose([press(PAY_SALARIES)]), watch);
       }
     } else if (phase === 'actions') {
-      const free = freeMove();
+      // Each press below spends an action or ends them, so a seat still in its actions after 3 presses and the end didn't end them.
+      if (a > ACTIONS_EACH_TURN) throw new Error(`${by} at t = ${t}: still in its actions after ${a} presses`);
+      // At 0 actions it ends them at once, as the phase used to by itself, so the games are the ones played before (Task 1).
+      const free = counterOf(engine.getState(), 'actions', by) > 0 ? freeMove() : null;
       if (free !== null) {
         play(engine, free, watch);
         continue;
@@ -1375,7 +1379,7 @@ function ranTheEngine(before: GameState, after: GameState, by: PlayerId): boolea
 
 /**
  * The state the Engine generated cubes in, as far as a project's leads go: `after`, with every card onboarding as it was before the
- * move. A reassigned card is onboarding, as the reassign leaves it. A move that spends the last action runs the Engine and may then start
+ * move. A reassigned card is onboarding, as the reassign leaves it. The end of a seat's actions runs the Engine and may then start
  * the next turn, which lets every card settle in, so `after` alone would show a lead the Engine never had (§6, ruling 8).
  */
 function atTheEngine(before: GameState, move: Move, after: GameState): GameState {
@@ -1588,7 +1592,7 @@ function happenings(runtime: LangRuntime, before: GameState, move: Move, after: 
       && bugsOn(project) < bugsOn(wasById.get(project.id) ?? project));
     keys.push(...hunted.map(() => QA_ENGINEER_CLEANED));
   }
-  // A move that spends the last action starts the next turn, whose start clears every Onboarding token, so only a move that starts
+  // The end of a seat's actions may start the next turn, whose start clears every Onboarding token, so only a move that starts
   // none shows what Agile spared; and Agile is read before the move, since a PM arriving in it spares no one (P8, §11.E.3, ruling 8).
   if (turnStarted(before, after) === null && [REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS, ASSIGN_TO_PROJECT].includes(move.type)) {
     const agile = cardsOn(before, move.onto as string).some((staff) => runtime.workedFlag(before, staff.id, 'agile'));
@@ -1718,7 +1722,7 @@ function scoreOf(state: GameState, seat: PlayerId): number {
  * - Agile: staff moved onto a project, by a reassign or by an assign from the bench, are spared the Onboarding token exactly when some
  *   card on the project was Agile before the move: a reassigned card is onboarding exactly when none was, and a card still onboarding on
  *   the bench, pivoted or recalled this turn, is no longer onboarding once assigned exactly when one was (§6, §11.E.3, ruling 8). Only
- *   where no turn starts in the move, since a move that spends the last action starts the next turn, whose start clears every token (P8).
+ *   where no turn starts in the move, since the end of a seat's actions may start the next turn, whose start clears every token (P8).
  * - Modes: no card off the Board, out of every development team and ops team, is in Red mode, QA mode or Blue mode. Red mode sits only
  *   on a card the rules call declarable, QA mode only on a QA Skill card, a qa card or one with a green Skill token, and Blue mode only
  *   on one with a blue Skill token. A card's mode changes only in a declaration of that card, or as it leaves the Board, so a mode stays
@@ -2018,7 +2022,7 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       expect(card!.data?.trait, `the trait of the card ${by} reassigned ${at}`).not.toBe('Ego');
     }
     // An Agile PM on a project spares the staff moved onto it the Onboarding token, as it was before the move: a PM arriving in the same
-    // assign spares no one, and one reassigning itself is onboarding (§6, §11.E.3, ruling 8). A move that spends the last action starts
+    // assign spares no one, and one reassigning itself is onboarding (§6, §11.E.3, ruling 8). The end of a seat's actions may start
     // the next turn, which clears every Onboarding token, so the check reads only a move that starts no turn (P8).
     if (started === null && [REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS, ASSIGN_TO_PROJECT].includes(move.type)) {
       const agile = cardsOn(before, move.onto as string).some((c) => runtime.workedFlag(before, c.id, 'agile'));
@@ -2887,7 +2891,7 @@ describe('Startup Simulator (designer language)', () => {
     expect(seen(kept, 'p1', hidden).map((card) => card.faceKey)).toEqual([HIDDEN_FACE_KEY, HIDDEN_FACE_KEY]);
   });
 
-  it('hands the turn back once the cards a Layoff with the last action found are passed on, and the turn goes on to the next player (Review Focus)', () => {
+  it('hands the turn back to the actions at 0 once the cards a Layoff with the last action found are passed on, and the turn goes on to the next player once the seat ends its actions (Review Focus)', () => {
     const arranged = arrange({
       'bench-p0': [idOf('Engineer')],
       'agency-row': ['Hacker', 'Architect', 'Veteran', 'Diva'].map(idOf),
@@ -2902,12 +2906,40 @@ describe('Startup Simulator (designer language)', () => {
 
     expect(engine.dispatch({ type: PASS_ON_THE_REST, by: 'p0' }).ok).toBe(true);
     const passed = engine.getState();
-    expect(passed.turn).toMatchObject({ current: 'p1', phase: 'actions' });
-    expect(counterOf(passed, 'actions', 'p1')).toBe(ACTIONS_EACH_TURN);
+    // Free actions may still be taken at 0, so the turn waits on the seat (rulebook l.172–173).
+    expect(passed.turn).toMatchObject({ current: 'p0', phase: 'actions' });
+    expect(counterOf(passed, 'actions', 'p0')).toBe(0);
+    expect(engine.dispatch({ type: END_ACTIONS, by: 'p0' }).ok).toBe(true);
+    const ended = engine.getState();
+    expect(ended.turn).toMatchObject({ current: 'p1', phase: 'actions' });
+    expect(counterOf(ended, 'actions', 'p1')).toBe(ACTIONS_EACH_TURN);
     expect(zoneCards(passed, 'scouting-p0')).toEqual([]);
     // The Fixer enters at the left end and pushes the Diva out (R7).
     expect(namesIn(passed, 'agency-row')).toEqual(['Fixer', 'Hacker', 'Architect', 'Veteran']);
     expect(namesIn(passed, 'open-job-market')).toEqual(['Engineer', 'Diva']);
+  });
+
+  it('waits at 0 actions with the end button and a Greenlight allowed on the page and a recruit greyed by its cost, and ends the actions only on the seat’s press (rulebook l.172–173, Review Focus)', () => {
+    const dating = idOf('Dating App');
+    const arranged = arrange({ 'backlog-p0': [dating], 'development-p0': [] }).getState();
+    const { engine, runtime } = createEngine(game!, lib, 2, setCounter(arranged, 'actions', 'p0', 0));
+    const allowed = () => Object.fromEntries(seatExtras(engine, runtime, engine.getState(), 'p0').actions.map((action) => [action.move, action.allowed]));
+    expect(allowed()[END_ACTIONS]).toBe(true);
+    expect(allowed()[GREENLIGHT]).toBe(true);
+    expect(allowed()[RECRUITS[0]]).toBe('they have at least 1 action');
+    expect(engine.dispatch({ type: RECRUITS[0], by: 'p0' })).toMatchObject({ ok: false, reason: 'they have at least 1 action' });
+    expect(engine.dispatch({ type: GREENLIGHT, by: 'p0', cardId: dating }).ok).toBe(true);
+    expect(engine.getState().turn).toMatchObject({ current: 'p0', phase: 'actions' });
+    expect(allowed()[END_ACTIONS]).toBe(true);
+    expect(engine.dispatch({ type: END_ACTIONS, by: 'p0' }).ok).toBe(true);
+    expect(engine.getState().turn).toMatchObject({ current: 'p1', phase: 'actions' });
+    // Undo of the end gives back the actions at 0 with the end still allowed, and undo of the Greenlight gives it back too (Review Focus 4).
+    engine.undo();
+    expect(engine.getState().turn).toMatchObject({ current: 'p0', phase: 'actions' });
+    expect(counterOf(engine.getState(), 'actions', 'p0')).toBe(0);
+    expect(allowed()[END_ACTIONS]).toBe(true);
+    engine.undo();
+    expect(allowed()[GREENLIGHT]).toBe(true);
   });
 
   it('finds nothing wrong with a whole table: after Setup at every count, and with staff on projects and in the ops team', () => {

@@ -241,6 +241,9 @@ describe('a round played through the page', () => {
     mount();
     for (let i = 0; i < 3; i++) press('Recruit a junior software dev');
     expect(lineOf(S)).toBe(`${S} 1 capital, 0 actions, 0 market share · bench 6 · backlog 1 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0 · strategy hand 0 · brainstorm 0 · milestones 0 · start player`);
+    // At 0 actions the turn waits on the seat, which may still take a free action, until it ends its actions (rulebook l.172–173).
+    expect(status()).toBe(`seat: ${S} — Your turn — ${hint('actions')}`);
+    press('End your actions');
     expect(status()).toBe(`seat: ${S} — Your turn — ${hint('bench cleanup')}`);
 
     press('Discard a card in your bench');
@@ -273,9 +276,11 @@ describe('a round played through the page', () => {
 
     press('Keep a card in your research');
     pickFirst();
-    selected(`${T} — to act`);
+    selected(`${N} — to act`);
     expect(cardsIn('open-idea-pool')).toHaveLength(2);
     expect(lineOf(N)).toContain('0 actions, 0 market share · bench 5 · backlog 2 · research 0 · development 0 · operations 0 · development team 0 · ops team 0 · scouting 0');
+    press('End your actions');
+    selected(`${T} — to act`);
 
     press('Draft a card from the seed market to your backlog');
     pickFirst();
