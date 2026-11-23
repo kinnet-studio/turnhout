@@ -226,7 +226,6 @@ Before starting: re-check Task 1's `inPlayZones`, 5-3's walk of a button's `Then
 **Files:**
 - Modify: `src/engine/core/lang/cards.ts` (`isSentence`), `src/engine/pixi/text-faces.ts` (`detailsOf`)
 - Modify: `src/engine/core/lang/library/game-numbers.ts` (export `PAY_NUMBER`), `src/engine/core/lang/worked-view.ts` (export `thenRefs`; the `readsOnlyCards` wording, R4), `src/engine/core/lang/board-view.ts` (`paidNumbers`; `gameNumbersIn`)
-- Modify: `src/engine/core/lang/card-alone.ts` (its header comment only)
 - Modify: `src/pages/designer/tableaux.tsx` (`inPlayLines`; the lines first)
 - Modify: `src/games/startup-simulator.rules` (the Event table)
 - Test (all append): `src/engine/core/lang/cards.test.ts`, `src/engine/pixi/text-faces.test.ts`, `src/engine/core/lang/board-view.test.ts`, `src/pages/designer/tableaux.test.ts`, `src/pages/designer/playtest-fitted.test.tsx`, `src/games/startup-simulator.test.ts`
@@ -264,11 +263,11 @@ const bankText = () => within(screen.getByTestId('tableaux')).getByText(/^licens
 ```
 
 - **`Tableaux`** renders `inPlayLines(game, cards)` first, one `<div>` each (Page copy), before the seats' lines.
-- **`worked-view.ts` and `card-alone.ts` wording (pre-flight Minors 8–9; no behaviour changes).**
+- **`worked-view.ts` wording (pre-flight Minors 8–9; no behaviour changes).**
   - The file header, `standIns` and `shownFlags` say a shown value reads "the card, the cards on it and what a shared zone everyone can see holds". `shownFlags` adds "or one that tests such a zone itself".
-  - `readsOnlyCards(game, name, reads: Reads = {}, seen = new Set<string>())`, with `type Reads = { holder?: boolean; owner?: boolean; centre?: boolean }`. Callers pass `{ centre: true }`, `{ holder: true }` or `{ owner: true, centre: true }`. Its doc adds "card-alone.ts never reads so: what such a zone holds changes while the card stays as it is."
+  - `readsOnlyCards(game, name, reads: Reads = {}, seen = new Set<string>())`, with `type Reads = { holder?: boolean; owner?: boolean; centre?: boolean }`. Callers pass `{ centre: true }`, `{ holder: true }` or `{ owner: true, centre: true }`. Its doc adds "card-alone.ts keeps a value that reads so by the cards that zone holds as well as by the card (`keptValues`, speed-up 3): what such a zone holds changes while the card stays as it is."
   - Wrap the `testsCentre` line after `value.kind === 'flag'`.
-  - `card-alone.ts`'s header gains: "Nor does a line that tests what a shared zone holds, which `readsOnlyCards` counts with `centre`: the card in play changes while this one stays as it is."
+  - `card-alone.ts`'s header needs no change: speed-up 3 (`1dcbf99`) rewrote it to say a value that also tests what a shared zone holds is kept by that zone's cards (`keptValues`). (Pre-flight R4's sentence for it is dropped: it was made false by that plan.)
 - **The Event table** (§20.D). In `  A deck called events, starting in the event deck:`, the table becomes, exact copy:
 
 ```text
@@ -350,7 +349,7 @@ const bankText = () => within(screen.getByTestId('tableaux')).getByText(/^licens
 
 ```bash
 git add src/engine/core/lang/cards.ts src/engine/pixi/text-faces.ts src/engine/core/lang/library/game-numbers.ts \
-  src/engine/core/lang/worked-view.ts src/engine/core/lang/card-alone.ts src/engine/core/lang/board-view.ts src/pages/designer/tableaux.tsx src/games/startup-simulator.rules \
+  src/engine/core/lang/worked-view.ts src/engine/core/lang/board-view.ts src/pages/designer/tableaux.tsx src/games/startup-simulator.rules \
   src/engine/core/lang/cards.test.ts src/engine/pixi/text-faces.test.ts src/engine/core/lang/board-view.test.ts \
   src/pages/designer/tableaux.test.ts src/pages/designer/playtest-fitted.test.tsx src/games/startup-simulator.test.ts
 git commit -F - <<'EOF'
