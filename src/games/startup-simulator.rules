@@ -5501,7 +5501,7 @@ Example: during Chip Shortage a player with $3 can't recruit a Junior Hardware E
   Then it is rejected because "they have at least the junior price in capital"
   And p0 has 2 actions
 
-Example: during Chip Shortage the Diva a Layoff found costs $8, the $5 printed price plus $3, while a Junior Software Dev costs no more (section 20, section 13)
+Example: during Chip Shortage the Diva a Layoff found costs $8, the $5 printed price plus $3 (section 20, section 13)
   Given the event deck has the Chip Shortage
   And the agency row has the Hacker, the Architect, the Veteran and the Engineer
   And the talent deck has the Diva
