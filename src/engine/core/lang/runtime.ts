@@ -7,6 +7,7 @@ import type { Json } from '../table-def';
 import { attachmentProblem } from './attach';
 import { numberIn } from './board';
 import { holderOf, interruptedTurn, isOut, nextIn, playersIn, setCounter } from './board-state';
+import { cardAloneValues } from './card-alone';
 import { cardAttribute, cardFact } from './card-facts';
 import { CHOOSE_ONE, CHOOSE_PLAYER, type ChoiceOption } from './choices';
 import { isMissing, readsPressCard } from './compile-util';
@@ -87,7 +88,18 @@ export class LangRuntime {
    * The values being worked out right now, each for a card or a player, by a key of its own: a number or a flag whose lines ask it again,
    * directly or through another value, would never end.
    */
-  private readonly workingOut = new Set<string>();
+  private readonly workingOut: string[][] = [];
+  /**
+   * The code behind each ref this runtime has run, by the ref, which the compiled game holds and never changes; undefined for a ref the
+   * library has no phrase for.
+   */
+  private readonly codeOf = new WeakMap<PhraseRef, { fn: unknown } | undefined>();
+  /**
+   * What each value that reads its card alone (`cardAloneValues`) came to for each card object: a card is never changed once made, so the
+   * value is the same in every state that holds that object. Weakly held, so a card no state holds any more takes its values with it.
+   */
+  private readonly ofCard = new WeakMap<CardState, Map<string, Json | null>>();
+  private cardAlone: ReadonlySet<string> | undefined;
 
   constructor(
     readonly game: CompiledGame,
@@ -504,12 +516,14 @@ export class LangRuntime {
     const card = this.cardIn(state, cardId);
     const worked = this.workedOf(name);
     if (worked?.kind !== 'number') return cardAttribute(card, name, this.game);
-    const own = cardFact(card, name);
-    const env = this.env(state, undefined, undefined, { player: null, space: null, card: cardId });
-    return this.workOut([cardId, name], name, () => worked.refs.reduce(
-      (value, ref) => unlessNoSuchNumber(() => this.call<ValueFn, number | null>(ref, ['value'], (fn) => fn(env, ref.args, value)), value),
-      worked.refines ? (typeof own === 'number' ? own : null) : 0,
-    ));
+    return this.keptFor(card, name, () => {
+      const own = cardFact(card, name);
+      const env = this.env(state, undefined, undefined, { player: null, space: null, card: cardId });
+      return this.workOut([cardId, name], name, () => worked.refs.reduce(
+        (value, ref) => unlessNoSuchNumber(() => this.call<ValueFn, number | null>(ref, ['value'], (fn) => fn(env, ref.args, value)), value),
+        worked.refines ? (typeof own === 'number' ? own : null) : 0,
+      ));
+    });
   };
 
   /**
@@ -522,10 +536,12 @@ export class LangRuntime {
     const card = this.cardIn(state, cardId);
     const worked = this.workedOf(flag);
     if (worked?.kind !== 'flag') return cardFact(card, flag) === true;
-    const subject: Subject = { player: null, space: null, card: cardId };
-    const holds = (ref: PhraseRef) => unlessNoSuchNumber(() => this.test(ref, state, undefined, undefined, subject), false);
-    const groupHolds = (group: CondGroup) => (group.mode === 'all' ? group.refs.every(holds) : group.refs.some(holds));
-    return this.workOut([cardId, flag], flag, () => worked.conditions.every(groupHolds));
+    return this.keptFor(card, flag, () => {
+      const subject: Subject = { player: null, space: null, card: cardId };
+      const holds = (ref: PhraseRef) => unlessNoSuchNumber(() => this.test(ref, state, undefined, undefined, subject), false);
+      const groupHolds = (group: CondGroup) => (group.mode === 'all' ? group.refs.every(holds) : group.refs.some(holds));
+      return this.workOut([cardId, flag], flag, () => worked.conditions.every(groupHolds));
+    });
   };
 
   /**
@@ -542,6 +558,24 @@ export class LangRuntime {
     const line = (sum: number, ref: PhraseRef) => this.call<ValueFn, number | null>(ref, ['value'], (fn) => fn(env, ref.args, sum)) ?? sum;
     return this.workOut(['player', seat, name], name, () => value.refs.reduce((sum, ref) => unlessNoSuchNumber(() => line(sum, ref), sum), 0));
   };
+
+  /**
+   * The value `name` of `card` as `work` works it out, or as it came to before for that card object when it reads the card alone
+   * (`cardAloneValues`): such a value reads nothing a state holds but the card, so it is the same in every state that holds it. A value
+   * whose lines threw is kept for no card, so it throws again, as before.
+   */
+  private keptFor<T extends Json | null>(card: CardState, name: string, work: () => T): T {
+    if (!(this.cardAlone ??= cardAloneValues(this.game)).has(name)) return work();
+    let kept = this.ofCard.get(card);
+    if (kept === undefined) {
+      kept = new Map();
+      this.ofCard.set(card, kept);
+    }
+    if (kept.has(name)) return kept.get(name) as T;
+    const value = work();
+    kept.set(name, value);
+    return value;
+  }
 
   /** The value a section works out under this name, if one does. */
   private workedOf(name: string): WorkedValue | undefined {
@@ -561,14 +595,16 @@ export class LangRuntime {
    * never a stack overflow.
    */
   private workOut<T>(key: string[], name: string, work: () => T): T {
-    const id = JSON.stringify(key);
-    if (this.workingOut.has(id)) throw new RuleError(WORKED_FROM_ITSELF(name));
-    this.workingOut.add(id);
+    // The values being worked out sit one inside the other, so they come off in the order they went on.
+    if (this.workingOut.some((other) => other.length === key.length && other.every((part, i) => part === key[i]))) {
+      throw new RuleError(WORKED_FROM_ITSELF(name));
+    }
+    this.workingOut.push(key);
     try {
       return work();
     } finally {
       // A value that throws must not leave the runtime thinking it is still being worked out.
-      this.workingOut.delete(id);
+      this.workingOut.pop();
     }
   }
 
@@ -620,7 +656,11 @@ export class LangRuntime {
     if (isMissing(ref)) throw notImplemented(ref);
     if (ref.kind === 'lang' || !kinds.includes(ref.kind)) throw new Error(`“${ref.text}” can't be used as ${kinds.join(' or ')} here.`);
     // A game compiled against a richer library may name a phrase this one lacks: to the designer that is the same thing.
-    const entry = this.library.get(ref.kind, ref.phrase);
+    let entry = this.codeOf.get(ref);
+    if (entry === undefined && !this.codeOf.has(ref)) {
+      entry = this.library.get(ref.kind, ref.phrase);
+      this.codeOf.set(ref, entry);
+    }
     if (!entry) throw notImplemented(ref);
     try {
       return use(entry.fn as F);

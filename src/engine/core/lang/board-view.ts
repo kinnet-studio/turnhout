@@ -461,11 +461,43 @@ function actionViews(engine: GameEngine, runtime: LangRuntime, state: GameState,
   });
 }
 
+/** What `workedView` and `playerValuesView` show of a game: the rules alone decide it (see worked-view), so it is read once per game. */
+interface Shown {
+  readonly columns: readonly [string, string][];
+  readonly flags: readonly string[];
+  readonly withoutHolder: readonly string[];
+  readonly playerValues: readonly string[];
+}
+
+const shownByGame = new WeakMap<CompiledGame, Shown>();
+
+/**
+ * Each `standIns` column with the number that stands in for it; the flags `shownFlags` or `pressFlags` keep, in the order the game works
+ * them out, and those of them not read through the card a card sits on (`holderFlags`); and `shownPlayerValues`. Kept for each compiled
+ * game, which never changes once made.
+ */
+function shownOf(game: CompiledGame): Shown {
+  let shown = shownByGame.get(game);
+  if (shown === undefined) {
+    const kept = new Set([...shownFlags(game), ...pressFlags(game)]);
+    const flags = Object.keys(game.worked ?? {}).filter((name) => kept.has(name));
+    const throughHolder = new Set(holderFlags(game));
+    shown = {
+      columns: Object.entries(standIns(game)), flags, withoutHolder: flags.filter((flag) => !throughHolder.has(flag)),
+      playerValues: shownPlayerValues(game),
+    };
+    shownByGame.set(game, shown);
+  }
+  return shown;
+}
+
 /**
  * A card's numbers worked out in place of the columns it holds as numbers (`columns`, a `standIns` entry each), and the flags of `flags`
  * that hold for it, in order; null when it has neither.
  */
-function workedCard(runtime: LangRuntime, state: GameState, card: CardState, columns: [string, string][], flags: string[]): WorkedCard | null {
+function workedCard(
+  runtime: LangRuntime, state: GameState, card: CardState, columns: readonly (readonly [string, string])[], flags: readonly string[],
+): WorkedCard | null {
   const worked: WorkedCard = { columns: {}, flags: flags.filter((flag) => runtime.workedFlag(state, card.id, flag)) };
   for (const [column, name] of columns) {
     if (typeof cardFact(card, column) !== 'number') continue;
@@ -486,12 +518,8 @@ function workedCard(runtime: LangRuntime, state: GameState, card: CardState, col
  */
 function workedView(runtime: LangRuntime, state: GameState, seat: PlayerId): WorkedView | null {
   const { game } = runtime;
-  const columns = Object.entries(standIns(game));
-  const kept = new Set([...shownFlags(game), ...pressFlags(game)]);
-  const flags = Object.keys(game.worked ?? {}).filter((name) => kept.has(name));
+  const { columns, flags, withoutHolder } = shownOf(game);
   if (columns.length === 0 && flags.length === 0) return null;
-  const throughHolder = new Set(holderFlags(game));
-  const withoutHolder = flags.filter((flag) => !throughHolder.has(flag));
   const view: WorkedView = {};
   for (const card of Object.values(cardsKept(runtime, state)).flat()) {
     if (!seesFace(game, card, seat)) continue;
@@ -515,7 +543,7 @@ function workedView(runtime: LangRuntime, state: GameState, seat: PlayerId): Wor
  * left out of that seat's entry alone, so that one mistake leaves every view whole.
  */
 function playerValuesView(runtime: LangRuntime, state: GameState): PlayerValuesView | null {
-  const names = shownPlayerValues(runtime.game);
+  const names = shownOf(runtime.game).playerValues;
   if (names.length === 0) return null;
   const view: PlayerValuesView = {};
   for (const seat of runtime.seats) {
