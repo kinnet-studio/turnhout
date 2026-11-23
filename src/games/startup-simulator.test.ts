@@ -7,6 +7,7 @@ import { createEngine, initialState, seatsFor, tableDefFor } from '@/engine/core
 import { COUNTERS_KEY, counterOf, gameNumber, playerFact, setCounter } from '@/engine/core/lang/board-state';
 import { seatExtras, type CardPickView, type SeatExtras } from '@/engine/core/lang/board-view';
 import { attachmentProblem, cardsOn, putOn } from '@/engine/core/lang/attach';
+import { othersOn } from '@/engine/core/lang/attach';
 import { deckOf, NEXT_CARD_KEY } from '@/engine/core/lang/cards';
 import { cardCandidates, hasCost, ontoCandidates, pressChoices } from '@/engine/core/lang/declared-actions';
 import { moveZoneId } from '@/engine/core/lang/declared-moves';
@@ -543,6 +544,27 @@ const SHOW_TECHCRUNCH = 'Trade Show: a TechCrunch Feature for $2';
 const CRUNCH_CUBE = 'Crunch Time: a cube';
 const CRUNCH_BUG = 'Crunch Time: a Bug';
 const CRUNCH_STOPPED = 'Crunch Time: a Bug stopped by Clean Code';
+/** Plan 7-2a's keys: held Equity (§17). An Invest by the price paid, as `${INVEST_AT} $5`, and during Venture Capital Rain (§17.A, §20.D 1). */
+const INVEST_AT = 'an Invest at';
+const INVEST_IN_RAIN = 'an Invest during Venture Capital Rain';
+/** The hard cap's words, as the Invest buttons refuse a Founder's last token (§17.D). */
+const HARD_CAP_REFUSAL = 'its owner has at least 2 cards in their equity';
+const HARD_CAP_REFUSED = 'the hard cap refused an Invest';
+/** A dividend by the amount paid for each token, as `${DIVIDEND_OF} $1` (§9.B, §17.B.1). */
+const DIVIDEND_OF = 'a dividend of';
+const LICENSE_WAIVED = 'a License waived between Partners';
+/** A Consultant placed, by its colour, as `${CONSULTANT_PLACED}: Blue` (§17.B.4). */
+const CONSULTANT_PLACED = 'a Consultant placed';
+const CONSULTANT_CUBE = "a Consultant's cube at the Engine";
+const CONSULTANT_BUG = "a Consultant's Bug at the Engine";
+const CONSULTANT_STALLED = 'a Consultant on a Stalled project at the Engine';
+const CONSULTANT_BANDWIDTH = "a Consultant's bandwidth at an Income";
+const CONSULTANT_OPS_QA = "a Consultant's Bug in Ops QA";
+const CONSULTANT_LAUNCHED = 'a Consultant kept by a Launch';
+const CONSULTANT_PIVOTED = 'a Consultant sent back by a Pivot';
+const CONSULTANT_PLACED_AT_START = 'a Consultant placed at a Round Start';
+const CONSULTANT_MOVED_AT_START = 'a Consultant moved at a Round Start';
+const TWO_CONSULTANTS = 'two Consultants on one product';
 /** The colour each skill works in already, as a declaration's answer names it (§11.C.2). */
 const NATIVE_ANSWER: Record<string, string> = { software: 'blue', hardware: 'red', qa: 'qa' };
 /** The Permanent XP tokens of each colour a Junior holds (§11.A). */
@@ -1401,13 +1423,24 @@ function playTurn(
     return press(BRAINSTORM);
   };
   /**
-   * An Invest as the turn's action `a`, when `(t + a) % 7 === 3`: the first card offered, rival by rival from the seat's left
-   * (`equitiesFrom`), whose press is allowed and whose founder's Share Price leaves the seat 2 or more capital (§17.A). Null otherwise.
+   * An Invest as the turn's action `a`, when `(t + a) % 7 === 0` or Venture Capital Rain is in play: of the cards offered, rival by
+   * rival from the seat's left (`equitiesFrom`), whose press is allowed and whose founder's Share Price leaves the seat 2 or more
+   * capital, and that are not a second token of a Founder unless Venture Capital Rain is in play or that Founder's price is above $5,
+   * the one whose founder's Share Price is highest, then whose Operational Revenue is, the first of those (§17.A, §17.B.1, §20.D 1).
+   * Null otherwise. A seat keeps a Founder's second token for the Rain or a dearer price, so the hard cap seldom stops those.
    */
   const investing = (a: number): Move | null => {
-    if ((t + a) % 7 !== 3) return null;
-    const keeps = (card: CardState) => capital() - sharePriceOf(runtime, engine.getState(), founderOf(card)!) >= 2;
-    const plain = pick(INVEST, equitiesFrom(runtime.seats, by), (row, pressing) => row.find((card) => pressing.allows(card) && keeps(card)));
+    const raining = eventOf(engine.getState()) === 'Venture Capital Rain';
+    if ((t + a) % 7 !== 0 && !raining) return null;
+    const priceOf = (card: CardState) => sharePriceOf(runtime, engine.getState(), founderOf(card)!);
+    const revenueOf = (card: CardState) => runtime.playerValue(engine.getState(), founderOf(card)!, 'operational revenue') as number;
+    const keeps = (card: CardState) => capital() - priceOf(card) >= 2;
+    const second = (card: CardState) => cards(own('portfolio')).some((c) => founderOf(c) === founderOf(card));
+    const wanted = (card: CardState) => !second(card) || raining || priceOf(card) > 5;
+    const dearest = (row: CardState[], pressing: Pressing) => row.filter((card) => pressing.allows(card) && keeps(card) && wanted(card))
+      .reduce<CardState | undefined>((top, card) => (top === undefined || priceOf(card) > priceOf(top)
+        || (priceOf(card) === priceOf(top) && revenueOf(card) > revenueOf(top)) ? card : top), undefined);
+    const plain = pick(INVEST, equitiesFrom(runtime.seats, by), dearest);
     if (plain === null || t % 2 !== 0) return plain;
     // On an even t, it places the token on its founder's first product, in `foundersBoards` order, when the founder has one (§17.B.4).
     const founder = founderOf(cardById(engine.getState(), plain.cardId as string)!)!;
@@ -1419,6 +1452,12 @@ function playTurn(
     };
     return pick(INVEST_PLACING, equitiesFrom(runtime.seats, by), (row) => row.find((card) => card.id === plain.cardId), onFounders);
   };
+  /**
+   * On the Invest cadence, the press of a Founder's last token in their equity, which the hard cap refuses at no cost before the seat
+   * invests (§17.D).
+   */
+  const capped = (a: number): Move | null => ((t + a) % 7 !== 0 ? null
+    : pick(INVEST, equitiesFrom(runtime.seats, by), (row) => row.find((card) => cards(card.zoneId).length === 1)));
   /** The move the action numbered `action` makes, or null when it has nothing to pick (see above). */
   const boardAction = (action: number): Move | null => {
     const projects = cards(own('development'));
@@ -1533,7 +1572,7 @@ function playTurn(
         : ideation());
       const planned = a === 0 ? [launch(), ...ideas()] : [
         reassignDiva(), launch(), internRecruit(a), qaForBugs(), hireGrowthHacker(action), hireHacker(), moveGrowthHacker(), pmToProject(),
-        pivotDiva(), divaToOps(), hireDiva(), makersToProject(), investing(a), brainstorming(a), ...board(),
+        pivotDiva(), divaToOps(), hireDiva(), makersToProject(), capped(a), investing(a), brainstorming(a), ...board(),
       ];
       const move = choose([...planned, recruitMaker(a), press(END_ACTIONS)]);
       if (move.type === REASSIGN_TO_PRODUCT) movedOnProducts = true;
@@ -1640,7 +1679,7 @@ function playGame(
 const REPLAYED = [
   'declarations', 'switches off', 'Bugs added to a project', 'Pending tokens gained', 'Launches that raised XP', 'reshuffles',
   'Training that asked a choice or had it filled in', 'Milestone claims', 'Debuffs', 'strips', 'TechCrunch Features', 'Design Sprints',
-  'Event reshuffles', 'let-gos in the event check',
+  'Event reshuffles', 'let-gos in the event check', 'Consultant pivots', 'placing Invests', 'Round Start placements',
 ] as const;
 
 /**
@@ -1662,12 +1701,28 @@ const REPLAYED = [
  *   bench, and 'during Chip Shortage Hardware talent costs $3 more from the University, the agency row and the open job market, and a
  *   flex Firmware Specialist its printed price (section 20, section 13)' hires the Engineer and the Firmware Specialist to it); and
  *   Patent Trolls' $5 License (2 players seed 4; 'during Patent Trolls a Greenlight License costs $5, …').
- * - Plan 7-2a: a License paid to a provider chosen among several, which 3 players seed 2 alone held once the seats invested and no
- *   game held once Partners waived the License (two rivals must run products of the Tag a seat's Greenlight lacks, and neither may be
- *   its Partner); the arranged test 'names the provider it pays a License to by t when two rivals provide the Tag, …' pins it.
+ * - Plan 7-2a, out of reach of the runs: an Invest at $15 (no run puts a Tier 3 product in operation), at $10 (one game, 2 players
+ *   seed 4, where a rival holds the $12 while a Tier 2 product is in operation), a dividend of $3 (no Income comes to $21; one of $17
+ *   is the most) and a Consultant's Bug in Ops QA (a Bug on a product in operation is rare, and a QA Consultant must sit on it), each
+ *   pinned by its example ('Invest pays the Founder their Share Price: $5 with only Tier 1, $10 with an Active Tier 2, $15 with a Tier
+ *   3 …', '$21 of Operational Revenue pays $3 a token, …', 'a Consultant on a Maintenance product adds 1 Ops bandwidth of its colour
+ *   at the Founder's Income, or removes 1 Bug in Ops QA …').
+ * - Plan 7-2a, held by fewer once the seats invest (the Invests and the Round Start steps replay every game; nine cadences tried kept
+ *   none of these four at 2): a Junior PM promoted at a Launch (none; 'claims First Mover Advantage, Platform Power and Full Stack
+ *   Founder at one auto-player Launch of a Tier 2 card, which promotes its Junior PM, …'), Pending tokens returned by a pivot (5 players
+ *   seed 4; 'Pending tokens stay with a Junior who is Reassigned, and a Pivot returns them all …'), Trade Show's TechCrunch Feature for
+ *   $2 (4 players seed 2; 'during Trade Show TechCrunch Feature costs $2, …') and a trained Junior declared blue (4 players seed 1; 'a
+ *   Junior Hardware Eng with a Blue Skill token declared Blue makes 1 Blue, its Red XP idle …').
  */
 const HELD_BY_FEWER_THAN_TWO = new Set<string>([
-  "a Workaholic's +2 at the Engine",
+  'an Invest at $10',
+  'an Invest at $15',
+  'a dividend of $3',
+  "a Consultant's Bug in Ops QA",
+  'a Junior PM promoted at a Launch',
+  'Pending tokens returned by a pivot',
+  'Trade Show: a TechCrunch Feature for $2',
+  'a trained Junior declared blue',
   'Attributes kept through a bench discard',
   'Toxic: a Red cube taken',
   'hire a card from the agency row to their bench',
@@ -1676,7 +1731,6 @@ const HELD_BY_FEWER_THAN_TWO = new Set<string>([
   'Crunch Time: a Bug stopped by Clean Code',
   'a trained Junior declared red',
   'Patent Trolls: a $5 License',
-  'a license paid to a chosen provider',
 ]);
 
 /** A game kept for the Greenlight test: the moves to its first Greenlight that answered a choice, and the states before and after it. */
@@ -1704,6 +1758,9 @@ function keepingForReplay(runtime: LangRuntime) {
     seen.reshuffles += keys.filter((key) => key === RESHUFFLED).length;
     seen['Event reshuffles'] += keys.filter((key) => key === EVENTS_RESHUFFLED).length;
     seen['let-gos in the event check'] += keys.filter((key) => key === AUDIT_LET_GO).length;
+    seen['Consultant pivots'] += keys.filter((key) => key === CONSULTANT_PIVOTED).length;
+    if (move.type === INVEST_PLACING) seen['placing Invests'] += 1;
+    if (move.type === PLACE) seen['Round Start placements'] += 1;
     // A Training press asks the colour a Full Stack Bootcamp gives when it fits both, and fills in the one it fits alone (§20.A).
     const asked = move.type === PLAY_TRAINING && isTraining(cardById(before, move.cardId as string)!) ? pressChoices(runtime, before, move) : [];
     if (typeof asked !== 'string' && asked.length > 0) seen['Training that asked a choice or had it filled in'] += 1;
@@ -1931,10 +1988,21 @@ function happenings(runtime: LangRuntime, before: GameState, move: Move, after: 
     if (growth) keys.push(GROWTH_LAUNCHED);
     if (cubesOn(card!, 'cut blue cubes') + cubesOn(card!, 'cut red cubes') > 0) keys.push(CUT_LAUNCHED);
   }
+  const consulting = (state: GameState, id: string, value: string) => (runtime.workedValue(state, id, value) as number | null) ?? 0;
   if (ranTheEngine(before, after, by)) {
     const generating = atTheEngine(before, move, after);
     const stalled = zoneCards(generating, zoneIdFor('development', by)).filter((project) => runtime.workedFlag(generating, project.id, 'stalled'));
     keys.push(...stalled.map(() => STALLED_AT_THE_ENGINE));
+    // Plan 7-2a's Consultants at the Engine, read in the same state (§17.B.4).
+    for (const project of zoneCards(generating, zoneIdFor('development', by))) {
+      if (stalled.includes(project)) {
+        if (othersOn(generating, project.id).length > 0) keys.push(CONSULTANT_STALLED);
+        continue;
+      }
+      if (consulting(generating, project.id, 'consultant blue') + consulting(generating, project.id, 'consultant red') > 0) keys.push(CONSULTANT_CUBE);
+      const had = cardById(before, project.id);
+      if (consulting(generating, project.id, 'consultant qa') > 0 && had !== undefined && bugsOn(had) > 0) keys.push(CONSULTANT_BUG);
+    }
   }
   if (move.type === PIVOT) {
     const fired = cardsOn(before, move.cardId as string)
@@ -2246,6 +2314,43 @@ function happenings(runtime: LangRuntime, before: GameState, move: Move, after: 
   if (priced === 'Intern Season' && RECRUITS.includes(move.type)) keys.push(INTERN_RECRUIT);
   if (priced === 'Online Course Boom' && move.type === PLAY_TRAINING && isTraining(card!)) keys.push(COURSE_TRAINING);
   if (priced === 'Trade Show' && move.type === PLAY_TO_PRODUCT) keys.push(SHOW_TECHCRUNCH);
+
+  // Plan 7-2a's paths: held Equity (§17).
+  if ([INVEST, INVEST_PLACING].includes(move.type)) {
+    keys.push(`${INVEST_AT} $${sharePriceOf(runtime, before, founderOf(card!)!)}`);
+    if (eventOf(before) === 'Venture Capital Rain') keys.push(INVEST_IN_RAIN);
+  }
+  if (reached !== null) {
+    const dividend = dividendOf(runtime, after, reached);
+    const paidTo = seats.filter((seat) => seat !== reached).flatMap((seat) => portfolioOf(after, seat).filter((c) => founderOf(c) === reached));
+    if (dividend > 0) keys.push(...paidTo.map(() => `${DIVIDEND_OF} $${dividend}`));
+  }
+  if (move.type === GREENLIGHT) {
+    const lacked = requirementsOf(card!).filter((tag) => !tagsOf(before, by).has(tag));
+    const partnered = (tag: string) => seats.some((seat) => seat !== by && tiedTo(before, by, seat) && tagsOf(before, seat).has(tag));
+    if (lacked.some(partnered)) keys.push(LICENSE_WAIVED);
+  }
+  if ([INVEST_PLACING, PLACE].includes(move.type)) {
+    const placed = cardById(after, move.cardId as string)!;
+    keys.push(...Object.entries(CONSULTANT_COLOURS).filter(([, flag]) => placed.data?.[flag] === true).map(([colour]) => `${CONSULTANT_PLACED}: ${colour}`));
+  }
+  if (move.type === PLACE) {
+    keys.push(typeof card?.data?.[HOLDER_KEY] === 'string' ? CONSULTANT_MOVED_AT_START : CONSULTANT_PLACED_AT_START);
+  }
+  if (reached !== null) {
+    const bandwidth = operationsOf(after, reached)
+      .reduce((total, product) => total + consulting(after, product.id, 'consultant blue') + consulting(after, product.id, 'consultant red'), 0);
+    if (bandwidth > 0) keys.push(CONSULTANT_BANDWIDTH);
+  }
+  for (const seat of seats) {
+    if (!ranTheEngine(before, after, seat)) continue;
+    const qa = operationsOf(before, seat).reduce((total, product) => total + consulting(before, product.id, 'consultant qa'), 0);
+    if (qa > 0 && ((runtime.playerValue(before, seat, 'bug load') as number | null) ?? 0) > 0) keys.push(CONSULTANT_OPS_QA);
+  }
+  if ((move.type === LAUNCH || move.type === PIVOT) && othersOn(before, move.cardId as string).length > 0) {
+    keys.push(move.type === LAUNCH ? CONSULTANT_LAUNCHED : CONSULTANT_PIVOTED);
+  }
+  if (after.cards.some((c) => othersOn(after, c.id).length >= 2)) keys.push(TWO_CONSULTANTS);
   return keys;
 }
 
@@ -3999,6 +4104,8 @@ describe('Startup Simulator (designer language)', () => {
     const tally: Record<string, number> = {};
     /** The market share every seat ended those runs with, summed. */
     let marketShare = 0;
+    /** The rival tokens every seat held at those runs' results, summed: each scores 5 (§12.4). */
+    let held = 0;
     /**
      * The long run's 2- and 3-player games, by `${players} ${seed}`. The replay tests and the view test below reuse them instead of playing
      * them again, and each plays its own when a `-t` filter left the long run out.
@@ -4048,6 +4155,8 @@ describe('Startup Simulator (designer language)', () => {
         // The Diva's Ego refuses her reassign, which the rules say in that line's words (§6, §20.B.1).
         const refused: Refused = (_state, move, reason) => {
           if (REASSIGNS.includes(move.type) && reason === EGO_REFUSAL) count(DIVA_REFUSED[move.type]);
+          // The hard cap refuses an Invest in a Founder's last token, in the rules' words (§17.D).
+          if ([INVEST, INVEST_PLACING].includes(move.type) && reason === HARD_CAP_REFUSAL) count(HARD_CAP_REFUSED);
         };
         const finalCheck = new Set<number>();
         /** The seats that have declared a mode since their turn started (§11.C.2). */
@@ -4102,6 +4211,7 @@ describe('Startup Simulator (designer language)', () => {
         const winners = seats.filter((seat) => scores[seat] === top);
         expect(state.result, where).toEqual({ scores, winner: winners[0], winners });
         for (const seat of seats) marketShare += counterOf(state, 'market share', seat);
+        for (const seat of seats) held += portfolioOf(state, seat).length;
         if (keeping !== null) keptGames.set(`${players} ${seed}`, keeping.kept(engine));
         if (greenlit !== null) greenlitGames.set(seed, greenlit.kept(engine));
       }
@@ -4128,6 +4238,8 @@ describe('Startup Simulator (designer language)', () => {
         PLAY_DEBUFF, PLAY_TO_PRODUCT, PLAY_ALONE,
         // Plan 6-2b's: a let-go in the event check.
         AUDIT_LET_GO,
+        // Plan 7-2a's: both Invests, and the Round Start step's place and confirm.
+        INVEST, INVEST_PLACING, PLACE, CONFIRM_CONSULTANTS,
         // What the rules make happen on their own.
         'open idea pool lets a card go to the box', 'open job market lets a card go to the box', PUSHED_OUT,
         'the Market Crash reaches the crash pile from the growth market', 'the Market Crash reaches the crash pile from a research row',
@@ -4350,6 +4462,19 @@ describe('Startup Simulator (designer language)', () => {
       expect(paths.filter((key) => !(tally[key] > 0) && !HELD_BY_FEWER_THAN_TWO.has(key)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
+    it('played slice 7’s held Equity in those runs: Invests at every price and during Venture Capital Rain, the hard cap, dividends of $1, $2 and $3, a License waived between Partners, Consultants placed in each colour and at work in Development, on a Stalled project, in Ops bandwidth and Ops QA, kept by a Launch, sent back by a Pivot, stacked, and placed and moved at a Round Start, and rival tokens scored', () => {
+      const paths = [
+        ...[5, 10, 15].map((price) => `${INVEST_AT} $${price}`), INVEST_IN_RAIN, HARD_CAP_REFUSED,
+        ...[1, 2, 3].map((amount) => `${DIVIDEND_OF} $${amount}`), LICENSE_WAIVED,
+        ...Object.keys(CONSULTANT_COLOURS).map((colour) => `${CONSULTANT_PLACED}: ${colour}`),
+        CONSULTANT_CUBE, CONSULTANT_BUG, CONSULTANT_STALLED, CONSULTANT_BANDWIDTH, CONSULTANT_OPS_QA,
+        CONSULTANT_LAUNCHED, CONSULTANT_PIVOTED, CONSULTANT_PLACED_AT_START, CONSULTANT_MOVED_AT_START, TWO_CONSULTANTS,
+      ];
+      // A failure here means a cadence moved: retune the auto-player, never the rules.
+      expect(paths.filter((key) => !(tally[key] > 0) && !HELD_BY_FEWER_THAN_TWO.has(key)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
+      expect(held, 'the rival tokens held at the results').toBeGreaterThan(0);
+    });
+
     it('plays the same game through the page’s view as without it (2 players, seed 2)', () => {
       // Seed 2 has a Greenlight that asks a choice (a cut, Cut 2 red or Cut 1 of each), which the view must list for the card. The game played without
       // the view is the long run's, which plays seed 2 so.
@@ -4433,13 +4558,13 @@ describe('Startup Simulator (designer language)', () => {
 
     it('takes back every move with undo, and rebuilds the game from its log, through recruits and research (3 players, seed 1)', () => {
       const states: GameState[] = [];
-      // The retuned seats put their makers on projects before they recruit, so the first recruit comes at move 50 (it was within 40; a Design Sprint and its cleanup came before it from plan 6-2a, the Event deck reshuffled the game from plan 6-2b, and plan 7-2a's Invest and Round Start steps, a placement and two confirms among them, reshuffled it again).
+      // The retuned seats put their makers on projects before they recruit, so the first recruit comes at move 52 (it was within 40; a Design Sprint and its cleanup came before it from plan 6-2a, the Event deck reshuffled the game from plan 6-2b, and plan 7-2a's Invests and Round Start steps reshuffled it again: an Invest, a placement, a confirm and a placing Invest come before it, so undo takes each back).
       const both = (log: readonly Move[]) => log.some((move) => RECRUITS.includes(move.type))
         && log.some((move) => move.type === RESEARCH_SEED || move.type === RESEARCH_GROWTH);
       const engine = playGame(3, 1, (_before, _move, after) => states.push(after), { until: both });
       const log = [...engine.getLog()];
-      expect(log).toHaveLength(50);
-      expect(states).toHaveLength(50);
+      expect(log).toHaveLength(52);
+      expect(states).toHaveLength(52);
       // A recruit makes a Junior whose id comes from the state, and a research deals and keeps a card, so both must replay.
       expect(log.some((move) => RECRUITS.includes(move.type))).toBe(true);
       expect(log.some((move) => move.type === RESEARCH_SEED || move.type === RESEARCH_GROWTH)).toBe(true);
@@ -4457,15 +4582,15 @@ describe('Startup Simulator (designer language)', () => {
       expect(engine.getState()).toEqual(fresh().getState());
     });
 
-    it('takes back every move with undo, and rebuilds the game from its log, across an assign, a launch, a pivot and a reassign (Review Focus: 3 players, seed 2)', () => {
+    it('takes back every move with undo, and rebuilds the game from its log, across an assign, a launch, a pivot and a reassign (Review Focus: 3 players, seed 4)', () => {
       const made = (log: readonly Move[], types: string[]) => log.some((move) => types.includes(move.type));
       // The brief asks for a launch or a pivot; the Review Focus names both, and the run that has both is still short.
       const board = (log: readonly Move[]) => made(log, [ASSIGN_TO_PROJECT, ASSIGN_TO_OPS]) && made(log, [LAUNCH]) && made(log, [PIVOT])
         && made(log, [REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS]);
       const states: GameState[] = [];
-      // Seed 2 makes all four by its 69th move, the soonest of the 3-player seeds 1 to 5 (seeds 5 and 4 take 78 and 79, seeds 3 and 1
-      // 137 and 140).
-      const engine = playGame(3, 2, (_before, _move, after) => states.push(after), { until: board });
+      // Seed 4 makes all four by its 64th move, the soonest of the 3-player seeds 1 to 5 once plan 7-2a's seats invest (seeds 3, 1, 5
+      // and 2 take 122, 125, 129 and 131; seed 2 took 69 before). Undo plays the log again from the start, so a short log keeps it quick.
+      const engine = playGame(3, 4, (_before, _move, after) => states.push(after), { until: board });
       const log = [...engine.getLog()];
       expect(board(log), `the moves made: ${[...new Set(log.map((move) => move.type))].join(', ')}`).toBe(true);
       expect(states).toHaveLength(log.length);
@@ -4475,7 +4600,7 @@ describe('Startup Simulator (designer language)', () => {
       expect(some((card) => cubesOn(card, 'blue cubes') + cubesOn(card, 'red cubes') > 0), 'a project with cubes').toBe(true);
       expect(some((card) => card.data?.onboarding === true), 'an onboarding card').toBe(true);
 
-      const fresh = () => createEngine(game!, lib, 3, initialState(game!, 2)).engine;
+      const fresh = () => createEngine(game!, lib, 3, initialState(game!, 4)).engine;
       const replayed = fresh();
       replayed.loadLog(log);
       expect(replayed.getState()).toEqual(engine.getState());
@@ -4702,10 +4827,12 @@ describe('Startup Simulator (designer language)', () => {
       // at a Launch, shuffled the strategy discard into the deck, played a Training card that asked a choice or had it filled in,
       // claimed a Milestone, played a Debuff, discarded a fired Talent's Attributes and played a TechCrunch Feature, shuffled the event
       // discard into the event deck and let staff go in an event check that waited, so the replays rebuilt each of them. Every log
-      // reveals Events. The declarations are in seeds 1, 2, 4 and 5, the Debuffs in seeds 2 to 5, the reshuffle and the TechCrunch
-      // Feature in seeds 2 and 4, the strips in seeds 1, 2 and 4, the Event reshuffle in seeds 2 and 4 (only 2-player games last the 19
-      // rounds a reshuffle takes) and a let-go in the event check in seeds 1, 2 and 4. The last move taken back is the end of the
-      // actions in seeds 1 and 3, a final-check switch-off in seed 2 and a backlog cleanup's discard in seeds 4 and 5. No log holds a
+      // reveals Events. The declarations are in seeds 1, 2 and 4, the Debuffs in seeds 2, 4 and 5, the reshuffle in seed 2, the
+      // TechCrunch Feature in seeds 2 and 4, the strips in seeds 2, 4 and 5, the Event reshuffle in seeds 2 and 4 (only 2-player games
+      // last the 19 rounds a reshuffle takes) and a let-go in the event check in seeds 1 and 2 (plan 7-2a's Invests and Round Start
+      // steps replayed every game); every log holds a placing Invest and a Round Start placement, and seed 4 a Pivot of a product with a
+      // Consultant on it (plan 7-2a). The last move taken back is a backlog cleanup's discard in seeds 1, 3 and 5, the end of the actions
+      // in seed 2 and a final-check switch-off in seed 4. No log holds a
       // clean press, so the test 'Review Focus: cleans no more Bugs than its QA when one product is left with Bugs partway through the
       // step (R3)' above replays one; none a keep or Mentor press, so 'makes the graduation choices the auto-player picks, …' below
       // replays those; none moves a card onto an Agile PM's team (P8), so 'reassigns a spare QA Engineer from the ops team onto the
@@ -4715,10 +4842,11 @@ describe('Startup Simulator (designer language)', () => {
     }, 120_000);
 
     it('takes back the last move and rebuilds whole games from their logs, through Attribute plays, strips, TechCrunch Features and a Design Sprint (Review Focus: 3 players, seeds 1 to 5)', () => {
-      // The games are the long run's (see `keptGames`), with what each counted as it was played. A Debuff is in every seed's log, the
-      // strips (Attributes discarded with a fired Talent) in seeds 1, 2 and 5, a TechCrunch Feature in seeds 1, 2 and 4 (none before
-      // the second retune kept the TechCrunch Feature first) and a Design Sprint in seeds 2 and 5. The last move taken back is a
-      // final-check switch-off in every seed.
+      // The games are the long run's (see `keptGames`), with what each counted as it was played. A Debuff is in seeds 2, 4 and 5, the
+      // strips (Attributes discarded with a fired Talent) in seed 4, a TechCrunch Feature in seeds 2 and 4 (none before the second
+      // retune kept the TechCrunch Feature first) and a Design Sprint in seed 4, since plan 7-2a's Invests and Round Start steps replayed
+      // every game. The last move taken back is the end of the actions in seed 1, a final-check switch-off in seeds 2 and 5 and a
+      // backlog cleanup's discard in seeds 3 and 4.
       const seen = { Debuffs: 0, strips: 0, 'TechCrunch Features': 0, 'Design Sprints': 0 };
       for (let seed = 1; seed <= 5; seed++) {
         const where = `3 players, seed ${seed}`;
