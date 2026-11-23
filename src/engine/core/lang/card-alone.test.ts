@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import STARTUP_SIMULATOR from '@/games/startup-simulator.rules?raw';
 import type { GameState } from '../game-state';
 import type { Move } from '../moves';
+import type { Json } from '../table-def';
 import { cardsOn, putOn } from './attach';
 import { seatExtras, type ActionView, type PickCardView } from './board-view';
 import { createEngine, initialState } from './build';
@@ -10,6 +11,7 @@ import { cardAloneValues, testedBy } from './card-alone';
 import { registerCardNumberPhrases } from './library/card-number-phrases';
 import { registerCardSubjectPhrases } from './library/card-subject-phrases';
 import { registerCardValuePhrases } from './library/card-value-phrases';
+import { registerFactPhrases, IT_IS_FLAGGED } from './library/fact-phrases';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
 import { compileGame } from './compile';
@@ -68,19 +70,44 @@ const TRUSTED = [
   "value: {cardclass}'s {attribute} is its {attribute}", "value: {cardclass}'s {attribute} is {int}",
 ];
 
+const NEEDS_A_CHECK = 'A phrase newly trusted as card-alone needs a SECTIONS line in this file and a runtime test showing it reads only the card.';
+const bareLibrary = () => new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES]);
+const phrasesOf = (library: PhraseLibrary) => (library as unknown as { entries: Map<string, Map<string, unknown>> }).entries;
+
 describe('the phrases the classifier draws on', () => {
-  it('are these: a phrase added to one of the three libraries must be checked for what it reads before it is listed here', () => {
-    const library = registerCardNumberPhrases(registerCardValuePhrases(registerCardSubjectPhrases(
-      new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES]),
-    ))) as unknown as { entries: Map<string, Map<string, unknown>> };
-    const found = [...library.entries].filter(([kind]) => kind === 'condition' || kind === 'value')
+  it(`are these. ${NEEDS_A_CHECK}`, () => {
+    const library = registerCardNumberPhrases(registerCardValuePhrases(registerCardSubjectPhrases(bareLibrary())));
+    const found = [...phrasesOf(library)].filter(([kind]) => kind === 'condition' || kind === 'value')
       .flatMap(([kind, phrases]) => [...phrases.keys()].map((phrase) => `${kind}: ${phrase}`));
-    expect(found.sort()).toEqual([...TRUSTED].sort());
+    expect(found.sort(), NEEDS_A_CHECK).toEqual([...TRUSTED].sort());
+  });
+
+  it('run the same code in the default library, where later registrars may replace a phrase, as in the three libraries alone', () => {
+    const own = registerCardNumberPhrases(registerCardValuePhrases(registerCardSubjectPhrases(bareLibrary())));
+    const flagged = registerFactPhrases(bareLibrary());
+    const real = createDefaultLibrary();
+    const pairs = [
+      ...TRUSTED.map((trusted) => [trusted.split(': ')[0] as 'condition' | 'value', trusted.slice(trusted.indexOf(': ') + 2), own] as const),
+      ['condition', IT_IS_FLAGGED, flagged] as const,
+    ];
+    expect(pairs.length).toBe(TRUSTED.length + 1);
+    for (const [kind, pattern, from] of pairs) {
+      const want = from.get(kind, pattern);
+      const got = real.get(kind, pattern);
+      expect(want, `${kind}: ${pattern}`).toBeDefined();
+      expect(String(got?.fn), `${kind}: ${pattern}`).toBe(String(want!.fn));
+    }
   });
 });
 
 describe('which values read their card alone', () => {
   const alone = cardAloneValues(game);
+
+  it('is about values the game works out, every one of those named below', () => {
+    const named = ['sturdy', 'potterish', 'skilled', 'handy', 'crew skill', 'crowned', 'carried', 'hall mate', 'owned', 'fee paid', 'whose same',
+      'whose above', 'crowd', 'crafty', 'looping', 'ping', 'pong'];
+    expect(Object.keys(game.worked!)).toEqual(expect.arrayContaining(named));
+  });
 
   it('counts a number that reads its own number and a flag that reads its own kind', () => {
     expect(alone.has('sturdy')).toBe(true);
@@ -304,5 +331,85 @@ describe('a kept value against a fresh one, in a played game', () => {
     expect(checked).toBeGreaterThan(1000);
     // The states sampled hold cards on cards, the cards whose values read others.
     expect(stacked).toBeGreaterThan(5);
+  });
+});
+
+// ---- the classifier's claim, on real states ---------------------------------------------------------
+
+/**
+ * Every `every`th state of a Startup game of two at seed 1, played by pressing, for the seat whose turn it is, a button the page's view
+ * allows: with `ontoFirst` one that puts cards on cards, else the next of all of them in turn, so that the game goes through its phases.
+ */
+function sampledStates(startup: CompiledGame, ontoFirst: boolean, steps: number, every: number): GameState[] {
+  const { engine, runtime } = createEngine(startup, lib, 2, initialState(startup, 1));
+  const states = [engine.getState()];
+  for (let step = 0; step < steps && engine.getState().result === undefined; step++) {
+    const state = engine.getState();
+    const by = state.turn!.current;
+    const presses = seatExtras(engine, runtime, state, by).actions
+      .filter((action) => action.allowed === true)
+      .map((action) => pressOf(action, by))
+      .filter((move): move is Move => move !== null);
+    const ordered = ontoFirst ? [...presses.filter((move) => 'onto' in move), ...presses.filter((move) => !('onto' in move))] : presses;
+    const pool = (ontoFirst && ordered.filter((move) => 'onto' in move).length) || ordered.length;
+    const accepted = ordered.map((_, i) => ordered[(i + step) % pool]).find((move) => engine.canDispatch(move) === true);
+    if (accepted === undefined) break;
+    expect(engine.dispatch(accepted).ok).toBe(true);
+    if ((step + 1) % every === 0) states.push(engine.getState());
+  }
+  return states;
+}
+
+describe('a card moved from one state into another, in a played game', () => {
+  it('has the same value that reads its card alone, and the values that read its surroundings are seen to differ', () => {
+    const startup = compileGame(STARTUP_SIMULATOR, lib).game!;
+    const alone = cardAloneValues(startup);
+    const names = Object.keys(startup.worked!);
+    const played = [...sampledStates(startup, true, 140, 20), ...sampledStates(startup, false, 140, 20)];
+    // The game rarely reaches a card with poisoning or leading hands on it, so some states have every card made so: the surroundings of a
+    // card moved into one of them are then unlike those it came from.
+    const everyCard = (state: GameState, data: { [k: string]: Json }) => state.cards.reduce((all, card) => changeCard(all, card.id, data, startup), state);
+    const states = [
+      ...played,
+      ...played.filter((_, i) => i % 4 === 0).flatMap((state) => [everyCard(state, { 'toxic personality': 1 }), everyCard(state, { visionary: 1 }), everyCard(state, { trait: 'Rainmaker' })]),
+    ];
+    expect(states.length).toBeGreaterThan(10);
+    const seats = ['p0', 'p1'];
+    const read = (rt: LangRuntime, state: GameState, cardId: string, name: string) => outcome(() => (startup.worked![name].kind === 'number'
+      ? rt.workedValue(state, cardId, name) : rt.workedFlag(state, cardId, name)));
+    // What each card of a state has under every name, worked out by a runtime that has seen no other state.
+    const valuesIn = (state: GameState) => {
+      const rt = new LangRuntime(startup, lib, seats);
+      return new Map(state.cards.map((card) => [card.id, names.map((name) => read(rt, state, card.id, name))]));
+    };
+    const seen = states.map(valuesIn);
+    const differed = new Set<string>();
+    let moved = 0;
+    let offered = 0;
+    for (let i = 0; i < states.length; i++) {
+      for (let j = i + 1; j < states.length; j += 4) {
+        const [from, into] = [states[i], states[j]];
+        for (const [at, card] of into.cards.entries()) {
+          const own = from.cards.find((other) => other.id === card.id);
+          // A card that differs, with cards on it in one state or the other, or else every sixteenth, to keep the test short.
+          if (own === undefined || own === card) continue;
+          if (cardsOn(from, card.id).length === 0 && cardsOn(into, card.id).length === 0 && offered++ % 32 !== 0) continue;
+          const moving = { ...into, cards: into.cards.map((other, k) => (k === at ? own : other)) };
+          const rt = new LangRuntime(startup, lib, seats);
+          const before = seen[i].get(card.id)!;
+          moved++;
+          for (const [n, name] of names.entries()) {
+            const now = read(rt, moving, card.id, name);
+            if (alone.has(name)) expect(now, `${card.id} ${name}, state ${i} into ${j}`).toEqual(before[n]);
+            else if (JSON.stringify(now) !== JSON.stringify(before[n])) differed.add(name);
+          }
+        }
+      }
+    }
+    expect(moved).toBeGreaterThan(200);
+    // The values that read their surroundings do differ, those that read the cards on a card among them: the test can see a mistake.
+    expect(differed.size).toBeGreaterThan(2);
+    expect(['blue workers', 'red workers', 'qa workers'].some((name) => differed.has(name))).toBe(true);
+    expect(['losing blue', 'fully led', 'pitched'].some((name) => differed.has(name))).toBe(true);
   });
 });
