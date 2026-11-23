@@ -144,12 +144,14 @@ const PICK_IN = new RegExp(`${PICKS} a card in (.+)$`, 'i');
 const ANOTHER_PLAYERS = /^another player['‘’]s (.+)$/i;
 /**
  * Another player's zone is several zones, one of each other player still in: a button picks one card in it, its own or its target, and
- * never puts cards in it, nor does a card move drag from it.
+ * never puts cards in it, nor does a card move drag a card from it or to it.
  */
 const OTHERS_NOT_WHERE_IT_GOES = (text: string) =>
   `“${text}” can't be where a button puts its cards: say whose zone it is, as in “their ${text.replace(ANOTHER_PLAYERS, '$1')}”.`;
 const OTHERS_IN_A_MOVE = (text: string) =>
   `A card is dragged only from the player's own zones or the center. To pick one in ${text}, make the line a button with a cost line, or write “a card in ${text}”.`;
+const OTHERS_NOT_WHERE_DRAGGED = (text: string) =>
+  `A card is dragged only to the player's own zones or the center: say whose zone “${text}” is, as in “their ${text.replace(ANOTHER_PLAYERS, '$1')}”.`;
 const SOME_FROM_OTHERS = (text: string) => `A button picks one card in ${text}: write “a card in ${text}”.`;
 const NAMED_ZONE_IN_MOVE = (text: string) =>
   `“${text}” can't be where a card is dragged from or to: say whose zone it is, as in “their ${text.replace(/^its .+?['‘’]s /i, '')}”.`;
@@ -275,6 +277,10 @@ function ontoTexts(text: string, vocab: Vocab): string[] {
 function moveZones(node: OutlineNode, found: RegExpExecArray, ctx: LineCtx): { from: ZoneRef; to: ZoneRef } | null {
   if (ANOTHER_PLAYERS.test(found[2])) {
     addProblem(ctx.diagnostics, node.line, OTHERS_IN_A_MOVE(found[2]), { text: found[2] });
+    return null;
+  }
+  if (ANOTHER_PLAYERS.test(found[3])) {
+    addProblem(ctx.diagnostics, node.line, OTHERS_NOT_WHERE_DRAGGED(found[3]), { text: found[3] });
     return null;
   }
   const zones = oneZones(node, [found[2], found[3]], ctx);
@@ -675,9 +681,10 @@ function choiceGroups(action: DeclaredAction): CondGroup[] {
  * its clause and its guard. A press the line refuses, or asks a choice of, costs nothing and changes nothing, so pressing each face-down
  * card in turn would tell the player which is which. Face-down cards in a zone everyone sees are slice 9's.
  * The cards on the press's card (“some card on the target card is …”, “some card on it is …”) are read through `cardsOn`, and the zone
- * they sit in is not checked here: cards in a zone only its owner sees, sitting on a card everyone sees, would let a refused press hint
- * at a hidden flag. No game has such a zone today; narrowing `cardsOn` to the cards of the holder's owner would not close it, so the
- * check belongs here.
+ * they sit in is not checked here. `cardsOn` gives only the holder's owner's cards, and `othersOn` the other players', which sit in a zone
+ * everyone sees (a zone whose cards sit on other players' cards must be one), so those tell nothing. The owner's own cards may still sit
+ * in a zone only they see, on a card everyone sees, where a refused press would hint at a hidden flag. The split does not close that; no
+ * game has such a zone today, and its check belongs here.
  */
 export function reportHiddenCardReads(phase: CompiledPhase, zones: ZoneSpec[], ctx: LineCtx): void {
   for (const action of phase.actions) {

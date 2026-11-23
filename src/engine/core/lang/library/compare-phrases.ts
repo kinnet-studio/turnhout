@@ -82,13 +82,6 @@ const everyCardOnItWhoseGoesTo: EffectFn = (env, [filter, zone]) => {
   return ids.length === 0 ? env.state : relocate(env.state, ids, to, env.game);
 };
 
-/**
- * The sentences that compare cards by a test (see `passes`): whether they, some player, or another player has a card that passes it in a
- * zone, whether they have at least some number of such cards, and whether they have one that is, or is not, so (maybe passing a test as
- * well); whether the card a press moves, or “it”, has no value under a name; moving the cards on it that pass; and whether its owner has,
- * or has no, card in a zone of theirs that is, or is not, so. A test that compares with “the card's” value needs a card move and one that
- * compares with “its” needs a card; the compiler asks that of the test itself, in a clause as well.
- */
 /** Whether the card a press moves names the player the line is about: a card that names no one names nobody. */
 const theyAreNamed = (wanted: boolean): ConditionFn => (env, [fact]) => (movedCard(env).data?.[fact as string] === theyOf(env)) === wanted;
 
@@ -135,6 +128,13 @@ const tiedHas = (wanted: boolean): ConditionFn => (env, [tie, zone, filter]) => 
   return found === wanted;
 };
 
+/**
+ * The sentences that compare cards by a test (see `passes`): whether they, some player, or another player has a card that passes it in a
+ * zone, whether they have at least some number of such cards, and whether they have one that is, or is not, so (maybe passing a test as
+ * well); whether the card a press moves, or “it”, has no value under a name; moving the cards on it that pass; and whether its owner has,
+ * or has no, card in a zone of theirs that is, or is not, so. A test that compares with “the card's” value needs a card move and one that
+ * compares with “its” needs a card; the compiler asks that of the test itself, in a clause as well.
+ */
 export function registerComparePhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
     .condition('they have a card in {zones} whose {cardfilter}', theyHaveACard(true), { needsPlayer: true })

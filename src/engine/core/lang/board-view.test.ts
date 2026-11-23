@@ -1428,6 +1428,15 @@ describe('a waiting action', () => {
     expect(built.engine.dispatch({ type: 'sell a card in their holdings', by: 'p0', cardId: sold }).reason).toBeUndefined();
     for (const seat of SEATS3) expect(extras(built, seat).waiting?.cards, seat).toEqual(['Stake whose maker is p2']);
   });
+  it('names no player for a face-down card that names one', () => {
+    const built = table(['holdings-p1', 'holdings-p2'], (s) => makeCard(s, game, { name: 'Stake', maker: 'p2' }, 'stash-p0')!.state);
+    const hidden = zoneCards(built.engine.getState(), 'stash-p0').find((card) => card.data?.name === 'Stake')!.id;
+    expect(built.engine.dispatch({ type: 'swap a card from their stash to their workshop', by: 'p0', cardId: hidden }).reason).toBeUndefined();
+    const p1 = extras(built, 'p1');
+    expect(p1.waiting?.cards).toEqual(['a face-down card']);
+    expect(JSON.stringify(p1.waiting)).not.toContain('maker');
+    expect(extras(built, 'p0').waiting?.cards).toEqual(['Stake whose maker is p2']);
+  });
   it('carries the choices of the press', () => {
     const built = table(['holdings-p1', 'holdings-p2']);
     expect(built.engine.dispatch({ type: 'tidy a card in their workshop', by: 'p0', cardId: vase, choices: ['Pay'] }).reason).toBeUndefined();

@@ -502,7 +502,7 @@ describe("the other players' cards on it (7-1 Task 6)", () => {
   const staked = stakeOf(crewed, 'holdings-p1');
   const value = (state: GameState, name: string) => rivalRuntime.workedValue(state, jobVase, name);
 
-  it('is the RIVAL_GAME', () => {
+  it('has, in POST_GAME, the finish line the RIVAL_GAME builds on', () => {
     expect(POST_GAME).toContain('      Move it to the scrap.');
   });
   it("counts the other players' cards on it, and adds their lift", () => {

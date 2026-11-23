@@ -17,6 +17,7 @@ import type {
 import { chooseNext } from '../zones';
 import { itOf, seatOf, theyOf } from './support';
 import { passStep } from './turn-phrases';
+import { passAnswer } from './turn-phrases';
 import { ownerOf as cardOwnerOf, playerValueOf } from './support';
 import { itCard } from './fact-phrases';
 import { NAMES_NO } from '../zones';
@@ -418,15 +419,23 @@ const goesBackTo: EffectFn = (env, [counter, n]) => setCounter(env.state, counte
 
 const owns: EffectFn = (env) => setOwner(env.state, itOf(env), theyOf(env));
 
+/**
+ * `state` once the turn has left `they`, a seat gone out, as their own words would have passed it on; a turn that was not theirs is left
+ * alone. An answer they were giving to a waiting action passes to the next seat asked still in (`passAnswer`), and a step they were taking
+ * before the score or as a round starts to the next seat's (`passStep`): that seat's start lines run, and after the last the action goes
+ * ahead, or the steps end, rather than come round again. Any other turn goes to the next seat still in. A player who goes out passes the
+ * turn on this way, and so does a window that closes on the turn of a player acting who went out while it was open.
+ */
+export function passOnFromOut(env: PhraseEnv, state: GameState, they: PlayerId): GameState {
+  if (state.turn?.current !== they) return state;
+  const { phase } = state.turn;
+  const passed = phase === undefined ? null : (passAnswer(env, state, phase) ?? passStep(env, state, phase));
+  return passed ?? chooseNext(state, nextIn(state, they, env.seats));
+}
+
 const goesOut: EffectFn = (env) => {
   const they = theyOf(env);
-  const out = markOut(env.state, they);
-  // The turn moves on only when it was theirs; a player who goes out in someone else's turn leaves it alone.
-  if (out.turn?.current !== they) return out;
-  // One who goes out while taking their step, before the score or as a round starts, passes it on as its own words would: the next
-  // seat's start lines run, and after the last seat the steps end rather than come round again.
-  const { phase } = out.turn;
-  return (phase === undefined ? null : passStep(env, out, phase)) ?? chooseNext(out, nextIn(out, they, env.seats));
+  return passOnFromOut(env, markOut(env.state, they), they);
 };
 
 const returnToBank: EffectFn = (env) => {

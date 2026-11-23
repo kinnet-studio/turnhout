@@ -295,13 +295,6 @@ const pressesCardButton = (form: Form, saysFrom = false): ActionFn => (env, args
   return { by, move };
 };
 
-/**
- * What the lines of a button that picks cards may say about them: “the target card” for the card a press picked for its cards to go
- * to (what kind of card it is, whether it is so, whether some card, or no card, on it is so, what it gains and what it is made), and
- * “the picked cards” for a set (how many there are, and every one made so or not so). And the lines of an example that press such a
- * button (“A player may buy a card from the shop to their stash.”), naming the cards after the button's base, and where they come from,
- * where they go or both when several buttons could take them, with the zone of the card they go to when cards in two zones have its name.
- */
 /** Whether the target card is in the zone of the player the card the rule is about names: false when it names no one, or the target is no player's. */
 const targetOwnerIsNamed: ConditionFn = (env, [fact]) => {
   const named = itCard(env).data?.[fact as string];
@@ -309,6 +302,13 @@ const targetOwnerIsNamed: ConditionFn = (env, [fact]) => {
   return typeof named === 'string' && owner !== null && named === owner;
 };
 
+/**
+ * What the lines of a button that picks cards may say about them: “the target card” for the card a press picked for its cards to go
+ * to (what kind of card it is, whether it is so, whether some card, or no card, on it is so, what it gains and what it is made), and
+ * “the picked cards” for a set (how many there are, and every one made so or not so). And the lines of an example that press such a
+ * button (“A player may buy a card from the shop to their stash.”), naming the cards after the button's base, and where they come from,
+ * where they go or both when several buttons could take them, with the zone of the card they go to when cards in two zones have its name.
+ */
 export function registerCardPickPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
     .condition('the target card is {cardclass}', targetIs(true), { needsOnto: true })

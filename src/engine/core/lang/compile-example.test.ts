@@ -235,5 +235,26 @@ describe('examples that name choices', () => {
       const text = rate().replace(', choosing p2', ', choosing trim 2 gold');
       expect(whenOf(compiled(text).game).args.slice(1)).toEqual([[], 'trim 2 gold']);
     });
+    describe('on a press that asks a player and has named options too', () => {
+      const HAND = "      Hand the answer phase to another player of their choice who is not the card's maker.";
+      expect(RATE_GAME.split('\n')).toContain(HAND);
+      const options = ['      They choose one:', '        Polite:', '          They get 1 coin.', '        Curt:',
+        '          They get 2 coins.'];
+      const both = (choosing: string) => [RATE_GAME.replace(HAND, [...options, HAND].join('\n')), '', ...OFFER, '  And p0 has 11 coins']
+        .join('\n').replace(', choosing p2', `, choosing ${choosing}`);
+      it('reads the option, and the player is filled in as the press fills it', () => {
+        const { game, diagnostics } = compiled(both('Curt'));
+        expect(diagnostics).toEqual([]);
+        expect(whenOf(game).args.slice(1)).toEqual([[], 'Curt']);
+        expect(runExamples(game!, lib)).toEqual([expect.objectContaining({ status: 'pass', message: null })]);
+      });
+      it('reads players named there as an option, which the press does not have', () => {
+        const { game, diagnostics } = compiled(both('p2'));
+        expect(diagnostics).toEqual([]);
+        expect(runExamples(game!, lib)).toEqual([
+          expect.objectContaining({ status: 'fail', message: '“p2” isn\'t a choice here. The choices are: Polite or Curt.' }),
+        ]);
+      });
+    });
   });
 });

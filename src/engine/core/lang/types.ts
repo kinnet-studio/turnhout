@@ -25,7 +25,7 @@ export type CardFilter =
   | { attribute: string; sameAs: { of: 'the card' | 'it'; attribute: string } }
   | { flag: string; wanted: boolean }
   | { names: string; player: PlayerWho };
-/** Whom a card's test compares the player it names with: the player the line is about, or the target card's owner (Task 7 adds 'acting'). */
+/** Whom a card's test compares the player it names with: the player the line is about, the target card's owner, or the player acting. */
 export type PlayerWho = 'them' | 'target owner' | 'acting';
 /**
  * Some cards a rule adds up or walks through: those in the zones, slot by slot; those on “it”, the card the rule is about; or the set a

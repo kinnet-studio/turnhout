@@ -34,9 +34,14 @@ const valueIsExpected: ExpectFn = (env, [seat, name, n]) => {
 const valueIsTheNumberWritten: ValueFn = (_env, [, n]) => n as number;
 /** A whole number when another of their values is at least a step, else what the lines before made of it: the last line that applies wins. */
 const valueIsTheNumberPast: ValueFn = (env, [, n, other, step], value) => (theirs(env, other as string) >= (step as number) ? (n as number) : value);
-/** The highest number among the cards of a group, each read as every phrase reads one; 0 when no card has it. */
-const valueIsTheHighest: ValueFn = (env, [, attribute, group]) =>
-  cardsIn(env, group as CardGroup).reduce((most, card) => Math.max(most, numberIfAny(env, card, attribute as string) ?? 0), 0);
+/**
+ * The highest number among the cards of a group, each read as every phrase reads one, below 0 too: a card without the number is passed
+ * over, and the value is 0 only when no card of the group has it.
+ */
+const valueIsTheHighest: ValueFn = (env, [, attribute, group]) => cardsIn(env, group as CardGroup).reduce<number | null>((most, card) => {
+  const number = numberIfAny(env, card, attribute as string);
+  return number === null ? most : Math.max(most ?? number, number);
+}, null) ?? 0;
 /** What the lines before made of the value, and the group's total added. */
 const valueGoesUpByTheTotal: ValueFn = (env, [, attribute, group], value) => (value ?? 0) + totalOf(env, attribute as string, group as CardGroup);
 

@@ -1533,7 +1533,7 @@ None that needs a protected file or contradicts a binding call. Checked:
   Both are recorded as calls.
 
 Recorded limits, none blocking slice 7:
-- **A window button that changes what the waiting action reads**, other than stopping it, can make the action throw as it goes ahead, and the last pass is then refused. The rules alone can't show that a line touches the picked cards. Slice 7's veto phase stops the action whenever it moves a token, so it can't arise there. A slice that writes another window must keep its passing buttons free of such lines.
+- **A line that changes what the waiting action reads while it waits**, other than stopping it: a window button, a start line or rule of the window phase, or a rule for every phase. The action may then throw as it goes ahead, so that `dispatch` of the last pass throws, or go ahead on the changed table, moving a card from wherever the window moved it, say. The rules alone can't show that a line touches the picked cards. Slice 7's veto phase stops the action whenever it moves a token, so it can't arise there. A slice that writes another window must keep its passing buttons free of such lines, and its window phase's start lines and rules and its rules for every phase too.
 - **A tie reads every player fact a game declares.** A game with two player facts can't tie by one only. Startup declares one.
 - **A pick's own zone is one place:** "a card in another player's portfolio or another player's equity" is not read. Slice 7 keeps held cards in one zone, so it is not needed.
 - **A zone where every card must sit on another player's card** is not offered (only `'some'`). Slice 7 doesn't need it.

@@ -125,15 +125,15 @@ const stepPassesLeft: EffectFn = (env, [phase]) => {
 
 /**
  * An answer is passed on, while an action waits with no verdict and `name` is its phase, the game's window phase and the phase the game is
- * in: the next seat asked becomes current, and the phase's start lines run about them; after the last, the action goes ahead. Null
- * otherwise.
+ * in: the next seat asked that is still in becomes current, and the phase's start lines run about them; a seat gone out since it was
+ * asked is passed over. After the last, the action goes ahead, and `at` is left as it was. Null otherwise.
  */
-function passAnswer(env: PhraseEnv, state: GameState, name: string): GameState | null {
+export function passAnswer(env: PhraseEnv, state: GameState, name: string): GameState | null {
   const waiting = waitingOf(state);
   if (waiting === null || waiting.verdict !== undefined || waiting.phase !== name || env.game.everyPhase.window?.phase !== name) return null;
   if (state.turn?.phase !== name) return null;
-  const at = waiting.at + 1;
-  if (at >= waiting.asked.length) return { ...state, data: { ...state.data, [WINDOW_KEY]: { ...waiting, verdict: 'ahead' } as unknown as Json } };
+  const at = waiting.asked.findIndex((seat, i) => i > waiting.at && !isOut(state, seat));
+  if (at < 0) return { ...state, data: { ...state.data, [WINDOW_KEY]: { ...waiting, verdict: 'ahead' } as unknown as Json } };
   const moved: GameState = { ...state, data: { ...state.data, [WINDOW_KEY]: { ...waiting, at } as unknown as Json } };
   return takeStep(env, name, moved, waiting.asked[at]);
 }

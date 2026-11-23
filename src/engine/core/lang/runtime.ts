@@ -26,6 +26,7 @@ import { relocate } from './zones';
 import { WINDOW_KEY, waitingOf, type Waiting } from './action-window';
 import { TURN_KEY, TURN_ROLLS_KEY, type InterruptedTurn } from './board-state';
 import { currentIdOf, RENAMED_KEY } from './cards';
+import { passOnFromOut } from './library/board-phrases';
 
 type Checker = (state: GameState, move: Move) => true | string;
 
@@ -405,6 +406,8 @@ export class LangRuntime {
     const answering = this.game.everyPhase.window;
     const { turn } = state;
     if (!answering || !turn) throw new Error('An action waited with no window or no turn.');
+    // No line the compiler allows leaves the window phase, and no button there has a cost, so a second Waiting is a mistake in the code.
+    if (waitingOf(state) !== null) throw new Error('An action waited while another was waiting.');
     const back: InterruptedTurn = {
       phase: turn.phase ?? null, current: turn.current, log: state.data[TURN_KEY] ?? null, rolls: state.data[TURN_ROLLS_KEY] ?? null,
     };
@@ -423,6 +426,9 @@ export class LangRuntime {
   /**
    * Puts the turn back as `back` holds it and drops WINDOW_KEY. On 'ahead' it then moves the relocation's cards and runs the button's Then:
    * lines about the stored subject with the stored card move, as the press would have, the table checked on the button's line.
+   *
+   * A player acting who went out while the window was open has their action stopped, whatever the verdict, its cost still spent: once the
+   * turn is put back, it passes on from them as it would have had they gone out in it (`passOnFromOut`).
    */
   closeWindow(state: GameState): GameState {
     const waiting = waitingOf(state);
@@ -435,7 +441,9 @@ export class LangRuntime {
     if (back.phase === null) delete turn.phase;
     else turn.phase = back.phase;
     const closed: GameState = { ...state, turn, data };
+    if (isOut(closed, waiting.by)) return passOnFromOut(this.env(closed), closed, waiting.by);
     if (waiting.verdict === 'stopped') return closed;
+    // A press's `endsTurn` and `clearTurnLog` are skipped: safe only as AFTER_NAMES_ACTION keeps a button with a cost off any After line.
     const action = this.game.phases.find((p) => p.id === waiting.from)?.actions.find((a) => a.words === waiting.move);
     if (!action) throw new Error(`No button “${waiting.move}” in the phase “${waiting.from}”.`);
     const { relocation } = waiting;

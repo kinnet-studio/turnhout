@@ -1966,6 +1966,13 @@ describe("a card picked in another player's zone", () => {
       "A card is dragged only from the player's own zones or the center. To pick one in another player's purse, make the line a button with a cost line, or write “a card in another player's purse”."]]);
     expect(compileGame(text, lib).game?.phases[0].moves.map((m) => m.verb) ?? []).not.toContain('pass');
   });
+  it("refuses a card move to another player's zone, saying whose zone to write", () => {
+    const line = "  A player may pass a card from their stash to another player's purse.";
+    const text = withButton([line]);
+    expect(messages(text)).toEqual([[lineOf(text, line),
+      "A card is dragged only to the player's own zones or the center: say whose zone “another player's purse” is, as in “their purse”."]]);
+    expect(compileGame(text, lib).game?.phases[0].moves.map((m) => m.verb) ?? []).not.toContain('pass');
+  });
   it("Review Focus: refuses an Only if that reads a card picked in a zone the presser can't see", () => {
     const text = withButton(["  A player may peek a card in another player's stash.", '    It costs 1 move.', '    Only if it is a Vase card.']);
     expect(messages(text)).toEqual([[lineOf(text, '    Only if it is a Vase card.'),

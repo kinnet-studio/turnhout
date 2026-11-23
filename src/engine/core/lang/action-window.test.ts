@@ -15,6 +15,9 @@ import { compileGame } from './compile';
 import { createDefaultLibrary } from './library';
 import { CREW_GAME, OBJECT_GAME, fixtureEnv, runPhrase } from './testing';
 import type { CompiledGame } from './types';
+import { isOut } from './board-state';
+import { LangRuntime } from './runtime';
+import { START_PLAYER_KEY } from './turns';
 
 const lib = createDefaultLibrary();
 const SEATS = seatsFor(3);
@@ -52,6 +55,9 @@ const WINDOW_READS_HIDDEN = (zone: string) =>
   `Every player sees who is asked to answer an action, so whether a player is asked can't depend on ${zone}, which not everyone can see.`;
 const ACTING_ELSEWHERE = (clean: string) =>
   `“${clean}” only makes sense while an action waits for the players to answer it: in the phase where they answer it, or in the line that says who does.`;
+/** The flow's name for the rule that closes an answered action (`build.ts`). */
+const WINDOW_RULE = 'an action is answered';
+const WINDOW_ENTERED = (phase: string) => `The players go to the ${phase} only to answer an action, so no line can go to it.`;
 const at = (text: string, line: string) => lineOf(text, line);
 const only = (text: string) => errorsOf(text).map((d) => [d.line, d.message]);
 
@@ -63,15 +69,17 @@ describe('the line and its refusals', () => {
     });
     it('compiles with no problems, and no phase left unreached', () => expect(compileGame(OBJECT_GAME, lib).diagnostics).toEqual([]));
     it('keeps the window: its phase, its line and its clause', () => {
-      const window = compiled(OBJECT_GAME).everyPhase.window!;
-      expect(window).toMatchObject({ phase: 'objection', line: lineOf(OBJECT_GAME, WINDOW) });
-      expect(window.who.phrase).toBe('they have a card in {zones} whose {cardfilter}');
-      expect(window.who.args[1]).toEqual({ names: 'maker', player: 'acting' });
+      const answering = compiled(OBJECT_GAME).everyPhase.window!;
+      expect(answering).toMatchObject({ phase: 'objection', line: lineOf(OBJECT_GAME, WINDOW) });
+      expect(answering.who.phrase).toBe('they have a card in {zones} whose {cardfilter}');
+      expect(answering.who.args[1]).toEqual({ names: 'maker', player: 'acting' });
     });
     it('(guard) gives a game without one no window', () => {
       const crew = compiled(CREW_GAME);
       expect(crew.everyPhase).not.toHaveProperty('window');
-      expect(flowDefFor(crew, SEATS)).toBeTruthy();
+      expect((flowDefFor(crew, SEATS).triggers ?? []).map((trigger) => trigger.id)).not.toContain(WINDOW_RULE);
+      // A game with one closes an answered action ahead of every other rule.
+      expect(flowDefFor(compiled(OBJECT_GAME), SEATS).triggers?.[0]?.id).toBe(WINDOW_RULE);
     });
   });
 
@@ -128,7 +136,7 @@ describe('the line and its refusals', () => {
         '', 'Dusty:', '  Only if it is a Stake card.', '  Only if the pile is not empty.'].join('\n');
       expect(only(dusty)).toContainEqual([lineOf(OBJECT_GAME, WINDOW), WINDOW_READS_HIDDEN('the pile')]);
       // (amendment) A worked flag that tests what a shared zone holds reads it too.
-      const holds = dusty.replace('  Only if the pile is not empty.', '  Only if the pile has a Vase.');
+      const holds = swap(dusty, '  Only if the pile is not empty.', '  Only if the pile has a Vase.');
       expect(only(holds)).toContainEqual([lineOf(OBJECT_GAME, WINDOW), WINDOW_READS_HIDDEN('the pile')]);
     });
     it('refuses the player acting, and the stopping line, anywhere else', () => {
@@ -138,6 +146,77 @@ describe('the line and its refusals', () => {
       const stop = OBJECT_GAME.replace('  A player may stop.\n    Then:\n', '  A player may stop.\n    Then:\n      The action does not go ahead.\n');
       expect(stop).not.toBe(OBJECT_GAME);
       expect(only(stop)).toContainEqual([lineOf(stop, '      The action does not go ahead.'), ACTING_ELSEWHERE('The action does not go ahead')]);
+    });
+  });
+
+  describe('refused: going into the window phase, or leaving it but by its own words', () => {
+    const exactly = (text: string, line: string, message: string) => expect(only(text)).toEqual([[lineOf(text, line), message]]);
+    it('refuses a line elsewhere that goes to it', () => {
+      const line = '      Go to objection.';
+      exactly(withLine(OBJECT_GAME, '      Their moves go back to 0.', line), line, WINDOW_ENTERED('objection'));
+    });
+    it('refuses a line elsewhere that starts it', () => {
+      const line = '      The objection phase starts with them.';
+      exactly(withLine(OBJECT_GAME, '      Their moves go back to 0.', line), line, WINDOW_ENTERED('objection'));
+    });
+    it("refuses another phase's go-to rule naming it", () => {
+      const line = '  When they have at least 5 coins, go to objection.';
+      exactly(withLine(OBJECT_GAME, 'Phase: working', line), line, WINDOW_ENTERED('objection'));
+    });
+    it('refuses only its first-phase problem, on the window line, when it comes first', () => {
+      const objection = OBJECT_GAME.slice(OBJECT_GAME.indexOf('Phase: objection'), OBJECT_GAME.indexOf('Phase: answer'));
+      const text = OBJECT_GAME.replace(objection, '').replace('Phase: working', `${objection}Phase: working`);
+      expect(only(text).filter(([, message]) => message === WINDOW_ENTERED('objection'))).toEqual([]);
+      expect(only(text)).toContainEqual([lineOf(text, WINDOW), WINDOW_FIRST('objection')]);
+    });
+    it('refuses a line of its own that starts another phase', () => {
+      // The call button in working says the same, and is not refused: the line is the one after the objection's move.
+      const text = withLine(OBJECT_GAME, "      Move it to its maker's purse.", '      The answer phase starts with its owner.');
+      expect(only(text)).toEqual([[lineOf(text, "      Move it to its maker's purse.") + 1, WINDOW_GO_TO('objection')]]);
+    });
+    it('refuses a line of its own that goes back to an interrupted turn', () => {
+      const line = '      Go back to the interrupted turn.';
+      exactly(withLine(OBJECT_GAME, '      The objection passes to the left.', line), line, WINDOW_GO_TO('objection'));
+    });
+    it("(guard) leaves the game's own lines that start the answer phase and go back from it", () => {
+      expect(compileGame(OBJECT_GAME, lib).diagnostics).toEqual([]);
+    });
+    it('throws, as a mistake in the code, when an action would wait while another waits', () => {
+      const game = compiled(OBJECT_GAME);
+      const waiting = { phase: 'objection', by: 'p0', from: 'working', move: 'stop', subject: { player: 'p0', space: null, card: null },
+        asked: ['p1'], at: 0, back: { phase: 'working', current: 'p0', log: null, rolls: null } } satisfies Waiting;
+      const base = initialState(game, 1);
+      const open: GameState = { ...base, turn: { current: 'p1', phase: 'objection' }, data: { ...base.data, [WINDOW_KEY]: waiting } };
+      const runtime = new LangRuntime(game, lib, SEATS);
+      const another = { by: 'p1', from: 'working', move: 'stop', subject: { player: 'p1', space: null, card: null }, asked: ['p2'] };
+      expect(() => runtime.openWindow(open, another)).toThrow('An action waited while another was waiting.');
+    });
+  });
+
+  describe('refused: a clause reading what not everyone sees, through counters and values', () => {
+    const CLAUSE = 'who has a card in their holdings whose maker is the player acting has';
+    const hiddenCoins = swap(OBJECT_GAME, 'Each player has 9 coins that everyone can see.', 'Each player has 9 coins that only they can see.');
+    it('refuses a counter only its owner sees', () => {
+      const text = swap(hiddenCoins, CLAUSE, 'who has at least 5 coins has');
+      expect(only(text)).toEqual([[lineOf(OBJECT_GAME, WINDOW), WINDOW_READS_HIDDEN('their coins')]]);
+    });
+    it('(guard) takes a counter everyone sees', () => {
+      expect(compileGame(swap(OBJECT_GAME, CLAUSE, 'who has at least 5 coins has'), lib).diagnostics).toEqual([]);
+    });
+    it('refuses a counter only its owner sees, read through a worked flag', () => {
+      // No line of a value about a player reads a counter; a worked flag's condition can.
+      const text = [swap(hiddenCoins, CLAUSE, 'who has a card in their holdings that is dusty has'),
+        '', 'Dusty:', '  Only if it is a Stake card.', '  Only if no player has less than 5 coins.'].join('\n');
+      expect(only(text)).toEqual([[lineOf(OBJECT_GAME, WINDOW), WINDOW_READS_HIDDEN('their coins')]]);
+    });
+    it('reads a worked value through itself, or two through each other, once each', () => {
+      const dusty = (...lines: string[]) => [swap(OBJECT_GAME, CLAUSE, 'who has a card in their holdings that is dusty has'),
+        '', 'Dusty:', '  Only if it is a Stake card.', ...lines].join('\n');
+      expect(only(dusty('  Only if it is dusty.', '  Only if the pile is not empty.')))
+        .toEqual([[lineOf(OBJECT_GAME, WINDOW), WINDOW_READS_HIDDEN('the pile')]]);
+      expect(only(dusty('  Only if it is musty.', '', 'Musty:', '  Only if it is dusty.', '  Only if the pile is not empty.')))
+        .toEqual([[lineOf(OBJECT_GAME, WINDOW), WINDOW_READS_HIDDEN('the pile')]]);
+      expect(only(dusty('  Only if it is musty.', '', 'Musty:', '  Only if it is dusty.'))).toEqual([]);
     });
   });
 
@@ -327,12 +406,14 @@ describe('the window played', () => {
       expect([engine.getState().turn?.current, waitingOf(engine.getState())?.at]).toEqual(['p1', 0]);
     });
     it('finishes no round while an action waits', () => {
-      const state: GameState = {
-        ...base, turn: { current: 'p2', phase: 'objection' },
-        data: { [WINDOW_KEY]: { by: 'p0' }, [ROUND_KEY]: 1, [TURN_OF_KEY]: 'p0' },
+      // The turn is back with the start player, p0, whose turn has not started again: but for the waiting action, the round is finished.
+      const finished: GameState = {
+        ...base, turn: { current: 'p0', phase: 'working' },
+        data: { ...base.data, [START_PLAYER_KEY]: 'p0', [ROUND_KEY]: 1, [TURN_OF_KEY]: 'p2' },
       };
-      expect(roundFinished({ ...state, data: { ...state.data, [WINDOW_KEY]: null } as GameState['data'] }, SEATS)).toBe(false);
-      expect(roundFinished(state, SEATS)).toBe(false);
+      expect(roundFinished({ ...finished, data: { ...finished.data, [WINDOW_KEY]: { by: 'p2' } } }, SEATS)).toBe(false);
+      expect(finished.data).not.toHaveProperty(WINDOW_KEY);
+      expect(roundFinished(finished, SEATS)).toBe(true);
     });
   });
 
@@ -350,6 +431,62 @@ describe('the window played', () => {
       const state: GameState = { ...base, turn: { current: 'p1', phase: 'objection' } };
       expect(() => runPhrase(lib, 'effect', 'the objection passes to the left', fixtureEnv(state, { game: objectGame, seats: SEATS })))
         .toThrow('The objection passes to the left only while an action waits for the players to answer it.');
+    });
+  });
+
+  describe('a seat that goes out while an action waits', () => {
+    // Any seat still in may give up while the players answer, the one answering, another asked, or the player acting.
+    const OUT_GAME = swap(OBJECT_GAME, '  A player may let it go.',
+      ['  Any player may give up.', '    Then:', '      They are out.', '  A player may let it go.'].join('\n'));
+    const outGame = compiled(OUT_GAME);
+    const GIVE_UP = 'give up';
+    const stakeOut = (maker: string, ...zones: string[]): Prepare => (state) =>
+      zones.reduce((s, zone) => makeCard(s, outGame, { name: 'Stake', maker }, zone)!.state, state);
+    /** A fresh table given the engine's log comes to the engine's state. */
+    const replays = (engine: Engine, prepare: Prepare) => {
+      const replayed = table(outGame, prepare);
+      replayed.loadLog([...engine.getLog()]);
+      expect(replayed.getState()).toEqual(engine.getState());
+    };
+    it('skips an asked seat gone out: the action goes ahead once the rest let it go', () => {
+      const prepare = stakeOut('p0', 'holdings-p1', 'holdings-p2');
+      const engine = table(outGame, prepare);
+      expect(hire(engine).reason).toBeUndefined();
+      expect(waitingOf(engine.getState())?.asked).toEqual(['p1', 'p2']);
+      press(engine, GIVE_UP, 'p2');
+      expect([engine.getState().turn?.current, waitingOf(engine.getState())?.at]).toEqual(['p1', 0]);
+      const state = press(engine, LET_GO, 'p1');
+      expect(isOut(state, 'p2')).toBe(true);
+      expect(cardById(state, potter)).toMatchObject({ zoneId: 'crew-p0', data: expect.objectContaining({ 'lang:on': vase }) });
+      expect([state.turn?.phase, state.turn?.current]).toEqual(['working', 'p0']);
+      expect(state.data).not.toHaveProperty(WINDOW_KEY);
+      replays(engine, prepare);
+    });
+    it('passes the answer on when the seat answering goes out, to no seat that was not asked', () => {
+      const prepare = stakeOut('p0', 'holdings-p1');
+      const engine = table(outGame, prepare);
+      hire(engine);
+      expect(waitingOf(engine.getState())?.asked).toEqual(['p1']);
+      const state = press(engine, GIVE_UP, 'p1');
+      expect(cardById(state, potter)).toMatchObject({ zoneId: 'crew-p0', data: expect.objectContaining({ 'lang:on': vase }) });
+      expect([state.turn?.phase, state.turn?.current]).toEqual(['working', 'p0']);
+      expect(state.data).not.toHaveProperty(WINDOW_KEY);
+      // p2 was never handed the answer: there is none to give.
+      expect(engine.dispatch({ type: LET_GO, by: 'p2' })).toMatchObject({ ok: false });
+      replays(engine, prepare);
+    });
+    it('stops the action of a player acting who goes out, and passes the turn on from them', () => {
+      const prepare = stakeOut('p0', 'holdings-p1');
+      const engine = table(outGame, prepare);
+      hire(engine);
+      press(engine, GIVE_UP, 'p0');
+      expect([engine.getState().turn?.phase, engine.getState().turn?.current]).toEqual(['objection', 'p1']);
+      const state = press(engine, LET_GO, 'p1');
+      expect(cardById(state, potter)?.zoneId).toBe('hall');
+      expect(moves(state, 'p0')).toBe(2);
+      expect([state.turn?.phase, state.turn?.current]).toEqual(['working', 'p1']);
+      expect(state.data).not.toHaveProperty(WINDOW_KEY);
+      replays(engine, prepare);
     });
   });
 

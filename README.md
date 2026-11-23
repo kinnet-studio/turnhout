@@ -317,7 +317,7 @@ Phase: playing
   - Examples write `the Stake in p1's holdings is on the Vase in p0's workshop` and `… is on no card`.
 - **Answering an action.**
   - The line under `In every phase:`, the phase's buttons, and `The objection passes to the left.` / `The action does not go ahead.`
-  - Only a button with a cost is answered. An answered action has spent its cost and done nothing else; one that goes ahead does exactly what the press would have.
+  - Only a button with a cost is answered. A stopped action has spent its cost and done nothing else; one that goes ahead does exactly what the press would have.
   - Every seat sees who pressed it and its label, choices and cards, a card it can't see as a face-down card.
   - Lines that would leave a player unable to answer, or let the clause read what not everyone sees, are refused when the rules are read.
 - **Scoring held cards.** `Each Stake in a player's holdings scores 5 points.` A player's own stakes are kept in their purse, so they score nothing.

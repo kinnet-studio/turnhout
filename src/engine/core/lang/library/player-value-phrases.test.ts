@@ -213,4 +213,15 @@ describe('values by lookup', () => {
     const other = compileGame(reversed, lib).game!;
     expect(valuesOf(other, relocate(initialState(other, 1), [statue], 'workshop-p0', other))[1]).toBe(5);
   });
+  it('the highest of numbers all below 0 is the highest of them; of an empty group, 0', () => {
+    const worths: Record<string, number> = { [vase]: -2, [statue]: -5 };
+    const placed = inWorkshop([vase, statue]);
+    const below = {
+      ...placed, cards: placed.cards.map((card) => (card.id in worths ? { ...card, data: { ...card.data, worth: worths[card.id] } } : card)),
+    };
+    const highest = (state: GameState) => runPhrase(lib, 'value', "a player's top worth is the highest worth of the cards in their workshop",
+      fixtureEnv(state, { game, seats: ['p0', 'p1', 'p2'], subject: { player: 'p0', space: null, card: null } }), 7);
+    expect(highest(below)).toBe(-2);
+    expect(highest(fresh)).toBe(0);
+  });
 });

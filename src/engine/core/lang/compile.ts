@@ -23,6 +23,7 @@ import { WINDOW_LINE } from './action-window';
 import { theyForm } from './refs';
 import { describeZone } from './library/support';
 import type { CardFilter, CardGroup, ZoneRef } from './types';
+import type { CounterSpec } from './types';
 
 export type CompileResult = { game?: CompiledGame; diagnostics: Diagnostic[] };
 
@@ -83,6 +84,8 @@ const AFTER_NAMES_ACTION = 'Players may answer an action that costs something be
   + 'write “The turn passes to the left.” in its Then: lines instead.';
 const WINDOW_READS_HIDDEN = (zone: string) =>
   `Every player sees who is asked to answer an action, so whether a player is asked can't depend on ${zone}, which not everyone can see.`;
+/** The window phase is only ever gone to as an action with a cost waits: anywhere else, nothing there could be answered or passed on. */
+const WINDOW_ENTERED = (phase: string) => `The players go to the ${phase} only to answer an action, so no line can go to it.`;
 const ONLY_WHEN_RULES = 'Only “When …:” rules go under In every phase:, like “When the shop has fewer than 4 cards:”.';
 /** The first phase starts once, as the game does: each turn after the first goes back to it without starting it again. */
 const FIRST_PHASE_STARTS =
@@ -787,12 +790,13 @@ function warnUnreachable(
 /**
  * The checks on the line that lets players answer an action (`window`), each on the line named; the window, or null when its phase is one
  * where everyone acts at once. On the window line: that, its phase coming first, its phase being one where steps are taken in turn, no
- * line of the game (`lines`) passing it on, and the first zone not everyone sees that its clause reads. In its phase: a go-to line and any
- * `go to` among its lines, its After line, and a cost line of one of its buttons. In any phase, an After line naming a button with a cost.
+ * line of the game (`lines`) passing it on, and the first zone or counter not everyone sees that its clause reads. In its phase: a go-to
+ * line, any `go to` among its lines, any that starts a phase or goes back to an interrupted turn, its After line, and a cost line of one of
+ * its buttons. In any phase, an After line naming a button with a cost. A line that goes into its phase is refused by `refuseEnteringSteps`.
  */
 function checkWindow(
   answering: NonNullable<EveryPhase['window']>, phases: CompiledPhase[], end: CompiledEnd | null, roundSteps: EveryPhase['roundSteps'] | null,
-  lines: PhraseRef[], zones: ZoneSpec[], read: ValuesRead, ctx: LineCtx,
+  lines: PhraseRef[], zones: ZoneSpec[], counters: CounterSpec[], read: ValuesRead, ctx: LineCtx,
 ): NonNullable<EveryPhase['window']> | null {
   const { diagnostics } = ctx;
   const id = answering.phase;
@@ -805,12 +809,14 @@ function checkWindow(
   if (end?.steps?.phase === id || roundSteps?.phase === id) addProblem(diagnostics, answering.line, WINDOW_IS_STEPS(id));
   const passes = (ref: PhraseRef) => ref.kind === 'effect' && ref.phrase === STEP_PASSES_PHRASE && ref.args[0] === id;
   if (!lines.flatMap(linesDoing).some(passes)) addProblem(diagnostics, answering.line, STEPS_NEVER_PASS(id));
-  const hidden = hiddenZoneRead(answering.who, zones, read);
+  const hidden = hiddenZoneRead(answering.who, zones, counters, read);
   if (hidden !== null) addProblem(diagnostics, answering.line, WINDOW_READS_HIDDEN(hidden));
   if (phase) {
     if (phase.goTo) addProblem(diagnostics, phase.goTo.line, WINDOW_GO_TO(id));
+    // Starting another phase, or going back to an interrupted turn, would leave the window behind with its action still waiting.
+    const leaves = (ref: PhraseRef) => ref.kind === 'effect' && (ref.phrase === GO_TO_PHRASE || ref.phrase === GO_BACK_PHRASE);
     for (const ref of effectsOf(phase).flatMap(linesDoing)) {
-      if (ref.kind === 'effect' && ref.phrase === GO_TO_PHRASE) addProblem(diagnostics, ref.line, WINDOW_GO_TO(id));
+      if (leaves(ref) || phaseStartedBy(ref, ctx.library) !== null) addProblem(diagnostics, ref.line, WINDOW_GO_TO(id));
     }
     if (phase.after) addProblem(diagnostics, phase.after.line, WINDOW_AFTER(id));
     for (const action of phase.actions) if (action.cost) addProblem(diagnostics, action.cost.line, WINDOW_COST(id));
@@ -825,12 +831,15 @@ const ZONE_PARAM = /\{([^{}]+)\}/g;
 type ValuesRead = { worked: { [name: string]: WorkedValue }; players: { [name: string]: PlayerValue } };
 
 /**
- * The first zone not everyone sees that a line reads, said as a designer would say it, or null: a zone named by its arguments (a `{zone}`,
- * `{zones}`, `{perzone}` or `{sharedzone}`, the zones of a `{cardgroup}`), and each zone the lines of every player value and worked value it reads read,
- * all the way down. `seen` holds the values looked at already.
+ * The first zone or counter not everyone sees that a line reads, said as a designer would say it, or null: a zone named by its arguments (a
+ * `{zone}`, `{zones}`, `{perzone}` or `{sharedzone}`, the zones of a `{cardgroup}`), a `{counter}` only its owner sees (“their coins”), and
+ * each one the lines of every player value and worked value it reads read, all the way down. `seen` holds the values looked at already.
  */
-function hiddenZoneRead(ref: PhraseRef, zones: ZoneSpec[], valuesRead: ValuesRead, seen = new Set<string>()): string | null {
+function hiddenZoneRead(
+  ref: PhraseRef, zones: ZoneSpec[], counters: CounterSpec[], valuesRead: ValuesRead, seen = new Set<string>(),
+): string | null {
   const hiddenName = (name: string) => zones.some((zone) => zone.name === name && zone.visibility !== 'public');
+  const ownersOnly = (name: string) => counters.some((counter) => counter.name === name && counter.visibility === 'owner');
   const nameOf = (zone: ZoneRef) => ('shared' in zone ? zone.shared : 'each' in zone ? zone.each : 'others' in zone ? zone.others : zone.zone);
   const ofZone = (zone: ZoneRef) => (hiddenName(nameOf(zone)) ? describeZone(zone) : null);
   const values = (name: string): PhraseRef[] => {
@@ -853,6 +862,7 @@ function hiddenZoneRead(ref: PhraseRef, zones: ZoneSpec[], valuesRead: ValuesRea
     if (type === 'zones') for (const zone of arg as ZoneRef[]) { const found = ofZone(zone); if (found) return found; }
     if (type === 'perzone' && hiddenName(arg as string)) return describeZone({ of: { who: 'actor' }, zone: arg as string });
     if (type === 'sharedzone' && hiddenName(arg as string)) return describeZone({ shared: arg as string });
+    if (type === 'counter' && ownersOnly(arg as string)) return `their ${arg as string}`;
     if (type === 'cardgroup') {
       const group = arg as CardGroup;
       if (group.kind === 'in') for (const zone of group.zones) { const found = ofZone(zone); if (found) return found; }
@@ -865,7 +875,7 @@ function hiddenZoneRead(ref: PhraseRef, zones: ZoneSpec[], valuesRead: ValuesRea
   for (const arg of ref.args) if (arg !== null && typeof arg === 'object' && !Array.isArray(arg) && 'phrase' in arg) read.push(arg as unknown as PhraseRef);
   for (const name of names) read.push(...values(name));
   for (const line of read) {
-    const found = hiddenZoneRead(line, zones, valuesRead, seen);
+    const found = hiddenZoneRead(line, zones, counters, valuesRead, seen);
     if (found) return found;
   }
   return null;
@@ -930,17 +940,19 @@ function refuseLeavingSteps(
  * Refuses, each on its own line, what would take the game into `id`, the phase of a round's steps or of the steps before the score, other
  * than by their beginning: a line anywhere but in that phase that goes to it or starts it (`elsewhere`, Setup's lines, what cards say and
  * the rules for every phase, and every other phase's lines, choices and `If …, …` or `For …, …` lines read through), another phase's
- * `go to` rule naming it, and the phase coming first, which starts the game in it.
+ * `go to` rule naming it, and the phase coming first, which starts the game in it. The window phase is refused the same way, but for its
+ * coming first, which `checkWindow` refuses on the window's own line (`first` false).
  */
 function refuseEnteringSteps(
   id: string, message: string, elsewhere: PhraseRef[], phases: CompiledPhase[], library: PhraseLibrary, diagnostics: Diagnostic[],
+  first = true,
 ): void {
   const others = phases.filter((phase) => phase.id !== id);
   for (const ref of [...elsewhere, ...others.flatMap(effectsOf)].flatMap(linesDoing)) {
     if (phaseStartedBy(ref, library) === id) addProblem(diagnostics, ref.line, message);
   }
   for (const phase of others) if (phase.goTo?.to === id) addProblem(diagnostics, phase.goTo.line, message);
-  if (phases[0]?.id === id) addProblem(diagnostics, phases[0].line, message);
+  if (first && phases[0]?.id === id) addProblem(diagnostics, phases[0].line, message);
 }
 
 /** Whether a line begins a round's steps, read through what an `If …, …` or `For …, …` line does. */
@@ -1140,9 +1152,13 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   if (roundSteps) refuseEnteringSteps(roundSteps.phase, ROUND_STEPS_ENTERED(roundSteps.phase), elsewhere, phases, library, diagnostics);
   if (everyPhase.window) {
     const read: ValuesRead = { worked: values, players: valuesAboutPlayers };
-    const answering = checkWindow(everyPhase.window, phases, end, roundSteps, [...elsewhere, ...phases.flatMap(effectsOf)], zones, read, ctx);
-    if (answering) everyPhase.window = answering;
-    else delete everyPhase.window;
+    const lines = [...elsewhere, ...phases.flatMap(effectsOf)];
+    const answering = checkWindow(everyPhase.window, phases, end, roundSteps, lines, zones, board?.counters ?? [], read, ctx);
+    if (answering) {
+      everyPhase.window = answering;
+      // It is reached only as an action with a cost waits, never by a line that goes to it.
+      refuseEnteringSteps(answering.phase, WINDOW_ENTERED(answering.phase), elsewhere, phases, library, diagnostics, false);
+    } else delete everyPhase.window;
   }
   const reached = [
     ...(end?.steps ? [end.steps.phase] : []), ...(roundSteps ? [roundSteps.phase] : []), ...(everyPhase.window ? [everyPhase.window.phase] : []),

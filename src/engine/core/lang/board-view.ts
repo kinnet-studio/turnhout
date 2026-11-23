@@ -620,6 +620,7 @@ function waitingView(runtime: LangRuntime, state: GameState, seat: PlayerId): Wa
   const { card, cards = [], onto, choices = [] } = waiting.subject;
   const ids = [...(card === null ? cards : [card]), ...(onto === undefined ? [] : [onto])];
   return {
+    // The fallback to the move is never reached for a compiled game: it is kept for a stored state read against rules changed since.
     by: waiting.by, label: action?.label ?? waiting.move,
     cards: ids.map((id) => {
       const { name, seen } = pickedAs(runtime, state, seat, id);
