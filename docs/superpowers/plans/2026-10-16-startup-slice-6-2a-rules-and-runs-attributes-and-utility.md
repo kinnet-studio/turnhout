@@ -23,7 +23,7 @@
   - **The counts are named after their cards** (`workaholic`, `clean coder`, `visionary`, `toxic personality`, `burnout`, `flight risk`, as R2's "1 workaholic"); each is 0 or 1, since §20.A prints one copy of each and its card stays parked while the count is on a Talent.
   - **Firing strips the counts in 5-2a's `When a card in the open job market is fired:` rule**, moving the parked card named by each count to the strategy discard. **The Diva's Pivot now marks her fired** (`Every card on it that is egotistic is fired.`): 5-2a left R4's Diva line out because a Senior then held no token, but a Senior may hold Attributes (§11.F), so the line is reachable and an example pins it.
   - **Eviction strips the counts in a `When a card in the box is holding attributes:` rule** and sends the parked cards to the box (R2: eviction is not firing).
-  - **Workaholic's +2 goes in each output before the mode lines that zero it**, so it lands only in the colour the unit works in; a card with no output in a colour stays with none (6-1's "nothing so far stays nothing"), which gives PMs, Sales Reps, HR Managers and the Growth Hacker only the salary. A QA Engineer or a QA-mode unit gets +2 Bugs removed (§20.A "+2 Output in its current mode"; suwa's `talent_output.rs` adds the 2 after the Bug Hunter's output).
+  - **Workaholic's +2 goes in each output before the mode lines that zero it**, so it lands only in the colour the unit works in; outputs start from 0 (they refine no table column), so the +2 reads per-colour flags that hold only for a card working in that colour (its skill, flex, its declared mode, or a Bug Hunter for QA); this gives PMs, Sales Reps, HR Managers and the Growth Hacker only the salary. A QA Engineer or a QA-mode unit gets +2 Bugs removed (§20.A "+2 Output in its current mode"; suwa's `talent_output.rs` adds the 2 after the Bug Hunter's output).
   - **Clean Code is a worked flag `clean coding`** (the Architect's trait or a Clean Coder count, while not onboarding). A pooled clean-coding card shields every product from the Growth Hacker, an attached one only the product it sits on (§20.B Clean Code; suwa's `run_end_of_turn_traits`). The Hacker's own join Bug reads his Clean Coder count with no onboarding test (§20.B: "unless he has Clean Code himself").
   - **Visionary makes any unit a lead in both colours, PMs included** (§11.G.1 "Any unit with the Visionary Attribute"; suwa's `lead_coverage` has no exception). §11.E's "PMs … cannot fulfill the Lead Requirement" is about the Gold Badge; this call is on the owner's list.
   - **Burnout is the last line of each output** (R3), and a burned-out PM gives no Synergy through a new flag `giving synergy` that `PM count:` counts. `Managing:` keeps the burned-out PM, so it still gives Brainstorm its third card and stays Agile: Burnout's text names only Output and Synergy, and suwa's `has_working_pm` ignores it.
@@ -34,7 +34,7 @@
 - **Names.**
   - Zone: `attributes in play` (a pile in the center that everyone can see).
   - Counts on cards: `workaholic`, `clean coder`, `visionary`, `toxic personality`, `burnout`, `flight risk`, `hype`.
-  - Worked flags: `egotistic`, `holding attributes`, `overworked`, `clean coding`, `guarding the pool`, `burned out`, `giving synergy`, `poisoning`, `losing blue`, `losing red`, `losing qa`, `pool losing blue`, `pool losing red`, `pool losing qa`, `pitching`, `pitched`.
+  - Worked flags: `egotistic`, `holding attributes`, `overworked`, `overworked in blue`, `overworked in red`, `overworked in qa`, `clean coding`, `guarding the pool`, `burned out`, `giving synergy`, `poisoning`, `losing blue`, `losing red`, `losing qa`, `pool losing blue`, `pool losing red`, `pool losing qa`, `pitching`, `pitched`.
   - Worked numbers: new `blue made`, `red made`, `qa made`, `pool blue`, `pool red`, `pool qa`; refined `price` (a `Price:` section on the Strategy table's column), `salary`, `blue output`, `red output`, `qa output`, `portfolio points`.
 
 **Tech Stack:** TypeScript (strict), Bun, Vitest + happy-dom.
@@ -60,12 +60,13 @@
 - **Every number comes from the rulebook, and examples say where:** a section or ruling in each title, and each task's "How the numbers come".
 - **Anti-goals (spec and overview):** Startup words in shared code; a rival seeing a hidden zone (a count on a bench card hides with the card); a rule approximated without a recorded call; a game that can't end; an auto-player that hides a rule that never fires.
 - **Every rules line is pinned.** Each line this plan adds or changes, other than `Hint:` lines, table rows and `Cards can …` declarations, fails some example when it alone is removed, or is named in its task as pinned by a test instead. Each task's Step 4 runs plan 5-2a's removal probe. Never leave a rulebook line out because no example fails without it: show it is redundant, or reach it with an example.
-- **Example counts.** N₆ is the count the committed test pins (`results` length) when Task 1 starts: plan 5-2b's N₅ + 33, plus whatever fix waves add. The tasks end at N₆ + 3, + 9, + 16, + 25 and + 31. Each task updates `results` in `startup-simulator.test.ts`, the Startup test in `designer-page.test.tsx` and the README's "Its N examples".
+- **Example counts.** N₆ is the count the committed test pins (`results` length) when Task 1 starts: plan 5-2b's N₅ + 33, plus whatever fix waves add. The tasks end at N₆ + 3, + 9, + 17, + 26 and + 32 (the pre-flight found N₆ = 243 at HEAD: 246, 252, 260, 269 and 275). Each task updates `results` in `startup-simulator.test.ts`, the Startup test in `designer-page.test.tsx` and the README's "Its N examples".
 - **Commands.**
   - Single file: `bunx vitest run src/games/startup-simulator.test.ts`. Full suite: `bun run test`. Types: `bun run typecheck`.
   - Before Task 1: record `BASE=$(git rev-parse HEAD)`; run `bun run test` once for the passing count and the long runs' time; note N₆.
 - **Existing tests.** Only the lines each task names change. If any other existing test fails, stop and report it.
-- **Long runs.** If an invariant shows a wrong rule, fix the rules text. If a required tally stays at 0, change the auto-player (cadences, targets), never the rules; report a key that stays unreachable. If a rule can't be written with plans 4-1, 5-1 and 6-1's phrases, report it. If the long runs take more than a third longer than at BASE, report the timing.
+  - Seed-pinned tests that the new moves shift change only where a task names them: Task 1 (the Buff cadence that keeps slice 3's Engineer-in-ops key and the reshuffle tests as they are; the Training-press check, the `TRAINING_ON` key and the replay's Training counter, which a Buff press now reaches); Task 2 (the box invariant and the `pressFlags` pin); Task 5 (the backlog limit, the undo test's length and the Growth Hacker test); Task 6 (the scouting hire to the ops team in `'made every move …'`, and the slice-6 tally's required keys).
+- **Long runs.** If an invariant shows a wrong rule, fix the rules text. If a required tally stays at 0, change the auto-player (cadences, targets), never the rules; report a key that stays unreachable. If a rule can't be written with plans 4-1, 5-1 and 6-1's phrases, report it. The Startup file's vitest `tests` figure, best of 3, is at most 30 s (the long runs' watch). The pre-flight measured about 27.5 s with the memo, against 20.1 s at BASE. A speed-up mini plan follows this plan, before 6-2b.
 - **Pre-flight notes carried from plans 4-2 and 5-2:**
   - Take every `shownFlags` / `standIns` / `shownPlayerValues` pin from HEAD and apply only the change named; a flag or value read through anything but the card fails closed.
   - Never write `For each card … that is X` (a For-each takes no flag test); the lines below use `whose`, `on it`, `each {cardflag} card in {zone}` or a zone.
@@ -76,6 +77,13 @@
   - TDD every task: change the test first, watch it fail, then the rules, pass, `bun run typecheck`, commit.
   - Every rules line below is exact copy. Insertion points name a line or section by its text, never by a line number. **Re-read the committed rules file before each task:** plans 4-2, 5-2a and 5-2b's text is the base, and line numbers will have moved. If a named anchor line is missing or worded otherwise, stop and report it.
   - If a line reads two ways (an `ambiguous` diagnostic: the counts share their cards' names), stop and report it.
+- **Controller amendment (pre-flight 2026-11-23):** a probe of every task changed these.
+  - Buffs play only on turns where `t % 3 === 0` (Task 1): a Buff every turn spent the money three seed-pinned tests need.
+  - Workaholic's +2 reads `overworked in blue`, `… red`, `… qa` (Task 3): outputs start at 0, so one flag gave +2 in every colour.
+  - Flags that outputs, leads and supplies read test their counts as `It is a card whose …` (G4; Tasks 3 and 4): the plain `Its …` form drops the view's stand-ins and supplies.
+  - The Toxic invariants work out only teams and pools that hold a Toxic card (Task 4): checking every one cost about 12 s.
+  - Task 6 requires the 18 slice-6 keys held by 2 or more games; 12 keys are counted, not required, each with a named pin.
+  - The long runs' ceiling is 30 s, best of 3, in place of a third over BASE (Long runs above); a speed-up mini plan follows.
 
 ## Review Focus
 
@@ -101,7 +109,7 @@ Re-read each item at HEAD by name. If one is missing or differs, stop and report
 
 - **Plan 6-1, built (its Interfaces):** a button target `… to a card in another player's development team or another player's ops team` (`{ others: … }`, `ontoZoneIds`, `othersZoneIds`); value lines `a/an {cardflag} card's {attribute} goes up by {int}`, `… goes down by {int}`, `… goes up by its {attribute}`; `a card's {attribute} is {int}`; `a card's {attribute} goes up by {int} for each {attribute}`; `they have at least the lower of the card's {attribute} and the target card's {attribute} in {counter}` and `they pay the lower of the card's {attribute} and the target card's {attribute}`.
 - **Plan 5-2b, built:** the Strategy table (`kind`, `price`), the strategy deck, discard, hand and brainstorm zones; the button `A player may play a card from their strategy hand to a card in their bench, their development team or their ops team.` with `Only if the card is a Training card.`, its option block `Blue:`/`Red:`/`Green:`/`XP:`/`Badge:` and its last line `Move it to the strategy discard.`; the example "only a Training card can be played in this slice: a Hit Piece waits in the hand (the spec's call, section 20)"; the worked flag sections ending with `Software side:`; in the test file `PLAY_TRAINING`, `TRAINING_TARGETS`, `isTraining`, `training()`, `brainstorming()`, the brainstorm keep policy, `CLEANUPS['strategy cleanup']`, the Strategy-card conservation invariant, `Onto.zoneId` as `string | string[]`, the values test `works out slice 5’s values …`.
-- **Plan 5-2a, built:** `Cards can be fired.` and the rule `When a card in the open job market is fired:` ending `    It is not fired.`; the four dismiss / let-go buttons' `      It is fired.`; the sections `Blue output:`, `Red output:`, `QA output:` (with `  A practised card's qa output is 2.`), `Salary:` (ending `  An experienced card's salary is 1.`), `Blue team output:`, `Red team output:`, `QA team output:`, `PM count:` (`  A card's pm count is the number of the cards on it that are managing.`), `QA workers:`, `Leading software:`, `Leading hardware:`, `Managing:`; the engine's start lines (the new-cube lines, the three Pending lines and `    For each card in their development, its bugs go down by its qa team output.`); in the test file `TOKENS`, `tokenOn`, `scoreOf(runtime, state, seat)`, the firing invariant, `pmToProject()`.
+- **Plan 5-2a, built:** `Cards can be fired.` and the rule `When a card in the open job market is fired:` ending `    It is not fired.`; the four dismiss / let-go buttons' `      It is fired.`; the sections `Blue output:`, `Red output:`, `QA output:` (with `  A practised card's qa output is 2.`), `Salary:` (ending `  An experienced card's salary is 1.`), `Blue team output:`, `Red team output:`, `QA team output:`, `PM count:` (`  A card's pm count is the number of the cards on it that are managing.`), `QA workers:`, `Leading software:`, `Leading hardware:`, `Managing:`; the engine's start lines (the new-cube lines, the three Pending lines and `    For each card in their development, its bugs go down by its qa team output.`); in the test file `TOKENS`, `tokenOn`, `scoreOf(state, seat)`, the firing invariant, `pmToProject()`.
 - **Plan 4-2, built:** `Blue bandwidth:`, `Red bandwidth:`, `Blue supply:`, `Red supply:`, `QA supply:` (`  A player's qa supply is the total qa output of the cards in their ops team.`), `Rev:`, `Portfolio points:` (`  A card's portfolio points is its val.` / `  An offline card's portfolio points is 0.`), `Attaching:`, `Viral:`, the Hacker's rule `  When a Spaghetti Code card joins a card in a development:`, the backlog cleanup line `    If they have no card in their ops team that is not onboarding and whose trait is Clean Code, each viral card in their operations gains 1 bug.`, the Pivot's `      Every card on it whose trait is Ego goes to the open job market.`, the ops-team product routes; in the test file `DECLARE`, `CONFIRM_MODES`, `SWITCH_OFF`, `SWITCH_ON`, `CONFIRM_ONLINE`, `shortOf`, `enteredIncome`, `onProduct`, `CLEAN`, `REASSIGN_TO_PRODUCT`, `ASSIGN_TO_PRODUCT`, `FINAL_CHECK`.
 - **Plans 4-3 and 5-3, built:** the `shownFlags`, `standIns` and `shownPlayerValues` pins in `startup-simulator.test.ts` (`describe('what the view says the rules work out')`); the fitted table's Startup pins.
 - **Plans 4-1 and 5-1:** `If <condition> and <condition>, <effect>`; `every card on it that is {cardflag} is {cardflag}`; `its owner has (a / no) card in their {perzone} {cardclause}`; `a card in {sharedzone} is {cardflag}` as a rule; `move {card} from {zone} to {zone}`; `deal up to {int} cards from {zone} to {zone}`; `the target card gains {int} {attribute}`; `some / no card on it is {cardflag}`; `a card's {attribute} goes up by its {attribute}`; `a card's {attribute} is the number of {cardgroup}`.
@@ -112,7 +120,7 @@ Re-read each item at HEAD by name. If one is missing or differs, stop and report
 
 **Files:**
 - Modify: `src/games/startup-simulator.rules`, `src/games/startup-simulator.test.ts`, `README.md` (count)
-- Test pins: `src/pages/designer/designer-page.test.tsx` (count); `playtest-fitted.test.tsx` and `tableaux.test.ts` only if they pin what this task changes
+- Test pins: `src/pages/designer/designer-page.test.tsx` (count); `playtest-fitted.test.tsx` (the offered Strategy buttons); `tableaux.test.ts` only if it pins what this task changes
 
 **Interfaces:**
 - Consumes: 5-2b's Strategy button and table; 6-1's `another player's` targets.
@@ -138,15 +146,35 @@ const debuffZones = (seats: PlayerId[], by: PlayerId): string[];
   - **Pins.**
     - `results` is N₆ + 3; the designer page's count too.
     - `'lays out the table …'`: after `['strategy-discard', false, 'pile', 'public']` add `['attributes-in-play', false, 'pile', 'public']`.
+    - `playtest-fitted.test.tsx`, "Review Focus: plays Training onto a card in the bench, development team or ops team, and greys a target it doesn't fit": beside `PLAY` and `FLUSH` add `const DEBUFF = "Play a card from your strategy hand to a card in another player's development team or another player's ops team";`, and `expect(offered()).toEqual([[PLAY, true], [FLUSH, true]]);` becomes:
+
+```ts
+    expect(offered()).toEqual([[PLAY, true], [DEBUFF, "There is no card in another player's development team or another player's ops team."], [FLUSH, true]]);
+```
+
   - **Append `it('offers a Debuff only another seat’s Board staff, development teams first, seat by seat from the presser’s left (§20.A, plan 6-1)')`.** At 3 players from `setUp(3, 1)`, with p0 to act: a Burnout in `strategy-hand-p0`; each seat's Junior Software Dev `putOn` a project in its own development; p1 and p2 each running a product in their operations, with their Junior QA Testers pooled in their ops teams. `ontoCandidates(runtime, debuff, state, 'p0')` is p1's development-team card, p2's, then p1's ops-team card, p2's; p0's own cards and every bench card are absent.
   - **Money (`keepsTheRules`):** a `PLAY_DEBUFF` press pays the played card's worked `price` (read with `runtime.workedValue(before, cardId, 'price')`); `PLAY_TRAINING` reads the worked `price` too.
   - **Invariants (Review Focus 1):**
-    - 5-2b's Strategy-card conservation also counts the `attributes-in-play` pile and the box;
-    - each Attribute card is in the attributes in play exactly when its count is 1 on some card not in the box (`tokenOn`), and no card holds more than 1 of any count;
+    - 5-2b's Strategy-card conservation also counts the `attributes-in-play` pile and the box's cards named in `STRATEGY_CARDS` (the box also holds Milestones, ideas and evicted Talents); its `const strategy = …` becomes:
+
+```ts
+    const boxedStrategy = zoneCards(after, 'box').filter((c) => Object.hasOwn(STRATEGY_CARDS, nameOf(c) as string));
+    const strategy = nameCounts([...[...strategyZones, 'attributes-in-play'].flatMap((zoneId) => zoneCards(after, zoneId)), ...boxedStrategy]);
+```
+
+    - each Attribute card is in the attributes in play exactly when its count is 1 on some card (`const held = after.cards.some((c) => tokenOn(c, count) === 1);`; Task 2 narrows this to a card not in the box: until its eviction rule, an evicted Talent keeps its count in the box), and no card holds more than 1 of any count;
     - only a card with a `role` of `Senior Developer`, `Specialist` or `Junior` holds an Attribute count;
-    - a count rises in a move only on the target of a `PLAY_TRAINING` or `PLAY_DEBUFF` press of that Attribute, by 1; a `PLAY_DEBUFF` target is in a seat other than the mover's (Task 2 adds the moves that lower a count).
+    - a count rises in a move only on the target of a `PLAY_TRAINING` or `PLAY_DEBUFF` press of that Attribute, by 1; a `PLAY_DEBUFF` target is in a seat other than the mover's (Task 2 adds the moves that lower a count);
+    - 5-2b's Training-press check (whose failure reads `the Strategy cards played that are not Training`) runs only for a Training card, since a Buff goes to the attributes in play and that check refuses it: `if (move.type === PLAY_TRAINING) {` becomes `if (move.type === PLAY_TRAINING && isTraining(card!)) {`;
+    - happenings' `TRAINING_ON` key (`if (move.type === PLAY_TRAINING) {`) and `keepingForReplay`'s `'Training that asked a choice or had it filled in'` counter (`const asked = move.type === PLAY_TRAINING ? …`) also count Buff presses (they would give keys such as `Training: Clean Coder on a Full Stack Ninja` and `Training: Workaholic on a Junior`): each test gains `&& isTraining(card!)` (in `keepingForReplay`'s watch the pressed card is `cardById(before, move.cardId as string)`).
   - **The auto-player.**
-    - `training()` also takes Buff cards: the first Training or Buff card of its strategy hand that has a target the rules take; a Buff goes on the taken target at `t % n`.
+    - `training()` also takes Buff cards, only on a turn where `t % 3 === 0` (a Buff every turn spends the money slice 3's Engineer-in-ops and the reshuffle tests need): the first Training card, or on such a turn Buff card, of its strategy hand that has a target the rules take; a Buff goes on the taken target at `t % n`. Its `fits` becomes:
+
+```ts
+    const fits = (card: CardState) => (isTraining(card) || (BUFFS.includes(nameOf(card) as string) && t % 3 === 0))
+      && zones.some((zoneId) => cards(zoneId).some((target) => takes(card, target)));
+```
+
     - **`debuffing()`**, a free move made at most once a turn, right after `training()`: the first Debuff card of its strategy hand with a target the rules take (`pressChoices` on `{ type: PLAY_DEBUFF, by, cardId, onto }` gives a list, not a refusal), on the taken target at `t % n` among `ontoCandidates` (its `Onto.zoneId` is `debuffZones(seats, by)`).
     - The brainstorm keep policy, the cleanup's kept cards and the flush read `isPlayable` in place of `isTraining`.
   - **Append `it('plays a Debuff the auto-player holds on the rival card picked by t, through the page’s view and without it (§20.A)')`.** From `setUp(2, 1)` with S its start player and O the other seat: a Burnout to `strategy-hand-S`, two of O's Juniors onto a project of O's development. For t = 0 and t = 1, `playTurn` stops at the first `PLAY_DEBUFF`, whose target differs between the two; the logs with and without the view are equal.
@@ -314,12 +342,28 @@ EOF
 - Produces (test file): `const attributesOn = (card: CardState) => Object.values(ATTRIBUTES).filter((count) => tokenOn(card, count) > 0);`
 
 - [ ] **Step 1: Change the tests.**
-  - **Pins.** `results` is N₆ + 9; the designer page's count too. The values test adds `egotistic` and `holding attributes` (flags).
+  - **Pins.**
+    - `results` is N₆ + 9; the designer page's count too. The values test adds `egotistic` and `holding attributes` (flags).
+    - `'labels Managing, Agile, Coaching, the pending Badge and Attaching, …'`: the Diva now carries a permanent `egotistic` press label (`Every card on it whose trait is Ego is fired.` is not in the phrase library, so the flag stays), and the pin becomes:
+
+```ts
+    expect(pressFlags(game!)).toEqual(['managing', 'agile', 'egotistic', 'coaching', 'pending badge', 'attaching']);
+```
+
   - **Invariants (Review Focus 1)**, widening Task 1's "a count rises only …":
     - a card that moves from a development team or an ops team to the open job market in a `DISMISS_FROM_PROJECT`, `DISMISS_FROM_OPS`, `LET_GO` or `PIVOT` press holds no Attribute count after the move, and each Attribute card it held in `before` (`attributesOn`) is in the strategy discard after it;
     - a card that moves from a bench to the open job market (`DISCARD_BENCH`, `LAY_OFF`), from a development team or an ops team to a bench (`RECALL`, `PIVOT`), or from the open job market to a bench (`HIRE_MARKET`) holds after the move exactly the counts it held before;
     - a card that moves from the open job market to the box holds no count after the move, and each Attribute card it held is in the box;
-    - a count falls in a move only in those three ways.
+    - a count falls in a move only in those three ways;
+    - Task 1's held-count check narrows to a card not in the box, now that the box rule strips an evicted Talent: `const held = after.cards.some((c) => c.zoneId !== 'box' && tokenOn(c, count) === 1);`;
+    - the pools' box check ("only the pools send cards to the box") also allows cards that were in the attributes in play before the move, and its comment `// This assumes only the pools send cards to the box, …` is rewritten to match:
+
+```ts
+    // Besides the pools, only an evicted Talent's Attribute cards go there, from the attributes in play (§15.A.4, R2).
+    const parkedBoxed = box.filter((id) => !boxed.has(id) && cardById(before, id)?.zoneId === 'attributes-in-play');
+    sameList(box.filter((id) => !boxed.has(id)).sort(), [...letGoNow, ...parkedBoxed].sort(), () => `cards new in the box ${at}`);
+```
+
 - [ ] **Step 2: Run** the file. Expected: FAIL.
 - [ ] **Step 3: Change the rules text.**
   - **The flags.** Right after the `Software side:` section add:
@@ -508,23 +552,49 @@ EOF
 
 **Interfaces:**
 - Consumes: Task 1's counts; 6-1's `a/an {cardflag} card's {attribute} goes up by {int}`; 4-2's Hacker rule, `Viral:` and the backlog cleanup's viral line; 5-2a's outputs, `Salary:` and leads.
-- Produces (rules): worked flags `overworked`, `clean coding`, `guarding the pool`; refined `blue output`, `red output`, `qa output`, `salary`, `Leading software`, `Leading hardware`, `Viral`.
+- Produces (rules): worked flags `overworked`, `overworked in blue`, `overworked in red`, `overworked in qa`, `clean coding`, `guarding the pool`; refined `blue output`, `red output`, `qa output`, `salary`, `Leading software`, `Leading hardware`, `Viral`.
 
 - [ ] **Step 1: Change the tests.**
-  - **Pins.** `results` is N₆ + 16; the designer page's count too. The values test adds `overworked`, `clean coding` and `guarding the pool` (flags). `shownFlags(game)` gains `'overworked'` (its value lines read only the card); `standIns(game)` is unchanged. If the view says otherwise, pin what it says and report it.
+  - **Pins.** `results` is N₆ + 17 (260); the designer page's count and the README's too. The values test adds `overworked`, `overworked in blue`, `overworked in red`, `overworked in qa`, `clean coding` and `guarding the pool` (flags). `shownFlags(game)` gains `'overworked'`, `'overworked in blue'`, `'overworked in red'`, `'overworked in qa'` (first, before `'stalled'`; their lines read only the card), at both pins (`'stands each need in for its cost, …'` and `'(guard) shows the same flags beside a value, …'`); `standIns(game)` is unchanged. Both pins become:
+
+```ts
+    expect(shownFlags(game!)).toEqual(['overworked', 'overworked in blue', 'overworked in red', 'overworked in qa', 'stalled', 'efficient in ops', 'experienced', 'practised']);
+```
+
+    If the view says otherwise, pin what it says and report it.
   - **Invariants:**
     - every `overworked` card on a Board has a worked `salary` of at least 2;
     - a project's `bugs` never rise in an assign, reassign or hire that moves a `Spaghetti Code` card with `clean coder` 1 onto it (4-2's Hacker invariant, if present, reads the count).
   - **The auto-player.** `training()`'s Buff targets: a Workaholic goes on the first taken target with a worked `blue output`, `red output` or `qa output` above 0, else at `t % n`; a Clean Coder on a taken card whose trait is `Spaghetti Code`, else on an attaching card in its ops team, else at `t % n`; a Visionary on a taken Junior on a project of its development that is `stalled`, else at `t % n`.
 - [ ] **Step 2: Run** the file. Expected: FAIL.
 - [ ] **Step 3: Change the rules text.**
-  - **Workaholic's output** (§20.A). In `Blue output:`, right after `  A card's blue output goes up by its blue xp.`, add `  An overworked card's blue output goes up by 2.` In `Red output:`, right after `  A card's red output goes up by its red xp.`, add `  An overworked card's red output goes up by 2.` In `QA output:`, right after `  A practised card's qa output is 2.`, add `  An overworked card's qa output goes up by 2.`
-  - **Workaholic's salary.** At the end of `Salary:` (after `  An experienced card's salary is 1.`) add `  An overworked card's salary goes up by 2.`
+  - **Workaholic's output** (§20.A). In `Blue output:`, right after `  A card's blue output goes up by its working blue xp.`, add `  An overworked in blue card's blue output goes up by 2.` In `Red output:`, right after `  A card's red output goes up by its working red xp.`, add `  An overworked in red card's red output goes up by 2.` In `QA output:`, right after `  A practised card's qa output is 2.`, add `  An overworked in qa card's qa output goes up by 2.` (Outputs start from 0, as they refine no table column, so a line reading plain `overworked` would give a hardware card 2 Blue: each line reads the flag for its colour.)
+  - **Workaholic's salary.** At the end of `Salary:` (after `  An experienced card's salary is 1.`) add `  An overworked card's salary goes up by 2.` (every talent has a salary column, so plain `overworked` is right here).
   - **The flags.** Right after the `Holding attributes:` section add:
 
 ```text
 Overworked:
-  Only if its workaholic is more than 0.
+  Only if it is a card whose workaholic is more than 0.
+
+Overworked in blue:
+  Only if it is overworked.
+  Only if one of:
+    It is a software card.
+    It is a flex card.
+    It is blue mode.
+
+Overworked in red:
+  Only if it is overworked.
+  Only if one of:
+    It is a hardware card.
+    It is red mode.
+
+Overworked in qa:
+  Only if it is overworked.
+  Only if one of:
+    It is a qa card.
+    It is qa mode.
+    It is a Bug Hunter card.
 
 Clean coding:
   Only if one of:
@@ -544,35 +614,8 @@ Guarding the pool:
     If they have no card in their ops team that is guarding the pool, each viral card in their operations gains 1 bug.
 ```
 
-  - **Visionary** (§20.A, §11.G.1). `Leading software:` and `Leading hardware:` become:
-
-```text
-Leading software:
-  Only if one of:
-    It is a Senior Developer card.
-    It is badged.
-    Its visionary is more than 0.
-  Only if one of:
-    It is a software card.
-    It is a flex card.
-    Its blue skill is more than 0.
-    Its visionary is more than 0.
-  Only if it is not onboarding.
-
-Leading hardware:
-  Only if one of:
-    It is a Senior Developer card.
-    It is badged.
-    Its visionary is more than 0.
-  Only if one of:
-    It is a hardware card.
-    It is a flex card.
-    Its red skill is more than 0.
-    Its visionary is more than 0.
-  Only if it is not onboarding.
-```
-
-  - **Append these 7 examples.**
+  - **Visionary** (§20.A, §11.G.1). In `Leading software:` and `Leading hardware:`, add `    It is a card whose visionary is more than 0.` as the last line of each of the two `Only if one of:` groups (after HEAD's `    It is a card whose badge points are more than 0.` and after `    It is a card whose blue skill tokens are more than 0.` / `    It is a card whose red skill tokens are more than 0.`). The `It is a card whose …` form (G4) keeps the leads card-only, so the view still shows Stalled.
+  - **Append these 8 examples.**
 
 ```text
 Example: Workaholic gives +2 output in the colour its staff member makes and +$2 salary (section 20)
@@ -633,13 +676,13 @@ Example: a Sales Rep with Clean Coder on the Growth Hacker's own product stops i
   When p0 ends their actions
   Then the Dating App in p0's operations has 0 bugs
 
-Example: a Junior with Visionary leads in both colours, so it builds a Tier 2 hybrid and Launches it alone (section 20, section 11, section 3)
+Example: a Junior with Visionary leads in both colours, so a Tier 2 hybrid with no other lead progresses and Launches (section 20, section 11, section 3)
   Given the phase is actions
   And p0's development has a Drone Delivery
   And the Drone Delivery in p0's development has 6 blue cubes
   And the Drone Delivery in p0's development has 5 red cubes
-  And the Drone Delivery in p0's development has a Junior Hardware Eng on it
-  And the Junior Hardware Eng in p0's development team has 1 visionary
+  And the Drone Delivery in p0's development has a Junior Software Dev and a Junior Hardware Eng on it
+  And the Junior Software Dev in p0's development team has 1 visionary
   When p0 ends their actions
   Then the Drone Delivery in p0's development has 6 red cubes
   When p1 ends their actions
@@ -654,14 +697,38 @@ Example: Visionary makes any unit a lead, a Junior PM included, so its Tier 2 pr
   And the Junior PM in p0's development team has 1 visionary
   When p0 ends their actions
   Then the Neobank in p0's development has 2 blue cubes
+
+Example: Workaholic's +2 follows the mode a unit works in: a flex Senior makes Blue unless declared Red, a Junior in Blue mode makes Blue, and the Fixer in QA mode and a QA Engineer clean 2 more Bugs each (section 20, section 11)
+  Given the phase is actions
+  And p0's development has a Gig Economy, a Genetics Kit and a Dating App
+  And the Dating App in p0's development has 6 bugs
+  And the Gig Economy in p0's development has a Firmware Specialist and a Junior Hardware Eng on it
+  And the Genetics Kit in p0's development has a Full Stack Ninja on it
+  And the Dating App in p0's development has the Fixer and a QA Engineer on it
+  And the Junior Hardware Eng in p0's development team has 1 blue skill token
+  And the Junior Hardware Eng in p0's development team is blue mode
+  And the Full Stack Ninja in p0's development team is red mode
+  And the Fixer in p0's development team is qa mode
+  And the Firmware Specialist in p0's development team has 1 workaholic
+  And the Junior Hardware Eng in p0's development team has 1 workaholic
+  And the Full Stack Ninja in p0's development team has 1 workaholic
+  And the Fixer in p0's development team has 1 workaholic
+  And the QA Engineer in p0's development team has 1 workaholic
+  When p0 ends their actions
+  Then the Gig Economy in p0's development has 7 blue cubes
+  And the Genetics Kit in p0's development has 5 red cubes
+  And the Genetics Kit in p0's development has 0 blue cubes
+  And the Dating App in p0's development has 0 bugs
+  And the Dating App in p0's development has 0 blue cubes
 ```
 
   **How the numbers come** (§3, §11, §20.A, §20.B, §20.C):
   - **Workaholic:** +2 Output in the unit's current mode, +$2 salary; PMs, Sales Reps and HR Managers produce no Output, so only the salary (§20.A). Juniors make 1 (§20.B.2): 1 + 2 = 3 Blue and 3 Red on the Cloud Storage (4/4); salaries 0 + 2 each, 7 − 4 = 3. The Junior PM's $1 + 2 and the QA Tester's $0 + 2: 7 − 5 = 2.
   - **Synergy** (5-2a): +1 for each working teammate in its colour: Blue 1 + 1 = 2; QA (1 + 2) + 1 = 4 against 3 Bugs.
+  - **Workaholic by mode** (example 8; §20.A, §20.B): the Firmware Specialist is flex, output 2, Blue by default: 2 + 2 = 4; the blue-mode Hardware Junior 1 + 2 = 3; that makes 7 against the Gig Economy's 8 Blue. The red-mode Ninja is flex, output 3: 3 + 2 = 5 Red and 0 Blue on the Genetics Kit (8 Red). The Fixer in QA mode cleans 1 + 2 = 3, and the QA Engineer (Bug Hunter, 1) 1 + 2 = 3: 6 against 6 Bugs, and 0 Blue.
   - **Clean Coder:** $3, 7 − 3 = 4 (§20.A); the unit gains Clean Code (§20.B): the Hacker adds no Bug when he joins; a working unit in the pool shields every product from Growth Hackers, an attached one only its own (§20.B, ruling 19; suwa's `run_end_of_turn_traits`).
-  - **Visionary:** a Software and a Hardware Lead for any Tier (§20.A, §11.G.1). The Drone Delivery is Tier 2, 6 Blue / 6 Red (§20.C.2): a Junior alone would leave it Stalled (§3); with Visionary it progresses (1 Red) and Launches with both leads. The Neobank is Tier 2 Software, 10 Blue: Junior 1 + Synergy 1 = 2.
-  - **Lines each example pins:** 1 the Blue and Red Workaholic lines, the salary line and Overworked; 2 the QA Workaholic line (5-2a's Bug Hunter and practised lines set the value before it); 3 the Hacker rule's `Only if its clean coder is 0.`; 4 Guarding the pool's `not attaching` and `clean coding` lines (the pooled Juniors would otherwise guard) and the backlog cleanup line; 5 Viral's new line and Clean coding's count alternative; 6 the four `Its visionary is more than 0.` lines (a Launch needs both leads); 7 is a guard of the call. Clean coding's trait alternative and onboarding line are pinned by 4-2's Architect examples.
+  - **Visionary:** a Software and a Hardware Lead for any Tier (§20.A, §11.G.1). The Drone Delivery is Tier 2, 6 Blue / 6 Red (§20.C.2): Juniors with no lead would leave it Stalled (§3); with Visionary on the Junior Software Dev it progresses (the Junior Hardware Eng's 1 Red) and Launches with both leads. The Neobank is Tier 2 Software, 10 Blue: Junior 1 + Synergy 1 = 2.
+  - **Lines each example pins:** 1 the Blue and Red Workaholic lines, the salary line and Overworked; 2 the QA Workaholic line (5-2a's Bug Hunter and practised lines set the value before it); 3 the Hacker rule's `Only if its clean coder is 0.`; 4 Guarding the pool's `not attaching` and `clean coding` lines (the pooled Juniors would otherwise guard) and the backlog cleanup line; 5 Viral's new line and Clean coding's count alternative; 6 both Senior-or-badged `It is a card whose visionary is more than 0.` lines and Leading hardware's skill-group one (a Launch needs both leads); 7 Leading software's skill-group line, so it is no longer only a guard of the call; 8 the alternatives of Overworked in blue, Overworked in red and Overworked in qa. Clean coding's trait alternative and onboarding line are pinned by 4-2's Architect examples.
 - [ ] **Step 4: Run** `bunx vitest run src/games src/pages/designer`, then `bun run test` and `bun run typecheck`, then the removal probe.
 - [ ] **Step 5: Commit**
 
@@ -681,7 +748,7 @@ EOF
 
 **Files:**
 - Modify: `src/games/startup-simulator.rules`, `src/games/startup-simulator.test.ts`, `README.md` (count)
-- Test pins: `src/pages/designer/designer-page.test.tsx` (count); any designer pin of `shownPlayerValues` or the bandwidth gauges (see the Gaps)
+- Test pins: `src/pages/designer/designer-page.test.tsx` (count)
 
 **Interfaces:**
 - Consumes: Task 1's counts; 6-1's `goes down by {int}` and `a card's {attribute} is {int}`; 5-1's owner scope and `goes up by its {attribute}`; 5-2a's team values and `PM count:`.
@@ -690,21 +757,54 @@ EOF
 
 - [ ] **Step 1: Change the tests.**
   - **Pins.**
-    - `results` is N₆ + 25; the designer page's count too.
+    - `results` is N₆ + 26 (269); the designer page's count and the README's too.
     - The values test adds `blue made`, `red made`, `qa made`, `pool blue`, `pool red`, `pool qa` (numbers, `refines: false`) and the nine flags above.
-    - `shownFlags(game)` gains `'burned out'`, `'losing blue'`, `'losing red'` and `'losing qa'` (the `pool losing …` flags read their owner's ops team, so they fail closed). `standIns(game)` gains `'blue team output': 'blue made'`, `'red team output': 'red made'` and `'qa team output': 'qa made'` (no card keeps those as facts, so no face changes).
-    - `shownPlayerValues(game)` (4-3) loses `'blue supply'`, `'red supply'` and `'qa supply'`: each is now a total of a value that reads the owner's ops team. Pin what the view says and report it as this plan's Gap 1.
+    - `shownFlags(game)` gains only `'burned out'` (after the overworked flags), at both pins; `standIns(game)` and `shownPlayerValues(game)` are unchanged (6-1's R5 counts the owner-scope ops-team tests as public). Both `shownFlags` pins become:
+
+```ts
+    expect(shownFlags(game!)).toEqual(['overworked', 'overworked in blue', 'overworked in red', 'overworked in qa', 'burned out', 'stalled', 'efficient in ops', 'experienced', 'practised']);
+```
+
     - If the view says otherwise in any pin, pin what it says and report it.
   - **Append `it('takes Toxic Personality’s cube only from a colour its team makes, so no made value or supply is ever below 0 (§20.A, the slice’s R1)')`.** Each table is arranged on `setUp(2, 1)` with S its start player; values are read with `runtime.workedValue` and `runtime.playerValue`:
     - the Engineer with 1 toxic personality alone on a Smart Lock in S's development: `blue made` 0, `red made` 2, `qa made` 0;
     - a Junior QA Tester and a QA Engineer with 1 toxic personality on a Dating App: `blue made` 0, `red made` 0, `qa made` 1;
     - a Junior PM with 1 toxic personality alone on a To-Do List: all three 0;
+    - a Junior Software Dev and a Junior QA Tester with 1 toxic personality on a Dating App: `blue made` 0, `red made` 0, `qa made` 1;
+    - a Junior Hardware Eng and a Junior QA Tester with 1 toxic personality on a Smart Lock: `blue made` 0, `red made` 0, `qa made` 1;
     - S's ops team holding a Junior Software Dev, a Junior QA Tester and a Junior PM with 1 toxic personality: `blue supply` 0, `red supply` 0, `qa supply` 1;
-    - S's ops team holding a Junior Hardware Eng, a Junior QA Tester and a Junior PM with 1 toxic personality: `blue supply` 0, `red supply` 0, `qa supply` 1.
+    - S's ops team holding a Junior Hardware Eng, a Junior QA Tester and a Junior PM with 1 toxic personality: `blue supply` 0, `red supply` 0, `qa supply` 1;
+    - S's ops team holding only a Junior PM with 1 toxic personality: all three 0.
+
+    The three cases the pre-flight added pin lines no example reads (see "Lines each example pins"). In the probe's shape, where `onProject(projectName, staff, toxicId)` gives the project's three made values and `supplies(staff)` gives S's three supplies with the Junior PM toxic, they follow the To-Do List's case and the last supplies case:
+
+```ts
+      // A team that makes Blue or Red and cleans Bugs loses the one cube, not a cleaning too.
+      expect(onProject('Dating App', [benched('Junior Software Dev'), benched('Junior QA Tester')], benched('Junior QA Tester'))).toEqual([0, 0, 1]);
+      expect(onProject('Smart Lock', [benched('Junior Hardware Eng'), benched('Junior QA Tester')], benched('Junior QA Tester'))).toEqual([0, 0, 1]);
+```
+
+```ts
+      // A pool that makes nothing loses nothing.
+      expect(supplies([idOf('Junior PM')])).toEqual([0, 0, 0]);
+```
+
   - **Invariants (Review Focus 2, 3)**, after every move:
     - every card with a `burnout` count above 0 on a Board has worked `blue output`, `red output` and `qa output` each 0 or null, and is never counted by `pm count`;
-    - every card in a development has `blue made`, `red made` and `qa made` of 0 or more, each at most its team value and at least that less 1;
-    - every seat's `blue supply`, `red supply` and `qa supply` is 0 or more.
+    - every card in a development **with a card holding `toxic personality` on it** has `blue made`, `red made` and `qa made` of 0 or more, each at most its team value and at least that less 1;
+    - every seat **whose ops team holds a card with `toxic personality`** has `blue supply`, `red supply` and `qa supply` of 0 or more.
+
+    Only such a team or pool can make less than its team value, and working out every one after every move costs about 12 s of the long runs. The two guards:
+
+```ts
+      // Only a team with a Toxic card on it can make less than its team value, so only such a project is worked out (time).
+      if (zoneInfo(game!, c.zoneId)?.spec.name === 'development' && cardsOn(after, c.id).some((on) => tokenOn(on, 'toxic personality') > 0)) {
+```
+
+```ts
+    for (const seat of seats.filter((s) => zoneCards(after, zoneIdFor('ops team', s)).some((on) => tokenOn(on, 'toxic personality') > 0))) {
+```
+
 - [ ] **Step 2: Run** the file. Expected: FAIL.
 - [ ] **Step 3: Change the rules text.**
   - **Burnout** (§20.A, R3). Each of `Blue output:`, `Red output:` and `QA output:` ends, after its `… onboarding card's … output is 0.` line, with in turn:
@@ -726,14 +826,14 @@ EOF
 
 ```text
 Burned out:
-  Only if its burnout is more than 0.
+  Only if it is a card whose burnout is more than 0.
 
 Giving synergy:
   Only if it is managing.
-  Only if its burnout is 0.
+  Only if it is not burned out.
 
 Poisoning:
-  Only if its toxic personality is more than 0.
+  Only if it is a card whose toxic personality is more than 0.
   Only if it is not onboarding.
 
 Losing blue:
@@ -753,18 +853,15 @@ Losing qa:
 
 Pool losing blue:
   Only if it is poisoning.
-  Only if it is in an ops team.
   Only if its owner has a card in their ops team that is not onboarding and whose blue bandwidth is more than 0.
 
 Pool losing red:
   Only if it is poisoning.
-  Only if it is in an ops team.
   Only if its owner has no card in their ops team that is not onboarding and whose blue bandwidth is more than 0.
   Only if its owner has a card in their ops team that is not onboarding and whose red bandwidth is more than 0.
 
 Pool losing qa:
   Only if it is poisoning.
-  Only if it is in an ops team.
   Only if its owner has no card in their ops team that is not onboarding and whose blue bandwidth is more than 0.
   Only if its owner has no card in their ops team that is not onboarding and whose red bandwidth is more than 0.
   Only if its owner has a card in their ops team that is not onboarding and whose qa output is more than 0.
@@ -790,17 +887,14 @@ QA made:
 
 ```text
 Pool blue:
-  A card's pool blue is 0.
   A card's pool blue goes up by its blue bandwidth.
   A pool losing blue card's pool blue goes down by 1.
 
 Pool red:
-  A card's pool red is 0.
   A card's pool red goes up by its red bandwidth.
   A pool losing red card's pool red goes down by 1.
 
 Pool qa:
-  A card's pool qa is 0.
   A card's pool qa goes up by its qa output.
   A pool losing qa card's pool qa goes down by 1.
 ```
@@ -925,7 +1019,7 @@ Example: an ops team that makes neither Blue nor Red cleans one Bug fewer for To
   - **Toxic Personality:** −1 to its team's total Output (§20.A; ruling 25 "its whole team"); Blue if the team makes any, else Red, else QA; after Synergy; nothing while it onboards (ruling 8); even when the Toxic card makes nothing (R1). Cloud Storage: Blue 1 + 1 Synergy − 1 = 1, Red 1 + 1 = 2. The Engineer: 3 Red − 1 = 2. QA: 1 + 1 − 1 = 1 Bug cleaned.
   - **The onboarding Hacker** still adds his join Bug (4-2) and makes nothing: Blue 1.
   - **The ops pool:** Junior Software Dev Blue 1 − 1 = 0 against the Dating App's 1; the Junior Hardware Eng's Red 1 runs the Smart Lock (rev 2): 7 + 2 = 9, the Junior PM's $1 keeping p1 at Income. The Engineer's Red 3 − 1 = 2 runs two of three products of Red maintenance 1 (rev 2 each): 7 + 4 = 11, its $1 in the ops team keeping p1 at Income. Ops QA 1 + 1 − 1 = 1 against 2 Bugs on one product (4-2's shared step).
-  - **Lines each example pins:** 1 the three Burnout lines and Burned out; 2 Giving synergy's Burnout line and the PM count line; 3 Poisoning's count line, Losing blue's poisoning line, Blue made and the Engine's Blue line; 4 Poisoning's onboarding line; 5 Losing red's lines, Red made and the Engine's Red line; 6 Losing qa's lines, QA made and the Engine's Bug line; 7 Pool losing blue's lines, Pool blue and the Blue supply line, and Pool losing red's `no card … blue` line (else Red 0); 8 Pool losing red's other lines, Pool red, the Red supply line, and Pool losing blue's owner line (else Blue −1); 9 Pool losing qa's lines, Pool qa and the QA supply line. Pool blue's and Pool red's `is 0` lines are pinned by 7 and 8 (the Toxic PM's value would stay nothing); the `… team output is more than 0` lines of the three Losing flags and Pool losing qa's two `no card` lines, by the made-values test above.
+  - **Lines each example pins:** 1 the three Burnout lines and Burned out; 2 Giving synergy's Burnout line and the PM count line; 3 Poisoning's count line, Losing blue's poisoning line, Blue made and the Engine's Blue line; 4 Poisoning's onboarding line; 5 Losing red's lines, Red made and the Engine's Red line; 6 Losing qa's lines, QA made and the Engine's Bug line; 7 Pool losing blue's lines, Pool blue and the Blue supply line, and Pool losing red's `no card … blue` line (else Red 0); 8 Pool losing red's other lines, Pool red, the Red supply line, and Pool losing blue's owner line (else Blue −1); 9 Pool losing qa's lines, Pool qa and the QA supply line. The `… team output is more than 0` lines of the three Losing flags, Losing qa's two `… team output is 0` lines, and Pool losing qa's three owner lines are pinned by the made-values test above. (No `is 0` line starts a pool value, and no Pool losing flag tests `in an ops team`: numbers start at 0, and pool values are read only through ops-team totals.)
 - [ ] **Step 4: Run** `bunx vitest run src/games src/pages/designer`, then `bun run test` and `bun run typecheck`, then the removal probe (the lines named as pinned by the made-values test excepted, which that test fails without).
 - [ ] **Step 5: Commit**
 
@@ -945,7 +1039,7 @@ EOF
 
 **Files:**
 - Modify: `src/games/startup-simulator.rules`, `src/games/startup-simulator.test.ts`, `README.md` (count)
-- Test pins: `src/pages/designer/designer-page.test.tsx` (count); `playtest-fitted.test.tsx` only if it pins an offered list the two new buttons join
+- Test pins: `src/pages/designer/designer-page.test.tsx` (count); `playtest-fitted.test.tsx` (the offered Strategy buttons the two new buttons join)
 
 **Interfaces:**
 - Consumes: 6-1's lower-of payment and `goes up by {int} for each {attribute}`; 4-2's `Portfolio points:`; 4-1's `deal up to {int} cards from {zone} to {zone}`.
@@ -960,7 +1054,52 @@ const techCrunchPrice = (runtime: LangRuntime, state: GameState, cardId: string,
 ```
 
 - [ ] **Step 1: Change the tests.**
-  - **Pins.** `results` is N₆ + 31; the designer page's count too. The values test adds `price` (`kind: 'number'`, `refines: true`) and `pitching`, `pitched` (flags). `shownFlags(game)` gains `'pitched'`; `standIns(game)` is unchanged. Pin what the view says if it differs, and report it.
+  - **Pins.**
+    - `results` is N₆ + 32 (275); the designer page's count and the README's too. The values test adds `price` (`kind: 'number'`, `refines: true`) and `pitching`, `pitched` (flags). `standIns(game)` is unchanged.
+    - `shownFlags(game)` gains `'pitched'`, at both pins, which become:
+
+```ts
+    expect(shownFlags(game!)).toEqual(['overworked', 'overworked in blue', 'overworked in red', 'overworked in qa', 'burned out', 'pitched', 'stalled', 'efficient in ops', 'experienced', 'practised']);
+```
+
+    - `playtest-fitted.test.tsx`, the Training test Task 1 pinned: beside `DEBUFF` add `const TO_PRODUCT = 'Play a card from your strategy hand to a card in your operations';` and `const ALONE = 'Play a card in your strategy hand';`, and the offered list gains them after `DEBUFF`:
+
+```ts
+    expect(offered()).toEqual([
+      [PLAY, true], [DEBUFF, "There is no card in another player's development team or another player's ops team."],
+      [TO_PRODUCT, 'There is no card in your operations.'], [ALONE, 'it is a Design Sprint card'], [FLUSH, true],
+    ]);
+```
+
+    - Pin what the view says if it differs, and report it.
+  - **Existing tests the Design Sprint shifts.**
+    - The backlog invariant `atMost(own('backlog'), 4);` becomes:
+
+```ts
+        // A Design Sprint deals up to 5 past the 4 a turn's research leaves; Cleanup cuts the backlog back to 3 (§20.A, §5 Phase D).
+        atMost(own('backlog'), 9);
+```
+
+    - `'takes back every move with undo, and rebuilds the game from its log, through recruits and research (3 players, seed 1)'`: 52 becomes 55 in both `toHaveLength` and in the comment:
+
+```ts
+      // The retuned seats put their makers on projects before they recruit, so the first recruit comes at move 55 (it was within 40; a Design Sprint and its cleanup came before it from plan 6-2a).
+```
+
+```ts
+      expect(log).toHaveLength(55);
+      expect(states).toHaveLength(55);
+```
+
+    - `'runs the Growth Hacker on a product through its owner’s Engine and its next Income: …'`: box both Design Sprints with the Architect. A dealt Sprint sends the turn through backlog cleanup, whose last discard ends the turn after the Engine's move. `let state = relocate(relocate(start, [architect], 'box', game!), …` becomes:
+
+```ts
+      // The Design Sprints go to the box too: 5 Seed cards would send the seat's turn through backlog cleanup, whose last discard ends
+      // the turn after the Engine's move.
+      const sprints = start.cards.filter((card) => nameOf(card) === 'Design Sprint').map((card) => card.id);
+      let state = relocate(relocate(start, [architect, ...sprints], 'box', game!), [dating, wallet], zoneIdFor('operations', S), game!);
+```
+
   - **`scoreOf`** adds 5 for each `hype` on each of the seat's products in operations that are not `offline` (§12.1).
   - **Money (`keepsTheRules`):** a `PLAY_TO_PRODUCT` press pays `techCrunchPrice(runtime, before, cardId, ontoId)`; a `PLAY_ALONE` press pays nothing.
   - **Invariants:**
@@ -1013,6 +1152,7 @@ Example: TechCrunch Feature adds 1 Hype to one of the player's products for $5 a
   And p0 has 9 capital
   And p0's strategy hand has a TechCrunch Feature and a TechCrunch Feature
   And p0's operations has a Dating App and a To-Do List
+  And the Dating App in p0's operations has a Growth Hacker on it
   And the To-Do List in p0's operations has a Sales Rep on it
   When p0 plays a TechCrunch Feature to the Dating App
   Then it is accepted
@@ -1093,7 +1233,7 @@ Example: each Utility card plays only as itself: a Design Sprint goes on no prod
   - **TechCrunch Feature** (formerly "PR Campaign", ruling 23): +1 Hype on one of the player's Maintenance products for $5, $2 with a Sales Rep attached to it (§20.A, §20.B Rainmaker); an onboarding Rep's effects are cancelled (§6 Reassign, ruling 8). So 9 − 5 = 4, then 4 − 2 = 2; 4 < 5 is refused.
   - **Hype** scores +5 VP on an Active product; Offline products score 0 (§12.1). p0: 7 capital is 1 point; the Dating App's val 5 + 2 × 5 = 15; the To-Do List offline 0: 16. The Junior's Blue 1 runs the Dating App alone, so the game-end check leaves the To-Do List offline (§12.2). p1: 7 capital, 1.
   - **Design Sprint:** $0, draw 5 from the Seed Deck into the Backlog, fewer if it runs short; Cleanup discards down to 3 (§20.A, §5 Phase D step 7). A Given lists a pile bottom first, so the last 5 named are drawn. The seed market's two cards keep the build's refill off the deck.
-  - **Lines each example pins:** 1 the TechCrunch button's guard on price, its payment, its Hype, its move, Pitched, Pitching's Rainmaker line and the `Price:` line; 2 Pitching's onboarding line and the price guard; 3 the Hype line in Portfolio points (and its place before the Offline line); 4 the Design Sprint button's deal and move; 6 both buttons' card guards. 5 is a guard (the deal stops short).
+  - **Lines each example pins:** 1 the TechCrunch button's guard on price, its payment, its Hype, its move, Pitched, Pitching's Rainmaker line (the Growth Hacker on the Dating App is no Rainmaker, and would pitch it without that line) and the `Price:` line; 2 Pitching's onboarding line and the price guard; 3 the Hype line in Portfolio points (and its place before the Offline line); 4 the Design Sprint button's deal and move; 6 both buttons' card guards. 5 is a guard (the deal stops short).
 - [ ] **Step 4: Run** `bunx vitest run src/games src/pages/designer`, then `bun run test` and `bun run typecheck`, then the removal probe.
 - [ ] **Step 5: Commit**
 
@@ -1130,16 +1270,89 @@ EOF
   - `Design Sprint dealing 5` and `Design Sprint dealing fewer`, by how many cards a `PLAY_ALONE` press added to the backlog.
 
 - [ ] **Step 1: Write the tests.**
-  - **`'made every move in those runs …'`** also expects above 0: `PLAY_DEBUFF`, `PLAY_TO_PRODUCT`, `PLAY_ALONE`.
-  - **Append `it('played slice 6’s Strategy cards in those runs: every Attribute on its targets, Attributes discarded, kept, rehired and boxed, their effects at work, TechCrunch at both prices, Hype scored and Design Sprints')`.** It expects every key above above 0.
-  - **Append `it('takes back the last move and rebuilds whole games from their logs, through Attribute plays, strips, a TechCrunch Feature and a Design Sprint (Review Focus: 3 players, seeds 1 to 5)')`.** Play each game to its result, keeping the state before each move; a fresh engine given `loadLog(log)` equals the final state, and `engine.undo()` gives the state before the last move. Across the five logs some log holds a `PLAY_DEBUFF`, a strip (an Attribute card reaching the strategy discard) and a `PLAY_TO_PRODUCT` (count them through the watch).
-  - **Kept as they are:** `'plays the same game through the page’s view as without it'` (now through the Debuff's targets in other seats' zones) and every earlier tally.
+  - **`'made every move in those runs …'`** also expects above 0: `PLAY_DEBUFF`, `PLAY_TO_PRODUCT`, `PLAY_ALONE`. Its `scoutedToOps` (`'hire some cards from their scouting to their ops team'`) leaves `every` for the "Counted, but not required" comment: the Buffs' spending leaves it to one game (5 players seed 3; it was held by three) under every Buff cadence that keeps the other tests. The comment names its pin, the arranged test below.
+  - **Append `it('played slice 6’s Strategy cards in those runs: every Attribute on its targets, Attributes discarded, kept, rehired and boxed, their effects at work, TechCrunch at both prices, Hype scored and Design Sprints')`.** It requires the 18 keys held by 2 or more games:
+    - `an Attribute played: Workaholic`, `… Clean Coder`, `… Visionary`, `… Toxic Personality`, `… Burnout`, `… Flight Risk`;
+    - `a Buff on a bench card`, `a Buff on a Board card`, `a Debuff on a development team card`, `a Debuff on an ops team card`;
+    - `Attributes discarded with a fired Talent`, `Attributes kept through a bench discard`;
+    - `Toxic: a Red cube taken`, `Burnout: a unit idle`;
+    - `TechCrunch for $5`, `Hype scored`, `Design Sprint dealing 5`, `Design Sprint dealing fewer`.
+
+    These are counted but not required, and a comment names each one's pin:
+    - `Attributes rehired`: Task 2's example 4;
+    - `Attributes boxed with an evicted Talent`: Task 2's examples 5–6;
+    - `a Workaholic's +2 at the Engine`: Task 3's examples 1, 2 and 8;
+    - `Clean Coder stopping the Hacker's Bug`: Task 3's example 3;
+    - `Clean Coder shielding a viral product`: Task 3's examples 4–5;
+    - `a Visionary leading`: Task 3's examples 6–7;
+    - `Toxic: a Blue cube taken` / `Toxic: a Bug left`: Task 4's example 3 / 6;
+    - `Toxic in the ops team`: Task 4's examples 7–9;
+    - `Burnout: a PM giving no Synergy`: Task 4's example 2;
+    - `TechCrunch for $2 with a Sales Rep`: Task 5's example 1, plus the arranged test of `utility()`'s pitched pick below;
+    - and the scouting hire to the ops team: the arranged test below, since no accepted example presses it (the rules' only example of it refuses it).
+  - **Append an arranged test of `utility()`'s pitched pick**, in the shape of 4-2's `'cleans the Bug the auto-player picks when ops QA can’t clean them all, …'`: the auto-player's TechCrunch Feature goes on the product a working Sales Rep pitches, for $2, through the page's view and without it.
+  - **Append an arranged test of the auto-player's scouting hire to the ops team**, in the same shape.
+  - **Append `it('takes back the last move and rebuilds whole games from their logs, through Attribute plays, strips, a TechCrunch Feature and a Design Sprint (Review Focus: 3 players, seeds 1 to 5)')`.** For each seed, a fresh engine given `loadLog(log)` equals the game's end, and `engine.undo()` gives the state before the last move. Across the five logs some log holds a `PLAY_DEBUFF`, a strip (an `Attributes discarded with a fired Talent` key) and a `PLAY_TO_PRODUCT`. It plays no game of its own: the long run keeps each 3-player game for replay (`keepingForReplay` for `players <= 3`; `twoPlayerGames` becomes `keptGames` keyed `${players} ${seed}`, with `keptGame(players, seed)` and `twoPlayerGame = (seed) => keptGame(2, seed)`); `REPLAYED` adds `'Debuffs'`, `'strips'`, `'TechCrunch Features'`, counted in `keepingForReplay`'s watch; the 3-player test reads `keptGame(3, seed)`. This saves about 1.7 s of the long runs.
+
+```ts
+const REPLAYED = [
+  'declarations', 'switches off', 'Bugs added to a project', 'Pending tokens gained', 'Launches that raised XP', 'reshuffles',
+  'Training that asked a choice or had it filled in', 'Milestone claims', 'Debuffs', 'strips', 'TechCrunch Features',
+] as const;
+```
+
+  In `keepingForReplay`'s watch, after the Milestone claims line:
+
+```ts
+    if (move.type === PLAY_DEBUFF) seen.Debuffs += 1;
+    if (move.type === PLAY_TO_PRODUCT) seen['TechCrunch Features'] += 1;
+    seen.strips += keys.filter((key) => key === ATTRIBUTES_FIRED).length;
+```
+
+  `twoPlayerGames` and `twoPlayerGame` become:
+
+```ts
+    const keptGames = new Map<string, KeptGame>();
+    /** The game at `players` and `seed`: the long run's, else played now, plainly. */
+    const keptGame = (players: number, seed: number): KeptGame => {
+      const at = `${players} ${seed}`;
+      if (!keptGames.has(at)) {
+        const keeping = keepingForReplay(new LangRuntime(game!, lib, seatsFor(players)));
+        keptGames.set(at, keeping.kept(playGame(players, seed, (before, move, after) => keeping.watch(before, move, after))));
+      }
+      return keptGames.get(at)!;
+    };
+    const twoPlayerGame = (seed: number): KeptGame => keptGame(2, seed);
+```
+
+  In the long run, `const keeping = players === 2 ? keepingForReplay(runtime) : null;` becomes `const keeping = players <= 3 ? keepingForReplay(runtime) : null;`, and `if (keeping !== null) twoPlayerGames.set(seed, keeping.kept(engine));` becomes `` if (keeping !== null) keptGames.set(`${players} ${seed}`, keeping.kept(engine)); ``. The test:
+
+```ts
+    it('takes back the last move and rebuilds whole games from their logs, through Attribute plays, strips, a TechCrunch Feature and a Design Sprint (Review Focus: 3 players, seeds 1 to 5)', () => {
+      const seen = { Debuffs: 0, strips: 0, 'TechCrunch Features': 0 };
+      for (let seed = 1; seed <= 5; seed++) {
+        const where = `3 players, seed ${seed}`;
+        const { log, beforeLast, end, seen: counted } = keptGame(3, seed);
+        for (const what of Object.keys(seen) as (keyof typeof seen)[]) seen[what] += counted[what];
+        expect(end.result, `${where}: the result`).toBeDefined();
+        const replayed = createEngine(game!, lib, 3, initialState(game!, seed)).engine;
+        replayed.loadLog(log);
+        expect(replayed.getState(), `${where}: the game rebuilt from its log`).toEqual(end);
+        replayed.undo();
+        expect(replayed.getState(), `${where}: the game with its last move taken back`).toEqual(beforeLast);
+      }
+      expect(Object.entries(seen).filter(([, times]) => times === 0), JSON.stringify(seen)).toEqual([]);
+    }, 120_000);
+```
+
+  - **Kept as they are:** `'plays the same game through the page’s view as without it'` (now through the Debuff's targets in other seats' zones) and every earlier tally but the scouting hire above (their comments are recounted in Step 2).
 - [ ] **Step 2: Run** `bunx vitest run src/games/startup-simulator.test.ts`.
   - If a required key stays at 0, print the tally and change the auto-player (`training()`'s Buff targets, `debuffing()`'s cadence, `utility()`'s cadence, the brainstorm keep order, the bench cleanup's discard order putting a Buffed bench card out first for `Attributes kept through a bench discard` and `… boxed …`), never the rules.
   - Report a key that stays unreachable, with the tally, and pin its path with an arranged test in the shape of 4-2's `'cleans the Bug the auto-player picks …'`.
-- [ ] **Step 3: Write the README.** In the Startup paragraph, after plan 5-2b's sentence, add: the six Attributes go on a Talent as counts, their cards parked until the Talent is fired (then discarded) or evicted (then boxed); Workaholic, Clean Coder, Visionary, Toxic Personality and Burnout change output, salary, Bugs, leads and Synergy, and Flight Risk waits for poaching; TechCrunch Feature adds Hype, which scores; Design Sprint deals 5 Seed cards. Its rulings list adds 23. "It still leaves out" drops the Attributes and the Utility cards but Cease & Desist, and keeps the Events (plan 6-2b).
+  - Recount every holder list the tally comments, the replay comment and the "first seed" comments name from a probe of the final runs. "Kept as they are" applies to the tests, not their comments. The memo also leaves two comments to rewrite: "The long run's 2-player games, by seed." above `keptGames`, and "(see `twoPlayerGames`)" in the 2-player replay test.
+- [ ] **Step 3: Write the README.** In the Startup paragraph, after plan 5-2b's sentence, add: the six Attributes go on a Talent as counts, their cards parked until the Talent is fired (then discarded) or evicted (then boxed); Workaholic, Clean Coder, Visionary, Toxic Personality and Burnout change output, salary, Bugs, leads and Synergy, and Flight Risk waits for poaching; TechCrunch Feature adds Hype, which scores; Design Sprint deals 5 Seed cards. Its rulings list adds 23. "It still leaves out" drops the Attributes and the Utility cards but Cease & Desist, and keeps the Events (plan 6-2b), and "Hype and Scandal" becomes "Scandal" (Hype's +$5 sale price comes with selling, which stays on the list).
 - [ ] **Step 4: Run** `bun run test` and `bun run typecheck`. The passing count is the starting count plus this plan's new tests.
-- [ ] **Step 5: Run the checks.** The first three print nothing. The fourth prints only the Startup count line in `designer-page.test.tsx` and any pin a task reported.
+- [ ] **Step 5: Run the checks.** The first three print nothing. The fourth prints only the Startup count lines in `designer-page.test.tsx`, the offered-buttons pin in `playtest-fitted.test.tsx` (Tasks 1 and 5) and any pin a task reported.
 
 ```bash
 # no shared code and no page code changed
@@ -1170,14 +1383,17 @@ EOF
 ## Forward notes
 
 - **Plan 6-2b** builds on `blue made` / `red made` / `qa made` (Crunch Time adds its cube after Toxic's, in new `blue added` / `red added` values the Engine reads), the outputs (the Events' lines go after the Workaholic lines and before the mode lines, Burnout staying last), `Rev:`, `Bug decay:`, `Price:` (Online Course Boom and Trade Show) and the counts (a Regulation Audit let-go fires its staff through the same strip).
-- **Plan 6-3 (the page):** the counts as labels under their Talent (5-3's lone-count labels), Hype as a label on the product; the attributes in play pile on the shared table; the Debuff picker over other seats' cards (6-1's Left-to-6-3); the bandwidth gauges (Gap 1); `burned out`, `losing blue/red/qa`, `overworked` and `pitched` are new shown flags.
+  - The price floor (`A card's price is at least 0.`) when Online Course Boom or Chip Shortage discounts a price. In 6-2a, TechCrunch's lower of $5 and $2 can't go below 0.
+- **Plan 6-3 (the page):** the counts as labels under their Talent (5-3's lone-count labels), Hype as a label on the product; the attributes in play pile on the shared table; the Debuff picker over other seats' cards (6-1's Left-to-6-3). The new shown flags are `overworked` and its three colour flags (`overworked in blue`, `overworked in red`, `overworked in qa`), `burned out` and `pitched`; `losing …` is not shown.
+  - The Diva carries a permanent `egotistic` press label (Task 2's `pressFlags` pin): decide whether it shows.
+  - Every Strategy card now shows all four Strategy buttons, three of them greyed with reasons (the fitted page's pin, Tasks 1 and 5): decide whether it should.
+- **Later long-runs work:** Task 6 counts, but does not require, 11 slice-6 keys and the scouting hire to the ops team (each pinned by examples or an arranged test). A later cadence change may promote them to required.
 - **Slice 8** reads `flight risk` (the poach multiplier ×1), counts the six Attribute counts in a poached Talent's Token Value (+$2 each), keeps them on a poached Talent (§15.C, §16.D.3), and makes Cease & Desist playable in its reaction window.
 
 ## Gaps against plan 6-1
 
-1. **The ops pool's Toxic cube takes the supplies off the page.** 6-1's Architecture puts the cube on a value of the Toxic card that reads its owner's ops team (5-1's owner scope), and makes the supplies totals of it. Owner scope is not card-only, so 4-3's `shownPlayerValues` stops showing `blue supply`, `red supply` and `qa supply`, and the bandwidth gauges leave the page from Task 4 until 6-3 lets an owner-scope test of a zone everyone sees count as public (or a language follow-up adds a player value that goes down by a number). Task 4 pins the view as it then is and reports it.
-2. **A press naming a card no button offers can't be said to be refused.** A Debuff aimed at a rival's bench finds no button (P16 finds no target zone holding the card), so an example fails with "I can't find …" instead of `it is rejected`. Task 1 pins the targets with `ontoCandidates` instead.
+1. **A press naming a card no button offers can't be said to be refused.** A Debuff aimed at a rival's bench finds no button (P16 finds no target zone holding the card), so an example fails with "I can't find …" instead of `it is rejected`. Task 1 pins the targets with `ontoCandidates` instead.
 
 Everything else is written with plans 4-1, 5-1 and 6-1's phrases. These calls follow from what the language reads, and are listed so a later plan can revisit them:
 - The six alternatives of `Holding attributes:` are each pinned only because each evicted card in Task 2's examples holds one Attribute.
-- Three `… team output is more than 0` lines and two pool `no card` lines change only values no example can read directly (a made value below 0); Task 4's made-values test pins them.
+- Three `… team output is more than 0` lines, Losing qa's two `… team output is 0` lines and Pool losing qa's three owner lines change only values no example can read directly; Task 4's made-values test pins them.
