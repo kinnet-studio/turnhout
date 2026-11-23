@@ -5,6 +5,7 @@ import { valueIsTheTotal } from './total-phrases';
 import type { CardGroup, ValueFn } from '../types';
 import { kindsAmong } from './support';
 import { valueIsTheNumber } from './total-phrases';
+import { cardsIn, numberIfAny, totalOf } from './support';
 
 /** What one of their values comes to, as the lines of its section work it out. */
 const theirs = (env: PhraseEnv, name: string): number => playerValueOf(env, theyOf(env), name);
@@ -29,6 +30,16 @@ const valueIsExpected: ExpectFn = (env, [seat, name, n]) => {
   return have === n ? true : `Expected ${who}'s ${name as string} to be ${n as number}, but it is ${have}.`;
 };
 
+/** A whole number, whatever the lines before made of the value. */
+const valueIsTheNumberWritten: ValueFn = (_env, [, n]) => n as number;
+/** A whole number when another of their values is at least a step, else what the lines before made of it: the last line that applies wins. */
+const valueIsTheNumberPast: ValueFn = (env, [, n, other, step], value) => (theirs(env, other as string) >= (step as number) ? (n as number) : value);
+/** The highest number among the cards of a group, each read as every phrase reads one; 0 when no card has it. */
+const valueIsTheHighest: ValueFn = (env, [, attribute, group]) =>
+  cardsIn(env, group as CardGroup).reduce((most, card) => Math.max(most, numberIfAny(env, card, attribute as string) ?? 0), 0);
+/** What the lines before made of the value, and the group's total added. */
+const valueGoesUpByTheTotal: ValueFn = (env, [, attribute, group], value) => (value ?? 0) + totalOf(env, attribute as string, group as CardGroup);
+
 /**
  * The line of a value about a player that adds up a group of cards: the view shows such a value only when each of its lines is this one,
  * over zones everyone can see, so a new line that works one out shows nothing until the view is taught what it reads.
@@ -49,6 +60,11 @@ export function registerPlayerValuePhrases(lib: PhraseLibrary): PhraseLibrary {
     // Counts are no totals: the view does not show a value counted from cards until it is taught what a count reads.
     .value("a player's {playervalue} is the number of {cardgroup}", valueIsTheNumber, { needsPlayer: true })
     .value("a player's {playervalue} is the number of different {attribute} values among {cardgroup}", valueIsTheKinds, { needsPlayer: true })
+    // Lookups: read in order, each seeing what the lines before made of the value, so the last line that applies wins.
+    .value("a player's {playervalue} is {int}", valueIsTheNumberWritten, { needsPlayer: true })
+    .value("a player's {playervalue} is {int} if their {playervalue} is at least {int}", valueIsTheNumberPast, { needsPlayer: true })
+    .value("a player's {playervalue} is the highest {attribute} of {cardgroup}", valueIsTheHighest, { needsPlayer: true })
+    .value("a player's {playervalue} goes up by the total {attribute} of {cardgroup}", valueGoesUpByTheTotal, { needsPlayer: true })
     .condition(AT_LEAST_THEIRS, withTheir(AT_LEAST), { needsPlayer: true })
     .condition('their {playervalue} is more than their {playervalue}', withTheir(MORE_THAN), { needsPlayer: true })
     .condition('their {playervalue} is {int}', withNumber(IS), { needsPlayer: true })

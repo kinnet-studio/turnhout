@@ -473,9 +473,12 @@ describe('what the view says about each player', () => {
       values.mockRestore();
     }
     // The two counts are judged not shown: `shownPlayerValues` reads only totals, and a count shows nothing until the view is taught it.
+    // The four lookups (7-1 Task 4) are judged not shown too: a value with one of them among its lines shows nothing.
     expect(registered).toEqual([
       PLAYER_TOTAL, "a player's {playervalue} is the number of {cardgroup}",
       "a player's {playervalue} is the number of different {attribute} values among {cardgroup}",
+      "a player's {playervalue} is {int}", "a player's {playervalue} is {int} if their {playervalue} is at least {int}",
+      "a player's {playervalue} is the highest {attribute} of {cardgroup}", "a player's {playervalue} goes up by the total {attribute} of {cardgroup}",
     ]);
   });
 

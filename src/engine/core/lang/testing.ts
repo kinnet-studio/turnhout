@@ -504,6 +504,18 @@ export const FORCE_GAME = [
   'Red load:', "  A player's red load is the total red need of the cards in their workshop.",
 ].join('\n');
 
+/** FORCE_GAME with lookups: a rate from the highest worth in the workshop, a yield by ranges of red load, and a reach that adds two totals. */
+export const LOOKUP_GAME = [
+  FORCE_GAME, '',
+  'Top worth:', "  A player's top worth is the highest worth of the cards in their workshop.", '',
+  'Rate:', "  A player's rate is 5.", "  A player's rate is 10 if their top worth is at least 3.",
+  "  A player's rate is 15 if their top worth is at least 4.", '',
+  'Yield:', "  A player's yield is 1 if their red load is at least 1.", "  A player's yield is 2 if their red load is at least 3.",
+  "  A player's yield is 3 if their red load is at least 5.", '',
+  'Reach:', "  A player's reach is the total pay of the cards in their workshop.",
+  "  A player's reach goes up by the total wage of the cards in their crew.",
+].join('\n');
+
 /** FORCE_GAME where a job can be resting, and a player's red load counts only the jobs in their workshop that are not resting. */
 export const RESTING_GAME = FORCE_GAME
   .replace('  Cards can be tired.', '  Cards can be tired.\n  Cards can be resting.')

@@ -11,6 +11,7 @@ import { COUNT_GAME } from '../testing';
 import type { CompiledGame } from '../types';
 import { relocate } from '../zones';
 import { createDefaultLibrary } from './index';
+import { LOOKUP_GAME } from '../testing';
 
 const lib = createDefaultLibrary();
 
@@ -169,5 +170,47 @@ describe('values about a player that count cards', () => {
       // The Potter's red work is 1, and the Smith's 0: no line of Red work is about a gold card.
       expect(kinds("a player's craft kinds is the number of different red work values among the cards in their crew")).toBe(2);
     });
+  });
+});
+
+describe('values by lookup', () => {
+  const lib = createDefaultLibrary();
+  const game = compileGame(LOOKUP_GAME, lib).game!;
+  const fresh = initialState(game, 1);
+  const named = (name: string) => fresh.cards.filter((c) => c.data?.name === name).map((c) => c.id);
+  const [vase, vase2] = named('Vase');
+  const [statue] = named('Statue');
+  const [potter] = named('Potter');
+  const [smith] = named('Smith');
+  const [tinker] = named('Tinker');
+  const valuesOf = (g: CompiledGame, state: GameState) => {
+    const { runtime } = createEngine(g, lib, 3, { ...state, turn: { current: 'p0', phase: 'working' } });
+    return ['top worth', 'rate', 'red load', 'yield', 'reach'].map((name) => runtime.playerValue(state, 'p0', name));
+  };
+  const inWorkshop = (ids: string[]) => relocate(fresh, ids, 'workshop-p0', game);
+  it.each([
+    ['empty', [], [0, 5, 0, 0, 0]],
+    ['a Vase', [vase], [3, 10, 2, 1, 1]],
+    ['a Statue', [statue], [4, 15, 1, 1, 2]],
+    ['a Vase, a Statue', [vase, statue], [4, 15, 3, 2, 3]],
+    ['two Vases, a Statue', [vase, vase2, statue], [4, 15, 5, 3, 4]],
+  ])('works out the values for %s', (_name, ids, values) => {
+    expect(valuesOf(game, inWorkshop(ids as string[]))).toEqual(values);
+  });
+  it("adds the crew's wages, worked out ones too", () => {
+    const crewed = putOn(inWorkshop([vase]), [potter, smith], 'crew-p0', vase, game);
+    expect(valuesOf(game, crewed)[4]).toBe(4);
+    expect(valuesOf(game, putOn(crewed, [tinker], 'crew-p0', vase, game))[4]).toBe(5);
+  });
+  it('Review Focus: the highest of nothing is 0, and the last line that applies wins', () => {
+    const crewed = putOn(inWorkshop([vase]), [potter], 'crew-p0', vase, game);
+    const env = fixtureEnv(crewed, { game, seats: ['p0', 'p1', 'p2'], subject: { player: 'p0', space: null, card: null } });
+    expect(runPhrase(lib, 'value', "a player's top worth is the highest pay of the cards in their crew", env, 7)).toBe(0);
+    const reversed = LOOKUP_GAME.replace(["  A player's rate is 5.", "  A player's rate is 10 if their top worth is at least 3.",
+      "  A player's rate is 15 if their top worth is at least 4."].join('\n'), ["  A player's rate is 15 if their top worth is at least 4.",
+      "  A player's rate is 10 if their top worth is at least 3.", "  A player's rate is 5."].join('\n'));
+    expect(reversed).not.toBe(LOOKUP_GAME);
+    const other = compileGame(reversed, lib).game!;
+    expect(valuesOf(other, relocate(initialState(other, 1), [statue], 'workshop-p0', other))[1]).toBe(5);
   });
 });

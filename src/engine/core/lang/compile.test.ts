@@ -19,6 +19,7 @@ import { MEND_GAME } from './testing';
 import { JOIN_GAME } from './testing';
 import { COUNT_GAME } from './testing';
 import { CHARM_GAME } from './testing';
+import { LOOKUP_GAME } from './testing';
 
 const lib = createDefaultLibrary();
 const BASE = [
@@ -1515,5 +1516,28 @@ describe('lines a flag turns on', () => {
     expect(messages(wage.text)).toEqual([[wage.at, 'This line is about “wage”, but it is under Bonus:.']]);
     const misspelt = underBonus("  A charmd card's bonus goes up by 2.");
     expect(messages(misspelt.text)).toEqual([[misspelt.at, 'There is no card fact called “charmd”.']]);
+  });
+});
+
+describe('values by lookup', () => {
+  const lib = createDefaultLibrary();
+  const lineOf = (text: string, line: string) => text.split('\n').indexOf(line) + 1;
+  const errorsOf = (text: string) => compileGame(text, lib).diagnostics.filter((d) => d.severity === 'error').map((d) => [d.line, d.message]);
+  const RATE_5 = "  A player's rate is 5.";
+  it('compiles, with the rate lines in order', () => {
+    const { game, diagnostics } = compileGame(LOOKUP_GAME, lib);
+    expect(diagnostics).toEqual([]);
+    expect(game!.playerValues!.rate.refs.map((ref) => ref.phrase)).toEqual([
+      "a player's {playervalue} is {int}", "a player's {playervalue} is {int} if their {playervalue} is at least {int}",
+      "a player's {playervalue} is {int} if their {playervalue} is at least {int}"]);
+  });
+  it.each([
+    ["  A player's yield is 1 if their red load is at least 1.", 'This line is about “yield”, but it is under Rate:.'],
+    ["  A player's rate is 10 if their top wrth is at least 3.", 'There is no player value called “top wrth”.'],
+    ["  A player's rate is the highest worth of the cards on it.",
+      "“A player's rate is the highest worth of the cards on it” only makes sense in a rule about a card, such as “When a card …”."],
+  ])('refuses %s', (line, message) => {
+    const text = LOOKUP_GAME.replace(RATE_5, `${RATE_5}\n${line}`);
+    expect(errorsOf(text)).toEqual([[lineOf(text, line), message]]);
   });
 });
