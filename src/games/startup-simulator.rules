@@ -345,6 +345,18 @@ Software side:
     It is a card whose tag is Metaverse.
     It is a card whose tag is DeFi.
 
+Egotistic:
+  Only if it is an Ego card.
+
+Holding attributes:
+  Only if one of:
+    Its workaholic is more than 0.
+    Its clean coder is more than 0.
+    Its visionary is more than 0.
+    Its toxic personality is more than 0.
+    Its burnout is more than 0.
+    Its flight risk is more than 0.
+
 Stalled:
   Only if it is in a development.
   Only if it is not a Tier 1 card.
@@ -602,6 +614,18 @@ In every phase:
     It loses its pending red.
     It loses its pending green.
     It is not badged.
+    If its workaholic is more than 0, move the workaholic from the attributes in play to the strategy discard.
+    If its clean coder is more than 0, move the clean coder from the attributes in play to the strategy discard.
+    If its visionary is more than 0, move the visionary from the attributes in play to the strategy discard.
+    If its toxic personality is more than 0, move the toxic personality from the attributes in play to the strategy discard.
+    If its burnout is more than 0, move the burnout from the attributes in play to the strategy discard.
+    If its flight risk is more than 0, move the flight risk from the attributes in play to the strategy discard.
+    It loses its workaholic.
+    It loses its clean coder.
+    It loses its visionary.
+    It loses its toxic personality.
+    It loses its burnout.
+    It loses its flight risk.
     It is not fired.
   When a player has at least 2 cards in their bench, their development team and their ops team whose xp is more than 2:
     Only if the milestone row has a Talent Magnet.
@@ -615,6 +639,19 @@ In every phase:
     Only if no player is choosing offline products.
     Only if the milestone row has a Full Stack Founder.
     Move the full stack founder from the milestone row to their milestones.
+  When a card in the box is holding attributes:
+    If its workaholic is more than 0, move the workaholic from the attributes in play to the box.
+    If its clean coder is more than 0, move the clean coder from the attributes in play to the box.
+    If its visionary is more than 0, move the visionary from the attributes in play to the box.
+    If its toxic personality is more than 0, move the toxic personality from the attributes in play to the box.
+    If its burnout is more than 0, move the burnout from the attributes in play to the box.
+    If its flight risk is more than 0, move the flight risk from the attributes in play to the box.
+    It loses its workaholic.
+    It loses its clean coder.
+    It loses its visionary.
+    It loses its toxic personality.
+    It loses its burnout.
+    It loses its flight risk.
 
 Phase: modes
   Hint: Choose what each flex Senior, the Fixer and each Junior with a Skill token work on this turn: Blue, Red or QA. Each keeps its mode until you change it.
@@ -1015,6 +1052,7 @@ Phase: actions
   A player may pivot a card in their development.
     It costs 1 action.
     Then:
+      Every card on it that is egotistic is fired.
       Every card on it whose trait is Ego goes to the open job market.
       Every card on it is onboarding.
       For each card on it, it loses its pending blue.
@@ -4430,3 +4468,101 @@ Example: only a Debuff goes on a rival's staff, and a Cease & Desist waits in th
   Then it is rejected because "the card is a Training card or the card is a Workaholic or the card is a Clean Coder or the card is a Visionary"
   And p0 has 7 capital
   And p0's strategy hand has a Workaholic and a Cease & Desist
+
+
+Example: a Talent dismissed from the Board loses its Attributes, and their cards go to the strategy discard (section 15, section 18, the slice's R2)
+  Given the phase is actions
+  And p0's development has a Smart Lock
+  And the attributes in play has a Workaholic, a Toxic Personality, a Flight Risk and a Burnout
+  And the Smart Lock in p0's development has the Engineer on it
+  And the Engineer in p0's development team has 1 workaholic
+  And the Engineer in p0's development team has 1 toxic personality
+  And the Engineer in p0's development team has 1 flight risk
+  When p0 dismisses the Engineer
+  Then the open job market has the Engineer
+  And the Engineer in the open job market has 0 workaholic
+  And the Engineer in the open job market has 0 toxic personality
+  And the Engineer in the open job market has 0 flight risk
+  And the strategy discard has a Workaholic, a Toxic Personality and a Flight Risk
+  And the attributes in play has a Burnout
+
+Example: a Talent let go unpaid at Income loses its Attributes too (section 5, section 18, the slice's R2)
+  Given p1 has 1 capital
+  And p1's development has a Dating App
+  And the attributes in play has a Clean Coder and a Visionary
+  And the Dating App in p1's development has the Hacker on it
+  And the Hacker in p1's development team has 1 clean coder
+  And the Hacker in p1's development team has 1 visionary
+  And the turn passes to the left
+  Then the phase is income
+  When p1 lets go of the Hacker
+  Then the phase is actions
+  And the Hacker in the open job market has 0 clean coder
+  And the Hacker in the open job market has 0 visionary
+  And the strategy discard has a Clean Coder and a Visionary
+  And the attributes in play is empty
+
+Example: the Diva fired by a Pivot loses her Attributes, while the staff the Pivot benches keep theirs (section 6, ruling 9, the slice's R2)
+  Given the phase is actions
+  And p0's development has a Smart Lock
+  And the attributes in play has a Burnout and a Workaholic
+  And the Smart Lock in p0's development has the Diva and a Junior Hardware Eng on it
+  And the Diva in p0's development team has 1 burnout
+  And the Junior Hardware Eng in p0's development team has 1 workaholic
+  When p0 pivots the Smart Lock
+  Then the open job market has the Diva
+  And the Diva in the open job market has 0 burnout
+  And the Junior Hardware Eng in p0's bench has 1 workaholic
+  And the strategy discard has a Burnout
+  And the attributes in play has a Workaholic
+
+Example: a Talent discarded from the bench keeps its Attributes, and the rival who hires it from the open job market gets them (section 13, section 15, the slice's R2)
+  Given the phase is bench cleanup
+  And p0's bench has a Junior Software Dev, a QA Engineer, a QA Engineer, a QA Engineer, a Sales Rep and a Sales Rep
+  And the attributes in play has a Workaholic
+  And the Junior Software Dev in p0's bench has 1 workaholic
+  When p0 discards the Junior Software Dev
+  Then it is p1's turn
+  And the Junior Software Dev in the open job market has 1 workaholic
+  When p1 hires the Junior Software Dev
+  Then it is accepted
+  And p1 has 6 capital
+  And the Junior Software Dev in p1's bench has 1 workaholic
+  And the attributes in play has a Workaholic
+
+Example: Talents evicted from the open job market take their Attributes to the box, cards and all, whichever they hold (section 15, the slice's R2)
+  Given the phase is actions
+  And the open job market has the Hacker, the Architect, the Veteran, the Diva and the Engineer
+  And the attributes in play has a Workaholic, a Clean Coder, a Visionary, a Toxic Personality and a Burnout
+  And p0's development has a Dating App
+  And the Hacker in the open job market has 1 workaholic
+  And the Architect in the open job market has 1 clean coder
+  And the Veteran in the open job market has 1 visionary
+  And the Diva in the open job market has 1 toxic personality
+  And the Engineer in the open job market has 1 burnout
+  And the Dating App in p0's development has a Junior Software Dev, a Junior Software Dev, a Junior Software Dev, a Junior Software Dev and a Junior Software Dev on it
+  When p0 dismisses a Junior Software Dev
+  And p0 dismisses a Junior Software Dev
+  And p0 dismisses a Junior Software Dev
+  And p0 dismisses a Junior Software Dev
+  And p0 dismisses a Junior Software Dev
+  Then the box has the Hacker, the Architect, the Veteran, the Diva, the Engineer, a Workaholic, a Clean Coder, a Visionary, a Toxic Personality and a Burnout
+  And the Hacker in the box has 0 workaholic
+  And the Architect in the box has 0 clean coder
+  And the Veteran in the box has 0 visionary
+  And the Diva in the box has 0 toxic personality
+  And the Engineer in the box has 0 burnout
+  And the attributes in play is empty
+  And the strategy discard is empty
+
+Example: a Talent evicted with Flight Risk takes it to the box (section 15, the slice's R2)
+  Given the phase is actions
+  And the open job market has the Fixer, a Junior PM, a Junior PM, a Growth Hacker and an HR Manager
+  And the attributes in play has a Flight Risk
+  And p0's development has a Dating App
+  And the Fixer in the open job market has 1 flight risk
+  And the Dating App in p0's development has a Junior Software Dev on it
+  When p0 dismisses the Junior Software Dev
+  Then the box has the Fixer and a Flight Risk
+  And the Fixer in the box has 0 flight risk
+  And the attributes in play is empty

@@ -163,6 +163,8 @@ const debuffZones = (seats: PlayerId[], by: PlayerId): string[] => {
   const others = [...seats.slice(at + 1), ...seats.slice(0, at)];
   return [...others.map((seat) => zoneIdFor('development team', seat)), ...others.map((seat) => zoneIdFor('ops team', seat))];
 };
+/** The Attribute counts a card holds. */
+const attributesOn = (card: CardState) => Object.values(ATTRIBUTES).filter((count) => tokenOn(card, count) > 0);
 /** The rows that keep only their 5 newest cards, letting the oldest go to the box. */
 const POOLS = ['open-job-market', 'open-idea-pool'];
 /** The rows each player has that only they can see: their hands, the rows a step deals into, and the Brainstorm look (§3, §15.C). */
@@ -2184,7 +2186,7 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     const attributes: string[] = [];
     const inPlay = new Set(zoneCards(after, 'attributes-in-play').map((c) => nameOf(c) as string));
     for (const [name, count] of Object.entries(ATTRIBUTES)) {
-      const held = after.cards.some((c) => tokenOn(c, count) === 1);
+      const held = after.cards.some((c) => c.zoneId !== 'box' && tokenOn(c, count) === 1);
       if (inPlay.has(name) !== held) attributes.push(`${name} ${inPlay.has(name) ? 'is' : 'is not'} in the attributes in play, ${held ? '' : 'not '}held`);
     }
     const pressed = [PLAY_TRAINING, PLAY_DEBUFF].includes(move.type) ? ATTRIBUTES[nameOf(card!) as string] : undefined;
@@ -2196,6 +2198,32 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
         if (now > 0 && !['Senior Developer', 'Specialist', 'Junior'].includes(c.data?.role as string)) attributes.push(`${c.id} (${nameOf(c)}) holds ${count}`);
         const rose = now - (was === undefined ? 0 : tokenOn(was, count));
         if (rose > 0 && !(c.id === move.onto && count === pressed && rose === 1)) attributes.push(`${c.id} (${nameOf(c)}) gained ${rose} ${count}`);
+      }
+      // Where a count falls (§15.A.3–4, §15.C, §18.B, R2): fired from the Board, it leaves and its card goes to the strategy discard;
+      // evicted to the box, its card goes there too; benched, laid off or rehired, the card keeps it.
+      if (was === undefined) continue;
+      const held = attributesOn(was);
+      const row = (zoneId: string) => zoneInfo(game!, zoneId)?.spec.name;
+      const [fromRow, toRow] = [row(was.zoneId), row(c.zoneId)];
+      const fired = ['development team', 'ops team'].includes(fromRow as string) && toRow === 'open job market'
+        && [DISMISS_FROM_PROJECT, DISMISS_FROM_OPS, ...Object.values(LET_GO), PIVOT].includes(move.type);
+      const evicted = fromRow === 'open job market' && toRow === 'box';
+      const kept = (fromRow === 'bench' && toRow === 'open job market' && [DISCARD_BENCH, LAY_OFF].includes(move.type))
+        || (['development team', 'ops team'].includes(fromRow as string) && toRow === 'bench' && [RECALL, PIVOT].includes(move.type))
+        || (fromRow === 'open job market' && toRow === 'bench' && move.type === HIRE_MARKET);
+      const parked = (name: string) => after.cards.find((a) => nameOf(a) === name)?.zoneId;
+      const named = (count: string) => Object.keys(ATTRIBUTES).find((name) => ATTRIBUTES[name] === count)!;
+      if (fired || evicted) {
+        if (attributesOn(c).length > 0) attributes.push(`${c.id} (${nameOf(c)}) still holds ${attributesOn(c).join(', ')} ${fired ? 'fired' : 'evicted'}`);
+        for (const count of held) {
+          const where = parked(named(count));
+          if (where !== (fired ? 'strategy-discard' : 'box')) attributes.push(`${named(count)} is in ${where} after ${c.id} was ${fired ? 'fired' : 'evicted'}`);
+        }
+      } else if (kept) {
+        sameList(attributesOn(c), held, () => `the counts ${c.id} (${nameOf(c)}) kept ${at}`);
+      } else {
+        const fell = held.filter((count) => tokenOn(c, count) < tokenOn(was, count));
+        if (fell.length > 0) attributes.push(`${c.id} (${nameOf(c)}) lost ${fell.join(', ')} from ${fromRow} to ${toRow}`);
       }
     }
     if (move.type === PLAY_DEBUFF && zoneInfo(game!, cardById(before, move.onto as string)!.zoneId)?.seat === by) {
@@ -2334,8 +2362,9 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     noneOf(letGo.filter((id) => !box.includes(id)), () => `cards a pool let go of that are not in the box ${at}`);
     // Only the pools fill the box, and only with their oldest cards: a pool that let go of a card the moment it entered would
     // show the same 5 cards as before, so this is what catches it.
-    // This assumes only the pools send cards to the box, as in slice 1a; a later slice that boxes cards some other way must widen it.
-    sameList(box.filter((id) => !boxed.has(id)).sort(), letGoNow.sort(), () => `cards new in the box ${at}`);
+    // Besides the pools, only an evicted Talent's Attribute cards go there, from the attributes in play (§15.A.4, R2).
+    const parkedBoxed = box.filter((id) => !boxed.has(id) && cardById(before, id)?.zoneId === 'attributes-in-play');
+    sameList(box.filter((id) => !boxed.has(id)).sort(), [...letGoNow, ...parkedBoxed].sort(), () => `cards new in the box ${at}`);
 
     // Turns: each one that starts is the next seat's.
     const rounds = (after.data[ROUND_KEY] as number) - (before.data[ROUND_KEY] as number);
@@ -2382,7 +2411,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(246);
+    expect(results).toHaveLength(252);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -2485,6 +2514,8 @@ describe('Startup Simulator (designer language)', () => {
     // Which side of the stack a product is on, which Full Stack Founder reads: the hardware side's Tags or the software side's, and
     // neither while it is offline (§20.G, ruling 5).
     for (const flag of ['hardware side', 'software side']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
+    // The Diva's Ego, which her Pivot fires her for, and a card holding any Attribute count, which the box strips (§6, §15, R2).
+    for (const flag of ['egotistic', 'holding attributes']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
   });
 
   // The next three tests each add to the rules an example that the rules refuse for naming no button alone, and then an example for each
@@ -4302,7 +4333,7 @@ describe('what the page shows of slice 5', () => {
     // In the rules' order, each read by a button's Then: lines. Managing: Brainstorm's third card. Agile: the Onboarding token an Agile PM
     // spares at Assign and Reassign (§11.E.3). Coaching: the working Veteran's Mentor at Launch (§20). The pending Badge: made Permanent
     // at Launch (§11.E.2). Attaching: the Growth Hacker and the Sales Rep, which a hire, an Assign and Launch put on a product (§20.B).
-    expect(pressFlags(game!)).toEqual(['managing', 'agile', 'coaching', 'pending badge', 'attaching']);
+    expect(pressFlags(game!)).toEqual(['managing', 'agile', 'egotistic', 'coaching', 'pending badge', 'attaching']);
     // The pending Badge reads the project's Tier: a seat that can't see that project is not told it.
     expect(holderFlags(game!)).toEqual(['pending badge']);
   });
