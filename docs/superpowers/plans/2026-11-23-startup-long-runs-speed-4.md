@@ -66,7 +66,7 @@
 git apply --include='src/engine/core/lang/library/*' /tmp/claude-0/-home-user/fbd53c51-0292-5f8c-bf20-70c6ad4ed3bd/scratchpad/perf4/candidates/set-on-wave.diff
 ```
 
-- [ ] **Step 2: Run** `npx vitest run src/engine/core/lang/library/player-value-phrases.test.ts`. Expected: FAIL in "works a value out once for a seat in a state" and "gives each of many states its own values…", whose call counts grow at BASE. The other three pass at BASE. Record which ones fail.
+- [ ] **Step 2: Run** `npx vitest run src/engine/core/lang/library/player-value-phrases.test.ts`. Expected: FAIL in the three tests that count calls on a value asked again ("works a value out once for a seat in a state", "works a value out afresh while the checker answers…" and "gives each of many states its own values…"), whose counts grow at BASE. The other two pass at BASE. Record which ones fail.
 - [ ] **Step 3: Apply the runtime hunk.**
 
 ```bash
