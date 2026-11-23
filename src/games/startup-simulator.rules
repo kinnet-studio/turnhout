@@ -5274,6 +5274,15 @@ Example: Supply Chain Logjam takes nothing from a burned-out unit or from the Fi
   When p0 ends their actions
   Then the Smart Lock in p0's development has 2 red cubes
 
+Example: Hardware Hackathon gives nothing to the Fixer working in QA, so its Red is 0, not 1 (section 20, section 11, the slice's R3)
+  Given the event in play has the Hardware Hackathon
+  And the phase is actions
+  And p0's development has a Smart Lock
+  And the Smart Lock in p0's development has the Engineer and the Fixer on it
+  And the Fixer in p0's development team is qa mode
+  When p0 ends their actions
+  Then the Smart Lock in p0's development has 4 red cubes
+
 Example: Tech Bubble's $1 comes before Bug Decay and the $0 floor, and an Offline product gets none (section 20, section 5)
   Given the event in play has the Tech Bubble
   And p1's operations has a To-Do List and a Dating App
