@@ -205,6 +205,7 @@ Blue output:
   A blue mode card's blue output is its output.
   A card's blue output goes up by its working blue xp.
   An overworked in blue card's blue output goes up by 2.
+  An open source boosted card's blue output goes up by 1.
   A red mode card's blue output is 0.
   A qa mode card's blue output is 0.
   An onboarding card's blue output is 0.
@@ -215,6 +216,8 @@ Red output:
   A red mode card's red output is its output.
   A card's red output goes up by its working red xp.
   An overworked in red card's red output goes up by 2.
+  A hackathon boosted card's red output goes up by 1.
+  A logjammed card's red output goes down by 1.
   A qa mode card's red output is 0.
   A blue mode card's red output is 0.
   An onboarding card's red output is 0.
@@ -285,6 +288,8 @@ QA made:
 
 Blue bandwidth:
   A card's blue bandwidth is its blue output.
+  A server crashed card's blue bandwidth goes down by 1.
+  A card's blue bandwidth is at least 0.
 
 Red bandwidth:
   A card's red bandwidth is its red output.
@@ -496,6 +501,35 @@ Pitching:
 Pitched:
   Only if some card on it is pitching.
 
+Bubbly:
+  Only if the event in play has the Tech Bubble.
+
+Legacy:
+  Only if the event in play has the Legacy Code.
+  Only if it is decaying.
+
+Open source boosted:
+  Only if the event in play has the Open Source Boom.
+  Only if one of:
+    It is a software card.
+    It is a flex card.
+    It is blue mode.
+
+Hackathon boosted:
+  Only if the event in play has the Hardware Hackathon.
+  Only if one of:
+    It is a hardware card.
+    It is red mode.
+
+Server crashed:
+  Only if the event in play has the Server Crash.
+
+Logjammed:
+  Only if the event in play has the Supply Chain Logjam.
+  Only if one of:
+    It is a hardware card.
+    It is red mode.
+
 Price:
   A pitched card's price is 2.
 
@@ -604,6 +638,7 @@ Declarable:
 
 Rev:
   A card's rev goes up by the total rev bonus of the cards on it.
+  A bubbly card's rev goes up by 1.
   A card's rev goes down by its bug decay.
   A card's rev is at least 0.
   An offline card's rev is 0.
@@ -633,6 +668,7 @@ Decaying:
 
 Bug decay:
   A decaying card's bug decay is its bugs.
+  A legacy card's bug decay goes up by its bugs.
 
 Portfolio points:
   A card's portfolio points is its val.
@@ -5090,3 +5126,163 @@ Example: no Event is revealed after the last round: the Crash round ends the gam
   Then the game is over
   And the event in play has the Venture Capital Rain
   And the event deck has the Headhunter Holiday
+
+Example: Tech Bubble adds $1 to each Active product's revenue at every Income of its round, and ends at the next Round Start (section 20, section 5, ruling 13)
+  Given the event in play has the Tech Bubble
+  And the event deck has the Whistleblower Protection Act
+  And p0's operations has a To-Do List
+  And p0's ops team has a Junior Software Dev
+  And p1's operations has a Dating App and a Smart Lock
+  And p1's ops team has a Junior Software Dev and a Junior Hardware Eng
+  And it is p1's turn
+  Then p1 has 12 capital
+  When p1 ends their actions
+  Then the event in play has the Whistleblower Protection Act
+  And p0 has 8 capital
+
+Example: Legacy Code makes each Bug cost $2 of revenue, still never below $0 (section 20, section 5)
+  Given the event in play has the Legacy Code
+  And p1's operations has a Payment Gateway and a Dating App
+  And p1's ops team has a Junior Software Dev and a Junior Software Dev
+  And the Payment Gateway in p1's operations has 1 bug
+  And the Dating App in p1's operations has 1 bug
+  And the turn passes to the left
+  Then p1 has 8 capital
+  And p1 has 1 market share
+
+Example: Open Source Boom gives every staff member working in Blue 1 more, on a project and in the ops team, but a burned-out one still makes nothing, learns nothing and is no teammate for Synergy (section 20, the slice's R3)
+  Given the event in play has the Open Source Boom
+  And p1's development has a Dating App
+  And p1's operations has a To-Do List and a Mobile Wallet
+  And p1's ops team has a Junior Software Dev
+  And the Dating App in p1's development has a Junior PM, a Junior Software Dev and a Firmware Specialist on it
+  And the Junior Software Dev in p1's development team has 1 burnout
+  And the turn passes to the left
+  Then the phase is modes
+  When p1 confirms their modes
+  Then the phase is income
+  And p1's blue supply is 2
+  And p1 has 10 capital
+  When p1 pays salaries
+  And p1 ends their actions
+  Then the Dating App in p1's development has 4 blue cubes
+  And the Junior Software Dev in p1's development team has 0 pending blue
+
+Example: Hardware Hackathon gives every staff member working in Red 1 more, and Supply Chain Logjam 1 less, on a project and in the ops team (section 20)
+  Given the event in play has the Hardware Hackathon
+  And the event deck has the Supply Chain Logjam
+  And p1's development has a Smart Lock
+  And p1's operations has a Smart Thermostat and a Smart Toy
+  And p1's ops team has a Junior Hardware Eng
+  And the Smart Lock in p1's development has a Junior Hardware Eng on it
+  And the turn passes to the left
+  Then p1's red supply is 2
+  And p1 has 11 capital
+  When p1 ends their actions
+  Then the Smart Lock in p1's development has 2 red cubes
+  When p0 ends their actions
+  Then it is p1's turn
+  And the event in play has the Supply Chain Logjam
+  And the phase is ops check
+  And p1's red supply is 0
+  When p1 switches off the Smart Thermostat
+  And p1 switches off the Smart Toy
+  And p1 confirms the products online
+  And p1 ends their actions
+  Then the Smart Lock in p1's development has 2 red cubes
+  And p1 has 11 capital
+
+Example: Server Crash takes 1 off the Blue bandwidth of each ops staff member, never below 0, and leaves development alone (section 20, the spec's call)
+  Given the event in play has the Server Crash
+  And the event deck has the Whistleblower Protection Act
+  And p1's development has a Dating App
+  And p1's operations has a Smart Lock and a To-Do List
+  And p1's ops team has a Junior Software Dev, a Firmware Specialist and a Junior Hardware Eng
+  And the Firmware Specialist in p1's ops team is red mode
+  And the Dating App in p1's development has a Junior Software Dev on it
+  And the turn passes to the left
+  Then the phase is modes
+  When p1 confirms their modes
+  Then the phase is ops check
+  And p1's blue supply is 0
+  And p1's red supply is 3
+  When p1 switches off the To-Do List
+  And p1 confirms the products online
+  And p1 pays salaries
+  And p1 ends their actions
+  Then the Dating App in p1's development has 1 blue cube
+  And p1 has 7 capital
+
+Example: Legacy Code doubles no Bug Decay that is stopped: a QA Engineer with 2 XP in the ops team keeps every Active product's full revenue (section 20, section 11, ruling 19)
+  Given the event in play has the Legacy Code
+  And p1's operations has a Dating App and a Mobile Wallet
+  And the Dating App in p1's operations has 2 bugs
+  And the Mobile Wallet in p1's operations has 1 bug
+  And p1's ops team has a QA Engineer, a Junior Software Dev and a Junior Software Dev
+  And the QA Engineer in p1's ops team has 2 training xp
+  And the turn passes to the left
+  Then the phase is income
+  And p1 has 10 capital
+
+Example: Open Source Boom gives its 1 more to a Junior trained in Blue and declared Blue, and nothing to a flex Senior declared Red (section 20, section 11)
+  Given the event in play has the Open Source Boom
+  And p1's operations has a To-Do List
+  And p1's ops team has a Junior Hardware Eng and a Firmware Specialist
+  And the Junior Hardware Eng in p1's ops team has 1 blue skill token
+  And the turn passes to the left
+  Then the phase is modes
+  When p1 declares the Junior Hardware Eng, choosing blue
+  And p1 declares the Firmware Specialist, choosing red
+  And p1 confirms their modes
+  Then p1's blue supply is 2
+  And p1's red supply is 2
+
+Example: Hardware Hackathon gives its 1 more, and Supply Chain Logjam its 1 less, to a Junior trained in Red and declared Red (section 20, section 11)
+  Given the event in play has the Hardware Hackathon
+  And the event deck has the Supply Chain Logjam
+  And p1's operations has a Smart Thermostat
+  And p1's ops team has a Junior QA Tester
+  And the Junior QA Tester in p1's ops team has 1 red skill token
+  And the turn passes to the left
+  Then the phase is modes
+  When p1 declares the Junior QA Tester, choosing red
+  And p1 confirms their modes
+  Then p1's red supply is 2
+  When p1 pays salaries
+  And p1 ends their actions
+  And p0 ends their actions
+  Then it is p1's turn
+  And the event in play has the Supply Chain Logjam
+  And p1's red supply is 0
+
+Example: Hardware Hackathon gives a burned-out unit nothing, as Burnout's 0 comes after every Event (section 20, the slice's R3)
+  Given the event in play has the Hardware Hackathon
+  And the phase is actions
+  And p0's development has a Smart Lock
+  And the Smart Lock in p0's development has the Engineer and the Diva on it
+  And the Diva in p0's development team has 1 burnout
+  When p0 ends their actions
+  Then the Smart Lock in p0's development has 4 red cubes
+
+Example: Supply Chain Logjam takes nothing from a burned-out unit or from the Fixer working in QA, so no unit makes less than 0 (section 20, the slice's R3, the spec's call)
+  Given the event in play has the Supply Chain Logjam
+  And the phase is actions
+  And p0's development has a Smart Lock
+  And the Smart Lock in p0's development has the Engineer, the Diva and the Fixer on it
+  And the Diva in p0's development team has 1 burnout
+  And the Fixer in p0's development team is qa mode
+  When p0 ends their actions
+  Then the Smart Lock in p0's development has 2 red cubes
+
+Example: Tech Bubble's $1 comes before Bug Decay and the $0 floor, and an Offline product gets none (section 20, section 5)
+  Given the event in play has the Tech Bubble
+  And p1's operations has a To-Do List and a Dating App
+  And p1's ops team has a Junior Software Dev
+  And the To-Do List in p1's operations has 2 bugs
+  And the turn passes to the left
+  Then the phase is ops check
+  When p1 switches off the Dating App
+  And p1 confirms the products online
+  Then the phase is actions
+  And p1 has 7 capital
+  And p1 has 0 market share

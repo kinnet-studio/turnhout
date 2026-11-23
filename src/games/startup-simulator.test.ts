@@ -2601,6 +2601,24 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       toxicity.push(...toxicCube(`${seat}'s ops team`, given, supplies, toxic.data?.onboarding !== true));
     }
     noneOf(toxicity, () => `Toxic Personality and Burnout ${at}`);
+    // The Events' output lines (Review Focus 4): no Board card's output or Blue bandwidth is below 0, and a card's Blue or Red output
+    // changes only in a move that changed the Event in play or the card itself (its counts, mode flags, onboarding or zone): a modifier
+    // never acts outside its round.
+    const outputs: string[] = [];
+    const eventMoved = eventOf(before) !== eventOf(after);
+    for (const c of after.cards) {
+      if (!staffZones.has(c.zoneId)) continue;
+      for (const name of ['blue output', 'red output', 'qa output', 'blue bandwidth']) {
+        const value = runtime.workedValue(after, c.id, name) as number | null;
+        if (value !== null && value < 0) outputs.push(`${c.id} (${nameOf(c)}) has ${name} ${value}`);
+      }
+      if (eventMoved || wasById.get(c.id) !== c) continue;
+      for (const name of ['blue output', 'red output']) {
+        const [was, now] = [runtime.workedValue(before, c.id, name), runtime.workedValue(after, c.id, name)];
+        if (was !== now) outputs.push(`${c.id} (${nameOf(c)}): ${name} ${was} → ${now}`);
+      }
+    }
+    noneOf(outputs, () => `the outputs ${at}`);
     // The Hacker with Clean Coder adds no Bug to a project he joins (§20.B "unless he has Clean Code himself").
     if ([...REASSIGNS, ...HIRES, ASSIGN_TO_PROJECT].includes(move.type)) {
       for (const c of after.cards) {
@@ -2821,7 +2839,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(282);
+    expect(results).toHaveLength(293);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -2936,6 +2954,10 @@ describe('Startup Simulator (designer language)', () => {
     // TechCrunch Feature's price, which a working Sales Rep on the product lowers to $2 (§20.A, §20.B).
     expect(worked.price).toMatchObject({ kind: 'number', refines: true });
     for (const flag of ['pitching', 'pitched']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
+    // The round-long Events' flags, each reading the Event in play (§20.D 2, 5, 7, 8, 11, 12).
+    for (const flag of ['bubbly', 'legacy', 'open source boosted', 'hackathon boosted', 'server crashed', 'logjammed']) {
+      expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
+    }
   });
 
   // The next three tests each add to the rules an example that the rules refuse for naming no button alone, and then an example for each
@@ -5055,8 +5077,7 @@ describe('Review Focus: a reshuffle no seat can follow (plan 6-1, Task 6)', () =
 
 describe('what the view reads in the centre', () => {
   it('reads the Event in play as every seat sees it, labels no flag that tests it, and names no new press flag (plan 6-3, Task 1)', () => {
-    // Run ahead of plan 6-2b's Task 2 (6-3's G1), no worked value reads the Event in play yet; 6-2b's Task 2 makes this ['event in play'].
-    expect(inPlayZones(game!)).toEqual([]);
+    expect(inPlayZones(game!)).toEqual(['event in play']);
     expect(pressFlags(game!)).toEqual(['managing', 'agile', 'egotistic', 'coaching', 'pending badge', 'attaching']);
     expect(holderFlags(game!)).toEqual(['pending badge']);
     const eventFlags = ['bubbly', 'legacy', 'open source boosted', 'hackathon boosted', 'server crashed', 'logjammed', 'chip short',
