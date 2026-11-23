@@ -201,7 +201,9 @@ const PLAY_ALONE = 'play a card in their strategy hand';
 const techCrunchPrice = (runtime: LangRuntime, state: GameState, cardId: string, productId: string): number =>
   Math.min(...[runtime.workedValue(state, cardId, 'price'), runtime.workedValue(state, productId, 'price')].filter((p): p is number => typeof p === 'number'));
 /** The Attribute counts a card holds. */
-const attributesOn = (card: CardState) => Object.values(ATTRIBUTES).filter((count) => tokenOn(card, count) > 0);
+/** The Attributes' counts, in `ATTRIBUTES` order, read once: the checks after every move go through them for every card. */
+const ATTRIBUTE_COUNTS = Object.values(ATTRIBUTES);
+const attributesOn = (card: CardState) => ATTRIBUTE_COUNTS.filter((count) => tokenOn(card, count) > 0);
 /** The rows that keep only their 5 newest cards, letting the oldest go to the box. */
 const POOLS = ['open-job-market', 'open-idea-pool'];
 /** The rows each player has that only they can see: their hands, the rows a step deals into, and the Brainstorm look (§3, §15.C). */
@@ -266,6 +268,10 @@ const TOKENS = [
 const JUNIOR_TOKENS = TOKENS.filter((name) => name.endsWith(' tokens'));
 /** The Pending tokens a Junior learns on a project, one of each colour at most (§11.B, ruling 1). */
 const PENDING = ['pending blue', 'pending red', 'pending green'] as const;
+/** Each track's colour with the names of its cubes and its cut, made once for the checks after every move. */
+const TRACK_KEYS = [['blue', 'blue cubes', 'cut blue cubes'], ['red', 'red cubes', 'cut red cubes']] as const;
+/** The counts the Engine leaves on a card while its owner's turn is in it (§5 Phase D, R3). */
+const ENGINE_COUNTS = ['new blue cubes', 'new red cubes', 'fixed bugs'];
 /** The Skill token in the colour each skill works in already, which no card of that skill holds (§11.A.1). */
 const NATIVE_SKILL: Record<string, string> = { software: 'blue skill tokens', hardware: 'red skill tokens', qa: 'green skill tokens' };
 /** The traits of the only Specialists that earn Training XP, 2 at most: the QA Engineer's and the Sales Rep's (§11.D). */
@@ -1485,6 +1491,9 @@ const REPLAYED = [
   'Training that asked a choice or had it filled in', 'Milestone claims', 'Debuffs', 'strips', 'TechCrunch Features', 'Design Sprints',
 ] as const;
 
+/** A game kept for the Greenlight test: the moves to its first Greenlight that answered a choice, and the states before and after it. */
+type GreenlitGame = { log: Move[]; before: GameState | null; after: GameState };
+
 /** A game kept for the replay and view tests: its log, the state before its last move, its end, the moves watched and its counts. */
 type KeptGame = {
   log: Move[]; beforeLast: GameState; end: GameState; watched: number; seen: Record<(typeof REPLAYED)[number], number>;
@@ -2076,6 +2085,8 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
   const letGo: string[] = [];
   /** The seat whose turn started last. */
   let lastTurn: PlayerId | null = null;
+  /** The row a zone is, by its name in the rules. */
+  const rowOf = (zoneId: string) => zoneInfo(game!, zoneId)?.spec.name;
 
   return (before, move, after) => {
     const by = move.by as PlayerId;
@@ -2269,46 +2280,46 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     const atGenerate = () => (generating ??= atTheEngine(before, move, after));
     const board: string[] = [];
     for (const c of after.cards) {
-      const which = `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
+      const which = () => `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
       const holder = c.data?.[HOLDER_KEY];
       const holderZone = typeof holder === 'string' ? cardById(after, holder)?.zoneId : undefined;
       if (holder !== undefined && (!holdersOf.has(c.zoneId) || holderZone !== holdersOf.get(c.zoneId))) {
-        board.push(`${which} is on ${JSON.stringify(holder)}, in ${holderZone}`);
+        board.push(`${which()} is on ${JSON.stringify(holder)}, in ${holderZone}`);
       }
       if (holder !== undefined && !projectsOf.has(c.zoneId) && !runtime.workedFlag(after, c.id, 'attaching')) {
-        board.push(`${which} is on ${JSON.stringify(holder)} but is not attaching`);
+        board.push(`${which()} is on ${JSON.stringify(holder)} but is not attaching`);
       }
-      if (holder === undefined && projectsOf.has(c.zoneId)) board.push(`${which} is on no card`);
+      if (holder === undefined && projectsOf.has(c.zoneId)) board.push(`${which()} is on no card`);
       const need = (color: string) => runtime.workedValue(after, c.id, `${color} need`) as number;
-      for (const color of ['blue', 'red']) {
-        const cubes = cubesOn(c, `${color} cubes`);
+      for (const [color, cubesKey, cutKey] of TRACK_KEYS) {
+        const cubes = cubesOn(c, cubesKey);
         // Off the Board a card has no cut, so its need is its cost, at least 0: only one with cubes can hold more than it.
         if ((cubes > 0 || built.has(c.zoneId)) && cubes > need(color)) {
-          board.push(`${which} has ${cubes} ${color} cubes for a need of ${need(color)}`);
+          board.push(`${which()} has ${cubes} ${color} cubes for a need of ${need(color)}`);
         }
-        const cut = c.data?.[`cut ${color} cubes`];
-        if (cut !== undefined && !built.has(c.zoneId)) board.push(`${which} keeps a cut of ${cut} ${color} cubes`);
+        const cut = c.data?.[cutKey];
+        if (cut !== undefined && !built.has(c.zoneId)) board.push(`${which()} keeps a cut of ${cut} ${color} cubes`);
       }
       // The Engine's counts wait on a card only while its owner's turn is in the Engine: the cubes it generated until it commits them,
       // and the Bugs ops QA cleaned by a press until the step ends (§5 Phase D, R3).
       const owner = ownerOf.get(c.zoneId);
       const inTheEngine = owner !== undefined && current === owner && phase === 'engine';
-      for (const kind of ['new blue cubes', 'new red cubes', 'fixed bugs']) {
-        if (cubesOn(c, kind) !== 0 && !inTheEngine) board.push(`${which} keeps ${cubesOn(c, kind)} ${kind}`);
+      for (const kind of ENGINE_COUNTS) {
+        if (cubesOn(c, kind) !== 0 && !inTheEngine) board.push(`${which()} keeps ${cubesOn(c, kind)} ${kind}`);
       }
-      if (bugsOn(c) !== 0 && !built.has(c.zoneId)) board.push(`${which} has ${bugsOn(c)} bugs`);
+      if (bugsOn(c) !== 0 && !built.has(c.zoneId)) board.push(`${which()} has ${bugsOn(c)} bugs`);
       // A Bug costs its product $1 of revenue, and a product earns at least $0 (§5 Phase B).
-      if (operations.has(c.zoneId) && revOf(runtime, after, c) < 0) board.push(`${which} earns ${revOf(runtime, after, c)}`);
+      if (operations.has(c.zoneId) && revOf(runtime, after, c) < 0) board.push(`${which()} earns ${revOf(runtime, after, c)}`);
       if (!developments.has(c.zoneId)) continue;
       for (const color of ['blue', 'red']) {
         const [cut, cost] = [cubesOn(c, `cut ${color} cubes`), (c.data?.[`${color} cost`] as number | undefined) ?? 0];
-        if (cut > cost) board.push(`${which} has a cut of ${cut} ${color} cubes for a cost of ${cost}`);
+        if (cut > cost) board.push(`${which()} has a cut of ${cut} ${color} cubes for a cost of ${cost}`);
       }
-      if (need('blue') + need('red') < 1) board.push(`${which} needs ${need('blue')} blue and ${need('red')} red cubes`);
+      if (need('blue') + need('red') < 1) board.push(`${which()} needs ${need('blue')} blue and ${need('red')} red cubes`);
       // A project gains cubes only from a team that has its leads, as the team was when the Engine generated them (§3).
       const was = cardById(before, c.id);
       const rose = ['blue', 'red'].some((color) => cubesOn(c, `${color} cubes`) > (was === undefined ? 0 : cubesOn(was, `${color} cubes`)));
-      if (rose && runtime.workedFlag(atGenerate(), c.id, 'stalled')) board.push(`${which} gained cubes while it was stalled`);
+      if (rose && runtime.workedFlag(atGenerate(), c.id, 'stalled')) board.push(`${which()} gained cubes while it was stalled`);
     }
     noneOf(board, () => `the Board ${at}`);
     // The Diva's Ego keeps her where she works: no reassign the rules take moves her (§6, §20.B.1).
@@ -2335,23 +2346,22 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     const wasById = new Map(before.cards.map((c) => [c.id, c]));
     const modes: string[] = [];
     for (const c of after.cards) {
-      const which = `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
+      const which = () => `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
       const was = wasById.get(c.id);
       const left = was !== undefined && teams.has(was.zoneId) && !teams.has(c.zoneId);
       for (const mode of MODES) {
         const now = c.data?.[mode] === true;
-        if (now && !teams.has(c.zoneId)) modes.push(`${which} is ${mode} off the Board`);
+        if (now && !teams.has(c.zoneId)) modes.push(`${which()} is ${mode} off the Board`);
         // Red mode only on a declarable card; QA mode only on a QA Skill card, a qa card or one with a green Skill token.
-        const mayTake = () => (mode === 'red mode' ? runtime.workedFlag(after, c.id, 'declarable')
-          : c.data?.trait === 'QA Skill' || c.data?.skill === 'qa' || tokenOn(c, 'green skill tokens') > 0);
-        if (now && !mayTake()) modes.push(`${which} is ${mode}, which it may not be`);
-        if (now !== (was?.data?.[mode] === true) && c.id !== declared && !left) modes.push(`${which} became ${now ? '' : 'not '}${mode}`);
+        if (now && !(mode === 'red mode' ? runtime.workedFlag(after, c.id, 'declarable')
+          : c.data?.trait === 'QA Skill' || c.data?.skill === 'qa' || tokenOn(c, 'green skill tokens') > 0)) modes.push(`${which()} is ${mode}, which it may not be`);
+        if (now !== (was?.data?.[mode] === true) && c.id !== declared && !left) modes.push(`${which()} became ${now ? '' : 'not '}${mode}`);
       }
       // Blue mode only on a Board card with a blue Skill token, and it changes as the other modes do.
       const blue = c.data?.[BLUE_MODE] === true;
-      if (blue && !teams.has(c.zoneId)) modes.push(`${which} is ${BLUE_MODE} off the Board`);
-      if (blue && tokenOn(c, 'blue skill tokens') === 0) modes.push(`${which} is ${BLUE_MODE} with no blue Skill token`);
-      if (blue !== (was?.data?.[BLUE_MODE] === true) && c.id !== declared && !left) modes.push(`${which} became ${blue ? '' : 'not '}${BLUE_MODE}`);
+      if (blue && !teams.has(c.zoneId)) modes.push(`${which()} is ${BLUE_MODE} off the Board`);
+      if (blue && tokenOn(c, 'blue skill tokens') === 0) modes.push(`${which()} is ${BLUE_MODE} with no blue Skill token`);
+      if (blue !== (was?.data?.[BLUE_MODE] === true) && c.id !== declared && !left) modes.push(`${which()} became ${blue ? '' : 'not '}${BLUE_MODE}`);
     }
     noneOf(modes, () => `the modes ${at}`);
     if (declared !== undefined) {
@@ -2369,16 +2379,16 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     const graduates = Object.values(KEEP_PENDING).includes(move.type) || move.type === MENTOR ? move.cardId : undefined;
     const tokens: string[] = [];
     for (const c of after.cards) {
-      const which = `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
+      const which = () => `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
       const junior = c.data?.role === 'Junior';
-      for (const name of JUNIOR_TOKENS) if (tokenOn(c, name) > 0 && !junior) tokens.push(`${which} has ${tokenOn(c, name)} ${name}`);
+      if (!junior) for (const name of JUNIOR_TOKENS) if (tokenOn(c, name) > 0) tokens.push(`${which()} has ${tokenOn(c, name)} ${name}`);
       const native = NATIVE_SKILL[c.data?.skill as string];
-      if (native !== undefined && tokenOn(c, native) > 0) tokens.push(`${which} has ${tokenOn(c, native)} ${native}, its own colour`);
+      if (native !== undefined && tokenOn(c, native) > 0) tokens.push(`${which()} has ${tokenOn(c, native)} ${native}, its own colour`);
       const xp = junior ? runtime.workedValue(after, c.id, 'xp') as number : 0;
-      if (xp > 4) tokens.push(`${which} has ${xp} xp`);
+      if (xp > 4) tokens.push(`${which()} has ${xp} xp`);
       const was = wasById.get(c.id);
       const gained = XP_TOKENS.reduce((total, name) => total + Math.max(0, tokenOn(c, name) - (was === undefined ? 0 : tokenOn(was, name))), 0);
-      if (c.id === graduates ? gained !== 1 : gained > (move.type === LAUNCH ? 1 : 0)) tokens.push(`${which} gained ${gained} xp tokens`);
+      if (c.id === graduates ? gained !== 1 : gained > (move.type === LAUNCH ? 1 : 0)) tokens.push(`${which()} gained ${gained} xp tokens`);
     }
     noneOf(tokens, () => `the XP and Skill tokens ${at}`);
     // Training plays only a Training card, which goes to the strategy discard, and changes nothing but its target's Skill tokens, Training
@@ -2451,7 +2461,7 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     const pressed = [PLAY_TRAINING, PLAY_DEBUFF].includes(move.type) ? ATTRIBUTES[nameOf(card!) as string] : undefined;
     for (const c of after.cards) {
       const was = wasById.get(c.id);
-      for (const count of Object.values(ATTRIBUTES)) {
+      for (const count of ATTRIBUTE_COUNTS) {
         const now = tokenOn(c, count);
         if (now > 1) attributes.push(`${c.id} (${nameOf(c)}) holds ${now} ${count}`);
         if (now > 0 && !['Senior Developer', 'Specialist', 'Junior'].includes(c.data?.role as string)) attributes.push(`${c.id} (${nameOf(c)}) holds ${count}`);
@@ -2462,8 +2472,9 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       // evicted to the box, its card goes there too; benched, laid off or rehired, the card keeps it.
       if (was === undefined) continue;
       const held = attributesOn(was);
-      const row = (zoneId: string) => zoneInfo(game!, zoneId)?.spec.name;
-      const [fromRow, toRow] = [row(was.zoneId), row(c.zoneId)];
+      // A card that held no count and holds none has none to keep, leave or lose: every branch below would find nothing.
+      if (held.length === 0 && attributesOn(c).length === 0) continue;
+      const [fromRow, toRow] = [rowOf(was.zoneId), rowOf(c.zoneId)];
       const fired = ['development team', 'ops team'].includes(fromRow as string) && toRow === 'open job market'
         && [DISMISS_FROM_PROJECT, DISMISS_FROM_OPS, ...Object.values(LET_GO), PIVOT].includes(move.type);
       const evicted = fromRow === 'open job market' && toRow === 'box';
@@ -2528,7 +2539,7 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
         if (runtime.workedFlag(after, c.id, 'giving synergy')) toxicity.push(`${c.id} (${nameOf(c)}) burned out giving synergy`);
       }
       // Only a team with a Toxic card on it can make less than its team value, so only such a project is worked out (time).
-      const toxic = zoneInfo(game!, c.zoneId)?.spec.name === 'development'
+      const toxic = rowOf(c.zoneId) === 'development'
         ? cardsOn(after, c.id).find((on) => tokenOn(on, 'toxic personality') > 0) : undefined;
       if (toxic !== undefined) {
         const read = (names: readonly string[]) => names.map((name) => runtime.workedValue(after, c.id, name) as number);
@@ -2569,28 +2580,28 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     const mayHoldPending = (zoneId: string) => developmentTeams.has(zoneId)
       || (graduating !== null && zoneId === zoneIdFor('ops team', graduating));
     const pending: string[] = [];
+    const [byTeam, byDevelopment] = [zoneIdFor('development team', by), zoneIdFor('development', by)];
     for (const c of after.cards) {
-      const which = `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
+      const which = () => `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
       const was = wasById.get(c.id);
       const holder = c.data?.[HOLDER_KEY];
-      const onProject = c.zoneId === zoneIdFor('development team', by) && typeof holder === 'string'
-        && cardById(after, holder)?.zoneId === zoneIdFor('development', by);
+      const onProject = c.zoneId === byTeam && typeof holder === 'string' && cardById(after, holder)?.zoneId === byDevelopment;
       for (const name of PENDING) {
         const held = tokenOn(c, name);
-        if (held > 1) pending.push(`${which} has ${held} ${name}`);
-        if (held > 0 && c.data?.role !== 'Junior') pending.push(`${which} holds ${held} ${name}, though it is no Junior`);
-        if (held > 0 && !mayHoldPending(c.zoneId)) pending.push(`${which} holds ${held} ${name} out of a development team`);
+        if (held > 1) pending.push(`${which()} has ${held} ${name}`);
+        if (held > 0 && c.data?.role !== 'Junior') pending.push(`${which()} holds ${held} ${name}, though it is no Junior`);
+        if (held > 0 && !mayHoldPending(c.zoneId)) pending.push(`${which()} holds ${held} ${name} out of a development team`);
         const rose = held > (was === undefined ? 0 : tokenOn(was, name));
         if (rose && !(engineRan && onProject)) {
-          pending.push(`${which} gained ${name} ${engineRan ? `off a project of ${by}` : `with no Engine run for ${by}`}`);
+          pending.push(`${which()} gained ${name} ${engineRan ? `off a project of ${by}` : `with no Engine run for ${by}`}`);
         }
         if (rose && onProject && runtime.workedFlag(atGenerate(), holder as string, 'stalled')) {
-          pending.push(`${which} gained ${name} on ${holder}, which was stalled`);
+          pending.push(`${which()} gained ${name} on ${holder}, which was stalled`);
         }
       }
       // A Junior is graduated only while its owner's graduation step runs, in their ops team: the step ends by clearing it (§11.B.2).
       if (c.data?.graduated === true && !(graduating !== null && c.zoneId === zoneIdFor('ops team', graduating))) {
-        pending.push(`${which} is graduated, with ${graduating === null ? 'no seat' : graduating} in graduation`);
+        pending.push(`${which()} is graduated, with ${graduating === null ? 'no seat' : graduating} in graduation`);
       }
     }
     // The Veteran's Mentor waits on a seat only through its graduation step, which ends by setting it back to 0 (§20.B).
@@ -2615,17 +2626,17 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     const firing = FIRES.includes(move.type);
     const staff: string[] = [];
     for (const c of after.cards) {
-      const which = `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
+      const which = () => `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
       const training = tokenOn(c, 'training xp');
-      if (training > 0 && !TRAINED.includes(c.data?.trait as string)) staff.push(`${which} has ${training} training xp`);
-      if (training > 2) staff.push(`${which} has ${training} training xp, more than 2`);
-      if (c.data?.role === 'Senior Developer' && c.data?.badged === true) staff.push(`${which} is a badged Senior Developer`);
-      if (c.data?.fired === true) staff.push(`${which} is fired`);
+      if (training > 0 && !TRAINED.includes(c.data?.trait as string)) staff.push(`${which()} has ${training} training xp`);
+      if (training > 2) staff.push(`${which()} has ${training} training xp, more than 2`);
+      if (c.data?.role === 'Senior Developer' && c.data?.badged === true) staff.push(`${which()} is a badged Senior Developer`);
+      if (c.data?.fired === true) staff.push(`${which()} is fired`);
       const was = wasById.get(c.id);
       if (c.zoneId !== 'open-job-market' || was === undefined || was.zoneId === c.zoneId) continue;
-      if (firing && teams.has(was.zoneId) && holding(c) !== '') staff.push(`${which}, fired from ${was.zoneId}, holds ${holding(c)}`);
+      if (firing && teams.has(was.zoneId) && holding(c) !== '') staff.push(`${which()}, fired from ${was.zoneId}, holds ${holding(c)}`);
       if (benches.has(was.zoneId) && holding(c) !== holding(was)) {
-        staff.push(`${which}, discarded from ${was.zoneId}, holds ${holding(c) || 'nothing'} where it held ${holding(was) || 'nothing'}`);
+        staff.push(`${which()}, discarded from ${was.zoneId}, holds ${holding(c) || 'nothing'} where it held ${holding(was) || 'nothing'}`);
       }
     }
     noneOf(staff, () => `the Training XP, Badges and firing of staff ${at}`);
@@ -3470,6 +3481,27 @@ describe('Startup Simulator (designer language)', () => {
       return keptGames.get(at)!;
     };
     const twoPlayerGame = (seed: number): KeptGame => keptGame(2, seed);
+    /** A Greenlight that answered the choices its press asked; the auto-player names no choices for a press that asks none. */
+    const answeredGreenlight = (move: Move) => move.type === GREENLIGHT && move.choices !== undefined;
+    /**
+     * The 4-player long run's games, by seed, up to their first Greenlight that answered a choice (`answeredGreenlight`): the moves to it
+     * and the states before and after it; a game with none, whole, its end as `after`. The Greenlight test below reuses them instead of
+     * playing them again, and plays its own when a `-t` filter left the long run out.
+     */
+    const greenlitGames = new Map<number, GreenlitGame>();
+    /** A watch for a long run that keeps what `greenlitGames` holds of it. */
+    const keepingToGreenlight = () => {
+      let watched = 0;
+      let found: { at: number; before: GameState; after: GameState } | null = null;
+      const watch = (before: GameState, move: Move, after: GameState) => {
+        watched += 1;
+        if (found === null && answeredGreenlight(move)) found = { at: watched, before, after };
+      };
+      const kept = (engine: GameEngine): GreenlitGame => (found === null
+        ? { log: [...engine.getLog()], before: null, after: engine.getState() }
+        : { log: engine.getLog().slice(0, found.at), before: found.before, after: found.after });
+      return { watch, kept };
+    };
 
     it.each([2, 3, 4, 5])('plays %i players, building on the Board, to the Market Crash and a score at seeds 1 to 5, seed 1 through the page’s view', (players) => {
       const seats = seatsFor(players);
@@ -3488,12 +3520,14 @@ describe('Startup Simulator (designer language)', () => {
         /** The seats that have declared a mode since their turn started (§11.C.2). */
         const declaring = new Set<PlayerId>();
         const keeping = players <= 3 ? keepingForReplay(runtime) : null;
+        const greenlit = players === 4 ? keepingToGreenlight() : null;
         const engine = playGame(players, seed, (before, move, after) => {
           rules(before, move, after);
           budget(before, move, after);
           const keys = happenings(runtime, before, move, after);
           for (const key of [move.type, ...keys]) count(key);
           keeping?.watch(before, move, after, keys);
+          greenlit?.watch(before, move, after);
           const by = move.by as PlayerId;
           if (Object.values(DECLARE).includes(move.type)) declaring.add(by);
           if (move.type === CONFIRM_MODES && !declaring.has(by)) count(MODES_KEPT);
@@ -3529,6 +3563,7 @@ describe('Startup Simulator (designer language)', () => {
         expect(state.result, where).toEqual({ scores, winner: winners[0], winners });
         for (const seat of seats) marketShare += counterOf(state, 'market share', seat);
         if (keeping !== null) keptGames.set(`${players} ${seed}`, keeping.kept(engine));
+        if (greenlit !== null) greenlitGames.set(seed, greenlit.kept(engine));
       }
     }, 120_000);
 
@@ -3879,8 +3914,15 @@ describe('Startup Simulator (designer language)', () => {
     it('takes back a Greenlight that asked a choice, and rebuilds it from its log, the payee included, whether the move named its answers or left them to be filled in (Review Focus: 4 players, from seed 1 until each kind is seen, at most seed 30)', () => {
       const seats = seatsFor(4);
       const runtime = new LangRuntime(game!, lib, seats);
-      /** A Greenlight that answered the choices its press asked; the auto-player names no choices for a press that asks none. */
-      const answered = (move: Move) => move.type === GREENLIGHT && move.choices !== undefined;
+      const answered = answeredGreenlight;
+      /** The game at `seed` up to its first such Greenlight: the long run's, else played now. */
+      const greenlitGame = (seed: number): GreenlitGame => {
+        const kept = greenlitGames.get(seed);
+        if (kept !== undefined) return kept;
+        const states: GameState[] = [];
+        const engine = playGame(4, seed, (before) => states.push(before), { until: (log) => log.some(answered) });
+        return { log: [...engine.getLog()], before: states.at(-1) ?? null, after: engine.getState() };
+      };
       const seen = { payees: 0, among: 0, filledIn: 0 };
       /** Whether some Greenlight has paid a License, some chose among several answers, and some had every answer filled in. */
       const everyKind = () => Object.values(seen).every((times) => times > 0);
@@ -3891,15 +3933,13 @@ describe('Startup Simulator (designer language)', () => {
       let seed = 1;
       for (; seed <= lastSeed && !everyKind(); seed++) {
         const where = `4 players, seed ${seed}`;
-        const states: GameState[] = [];
-        const engine = playGame(4, seed, (before) => states.push(before), { until: (log) => log.some(answered) });
-        const log = [...engine.getLog()];
+        const { log, before: kept, after } = greenlitGame(seed);
         // The run stops at the first such Greenlight, so one that stops short of it is a game whose seats never made one: it ended.
         if (!answered(log.at(-1)!)) {
-          expect(engine.getState().result, `${where}: the game with no Greenlight that asked a choice`).toBeDefined();
+          expect(after.result, `${where}: the game with no Greenlight that asked a choice`).toBeDefined();
           continue;
         }
-        const [before, after, greenlight] = [states.at(-1)!, engine.getState(), log.at(-1)!];
+        const [before, greenlight] = [kept!, log.at(-1)!];
         // Each payee gained a License for each Tag it was paid for, and the mover paid them all (§6, §14.B.2). The payees answer the
         // choices of a player the press asked; one only a single player qualifies for is that player, named or filled in.
         const license = gameNumber(before, game!, 'license');
@@ -3922,9 +3962,10 @@ describe('Startup Simulator (designer language)', () => {
           expect(filledIn.getState(), `${where}: the game rebuilt with the Greenlight's answers filled in`).toEqual(after);
         }
 
-        engine.undo();
-        expect(engine.getState(), `${where}: the game with the Greenlight taken back`).toEqual(before);
-        expect(gained(engine.getState()), `${where}: capital after the Greenlight is taken back`).toEqual(seats.map(() => 0));
+        // Undo replays the log without its last move from the start, on the game rebuilt from it as on the one played.
+        replayed.undo();
+        expect(replayed.getState(), `${where}: the game with the Greenlight taken back`).toEqual(before);
+        expect(gained(replayed.getState()), `${where}: capital after the Greenlight is taken back`).toEqual(seats.map(() => 0));
         seen.payees += payees.length;
         seen.among += among ? 1 : 0;
         seen.filledIn += among ? 0 : 1;
