@@ -288,6 +288,18 @@ QA made:
   A card's qa made is its qa team output.
   A losing qa card's qa made goes down by 1.
 
+Blue reached:
+  A card's blue reached is its blue made.
+  A card's blue reached goes up by its blue cubes.
+
+Blue added:
+  A card's blue added is its blue made.
+  A crunching blue card's blue added goes up by 1.
+
+Red added:
+  A card's red added is its red made.
+  A crunching red card's red added goes up by 1.
+
 Blue bandwidth:
   A card's blue bandwidth is its blue output.
   A server crashed card's blue bandwidth goes down by 1.
@@ -543,6 +555,24 @@ Course priced:
 Show priced:
   Only if the event in play has the Trade Show.
   Only if it is a TechCrunch Feature card.
+
+Blue covered:
+  Only if its blue reached is at least its blue need.
+
+Crunching blue:
+  Only if the event in play has the Crunch Time.
+  Only if it is not stalled.
+  Only if it is not blue covered.
+
+Crunching red:
+  Only if the event in play has the Crunch Time.
+  Only if it is not stalled.
+  Only if it is blue covered.
+
+Crunched:
+  Only if the event in play has the Crunch Time.
+  Only if it is not stalled.
+  Only if no card on it is clean coding.
 
 Price:
   A pitched card's price is 2.
@@ -1415,8 +1445,9 @@ Phase: brainstorm
 Phase: engine
   Hint: Your ops team's QA can't fix every Bug on your products. Clean one Bug at a time from the products you choose.
   When this phase starts:
-    For each card in their development, its new blue cubes go up by its blue made.
-    For each card in their development, its new red cubes go up by its red made.
+    For each card in their development, its new blue cubes go up by its blue added.
+    For each card in their development, its new red cubes go up by its red added.
+    Each crunched card in their development gains 1 bug.
     For each card in their development whose blue team output is more than 0, the cards on it that are learning blue gain 1 pending blue.
     For each card in their development whose red team output is more than 0, the cards on it that are learning red gain 1 pending red.
     For each card in their development whose qa team output is more than 0, up to its bugs of the cards on it that are learning green gain 1 pending green, first card first.
@@ -5427,3 +5458,45 @@ Example: during Chip Shortage a player with $3 can't recruit a Junior Hardware E
   When p0 recruits a junior qa tester
   Then it is rejected because "they have at least the junior price in capital"
   And p0 has 2 actions
+
+Example: Crunch Time gives each project that isn't Stalled 1 more cube, staffed or not, Blue while it still needs Blue and else Red, and a Bug unless a working Clean Code unit is on it (section 20, the spec's call)
+  Given the event in play has the Crunch Time
+  And the phase is actions
+  And p0's development has a Dating App, a Smart Lock and a Cloud Storage
+  And the Smart Lock in p0's development has 1 blue cube
+  And the Cloud Storage in p0's development has 3 blue cubes
+  And the Cloud Storage in p0's development has a Junior Software Dev on it
+  And the Dating App in p0's development has the Architect on it
+  When p0 ends their actions
+  Then the Dating App in p0's development has 4 blue cubes
+  And the Dating App in p0's development has 0 bugs
+  And the Smart Lock in p0's development has 1 red cube
+  And the Smart Lock in p0's development has 1 bug
+  And the Cloud Storage in p0's development has 4 blue cubes
+  And the Cloud Storage in p0's development has 1 red cube
+  And the Cloud Storage in p0's development has 1 bug
+
+Example: Crunch Time skips Stalled projects, and Development QA can clean the Bug it adds the same turn, its Junior learning Green (section 20, section 5, ruling 1)
+  Given the event in play has the Crunch Time
+  And the phase is actions
+  And p0's development has a Neobank, a Server Farm and a To-Do List
+  And the To-Do List in p0's development has a Junior QA Tester on it
+  When p0 ends their actions
+  Then the Neobank in p0's development has 0 blue cubes
+  And the Neobank in p0's development has 0 bugs
+  And the Server Farm in p0's development has 0 red cubes
+  And the Server Farm in p0's development has 0 bugs
+  And the To-Do List in p0's development has 1 blue cube
+  And the To-Do List in p0's development has 0 bugs
+  And the Junior QA Tester in p0's development team has 1 pending green
+
+Example: Toxic Personality takes its cube from the team's output before Crunch Time adds the project's, so the Crunch cube stays (section 20, the slice's R1)
+  Given the event in play has the Crunch Time
+  And the phase is actions
+  And p0's development has a Smart Lock
+  And the Smart Lock in p0's development has the Engineer on it
+  And the Engineer in p0's development team has 1 toxic personality
+  When p0 ends their actions
+  Then the Smart Lock in p0's development has 1 blue cube
+  And the Smart Lock in p0's development has 2 red cubes
+  And the Smart Lock in p0's development has 1 bug

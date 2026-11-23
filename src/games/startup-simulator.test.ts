@@ -2796,6 +2796,19 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       const hardware = eventAfter === 'Intern Season' ? 0 : eventAfter === 'Chip Shortage' ? 5 : 2;
       sameAs(gameNumber(after, game!, 'hardware junior price'), hardware, () => `the hardware junior price ${at}`);
     }
+    // Crunch Time (§20.D 10): a move that ran the mover's Engine gave each of their projects that was not Stalled exactly 1 Bug more,
+    // unless a working Clean Code unit was on it, before Development QA cleaned what it could.
+    if (eventBefore === 'Crunch Time' && ranTheEngine(before, after, by)) {
+      const crunched: string[] = [];
+      for (const project of zoneCards(before, zoneIdFor('development', by))) {
+        const now = cardById(after, project.id);
+        if (now === undefined || now.zoneId !== project.zoneId || runtime.workedFlag(before, project.id, 'stalled')) continue;
+        const clean = cardsOn(before, project.id).some((c) => runtime.workedFlag(before, c.id, 'clean coding'));
+        const want = Math.max(0, bugsOn(project) + (clean ? 0 : 1) - (runtime.workedValue(before, project.id, 'qa made') as number));
+        if (bugsOn(now) !== want) crunched.push(`${project.id} (${nameOf(project)}) has ${bugsOn(now)} bugs, not ${want}`);
+      }
+      noneOf(crunched, () => `Crunch Time's Bugs ${at}`);
+    }
     const deckNames = (state: GameState) => zoneCards(state, 'event-deck').map(nameOf).sort();
     if (rounds === 0) {
       sameAs(eventAfter, eventBefore, () => `the Event in play ${at}, in which no round started`);
@@ -2850,7 +2863,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(300);
+    expect(results).toHaveLength(303);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -2973,6 +2986,9 @@ describe('Startup Simulator (designer language)', () => {
     expect(worked.cost).toMatchObject({ kind: 'number', refines: true });
     expect(worked['rehire price']).toMatchObject({ kind: 'number' });
     for (const flag of ['chip short', 'course priced', 'show priced']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
+    // Crunch Time's cube and Bug (§20.D 10).
+    for (const name of ['blue reached', 'blue added', 'red added']) expect(worked[name], name).toMatchObject({ kind: 'number' });
+    for (const flag of ['blue covered', 'crunching blue', 'crunching red', 'crunched']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
   });
 
   // The next three tests each add to the rules an example that the rules refuse for naming no button alone, and then an example for each
@@ -4933,6 +4949,27 @@ describe('Startup Simulator (designer language)', () => {
       // Choice 0 is answered with option t % 2, so the two turns pay each rival once.
       expect([...payees].sort()).toEqual([A, B].sort());
     });
+  });
+
+  it('adds exactly one Crunch Time cube to a project that isn’t Stalled, Blue while the project still needs Blue, else Red (§20.D, suwa’s apply_crunch_time_bonus)', () => {
+    // A Dating App (6 Blue) unstaffed; a Smart Lock (1 Blue / 5 Red) with its Blue on the track; a Cloud Storage (4 / 4) with 3 Blue on the
+    // track and a Junior Software Dev making the fourth; a Neobank with no lead, Stalled (§3, §20.C).
+    const seats = seatsFor(2);
+    const start = setUp(2, 1);
+    const S = startPlayerOf(start, seats);
+    const [dating, lock, cloud, neobank, crunch] = ['Dating App', 'Smart Lock', 'Cloud Storage', 'Neobank', 'Crunch Time'].map(idOf);
+    const junior = zoneCards(start, zoneIdFor('bench', S)).find((card) => nameOf(card) === 'Junior Software Dev')!.id;
+    let state = relocate(start, zoneCards(start, 'event-in-play').map((card) => card.id), 'event-discard', game!);
+    state = relocate(state, [crunch], 'event-in-play', game!);
+    state = relocate(state, [dating, lock, cloud, neobank], zoneIdFor('development', S), game!);
+    state = changeCard(changeCard(state, lock, { 'blue cubes': 1 }, game!), cloud, { 'blue cubes': 3 }, game!);
+    state = putOn(state, [junior], zoneIdFor('development team', S), cloud, game!);
+    const { runtime } = createEngine(game!, lib, 2, state);
+    const projects = [dating, lock, cloud, neobank];
+    const values = (at: GameState, names: string[]) => projects.map((id) => names.map((name) => runtime.workedValue(at, id, name)));
+    expect(values(state, ['blue added', 'red added'])).toEqual([[1, 0], [0, 1], [1, 1], [0, 0]]);
+    const ended = relocate(state, [crunch], 'event-discard', game!);
+    expect(values(ended, ['blue added', 'red added'])).toEqual(values(ended, ['blue made', 'red made']));
   });
 });
 
