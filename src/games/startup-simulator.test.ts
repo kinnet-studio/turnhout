@@ -488,6 +488,30 @@ const TECHCRUNCH_2 = 'TechCrunch for $2 with a Sales Rep';
 const HYPE_SCORED = 'Hype scored';
 const SPRINT_5 = 'Design Sprint dealing 5';
 const SPRINT_FEWER = 'Design Sprint dealing fewer';
+/** Plan 6-2b's keys: each Event revealed, by its name, and the event discard's reshuffle (§5 Phase A, §15.D). */
+const EVENT_REVEALED = 'an Event revealed';
+const EVENTS_RESHUFFLED = 'the event discard shuffled into the event deck';
+/** The two Events that act once, as they are revealed (§20.D 4 and 6). */
+const ANGEL_PAID = 'Angel Investors paid';
+const AUDIT_PAID = 'Regulation Audit paid';
+const AUDIT_LET_GO = 'Regulation Audit: staff let go';
+/** The round-long Events at work (§20.D). */
+const BUBBLE_AT_INCOME = 'Tech Bubble at an Income';
+const LEGACY_AT_INCOME = 'Legacy Code at an Income';
+const BOOM_AT_WORK = 'Open Source Boom at work';
+const HACKATHON_AT_WORK = 'Hardware Hackathon at work';
+const LOGJAM_AT_WORK = 'Supply Chain Logjam at work';
+const CRASH_AT_INCOME = 'Server Crash at an Income';
+/** The prices the Events change (§20.D). */
+const TROLLS_LICENSE = 'Patent Trolls: a $5 License';
+const CHIP_HIRE = 'Chip Shortage: a Hardware hire for $3 more';
+const INTERN_RECRUIT = 'Intern Season: a free recruit';
+const COURSE_TRAINING = 'Online Course Boom: a Training card for $1';
+const SHOW_TECHCRUNCH = 'Trade Show: a TechCrunch Feature for $2';
+/** Crunch Time at the Engine (§20.D 10). */
+const CRUNCH_CUBE = 'Crunch Time: a cube';
+const CRUNCH_BUG = 'Crunch Time: a Bug';
+const CRUNCH_STOPPED = 'Crunch Time: a Bug stopped by Clean Code';
 /** The colour each skill works in already, as a declaration's answer names it (§11.C.2). */
 const NATIVE_ANSWER: Record<string, string> = { software: 'blue', hardware: 'red', qa: 'qa' };
 /** The Permanent XP tokens of each colour a Junior holds (§11.A). */
@@ -1517,35 +1541,43 @@ function playGame(
 const REPLAYED = [
   'declarations', 'switches off', 'Bugs added to a project', 'Pending tokens gained', 'Launches that raised XP', 'reshuffles',
   'Training that asked a choice or had it filled in', 'Milestone claims', 'Debuffs', 'strips', 'TechCrunch Features', 'Design Sprints',
+  'Event reshuffles', 'let-gos in the event check',
 ] as const;
 
 /**
- * Paths the 20 seeded games hold for fewer than 2 games from plan 6-2b's Task 1, whose Event shuffle replays every one of them (and
- * each Event's effect replays them again from Tasks 2 to 5). They are counted, not required (the plan's Long runs rule), and each is
- * pinned by an example meanwhile:
- * - 'Attributes kept through a bench discard': 'a Talent discarded from the bench keeps its Attributes, and the rival who hires it from
- *   the open job market gets them';
- * - 'TechCrunch Features' (the 3-player replay): 'TechCrunch Feature adds 1 Hype to one of the player's products for $5 and no action,
- *   or $2 when a working Sales Rep is on that product';
- * - 'Toxic: a Red cube taken': 'a team that makes no Blue loses a Red cube to Toxic Personality';
- * - 'a Buff on a bench card': 'a Buff goes on one of the player's own staff, on the bench or the Board, for its printed price and no
- *   action, and its card waits in the attributes in play';
- * - 'an Attribute played: Clean Coder' and '... Workaholic': 'the Hacker with Clean Coder adds no Bug to the projects he joins' and
- *   'Workaholic gives +2 output in the colour its staff member makes and +$2 salary';
- * - 'hire a card from the agency row to their bench': 'a Sales Rep hired from the open job market costs 1 while the agency row has one
- *   too, and the agency row keeps its own' (the agency row's own hires: 'the Hacker hired from the agency row straight onto a project
- *   adds a Bug to it');
- * - 'the Engineer paid 1 in the ops team': 'the Engineer's salary is $1 in the ops team'.
+ * Paths (tally keys, and `REPLAYED` counts of the replay tests) that fewer than 2 of the long runs' 20 games hold once the Event deck
+ * replays every seeded game (plan 6-2b): counted, not required, as plan 6-2a's precedent has it, each pinned by its examples or the
+ * arranged test named here. A later cadence change may promote them.
+ * - None: Attributes kept through a bench discard ('a Talent discarded from the bench keeps its Attributes, and the rival who hires it
+ *   from the open job market gets them'); Toxic taking a Red cube ('a team that makes no Blue loses a Red cube to Toxic Personality');
+ *   the agency row's hire to the bench ('a Sales Rep hired from the open job market costs 1 while the agency row has one too, and the
+ *   agency row keeps its own'; the agency row's own hires: 'the Hacker hired from the agency row straight onto a project adds a Bug to
+ *   it'); the Engineer paid $1 in the ops team ('the Engineer's salary is $1 in the ops team'); a TechCrunch Feature in a 3-player log
+ *   (the 2-player replay rebuilds one, seed 4; 'TechCrunch Feature adds 1 Hype to one of the player's products for $5 and no
+ *   action, or $2 when a working Sales Rep is on that product'); Legacy Code at an Income ('Legacy Code makes each Bug cost $2 of
+ *   revenue, …'); a Crunch Time Bug stopped by Clean Code ('Crunch Time gives each project that isn't Stalled 1 more cube, …'); a
+ *   TechCrunch Feature under Trade Show ('during Trade Show TechCrunch Feature costs $2, …').
+ * - One game: TechCrunch for $5 (2 players seed 4; the TechCrunch example above); a trained Junior declared red (5 players seed 2);
+ *   Workaholic played (5 players seed 5; 'Workaholic gives +2 output in the colour its staff member makes and +$2 salary'); the
+ *   reassign from the ops team to a product in operation (3 players seed 4; 'the Growth Hacker reassigned to another product is
+ *   onboarding, …'); Intern Season's free recruit (2 players seed 4; 'during Intern Season recruiting from the University costs $0,
+ *   …'); and Patent Trolls' $5 License (2 players seed 4; 'during Patent Trolls a Greenlight License costs $5, …').
  */
 const HELD_BY_FEWER_THAN_TWO = new Set<string>([
   'Attributes kept through a bench discard',
-  'TechCrunch Features',
   'Toxic: a Red cube taken',
-  'a Buff on a bench card',
-  'an Attribute played: Clean Coder',
-  'an Attribute played: Workaholic',
   'hire a card from the agency row to their bench',
   'the Engineer paid 1 in the ops team',
+  'TechCrunch Features',
+  'Legacy Code at an Income',
+  'Crunch Time: a Bug stopped by Clean Code',
+  'Trade Show: a TechCrunch Feature for $2',
+  'TechCrunch for $5',
+  'a trained Junior declared red',
+  'an Attribute played: Workaholic',
+  'reassign a card from their ops team to a card in their operations',
+  'Intern Season: a free recruit',
+  'Patent Trolls: a $5 License',
 ]);
 
 /** A game kept for the Greenlight test: the moves to its first Greenlight that answered a choice, and the states before and after it. */
@@ -1571,6 +1603,8 @@ function keepingForReplay(runtime: LangRuntime) {
     if (move.type === SWITCH_OFF) seen['switches off'] += 1;
     seen['Bugs added to a project'] += keys.filter((key) => key === BUG_ON_PROJECT).length;
     seen.reshuffles += keys.filter((key) => key === RESHUFFLED).length;
+    seen['Event reshuffles'] += keys.filter((key) => key === EVENTS_RESHUFFLED).length;
+    seen['let-gos in the event check'] += keys.filter((key) => key === AUDIT_LET_GO).length;
     // A Training press asks the colour a Full Stack Bootcamp gives when it fits both, and fills in the one it fits alone (§20.A).
     const asked = move.type === PLAY_TRAINING && isTraining(cardById(before, move.cardId as string)!) ? pressChoices(runtime, before, move) : [];
     if (typeof asked !== 'string' && asked.length > 0) seen['Training that asked a choice or had it filled in'] += 1;
@@ -1599,6 +1633,25 @@ const turnsIn = (log: readonly Move[], skipped: ReadonlySet<number>): PlayerId[]
   const kept = log.filter((_, i) => !skipped.has(i));
   return kept.filter((move, i) => i === 0 || move.by !== kept[i - 1].by).map((move) => move.by as PlayerId);
 };
+
+/**
+ * The seats whose step in a round's steps ended in the move from `before` to `after`, in turn from the first: none outside them; every
+ * seat when they ran out within the move (6-1's round steps).
+ */
+function stepsEndedIn(before: GameState, after: GameState, seats: PlayerId[]): PlayerId[] {
+  const done = (state: GameState): PlayerId[] | null => {
+    const steps = roundStepsOf(state);
+    if (steps === null || steps === true) return null;
+    const from = seats.indexOf(steps.first);
+    const upTo = (seats.indexOf(state.turn!.current as PlayerId) - from + seats.length) % seats.length;
+    return Array.from({ length: upTo }, (_, i) => seats[(from + i) % seats.length]);
+  };
+  const started = (after.data[ROUND_KEY] as number) > (before.data[ROUND_KEY] as number);
+  if (!started && roundStepsOf(before) === null) return [];
+  const doneBefore = done(before) ?? [];
+  const doneAfter = done(after) ?? (started && roundStepsOf(after) === null && !['Angel Investors', 'Regulation Audit'].includes(eventOf(after) as string) ? [] : seats);
+  return doneAfter.filter((seat) => !doneBefore.includes(seat));
+}
 
 /** The seat whose turn started in the move from `before` to `after`: the turn marker became it, from no seat or from another one. */
 function turnStarted(before: GameState, after: GameState): PlayerId | null {
@@ -1719,6 +1772,18 @@ function atTheEngine(before: GameState, move: Move, after: GameState): GameState
  * - **Toxic Personality in the ops team**, for the seat that reached its Income: each card of its ops team taking one off its supplies.
  * - **Utility.** Each TechCrunch Feature, by its price: $5, or $2 with a working Sales Rep on the product; each Design Sprint, by whether
  *   it dealt 5 cards; and, in the move that set the result, each seat with an online product holding Hype, which scores.
+ *
+ * Plan 6-2b's paths, read through `runtime` as well (§5 Phase A, §15.D, §20.D):
+ * - **Reveals.** Each Event revealed, by its name, in a move in which a round started, and the event discard shuffled into the event
+ *   deck when the deck was empty before it; each seat the Angel Investors paid, each seat whose Regulation Audit step ended having paid
+ *   above $0, and each let-go press in the event check.
+ * - **Round-long effects**, read under the Event in play as the seat reached its Income (`after`) or as the Engine ran (`before`): Tech
+ *   Bubble and Legacy Code at an Income with an online product (with Bugs, decaying, for Legacy Code); Open Source Boom, Hardware
+ *   Hackathon and Supply Chain Logjam at the Engine on each project not Stalled with a card on it making Blue (the first) or Red; Server
+ *   Crash at an Income with a card of the ops team making Blue; and Crunch Time's cube, Bug, or Bug stopped by Clean Code on each project
+ *   not Stalled.
+ * - **Prices**, under the Event in play before the press: a Greenlight paying a License of 5, a Hardware recruit or hire under Chip
+ *   Shortage, a recruit under Intern Season, a Training card under Online Course Boom and a TechCrunch Feature under Trade Show.
  */
 function happenings(runtime: LangRuntime, before: GameState, move: Move, after: GameState): string[] {
   const boxed = new Set(zoneCards(before, 'box').map((c) => c.id));
@@ -1995,7 +2060,11 @@ function happenings(runtime: LangRuntime, before: GameState, move: Move, after: 
     keys.push(...zoneCards(after, zoneIdFor('ops team', reached)).filter(poolLosing).map(() => TOXIC_OPS));
   }
   if (move.type === PLAY_TO_PRODUCT) {
-    keys.push(techCrunchPrice(runtime, before, move.cardId as string, move.onto as string) === 5 ? TECHCRUNCH_5 : TECHCRUNCH_2);
+    // A $2 TechCrunch Feature is the Sales Rep's only when the product's price is $2: Trade Show makes the card's $2 (plan 6-2b).
+    const pitched = runtime.workedValue(before, move.onto as string, 'price') === 2;
+    const price = techCrunchPrice(runtime, before, move.cardId as string, move.onto as string);
+    if (price === 5) keys.push(TECHCRUNCH_5);
+    else if (pitched) keys.push(TECHCRUNCH_2);
   }
   if (move.type === PLAY_ALONE) {
     const backlog = zoneIdFor('backlog', by);
@@ -2008,6 +2077,65 @@ function happenings(runtime: LangRuntime, before: GameState, move: Move, after: 
       if (hyped) keys.push(HYPE_SCORED);
     }
   }
+
+  // Plan 6-2b's paths: the Events.
+  const seats = runtime.seats as PlayerId[];
+  if ((after.data[ROUND_KEY] as number) > (before.data[ROUND_KEY] as number)) {
+    const revealed = eventOf(after);
+    keys.push(`${EVENT_REVEALED}: ${revealed}`);
+    if (zoneCards(before, 'event-deck').length === 0) keys.push(EVENTS_RESHUFFLED);
+    if (revealed === 'Angel Investors') {
+      const products = (seat: PlayerId) =>
+        [...zoneCards(before, zoneIdFor('development', seat)), ...zoneCards(before, zoneIdFor('operations', seat))];
+      keys.push(...seats.filter((seat) => products(seat).length > 0 && products(seat).every((product) => product.data?.tier === 'Tier 1'))
+        .map(() => ANGEL_PAID));
+    }
+  }
+  if (eventOf(after) === 'Regulation Audit') {
+    keys.push(...stepsEndedIn(before, after, seats).filter((seat) => payrollTaxOf(runtime, after, seat) > 0).map(() => AUDIT_PAID));
+  }
+  if (before.turn?.phase === EVENT_CHECK && Object.values(LET_GO).includes(move.type)) keys.push(AUDIT_LET_GO);
+  if (reached !== null) {
+    const online = operationsOf(after, reached).filter((product) => product.data?.offline !== true);
+    const event = eventOf(after);
+    if (event === 'Tech Bubble' && online.length > 0) keys.push(BUBBLE_AT_INCOME);
+    if (event === 'Legacy Code' && online.some((product) => bugsOn(product) > 0 && runtime.workedFlag(after, product.id, 'decaying'))) {
+      keys.push(LEGACY_AT_INCOME);
+    }
+    const blueOf = (staff: CardState) => ((runtime.workedValue(after, staff.id, 'blue output') as number | null) ?? 0) > 0;
+    if (event === 'Server Crash' && zoneCards(after, zoneIdFor('ops team', reached)).some(blueOf)) keys.push(CRASH_AT_INCOME);
+  }
+  if (engineRan) {
+    const event = eventOf(before);
+    const working = zoneCards(before, zoneIdFor('development', by)).filter((project) => !runtime.workedFlag(before, project.id, 'stalled'));
+    const makes = (project: CardState, name: string) =>
+      cardsOn(before, project.id).some((staff) => runtime.workedValue(before, staff.id, name) !== null);
+    const atWork = { 'Open Source Boom': ['blue output', BOOM_AT_WORK], 'Hardware Hackathon': ['red output', HACKATHON_AT_WORK],
+      'Supply Chain Logjam': ['red output', LOGJAM_AT_WORK] } as Record<string, [string, string]>;
+    if (event !== null && atWork[event] !== undefined) {
+      const [name, key] = atWork[event];
+      keys.push(...working.filter((project) => makes(project, name)).map(() => key));
+    }
+    if (event === 'Crunch Time') {
+      for (const project of working) {
+        keys.push(CRUNCH_CUBE, runtime.workedFlag(before, project.id, 'crunched') ? CRUNCH_BUG : CRUNCH_STOPPED);
+      }
+    }
+  }
+  const priced = eventOf(before);
+  if (move.type === GREENLIGHT && priced === 'Patent Trolls' && gameNumber(before, game!, 'license') === 5) {
+    const asked = pressChoices(runtime, before, move);
+    if (typeof asked !== 'string' && asked.some(({ kind }) => kind === 'player')) keys.push(TROLLS_LICENSE);
+  }
+  if (priced === 'Chip Shortage') {
+    const hired = move.type === RECRUITS[1] ? 1
+      : HIRES.includes(move.type) ? [move.cardId, ...((move.cardIds as string[] | undefined) ?? [])]
+        .filter((id): id is string => typeof id === 'string' && runtime.workedFlag(before, id, 'chip short')).length : 0;
+    for (let i = 0; i < hired; i++) keys.push(CHIP_HIRE);
+  }
+  if (priced === 'Intern Season' && RECRUITS.includes(move.type)) keys.push(INTERN_RECRUIT);
+  if (priced === 'Online Course Boom' && move.type === PLAY_TRAINING && isTraining(card!)) keys.push(COURSE_TRAINING);
+  if (priced === 'Trade Show' && move.type === PLAY_TO_PRODUCT) keys.push(SHOW_TECHCRUNCH);
   return keys;
 }
 
@@ -3748,7 +3876,9 @@ describe('Startup Simulator (designer language)', () => {
         expect(turns.length, where).toBeLessThanOrEqual(MAX_TURNS);
         expect(namesIn(state, 'crash-pile'), where).toEqual(['Market Crash']);
         // No Event is revealed after the last round: the one in play at the result is the last Round Start's (§12, slice 1a's R1.3).
-        if (revealed !== null) expect(eventOf(state), `${where}: the Event in play at the result`).toBe(revealed);
+        // A game that saw no Round Start would skip the check, so a missing one fails here.
+        expect(revealed, `${where}: a Round Start was seen`).not.toBeNull();
+        expect(eventOf(state), `${where}: the Event in play at the result`).toBe(revealed);
 
         // The game ends once the round is finished: every seat has had as many turns, the start player's left neighbour last.
         expect(turns.length % players, `${where}: ${turns.length} turns`).toBe(0);
@@ -3790,6 +3920,8 @@ describe('Startup Simulator (designer language)', () => {
         BRAINSTORM, BRAINSTORM_FLUSHING, KEEP_STRATEGY, DISCARD_STRATEGY, PLAY_TRAINING,
         // Plan 6-2a's: the Debuff, TechCrunch Feature and Design Sprint buttons.
         PLAY_DEBUFF, PLAY_TO_PRODUCT, PLAY_ALONE,
+        // Plan 6-2b's: a let-go in the event check.
+        AUDIT_LET_GO,
         // What the rules make happen on their own.
         'open idea pool lets a card go to the box', 'open job market lets a card go to the box', PUSHED_OUT,
         'the Market Crash reaches the crash pile from the growth market', 'the Market Crash reaches the crash pile from a research row',
@@ -3804,16 +3936,18 @@ describe('Startup Simulator (designer language)', () => {
       // - the agency row's hire to the ops team: a seat with a product hires onto it, and the cycle seldom comes to the hire while one
       //   without has a Senior's price (the retune's D3) ('hires the agency row’s first Senior it can pay for to the ops team when it
       //   can’t go to a product, …');
-      // - the scouting's hire to the ops team: the Buffs' spending leaves it to one game (5 players seed 3; it was held by three) under
-      //   every Buff cadence that keeps the other tests (plan 6-2a's pre-flight) ('hires the card a Layoff found to the ops team while
-      //   it has a product, …').
-      // Held by two games each, the fewest: the agency row's hire to the bench (3 players seed 3, 4 players seed 4) and the reassign from
-      // one product to another (2 and 3 players, seed 2); by three: the scouting's hire onto a product (2 and 5 players seed 4, 3 players
-      // seed 2); by four each: the scouting's hire to the bench (3 players seeds 2 and 4, 4 players seed 2, 5 players seed 4) and the
-      // assign onto a product (2 players seed 4, 4 players seeds 2 and 4, 5 players seed 4); by five each: the assign to the ops team, the
-      // ops check's switch on, the flushing Brainstorm and the strategy cleanup's discard; by six each: the agency row's hire onto a
-      // product and the TechCrunch Feature; the ops team's let go by eight, the ops check's confirm by eleven, the Design Sprint by fifteen
-      // and the Debuff by all twenty. A failure here means a cadence moved: retune the auto-player, never the rules.
+      // - the scouting's hire to the ops team: the Buffs' spending leaves it to two games (3 and 4 players seed 4; it was held by three)
+      //   under every Buff cadence that keeps the other tests (plan 6-2a's pre-flight) ('hires the card a Layoff found to the ops team
+      //   while it has a product, …').
+      // Held by none, the fewest: the agency row's hire to the bench, and by one game: the reassign from one product to another (3
+      // players seed 4), both in `HELD_BY_FEWER_THAN_TWO` once plan 6-2b's Event deck replayed every game; by two games: the TechCrunch
+      // Feature (2 and 4 players, seed 4); by three each: the scouting's hire onto a product (2, 4 and 5 players seed 4) and the agency
+      // row's hire onto a product (3, 4 and 5 players seed 4); by four each: the strategy cleanup's discard (2 players seeds 1 and 2, 3
+      // players seed 5, 5 players seed 4) and a let-go in the event check (2 players seeds 1 and 4, 3 players seeds 1 and 3); by five
+      // each: the assign onto a product (2 and 3 players seed 4, 4 players seeds 1, 2 and 4) and the ops team's let go (2 players seeds 2
+      // and 4, 3 players seeds 2 and 5, 4 players seed 4); by six each: the assign to the ops team and the ops check's switch on; by eight
+      // each: the scouting's hire to the bench and the ops check's confirm; the Design Sprint by ten, the flushing Brainstorm by thirteen
+      // and the Debuff by fourteen. A failure here means a cadence moved: retune the auto-player, never the rules.
       expect(every.filter((key) => !(tally[key] > 0) && !HELD_BY_FEWER_THAN_TWO.has(key)), `never made or seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
@@ -3842,12 +3976,14 @@ describe('Startup Simulator (designer language)', () => {
       // - DIVA_REFUSED[REASSIGN_FROM_OPS], the Diva refused a reassign from the ops team: she must reach the ops team, from the bench or
       //   with her project's Launch, and the Milestones' shuffle at Setup replayed every game again at plan 5-2b's Task 3 (P7) ('tries
       //   the Diva’s reassign from the ops team before each later action, …').
-      // Held by two games, the fewest: the Engineer paid $1 in the ops team (2 and 4 players, seed 4); by three each: a Tier 2 or 3 card
-      // launched (2, 3 and 4 players, seed 4), a project launched with a cut (2, 3 and 5 players, seed 4) and Cut 1 of each (3 players
-      // seed 4, 4 players seeds 2 and 5); by five each: the Diva refused a reassign from a project and fired by a pivot (2 players seeds 3
-      // and 4, 3, 4 and 5 players seed 3); by six: Cut 2 red (2 players seeds 4 and 5, 3 and 4 players seed 2, 4 and 5 players seed 4); by
-      // eight: a cut chosen among options (2 players seeds 4 and 5, 3 players seeds 2 and 4, 4 players seeds 2, 4 and 5, 5 players seed
-      // 4). A failure here means a cadence moved: retune the auto-player, never the rules.
+      // Held by none, the fewest: the Engineer paid $1 in the ops team (in `HELD_BY_FEWER_THAN_TWO` once plan 6-2b's Event deck replayed
+      // every game); by two games each: a Tier 2 or 3 card launched (2 and 3 players, seed 4); by three: a project launched with a cut
+      // (2 players seeds 2 and 4, 3 players seed 4); by four each: the Diva refused a reassign from a project and fired by a pivot (every
+      // player count, seed 3); by five each: Cut 2 red (2 players seeds 2 and 4, 4 players seed 4, 5 players seeds 2 and 4), Cut 2 blue
+      // (2 players seed 4, 3 players seeds 2 and 4, 4 players seed 4, 5 players seed 5) and the cut filled in (the same games as Cut 2
+      // blue); by six: Cut 1 of each (2 players seed 2, 3 players seeds 4 and 5, 4 players seed 5, 5 players seeds 2 and 4); by nine
+      // each: a cut chosen among options and a License paid to the only provider. A failure here means a cadence moved: retune the
+      // auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0) && !HELD_BY_FEWER_THAN_TWO.has(key)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
@@ -3870,10 +4006,10 @@ describe('Startup Simulator (designer language)', () => {
       // - EARNING_LESS, a product earning less for its Bugs;
       // - GROWTH_HACKER_EARNED, the Growth Hacker's $3 earned;
       // - CLEANED_IN_OPS, a Bug cleaned in operations by itself.
-      // Held by five games, the fewest: a mode forgotten on a bench (2 players seeds 1, 2 and 4, 3 and 4 players seed 2); by six: a mode
-      // declared QA (2 and 3 players seed 2, 3 players seed 3, 4 players seeds 2, 4 and 5); a product switched off at the final check by
-      // eight, a Bug cleaned on a project by nine, a Bug added to a project by ten and an offline product at Income by eleven. A failure
-      // here means a cadence moved: retune the auto-player, never the rules.
+      // Held by five games, the fewest: a mode forgotten on a bench (2 players seeds 1 and 4, 3 players seeds 1 and 2, 4 players seed 4);
+      // by eight each: a mode declared QA (2 players seeds 1, 4 and 5, 3 players seeds 2, 4 and 5, 5 players seeds 3 and 4), a Bug cleaned
+      // on a project and an offline product at Income; by nine each: a mode declared Red and a Bug added to a project; a product switched
+      // off at the final check by twelve. A failure here means a cadence moved: retune the auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0) && !HELD_BY_FEWER_THAN_TWO.has(key)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
@@ -3892,9 +4028,10 @@ describe('Startup Simulator (designer language)', () => {
       //   the runs moves a card onto a team it manages in a move that starts no turn ('reassigns a spare QA Engineer from the ops team
       //   onto the project the Senior PM manages, …').
       // A Bug cleaned by a QA Engineer is counted too: a QA Engineer must be on a project with Bugs. Examples pin it.
-      // Held by two games, the fewest: Synergy at the Engine (2 and 4 players, seed 2); by three: an experienced Junior paid (2 and 4
-      // players seed 4, 3 players seed 2); by four: the Sales Rep's bonus (2 players seeds 2 and 4, 3 players seed 2, 4 players seed 4);
-      // Pending tokens returned by a pivot by eight. A failure here means a cadence moved: retune the auto-player, never the rules.
+      // Held by three games, the fewest: an experienced Junior paid (2 players seeds 2 and 4, 3 players seed 4); by four: the Sales Rep's
+      // bonus (every player count 2 to 5, seed 4); by six: Pending tokens returned by a pivot (2 players seeds 1 and 3, 3 players seeds 1
+      // and 2, 4 players seeds 2 and 3); Synergy at the Engine by eight. A failure here means a cadence moved: retune the auto-player,
+      // never the rules.
       expect(paths.filter((key) => !(tally[key] > 0) && !HELD_BY_FEWER_THAN_TWO.has(key)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
@@ -3907,7 +4044,7 @@ describe('Startup Simulator (designer language)', () => {
         BADGED_LEADING, SALES_XP_BONUS, `${CLAIMED}: Clean Launch`,
       ];
       // Counted, but not required, each pinned by its examples (plan 5-2b's P8):
-      // - the reshuffle: only 2 and 4 players seed 4 run their Strategy deck dry, once each, and 'leaves no id a seat saw face up in the
+      // - the reshuffle: only 2, 4 and 5 players seed 4 run their Strategy deck dry, once each, and 'leaves no id a seat saw face up in the
       //   strategy discard in the strategy deck, …' below pins the reshuffle at 2 players seed 4 (the retune's D3);
       // - a Brainstorm drawing 3: a PM must be working on the seat's Board, and a seat seldom keeps one there;
       // - a single Strategy card kept at once: the deck and its discard must hold one card between them;
@@ -3916,22 +4053,21 @@ describe('Startup Simulator (designer language)', () => {
       //   or a Masterclass first, so the arranged test 'plays its %s at t = %i on the %s the target rule picks, …' below plays each;
       // - Bug Decay stopped by a QA Engineer or waived by a VP of Sales: each needs one Training card, or two, on one card that then works
       //   where it matters;
-      // - First Mover Advantage, Platform Power and Full Stack Founder: no Tier 2 Launch meets a revealed First Mover, only 2 players seed
-      //   4 runs 3 Tags, where Setup reveals no Platform Power, and only 2 and 4 players seed 4 run both sides of the stack (Full Stack
-      //   Founder, once each) (the arranged test 'claims First Mover Advantage, Platform Power and Full Stack Founder at one auto-player
-      //   Launch of a Tier 2 card, …' below claims all three, and 'claims Platform Power only once the seat has chosen which products its
-      //   ops check runs, …' Platform Power again);
-      // - Revenue Leader and Talent Magnet: an Income comes to $10 only at 2 and 4 players seed 4 (Revenue Leader, once each), and Setup
-      //   reveals no Talent Magnet at seeds 1 to 5 (the arranged test 'claims Talent Magnet and Clean Launch at an auto-player Launch that
-      //   graduates a second Junior to 3 XP, and Revenue Leader at its next Income of $10, …' below claims both);
+      // - First Mover Advantage, Platform Power and Full Stack Founder: held by two games (2 and 3 players seed 4), one (2 players seed 2)
+      //   and four (2 players seeds 2 and 4, 4 players seed 4, 5 players seed 2) (the arranged test 'claims First Mover Advantage,
+      //   Platform Power and Full Stack Founder at one auto-player Launch of a Tier 2 card, …' below claims all three, and 'claims
+      //   Platform Power only once the seat has chosen which products its ops check runs, …' Platform Power again);
+      // - Revenue Leader and Talent Magnet: no run claims either now (an Income comes to $10 seldom, and Setup reveals no Talent Magnet at
+      //   seeds 1 to 5) (the arranged test 'claims Talent Magnet and Clean Launch at an auto-player Launch that graduates a second Junior
+      //   to 3 XP, and Revenue Leader at its next Income of $10, …' below claims both);
       // - a Milestone claimed at the last check: one must be met only as the final Ops check brings products back online (the arranged
       //   test 'rebuilds and takes back Platform Power claimed at the last check, …' below claims one).
-      // Held by two games each, the fewest: Sales Seminar on a Sales Rep and the Sales Rep's XP bonus (2 and 4 players, seed 4); by three:
-      // a badged Junior leading at the Engine (2 and 5 players seed 1, 3 players seed 4); by four: a trained Junior declared red (2
-      // players seed 3, 4 players seed 4, 5 players seeds 1 and 3); by five each: a trained Junior declared blue (2 players seeds 1, 2 and
-      // 4, 3 players seeds 2 and 3), a trained Junior declared qa (2 players seed 2, 3 players seeds 2 and 3, 4 players seeds 2 and 4) and
-      // a strategy card discarded at cleanup (2 and 3 players seeds 2 and 4, 4 players seed 4); Leadership Masterclass on a Junior by six.
-      // A failure here means a cadence moved: retune the auto-player, never the rules.
+      // Held by none, the fewest: a trained Junior declared red, but by one game (5 players seed 2), in `HELD_BY_FEWER_THAN_TWO` once
+      // plan 6-2b's Event deck replayed every game; by three each: Sales Seminar on a Sales Rep and the Sales Rep's XP bonus (2, 3 and 4
+      // players, seed 4); by four each: a trained Junior declared blue (2 and 3 players, seeds 1 and 2) and a strategy card discarded at
+      // cleanup (2 players seeds 1 and 2, 3 players seed 5, 5 players seed 4); by five: a badged Junior leading at the Engine (2, 3 and 4
+      // players seed 4, 5 players seeds 2 and 4); by seven: a trained Junior declared qa; Leadership Masterclass on a Junior by ten. A
+      // failure here means a cadence moved: retune the auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0) && !HELD_BY_FEWER_THAN_TWO.has(key)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
@@ -3946,40 +4082,63 @@ describe('Startup Simulator (designer language)', () => {
       // product only when a Sales Rep sits on one. Retargeting them cost other tests' keys in plan 6-2a's pre-flight.
       // - Attributes rehired (none): the example 'a Talent discarded from the bench keeps its Attributes, and the rival who hires it from
       //   the open job market gets them, …';
-      // - Attributes boxed with an evicted Talent (4 players seed 4): 'Talents evicted from the open job market take their Attributes to
+      // - Attributes boxed with an evicted Talent (none): 'Talents evicted from the open job market take their Attributes to
       //   the box, …' and 'a Talent evicted with Flight Risk takes it to the box, …';
-      // - a Workaholic's +2 at the Engine (5 players seed 2): 'Workaholic gives +2 output in the colour its staff member makes and +$2
+      // - a Workaholic's +2 at the Engine (none): 'Workaholic gives +2 output in the colour its staff member makes and +$2
       //   salary, …', 'a Workaholic Junior PM gets only the +$2 salary, …' and 'Workaholic's +2 follows the mode a unit works in: …';
       // - Clean Coder stopping the Hacker's Bug (none): 'the Hacker with Clean Coder adds no Bug to the projects he joins, …';
       // - Clean Coder shielding a viral product (none): 'a Sales Rep with Clean Coder shields only the product it is on, …' and
       //   'a Sales Rep with Clean Coder on the Growth Hacker's own product stops its Bug, …';
-      // - a Visionary leading (5 players seed 4): 'a Junior with Visionary leads in both colours, …' and 'Visionary makes any unit a
+      // - a Visionary leading (3 players seed 4): 'a Junior with Visionary leads in both colours, …' and 'Visionary makes any unit a
       //   lead, …';
-      // - Toxic Personality taking a Blue cube (4 players seed 3) and leaving a Bug (none): 'Toxic Personality takes one cube off its
+      // - Toxic Personality taking a Blue cube (2 and 3 players, seed 4) and leaving a Bug (none): 'Toxic Personality takes one cube off its
       //   team's total after Synergy, Blue first, …' and 'a team that makes neither Blue nor Red cleans one Bug fewer for Toxic
       //   Personality, …';
-      // - Toxic Personality in the ops team (none): 'in the ops team Toxic Personality takes one off the Blue bandwidth first, …',
+      // - Toxic Personality in the ops team (2 players seed 4): 'in the ops team Toxic Personality takes one off the Blue bandwidth first, …',
       //   'an ops team that makes no Blue loses a Red to Toxic Personality, …' and 'an ops team that makes neither Blue nor Red cleans
       //   one Bug fewer for Toxic Personality, …';
       // - Burnout on a PM giving no Synergy (none): 'a Junior PM with Burnout gives no Synergy, …';
-      // - TechCrunch for $2 with a Sales Rep (none): 'TechCrunch Feature adds 1 Hype to one of the player's products for $5 and no action,
+      // - TechCrunch for $2 with a Sales Rep (4 players seed 4; a Trade Show play at $2 on a product no Sales Rep pitches is no longer
+      //   counted as one): 'TechCrunch Feature adds 1 Hype to one of the player's products for $5 and no action,
       //   or $2 when a working Sales Rep is on that product, …', and the arranged test 'plays a TechCrunch Feature the auto-player holds
       //   on the product a working Sales Rep pitches, …' below.
-      // Held by two games each, the fewest: Attributes kept through a bench discard (3 players seed 2, 4 players seed 4) and Toxic
-      // Personality taking a Red cube (2 and 4 players, seed 3); by three each: Workaholic played (4 players seed 1, 5 players seeds 1 and
-      // 2), Visionary played (2, 4 and 5 players, seed 4), a Buff on a bench card (4 players seed 4, 5 players seeds 1 and 2), Hype scored
-      // (2 and 5 players seed 1, 5 players seed 4) and a Design Sprint dealing fewer than 5 (2, 4 and 5 players, seed 5); by four each:
-      // Toxic Personality played (2 players seeds 3 and 4, 4 players seed 3, 5 players seed 2) and a Debuff on an ops team card (2 players
-      // seed 4, 3 players seed 3, 4 players seed 2, 5 players seed 1); by five: Clean Coder played (2 players seeds 2 and 4, 3 and 4
-      // players seed 4, 5 players seed 2); by six each: a Buff on a Board card and TechCrunch for $5; by eight each: Attributes discarded
-      // with a fired Talent and Burnout leaving a unit idle; Burnout played by twelve, Flight Risk by fourteen, a Design Sprint dealing 5
-      // by fifteen and a Debuff on a development team card by seventeen. A failure here means a cadence moved: retune the auto-player,
+      // Held by none, the fewest: Attributes kept through a bench discard and Toxic Personality taking a Red cube; by one game each:
+      // Workaholic played (5 players seed 5) and TechCrunch for $5 (2 players seed 4), both in `HELD_BY_FEWER_THAN_TWO` once plan
+      // 6-2b's Event deck replayed every game; by two games each: a Buff on a bench card (4 and 5 players, seed 5), Hype scored (2 and 4
+      // players, seed 4) and a Debuff on an ops team card (2 players seed 4, 3 players seed 2); by three: Toxic Personality played (2
+      // players seed 4, 3 players seeds 1 and 4); by four each: Clean Coder played (2 players seeds 2 and 4, 3 players seed 3, 4
+      // players seed 4), Attributes discarded with a fired Talent (2 players seed 4, 3 players seed 5, 4 players seed 2, 5 players seed
+      // 4) and a Design Sprint dealing fewer than 5 (2 and 3 players seed 5, 4 players seeds 4 and 5); by six: Visionary played; by seven:
+      // a Design Sprint dealing 5; by eight each: a Buff on a Board card, Burnout played and Burnout leaving a unit idle; Flight Risk
+      // played by ten and a Debuff on a development team card by fourteen. A failure here means a cadence moved: retune the auto-player,
       // never the rules.
       expect(paths.filter((key) => !(tally[key] > 0) && !HELD_BY_FEWER_THAN_TWO.has(key)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
+    it('played slice 6’s Events in those runs: all 18 revealed, the discard reshuffled, Angel Investors and Regulation Audit paid and staff let go, every round-long effect at work, every price changed, and Crunch Time’s cubes and Bugs', () => {
+      const paths = [
+        ...EVENTS.map((name) => `${EVENT_REVEALED}: ${name}`), EVENTS_RESHUFFLED,
+        ANGEL_PAID, AUDIT_PAID, AUDIT_LET_GO,
+        BUBBLE_AT_INCOME, LEGACY_AT_INCOME, BOOM_AT_WORK, HACKATHON_AT_WORK, LOGJAM_AT_WORK, CRASH_AT_INCOME,
+        TROLLS_LICENSE, CHIP_HIRE, INTERN_RECRUIT, COURSE_TRAINING, SHOW_TECHCRUNCH,
+        CRUNCH_CUBE, CRUNCH_BUG, CRUNCH_STOPPED,
+      ];
+      // Setup reveals the first Event, so a reveal is counted from the second round on. Each Event is revealed in 2 games or more; the
+      // fewest are Intern Season (2 players seed 4, 3 players seed 4) and Venture Capital Rain (2 players seeds 2 and 4), then Trade Show
+      // (5 games) and Open Source Boom and Server Crash (6 each); Tech Bubble is revealed in 18. The discard shuffled into the event deck in
+      // 2 games (2 players seeds 2 and 4), the only games to last the 19 rounds that takes. By game: Regulation Audit paid in 3 (2 players
+      // seeds 2 and 4, 5 players seed 4), staff let go in 4 (2 and 3 players, seeds 1 and 4 and seeds 1 and 3), Server Crash at an Income
+      // in 4 (2 players seeds 2 and 4, 3 and 4 players seed 4), Online Course Boom's Training card in 5, Tech Bubble at an Income in 7,
+      // Crunch Time's cube and Bug in 9, Open Source Boom at work in 10 and Angel Investors paid in 12; Chip Shortage's Hardware hire in 2
+      // (2 and 3 players, seeds 2 and 3). Held by none or one game, so counted and not required (`HELD_BY_FEWER_THAN_TWO`), each pinned by
+      // its examples: Legacy Code at an Income, a Bug Crunch Time's Clean Code stopped and a TechCrunch Feature at Trade Show's $2
+      // (none), and Intern Season's free recruit and Patent Trolls' $5 License (2 players seed 4).
+      // A failure here means a cadence moved: retune the auto-player, never the rules.
+      expect(paths.filter((key) => !(tally[key] > 0) && !HELD_BY_FEWER_THAN_TWO.has(key)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
+    });
+
     it('plays the same game through the page’s view as without it (2 players, seed 2)', () => {
-      // Seed 2 has a Greenlight that asks a choice (a cut, Cut 2 blue), which the view must list for the card. The game played without
+      // Seed 2 has a Greenlight that asks a choice (a cut, Cut 2 red or Cut 1 of each), which the view must list for the card. The game played without
       // the view is the long run's, which plays seed 2 so.
       const plain = twoPlayerGame(2);
       const viewed = playGame(2, 2, () => {}, { throughView: true });
@@ -4304,7 +4463,7 @@ describe('Startup Simulator (designer language)', () => {
       }
     });
 
-    it('takes back the last move and rebuilds whole games from their logs, through declarations, Bugs, the final check, Pending tokens, graduation, Brainstorms, a reshuffle, Training and Milestone claims (Review Focus: 2 players, seeds 1 to 5)', () => {
+    it('takes back the last move and rebuilds whole games from their logs, through declarations, Bugs, the final check, Pending tokens, graduation, Brainstorms, a reshuffle, Training and Milestone claims, reveals, an Event reshuffle and an event check that waited (Review Focus: 2 players, seeds 1 to 5)', () => {
       // The games are the long run's (see `keptGames`), with what each counted as it was played. Undo takes the last move off the
       // log and plays the rest again from the start, so it gives the same state on the engine rebuilt from the log as on the one that
       // played the game. It requires every path `REPLAYED` counts but the Design Sprints, which the 3-player test below requires.
@@ -4326,9 +4485,11 @@ describe('Startup Simulator (designer language)', () => {
       }
       // Some log declared a mode, switched a product off, added a Bug to a project, raised a Pending token at the Engine, graduated one at
       // a Launch, shuffled the strategy discard into the deck, played a Training card that asked a choice or had it filled in, claimed
-      // a Milestone, played a Debuff, discarded a fired Talent's Attributes and played a TechCrunch Feature, so the replays rebuilt each of
-      // them. The declarations and the Debuffs are in every seed, the reshuffle in seed 4 only, the strips and the TechCrunch Features in
-      // seeds 1 and 4, and a final-check switch-off is the last move taken back in seeds 3 to 5. No log holds a clean press, so the test
+      // a Milestone, played a Debuff, discarded a fired Talent's Attributes and played a TechCrunch Feature, shuffled the event discard into
+      // the event deck and let staff go in an event check that waited, so the replays rebuilt each of them. Every log reveals Events. The
+      // declarations are in seeds 1, 2, 4 and 5, the Debuffs in seeds 2 to 5, the reshuffle, the strips and the TechCrunch Feature in seed
+      // 4 only, the Event reshuffle in seeds 2 and 4 (only 2-player games last the 19 rounds a reshuffle takes) and a let-go in the event check in seeds 1 and 4. The last move taken back is the end of the
+      // actions in seeds 1 to 3, a final-check switch-off in seed 4 and a backlog cleanup's discard in seed 5. No log holds a clean press, so the test
       // 'Review Focus: cleans no more Bugs than its QA when one product is left with Bugs partway through the step (R3)' above replays one;
       // none a keep or Mentor press, so 'makes the graduation choices the auto-player picks, …' below replays those; none moves a card
       // onto an Agile PM's team (P8), so 'reassigns a spare QA Engineer from the ops team onto the project the Senior PM manages, …'
@@ -4339,9 +4500,9 @@ describe('Startup Simulator (designer language)', () => {
 
     it('takes back the last move and rebuilds whole games from their logs, through Attribute plays, strips, a TechCrunch Feature and a Design Sprint (Review Focus: 3 players, seeds 1 to 5)', () => {
       // The games are the long run's (see `keptGames`), with what each counted as it was played. A Debuff is in every seed's log, the
-      // strips (Attributes discarded with a fired Talent) in seeds 2 and 5, the TechCrunch Feature in seed 4 only, with a Clean Coder Buff,
-      // and a Design Sprint in seeds 1, 2 and 5. The last move taken back is a backlog cleanup's discard in seeds 1 and 2, a final-check
-      // switch-off in seeds 3 and 4 and the end of the actions in seed 5.
+      // strips (Attributes discarded with a fired Talent) in seed 5 only, no TechCrunch Feature in any (plan 6-2b's Event deck left it to
+      // one game, 2 players seed 4: `HELD_BY_FEWER_THAN_TWO`, replayed by the 2-player test above) and a Design Sprint in seeds 2 and 5.
+      // The last move taken back is a final-check switch-off in seeds 1, 2, 3 and 5 and a backlog cleanup's discard in seed 4.
       const seen = { Debuffs: 0, strips: 0, 'TechCrunch Features': 0, 'Design Sprints': 0 };
       for (let seed = 1; seed <= 5; seed++) {
         const where = `3 players, seed ${seed}`;
