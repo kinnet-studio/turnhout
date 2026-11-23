@@ -4373,11 +4373,12 @@ describe('Startup Simulator (designer language)', () => {
       // A Bug cleaned by a QA Engineer is counted too: a QA Engineer must be on a project with Bugs (three games held one before the
       // second retune; none now). Examples pin it. A Junior PM promoted at a Launch, counted while no game held one (a Junior PM must
       // be on a Tier 2 or 3 team that Launches), is required since the second retune's seats promote one in two games.
-      // Held by two games, the fewest: a Junior PM promoted at a Launch (2 and 3 players, seed 2); by five: an experienced Junior paid
-      // (2 and 3 players, seeds 2 and 4, 4 players seed 2); by seven each: the Sales Rep's bonus (2 players seeds 2 and 4, 3 players
-      // seed 4, 4 and 5 players seeds 2 and 4) and Pending tokens returned by a pivot (2 players seeds 1, 2 and 3, 3 players seeds 1
-      // and 2, 4 players seed 3, 5 players seed 2); Synergy at the Engine by nine. A failure here means a cadence moved: retune the
-      // auto-player, never the rules.
+      // Held by two games, the fewest: a Junior PM promoted at a Launch (2 and 3 players, seed 2; held by fewer since plan 7-2a, see
+      // HELD_BY_FEWER_THAN_TWO); by five: an experienced Junior paid (2 and 3 players, seeds 2 and 4, 4 players seed 2); by seven each:
+      // the Sales Rep's bonus (2 players seeds 2 and 4, 3 players seed 4, 4 and 5 players seeds 2 and 4) and Pending tokens returned by a
+      // pivot (2 players seeds 1, 2 and 3, 3 players seeds 1 and 2, 4 players seed 3, 5 players seed 2; held by fewer since plan 7-2a,
+      // see HELD_BY_FEWER_THAN_TWO); Synergy at the Engine by nine. A failure here means a cadence moved: retune the auto-player, never
+      // the rules.
       expect(paths.filter((key) => !(tally[key] > 0) && !HELD_BY_FEWER_THAN_TWO.has(key)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 
@@ -4413,8 +4414,9 @@ describe('Startup Simulator (designer language)', () => {
       // Held by none, the fewest: a trained Junior declared red (in `HELD_BY_FEWER_THAN_TWO` once plan 6-2b's Event deck replayed every
       // game; one game, 5 players seed 2, held it until the second retune's Intern Season recruit changed that game); by two: Platform
       // Power claimed (3 and 4 players, seed 2); by three each: Sales Seminar on a Sales Rep and the Sales Rep's XP bonus (2, 3 and 4
-      // players, seed 4) and a trained Junior declared blue (2 players seeds 1 and 2, 3 players seed 1); by four: a strategy card
-      // discarded at cleanup (2 players seed 1, 3 players seeds 4 and 5, 5 players seed 4); by six each: a badged Junior leading at the
+      // players, seed 4) and a trained Junior declared blue (held by fewer since plan 7-2a; see HELD_BY_FEWER_THAN_TWO); by four: a
+      // strategy card discarded at cleanup (2 players seed 1, 3 players seeds 4 and 5, 5 players seed 4); by six each: a badged Junior
+      // leading at the
       // Engine (2 players seeds 2 and 4, 3 players seed 3, 4 players seed 4, 5 players seeds 2 and 4) and Full Stack Bootcamp on a
       // Junior; by seven: a trained Junior declared qa; Leadership Masterclass on a Junior by ten. A failure here means a cadence
       // moved: retune the auto-player, never the rules.
@@ -4476,7 +4478,8 @@ describe('Startup Simulator (designer language)', () => {
       // fewest are Venture Capital Rain (2 players seeds 2 and 4) and Intern Season (2 players seeds 2 and 4, 3 players seed 4), then
       // Open Source Boom, Server Crash and Trade Show (6 each); Tech Bubble is revealed in 18. The discard shuffled into the event deck
       // in 2 games (2 players seeds 2 and 4), the only games to last the 19 rounds that takes. By game: Chip Shortage's Hardware hire
-      // in 2 (2 players seed 2, 3 players seed 3), a TechCrunch Feature at Trade Show's $2 in 2 (2 and 3 players, seed 2), Regulation
+      // in 2 (2 players seed 2, 3 players seed 3), a TechCrunch Feature at Trade Show's $2 (held by fewer since plan 7-2a; see
+      // HELD_BY_FEWER_THAN_TWO), Regulation
       // Audit paid in 3 (2 players seed 4, 3 players seed 2, 5 players seed 4), Server Crash at an Income in 4 (2 players seeds 2 and
       // 4, 3 and 4 players seed 4), Online Course Boom's Training card in 4 (2 players seeds 1, 2 and 5, 3 players seed 2), staff let
       // go in 6 (2 players seeds 1, 2 and 4, 3 players seeds 1, 2 and 3), Intern Season's free recruit in 6 (2 and 3 players, seeds 2
