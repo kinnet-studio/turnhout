@@ -822,6 +822,11 @@ Share price:
   A player's share price is 10 if their top tier is at least 2.
   A player's share price is 15 if their top tier is at least 3.
 
+Dividend:
+  A player's dividend is 1 if their operational revenue is at least 1.
+  A player's dividend is 2 if their operational revenue is at least 11.
+  A player's dividend is 3 if their operational revenue is at least 21.
+
 Active tags:
   A player's active tags is the number of different tag values among the cards in their operations that are not offline.
 
@@ -1031,6 +1036,7 @@ Phase: income
   When this phase starts:
     They get the total rev of the cards in their operations.
     For each card in their operations whose rev is more than 0, they get 1 market share.
+    For each card in each portfolio whose founder is them, its owner gets its founder's dividend.
     If their operational revenue is at least 10 and the milestone row has a Revenue Leader, move the revenue leader from the milestone row to their milestones.
   A player may let go of a card in their development team.
     Only if its salary is more than 0.
@@ -5733,3 +5739,54 @@ Example: during Venture Capital Rain the bank pays the Founder $3 more on every 
   When p0 invests in the Equity whose founder is p1
   Then p0 has 2 capital
   And p1 has 15 capital
+
+Example: at the Founder's Income the bank pays each of their Equity tokens a dividend: $12 of Operational Revenue pays $2 a token (section 5, section 9, section 17)
+  Given 3 players
+  And p1's operations has a Search Engine and a Streaming Service
+  And p1's ops team has a Junior Software Dev, a Junior Software Dev, a Junior Software Dev and a Junior Software Dev
+  And p0's portfolio has an Equity whose founder is p1
+  And p2's portfolio has an Equity whose founder is p1
+  And the turn passes to the left
+  Then it is p1's turn
+  And the phase is actions
+  And p1 has 19 capital
+  And p0 has 9 capital
+  And p2 has 9 capital
+
+Example: Operational Revenue counts bonuses and Bug decay, and $6 pays $1 a token (section 9)
+  Given p1's operations has a Search Engine
+  And the Search Engine in p1's operations has 2 bugs
+  And p1's ops team has a Junior Software Dev and a Junior Software Dev
+  And the Search Engine in p1's operations has a Sales Rep on it
+  And p0's portfolio has an Equity whose founder is p1
+  And the turn passes to the left
+  Then the phase is actions
+  And p1's operational revenue is 6
+  And p1 has 13 capital
+  And p0 has 8 capital
+
+Example: $21 of Operational Revenue pays $3 a token, and an Investor with two tokens is paid twice (section 9, section 17)
+  Given p1's operations has an Immortality Pill and a Search Engine
+  And p1's ops team has a Junior Software Dev, a Junior Software Dev, a Junior Software Dev, a Junior Software Dev, a Junior Hardware Eng and a Junior Hardware Eng
+  And p0's portfolio has an Equity whose founder is p1 and an Equity whose founder is p1
+  And the turn passes to the left
+  Then the phase is actions
+  And p1 has 28 capital
+  And p0 has 13 capital
+
+Example: dividends are not Operational Revenue: a Founder paid a dividend but earning nothing from products pays their own Investors nothing (section 9)
+  Given 3 players
+  And p2 is the start player
+  And it is p2's turn
+  And p2's operations has a Search Engine and a Streaming Service
+  And p2's ops team has a Junior Software Dev, a Junior Software Dev, a Junior Software Dev and a Junior Software Dev
+  And p1's portfolio has an Equity whose founder is p2
+  And p0's portfolio has an Equity whose founder is p1
+  Then p2 has 19 capital
+  And p1 has 9 capital
+  When p2 ends their actions
+  And p0 ends their actions
+  Then it is p1's turn
+  And the phase is actions
+  And p1 has 9 capital
+  And p0 has 7 capital

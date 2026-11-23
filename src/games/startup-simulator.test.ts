@@ -568,6 +568,8 @@ const payrollTaxOf = (runtime: LangRuntime, state: GameState, seat: PlayerId) =>
     .reduce((total, card) => total + ((runtime.workedValue(state, card.id, 'payroll tax') as number | null) ?? 0), 0);
 /** A seat's Share Price as the rules work it out (§17.A). */
 const sharePriceOf = (runtime: LangRuntime, state: GameState, seat: PlayerId): number => runtime.playerValue(state, seat, 'share price');
+/** The dividend each of a Founder's Equity tokens pays at their Income, by their Operational Revenue, as the rules work it out (§9.B, §17.B.1). */
+const dividendOf = (runtime: LangRuntime, state: GameState, seat: PlayerId): number => runtime.playerValue(state, seat, 'dividend');
 /** Every other seat's equity, seat by seat from `by`'s left: the zones an Invest picks in, in the order 7-1's fromZoneIds offers them. */
 const equitiesFrom = (seats: PlayerId[], by: PlayerId): string[] => {
   const at = seats.indexOf(by);
@@ -2359,8 +2361,11 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     // An Invest pays its price to the token's Founder, and Venture Capital Rain adds $3 from the bank (§17.A, §20.D 1).
     const investedIn = move.type === INVEST ? founderOf(card!) : undefined;
     const proceeds = (seat: PlayerId) => (seat === investedIn ? paid + (eventOf(before) === 'Venture Capital Rain' ? 3 : 0) : 0);
+    // A Founder's Income also pays every other seat the Founder's dividend for each of their tokens it holds, from the bank (§9.B).
+    const dividendsTo = (seat: PlayerId) => (income === null || seat === income ? 0
+      : dividendOf(runtime, after, income) * portfolioOf(after, seat).filter((c) => founderOf(c) === income).length);
     const earned = (seat: PlayerId) =>
-      (seat === income ? operationsOf(after, seat).reduce((total, product) => total + revOf(runtime, after, product), 0) : 0);
+      (seat === income ? operationsOf(after, seat).reduce((total, product) => total + revOf(runtime, after, product), 0) : 0) + dividendsTo(seat);
     const gained = seats.map((seat) => capital(after, seat) - capital(before, seat));
     if (move.type === GREENLIGHT) {
       // A License for each Tag the mover lacks, paid to the seats that provide it, read as the rules hold the license (§6, §14.B.2).
@@ -3117,7 +3122,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(313);
+    expect(results).toHaveLength(317);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -3169,7 +3174,7 @@ describe('Startup Simulator (designer language)', () => {
     expect(worked['tier number']).toMatchObject({ kind: 'number', refines: false });
     expect(Object.keys(game!.playerValues!)).toEqual([
       'blue supply', 'red supply', 'blue demand', 'red demand', 'blue load', 'red load', 'qa supply', 'bug load', 'qa spent', 'bugged products',
-      'operational revenue', 'top tier', 'share price', 'active tags',
+      'operational revenue', 'top tier', 'share price', 'dividend', 'active tags',
     ]);
   });
 
@@ -5342,6 +5347,29 @@ describe('Startup Simulator (designer language)', () => {
     expect(priceWith(['Neobank'])).toBe(10);
     expect(priceWith(['Neobank'], ['Neobank'])).toBe(5);
     expect(priceWith(['Neobank', 'Quantum Computer'])).toBe(15);
+  });
+
+  it('pays a dividend by the Founder’s Operational Revenue: $0, $1 from $1, $2 from $11, $3 from $21 (§9.B, §17.B.1)', () => {
+    const start = setUp(2, 1);
+    const O = seatsFor(2)[1];
+    const { runtime } = createEngine(game!, lib, 2, start);
+    const id = (name: string) => start.cards.find((card) => nameOf(card) === name)!.id;
+    const ops = zoneIdFor('operations', O);
+    // Printed rev (§20.C): the To-Do List 1, the Fusion Reactor 10, the Quantum Computer 10.
+    const cases: [string[], number, number][] = [
+      [[], 0, 0],
+      [['To-Do List'], 1, 1],
+      [['Fusion Reactor'], 10, 1],
+      [['Fusion Reactor', 'To-Do List'], 11, 2],
+      [['Fusion Reactor', 'Quantum Computer'], 20, 2],
+      [['Fusion Reactor', 'Quantum Computer', 'To-Do List'], 21, 3],
+    ];
+    for (const [names, revenue, dividend] of cases) {
+      let state = relocate(start, zoneCards(start, ops).map((card) => card.id), 'box', game!);
+      state = relocate(state, names.map(id), ops, game!);
+      expect(runtime.playerValue(state, O, 'operational revenue'), names.join(', ')).toBe(revenue);
+      expect(dividendOf(runtime, state, O), names.join(', ')).toBe(dividend);
+    }
   });
 });
 
