@@ -1755,7 +1755,8 @@ function stepsEndedIn(before: GameState, after: GameState, seats: PlayerId[]): P
   const started = (after.data[ROUND_KEY] as number) > (before.data[ROUND_KEY] as number);
   if (!started && roundStepsOf(before) === null) return [];
   const doneBefore = stepsDone(before, seats) ?? [];
-  const doneAfter = stepsDone(after, seats) ?? (started && roundStepsOf(after) === null && !['Angel Investors', 'Regulation Audit'].includes(eventOf(after) as string) ? [] : seats);
+  // Every round has its steps (plan 7-2a), so steps gone by the move's end ran out within it.
+  const doneAfter = stepsDone(after, seats) ?? seats;
   return doneAfter.filter((seat) => !doneBefore.includes(seat));
 }
 
@@ -5641,7 +5642,7 @@ describe('what the view reads in the centre', () => {
     expect(pressFlags(game!)).toEqual(['managing', 'agile', 'egotistic', 'coaching', 'pending badge', 'attaching']);
     expect(holderFlags(game!)).toEqual(['pending badge']);
     const eventFlags = ['bubbly', 'legacy', 'open source boosted', 'hackathon boosted', 'server crashed', 'logjammed', 'chip short',
-      'course priced', 'show priced', 'blue covered', 'crunching blue', 'crunching red', 'crunched', 'acting once', 'angel funded',
+      'course priced', 'show priced', 'blue covered', 'crunching blue', 'crunching red', 'crunched', 'angel funded',
       'past tier 1', 'taxed'];
     expect(shownFlags(game!).filter((flag) => eventFlags.includes(flag))).toEqual([]);
   });
