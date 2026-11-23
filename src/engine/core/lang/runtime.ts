@@ -427,8 +427,10 @@ export class LangRuntime {
    * Puts the turn back as `back` holds it and drops WINDOW_KEY. On 'ahead' it then moves the relocation's cards and runs the button's Then:
    * lines about the stored subject with the stored card move, as the press would have, the table checked on the button's line.
    *
-   * A player acting who went out while the window was open has their action stopped, whatever the verdict, its cost still spent: once the
-   * turn is put back, it passes on from them as it would have had they gone out in it (`passOnFromOut`).
+   * A player acting who went out while the window was open has their action stopped, whatever the verdict, its cost still spent. The seat
+   * whose turn is put back may have gone out too: the player acting, or the seat in whose turn a button any player may press was pressed.
+   * Their turn passes on from them once the action is settled, as it would have had they gone out in it (`passOnFromOut`), and the table
+   * is then checked on the button's line.
    */
   closeWindow(state: GameState): GameState {
     const waiting = waitingOf(state);
@@ -441,14 +443,17 @@ export class LangRuntime {
     if (back.phase === null) delete turn.phase;
     else turn.phase = back.phase;
     const closed: GameState = { ...state, turn, data };
-    if (isOut(closed, waiting.by)) return passOnFromOut(this.env(closed), closed, waiting.by);
-    if (waiting.verdict === 'stopped') return closed;
     // A press's `endsTurn` and `clearTurnLog` are skipped: safe only as AFTER_NAMES_ACTION keeps a button with a cost off any After line.
     const action = this.game.phases.find((p) => p.id === waiting.from)?.actions.find((a) => a.words === waiting.move);
     if (!action) throw new Error(`No button “${waiting.move}” in the phase “${waiting.from}”.`);
+    const goesAhead = waiting.verdict === 'ahead' && !isOut(closed, waiting.by);
+    const passesOn = isOut(closed, back.current);
+    if (!goesAhead && !passesOn) return closed;
     const { relocation } = waiting;
-    const moved = relocation ? relocate(closed, relocation.ids, relocation.to, this.game) : closed;
-    return this.checkAttachments(this.runLines(action.effects, moved, waiting.info, undefined, waiting.subject), { line: action.line });
+    const moved = goesAhead && relocation ? relocate(closed, relocation.ids, relocation.to, this.game) : closed;
+    const settled = goesAhead ? this.runLines(action.effects, moved, waiting.info, undefined, waiting.subject) : moved;
+    const passed = passesOn ? passOnFromOut(this.env(settled), settled, back.current) : settled;
+    return this.checkAttachments(passed, { line: action.line });
   }
 
   /**

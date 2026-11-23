@@ -488,6 +488,26 @@ describe('the window played', () => {
       expect(state.data).not.toHaveProperty(WINDOW_KEY);
       replays(engine, prepare);
     });
+    it("lets the action of another seat go ahead when the turn's seat goes out answering it, and passes the turn on from them", () => {
+      // A button any player may press, with a cost: p1 presses it in p0's turn, and p0, holding p1's stake, is asked.
+      const tradeGame = compiled(swap(OUT_GAME, '  A player may stop.',
+        ['  Any player may trade a card in their holdings.', '    It costs 1 move.', '    Then:', '      Move it to the scrap.',
+          '  A player may stop.'].join('\n')));
+      const prepare: Prepare = (state) => [['p1', 'holdings-p0'], ['p0', 'holdings-p1']]
+        .reduce((s, [maker, zone]) => makeCard(s, tradeGame, { name: 'Stake', maker }, zone)!.state, state);
+      const engine = table(tradeGame, prepare);
+      const traded = stakesIn(engine.getState(), 'holdings-p1')[0].id;
+      press(engine, 'trade a card in their holdings', 'p1', { cardId: traded });
+      expect(waitingOf(engine.getState())).toMatchObject({ by: 'p1', asked: ['p0'], back: { phase: 'working', current: 'p0' } });
+      const state = press(engine, GIVE_UP, 'p0');
+      expect(isOut(state, 'p0')).toBe(true);
+      expect(cardById(state, traded)?.zoneId).toBe('scrap');
+      expect([state.turn?.phase, state.turn?.current]).toEqual(['working', 'p1']);
+      expect(state.data).not.toHaveProperty(WINDOW_KEY);
+      const replayed = table(tradeGame, prepare);
+      replayed.loadLog([...engine.getLog()]);
+      expect(replayed.getState()).toEqual(engine.getState());
+    });
   });
 
   it('runs the example', () => {
