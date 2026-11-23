@@ -2148,10 +2148,14 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     const started = turnStarted(before, after);
     const income = enteredIncome(before, after);
     const capital = (state: GameState, seat: PlayerId) => counterOf(state, 'capital', seat);
-    const costOf = (ids: string[]) => sum(ids.map((id) => cardById(before, id)!), 'cost');
-    const paid = RECRUITS.includes(move.type) ? 2
-      : AGENCY_HIRES.includes(move.type) ? (card!.data?.cost as number)
-        : move.type === HIRE_MARKET ? 1
+    // Every hiring price is read as the rules hold it before the move: the University's two game numbers, and each card's worked cost
+    // and rehire price, which the Event in play may raise (§20.D 9, 14).
+    const workedOf = (id: string, name: string) => runtime.workedValue(before, id, name) as number;
+    const costOf = (ids: string[]) => ids.reduce((total, id) => total + workedOf(id, 'cost'), 0);
+    const paid = move.type === RECRUITS[1] ? gameNumber(before, game!, 'hardware junior price')
+      : RECRUITS.includes(move.type) ? gameNumber(before, game!, 'junior price')
+      : AGENCY_HIRES.includes(move.type) ? workedOf(card!.id, 'cost')
+        : move.type === HIRE_MARKET ? workedOf(card!.id, 'rehire price')
           : SOURCE_HIRES.includes(move.type) ? costOf(move.cardIds as string[])
             : move.type === PAY_SALARIES ? payrollOf(runtime, before, by)
               : [PLAY_TRAINING, PLAY_DEBUFF].includes(move.type) ? (runtime.workedValue(before, move.cardId as string, 'price') as number)
@@ -2785,6 +2789,13 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     const [eventBefore, eventAfter] = [eventOf(before), eventOf(after)];
     // A game arranged without Setup starts with none in play, though its first round has started; its next Round Start reveals one.
     if (eventBefore !== null || rounds > 0) sameAs(zoneCards(after, 'event-in-play').length, 1, () => `the Events in play ${at}`);
+    // The round's prices (Review Focus 3, the spec's anti-goal): set again at every Round Start, then changed by the Event in play only.
+    if (eventAfter !== null) {
+      sameAs(gameNumber(after, game!, 'license'), eventAfter === 'Patent Trolls' ? 5 : 3, () => `the license ${at}`);
+      sameAs(gameNumber(after, game!, 'junior price'), eventAfter === 'Intern Season' ? 0 : 2, () => `the junior price ${at}`);
+      const hardware = eventAfter === 'Intern Season' ? 0 : eventAfter === 'Chip Shortage' ? 5 : 2;
+      sameAs(gameNumber(after, game!, 'hardware junior price'), hardware, () => `the hardware junior price ${at}`);
+    }
     const deckNames = (state: GameState) => zoneCards(state, 'event-deck').map(nameOf).sort();
     if (rounds === 0) {
       sameAs(eventAfter, eventBefore, () => `the Event in play ${at}, in which no round started`);
@@ -2839,7 +2850,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(294);
+    expect(results).toHaveLength(300);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -2958,6 +2969,10 @@ describe('Startup Simulator (designer language)', () => {
     for (const flag of ['bubbly', 'legacy', 'open source boosted', 'hackathon boosted', 'server crashed', 'logjammed']) {
       expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
     }
+    // The round's prices (§20.D 9, 16, 18; §13.A): Chip Shortage refines the printed cost, and the open job market's price is worked.
+    expect(worked.cost).toMatchObject({ kind: 'number', refines: true });
+    expect(worked['rehire price']).toMatchObject({ kind: 'number' });
+    for (const flag of ['chip short', 'course priced', 'show priced']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
   });
 
   // The next three tests each add to the rules an example that the rules refuse for naming no button alone, and then an example for each

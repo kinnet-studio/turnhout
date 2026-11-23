@@ -7,6 +7,8 @@ Players: 2 to 5
   Players can have mentoring.
   Players can be choosing offline products.
   The game has a license of 3.
+  The game has a junior price of 2.
+  The game has a hardware junior price of 2.
 
 Cards:
   A deck called talent cards, starting in the talent deck:
@@ -530,8 +532,29 @@ Logjammed:
     It is a hardware card.
     It is red mode.
 
+Chip short:
+  Only if the event in play has the Chip Shortage.
+  Only if it is a hardware card.
+
+Course priced:
+  Only if the event in play has the Online Course Boom.
+  Only if it is a Training card.
+
+Show priced:
+  Only if the event in play has the Trade Show.
+  Only if it is a TechCrunch Feature card.
+
 Price:
   A pitched card's price is 2.
+  A course priced card's price is 1.
+  A show priced card's price is 2.
+
+Cost:
+  A chip short card's cost goes up by 3.
+
+Rehire price:
+  A card's rehire price is 1.
+  A chip short card's rehire price goes up by 3.
 
 Stalled:
   Only if it is in a development.
@@ -754,6 +777,13 @@ In every phase:
   When a round starts:
     Move the event in play to the event discard.
     Deal up to 1 card from the event deck to the event in play, shuffling the event discard into it when it runs out.
+    The license is 3.
+    If the event in play has the Patent Trolls, the license is 5.
+    The junior price is 2.
+    The hardware junior price is 2.
+    If the event in play has the Intern Season, the junior price is 0.
+    If the event in play has the Intern Season, the hardware junior price is 0.
+    If the event in play has the Chip Shortage, the hardware junior price goes up by 3.
   When a player's turn starts:
     No card is onboarding.
   When the agency row has fewer than 4 cards:
@@ -954,21 +984,21 @@ Phase: actions
   Hint: Spend 3 actions on hiring, drafting, research and your board. Greenlighting, dismissing and playing Strategy cards (Training, Attributes, TechCrunch Feature and Design Sprint) cost no actions, though a product may need Licenses. Press a button, then pick the cards. End your actions when you are done.
   A player may recruit a junior software dev.
     It costs 1 action.
-    Only if they have at least 2 capital.
+    Only if they have at least the junior price in capital.
     Then:
-      They pay 2.
+      They pay the junior price.
       A new Junior Software Dev goes to their bench.
   A player may recruit a junior hardware eng.
     It costs 1 action.
-    Only if they have at least 2 capital.
+    Only if they have at least the hardware junior price in capital.
     Then:
-      They pay 2.
+      They pay the hardware junior price.
       A new Junior Hardware Eng goes to their bench.
   A player may recruit a junior qa tester.
     It costs 1 action.
-    Only if they have at least 2 capital.
+    Only if they have at least the junior price in capital.
     Then:
-      They pay 2.
+      They pay the junior price.
       A new Junior QA Tester goes to their bench.
   A player may hire a card from the agency row to their bench.
     It costs 1 action.
@@ -977,9 +1007,9 @@ Phase: actions
       They pay the card's cost.
   A player may hire a card from the open job market to their bench.
     It costs 1 action.
-    Only if they have at least 1 capital.
+    Only if they have at least the card's rehire price in capital.
     Then:
-      They pay 1.
+      They pay the card's rehire price.
   A player may hire a card from the agency row to a card in their development.
     It costs 1 action.
     Only if they have at least the card's cost in capital.
@@ -1532,7 +1562,7 @@ Example: you can't pay, so you can't act (section 6)
   And the agency row has the Hacker, the Architect, the Veteran and the Diva
   Given p0 has 1 capital
   When p0 recruits a junior software dev
-  Then it is rejected because "they have at least 2 capital"
+  Then it is rejected because "they have at least the junior price in capital"
   And p0 has 3 actions
 
 Example: the University costs 2 and hires to the bench (ruling 20)
@@ -5295,3 +5325,105 @@ Example: Tech Bubble's $1 comes before Bug Decay and the $0 floor, and an Offlin
   Then the phase is actions
   And p1 has 7 capital
   And p1 has 0 market share
+
+Example: during Patent Trolls a Greenlight License costs $5, and the next round it is $3 again (section 20, section 6, section 14)
+  Given the event deck has the Venture Capital Rain and the Patent Trolls
+  And p1's operations has a Dating App
+  And p1's ops team has a Junior Software Dev
+  And p0's backlog has a Streaming Service and an Esports League
+  And it is p1's turn
+  When p1 ends their actions
+  Then the event in play has the Patent Trolls
+  And the license is 5
+  When p0 greenlights the Streaming Service
+  Then p0 has 2 capital
+  And p1 has 13 capital
+  When p0 ends their actions
+  And p1 ends their actions
+  Then the event in play has the Venture Capital Rain
+  And the license is 3
+
+Example: during Chip Shortage Hardware talent costs $3 more from the University, the agency row and the open job market, and a flex Firmware Specialist its printed price (section 20, section 13)
+  Given the event deck has the Chip Shortage
+  And the agency row has the Engineer, a Firmware Specialist, the Hacker and the Veteran
+  And the open job market has the Diva
+  And it is p1's turn
+  When p1 ends their actions
+  Then the event in play has the Chip Shortage
+  And the hardware junior price is 5
+  And the junior price is 2
+  Given p0 has 30 capital
+  And p0 has 4 actions
+  When p0 recruits a junior hardware eng
+  Then p0 has 25 capital
+  When p0 hires the Engineer to p0's bench
+  Then p0 has 16 capital
+  When p0 hires the Diva
+  Then p0 has 12 capital
+  When p0 hires the Firmware Specialist to p0's bench
+  Then p0 has 6 capital
+
+Example: during Intern Season recruiting from the University costs $0, and the next round $2 again (section 20, section 13)
+  Given the event deck has the Venture Capital Rain and the Intern Season
+  And it is p1's turn
+  When p1 ends their actions
+  Then the junior price is 0
+  And the hardware junior price is 0
+  Given p0 has 0 capital
+  When p0 recruits a junior software dev
+  And p0 recruits a junior hardware eng
+  And p0 recruits a junior qa tester
+  Then it is accepted
+  And p0 has 0 capital
+  And p0's bench has a Junior Software Dev, a Junior Hardware Eng and a Junior QA Tester
+  When p0 ends their actions
+  And p1 ends their actions
+  Then the event in play has the Venture Capital Rain
+  And the junior price is 2
+  And the hardware junior price is 2
+
+Example: during Online Course Boom every Training card costs $1, and other Strategy cards their printed price (section 20)
+  Given the event in play has the Online Course Boom
+  And p0 has 3 capital
+  And p0's strategy hand has a Full Stack Bootcamp, a Leadership Masterclass and a Workaholic
+  And p0's bench has a Junior Software Dev
+  When p0 plays the Full Stack Bootcamp to the Junior Software Dev
+  Then p0 has 2 capital
+  When p0 plays the Leadership Masterclass to the Junior Software Dev
+  Then p0 has 1 capital
+  When p0 plays the Workaholic to the Junior Software Dev
+  Then it is rejected because "they have at least the card's price in capital"
+
+Example: during Trade Show TechCrunch Feature costs $2, and with a Sales Rep on the product still $2, as the discounts don't stack, while other Strategy cards keep their printed price (section 20, ruling 23)
+  Given the event in play has the Trade Show
+  And the phase is actions
+  And p0 has 7 capital
+  And p0's strategy hand has a TechCrunch Feature, a TechCrunch Feature and a Clean Coder
+  And p0's operations has a Dating App and a To-Do List
+  And the To-Do List in p0's operations has a Sales Rep on it
+  And p0's bench has a Junior Software Dev
+  When p0 plays the Clean Coder to the Junior Software Dev
+  Then p0 has 4 capital
+  When p0 plays a TechCrunch Feature to the Dating App
+  Then p0 has 2 capital
+  When p0 plays the TechCrunch Feature to the To-Do List
+  Then p0 has 0 capital
+  And the To-Do List in p0's operations has 1 hype
+
+Example: during Chip Shortage a player with $3 can't recruit a Junior Hardware Eng for $5 or hire the Diva from the open job market for $4, and recruits a Junior QA Tester for $2 but not a second (section 20, section 13, section 6)
+  Given the event deck has the Chip Shortage
+  And the open job market has the Diva
+  And it is p1's turn
+  When p1 ends their actions
+  Then the event in play has the Chip Shortage
+  Given p0 has 3 capital
+  When p0 recruits a junior hardware eng
+  Then it is rejected because "they have at least the hardware junior price in capital"
+  When p0 hires the Diva
+  Then it is rejected because "they have at least the card's rehire price in capital"
+  When p0 recruits a junior qa tester
+  Then it is accepted
+  And p0 has 1 capital
+  When p0 recruits a junior qa tester
+  Then it is rejected because "they have at least the junior price in capital"
+  And p0 has 2 actions
