@@ -1,12 +1,14 @@
 # Startup Simulator: where the work stands (handoff, paused 2026-10-19; updated 2026-11-23)
 
-Everything below is on `claude/peaceful-curie-rdfkow`; 3777 tests pass. Plan 6-1 finished 2026-11-16 (last code commit `9677b98`); the owner asked to pause after it. The long-runs retune finished 2026-11-23 (`989b9e0`, `e824269`).
+Everything below is on `claude/peaceful-curie-rdfkow`; 3784 tests pass. Plan 6-2a finished 2026-11-23 (last code commit `850550f`). Plan 6-1 finished 2026-11-16 (last code commit `9677b98`); the owner asked to pause after it. The long-runs retune finished 2026-11-23 (`989b9e0`, `e824269`).
 
 ## Done
 - Slices 1, 3, 4 (all plans), the long-runs speed-up.
 - Slice 5, all four plans: 5-1 (language), 5-2a (talent rules), 5-2b (Strategy, Training, Milestones), 5-3 (the page: the taller fitted table `bbe5c92`, labels for the flags a press reads `cca9bf1`, labels off a Board and slice 5 on the page `db57012`/`99db1ce`/`e21f718`, the browser check and README `ef32883`, final-review fixes `fd0c4a3`). 5-3's ledger: `2026-10-19-startup-5-3-ledger.md`.
 - Slice 6, plan 6-1 (language): targets in another player's zone (`b386c61`), lines a flag turns on (`e3088eb`, `02d7dd3`), the lower of two prices and a game number that goes up (`0df1870`), steps each player takes when a round starts (`772e981`, `2b59c5b`), an example for each piece and the README (`a880885`), fresh ids for cards shuffled into a pile some seat can't see (`24a4264`, `deb140c`, `6ad2a9e`, closing 5-2b's G1), and the final fix wave (`c7edb1a` … `9677b98`: no line can send play into a steps phase from elsewhere, a seat that goes out in its own step passes it on). 6-1's ledger: `2026-11-16-startup-6-1-ledger.md`; its pre-flight: `2026-11-16-startup-6-1-preflight.md`.
 - The long-runs retune (plan `2026-11-23-startup-long-runs-retune.md`): the actions phase waits for the player to end their actions (`989b9e0`); the auto-player builds what it greenlights, so all 20 long runs Launch, and every required key is held by two games (`e824269`). Its pre-flight: `2026-11-23-startup-retune-preflight.md`; its ledger: `2026-11-23-startup-retune-ledger.md` (the controller adds the ledger at the end).
+
+- Slice 6, plan 6-2a (Attributes and Utility cards): Attribute cards played as counts on a Talent, Buffs on the player's own staff and Debuffs on a rival's Board (`24cfa53`); the counts ride with their Talent, stripped when it is fired and boxed when it is evicted (`5cf08a6`); Workaholic, Clean Coder and Visionary (`046f25d`); Toxic Personality and Burnout (`3aa8ae8`); TechCrunch Feature, Hype scoring and Design Sprint (`8c97016`); the long runs, README and checks (`8aee253`); the final fix wave pinning Burnout after Workaholic and the salary order, with stronger Toxic and Buff invariants (`850550f`). 278 examples. Its pre-flight: `2026-11-23-startup-6-2a-preflight.md`; its ledger: `2026-11-23-startup-6-2a-ledger.md`.
 
 ## Next, in order
 1. (done) Plan 5-3.
@@ -16,13 +18,15 @@ Everything below is on `claude/peaceful-curie-rdfkow`; 3777 tests pass. Plan 6-1
    - 95 required keys (four counted keys the retune brings to two games or more were promoted), none held by fewer than 2 games; of the ten single-game keys, eight are now held by 2 or more, and the agency row's hire to the ops team and the reshuffle moved, with the bench's discard, to "counted, not required", pinned by arranged tests and examples;
    - the free-actions call is done: the actions phase waits at 0 actions until the player ends their actions (the auto-player presses it), so a free action can be taken at 0;
    - test time (vitest `tests` figure on Startup's test file, best of 3, alternating with BASE `5b1f1d9`): BASE 13.02 s, after the retune 18.92 s (single runs 18.9–19.8 s; BASE 13.0–13.9 s). This is under the 30 s watch and just under the 20 s aim by the `tests` figure, but over 20 s by wall Duration (22.3–23.0 s). The gate reads the `tests` figure, so it took the ≤ 20 s branch; the candidates below are named in case it drifts over. Next candidates, if it is wanted lower: the 3-player seed-2 undo test (2.0 s) and the 4-player Greenlight test (1.8 s, seeds 1–7), either of which could take its game's moves from the long run's logs instead of playing them again (the shared 2-player runs are already memoized, `twoPlayerGames`, `656d6eb`).
-4. Plans 6-2a, 6-2b, 6-3; 7-1 … 7-3; 8-1 … 8-3; 9-1 … 9-3; 10-1 … 10-3 (all written; each gets a pre-flight first).
+4. (done 2026-11-23) Plan 6-2a: 18 new required keys, each held by 2+ games; 11 new keys and the old scouting-to-ops key counted, not required, each with a named pin; Startup's test file ≈27.1 s best (`tests`), from ≈20.1 s, under the 30 s watch but with single runs over it under load.
+5. The long-runs speed-up 2 (a mini plan from a fresh profile, before 6-2b's Events add more rules).
+6. Plans 6-2b, 6-3; 7-1 … 7-3; 8-1 … 8-3; 9-1 … 9-3; 10-1 … 10-3 (all written; each gets a pre-flight first).
 
 ## Notes carried to later pre-flights
-- **6-2a / 6-2b:** the Training money check reads the printed price (Online Course Boom makes it $1); the "only a Training card" guard and its example change once Attributes and Utility can be played.
+- **6-2b:** 6-2a moved the Strategy money check to the worked `price` and retitled the "only a Training card" example; Online Course Boom's $1 Training and Chip Shortage need the price floor below. Burnout's `… output is 0.` lines stay last in each output block (6-2a's fix wave pins it; add a line-order probe for the Event lines). The README heading moves to "(slice 6)".
 - **7:** `some card on the target card is …` / `some card on it is …` read the cards-on zone through `cardsOn`, which `reportHiddenCardReads` doesn't check; slice 7's narrowing of `cardsOn` by owner won't close it — if slice 7 makes an owner-only zone of cards on a public card, fix it in `mayHideFromPresser`/`reportHiddenCardReads`.
 - **9-1:** reuse 6-1's re-keying rather than building it twice (what 6-1 built, and two gaps it left — `announceJoins`, `goes into the bottom fifth of` — are in `…-notes-for-9-preflight.md`).
-- **6-2a / 6-2b (from 6-1):** floor every price a discount touches (a price below 0 is paid as given today, so paying it gives coins); write a flag the view should count as `it is a card whose … is more than …` (G4); a `Then:` payment against a hidden target tells its number (G1, park to the first slice that does it). Details in `…-notes-for-6-preflight.md`.
+- **6-2b (from 6-1; 6-2a used G4 throughout):** floor every price a discount touches (a price below 0 is paid as given today, so paying it gives coins); write a flag the view should count as `it is a card whose … is more than …` (G4); a `Then:` payment against a hidden target tells its number (G1, park to the first slice that does it). Details in `…-notes-for-6-preflight.md`.
 - **7-2b / 7-3 / 8-2a / 8-3 (from the long-runs retune):** the turn no longer moves on by itself at the last action (7-3's and 8-3's browser steps 8 expect it to), and the line 8-2a rewrites to go to the crisis moved into the end button's Then (details in `…-notes-for-7-preflight.md` and `…-notes-for-8-preflight.md`).
 - **10-3:** its writer's gaps G1–G7 (the Settlement not shown as a number; the Fire Sale price not in the picker; kept turns listed as a count; a long badge possibly covered; …).
 - **Page (later):** milestone faces break names mid-word ("Clean Launc|h"); greyed reasons from `Only if one of:` groups have mid-sentence capitals; 4-3's `countsRead` pairs any count named `<colour> <word>` with a column `<colour> <other>`.
@@ -43,6 +47,11 @@ Running list for the final report. Each is a call made under delegation; none bl
 - 3: Domain Expertise applies to Tier 1 too (Rust has no tier test).
 - 4: Ops QA removes Bugs from Maintenance products in Launch order (Rust); the rulebook doesn't say who picks.
 - 4: modes persist between declarations; the declaration is public (Rust).
+- 6 (plan 6-2a): Workaholic's +2 lands only in the colour a unit works in (its skill, flex, its declared mode, or a Bug Hunter's QA): "+2 Output in its current mode", so a PM, Sales Rep, HR Manager or Growth Hacker gets only the +$2 salary.
+- 6 (plan 6-2a): a Visionary counts as a Software and a Hardware lead whatever its role, a Junior PM included; an onboarding Visionary doesn't lead.
+- 6 (plan 6-2a): a burned-out PM stays Agile and still gives Brainstorm its third card; a burned-out Architect, Sales Rep or QA Engineer keeps its non-output perks ("0 Output" read narrowly).
+- 6 (plan 6-2a): Toxic takes Blue first even when the project's Blue need is met (the spec's R1); a Toxic card attached to a product still hits its owner's ops pool; Pending XP is read before Toxic's cube, so a teammate keeps its Pending.
+- 6 (plan 6-2a): TechCrunch Feature works on an Offline product (whose Hype scores nothing while Offline); a Design Sprint has no price and deals fewer than 5 when the Seed Deck runs short.
 
 ## Rulebook kept over the Rust engine (per Ruling #25)
 - License payee is the player's choice (Rust: lowest seat).
@@ -149,4 +158,5 @@ Running list for the final report. Each is a call made under delegation; none bl
 - `2026-10-19-startup-5-3-ledger.md`: plan 5-3's ledger (complete).
 - `2026-11-16-startup-6-1-preflight.md` and `2026-11-16-startup-6-1-ledger.md`: plan 6-1's pre-flight report and its ledger (complete; the parked findings are its appendix).
 - `2026-11-23-startup-retune-preflight.md` and `2026-11-23-startup-retune-ledger.md`: the long-runs retune's pre-flight report and its ledger.
+- `2026-11-23-startup-6-2a-preflight.md` and `2026-11-23-startup-6-2a-ledger.md`: plan 6-2a's pre-flight report and its ledger (the final review is its appendix).
 - `2026-10-19-startup-notes-for-<plan>-preflight.md`: the notes carried to each later plan's pre-flight (6, 7, 8, 9, 10, and 5-3's).
