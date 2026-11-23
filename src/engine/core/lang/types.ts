@@ -35,6 +35,7 @@ export type PlayerWho = 'them' | 'target owner';
 export type CardGroup =
   | { kind: 'in'; zones: ZoneRef[]; whose?: CardFilter[] }
   | { kind: 'on it'; whose?: CardFilter[] }
+  | { kind: 'others on it'; whose?: CardFilter[] }
   | { kind: 'picked'; whose?: CardFilter[] };
 /**
  * `onCards` is there only for a zone each player has whose line says its cards sit on cards, and only such a zone may hold a card that

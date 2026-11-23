@@ -652,6 +652,8 @@ const CARDFILTER: ParamType = {
  */
 const GROUP_TESTS = '(?: whose (.+)| that are (not )?(.+?)(?: and whose (.+))?)?';
 const ON_IT = new RegExp(`^the cards on it${GROUP_TESTS}$`, 'i');
+/** The other players' cards on the card the rule is about (R1), with the tests of GROUP_TESTS after it. */
+const OTHERS_ON_IT = new RegExp(`^the other players['‘’] cards on it${GROUP_TESTS}$`, 'i');
 const PICKED = new RegExp(`^the picked cards${GROUP_TESTS}$`, 'i');
 /** group 1 = the zones, then the tests as in GROUP_TESTS */
 const CARDS_IN = new RegExp(`^the cards in (.+?)${GROUP_TESTS}$`, 'i');
@@ -660,7 +662,7 @@ const CARDS_IN = new RegExp(`^the cards in (.+?)${GROUP_TESTS}$`, 'i');
 const flagTestSource = (vocab: Vocab): string => `(?:not )?${CARDFLAG.source(vocab)}(?: and whose ${CARDFILTER.source(vocab)})?`;
 
 const cardGroupSource = (vocab: Vocab): string =>
-  `(?:the cards on it|the picked cards|the cards in ${ZONES.source(vocab)})(?: whose ${CARDFILTER.source(vocab)}| that are ${flagTestSource(vocab)})?`;
+  `(?:the cards on it|the other players['‘’] cards on it|the picked cards|the cards in ${ZONES.source(vocab)})(?: whose ${CARDFILTER.source(vocab)}| that are ${flagTestSource(vocab)})?`;
 
 /**
  * The tests a group or a clause keeps, each read by its own type, so that each says what is wrong with it: the flag test, when a flag is
@@ -692,6 +694,8 @@ function withTests(group: { [key: string]: Json }, [whose, not, flag, andWhose]:
 function resolveCardGroup(text: string, vocab: Vocab): Parsed {
   const onIt = ON_IT.exec(text);
   if (onIt) return withTests({ kind: 'on it' }, onIt.slice(1), vocab);
+  const othersOnIt = OTHERS_ON_IT.exec(text);
+  if (othersOnIt) return withTests({ kind: 'others on it' }, othersOnIt.slice(1), vocab);
   const picked = PICKED.exec(text);
   if (picked) return withTests({ kind: 'picked' }, picked.slice(1), vocab);
   const found = CARDS_IN.exec(text);
@@ -713,7 +717,7 @@ function misnamedTests(flag: string | undefined, whose: string | undefined, voca
  */
 function misnamedCardGroup(text: string, vocab: Vocab): NameProblem | null {
   const tested = ([whose, , flag, andWhose]: (string | undefined)[]) => misnamedTests(flag, whose ?? andWhose, vocab);
-  const others = ON_IT.exec(text) ?? PICKED.exec(text);
+  const others = ON_IT.exec(text) ?? OTHERS_ON_IT.exec(text) ?? PICKED.exec(text);
   if (others) return tested(others.slice(1));
   const found = CARDS_IN.exec(text);
   if (!found) return null;
@@ -730,7 +734,8 @@ const CARDGROUP: ParamType = {
   source: (vocab) => bounded(cardGroupSource(vocab)),
   resolve: resolveCardGroup,
   loose: looseAs(
-    `(?:the cards in ${ANY_TEXT}|the cards on it (?:whose|that are) ${ANY_TEXT}|the picked cards (?:whose|that are) ${ANY_TEXT})`, misnamedCardGroup,
+    `(?:the cards in ${ANY_TEXT}|the cards on it (?:whose|that are) ${ANY_TEXT}|the other players['‘’] cards on it (?:whose|that are) ${ANY_TEXT}|the picked cards (?:whose|that are) ${ANY_TEXT})`,
+    misnamedCardGroup,
   ),
 };
 

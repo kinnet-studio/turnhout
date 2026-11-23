@@ -10,6 +10,9 @@ import { CREW_GAME, WORKED_GAME, fixtureEnv, runPhrase } from '../testing';
 import { MEND_GAME } from '../testing';
 import { BOOST_GAME } from '../testing';
 import { CHARM_GAME } from '../testing';
+import { POST_GAME } from '../testing';
+import { RIVAL_GAME } from '../testing';
+import { makeCard } from '../cards';
 import { putOn } from '../attach';
 import type { CompiledGame, MoveInfo, Subject } from '../types';
 import { relocate } from '../zones';
@@ -481,5 +484,39 @@ describe("lines a flag turns on, “A card's … is …”, and “A card's … 
     const TINKER_WAGE = "  A Tinker card's wage is 1.";
     const waged = reading([], (text) => text.replace(TINKER_WAGE, `  A card's wage is 4.\n${TINKER_WAGE}`));
     expect([waged.workedValue(table, jar, 'wage'), waged.workedValue(twice, jar, 'wage')]).toEqual([4, 6]);
+  });
+});
+
+describe("the other players' cards on it (7-1 Task 6)", () => {
+  const rival = compiled(RIVAL_GAME);
+  const base = initialState(rival, 1);
+  const { runtime: rivalRuntime } = createEngine(rival, lib, 3, { ...base, turn: { current: 'p0', phase: 'working' } });
+  const jobVase = base.cards.find((card) => card.data?.name === 'Vase')!.id;
+  const hand = base.cards.find((card) => card.data?.name === 'Potter')!.id;
+  const crewed = putOn(relocate(base, [jobVase], 'workshop-p0', rival), [hand], 'crew-p0', jobVase, rival);
+  const stakeOf = (state: GameState, zoneId: string, facts: Record<string, string | boolean> = {}) => {
+    const made = makeCard(state, rival, { name: 'Stake', maker: 'p0' }, zoneId)!;
+    const lit = Object.keys(facts).length === 0 ? made.state : changeCard(made.state, made.id, facts, rival);
+    return { id: made.id, state: putOn(lit, [made.id], zoneId, jobVase, rival) };
+  };
+  const staked = stakeOf(crewed, 'holdings-p1');
+  const value = (state: GameState, name: string) => rivalRuntime.workedValue(state, jobVase, name);
+
+  it('is the RIVAL_GAME', () => {
+    expect(POST_GAME).toContain('      Move it to the scrap.');
+  });
+  it("counts the other players' cards on it, and adds their lift", () => {
+    expect([value(staked.state, 'crew wage'), value(staked.state, 'help'), value(staked.state, 'worth')]).toEqual([1, 1, 9]);
+    const lit = stakeOf(crewed, 'holdings-p1', { lit: true });
+    expect(value(lit.state, 'crew wage')).toBe(2);
+    expect(rivalRuntime.playerValue(lit.state, 'p0', 'reach')).toBe(2);
+    const second = stakeOf(lit.state, 'holdings-p1', { lit: true });
+    expect([value(second.state, 'crew wage'), value(second.state, 'help')]).toEqual([3, 2]);
+    expect([value(crewed, 'help'), value(crewed, 'worth')]).toEqual([0, 3]);
+  });
+  it('(guard) leaves the stake out of “the cards on it”', () => {
+    const sized = compiled(`${RIVAL_GAME}\n\nSize:\n  A card's size is the number of the cards on it.`);
+    const { runtime: sizedRuntime } = createEngine(sized, lib, 3, { ...initialState(sized, 1), turn: { current: 'p0', phase: 'working' } });
+    expect(sizedRuntime.workedValue(staked.state, jobVase, 'size')).toBe(1);
   });
 });

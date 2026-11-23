@@ -86,7 +86,7 @@ function cardOnlyNames(game: CompiledGame, ref: PhraseRef): string[] | null {
     if (type === 'cardfilter') names.push(...testNames(ref.args[i] as CardFilter));
     if (type !== 'cardgroup') continue;
     const group = ref.args[i] as CardGroup;
-    if (group.kind !== 'on it') return null;
+    if (group.kind !== 'on it' && group.kind !== 'others on it') return null;
     names.push(...(group.whose ?? []).flatMap(testNames));
   }
   return names;

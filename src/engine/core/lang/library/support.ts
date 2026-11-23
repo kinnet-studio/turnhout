@@ -2,6 +2,7 @@ import { cardById, zoneCards } from '../zone-index';
 import type { CardState, PlayerId } from '../../scene';
 import type { Json } from '../../table-def';
 import { cardsOn } from '../attach';
+import { othersOn } from '../attach';
 import { pieceAt } from '../board-state';
 import { cardAttribute, cardFact } from '../card-facts';
 import { WORKED_KEPT } from '../compile-util';
@@ -207,6 +208,7 @@ export function passes(env: PhraseEnv, card: CardState, filters: CardFilter[]): 
 /** The cards a group names before its tests: those in its zones, those on the card the rule is about, or the set the press picked. */
 function cardsNamed(env: PhraseEnv, group: CardGroup): CardState[] {
   if (group.kind === 'on it') return cardsOn(env.state, cardOf(env));
+  if (group.kind === 'others on it') return othersOn(env.state, cardOf(env));
   if (group.kind === 'in') return group.zones.flatMap((ref) => cardsInZones(env, ref));
   return thePickedCards(env).map((id) => {
     const card = cardById(env.state, id);

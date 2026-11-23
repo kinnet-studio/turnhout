@@ -18,6 +18,7 @@ import { COUNT_GAME } from './testing';
 import type { CompiledGame } from './types';
 import type { ZoneSpec } from './types';
 import { shownFlags, standIns } from './worked-view';
+import { RIVAL_GAME } from './testing';
 import { dimFlags, gaugePairs, shownPlayerValues } from './worked-view';
 import { holderFlags, pressFlags } from './worked-view';
 import { BOOST_GAME, PERCH_GAME, SORT_GAME, YARD_GAME } from './testing';
@@ -801,5 +802,16 @@ describe('cards that name a player', () => {
     const game = compileGame(MAKER_GAME, createDefaultLibrary()).game!;
     expect(shownFlags(game)).toEqual([]);
     expect(standIns(game)).toEqual({});
+  });
+});
+
+describe("the other players' cards on it (7-1 Task 6)", () => {
+  it('shows a flag read from them, as they sit where everyone sees', () => {
+    expect(shownFlags(compiled(RIVAL_GAME))).toEqual(['helped']);
+  });
+  it('shows none read from a zone some seat cannot see', () => {
+    const fromHall = RIVAL_GAME.replace("  A card's help is the number of the other players' cards on it.", "  A card's help is the number of the cards in the hall.");
+    expect(fromHall).not.toBe(RIVAL_GAME);
+    expect(shownFlags(compiled(fromHall))).toEqual([]);
   });
 });

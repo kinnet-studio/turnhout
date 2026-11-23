@@ -2,6 +2,7 @@ import type { GameState } from '../../game-state';
 import { cardById } from '../zone-index';
 import type { PlayerId } from '../../scene';
 import { cardsOn, holderIdOf, onCardsZoneOf, putOn } from '../attach';
+import { othersOn } from '../attach';
 import { changeCard } from '../card-facts';
 import { pickName } from '../card-facts';
 import { RuleError } from '../diagnostics';
@@ -10,6 +11,7 @@ import { joinAnd } from '../refs';
 import type { CardMatch, ConditionFn, EffectFn, ExpectFn, MomentFn, PhraseEnv, ZoneRef } from '../types';
 import { matchesCard, relocate, zoneInfo } from '../zones';
 import { zoneNameOf } from '../zones';
+import { zoneIdFor } from '../zones';
 import { changeable } from './card-number-phrases';
 import { claimCards, coversExactly, describeCard, describeCards } from './example-phrases';
 import { namingFacts } from './example-phrases';
@@ -162,6 +164,24 @@ const everyCardOnItGoesTo: EffectFn = (env, [zone]) => {
   return ids.length === 0 ? env.state : relocate(env.state, ids, to, env.game);
 };
 
+/**
+ * The other players' cards on it (R1) go back, each in the order `othersOn` gives, to that zone of the seat whose zone it is in, coming off
+ * the card as it moves.
+ */
+const othersOnItGoToOwners: EffectFn = (env, [zone]) => othersOn(env.state, cardOf(env)).reduce((state, card) => {
+  const seat = zoneInfo(env.game, card.zoneId)?.seat;
+  if (seat === null || seat === undefined) throw new Error(`The ${pickName(card, env.game)} on it is in no player's zone.`);
+  return relocate(state, [card.id], zoneIdFor(zone as string, seat), env.game);
+}, env.state);
+
+/** The flag is cleared on each of the other players' cards on it (`othersOn`), as before they go back; their own player's are left. */
+const everyOtherCardOnItIsNot: EffectFn = (env, [fact]) => {
+  mustBeKept(env, fact as string);
+  return othersOn(env.state, cardOf(env))
+    .filter((card) => Object.hasOwn(card.data ?? {}, fact as string))
+    .reduce((state, card) => changeCard(state, card.id, { [fact as string]: null }, env.game), env.state);
+};
+
 /** A flag worked out from lines is refused first, whether or not a card is on it. */
 const everyCardOnItIs: EffectFn = (env, [fact]) => {
   mustBeKept(env, fact as string);
@@ -268,6 +288,8 @@ export function registerAttachPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('the picked cards that are {cardflag} go to {zone}, on the target card', pickedThatAreGoOnTarget, { needsCards: true, needsOnto: true })
     .effect('the picked cards that are not {cardflag} go to {zone}', pickedThatAreNotGoTo, { needsCards: true })
     .effect('every card on it goes to {zone}', everyCardOnItGoesTo, { needsCard: true })
+    .effect("the other players' cards on it go to their owners' {perzone}", othersOnItGoToOwners, { needsCard: true })
+    .effect("every other player's card on it is not {cardflag}", everyOtherCardOnItIsNot, { needsCard: true, writes: 0 })
     .effect('every card on it is {cardflag}', everyCardOnItIs, { needsCard: true, writes: 0 })
     .effect('every card on it that is {cardflag} is {cardflag}', cardsOnItThatAreSet, { needsCard: true, writes: 1 })
     .effect('every card on it that is {cardflag} goes to {zone}, staying on it', cardsOnItThatAreStay, { needsCard: true })

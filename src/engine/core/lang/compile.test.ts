@@ -20,6 +20,7 @@ import { JOIN_GAME } from './testing';
 import { COUNT_GAME } from './testing';
 import { CHARM_GAME } from './testing';
 import { LOOKUP_GAME } from './testing';
+import { RIVAL_GAME } from './testing';
 
 const lib = createDefaultLibrary();
 const BASE = [
@@ -1539,5 +1540,23 @@ describe('values by lookup', () => {
   ])('refuses %s', (line, message) => {
     const text = LOOKUP_GAME.replace(RATE_5, `${RATE_5}\n${line}`);
     expect(errorsOf(text)).toEqual([[lineOf(text, line), message]]);
+  });
+});
+
+describe("the other players' cards on it, compiled (7-1 Task 6)", () => {
+  const BACK = "      The other players' cards on it go to their owners' holdings.";
+  it('compiles RIVAL_GAME', () => expect(messages(RIVAL_GAME)).toEqual([]));
+  it('names a misspelt zone', () => {
+    const text = RIVAL_GAME.replace(BACK, "      The other players' cards on it go to their owners' holdngs.");
+    const found = messages(text);
+    expect(found).toHaveLength(1);
+    expect(found[0][0]).toBe(text.split('\n').indexOf("      The other players' cards on it go to their owners' holdngs.") + 1);
+    expect(found[0][1]).toContain('“holdngs”');
+  });
+  it('is read only in a rule about a card', () => {
+    const text = RIVAL_GAME.replace(BACK, '').replace('  A player may stop.\n    Then:\n', `  A player may stop.\n    Then:\n${BACK}\n`);
+    expect(messages(text).map(([, message]) => message)).toEqual([
+      "“The other players' cards on it go to their owners' holdings” only makes sense in a rule about a card, such as “When a card …”.",
+    ]);
   });
 });

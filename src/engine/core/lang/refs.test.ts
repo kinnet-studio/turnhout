@@ -11,6 +11,7 @@ import { GUILD_GAME, vocabFor } from './testing';
 import { RESTING_GAME } from './testing';
 import type { Vocab } from './types';
 import { MAKER_GAME } from './testing';
+import { RIVAL_GAME } from './testing';
 import { describeZone } from './library/support';
 import type { ZoneRef } from './types';
 
@@ -1176,5 +1177,18 @@ describe('the zone of the player a card names', () => {
     const parsed = parseParam('zone', "its maker's purse", vocab);
     expect(parsed).toEqual({ value: { of: { named: 'maker' }, zone: 'purse' } });
     expect(describeZone((parsed as { value: ZoneRef }).value)).toBe("its maker's purse");
+  });
+});
+
+describe("the other players' cards on it (7-1 Task 6)", () => {
+  const RIVAL = vocabFor(compileGame(RIVAL_GAME, createDefaultLibrary()).game!);
+  it('reads the group, with and without a test', () => {
+    expect(parseParam('cardgroup', "the other players' cards on it", RIVAL)).toEqual({ value: { kind: 'others on it' } });
+    expect(parseParam('cardgroup', "the other players' cards on it that are lit", RIVAL)).toEqual({
+      value: { kind: 'others on it', whose: [{ flag: 'lit', wanted: true }] },
+    });
+  });
+  it('names a misnamed flag', () => {
+    expect(misnamedParam('cardgroup', "the other players' cards on it that are lt", RIVAL)?.message).toBe('There is no card fact called “lt”.');
   });
 });

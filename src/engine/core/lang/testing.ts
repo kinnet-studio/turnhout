@@ -454,6 +454,23 @@ export const POST_GAME = MAKER_GAME
     '  A player may hide a card from their workshop to their stash.', '    It costs 1 move.',
     '  A player may stop.'].join('\n'));
 
+/**
+ * POST_GAME where a posted stake may be lit, lifting the crew wage of the job it is on by 1, and any stake makes the job helped (worth 9).
+ * Finishing a job sends the other players' stakes on it back to their holdings, on no card.
+ */
+export const RIVAL_GAME = [
+  POST_GAME
+    .replace('  Cards can name a maker.', '  Cards can name a maker.\n  Cards can be lit.')
+    .replace('      Move it to the scrap.', "      The other players' cards on it go to their owners' holdings.\n      Move it to the scrap."),
+  '', 'Lift:', "  A lit card's lift is 1.", '',
+  'Crew wage:', "  A card's crew wage is the total wage of the cards on it.",
+  "  A card's crew wage goes up by the total lift of the other players' cards on it.", '',
+  'Help:', "  A card's help is the number of the other players' cards on it.", '',
+  'Helped:', '  Only if it is a card whose help is more than 0.', '',
+  'Worth:', "  A helped card's worth is 9.", '',
+  'Reach:', "  A player's reach is the total crew wage of the cards in their workshop.",
+].join('\n');
+
 /** MAKER_GAME where a player may buy a card in another player's purse for 1 move, into their holdings. */
 export const BUY_GAME = MAKER_GAME.replace('  A player may stop.', [
   "  A player may buy a card in another player's purse.", '    It costs 1 move.', '    Then:', '      Move it to their holdings.',

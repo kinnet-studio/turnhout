@@ -15,6 +15,7 @@ import { YARD_GAME } from '../testing';
 import { BOOST_GAME } from '../testing';
 import { SORT_GAME } from '../testing';
 import { POST_GAME } from '../testing';
+import { RIVAL_GAME } from '../testing';
 import { makeCard } from '../cards';
 import { relocate } from '../zones';
 import { createDefaultLibrary } from './index';
@@ -773,5 +774,54 @@ describe("a stake posted on another player's job (7-1 Task 5)", () => {
     ].join('\n'));
     expect(result).toMatchObject({ status: 'fail' });
     expect(result.message).toContain("The Stake in p0's holdings is on the Vase, but cards there sit only on other players' cards.");
+  });
+});
+
+describe("the other players' cards on it sent back (7-1 Task 6)", () => {
+  const g = compileGame(RIVAL_GAME, lib).game!;
+  const base = initialState(g, 1);
+  const jobVase = base.cards.find((card) => card.data?.name === 'Vase')!.id;
+  const hand = zoneCards(base, 'hall').find((card) => card.data?.name === 'Potter')!.id;
+  const crewed = putOn(relocate(base, [jobVase], 'workshop-p0', g), [hand], 'crew-p0', jobVase, g);
+  const stakeOn = (state: GameState, zoneId: string) => {
+    const made = makeCard(state, g, { name: 'Stake', maker: 'p0' }, zoneId)!;
+    return { id: made.id, state: putOn(changeCard(made.state, made.id, { lit: true }, g), [made.id], zoneId, jobVase, g) };
+  };
+  const first = stakeOn(crewed, 'holdings-p1');
+  const FINISH_VASE: Move = { type: 'finish a card in their workshop', by: 'p0', cardId: jobVase };
+  const engineOn = (state: GameState) => createEngine(g, lib, 3, { ...state, turn: { current: 'p0', phase: 'working' } }).engine;
+
+  it('sends the stake back to its holdings, lit and on no card, as the job goes to the scrap', () => {
+    const engine = engineOn(first.state);
+    expect(engine.dispatch(FINISH_VASE).reason).toBeUndefined();
+    const state = engine.getState();
+    expect(cardById(state, hand)).toMatchObject({ zoneId: 'idle-p0', data: expect.objectContaining({ tired: true }) });
+    const stake = cardById(state, first.id)!;
+    expect(stake).toMatchObject({ zoneId: 'holdings-p1', data: expect.objectContaining({ lit: true }) });
+    expect(stake.data).not.toHaveProperty('lang:on');
+    expect(stake.data).not.toHaveProperty('lang:on-seat');
+    expect(cardById(state, jobVase)?.zoneId).toBe('scrap');
+    expect(counterOf(state, 'moves', 'p0')).toBe(2);
+    // (guard) “Every card on it is tired.” reads only p0's cards.
+    expect(stake.data?.tired).not.toBe(true);
+  });
+  it("clears a flag on the other players' cards on it before they go back, and leaves its own player's (A-T6b)", () => {
+    const text = RIVAL_GAME.replace("      The other players' cards on it go to their owners' holdings.",
+      "      Every other player's card on it is not lit.\n      The other players' cards on it go to their owners' holdings.");
+    const cleared = compileGame(text, lib);
+    expect(cleared.diagnostics).toEqual([]);
+    const litHand = changeCard(first.state, hand, { lit: true }, g);
+    const { engine } = createEngine(cleared.game!, lib, 3, { ...litHand, turn: { current: 'p0', phase: 'working' } });
+    expect(engine.dispatch(FINISH_VASE).reason).toBeUndefined();
+    expect(cardById(engine.getState(), first.id)).toMatchObject({ zoneId: 'holdings-p1' });
+    expect(cardById(engine.getState(), first.id)?.data).not.toHaveProperty('lit');
+    expect(cardById(engine.getState(), hand)?.data?.lit).toBe(true);
+  });
+  it('sends each stake back to its own holder (Review Focus)', () => {
+    const second = stakeOn(first.state, 'holdings-p2');
+    const engine = engineOn(second.state);
+    expect(engine.dispatch(FINISH_VASE).reason).toBeUndefined();
+    expect(cardById(engine.getState(), first.id)?.zoneId).toBe('holdings-p1');
+    expect(cardById(engine.getState(), second.id)?.zoneId).toBe('holdings-p2');
   });
 });

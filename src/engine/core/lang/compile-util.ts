@@ -230,7 +230,8 @@ const comparesWith = (of: 'the card' | 'it') => (filter: CardFilter): boolean =>
  * Whether the groups and tests read “it”, the card the rule is about: “the cards on it”, or a test that compares with “its” value. Whether
  * they read the card a press moves: a test that compares with “the card's” value. Whether they read “the picked cards” of a press's set.
  */
-const readsItsCard = ({ groups, filters }: CardArgs): boolean => groups.some((group) => group.kind === 'on it') || filters.some(comparesWith('it'));
+const readsItsCard = ({ groups, filters }: CardArgs): boolean =>
+  groups.some((group) => group.kind === 'on it' || group.kind === 'others on it') || filters.some(comparesWith('it'));
 const readsMovedCard = ({ filters }: CardArgs): boolean => filters.some(comparesWith('the card'));
 const readsPickedCards = ({ groups }: CardArgs): boolean => groups.some((group) => group.kind === 'picked');
 /** Whether a test compares the player a card names with the player the line is about, or with the target card's owner. */
