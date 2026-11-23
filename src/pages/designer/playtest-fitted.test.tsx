@@ -1434,6 +1434,8 @@ describe('slice 5 on the page', () => {
   const ringed = () => Object.keys(table!.decor ?? {}).filter((id) => table!.decor![id].ring !== undefined);
   const PLAY = 'Play a card from your strategy hand to a card in your bench, your development team or your ops team';
   const DEBUFF = "Play a card from your strategy hand to a card in another player's development team or another player's ops team";
+  const TO_PRODUCT = 'Play a card from your strategy hand to a card in your operations';
+  const ALONE = 'Play a card in your strategy hand';
   const FLUSH = 'Brainstorm after flushing some cards from your strategy hand';
   const KEEP_IDEA = 'Keep a card in your brainstorm';
   const [KEEP_BLUE, KEEP_RED, KEEP_GREEN] = ['blue', 'red', 'green'].map((colour) => `Keep ${colour} on a card in your ops team`);
@@ -1572,7 +1574,10 @@ describe('slice 5 on the page', () => {
       .map((b) => [b.textContent, b.getAttribute('aria-disabled')]);
 
     click(bootcamp);
-    expect(offered()).toEqual([[PLAY, true], [DEBUFF, "There is no card in another player's development team or another player's ops team."], [FLUSH, true]]);
+    expect(offered()).toEqual([
+      [PLAY, true], [DEBUFF, "There is no card in another player's development team or another player's ops team."],
+      [TO_PRODUCT, 'There is no card in your operations.'], [ALONE, 'it is a Design Sprint card'], [FLUSH, true],
+    ]);
     choose(PLAY);
     expect(within(picker()).getByText('Pick where it goes: a card in your bench, your development team or your ops team')).toBeTruthy();
     expect(targets()).toEqual([

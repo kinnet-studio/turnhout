@@ -146,6 +146,7 @@ Cards:
   Cards can have cut blue cubes and cut red cubes.
   Cards can have bugs and fixed bugs.
   Cards can have workaholic, clean coder, visionary, toxic personality, burnout and flight risk.
+  Cards can have hype.
 
 Table:
   The talent deck is a pile in the center that no one can see.
@@ -465,6 +466,16 @@ Pool losing qa:
   Only if its owner has no card in their ops team that is not onboarding and whose red bandwidth is more than 0.
   Only if its owner has a card in their ops team that is not onboarding and whose qa output is more than 0.
 
+Pitching:
+  Only if it is a Rainmaker card.
+  Only if it is not onboarding.
+
+Pitched:
+  Only if some card on it is pitching.
+
+Price:
+  A pitched card's price is 2.
+
 Stalled:
   Only if it is in a development.
   Only if it is not a Tier 1 card.
@@ -602,6 +613,7 @@ Bug decay:
 
 Portfolio points:
   A card's portfolio points is its val.
+  A card's portfolio points goes up by 5 for each hype.
   An offline card's portfolio points is 0.
 
 Bugged:
@@ -1060,6 +1072,18 @@ Phase: actions
       If the card is a Burnout, the target card gains 1 burnout.
       If the card is a Flight Risk, the target card gains 1 flight risk.
       Move it to the attributes in play.
+  A player may play a card from their strategy hand to a card in their operations.
+    Only if the card is a TechCrunch Feature.
+    Only if they have at least the lower of the card's price and the target card's price in capital.
+    Then:
+      They pay the lower of the card's price and the target card's price.
+      The target card gains 1 hype.
+      Move it to the strategy discard.
+  A player may play a card in their strategy hand.
+    Only if it is a Design Sprint card.
+    Then:
+      Deal up to 5 cards from the seed deck to their backlog.
+      Move it to the strategy discard.
   A player may assign some cards from their bench to a card in their development.
     It costs 1 action.
     Then:
@@ -4884,3 +4908,84 @@ Example: an ops team that makes neither Blue nor Red cleans one Bug fewer for To
   And p0's red supply is 0
   When p0 ends their actions
   Then the Dating App in p0's operations has 1 bug
+
+Example: TechCrunch Feature adds 1 Hype to one of the player's products for $5 and no action, or $2 when a working Sales Rep is on that product (section 20, ruling 23)
+  Given the phase is actions
+  And p0 has 9 capital
+  And p0's strategy hand has a TechCrunch Feature and a TechCrunch Feature
+  And p0's operations has a Dating App and a To-Do List
+  And the Dating App in p0's operations has a Growth Hacker on it
+  And the To-Do List in p0's operations has a Sales Rep on it
+  When p0 plays a TechCrunch Feature to the Dating App
+  Then it is accepted
+  And p0 has 4 capital
+  And p0 has 3 actions
+  And the Dating App in p0's operations has 1 hype
+  When p0 plays the TechCrunch Feature to the To-Do List
+  Then p0 has 2 capital
+  And the To-Do List in p0's operations has 1 hype
+  And the strategy discard has a TechCrunch Feature and a TechCrunch Feature
+
+Example: a Sales Rep reassigned to the product this turn gives no discount, and without the $5 TechCrunch Feature is refused and nothing changes (section 20, ruling 8)
+  Given the phase is actions
+  And p0 has 4 capital
+  And p0's strategy hand has a TechCrunch Feature
+  And p0's operations has a Dating App and a To-Do List
+  And the To-Do List in p0's operations has a Sales Rep on it
+  When p0 reassigns the Sales Rep to the Dating App
+  And p0 plays the TechCrunch Feature to the Dating App
+  Then it is rejected because "they have at least the lower of the card's price and the target card's price in capital"
+  And p0 has 4 capital
+  And p0's strategy hand has a TechCrunch Feature
+  And the Dating App in p0's operations has 0 hype
+
+Example: each Hype scores 5 points on an Active product, and nothing on an offline one (section 12, ruling 25)
+  Given the crash pile has the Market Crash
+  And it is p1's turn
+  And p0's operations has a Dating App and a To-Do List
+  And p0's ops team has a Junior Software Dev
+  And the Dating App in p0's operations has 2 hype
+  And the To-Do List in p0's operations has 1 hype
+  And the To-Do List in p0's operations is offline
+  When p1 ends their actions
+  Then the game is over
+  And p0 scores 16
+  And p1 scores 1
+
+Example: Design Sprint deals 5 cards from the Seed Deck to the backlog for $0 and no action, past the backlog's limit, and Cleanup cuts it back to 3 (section 20, section 5, the overview's call)
+  Given p0's strategy hand has a Design Sprint
+  And p0's backlog has a Smart Lock
+  And the seed market has a Gig Economy and a Dev Tools
+  And the seed deck has a To-Do List, a Dating App, a Mobile Wallet, a Smart Toy, a Tech Blog and a Pet Tracker
+  When p0 plays the Design Sprint
+  Then it is accepted
+  And p0 has 3 actions
+  And p0 has 7 capital
+  And p0's backlog has 6 cards
+  And the seed deck has a To-Do List
+  And the strategy discard has a Design Sprint
+  When p0 ends their actions
+  Then the phase is backlog cleanup
+  When p0 discards the Smart Lock
+  And p0 discards the Pet Tracker
+  And p0 discards the Tech Blog
+  Then it is p1's turn
+  And p0's backlog has a Dating App, a Mobile Wallet and a Smart Toy
+
+Example: Design Sprint on a Seed Deck of 2 deals both (section 20, ruling 25)
+  Given p0's strategy hand has a Design Sprint
+  And the seed market has a Gig Economy and a Dev Tools
+  And the seed deck has a Tech Blog and a Pet Tracker
+  When p0 plays the Design Sprint
+  Then p0's backlog has a Tech Blog and a Pet Tracker
+  And the seed deck is empty
+
+Example: each Utility card plays only as itself: a Design Sprint goes on no product, and a Cease & Desist waits in the hand for slice 8 (section 20, the spec's call)
+  Given the phase is actions
+  And p0's strategy hand has a Design Sprint and a Cease & Desist
+  And p0's operations has a Dating App
+  When p0 plays the Design Sprint to the Dating App
+  Then it is rejected because "the card is a TechCrunch Feature"
+  When p0 plays the Cease & Desist
+  Then it is rejected because "it is a Design Sprint card"
+  And p0's strategy hand has a Design Sprint and a Cease & Desist

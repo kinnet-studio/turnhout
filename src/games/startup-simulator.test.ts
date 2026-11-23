@@ -166,6 +166,11 @@ const debuffZones = (seats: PlayerId[], by: PlayerId): string[] => {
 /** What a project's team makes once Toxic Personality's cube is off, and what each ops-team card adds to its owner's supplies (R1). */
 const MADE = ['blue made', 'red made', 'qa made'] as const;
 const POOL = ['pool blue', 'pool red', 'pool qa'] as const;
+const PLAY_TO_PRODUCT = 'play a card from their strategy hand to a card in their operations';
+const PLAY_ALONE = 'play a card in their strategy hand';
+/** What a TechCrunch Feature on `product` costs: the lower of the card's worked price and the product's, a side without one left out (§20.A). */
+const techCrunchPrice = (runtime: LangRuntime, state: GameState, cardId: string, productId: string): number =>
+  Math.min(...[runtime.workedValue(state, cardId, 'price'), runtime.workedValue(state, productId, 'price')].filter((p): p is number => typeof p === 'number'));
 /** The Attribute counts a card holds. */
 const attributesOn = (card: CardState) => Object.values(ATTRIBUTES).filter((count) => tokenOn(card, count) > 0);
 /** The rows that keep only their 5 newest cards, letting the oldest go to the box. */
@@ -992,6 +997,25 @@ function playTurn(
       },
     });
   };
+  /**
+   * The play of a Utility card (§20.A): a TechCrunch Feature the seat can pay for on its first product a working Sales Rep pitches, else on
+   * its product at `t` (mod how many); else, on a turn when `t % 3` is 0, a Design Sprint.
+   */
+  const utility = (): Move | null => {
+    const state = engine.getState();
+    const products = cards(own('operations'));
+    const pitched = products.find((product) => runtime.workedFlag(state, product.id, 'pitched'));
+    const techCrunch = pick(PLAY_TO_PRODUCT, own('strategy hand'), (row) => row.find((card) => nameOf(card) === 'TechCrunch Feature'
+      && products.some((product) => techCrunchPrice(runtime, state, card.id, product.id) <= capital())), {
+      zoneId: own('operations'),
+      which: (targets, card) => {
+        const paid = targets.filter((product) => techCrunchPrice(runtime, state, card.id, product.id) <= capital());
+        return paid.find((product) => product.id === pitched?.id) ?? (paid.length === 0 ? undefined : paid[t % paid.length]);
+      },
+    });
+    if (techCrunch !== null) return techCrunch;
+    return t % 3 === 0 ? pick(PLAY_ALONE, own('strategy hand'), (row) => row.find((card) => nameOf(card) === 'Design Sprint')) : null;
+  };
   /** The free move to make now, or null. */
   const freeMove = (): Move | null => {
     const dismiss = t % 9 === 4 ? DISMISS_FROM_OPS : t % 9 === 8 ? DISMISS_FROM_PROJECT : null;
@@ -1005,6 +1029,7 @@ function playTurn(
       }) : null,
       made.has(PLAY_TRAINING) ? null : training(),
       made.has(PLAY_DEBUFF) ? null : debuffing(),
+      made.has(PLAY_TO_PRODUCT) || made.has(PLAY_ALONE) ? null : utility(),
       dismiss !== null && !made.has(dismiss)
         ? pick(dismiss, own(fromOps ? 'ops team' : 'development team'), (row) => (fromOps ? spare(row) : row)[0])
         : null,
@@ -1765,7 +1790,9 @@ function passedTurn(before: GameState, after: GameState, by: PlayerId): boolean 
  */
 function scoreOf(state: GameState, seat: PlayerId): number {
   const vaporware = zoneCards(state, zoneIdFor('backlog', seat)).reduce((sum, card) => sum + VAPORWARE[card.data?.tier as string], 0);
-  const val = sum(operationsOf(state, seat).filter((product) => product.data?.offline !== true), 'val');
+  const online = operationsOf(state, seat).filter((product) => product.data?.offline !== true);
+  // Each Hype on an Active product scores 5 (§12.1).
+  const val = sum(online, 'val') + 5 * online.reduce((total, product) => total + tokenOn(product, 'hype'), 0);
   const staff = ['bench', 'development team', 'ops team'].flatMap((row) => zoneCards(state, zoneIdFor(row, seat)));
   const scored = [...JUNIOR_TOKENS, 'training xp'];
   const human = staff.reduce((total, card) =>
@@ -1895,7 +1922,8 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
         : move.type === HIRE_MARKET ? 1
           : SOURCE_HIRES.includes(move.type) ? costOf(move.cardIds as string[])
             : move.type === PAY_SALARIES ? payrollOf(runtime, before, by)
-              : [PLAY_TRAINING, PLAY_DEBUFF].includes(move.type) ? (runtime.workedValue(before, move.cardId as string, 'price') as number) : 0;
+              : [PLAY_TRAINING, PLAY_DEBUFF].includes(move.type) ? (runtime.workedValue(before, move.cardId as string, 'price') as number)
+                : move.type === PLAY_TO_PRODUCT ? techCrunchPrice(runtime, before, move.cardId as string, move.onto as string) : 0;
     const earned = (seat: PlayerId) =>
       (seat === income ? operationsOf(after, seat).reduce((total, product) => total + revOf(runtime, after, product), 0) : 0);
     const gained = seats.map((seat) => capital(after, seat) - capital(before, seat));
@@ -1940,7 +1968,8 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     for (const seat of seats) {
       const own = (row: string) => zoneIdFor(row, seat);
       if (seat === current) {
-        atMost(own('backlog'), 4);
+        // A Design Sprint deals up to 5 past the 4 a turn's research leaves; Cleanup cuts the backlog back to 3 (§20.A, §5 Phase D).
+        atMost(own('backlog'), 9);
         atMost(own('research'), 3);
         if (size(own('research')) > 0) sameAs(phase, 'research', () => `the phase while ${own('research')} has cards ${at}`);
       } else {
@@ -2248,6 +2277,28 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       attributes.push(`a Debuff on ${move.onto}, in ${by}'s own zone`);
     }
     noneOf(attributes, () => `the Attributes ${at}`);
+    // Hype (§20.A, §12.1): only on a product in operation; it rises only on a TechCrunch Feature's target, by 1, and never falls. A Design
+    // Sprint deals to its player's backlog what the seed deck lost, 5 at most. No Utility card is ever parked with the Attributes.
+    const hype: string[] = [];
+    for (const c of after.cards) {
+      const now = tokenOn(c, 'hype');
+      const was = wasById.get(c.id);
+      const rose = now - (was === undefined ? 0 : tokenOn(was, 'hype'));
+      if (now > 0 && zoneInfo(game!, c.zoneId)?.spec.name !== 'operations') hype.push(`${c.id} (${nameOf(c)}) holds hype in ${c.zoneId}`);
+      if (rose < 0) hype.push(`${c.id} (${nameOf(c)}) lost ${-rose} hype`);
+      if (rose > 0 && !(move.type === PLAY_TO_PRODUCT && c.id === move.onto && rose === 1)) hype.push(`${c.id} (${nameOf(c)}) gained ${rose} hype`);
+    }
+    if (move.type === PLAY_ALONE) {
+      const backlog = zoneIdFor('backlog', by);
+      const lost = zoneCards(before, 'seed-deck').filter((c) => cardById(after, c.id)?.zoneId !== 'seed-deck').map((c) => c.id);
+      const dealt = zoneCards(after, backlog).filter((c) => cardById(before, c.id)?.zoneId !== backlog).map((c) => c.id);
+      sameList(dealt.sort(), lost.sort(), () => `the seed cards a Design Sprint dealt ${at}`);
+      if (dealt.length > 5) hype.push(`a Design Sprint dealt ${dealt.length}`);
+    }
+    for (const c of zoneCards(after, 'attributes-in-play')) {
+      if (['TechCrunch Feature', 'Design Sprint', 'Cease & Desist'].includes(nameOf(c) as string)) hype.push(`${nameOf(c)} in the attributes in play`);
+    }
+    noneOf(hype, () => `Hype and the Utility cards ${at}`);
     // Workaholic's +$2 salary (§20.A): an overworked card on the Board is paid at least $2.
     const staffZones = new Set(seats.flatMap((seat) => [zoneIdFor('development team', seat), zoneIdFor('ops team', seat)]));
     noneOf(after.cards.filter((c) => staffZones.has(c.zoneId) && runtime.workedFlag(after, c.id, 'overworked')
@@ -2472,7 +2523,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(269);
+    expect(results).toHaveLength(275);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -2584,6 +2635,9 @@ describe('Startup Simulator (designer language)', () => {
     for (const flag of ['burned out', 'giving synergy', 'poisoning', 'losing blue', 'losing red', 'losing qa', 'pool losing blue', 'pool losing red', 'pool losing qa']) {
       expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
     }
+    // TechCrunch Feature's price, which a working Sales Rep on the product lowers to $2 (§20.A, §20.B).
+    expect(worked.price).toMatchObject({ kind: 'number', refines: true });
+    for (const flag of ['pitching', 'pitched']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
   });
 
   // The next three tests each add to the rules an example that the rules refuse for naming no button alone, and then an example for each
@@ -3496,13 +3550,13 @@ describe('Startup Simulator (designer language)', () => {
 
     it('takes back every move with undo, and rebuilds the game from its log, through recruits and research (3 players, seed 1)', () => {
       const states: GameState[] = [];
-      // The retuned seats put their makers on projects before they recruit, so the first recruit comes at move 52 (it was within 40).
+      // The retuned seats put their makers on projects before they recruit, so the first recruit comes at move 55 (it was within 40; a Design Sprint and its cleanup came before it from plan 6-2a).
       const both = (log: readonly Move[]) => log.some((move) => RECRUITS.includes(move.type))
         && log.some((move) => move.type === RESEARCH_SEED || move.type === RESEARCH_GROWTH);
       const engine = playGame(3, 1, (_before, _move, after) => states.push(after), { until: both });
       const log = [...engine.getLog()];
-      expect(log).toHaveLength(52);
-      expect(states).toHaveLength(52);
+      expect(log).toHaveLength(55);
+      expect(states).toHaveLength(55);
       // A recruit makes a Junior whose id comes from the state, and a research deals and keeps a card, so both must replay.
       expect(log.some((move) => RECRUITS.includes(move.type))).toBe(true);
       expect(log.some((move) => move.type === RESEARCH_SEED || move.type === RESEARCH_GROWTH)).toBe(true);
@@ -4180,7 +4234,10 @@ describe('Startup Simulator (designer language)', () => {
       const O = seats.find((seat) => seat !== S)!;
       const juniorOf = (seat: PlayerId, junior: string) => zoneCards(start, zoneIdFor('bench', seat)).find((card) => nameOf(card) === junior)!.id;
       const [dating, wallet, growthHacker, architect] = ['Dating App', 'Mobile Wallet', 'Growth Hacker', 'Architect'].map(idOf);
-      let state = relocate(relocate(start, [architect], 'box', game!), [dating, wallet], zoneIdFor('operations', S), game!);
+      // The Design Sprints go to the box too: 5 Seed cards would send the seat's turn through backlog cleanup, whose last discard ends
+      // the turn after the Engine's move.
+      const sprints = start.cards.filter((card) => nameOf(card) === 'Design Sprint').map((card) => card.id);
+      let state = relocate(relocate(start, [architect, ...sprints], 'box', game!), [dating, wallet], zoneIdFor('operations', S), game!);
       state = changeCard(state, wallet, { bugs: 1 }, game!);
       const staff = [juniorOf(S, 'Junior Software Dev'), juniorOf(O, 'Junior Software Dev'), juniorOf(S, 'Junior QA Tester')];
       state = putOn(relocate(state, staff, zoneIdFor('ops team', S), game!), [growthHacker], zoneIdFor('ops team', S), dating, game!);
@@ -4357,7 +4414,7 @@ describe('what the view says the rules work out', () => {
     // Every line of each reads only the card and the cards on it: its Tier, its need, the leads on it, its trait, its zone, its xp and
     // its training xp. A lead's Badge and Skill lines read the card alone too (`it is a card whose …`), so Stalled still shows. Decaying
     // reads its owner's ops team, so it is not shown.
-    expect(shownFlags(game!)).toEqual(['overworked', 'overworked in blue', 'overworked in red', 'overworked in qa', 'burned out', 'stalled', 'efficient in ops', 'experienced', 'practised']);
+    expect(shownFlags(game!)).toEqual(['overworked', 'overworked in blue', 'overworked in red', 'overworked in qa', 'burned out', 'pitched', 'stalled', 'efficient in ops', 'experienced', 'practised']);
   });
 
   it('gives a seat the needs and the flags of the cards on a Board, and nothing of a backlog (Review Focus: 3 players, seed 1)', () => {
@@ -4436,7 +4493,7 @@ describe('what the page shows of slice 5', () => {
   });
 
   it('(guard) shows the same flags beside a value, and the same values about each player, as before (Call 5)', () => {
-    expect(shownFlags(game!)).toEqual(['overworked', 'overworked in blue', 'overworked in red', 'overworked in qa', 'burned out', 'stalled', 'efficient in ops', 'experienced', 'practised']);
+    expect(shownFlags(game!)).toEqual(['overworked', 'overworked in blue', 'overworked in red', 'overworked in qa', 'burned out', 'pitched', 'stalled', 'efficient in ops', 'experienced', 'practised']);
     // Operational revenue reads its owner's ops team through each product's rev, and active tags is a count: neither is shown.
     expect(shownPlayerValues(game!)).toEqual([
       'blue supply', 'red supply', 'blue demand', 'red demand', 'blue load', 'red load', 'qa supply', 'bug load', 'qa spent',
