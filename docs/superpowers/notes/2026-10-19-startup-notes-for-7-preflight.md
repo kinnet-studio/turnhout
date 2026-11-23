@@ -17,3 +17,11 @@
 - Three-line labels: the Diva's (`egotistic, burned out, 1 burnout`) and a stacked card's, whose count falls below the strip the card over it leaves (Gap 3). 6-3's Call 5 accepts it through the hover line; putting lone counts first changes 4-3's and 5-3's label order and pins.
 - 6-3's R5 option B adds `labelledFacts(card, game)` as a third reader of `flagsOn` and `countsRead` (beside `keptBadges`/`boardBadges`); merging the three is a natural cleanup.
 
+
+## From plan 7-1's pre-flight (2026-11-23), for 7-2a and 7-3
+- **7-2a (R20, ruled (b)):** the Round Start Consultant step keeps its accepted stop — an Investor whose Founders have no product is still asked, and confirms; no phrase tests the zones of the player a card names. Option (a), for 7-3's pre-flight as a page-comfort item: `its {cardplayer} has a card in their {perzone}` and its `has no card` form (`needsCard`); card-alone must exclude both (the speed-up 2 pin changes), and 7-2a would need two worked flags (development, operations), an auto-pass guard, and a changed example 2.
+- **7-2b (R21, ruled (a)):** 7-1's Task 3 adds `, choosing p3` for a player choice that isn't a payment; 7-2b's three `, paying` lines (its l.535, l.541, l.543, flagged at l.844) may read `, choosing` instead.
+- **7-3 (Gap 1):** two cards that name different players read alike in 6-3's `placesOf` — two Stakes naming p0 and p2 in p1's holdings are both `Stake (p1's holdings)`; `keptBadges`/`boardBadges` are `{}` and `cardLabel` gives `Stake`. 6-3's "cards still alike are equivalent to the seat" is false for naming cards: add the naming fact (`whose founder is p0`) to the tie-breaker and the lists (7-1's l.1472 asks for this; 7-1's R16 covers the waiting view).
+- **7-3 (Gap 2, G2):** the Share Price before pressing — lookups are judged not shown (7-1 R5), and the Invest button's greyed reason gives words, not the price; the rulebook makes the price public, so 7-3 shows a lookup or a price line.
+- **7-3 (Gap 3):** a posted stake on the page — Board text lists p1's stake under p0's Vase and leaves it off p1's line; the canvas draws it on neither side (7-1's l.1473 item, spec R1).
+- **7-3 (6-3 final review):** a card's own worked cost or price is not shown off a Board (the face gives the printed one); worth showing when the Share Price lands.
