@@ -1,7 +1,5 @@
 # Plan 7-2b: its pre-flight probe rebased onto speed-up 4's head (the second amendment's source)
 
-I couldn't write the file `/tmp/claude-0/-home-user/fbd53c51-0292-5f8c-bf20-70c6ad4ed3bd/scratchpad/pf72b3/report.md`: the harness refused it ("subagents should return findings as text"), so this message is the only copy.
-
 **Where things are**
 - Clone: `/tmp/claude-0/-home-user/fbd53c51-0292-5f8c-bf20-70c6ad4ed3bd/scratchpad/pf72b3/probe`, branch `pf72b-r`, cut at the real head **baaebcd**. Its head is `66e5054`: 12 `R:` picks, then 3 `R2:` commits, and the tree is clean.
 - BASE worktree: `/tmp/claude-0/-home-user/fbd53c51-0292-5f8c-bf20-70c6ad4ed3bd/scratchpad/pf72b3/base`. Logs and tools are in `logs/` and `tools/` beside it.
