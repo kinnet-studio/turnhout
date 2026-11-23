@@ -495,7 +495,7 @@ describe('a test of the player a card names, refused where it cannot be known', 
   it("refuses the target card's owner in a button that picks no target", () => {
     const line = "    Only if they have a card in their holdings whose maker is the target card's owner.";
     const text = MAKER_GAME.replace('  A player may stop.\n', `  A player may stop.\n${line}\n`);
-    expect(errorsOf(text)).toEqual([[lineOf(text, line), expect.stringContaining('only makes sense in a button that picks a card and the card it goes to')]]);
+    expect(errorsOf(text)).toEqual([[lineOf(text, line), '“they have a card in their holdings whose maker is the target card\'s owner” only makes sense in a button that picks a card and the card it goes to, like “A player may stack a card from their hand to a card in the row.”']]);
   });
   it('refuses them in a rule about no player', () => {
     const text = `${MAKER_GAME}\n\nBacked:\n  Only if it is a card whose maker is them.`;

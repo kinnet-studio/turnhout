@@ -580,16 +580,14 @@ describe("the target card's owner", () => {
   const maker = compileGame(MAKER_GAME, createDefaultLibrary()).game!;
   const base = initialState(maker, 1);
   const vases = base.cards.filter((card) => card.data?.name === 'Vase').map((card) => card.id);
-  const scrapped = base.cards.filter((c) => c.data?.name === 'Statue')[0].id;
-  const placed = relocate(relocate(relocate(base, [vases[0]], 'workshop-p0', maker), [vases[1]], 'workshop-p2', maker), [scrapped], 'scrap', maker);
+  const placed = relocate(relocate(base, [vases[0]], 'workshop-p0', maker), [vases[1]], 'workshop-p2', maker);
   const made = makeCard(placed, maker, { name: 'Stake', maker: 'p0' }, 'holdings-p1')!;
-  const about = (onto: string) => fixtureEnv(made.state, {
-    game: maker, seats: ['p0', 'p1', 'p2'], subject: { player: 'p1', space: null, card: made.id, onto },
-  });
-  const holds = (onto: string) => runPhrase<boolean>(createDefaultLibrary(), 'condition', "the target card's owner is its maker", about(onto));
+  const holds = (onto: string, state = made.state) => runPhrase<boolean>(createDefaultLibrary(), 'condition', "the target card's owner is its maker",
+    fixtureEnv(state, { game: maker, seats: ['p0', 'p1', 'p2'], subject: { player: 'p1', space: null, card: made.id, onto } }));
   it('holds for the maker\'s card, not another player\'s, nor one in the center', () => {
     expect(holds(vases[0])).toBe(true);
     expect(holds(vases[1])).toBe(false);
-    expect(holds(scrapped)).toBe(false);
+    // A Vase in the scrap has no owner.
+    expect(holds(vases[1], relocate(made.state, [vases[1]], 'scrap', maker))).toBe(false);
   });
 });

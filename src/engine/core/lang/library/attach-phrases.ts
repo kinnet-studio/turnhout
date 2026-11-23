@@ -9,7 +9,8 @@ import { joinAnd } from '../refs';
 import type { CardMatch, ConditionFn, EffectFn, ExpectFn, MomentFn, PhraseEnv, ZoneRef } from '../types';
 import { matchesCard, relocate, zoneInfo } from '../zones';
 import { changeable } from './card-number-phrases';
-import { claimCards, coversExactly, describeCard, describeCards, namingFacts } from './example-phrases';
+import { claimCards, coversExactly, describeCard, describeCards } from './example-phrases';
+import { namingFacts } from './example-phrases';
 import { itCard, namedCardIn, noCardIn, theCard } from './fact-phrases';
 import { cardHasFlag, cardNumber, cardOf, describeZone, mustBeKept, soleZone, theTargetCard, thePickedCards } from './support';
 
