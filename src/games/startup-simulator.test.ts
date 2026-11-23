@@ -126,7 +126,10 @@ const BRAINSTORM = 'brainstorm';
 const BRAINSTORM_FLUSHING = 'brainstorm after flushing some cards from their strategy hand';
 const KEEP_STRATEGY = 'keep a card in their brainstorm';
 const DISCARD_STRATEGY = 'discard a card in their strategy hand';
-/** A Strategy card's kind is Training, the only kind this slice plays (§20.A). */
+/**
+ * Whether a Strategy card's kind is Training (§20.A). The runs play the Attributes and two Utility cards too (see `isPlayable`), and a
+ * Buff through the Training button, so the checks of a Training press ask this of the card played.
+ */
 const isTraining = (card: CardState) => card.data?.kind === 'Training';
 /** The Strategy deck, by name: 30 cards (§20.A). */
 const STRATEGY_CARDS: Record<string, number> = {
@@ -166,6 +169,32 @@ const debuffZones = (seats: PlayerId[], by: PlayerId): string[] => {
 /** What a project's team makes once Toxic Personality's cube is off, and what each ops-team card adds to its owner's supplies (R1). */
 const MADE = ['blue made', 'red made', 'qa made'] as const;
 const POOL = ['pool blue', 'pool red', 'pool qa'] as const;
+/** What a project's team makes before Toxic Personality's cube comes off, Synergy included (R1). */
+const TEAM = ['blue team output', 'red team output', 'qa team output'] as const;
+/**
+ * What is wrong with the cube Toxic Personality took off `what`, a team or an ops team's pool, as messages (R1). `made` is what it
+ * makes before the cube, in Blue, Red and QA, and `left` what it makes once the cube is off; `working` says its Toxic card is not
+ * onboarding. Each colour keeps what it made or 1 less, never below 0; a working Toxic card takes exactly 1 cube in all when some
+ * colour is made, and none otherwise; and the cube comes off the first of Blue, Red and QA that is made. The deck holds one Toxic
+ * Personality (§20.A), so one card at most holds the count, and the team or pool loses 1 cube at most.
+ */
+function toxicCube(what: string, made: readonly number[], left: readonly number[], working: boolean): string[] {
+  const colours = ['Blue', 'Red', 'QA'];
+  const wrong = made.flatMap((value, i) => (left[i] < 0 || left[i] > value
+    ? [`${what} keeps ${left[i]} ${colours[i]} of the ${value} it makes, expected ${value} or ${value - 1} and never below 0`] : []));
+  const first = made.findIndex((value) => value > 0);
+  const expected = working && first >= 0 ? 1 : 0;
+  const lost = made.reduce((total, value, i) => total + value - left[i], 0);
+  if (lost !== expected) {
+    const why = !working ? 'its Toxic card is onboarding'
+      : first < 0 ? 'it makes nothing' : 'its Toxic card works and it makes some colour';
+    wrong.push(`${what} loses ${lost} cubes in all, expected ${expected}, as ${why}`);
+  } else if (expected === 1 && made[first] - left[first] !== 1) {
+    const off = colours.filter((_, i) => left[i] < made[i]).join(', ');
+    wrong.push(`${what} loses its cube off ${off}, expected off ${colours[first]}, the first of Blue, Red and QA it makes`);
+  }
+  return wrong;
+}
 const PLAY_TO_PRODUCT = 'play a card from their strategy hand to a card in their operations';
 const PLAY_ALONE = 'play a card in their strategy hand';
 /** What a TechCrunch Feature on `product` costs: the lower of the card's worked price and the product's, a side without one left out (§20.A). */
@@ -615,13 +644,18 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *   from the other when that one has none. Then it pays salaries.
  * - **Free moves** come first in the actions phase, each at most once a turn. While its development has fewer than 3, it greenlights
  *   the first backlog card whose press is allowed, Tier 2 and 3 included, but an idea Domain Expertise cuts before any other. Then it
- *   plays the first Training card of its Strategy Hand that has a target the rules take, in its bench, development team or ops team:
- *   a Leadership Masterclass on the first such target of the kind `t % 3` names (a Junior, a QA Engineer or a Sales Rep), else on the
- *   first such target, and any other card on the one at `t` (mod how many) among them (see `training`, §20.A). It
- *   dismisses the ops team's first card it can spare when `t % 9 === 4` and the development team's first when `t % 9 === 8`. In the
- *   last round, with the Market Crash in the crash pile, it dismisses on an even `t` the ops team's first card that gives Blue or Red
- *   bandwidth, once a turn (see `lastRound`): a path-driver, not play, that sends a seat short so that the final check has a choice
- *   to make (see below).
+ *   plays the first card of its Strategy Hand that has a target the rules take, in its bench, development team or ops team, of the
+ *   Training cards on any turn and of the Buffs too on a turn when `t % 3 === 0`: a Leadership Masterclass on the first such target of
+ *   the kind `t % 3` names (a Junior, a QA Engineer or a Sales Rep), else on the first such target; a Workaholic on the first that makes
+ *   some colour, a Clean Coder on the Hacker, else on an attaching card in the ops team, and a Visionary on a Junior on a Stalled
+ *   project, each else on the one at `t` (mod how many) among them, as any other card is (see `training`, §20.A). Then it plays the first
+ *   Debuff of its Strategy Hand that has a target the rules take, on the rival card at `t` (mod how many) among them (see `debuffing`).
+ *   Then one Utility card at most: a TechCrunch Feature it can pay for, on its first product a working Sales Rep pitches when it can pay
+ *   for that one, else on its product at `t` (mod how many) among those it can pay for; else, on a turn when `t % 3 === 0`, a Design
+ *   Sprint (see `utility`). It dismisses the ops team's first card it can spare when `t % 9 === 4` and the development team's first
+ *   when `t % 9 === 8`. In the last round, with the Market Crash in the crash pile, it dismisses on an even `t` the ops team's first
+ *   card that gives Blue or Red bandwidth, once a turn (see `lastRound`): a path-driver, not play, that sends a seat short so that the
+ *   final check has a choice to make (see below).
  * - **The first action** launches the first project the engine takes (see `launch`), else it is an Ideation. A seat that researches and
  *   runs no product yet first researches the seed deck, else drafts the seed market's first card, since a Tier 1 card is what it can build
  *   (the retune's D2). Else the Ideation goes by `t % 4`: a growth idea (0 and 2), draft from the growth market (1), or (3) by
@@ -683,9 +717,10 @@ const boardMovesAfter = (action: number) => Array.from({ length: 8 }, (_, i) => 
  *   When the rules refuse that, or it has nothing to pick, it tries the next of those places in that order, and with none it passes
  *   on the rest (see `sourcing`).
  * - In research it keeps a hybrid Domain Expertise cuts, else an idea it cuts, else the research row's card at `t` (mod the row's
- *   length). In the brainstorm step it keeps the row's first Training card, else the row's card at `t` (mod the row's length) (§6).
- *   In the backlog cleanup it discards the first card Domain Expertise doesn't cut, else the row's first; in the strategy cleanup,
- *   the first card that is not Training, else the row's first; in the bench cleanup, the row's first.
+ *   length). In the brainstorm step it keeps the row's first card the runs play (a Training card, an Attribute, a TechCrunch Feature or
+ *   a Design Sprint: see `isPlayable`), else the row's card at `t` (mod the row's length) (§6). In the backlog cleanup it discards the
+ *   first card Domain Expertise doesn't cut, else the row's first; in the strategy cleanup, the first card the runs don't play, else
+ *   the row's first; in the bench cleanup, the row's first.
  *
  * A hire's place goes by `(t + ⌊t / 9⌋) % 3`, not `t % 3`: the action that hires from the agency row comes only when `t % 9` is 0
  * or 8, and the Layoff before a sourcing only when it is 6 or 7, so `t % 3` would never send either to one of its three places.
@@ -967,16 +1002,20 @@ function playTurn(
   /** Whether `card` gives Blue or Red bandwidth, as the rules work it out (§5 Phase B). */
   const givesBandwidth = (card: CardState) =>
     ['blue', 'red'].some((color) => (runtime.workedValue(engine.getState(), card.id, `${color} bandwidth`) as number) > 0);
-  /** Whether the rules take Training card `card` played on `target`: the press is refused for none of their reasons before its choices. */
+  /**
+   * Whether the rules take `card`, a Training card or a Buff, played on `target`: the press is refused for none of their reasons before
+   * its choices.
+   */
   const takes = (card: CardState, target: CardState) =>
     typeof pressChoices(runtime, engine.getState(), { type: PLAY_TRAINING, by, cardId: card.id, onto: target.id }) !== 'string';
   /** What a Masterclass looks for in a target: a Junior by its role, else the card's name (§20.A). */
   const kindOf = (card: CardState) => (card.data?.role === 'Junior' ? 'Junior' : nameOf(card));
   /**
-   * The play of the Strategy Hand's first Training card that has a target the rules take, in the seat's bench, development team or ops
-   * team (§20.A). A Leadership Masterclass goes on the first taken target of the kind `t % 3` names, a Junior, a QA Engineer or a Sales
-   * Rep, else on the first taken target; any other card on the taken target at `t` (mod how many). The choice a Bootcamp asks of a
-   * Junior both colours fit is answered as any press's is, by `t`.
+   * The play of the Strategy Hand's first Training card, or on a turn when `t % 3 === 0` its first Training card or Buff, that has a
+   * target the rules take, in the seat's bench, development team or ops team (§20.A). A Leadership Masterclass goes on the first taken
+   * target of the kind `t % 3` names, a Junior, a QA Engineer or a Sales Rep, else on the first taken target; a Buff on the first taken
+   * target where it pays (see below), else on the taken target at `t` (mod how many), as any other card is. The choice a Bootcamp asks
+   * of a Junior both colours fit is answered as any press's is, by `t`.
    */
   const training = (): Move | null => {
     const zones = TRAINING_TARGETS.map(own);
@@ -1245,11 +1284,12 @@ function playTurn(
   /** The Diva's assign from the bench to the ops team, where her Ego refuses a reassign as well (§6, §20.B.1). */
   const divaToOps = () => pickSome(ASSIGN_TO_OPS, own('bench'), (bench) => bench.filter(isDiva));
   /**
-   * A Brainstorm as the turn's action `a`, when `(t + a) % 5 === 2`: on an odd `t`, while the seat's Strategy Hand holds a card that is
-   * not Training, it flushes every such card first, else it Brainstorms plainly (§6, §15.C). Null otherwise. Training is the only kind
-   * this slice plays, so the others only fill the hand: flushing them sends cards to the strategy discard, which a Brainstorm on an
-   * empty deck shuffles back in, and the strategy cleanup discards whatever is left over 3. A press the rules refuse, on an empty deck
-   * and an empty discard, falls through to the next planned move.
+   * A Brainstorm as the turn's action `a`, when `(t + a) % 5 === 2`: on an odd `t`, while the seat's Strategy Hand holds a card the runs
+   * don't play (see `isPlayable`), it flushes every such card first, else it Brainstorms plainly (§6, §15.C). Null otherwise. The runs
+   * play the Training cards, the Attributes, TechCrunch Feature and Design Sprint, so the Warfare cards and Cease & Desist only fill the
+   * hand: flushing them sends cards to the strategy discard, which a Brainstorm on an empty deck shuffles back in, and the strategy
+   * cleanup discards whatever is left over 3. A press the rules refuse, on an empty deck and an empty discard, falls through to the next
+   * planned move.
    */
   const brainstorming = (a: number): Move | null => {
     if ((t + a) % 5 !== 2) return null;
@@ -1396,7 +1436,7 @@ function playTurn(
     } else {
       const cleanup = CLEANUPS[phase!];
       if (cleanup === undefined) throw new Error(`The long runs don't play the ${phase} phase.`);
-      // A backlog keeps the ideas Domain Expertise cuts, and a Strategy Hand its Training cards, the only kind this slice plays.
+      // A backlog keeps the ideas Domain Expertise cuts, and a Strategy Hand the cards the runs play (see `isPlayable`).
       const kept = (card: CardState) => (cleanup.row === 'backlog' && expertIn(card)) || (cleanup.row === 'strategy hand' && isPlayable(card));
       play(engine, choose([pick(cleanup.discard, own(cleanup.row), (row) => row.find((card) => !kept(card)) ?? row[0])]), watch);
     }
@@ -1436,10 +1476,13 @@ function playGame(
   return engine;
 }
 
-/** What the replay test counts in a game: the paths some log must hold so that rebuilding the logs rebuilds them too. */
+/**
+ * What the replay tests count in a game: the paths some log must hold so that rebuilding the logs rebuilds them too. The 2-player test
+ * requires all but the Design Sprints, which the 3-player test requires with the Debuffs, strips and TechCrunch Features.
+ */
 const REPLAYED = [
   'declarations', 'switches off', 'Bugs added to a project', 'Pending tokens gained', 'Launches that raised XP', 'reshuffles',
-  'Training that asked a choice or had it filled in', 'Milestone claims', 'Debuffs', 'strips', 'TechCrunch Features',
+  'Training that asked a choice or had it filled in', 'Milestone claims', 'Debuffs', 'strips', 'TechCrunch Features', 'Design Sprints',
 ] as const;
 
 /** A game kept for the replay and view tests: its log, the state before its last move, its end, the moves watched and its counts. */
@@ -1468,6 +1511,7 @@ function keepingForReplay(runtime: LangRuntime) {
     seen['Milestone claims'] += keys.filter((key) => key.startsWith(`${CLAIMED}: `)).length;
     if (move.type === PLAY_DEBUFF) seen.Debuffs += 1;
     if (move.type === PLAY_TO_PRODUCT) seen['TechCrunch Features'] += 1;
+    if (move.type === PLAY_ALONE && nameOf(cardById(before, move.cardId as string)!) === 'Design Sprint') seen['Design Sprints'] += 1;
     seen.strips += keys.filter((key) => key === ATTRIBUTES_FIRED).length;
     const gained = (c: CardState, names: readonly string[]) => {
       const was = cardById(before, c.id);
@@ -1858,7 +1902,9 @@ function happenings(runtime: LangRuntime, before: GameState, move: Move, after: 
       }
     }
   }
-  if ([ASSIGN_TO_PROJECT, REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS, HIRE_AGENCY_TO_PROJECT].includes(move.type)) {
+  // No agency hire is here: the agency row's cards come from the talent deck, straight or through a scouting row, and it never
+  // reshuffles, so they hold no Attributes (§13).
+  if ([ASSIGN_TO_PROJECT, REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS].includes(move.type)) {
     for (const c of after.cards) {
       const holder = c.data?.[HOLDER_KEY];
       if (c.data?.trait !== 'Spaghetti Code' || tokenOn(c, 'clean coder') !== 1 || typeof holder !== 'string') continue;
@@ -1937,9 +1983,10 @@ function scoreOf(state: GameState, seat: PlayerId): number {
  *
  * - Money is conserved: each seat's capital changes by what it earned less what it paid. The mover pays the bank 2 for a recruit,
  *   the card's cost for a hire from the agency row, 1 for one from the open job market, the total cost of the picked cards for a
- *   hire from its scouting, its payroll for paying salaries, the played card's price for a Training card (§20.A), and nothing for
- *   anything else but a Greenlight. The seat that reached its Income in the move (see `enteredIncome`) earns the total rev of its
- *   products in operation, as the rules work it out, and no one else earns anything.
+ *   hire from its scouting, its payroll for paying salaries, the played card's price for a Training card or an Attribute, the lower of
+ *   the card's price and the product's for a TechCrunch Feature (§20.A), and nothing for anything else but a Greenlight. The seat that
+ *   reached its Income in the move (see `enteredIncome`) earns the total rev of its products in operation, as the rules work it out,
+ *   and no one else earns anything.
  * - A Greenlight pays a License for each Tag the card requires that the mover's operations didn't provide, and pays it to the other
  *   seats: the mover pays the license times the Tags missing, each other seat gains a whole number of Licenses, no more than the
  *   missing Tags its operations provided, and together they gain what the mover paid. Some seat provided every Tag the card
@@ -1974,6 +2021,8 @@ function scoreOf(state: GameState, seat: PlayerId): number {
  * - Training (§6, §20.A): in a Training press the only card that leaves a Strategy Hand for the strategy discard is the one played, and
  *   it is a Training card; the press gives its target exactly one thing, one Skill token, one Training XP or the Badge it lacked, and
  *   changes nothing else of any card's tokens or Badge.
+ * - A Buff (§20.A, the slice's R2): its press moves the card from its player's Strategy Hand to the attributes in play and gives its
+ *   target 1 of its count, and no other card moves or changes its data.
  * - Pending: a card holds one Pending token of each colour at most, and only a Junior holds one. It gains one only as its owner's Engine
  *   runs, while it sits on a project in their development that was not Stalled as the Engine generated (see `atTheEngine`) (§3, §5
  *   Phase D, §11.B, ruling 1). It holds one only in a development team, or in the ops team of the seat whose turn is in Launch's
@@ -2097,7 +2146,9 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     for (const seat of seats) {
       const own = (row: string) => zoneIdFor(row, seat);
       if (seat === current) {
-        // A Design Sprint deals up to 5 past the 4 a turn's research leaves; Cleanup cuts the backlog back to 3 (§20.A, §5 Phase D).
+        // 9 is the auto-player's bound, not the rules': it plays one Utility card a turn at most (see `utility`), so one Design Sprint
+        // deals up to 5 past the 4 a turn's research leaves. Two Sprints in one turn could legally take the backlog higher. Cleanup cuts
+        // it back to 3 either way (§20.A, §5 Phase D).
         atMost(own('backlog'), 9);
         atMost(own('research'), 3);
         if (size(own('research')) > 0) sameAs(phase, 'research', () => `the phase while ${own('research')} has cards ${at}`);
@@ -2356,6 +2407,38 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
         sameAs(what, 'one Skill token, one Training XP or the Badge', () => `what ${move.cardId} gave its target ${move.onto} ${at}`);
       }
     }
+    // A Buff leaves its player's Strategy Hand for the attributes in play and gives its target 1 of its count (§20.A, the slice's R2),
+    // and that is all it does on the table: no other card moves, and no card's tokens, flags or place on a card change but that one
+    // count. What it costs is the money check's above, and the hand's other cards only slide along, which their zones and data don't show.
+    if (move.type === PLAY_TRAINING && BUFFS.includes(nameOf(card!) as string)) {
+      const count = ATTRIBUTES[nameOf(card!) as string];
+      /** The data keys whose values differ between `was` and `now`, a key missing on one side included. */
+      const differs = (was: CardState, now: CardState) =>
+        [...new Set([...Object.keys(was.data ?? {}), ...Object.keys(now.data ?? {})])]
+          .filter((key) => JSON.stringify(was.data?.[key]) !== JSON.stringify(now.data?.[key]));
+      const buffed: string[] = [];
+      for (const c of after.cards) {
+        const was = wasById.get(c.id);
+        const which = `${c.id} (${nameOf(c)})`;
+        if (was === undefined) {
+          buffed.push(`${which} appeared in ${c.zoneId}, expected no new card`);
+          continue;
+        }
+        const [from, to] = c.id === move.cardId ? [zoneIdFor('strategy hand', by), 'attributes-in-play'] : [was.zoneId, was.zoneId];
+        if (was.zoneId !== from || c.zoneId !== to) {
+          buffed.push(`${which} went from ${was.zoneId} to ${c.zoneId}, expected ${from} to ${to}`);
+        }
+        const changed = differs(was, c);
+        const expected = c.id === move.onto ? [count] : [];
+        if (!sameValues(changed, expected)) {
+          buffed.push(`${which} changed ${changed.join(', ') || 'nothing'}, expected ${expected.join(', ') || 'nothing'}`);
+        }
+      }
+      const [was, target] = [wasById.get(move.onto as string), cardById(after, move.onto as string)];
+      const [had, has] = [was === undefined ? 0 : tokenOn(was, count), target === undefined ? 0 : tokenOn(target, count)];
+      if (has !== had + 1) buffed.push(`${move.onto} went from ${had} to ${has} ${count}, expected ${had + 1}`);
+      noneOf(buffed, () => `what a Buff press changed, other than its card's place and its target's ${count} ${at}`);
+    }
     // The Attributes (§15.C, §20.A, the slice's R2): each Attribute card is in the attributes in play exactly when its count is 1 on some
     // card not in the box; no card holds more than 1 of any; only staff hold one; a count rises only on the target of a press of that
     // Attribute, by 1, and a Debuff's target is in another seat.
@@ -2433,8 +2516,8 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     noneOf(after.cards.filter((c) => staffZones.has(c.zoneId) && runtime.workedFlag(after, c.id, 'overworked')
       && ((runtime.workedValue(after, c.id, 'salary') as number | undefined) ?? 0) < 2).map((c) => `${c.id} (${nameOf(c)})`),
       () => `overworked staff paid less than $2 ${at}`);
-    // Burnout (R3): its staff member makes nothing in any colour and gives no Synergy. Toxic Personality (R1): a team's made value is its
-    // team value or one less, never below 0, and no supply is below 0.
+    // Burnout (R3): its staff member makes nothing in any colour and gives no Synergy. Toxic Personality (R1): a team's made values and an
+    // ops team's supplies are what it makes less exactly 1 cube, off the first colour made, while its Toxic card works (see `toxicCube`).
     const toxicity: string[] = [];
     for (const c of after.cards) {
       if (staffZones.has(c.zoneId) && tokenOn(c, 'burnout') > 0) {
@@ -2445,19 +2528,23 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
         if (runtime.workedFlag(after, c.id, 'giving synergy')) toxicity.push(`${c.id} (${nameOf(c)}) burned out giving synergy`);
       }
       // Only a team with a Toxic card on it can make less than its team value, so only such a project is worked out (time).
-      if (zoneInfo(game!, c.zoneId)?.spec.name === 'development' && cardsOn(after, c.id).some((on) => tokenOn(on, 'toxic personality') > 0)) {
-        MADE.forEach((name, i) => {
-          const made = runtime.workedValue(after, c.id, name) as number;
-          const team = runtime.workedValue(after, c.id, ['blue team output', 'red team output', 'qa team output'][i]) as number;
-          if (made < 0 || made > team || made < team - 1) toxicity.push(`${c.id} (${nameOf(c)}) ${name} ${made} against ${team}`);
-        });
+      const toxic = zoneInfo(game!, c.zoneId)?.spec.name === 'development'
+        ? cardsOn(after, c.id).find((on) => tokenOn(on, 'toxic personality') > 0) : undefined;
+      if (toxic !== undefined) {
+        const read = (names: readonly string[]) => names.map((name) => runtime.workedValue(after, c.id, name) as number);
+        toxicity.push(...toxicCube(`${c.id} (${nameOf(c)})`, read(TEAM), read(MADE), toxic.data?.onboarding !== true));
       }
     }
-    for (const seat of seats.filter((s) => zoneCards(after, zoneIdFor('ops team', s)).some((on) => tokenOn(on, 'toxic personality') > 0))) {
-      for (const name of ['blue supply', 'red supply', 'qa supply']) {
-        const supply = runtime.playerValue(after, seat, name);
-        if (supply < 0) toxicity.push(`${seat}'s ${name} ${supply}`);
-      }
+    // An ops team's supplies likewise, from the Blue and Red bandwidth and the QA output its cards give, which is all a supply adds up
+    // before the cube (§5): only a seat with a Toxic card in its ops team is worked out (time).
+    for (const seat of seats) {
+      const team = zoneCards(after, zoneIdFor('ops team', seat));
+      const toxic = team.find((on) => tokenOn(on, 'toxic personality') > 0);
+      if (toxic === undefined) continue;
+      const given = ['blue bandwidth', 'red bandwidth', 'qa output']
+        .map((name) => team.reduce((total, on) => total + ((runtime.workedValue(after, on.id, name) as number | null) ?? 0), 0));
+      const supplies = ['blue supply', 'red supply', 'qa supply'].map((name) => runtime.playerValue(after, seat, name));
+      toxicity.push(...toxicCube(`${seat}'s ops team`, given, supplies, toxic.data?.onboarding !== true));
     }
     noneOf(toxicity, () => `Toxic Personality and Burnout ${at}`);
     // The Hacker with Clean Coder adds no Bug to a project he joins (§20.B "unless he has Clean Code himself").
@@ -2652,7 +2739,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(275);
+    expect(results).toHaveLength(278);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -3975,12 +4062,14 @@ describe('Startup Simulator (designer language)', () => {
     it('takes back the last move and rebuilds whole games from their logs, through declarations, Bugs, the final check, Pending tokens, graduation, Brainstorms, a reshuffle, Training and Milestone claims (Review Focus: 2 players, seeds 1 to 5)', () => {
       // The games are the long run's (see `keptGames`), with what each counted as it was played. Undo takes the last move off the
       // log and plays the rest again from the start, so it gives the same state on the engine rebuilt from the log as on the one that
-      // played the game.
-      const seen = Object.fromEntries(REPLAYED.map((what) => [what, 0])) as KeptGame['seen'];
+      // played the game. It requires every path `REPLAYED` counts but the Design Sprints, which the 3-player test below requires.
+      type Required = Exclude<(typeof REPLAYED)[number], 'Design Sprints'>;
+      const required = REPLAYED.filter((what): what is Required => what !== 'Design Sprints');
+      const seen = Object.fromEntries(required.map((what) => [what, 0])) as Record<Required, number>;
       for (let seed = 1; seed <= 5; seed++) {
         const where = `2 players, seed ${seed}`;
         const { log, beforeLast, end, watched, seen: counted } = twoPlayerGame(seed);
-        for (const what of REPLAYED) seen[what] += counted[what];
+        for (const what of required) seen[what] += counted[what];
         expect(end.result, `${where}: the result`).toBeDefined();
         expect(watched, `${where}: the moves watched`).toBe(log.length);
 
@@ -4008,7 +4097,7 @@ describe('Startup Simulator (designer language)', () => {
       // strips (Attributes discarded with a fired Talent) in seeds 2 and 5, the TechCrunch Feature in seed 4 only, with a Clean Coder Buff,
       // and a Design Sprint in seeds 1, 2 and 5. The last move taken back is a backlog cleanup's discard in seeds 1 and 2, a final-check
       // switch-off in seeds 3 and 4 and the end of the actions in seed 5.
-      const seen = { Debuffs: 0, strips: 0, 'TechCrunch Features': 0 };
+      const seen = { Debuffs: 0, strips: 0, 'TechCrunch Features': 0, 'Design Sprints': 0 };
       for (let seed = 1; seed <= 5; seed++) {
         const where = `3 players, seed ${seed}`;
         const { log, beforeLast, end, seen: counted } = keptGame(3, seed);

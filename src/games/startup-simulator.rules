@@ -888,7 +888,7 @@ Phase: income
 
 Phase: actions
   Players take turns.
-  Hint: Spend 3 actions on hiring, drafting, research and your board. Greenlighting, Training and dismissing cost no actions, though a product may need Licenses. Press a button, then pick the cards. End your actions when you are done.
+  Hint: Spend 3 actions on hiring, drafting, research and your board. Greenlighting, dismissing and playing Strategy cards (Training, Attributes, TechCrunch Feature and Design Sprint) cost no actions, though a product may need Licenses. Press a button, then pick the cards. End your actions when you are done.
   A player may recruit a junior software dev.
     It costs 1 action.
     Only if they have at least 2 capital.
@@ -4835,6 +4835,35 @@ Example: a Junior PM with Burnout gives no Synergy, though it still gives Brains
   And p1 ends their actions
   Then the Dating App in p1's development has 1 blue cube
 
+Example: an experienced Junior with Workaholic and Burnout is paid $1 + $2 and makes nothing, and the Engineer with Workaholic in the ops team is paid $1 + $2 (section 20, the slice's R3)
+  Given p1's development has a Dating App
+  And p1's operations has a Smart Lock
+  And p1's ops team has the Engineer
+  And the Dating App in p1's development has a Junior Software Dev on it
+  And the Junior Software Dev in p1's development team has 2 blue xp tokens
+  And the Junior Software Dev in p1's development team has 1 workaholic
+  And the Junior Software Dev in p1's development team has 1 burnout
+  And the Engineer in p1's ops team has 1 workaholic
+  And the turn passes to the left
+  Then the phase is income
+  When p1 pays salaries
+  Then p1 has 3 capital
+  When p1 ends their actions
+  Then the Dating App in p1's development has 0 blue cubes
+
+Example: Burnout comes after Workaholic in Red and QA too: a Junior Hardware Eng and a Junior QA Tester with both make no Red and clean no Bug (section 20, the slice's R3)
+  Given the phase is actions
+  And p0's development has a Cloud Storage
+  And the Cloud Storage in p0's development has 2 bugs
+  And the Cloud Storage in p0's development has a Junior Hardware Eng and a Junior QA Tester on it
+  And the Junior Hardware Eng in p0's development team has 1 workaholic
+  And the Junior Hardware Eng in p0's development team has 1 burnout
+  And the Junior QA Tester in p0's development team has 1 workaholic
+  And the Junior QA Tester in p0's development team has 1 burnout
+  When p0 ends their actions
+  Then the Cloud Storage in p0's development has 0 red cubes
+  And the Cloud Storage in p0's development has 2 bugs
+
 Example: Toxic Personality takes one cube off its team's total after Synergy, Blue first, though the Toxic staff member makes nothing itself (section 20, ruling 25, the slice's R1)
   Given the phase is actions
   And p0's development has a Cloud Storage
@@ -4872,6 +4901,15 @@ Example: a team that makes neither Blue nor Red cleans one Bug fewer for Toxic P
   And the QA Engineer in p0's development team has 1 toxic personality
   When p0 ends their actions
   Then the Dating App in p0's development has 2 bugs
+
+Example: a lone Junior with Toxic Personality making 1 Blue makes no cube, yet still gains its Blue Pending token, since Pending reads the team's work before Toxic's cube (section 11, section 20, the slice's R1)
+  Given the phase is actions
+  And p0's development has a Dating App
+  And the Dating App in p0's development has a Junior Software Dev on it
+  And the Junior Software Dev in p0's development team has 1 toxic personality
+  When p0 ends their actions
+  Then the Dating App in p0's development has 0 blue cubes
+  And the Junior Software Dev in p0's development team has 1 pending blue
 
 Example: in the ops team Toxic Personality takes one off the Blue bandwidth first, though the Toxic PM makes nothing, so a product goes offline (section 20, section 5, the slice's R1)
   Given p1's operations has a Dating App and a Smart Lock
