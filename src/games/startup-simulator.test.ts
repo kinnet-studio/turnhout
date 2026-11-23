@@ -2503,8 +2503,9 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     });
     const stray = seats.flatMap((seat) => [...zoneCards(after, zoneIdFor('equity', seat)), ...portfolioOf(after, seat)])
       .filter((c) => founderOf(c) === undefined).map((c) => `${c.id} (${nameOf(c)}) in ${c.zoneId}`);
-    // An Invest moves exactly its card, from its Founder's equity to the mover's portfolio, and only from an equity of 2 or more (§17.D).
-    if (move.type === INVEST) {
+    // An Invest, the one that places a Consultant too, moves exactly its card, from its Founder's equity to the mover's portfolio, and
+    // only from an equity of 2 or more (§17.B.4, §17.D).
+    if ([INVEST, INVEST_PLACING].includes(move.type)) {
       const moved = after.cards.filter((c) => cardById(before, c.id)?.zoneId !== c.zoneId).map((c) => c.id);
       sameList(moved, [card!.id], () => `the cards moved ${at}`);
       sameAs(from, zoneIdFor('equity', founderOf(card!)!), () => `where ${at} took its card`);
