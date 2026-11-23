@@ -12,6 +12,9 @@ import type { CompiledGame } from '../types';
 import { relocate } from '../zones';
 import { createDefaultLibrary } from './index';
 import { LOOKUP_GAME } from '../testing';
+import { vi } from 'vitest';
+import type { Move } from '../../moves';
+import { LangRuntime } from '../runtime';
 
 const lib = createDefaultLibrary();
 
@@ -223,5 +226,91 @@ describe('values by lookup', () => {
       fixtureEnv(state, { game, seats: ['p0', 'p1', 'p2'], subject: { player: 'p0', space: null, card: null } }), 7);
     expect(highest(below)).toBe(-2);
     expect(highest(fresh)).toBe(0);
+  });
+});
+
+describe('a runtime keeping the values about a player', () => {
+  /** A runtime of its own, so that nothing another test asked is kept, and a spy on the phrases it calls. */
+  const fresh = () => {
+    const own = new LangRuntime(game, lib, runtime.seats);
+    return { own, calls: vi.spyOn(own as unknown as { call: (...args: unknown[]) => unknown }, 'call') };
+  };
+
+  it('works a value out once for a seat in a state', () => {
+    const { own, calls } = fresh();
+    expect(own.playerValue(table, 'p0', 'red force')).toBe(2);
+    const once = calls.mock.calls.length;
+    expect(once).toBeGreaterThan(0);
+    expect(own.playerValue(table, 'p0', 'red force')).toBe(2);
+    expect(calls.mock.calls.length).toBe(once);
+    // Another seat, or another name, in the same state is worked out for itself.
+    expect([own.playerValue(table, 'p1', 'red force'), own.playerValue(table, 'p0', 'red load'), own.playerValue(table, 'p1', 'red load')])
+      .toEqual([0, 2, 1]);
+    expect(calls.mock.calls.length).toBeGreaterThan(once);
+  });
+
+  it('works it out afresh in a new state, as that state holds it, and keeps the old state’s as it was', () => {
+    const { own } = fresh();
+    expect(own.playerValue(table, 'p0', 'red force')).toBe(2);
+    // The same cards in a new state object: worked out again, to the same.
+    expect(own.playerValue({ ...table }, 'p0', 'red force')).toBe(2);
+    const fewer = relocate(table, [tinker], 'hall', game);
+    expect(own.playerValue(fewer, 'p0', 'red force')).toBe(1);
+    expect(own.playerValue(table, 'p0', 'red force')).toBe(2);
+  });
+
+  it('works a value out afresh while the checker answers, and keeps nothing of what it worked out there', () => {
+    const { own, calls } = fresh();
+    const asked: number[] = [];
+    own.setChecker((state) => {
+      asked.push(own.playerValue(state, 'p0', 'red force'));
+      return true;
+    });
+    const check = (own as unknown as { check: (state: GameState, move: Move) => true | string }).check;
+    const stop: Move = { type: 'stop', by: 'p0' };
+    // The first answer also works out the cards' values, which are kept for the card objects: what the value's own line costs is the
+    // second's.
+    expect(check(table, stop)).toBe(true);
+    const first = calls.mock.calls.length;
+    expect(check(table, stop)).toBe(true);
+    const line = calls.mock.calls.length - first;
+    expect(line).toBeGreaterThan(0);
+    // Nothing was kept in the checker: asked outside it, the value is worked out, and then kept.
+    expect(own.playerValue(table, 'p0', 'red force')).toBe(2);
+    expect(calls.mock.calls.length).toBe(first + 2 * line);
+    expect(own.playerValue(table, 'p0', 'red force')).toBe(2);
+    expect(calls.mock.calls.length).toBe(first + 2 * line);
+    // What was kept outside is not read in the checker either.
+    expect(check(table, stop)).toBe(true);
+    expect(calls.mock.calls.length).toBe(first + 3 * line);
+    expect(asked).toEqual([2, 2, 2]);
+  });
+
+  it('gives each of many states its own values, read again once later states were made from it', () => {
+    const { own, calls } = fresh();
+    // Each state is made from the one before it, so later states share most of their cards with earlier ones.
+    const steps = [
+      (state: GameState) => relocate(state, [tinker], 'hall', game),
+      (state: GameState) => relocate(state, [secondStatue], 'workshop-p0', game),
+      (state: GameState) => putOn(state, [tinker], 'crew-p0', vase, game),
+      (state: GameState) => relocate(state, [potter], 'hall', game),
+      (state: GameState) => putOn(state, [potter], 'crew-p1', statue, game),
+      (state: GameState) => relocate(state, [vase], 'hall', game),
+    ];
+    const states = steps.reduce((made, step) => [...made, step(made.at(-1)!)], [table]);
+    const readAll = (rt: LangRuntime, state: GameState) =>
+      ['p0', 'p1', 'p2'].flatMap((seat) => ['red force', 'red load'].map((name) => rt.playerValue(state, seat, name)));
+    const first = states.map((state) => readAll(own, state));
+    expect(new Set(first.map((values) => values.join())).size).toBeGreaterThan(4);
+    const worked = calls.mock.calls.length;
+    expect(states.map((state) => readAll(own, state))).toEqual(first);
+    expect(calls.mock.calls.length).toBe(worked);
+    expect(states.map((state) => readAll(fresh().own, state))).toEqual(first);
+  });
+
+  it('throws every time for a value about a player worked out from itself, and keeps nothing of it', () => {
+    const looping = compiled([FORCE_GAME, '', 'Loop:', "  A player's loop is 1 if their loop is at least 1."].join('\n'));
+    const own = new LangRuntime(looping, lib, runtime.seats);
+    for (let i = 0; i < 3; i++) expect(() => own.playerValue(table, 'p0', 'loop')).toThrow('“loop” is worked out from itself.');
   });
 });

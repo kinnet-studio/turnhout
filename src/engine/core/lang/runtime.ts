@@ -116,6 +116,12 @@ export class LangRuntime {
    */
   private readonly byZones = new Map<readonly string[], ZoneCardsKey>();
   private kept: ReadonlyMap<string, readonly string[]> | undefined;
+  /**
+   * What each value about a player came to in a state, by the state object, then by the seat and the name (`playerValue`). A state is
+   * never changed once made, and a value about a player reads only what its phrases are given: the state, the game and the seats. Weakly
+   * held, so a state no one holds any more takes its values with it.
+   */
+  private readonly ofState = new WeakMap<GameState, Map<string, number>>();
 
   constructor(
     readonly game: CompiledGame,
@@ -636,14 +642,34 @@ export class LangRuntime {
    * then has its say in the order written, about that player, seeing what the line before made of it. A line that comes to nothing, or
    * reads a number a card lacks, leaves the value as it was. The compiler lets only the names it works out into the lines, so any other is
    * a mistake in the code.
+   *
+   * What it came to is kept for the state object (`ofState`), and only what it came to: lines that threw keep nothing, so they throw again.
+   * It is looked up inside `workOut`, so a value asked again while it is being worked out still throws. While the checker answers a phrase
+   * (`check`) nothing is kept or looked up: a value asked there is worked out afresh, and throws as before if it asks the checker again.
    */
   readonly playerValue = (state: GameState, seat: PlayerId, name: string): number => {
     const values = this.game.playerValues;
     const value = values !== undefined && Object.hasOwn(values, name) ? values[name] : undefined;
     if (value === undefined) throw new Error(`No value called “${name}” is worked out for players.`);
-    const env = this.env(state, undefined, undefined, { player: seat, space: null, card: null });
-    const line = (sum: number, ref: PhraseRef) => this.call<ValueFn, number | null>(ref, ['value'], (fn) => fn(env, ref.args, sum)) ?? sum;
-    return this.workOut(['player', seat, name], name, () => value.refs.reduce((sum, ref) => unlessNoSuchNumber(() => line(sum, ref), sum), 0));
+    return this.workOut(['player', seat, name], name, () => {
+      let known: Map<string, number> | undefined;
+      if (!this.checking) {
+        known = this.ofState.get(state);
+        if (known === undefined) {
+          known = new Map();
+          this.ofState.set(state, known);
+        }
+      }
+      // Seats and names hold no line break, so the pair is one key.
+      const key = `${seat}\n${name}`;
+      const kept = known?.get(key);
+      if (kept !== undefined) return kept;
+      const env = this.env(state, undefined, undefined, { player: seat, space: null, card: null });
+      const line = (sum: number, ref: PhraseRef) => this.call<ValueFn, number | null>(ref, ['value'], (fn) => fn(env, ref.args, sum)) ?? sum;
+      const worked = value.refs.reduce((sum, ref) => unlessNoSuchNumber(() => line(sum, ref), sum), 0);
+      known?.set(key, worked);
+      return worked;
+    });
   };
 
   /**
