@@ -5421,6 +5421,26 @@ describe('what the view reads in the centre', () => {
   });
 });
 
+it('ends an Event\'s effect "Not in effect yet." exactly when no rule outside the Event table names that Event', () => {
+  // The rules without their examples (an example's Given and And lines name Events to set a scene) and without the Event table.
+  const rules: string[] = [];
+  let inExample = false;
+  let inEvents = false;
+  for (const line of STARTUP_SIMULATOR.split('\n')) {
+    if (/^\S/.test(line)) inExample = line.startsWith('Example');
+    if (inExample) continue;
+    if (line.includes('A deck called events')) { inEvents = true; continue; }
+    if (inEvents && /^\s*\|/.test(line)) continue;
+    inEvents = false;
+    rules.push(line);
+  }
+  const text = rules.join('\n').toLowerCase();
+  const unused = EVENTS.filter((name) => !text.includes(name.toLowerCase()));
+  const dormant = zoneCards(fresh(), 'event-deck').filter((card) => (card.data?.effect as string).endsWith('Not in effect yet.')).map((card) => card.data?.name);
+  expect(dormant.sort()).toEqual([...unused].sort());
+  expect([...unused].sort()).toEqual(['Headhunter Holiday', 'Recruiter Frenzy', 'Venture Capital Rain', 'Whistleblower Protection Act']);
+});
+
 it('gives every Event its effect, a sentence the page shows while it is in play, and makes the University prices the numbers a button pays (§20.D)', () => {
   // §20.D's text of each Event, shortened only where the rulebook adds flavour; the four of later slices end "Not in effect yet."
   const effects = zoneCards(fresh(), 'event-deck').map((card) => card.data?.effect as string);

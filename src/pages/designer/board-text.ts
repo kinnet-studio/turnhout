@@ -91,18 +91,23 @@ export function countParts(card: CardState, game: CompiledGame, worked?: WorkedC
   });
 }
 
+/** The counts on a card that no count part reads (`countsRead`) and that are not 0, as `[count, value]` in the order declared. */
+function loneCountValues(card: CardState, game: CompiledGame): Array<[string, number]> {
+  const { counts, read } = countsRead(card, game);
+  const isRead = new Set(read.flatMap(({ count, riders }) => [count, ...riders]));
+  return counts.filter((count) => !isRead.has(count)).flatMap((count): Array<[string, number]> => {
+    const value = cardAttribute(card, count, game);
+    return typeof value === 'number' && value !== 0 ? [[count, value]] : [];
+  });
+}
+
 /**
  * The counts on a card that no count part reads (`countsRead`), each not 0, in the order declared: '2 dents', '1 fixed dent'. A
  * count that rides on one no column reads is lone too. None for a face-down card.
  */
 export function loneCounts(card: CardState, game: CompiledGame): string[] {
   if (isFaceDown(card)) return [];
-  const { counts, read } = countsRead(card, game);
-  const isRead = new Set(read.flatMap(({ count, riders }) => [count, ...riders]));
-  return counts.filter((count) => !isRead.has(count)).flatMap((count) => {
-    const value = cardAttribute(card, count, game);
-    return typeof value === 'number' && value !== 0 ? [counted(value, count)] : [];
-  });
+  return loneCountValues(card, game).map(([count, value]) => counted(value, count));
 }
 
 /**
@@ -242,13 +247,7 @@ export function keptBadges(game: CompiledGame, cards: CardState[]): { [cardId: s
  */
 export function labelledFacts(card: CardState, game: CompiledGame): string[] {
   if (isFaceDown(card)) return [];
-  const { counts, read } = countsRead(card, game);
-  const isRead = new Set(read.flatMap(({ count, riders }) => [count, ...riders]));
-  const lone = counts.filter((count) => {
-    const value = cardAttribute(card, count, game);
-    return !isRead.has(count) && typeof value === 'number' && value !== 0;
-  });
-  return [...flagsOn(card, game), ...lone];
+  return [...flagsOn(card, game), ...loneCountValues(card, game).map(([count]) => count)];
 }
 
 /**

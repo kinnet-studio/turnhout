@@ -146,7 +146,8 @@ export function shownFlags(game: CompiledGame): string[] {
     Object.values(worked).flatMap((value) => (value.kind === 'number' ? value.refs : []))
       .filter((ref) => flagged.includes(ref.phrase)).map((ref) => ref.args[0] as string),
   );
-  // A flag that tests the centre itself holds for every card alike, so the card there says it once and no face is labelled with it.
+  // A flag that tests the centre turns on with the card there (for every card its other conditions hold for), so the card in play says
+  // it once and no face is labelled with it.
   const testsCentre = (value: WorkedValue) => value.kind === 'flag'
     && value.conditions.some((group) => group.refs.some((ref) => ref.phrase === CENTRE_HAS));
   return Object.entries(worked).filter(([name, value]) => value.kind === 'flag' && turnedOn.has(name)

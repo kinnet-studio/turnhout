@@ -247,7 +247,11 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
     }]));
   }, [game, captions, placed, worked, pickView, livePick, offered, asking, current]);
   // A card in another seat's own zone isn't drawn on this seat's table, so where a button picks it, the list names its place.
-  const places = useMemo(() => placesOf(game, view?.scene.cards ?? [], seat), [game, view, seat]);
+  // Two of one name in one place are told apart by the card each sits on, then by the label the Board line gives it.
+  const places = useMemo(() => {
+    const cards = view?.scene.cards ?? [];
+    return placesOf(game, cards, seat, { ...keptBadges(game, cards), ...boardBadges(game, cards, worked) });
+  }, [game, view, seat, worked]);
   // A card's face has room for only some of its columns, so a fitted table shows the card under the pointer in full below it.
   const [hovered, setHovered] = useState<string | null>(null);
   const hoveredCard = placement.cards.find((card) => card.id === hovered);

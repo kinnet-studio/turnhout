@@ -179,4 +179,45 @@ describe('placesOf', () => {
     const hidden: CardState = { ...card, faceUp: false, faceKey: HIDDEN_FACE_KEY, data: {} };
     expect(placesOf(jinx, [hidden], 'p0')).toEqual({ [hidden.id]: "p1's stash" });
   });
+
+  /** p1's workshop holds a Vase and a Statue, and p1's crew two Potters, one on each (or both on the Vase); a Vase is also in p2's workshop. */
+  const twoPotters = (bothOnVase = false) => {
+    let state = initialState(jinx, 1);
+    const [vaseA, vaseB] = state.cards.filter((c) => c.data?.name === 'Vase').map((c) => c.id);
+    const statue = state.cards.find((c) => c.data?.name === 'Statue')!.id;
+    const [potterA, potterB] = state.cards.filter((c) => c.data?.name === 'Potter').map((c) => c.id);
+    state = relocate(state, [vaseA, statue], 'workshop-p1', jinx);
+    state = relocate(state, [vaseB], 'workshop-p2', jinx);
+    state = putOn(state, [potterA], 'crew-p1', vaseA, jinx);
+    state = putOn(state, [potterB], 'crew-p1', bothOnVase ? vaseA : statue, jinx);
+    return { state, vaseA, vaseB, statue, potterA, potterB };
+  };
+
+  it('tells two cards of one name in one place apart by the card each sits on, leaving cards that read apart alone', () => {
+    const { state, vaseA, vaseB, statue, potterA, potterB } = twoPotters();
+    const places = placesOf(jinx, state.cards, 'p0');
+    expect([places[potterA], places[potterB]]).toEqual(["p1's crew, on Vase", "p1's crew, on Statue"]);
+    expect([places[vaseA], places[vaseB], places[statue]]).toEqual(["p1's workshop", "p2's workshop", "p1's workshop"]);
+  });
+
+  it('tells cards on the same card apart by their labels, and leaves alike those with none', () => {
+    const { state, potterA, potterB } = twoPotters(true);
+    expect(placesOf(jinx, state.cards, 'p0', { [potterA]: 'tired', [potterB]: '1 dent' })).toMatchObject({
+      [potterA]: "p1's crew, on Vase, tired", [potterB]: "p1's crew, on Vase, 1 dent",
+    });
+    expect(placesOf(jinx, state.cards, 'p0', { [potterA]: 'tired' })).toMatchObject({
+      [potterA]: "p1's crew, on Vase, tired", [potterB]: "p1's crew, on Vase",
+    });
+    expect(placesOf(jinx, state.cards, 'p0')).toMatchObject({ [potterA]: "p1's crew, on Vase", [potterB]: "p1's crew, on Vase" });
+  });
+
+  it('Review Focus: never names a face-down holder, and a face-down card keeps its place alone', () => {
+    const { state, statue, potterA, potterB } = twoPotters();
+    const cards = state.cards.map((c) => (c.id === statue ? { ...c, faceUp: false, faceKey: HIDDEN_FACE_KEY, data: { ...c.data, name: undefined } } : c));
+    const places = placesOf(jinx, cards, 'p0');
+    expect([places[potterA], places[potterB]]).toEqual(["p1's crew, on Vase", "p1's crew"]);
+    const hiddenPotter = cards.map((c) => (c.id === potterA ? { ...c, faceUp: false, faceKey: HIDDEN_FACE_KEY, data: {} } : c));
+    expect(placesOf(jinx, hiddenPotter, 'p0')[potterA]).toBe("p1's crew");
+    expect(placesOf(jinx, hiddenPotter, 'p0')[potterB]).toBe("p1's crew");
+  });
 });

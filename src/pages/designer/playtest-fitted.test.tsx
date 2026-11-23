@@ -1829,7 +1829,6 @@ describe('Attributes, Utility cards and Hype on the page', () => {
     click(junior);
     const label = 'overworked, overworked in blue, 1 workaholic';
     expect(table!.decor![junior]?.badge).toBe(label);
-    expect(label.endsWith('1 workaholic')).toBe(true);
     expect(boardOf(S)).toContain('with Junior Software Dev (overworked, overworked in blue) [1 workaholic]');
     expect(lineOf(S)!.startsWith(`${S} 5 capital, 3 actions`), lineOf(S)!).toBe(true);
     expect(inOrder('attributes-in-play').map((c) => [nameOf(c), c.faceUp])).toEqual([['Workaholic', true]]);
@@ -1931,9 +1930,32 @@ describe("a Debuff on another seat's staff, and the steps as a round starts", ()
     expect(Object.keys(table!.decor ?? {}).filter((id) => table!.decor![id].ring !== undefined)).toEqual([]);
     fireEvent.click(tab(N));
     const label = table!.decor![engineer]!.badge!;
-    expect(label.endsWith('1 burnout'), label).toBe(true);
-    const bracket = label === '1 burnout' ? '' : ` (${label.slice(0, -', 1 burnout'.length)})`;
-    expect(boardOf(N)).toContain(`with Engineer${bracket} [1 burnout]`);
+    expect(label).toBe('burned out, 1 burnout');
+    expect(boardOf(N)).toContain('with Engineer (burned out) [1 burnout]');
+  });
+
+  it('Review Focus: tells two rival Junior Software Devs in one development team apart by the product each sits on', () => {
+    let state = inPlay(setUp(), 'Whistleblower Protection Act');
+    const burnout = idOf(state, 'Burnout');
+    const [dating, todo] = ['Dating App', 'To-Do List'].map((name) => idOf(state, name));
+    const first = idOf(state, 'Junior Software Dev', `bench-${T}`);
+    const second = idOf(state, 'Junior Software Dev', `bench-${S}`);
+    state = relocate(state, [burnout], `strategy-hand-${S}`, game);
+    state = putOn(relocate(state, [dating], `development-${T}`, game), [first], `development-team-${T}`, dating, game);
+    state = putOn(relocate(state, [todo], `development-${T}`, game), [second], `development-team-${T}`, todo, game);
+    mount({ initial: state });
+
+    click(burnout);
+    choose(DEBUFF);
+    expect(within(picker()).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      `Junior Software Dev (${T}'s development team, on Dating App)`, `Junior Software Dev (${T}'s development team, on To-Do List)`, 'Cancel',
+    ]);
+    pickNamed(`Junior Software Dev (${T}'s development team, on To-Do List)`);
+    fireEvent.click(tab(T));
+    expect(boardOf(T)).toContain('Junior Software Dev (burned out) [1 burnout]');
+    expect(boardOf(T)).not.toContain('Dating App (burned out)');
+    const [onDating, onTodo] = [first, second].map((id) => table!.decor?.[id]?.badge);
+    expect([onDating, onTodo]).toEqual([undefined, 'burned out, 1 burnout']);
   });
 
   it('Review Focus: follows the event check to the seat it waits on, lets staff go there, and Undo brings the step back', () => {

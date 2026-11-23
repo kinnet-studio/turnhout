@@ -1,9 +1,14 @@
 // Picking cards for a button, as one state that the list under the buttons and clicks on the table share: what is picked so far,
 // what a click on a card does next, which cards to ring, and which buttons a clicked card may be offered to.
 import type { ActionView, CardPickView, PickCardView } from '@/engine/core/lang/board-view';
+import { holderIdOf } from '@/engine/core/lang/attach';
+import { pickName } from '@/engine/core/lang/card-facts';
 import type { CompiledGame } from '@/engine/core/lang/types';
 import { zoneInfo } from '@/engine/core/lang/zones';
+import { HIDDEN_FACE_KEY } from '@/engine/core/derive-scene';
 import type { CardState, PlayerId } from '@/engine/core/scene';
+
+const isFaceDown = (card: CardState): boolean => card.faceKey === HIDDEN_FACE_KEY;
 
 /** The cards picked so far, in the order clicked, and whether the player has gone on to pick the card they go to. */
 export type PickAt = { picked: string[]; onto: boolean };
@@ -97,14 +102,44 @@ export function takersOf(actions: ActionView[], cardId: string): Taker[] {
  * Where each card in another seat's own zone is, as `p1's workshop`; none for `seat`'s own zones or a shared zone's (Call 6). A
  * fitted table draws only the seat's own zones and the shared ones, so a card picked from another seat's zone is picked from the
  * list, where two of the same name would otherwise read alike. A face-down card is named by its place alone, since its zone is all
- * the seat may know of it.
+ * the seat may know of it. Two or more face-up cards of one name in one place are told apart: each gains `, on Vase` (the card it
+ * sits on, named only when that card is face up), and those still alike gain `, {label}` from `labels` (a card's label, as the
+ * Board line gives it). Cards still alike after that are equivalent to the seat and may repeat.
  */
-export function placesOf(game: CompiledGame, cards: CardState[], seat: PlayerId): { [cardId: string]: string } {
+export function placesOf(
+  game: CompiledGame, cards: CardState[], seat: PlayerId, labels: { [cardId: string]: string } = {},
+): { [cardId: string]: string } {
   const places: { [cardId: string]: string } = {};
   for (const card of cards) {
     const info = zoneInfo(game, card.zoneId);
     if (info === null || info.seat === null || info.seat === seat) continue;
     places[card.id] = `${info.seat}'s ${info.spec.name}`;
   }
+  const byId = new Map(cards.map((card) => [card.id, card]));
+  const nameOf = (card: CardState) => pickName(card, game);
+  /** Adds `extra(card)` to the place of each face-up card that reads like another one (same name, same place). */
+  const tellApart = (extra: (card: CardState) => string | null) => {
+    const groups = new Map<string, CardState[]>();
+    for (const card of cards) {
+      if (places[card.id] === undefined || isFaceDown(card)) continue;
+      const key = `${nameOf(card)}\n${places[card.id]}`;
+      groups.set(key, [...(groups.get(key) ?? []), card]);
+    }
+    const added = new Map<string, string>();
+    for (const group of groups.values()) {
+      if (group.length < 2) continue;
+      for (const card of group) {
+        const more = extra(card);
+        if (more !== null) added.set(card.id, more);
+      }
+    }
+    for (const [id, more] of added) places[id] += more;
+  };
+  tellApart((card) => {
+    const holderId = holderIdOf(card);
+    const holder = holderId === null ? undefined : byId.get(holderId);
+    return holder === undefined || isFaceDown(holder) ? null : `, on ${nameOf(holder)}`;
+  });
+  tellApart((card) => (labels[card.id] === undefined ? null : `, ${labels[card.id]}`));
   return places;
 }

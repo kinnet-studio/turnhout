@@ -279,4 +279,10 @@ describe('places', () => {
     fireEvent.click(button("Pick Vase (p2's workshop)"));
     expect(calls.onSend).toHaveBeenLastCalledWith({ cardId: 's', onto: 'c2' });
   });
+
+  it("lists an unseen card in a rival's zone as a face-down card with its place alone", () => {
+    const hidden: CardPickView = { some: false, prompt: 'Pick a card to peek at', cards: [{ id: 'h', name: 'a face-down card', allowed: true }], onto: null };
+    render(<CardPicker pick={hidden} places={{ h: "p1's stash" }} onSend={vi.fn()} onRefused={vi.fn()} onCancel={vi.fn()} />);
+    expect(within(picker()).getAllByRole('button').map((b) => b.textContent)).toEqual(["a face-down card (p1's stash)", 'Cancel']);
+  });
 });
