@@ -601,11 +601,6 @@ Crunched:
   Only if it is not stalled.
   Only if no card on it is clean coding.
 
-Acting once:
-  Only if one of:
-    It is an Angel Investors card.
-    It is a Regulation Audit card.
-
 Angel funded:
   Only if the event in play has the Angel Investors.
 
@@ -879,7 +874,7 @@ In every phase:
     If the event in play has the Intern Season, the junior price is 0.
     If the event in play has the Intern Season, the hardware junior price is 0.
     If the event in play has the Chip Shortage, the hardware junior price goes up by 3.
-    If some card in the event in play is acting once, each player has the event check, in turn from the start player.
+    Each player has the event check, in turn from the start player.
   When a player's turn starts:
     No card is onboarding.
   When the agency row has fewer than 4 cards:
@@ -1630,7 +1625,7 @@ Phase: final check
       It is not offline.
 
 Phase: event check
-  Hint: The Regulation Audit taxes you $1 for each employee on your Board who draws a salary, and you can't pay it all. Let staff go, as you choose, until you can.
+  Hint: Place each Consultant you hold on one of its Founder's products, or move it to another, if you like, picking its colour again, then confirm. Under a Regulation Audit, pay $1 for each employee on your Board who draws a salary, letting staff go as you choose until you can.
   When this phase starts:
     If they have a card in their development and their operations that is angel funded and they have no card in their development and their operations that is past tier 1, they get 3 capital.
   A player may let go of a card in their development team.
@@ -1643,7 +1638,28 @@ Phase: event check
     Then:
       It is fired.
       Move it to the open job market.
+  A player may place a card from their portfolio to a card in another player's development or another player's operations.
+    Only if the target card's owner is its founder.
+    Only if it is not on the target card.
+    Then:
+      It goes to their portfolio, on the target card.
+      It is not blue consultant.
+      It is not red consultant.
+      It is not qa consultant.
+      They choose one:
+        Blue:
+          It is blue consultant.
+        Red:
+          It is red consultant.
+        QA:
+          It is qa consultant.
+  A player may confirm their consultants.
+    Only if they have at least the total payroll tax of the cards in their development team and their ops team in capital.
+    Then:
+      They pay the total payroll tax of the cards in their development team and their ops team.
+      The event check passes to the left.
   When they have at least the total payroll tax of the cards in their development team and their ops team in capital:
+    Only if their portfolio is empty.
     They pay the total payroll tax of the cards in their development team and their ops team.
     The event check passes to the left.
 
@@ -6064,3 +6080,61 @@ Example: a Pivot sends the Founder's staff to the bench and the Investors' Consu
   And the Equity whose founder is p0 in p2's portfolio is not red consultant
   And the Equity whose founder is p0 in p3's portfolio is on no card
   And the Equity whose founder is p0 in p3's portfolio is not qa consultant
+
+Example: at each Round Start an Investor may move a Consultant to another of the Founder's products, or place one held unplaced, picking its colour again; players holding none pass at once (section 5, section 17, ruling 25)
+  Given 3 players
+  And it is p2's turn
+  And p0's development has a Smart Lock and a Dating App
+  And p2's development has a Server Farm and a To-Do List
+  And p1's portfolio has an Equity whose founder is p0 and an Equity whose founder is p2
+  And p2's portfolio has an Equity whose founder is p0
+  And the Equity whose founder is p0 in p1's portfolio is on the Smart Lock in p0's development
+  And the Equity whose founder is p0 in p1's portfolio is red consultant
+  And the Equity whose founder is p2 in p1's portfolio is on the Server Farm in p2's development
+  And the Equity whose founder is p2 in p1's portfolio is blue consultant
+  And the Equity whose founder is p0 in p2's portfolio is qa consultant
+  When p2 ends their actions
+  Then the phase is event check
+  And it is p1's turn
+  When p1 places the Equity whose founder is p0 to the To-Do List, choosing qa
+  Then it is rejected because "the target card's owner is its founder"
+  When p1 places the Equity whose founder is p0 to the Smart Lock, choosing qa
+  Then it is rejected because "it is not on the target card"
+  When p1 places the Equity whose founder is p0 to the Dating App, choosing qa
+  And p1 places the Equity whose founder is p2 to the To-Do List, choosing red
+  And p1 confirms their consultants
+  Then it is p2's turn
+  And the phase is event check
+  When p2 places the Equity whose founder is p0 to the Smart Lock, choosing blue
+  And p2 confirms their consultants
+  Then it is p0's turn
+  And the phase is actions
+  And the Equity whose founder is p0 in p1's portfolio is on the Dating App in p0's development
+  And the Equity whose founder is p0 in p1's portfolio is qa consultant
+  And the Equity whose founder is p0 in p1's portfolio is not red consultant
+  And the Equity whose founder is p2 in p1's portfolio is on the To-Do List in p2's development
+  And the Equity whose founder is p2 in p1's portfolio is red consultant
+  And the Equity whose founder is p2 in p1's portfolio is not blue consultant
+  And the Equity whose founder is p0 in p2's portfolio is on the Smart Lock in p0's development
+  And the Equity whose founder is p0 in p2's portfolio is blue consultant
+  And the Equity whose founder is p0 in p2's portfolio is not qa consultant
+
+Example: an Investor's Round Start step also pays a Regulation Audit, letting staff go until they can (section 5, section 17, section 20)
+  Given it is p1's turn
+  And the phase is actions
+  And the event deck has the Regulation Audit
+  And p1 has 1 capital
+  And p1's development has a Dating App
+  And the Dating App in p1's development has the Architect and the Veteran on it
+  And p1's portfolio has an Equity whose founder is p0
+  When p1 ends their actions
+  Then the event in play has the Regulation Audit
+  And the phase is event check
+  And it is p1's turn
+  When p1 confirms their consultants
+  Then it is rejected because "they have at least the total payroll tax of the cards in their development team and their ops team in capital"
+  When p1 lets go of the Veteran
+  And p1 confirms their consultants
+  Then it is p0's turn
+  And p1 has 0 capital
+  And the open job market has the Veteran

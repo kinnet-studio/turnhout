@@ -263,8 +263,14 @@ const PHASES = [
   'modes', 'ops check', 'income', 'actions', 'research', 'sourcing', 'graduation', 'brainstorm', 'engine', 'commit', 'bench cleanup',
   'strategy cleanup', 'backlog cleanup', FINAL_CHECK, 'event check',
 ];
-/** The step each player takes in turn from the start player as Angel Investors or Regulation Audit is revealed (§5 Phase A, §20.D). */
+/**
+ * The step each player takes in turn from the start player at each Round Start: Angel Investors' $3, Regulation Audit's tax and the
+ * Consultants (§5 Phase A, §17.B.4, §20.D).
+ */
 const EVENT_CHECK = 'event check';
+/** The Round Start step's Consultant buttons (§5 Phase A, §17.B.4). */
+const PLACE = "place a card from their portfolio to a card in another player's development or another player's operations";
+const CONFIRM_CONSULTANTS = 'confirm their consultants';
 // The two buttons that pick a card from a project's staff.
 const REASSIGN_FROM_PROJECT = 'reassign a card from their development team to a card in their development';
 const DISMISS_FROM_PROJECT = 'dismiss a card in their development team';
@@ -1492,6 +1498,8 @@ function playTurn(
   };
   /** Whether this turn has let a card go at Income. */
   let letGo = false;
+  /** Whether this step has placed a Consultant (§17.B.4). */
+  let placed = false;
   for (let a = 0; going();) {
     const { phase } = engine.getState().turn!;
     if (phase === 'modes') {
@@ -1555,8 +1563,28 @@ function playTurn(
       // its development team's first, then its ops team's, in slot order (§20.D 6).
       const taxed = ['development team', 'ops team'].flatMap((row) => cards(own(row)).map((card) => ({ row, card })))
         .filter(({ card }) => runtime.workedFlag(engine.getState(), card.id, 'taxed'));
-      const { row, card } = taxed[t % taxed.length];
-      play(engine, choose([pick(LET_GO[row], own(row), (r) => r.find((c) => c.id === card.id))]), watch);
+      if (capital() < payrollTaxOf(runtime, engine.getState(), by)) {
+        const { row, card } = taxed[t % taxed.length];
+        play(engine, choose([pick(LET_GO[row], own(row), (r) => r.find((c) => c.id === card.id))]), watch);
+        continue;
+      }
+      // Then, when `t % 4 === 1` (not `t % 3`: the colour is answered `(t + at) % 3`), an Investor places its first token on no card, else
+      // its first token, on its founder's first card (`foundersBoards` order) the token is not on, the colour answered as any choice is
+      // (`t % 3`, so not `t % 3 === 1`, which answers Red each time); then it confirms (§5 Phase A, §17.B.4).
+      const portfolio = cards(own('portfolio'));
+      const placing = () => {
+        const token = portfolio.find((c) => typeof c.data?.[HOLDER_KEY] !== 'string') ?? portfolio[0];
+        const onFounders: Onto = {
+          zoneId: foundersBoards(runtime.seats, by),
+          which: (targets, c) => targets.find((target) =>
+            [zoneIdFor('development', founderOf(c)!), zoneIdFor('operations', founderOf(c)!)].includes(target.zoneId)
+            && target.id !== c.data?.[HOLDER_KEY]),
+        };
+        return pick(PLACE, own('portfolio'), (row) => row.find((c) => c.id === token.id), onFounders);
+      };
+      const move = choose([portfolio.length > 0 && t % 4 === 1 && !placed ? placing() : null, press(CONFIRM_CONSULTANTS)]);
+      if (move.type === PLACE) placed = true;
+      play(engine, move, watch);
     } else if (phase === FINAL_CHECK) {
       const move = choose([t % 3 === 0 && !switchedOn ? switchOnBest() : null, switchOffLeast()]);
       if (move.type === SWITCH_ON) switchedOn = true;
@@ -1639,6 +1667,7 @@ const REPLAYED = [
  *   its Partner); the arranged test 'names the provider it pays a License to by t when two rivals provide the Tag, …' pins it.
  */
 const HELD_BY_FEWER_THAN_TWO = new Set<string>([
+  "a Workaholic's +2 at the Engine",
   'Attributes kept through a bench discard',
   'Toxic: a Red cube taken',
   'hire a card from the agency row to their bench',
@@ -2414,7 +2443,8 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       sameAs(others.reduce((total, seat) => total + net(seat), 0), license * missing.length, () => `Licenses received in all ${at}`);
     } else {
       // A move in the round's steps, or one that revealed Angel Investors or Regulation Audit, is checked as a whole (Review Focus 2):
-      // $3 to each seat the Angel Investors fund, as it stood before, and the tax of each seat whose step ended in it, on the Board it kept.
+      // $3 to each seat the Angel Investors fund whose step started in it, as it stood before, and the tax of each seat whose step ended
+      // in it, on the Board it kept.
       const revealed = (after.data[ROUND_KEY] as number) > (before.data[ROUND_KEY] as number) ? eventOf(after) : null;
       const stepping = [before, after].some((state) => state.data[ROUND_STEPS_KEY] !== undefined)
         || revealed === 'Angel Investors' || revealed === 'Regulation Audit';
@@ -2422,7 +2452,15 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       const ended = stepping ? (stepsDone(after, seats) ?? seats).filter((seat) => !doneBefore.includes(seat)) : [];
       const products = (state: GameState, seat: PlayerId) =>
         [...zoneCards(state, zoneIdFor('development', seat)), ...zoneCards(state, zoneIdFor('operations', seat))];
-      const funded = (seat: PlayerId) => revealed === 'Angel Investors' && products(before, seat).length > 0
+      // Angel Investors funds each seat as its step starts, and an Investor's step stops the steps (plan 7-2a), so a seat after it is
+      // funded in the move that starts its step.
+      const begun = (state: GameState) => {
+        const done = stepsDone(state, seats);
+        return done === null ? null : [...done, state.turn!.current as PlayerId];
+      };
+      const begunBefore = begun(before) ?? [];
+      const starting = stepping ? (begun(after) ?? seats).filter((seat) => !begunBefore.includes(seat)) : [];
+      const funded = (seat: PlayerId) => starting.includes(seat) && eventOf(after) === 'Angel Investors' && products(before, seat).length > 0
         && products(before, seat).every((product) => product.data?.tier === 'Tier 1');
       const taxOf = (seat: PlayerId) => (ended.includes(seat) && eventOf(after) === 'Regulation Audit' ? payrollTaxOf(runtime, after, seat) : 0);
       const want = seats.map((seat) => earned(seat) - (seat === by ? paid : 0) + proceeds(seat) + (funded(seat) ? 3 : 0) - taxOf(seat));
@@ -2664,7 +2702,7 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       const on = c.data?.[HOLDER_KEY];
       const wasOn = was?.data?.[HOLDER_KEY];
       if (on === wasOn) continue;
-      const placed = move.type === INVEST_PLACING && move.cardId === c.id && on === move.onto;
+      const placed = [INVEST_PLACING, PLACE].includes(move.type) && move.cardId === c.id && on === move.onto;
       const returned = move.type === PIVOT && wasOn === move.cardId && on === undefined && c.zoneId === was?.zoneId;
       if (!placed && !returned) board.push(`${c.id} (${nameOf(c)}) in ${c.zoneId} went from ${JSON.stringify(wasOn)} to ${JSON.stringify(on)}`);
     }
@@ -3121,11 +3159,15 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       }
       noneOf(crunched, () => `Crunch Time's Bugs ${at}`);
     }
-    // The event check runs only in the round's steps, under Angel Investors or Regulation Audit; a let-go there takes a taxed card.
+    // The event check runs only in the round's steps, and waits only on a seat that holds a card in its portfolio or is short of its
+    // payroll tax; a let-go there takes a taxed card.
     if (after.turn?.phase === EVENT_CHECK) {
       const steps = roundStepsOf(after);
       if (!(steps !== null && steps !== true && steps.phase === EVENT_CHECK)) expect(steps, `the round's steps in the event check ${at}`).toMatchObject({ phase: EVENT_CHECK });
-      if (!['Angel Investors', 'Regulation Audit'].includes(eventAfter ?? '')) expect(eventAfter, `the Event in the event check ${at}`).toMatch(/Angel Investors|Regulation Audit/);
+      const seat = after.turn.current as PlayerId;
+      if (portfolioOf(after, seat).length === 0 && capital(after, seat) >= payrollTaxOf(runtime, after, seat)) {
+        expect.fail(`${seat} waits in the event check with an empty portfolio and its tax in hand ${at}`);
+      }
     }
     if (before.turn?.phase === EVENT_CHECK && Object.values(LET_GO).includes(move.type)) {
       if (runtime.workedFlag(before, move.cardId as string, 'taxed') !== true) expect.fail(`${move.cardId} let go in the event check untaxed ${at}`);
@@ -3186,7 +3228,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(329);
+    expect(results).toHaveLength(331);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -3318,7 +3360,7 @@ describe('Startup Simulator (designer language)', () => {
     for (const flag of ['blue covered', 'crunching blue', 'crunching red', 'crunched']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
     // Angel Investors' and Regulation Audit's steps (§20.D 4, 6).
     expect(worked['payroll tax']).toMatchObject({ kind: 'number' });
-    for (const flag of ['acting once', 'angel funded', 'past tier 1', 'taxed']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
+    for (const flag of ['angel funded', 'past tier 1', 'taxed']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
   });
 
   // The next three tests each add to the rules an example that the rules refuse for naming no button alone, and then an example for each
@@ -4390,13 +4432,13 @@ describe('Startup Simulator (designer language)', () => {
 
     it('takes back every move with undo, and rebuilds the game from its log, through recruits and research (3 players, seed 1)', () => {
       const states: GameState[] = [];
-      // The retuned seats put their makers on projects before they recruit, so the first recruit comes at move 53 (it was within 40; a Design Sprint and its cleanup came before it from plan 6-2a, the Event deck reshuffled the game from plan 6-2b, and an Invest came before it from plan 7-2a).
+      // The retuned seats put their makers on projects before they recruit, so the first recruit comes at move 50 (it was within 40; a Design Sprint and its cleanup came before it from plan 6-2a, the Event deck reshuffled the game from plan 6-2b, and plan 7-2a's Invest and Round Start steps, a placement and two confirms among them, reshuffled it again).
       const both = (log: readonly Move[]) => log.some((move) => RECRUITS.includes(move.type))
         && log.some((move) => move.type === RESEARCH_SEED || move.type === RESEARCH_GROWTH);
       const engine = playGame(3, 1, (_before, _move, after) => states.push(after), { until: both });
       const log = [...engine.getLog()];
-      expect(log).toHaveLength(53);
-      expect(states).toHaveLength(53);
+      expect(log).toHaveLength(50);
+      expect(states).toHaveLength(50);
       // A recruit makes a Junior whose id comes from the state, and a research deals and keeps a card, so both must replay.
       expect(log.some((move) => RECRUITS.includes(move.type))).toBe(true);
       expect(log.some((move) => move.type === RESEARCH_SEED || move.type === RESEARCH_GROWTH)).toBe(true);

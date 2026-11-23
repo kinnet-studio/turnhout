@@ -1977,7 +1977,10 @@ describe("a Debuff on another seat's staff, and the steps as a round starts", ()
     expect(tab(`${SECOND2} — to act`).getAttribute('aria-selected')).toBe('true');
     expect(status()).toBe(`seat: ${SECOND2} — Your turn — ${hint('event check')}`);
     expect(inPlayLine().startsWith('event in play: Regulation Audit — effect When revealed,'), inPlayLine()).toBe(true);
-    expect(seatButtons()).toEqual(['Let go of a card in your development team', 'Let go of a card in your ops team']);
+    expect(seatButtons()).toEqual([
+      'Let go of a card in your development team', 'Let go of a card in your ops team',
+      "Place a card from your portfolio to a card in another player's development or another player's operations", 'Confirm your consultants',
+    ]);
     expect(within(screen.getByTestId('seat-buttons')).getAllByRole('button')[0].getAttribute('aria-disabled')).toBe('true');
     fireEvent.click(tab(FIRST2));
     expect(status()).toBe(`seat: ${FIRST2} — ${hint('event check')} — waiting for ${SECOND2}`);
