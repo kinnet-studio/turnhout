@@ -574,6 +574,23 @@ Crunched:
   Only if it is not stalled.
   Only if no card on it is clean coding.
 
+Acting once:
+  Only if one of:
+    It is an Angel Investors card.
+    It is a Regulation Audit card.
+
+Angel funded:
+  Only if the event in play has the Angel Investors.
+
+Past tier 1:
+  Only if one of:
+    It is a Tier 2 card.
+    It is a Tier 3 card.
+
+Taxed:
+  Only if the event in play has the Regulation Audit.
+  Only if its salary is more than 0.
+
 Price:
   A pitched card's price is 2.
   A course priced card's price is 1.
@@ -585,6 +602,9 @@ Cost:
 Rehire price:
   A card's rehire price is 1.
   A chip short card's rehire price goes up by 3.
+
+Payroll tax:
+  A taxed card's payroll tax is 1.
 
 Stalled:
   Only if it is in a development.
@@ -814,6 +834,7 @@ In every phase:
     If the event in play has the Intern Season, the junior price is 0.
     If the event in play has the Intern Season, the hardware junior price is 0.
     If the event in play has the Chip Shortage, the hardware junior price goes up by 3.
+    If some card in the event in play is acting once, each player has the event check, in turn from the start player.
   When a player's turn starts:
     No card is onboarding.
   When the agency row has fewer than 4 cards:
@@ -1525,6 +1546,24 @@ Phase: final check
     Then:
       It is not offline.
 
+Phase: event check
+  Hint: The Regulation Audit taxes you $1 for each employee on your Board who draws a salary, and you can't pay it all. Let staff go, as you choose, until you can.
+  When this phase starts:
+    If they have a card in their development and their operations that is angel funded and they have no card in their development and their operations that is past tier 1, they get 3 capital.
+  A player may let go of a card in their development team.
+    Only if it is taxed.
+    Then:
+      It is fired.
+      Move it to the open job market.
+  A player may let go of a card in their ops team.
+    Only if it is taxed.
+    Then:
+      It is fired.
+      Move it to the open job market.
+  When they have at least the total payroll tax of the cards in their development team and their ops team in capital:
+    They pay the total payroll tax of the cards in their development team and their ops team.
+    The event check passes to the left.
+
 End:
   The game ends when the crash pile is not empty and the round is finished.
   Before the score, each player has the final check, in turn from the start player.
@@ -2096,6 +2135,7 @@ Example: a flex Senior with no mode declared works in Blue (section 11, ruling 2
 
 Example: an onboarding staff member generates nothing this turn and works the next (rulings 8 and 25)
   Given the phase is actions
+  And the event deck has the Whistleblower Protection Act
   And p0's development has a Dating App and a To-Do List
   And the Dating App in p0's development has the Architect on it
   When p0 reassigns the Architect to the To-Do List
@@ -2595,6 +2635,7 @@ Example: a Tier 1 hybrid built by Juniors Launches with no lead (section 3, sect
 
 Example: an onboarding Senior leads nothing that turn (section 6, ruling 8)
   Given the phase is actions
+  And the event deck has the Whistleblower Protection Act
   And p0's development has a Neobank and a Dating App
   And the Dating App in p0's development has the Architect on it
   And the Neobank in p0's development has a Junior Software Dev on it
@@ -3439,6 +3480,7 @@ Example: XP adds to a Junior's output only in its own colour, a Junior with 1 XP
 
 Example: a Junior Software Dev with 2 Blue XP and a Red Skill token declared Red makes 1 Red, its Blue XP idle (section 11, the slice's R11)
   Given p1's development has a Smart Lock
+  And the event deck has the Whistleblower Protection Act
   And the Smart Lock in p1's development has a Junior Software Dev on it
   And the Junior Software Dev in p1's development team has 2 blue xp tokens
   And the Junior Software Dev in p1's development team has 1 red skill token
@@ -5500,3 +5542,74 @@ Example: Toxic Personality takes its cube from the team's output before Crunch T
   Then the Smart Lock in p0's development has 1 blue cube
   And the Smart Lock in p0's development has 2 red cubes
   And the Smart Lock in p0's development has 1 bug
+
+Example: Angel Investors, as it is revealed, gives $3 to each player with a Tier 1 product and none of Tier 2 or 3, in development or in operations, and nothing to a player with no product (section 20, the spec's call)
+  Given 5 players
+  And the event deck has the Angel Investors
+  And p0's development has a To-Do List
+  And p1's development has a Neobank
+  And p1's operations has a Dating App
+  And p2's development has a Quantum Computer
+  And p2's operations has a Mobile Wallet
+  And p3's operations has a Smart Lock
+  And the Neobank in p1's development has the Architect on it
+  And it is p4's turn
+  When p4 ends their actions
+  Then the event in play has the Angel Investors
+  And it is p0's turn
+  And the phase is actions
+  And p0 has 10 capital
+  And p1 has 7 capital
+  And p2 has 7 capital
+  And p3 has 10 capital
+  And p4 has 7 capital
+
+Example: Regulation Audit, as it is revealed, taxes each player $1 for each Board employee who draws a salary, in turn from the Start Player, and one who can't pay lets staff go, choosing whom, until they can (section 20, the spec's call)
+  Given 3 players
+  And the event deck has the Regulation Audit
+  And p0's development has a Dating App
+  And p1 has 1 capital
+  And p1's development has a Smart Lock
+  And p1's ops team has the Diva
+  And the attributes in play has a Workaholic and a Burnout
+  And the Dating App in p0's development has the Architect, a Junior Software Dev and a Junior PM on it
+  And the Smart Lock in p1's development has the Engineer, a Junior Hardware Eng and a Junior QA Tester on it
+  And the Junior Hardware Eng in p1's development team has 2 red xp tokens
+  And the Engineer in p1's development team has 1 workaholic
+  And the Diva in p1's ops team has 1 burnout
+  And it is p2's turn
+  When p2 ends their actions
+  Then the event in play has the Regulation Audit
+  And the phase is event check
+  And it is p1's turn
+  And p0 has 5 capital
+  When p1 lets go of the Junior QA Tester
+  Then it is rejected because "it is taxed"
+  When p1 lets go of the Engineer
+  Then the phase is event check
+  And it is p1's turn
+  When p1 lets go of the Diva
+  Then it is p0's turn
+  And p1 has 0 capital
+  And p2 has 7 capital
+  And the open job market has the Engineer and the Diva
+  And the strategy discard has a Workaholic and a Burnout
+  And the Smart Lock in p1's development has a Junior Hardware Eng and a Junior QA Tester on it
+
+Example: Regulation Audit lets a player go only of the staff it taxes, in the ops team too (section 20, the spec's call)
+  Given 2 players
+  And the event deck has the Regulation Audit
+  And p1 has 0 capital
+  And p1's ops team has a Junior QA Tester and the Diva
+  And it is p1's turn
+  And the phase is actions
+  When p1 ends their actions
+  Then the event in play has the Regulation Audit
+  And the phase is event check
+  And it is p1's turn
+  When p1 lets go of the Junior QA Tester
+  Then it is rejected because "it is taxed"
+  When p1 lets go of the Diva
+  Then it is p0's turn
+  And the open job market has the Diva
+  And p1's ops team has a Junior QA Tester

@@ -14,7 +14,7 @@ import { CHOOSE_ONE, CHOOSE_PLAYER, choicesOf, type AskedChoice, type ChoiceOpti
 import { RuleError } from '@/engine/core/lang/diagnostics';
 import { LangRuntime } from '@/engine/core/lang/runtime';
 import type { ZoneRef } from '@/engine/core/lang/types';
-import { markTurnStarted, ROUND_KEY, START_PLAYER_KEY, startPlayerOf, TURN_OF_KEY } from '@/engine/core/lang/turns';
+import { markTurnStarted, ROUND_KEY, ROUND_STEPS_KEY, roundStepsOf, START_PLAYER_KEY, startPlayerOf, TURN_OF_KEY } from '@/engine/core/lang/turns';
 import { HOLDER_KEY, relocate, zoneIdFor, zoneInfo } from '@/engine/core/lang/zones';
 import { HIDDEN_FACE_KEY, deriveScene } from '@/engine/core/derive-scene';
 import type { GameState } from '@/engine/core/game-state';
@@ -236,8 +236,10 @@ const FINAL_CHECK = 'final check';
  */
 const PHASES = [
   'modes', 'ops check', 'income', 'actions', 'research', 'sourcing', 'graduation', 'brainstorm', 'engine', 'commit', 'bench cleanup',
-  'strategy cleanup', 'backlog cleanup', FINAL_CHECK,
+  'strategy cleanup', 'backlog cleanup', FINAL_CHECK, 'event check',
 ];
+/** The step each player takes in turn from the start player as Angel Investors or Regulation Audit is revealed (§5 Phase A, §20.D). */
+const EVENT_CHECK = 'event check';
 // The two buttons that pick a card from a project's staff.
 const REASSIGN_FROM_PROJECT = 'reassign a card from their development team to a card in their development';
 const DISMISS_FROM_PROJECT = 'dismiss a card in their development team';
@@ -524,6 +526,10 @@ const earns = (runtime: LangRuntime, state: GameState) => (product: CardState) =
 const payrollOf = (runtime: LangRuntime, state: GameState, seat: PlayerId) =>
   [...zoneCards(state, zoneIdFor('development team', seat)), ...zoneCards(state, zoneIdFor('ops team', seat))]
     .reduce((total, card) => total + (runtime.workedValue(state, card.id, 'salary') as number), 0);
+/** The Regulation Audit's tax on `seat`'s Board in `state`: the total worked payroll tax of its two teams, a card with none counting 0 (§20.D 6). */
+const payrollTaxOf = (runtime: LangRuntime, state: GameState, seat: PlayerId) =>
+  [...zoneCards(state, zoneIdFor('development team', seat)), ...zoneCards(state, zoneIdFor('ops team', seat))]
+    .reduce((total, card) => total + ((runtime.workedValue(state, card.id, 'payroll tax') as number | null) ?? 0), 0);
 /**
  * The colors `seat` is short of in `state`: its ops team's supply of each is below the maintenance its online products demand, as the
  * rules work both out (§5 Phase B, ruling 19).
@@ -1449,6 +1455,13 @@ function playTurn(
       // The Engine waits on the seat only while its ops QA can't clean every Bug on its products, so some product has Bugs (R3).
       const bugged = (row: CardState[]) => row.filter((product) => bugsOn(product) > 0);
       play(engine, choose([pick(CLEAN, own('operations'), (row) => bugged(row)[t % bugged(row).length])]), watch);
+    } else if (phase === EVENT_CHECK) {
+      // Short of the Regulation Audit's tax, the seat lets go of one taxed card at a time: the one at t % n among its taxed Board cards,
+      // its development team's first, then its ops team's, in slot order (§20.D 6).
+      const taxed = ['development team', 'ops team'].flatMap((row) => cards(own(row)).map((card) => ({ row, card })))
+        .filter(({ card }) => runtime.workedFlag(engine.getState(), card.id, 'taxed'));
+      const { row, card } = taxed[t % taxed.length];
+      play(engine, choose([pick(LET_GO[row], own(row), (r) => r.find((c) => c.id === card.id))]), watch);
     } else if (phase === FINAL_CHECK) {
       const move = choose([t % 3 === 0 && !switchedOn ? switchOnBest() : null, switchOffLeast()]);
       if (move.type === SWITCH_ON) switchedOn = true;
@@ -1466,7 +1479,7 @@ function playTurn(
 /**
  * How a long run plays: until the log holds `moves` moves or `until` says it holds enough, with `throughView` finding each card
  * to pick through the page's view, and telling `refused` of each press the rules refuse. `finalCheck` gains the log index of each
- * move made in the final check.
+ * move made in the final check or in a round's event check.
  */
 type Run = {
   moves?: number; throughView?: boolean; until?: (log: readonly Move[]) => boolean; refused?: Refused; finalCheck?: Set<number>;
@@ -1477,7 +1490,8 @@ type Run = {
  * holds `moves` moves or `until` says it holds enough; the engine as it is then. At an odd seed every seat researches the growth
  * deck for its growth ideas, and at an even seed it drafts them from the growth market, so that the Crash comes out of each. With
  * `throughView` each seat finds the cards it picks through the page's view of it, as `playTurn` says. Each step of the final check
- * before the score is played as a turn of its own, and the index of each of its moves goes into `finalCheck`, since they are no turn.
+ * before the score, and of a round's event check, is played as a turn of its own, and the index of each of its moves goes into
+ * `finalCheck`, since they are no turn.
  */
 function playGame(
   players: number, seed: number, watch: Watch,
@@ -1487,7 +1501,7 @@ function playGame(
   const style: Style = seed % 2 === 0 ? 'drafts' : 'researches';
   const stop = (log: readonly Move[]) => log.length >= moves || until(log);
   const watching: Watch = (before, move, after) => {
-    if (before.turn?.phase === FINAL_CHECK) finalCheck?.add(engine.getLog().length - 1);
+    if (before.turn?.phase === FINAL_CHECK || before.turn?.phase === EVENT_CHECK) finalCheck?.add(engine.getLog().length - 1);
     watch(before, move, after);
   };
   for (let t = 0; t < MAX_TURNS && engine.getState().result === undefined && !stop(engine.getLog()); t++) {
@@ -2179,7 +2193,31 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       noneOf(overpaid, () => `Licenses received ${at}`);
       sameAs(others.reduce((total, seat) => total + net(seat), 0), license * missing.length, () => `Licenses received in all ${at}`);
     } else {
-      sameList(gained, seats.map((seat) => earned(seat) - (seat === by ? paid : 0)), () => `capital gained by ${seats.join(', ')} ${at}`);
+      // A move in the round's steps, or one that revealed Angel Investors or Regulation Audit, is checked as a whole (Review Focus 2):
+      // $3 to each seat the Angel Investors fund, as it stood before, and the tax of each seat whose step ended in it, on the Board it kept.
+      const revealed = (after.data[ROUND_KEY] as number) > (before.data[ROUND_KEY] as number) ? eventOf(after) : null;
+      const stepping = [before, after].some((state) => state.data[ROUND_STEPS_KEY] !== undefined)
+        || revealed === 'Angel Investors' || revealed === 'Regulation Audit';
+      /** The seats whose step has ended in `state`, in turn from the first; null outside the steps. */
+      const stepsDone = (state: GameState): PlayerId[] | null => {
+        const steps = roundStepsOf(state);
+        if (steps === null || steps === true) return null;
+        const from = seats.indexOf(steps.first);
+        const upTo = (seats.indexOf(state.turn!.current as PlayerId) - from + seats.length) % seats.length;
+        return Array.from({ length: upTo }, (_, i) => seats[(from + i) % seats.length]);
+      };
+      const doneBefore = stepsDone(before) ?? [];
+      const ended = stepping ? (stepsDone(after) ?? seats).filter((seat) => !doneBefore.includes(seat)) : [];
+      const products = (state: GameState, seat: PlayerId) =>
+        [...zoneCards(state, zoneIdFor('development', seat)), ...zoneCards(state, zoneIdFor('operations', seat))];
+      const funded = (seat: PlayerId) => revealed === 'Angel Investors' && products(before, seat).length > 0
+        && products(before, seat).every((product) => product.data?.tier === 'Tier 1');
+      const taxOf = (seat: PlayerId) => (ended.includes(seat) && eventOf(after) === 'Regulation Audit' ? payrollTaxOf(runtime, after, seat) : 0);
+      const want = seats.map((seat) => earned(seat) - (seat === by ? paid : 0) + (funded(seat) ? 3 : 0) - taxOf(seat));
+      sameList(gained, want, () => `capital gained by ${seats.join(', ')} ${at}`);
+      for (const seat of ended) {
+        if (eventOf(after) === 'Regulation Audit' && capital(after, seat) < 0) expect(capital(after, seat), `${seat}'s capital after its step ${at}`).toBeGreaterThanOrEqual(0);
+      }
     }
     // Market Share: 1 for each product that earned, when its owner reached Income.
     const share = (state: GameState, seat: PlayerId) => counterOf(state, 'market share', seat);
@@ -2770,13 +2808,16 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     const parkedBoxed = box.filter((id) => !boxed.has(id) && cardById(before, id)?.zoneId === 'attributes-in-play');
     sameList(box.filter((id) => !boxed.has(id)).sort(), [...letGoNow, ...parkedBoxed].sort(), () => `cards new in the box ${at}`);
 
-    // Turns: each one that starts is the next seat's.
+    // Turns: each one that starts is the next seat's. A round starts as the start player's turn starts or, when it opens with steps (the
+    // event check), as they start: the start player's turn then waits for them, and starts in no new round (6-1's round steps).
     const rounds = (after.data[ROUND_KEY] as number) - (before.data[ROUND_KEY] as number);
     if (started !== null) {
       sameAs(started, seats[(seats.indexOf(lastTurn) + 1) % seats.length], () => `the turn that started ${at}`);
       lastTurn = started;
     }
-    sameAs(rounds, started !== null && started === startPlayerOf(after, seats) ? 1 : 0, () => `rounds started ${at}`);
+    const waited = roundStepsOf(before) !== null;
+    const stepsStarted = !waited && roundStepsOf(after) !== null;
+    sameAs(rounds, stepsStarted || (!waited && started !== null && started === startPlayerOf(after, seats)) ? 1 : 0, () => `rounds started ${at}`);
 
     // The Events (§5 Phase A, §15.D, the spec's Proof 2): the 18 are conserved, by name, in the event deck, the event in play and the
     // event discard; one is in play once one has been revealed; the one in play changes only in a move in which a round started, the one
@@ -2808,6 +2849,15 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
         if (bugsOn(now) !== want) crunched.push(`${project.id} (${nameOf(project)}) has ${bugsOn(now)} bugs, not ${want}`);
       }
       noneOf(crunched, () => `Crunch Time's Bugs ${at}`);
+    }
+    // The event check runs only in the round's steps, under Angel Investors or Regulation Audit; a let-go there takes a taxed card.
+    if (after.turn?.phase === EVENT_CHECK) {
+      const steps = roundStepsOf(after);
+      if (!(steps !== null && steps !== true && steps.phase === EVENT_CHECK)) expect(steps, `the round's steps in the event check ${at}`).toMatchObject({ phase: EVENT_CHECK });
+      if (!['Angel Investors', 'Regulation Audit'].includes(eventAfter ?? '')) expect(eventAfter, `the Event in the event check ${at}`).toMatch(/Angel Investors|Regulation Audit/);
+    }
+    if (before.turn?.phase === EVENT_CHECK && Object.values(LET_GO).includes(move.type)) {
+      if (runtime.workedFlag(before, move.cardId as string, 'taxed') !== true) expect.fail(`${move.cardId} let go in the event check untaxed ${at}`);
     }
     const deckNames = (state: GameState) => zoneCards(state, 'event-deck').map(nameOf).sort();
     if (rounds === 0) {
@@ -2850,9 +2900,11 @@ function keepsTheBudget(seats: PlayerId[]): Watch {
     const cost = buttonOf(before, move.type)?.cost?.amount ?? 0;
     const turnOf = after.data[TURN_OF_KEY];
     const started = typeof turnOf === 'string' && turnOf !== before.data[TURN_OF_KEY] ? turnOf : null;
+    // The start player's own step can end a round's steps, and so start its own turn (6-1's round steps).
     const expected = seats.map((seat) => {
+      if (seat === started) return ACTIONS_EACH_TURN;
       if (seat === by) return move.type === END_ACTIONS ? 0 : actions(before, by) - cost;
-      return seat === started ? ACTIONS_EACH_TURN : actions(before, seat);
+      return actions(before, seat);
     });
     sameList(seats.map((seat) => actions(after, seat)), expected, () => `actions of ${seats.join(', ')} ${at}`);
   };
@@ -2863,7 +2915,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(303);
+    expect(results).toHaveLength(306);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -2989,6 +3041,9 @@ describe('Startup Simulator (designer language)', () => {
     // Crunch Time's cube and Bug (§20.D 10).
     for (const name of ['blue reached', 'blue added', 'red added']) expect(worked[name], name).toMatchObject({ kind: 'number' });
     for (const flag of ['blue covered', 'crunching blue', 'crunching red', 'crunched']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
+    // Angel Investors' and Regulation Audit's steps (§20.D 4, 6).
+    expect(worked['payroll tax']).toMatchObject({ kind: 'number' });
+    for (const flag of ['acting once', 'angel funded', 'past tier 1', 'taxed']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
   });
 
   // The next three tests each add to the rules an example that the rules refuse for naming no button alone, and then an example for each
@@ -4970,6 +5025,41 @@ describe('Startup Simulator (designer language)', () => {
     expect(values(state, ['blue added', 'red added'])).toEqual([[1, 0], [0, 1], [1, 1], [0, 0]]);
     const ended = relocate(state, [crunch], 'event-discard', game!);
     expect(values(ended, ['blue added', 'red added'])).toEqual(values(ended, ['blue made', 'red made']));
+  });
+
+  it('lets go of the staff the auto-player picks when a Regulation Audit finds it short, through the page’s view and without it (§20.D, the spec’s call)', () => {
+    // O's Engineer ($2) and Diva ($1) on a project draw salaries. S ends its actions; O's Income pays them from its $4; O ends its actions
+    // at once, and its turn passing back to S starts round 2: the Audit, on top of the event deck, asks O $2 for them of its $1 (§20.B,
+    // §20.D 6). Only the seat last in turn order meets the reveal with the Board it left: S's turn would pass to O's Income first.
+    const seats = seatsFor(2);
+    const start = setUp(2, 1);
+    const S = startPlayerOf(start, seats);
+    const O = seats.find((seat) => seat !== S)!;
+    const [audit, dating, engineer, diva] = ['Regulation Audit', 'Dating App', 'Engineer', 'Diva'].map(idOf);
+    let state = relocate(start, [audit], 'event-deck', game!);
+    state = relocate(state, [dating], zoneIdFor('development', O), game!);
+    state = putOn(state, [engineer, diva], zoneIdFor('development team', O), dating, game!);
+    state = setCounter(state, 'capital', O, 4);
+    const firsts = [0, 1].map((t) => [false, true].map((throughView) => {
+      const { engine, runtime } = createEngine(game!, lib, 2, state);
+      const watch = keepsTheRules(seats, runtime);
+      play(engine, { type: END_ACTIONS, by: S }, watch);
+      playTurn(engine, t, 'researches', watch, (log) => log.at(-1)?.type === PAY_SALARIES, runtime, throughView);
+      play(engine, { type: END_ACTIONS, by: O }, watch);
+      const lets: string[] = [];
+      const seen: Watch = (before, move, after) => {
+        watch(before, move, after);
+        if (before.turn!.phase === EVENT_CHECK && Object.values(LET_GO).includes(move.type)) lets.push(move.cardId as string);
+      };
+      playTurn(engine, t, 'researches', seen, () => false, runtime, throughView);
+      return { log: engine.getLog(), lets, end: engine.getState() };
+    }));
+    for (const [without, through] of firsts) expect(through.log).toEqual(without.log);
+    expect(firsts[0][0].lets[0]).not.toBe(firsts[1][0].lets[0]);
+    for (const [run] of firsts) {
+      expect(roundStepsOf(run.end)).toBeNull();
+      expect(counterOf(run.end, 'capital', O)).toBe(0);
+    }
   });
 });
 
