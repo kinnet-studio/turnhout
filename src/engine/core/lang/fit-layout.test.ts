@@ -460,3 +460,9 @@ describe('a fitted table that needs more room', () => {
     for (const zones of [MARKET, BOARD, TWO_LINES]) expect(fittedBounds(zones)).toBe(TABLE_BOUNDS);
   });
 });
+
+describe("(guard) a zone whose cards sit on other players' cards (7-1 Task 5)", () => {
+  const marked = BOARD.map((zone): ZoneSpec => (zone.name === 'idle' ? { ...zone, onCards: 'some', across: true } : zone));
+  it("keeps it a board row, as 4-1's guard pins for 'some'", () =>
+    expect(fittedLayout(marked, 'p1').find((d) => d.id === 'idle-p1')).toMatchObject({ layout: 'row', bounds: { height: 776 } }));
+});

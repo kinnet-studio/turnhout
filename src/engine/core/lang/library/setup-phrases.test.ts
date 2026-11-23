@@ -101,3 +101,20 @@ describe('zones where some cards sit on cards, and the zone they sit in', () => 
       .toEqual({ name: 'pocket', perPlayer: true, layout: 'row', visibility: 'owner', onCards: 'every' });
   });
 });
+
+describe("a zone whose cards sit on other players' cards (7-1 Task 5)", () => {
+  it('marks a row each player has, in the “a” form and the “an” form', () => {
+    expect(zone("Each player has a holdings row that everyone can see, where some cards are on other players' cards.")())
+      .toEqual({ name: 'holdings', perPlayer: true, layout: 'row', visibility: 'public', onCards: 'some', across: true });
+    expect(zone("Each player has an inbox row that everyone can see, where some cards are on other players' cards.")())
+      .toEqual({ name: 'inbox', perPlayer: true, layout: 'row', visibility: 'public', onCards: 'some', across: true });
+  });
+  it('refuses it on a row not everyone can see', () => {
+    expect(zone("Each player has a holdings row that only they can see, where some cards are on other players' cards."))
+      .toThrow(new RuleError("Only a row everyone can see can end with “, where some cards are on other players' cards”."));
+  });
+  it('refuses it on a zone in the center', () => {
+    expect(zone("The vault is a row in the center that everyone can see, where some cards are on other players' cards."))
+      .toThrow(new RuleError('Only a zone each player has can hold cards on cards.'));
+  });
+});

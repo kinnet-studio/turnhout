@@ -56,6 +56,18 @@ const playerRowMarked = (onCards: 'every' | 'some'): ZoneFn => ([name, visibilit
   return holders === undefined ? zone : { ...zone, holders: holders as string };
 };
 
+/** What a zone line not everyone can see is told when it says its cards sit on other players' cards. */
+const ACROSS_NEEDS_EVERYONE = "Only a row everyone can see can end with “, where some cards are on other players' cards”.";
+
+/**
+ * A row each player has whose cards may sit on other players' cards (R1): a card placed stays in its owner's row, on the card, held to
+ * the seat that card had when it was placed. Only a row everyone can see may say it.
+ */
+const playerRowAcross: ZoneFn = ([name, visibility]) => {
+  if (visibility !== 'public') throw new RuleError(ACROSS_NEEDS_EVERYONE);
+  return { ...playerRow([name, visibility]), onCards: 'some', across: true };
+};
+
 /**
  * Cards on cards are a player's: a card goes along with the card it sits on, so both stay on one player's table, and a zone in the
  * center can't hold them.
@@ -76,6 +88,7 @@ export function registerSetupPhrases(lib: PhraseLibrary): PhraseLibrary {
     .zone('the {name} is a {layout} in the center that {visibility}', sharedZone)
     .zone('the {name} is a {layout} in the center that {visibility}, where every card is on a card', sharedZoneOnCards)
     .zone('the {name} is a {layout} in the center that {visibility}, where some cards are on cards', sharedZoneOnCards)
+    .zone("the {name} is a {layout} in the center that {visibility}, where some cards are on other players' cards", sharedZoneOnCards)
     .zone('the {name} is a {layout} in the center that {visibility}, where every card is on a card in their {name}', sharedZoneOnCards)
     .zone('the {name} is a {layout} in the center that {visibility}, where some cards are on cards in their {name}', sharedZoneOnCards)
     .zone('each player has a {unrowedname} that {visibility}', playerZone)
@@ -89,5 +102,7 @@ export function registerSetupPhrases(lib: PhraseLibrary): PhraseLibrary {
     .zone('each player has a {name} row that {visibility}, where every card is on a card in their {name}', playerRowMarked('every'))
     .zone('each player has an {name} row that {visibility}, where every card is on a card in their {name}', playerRowMarked('every'))
     .zone('each player has a {name} row that {visibility}, where some cards are on cards in their {name}', playerRowMarked('some'))
-    .zone('each player has an {name} row that {visibility}, where some cards are on cards in their {name}', playerRowMarked('some'));
+    .zone('each player has an {name} row that {visibility}, where some cards are on cards in their {name}', playerRowMarked('some'))
+    .zone("each player has a {name} row that {visibility}, where some cards are on other players' cards", playerRowAcross)
+    .zone("each player has an {name} row that {visibility}, where some cards are on other players' cards", playerRowAcross);
 }

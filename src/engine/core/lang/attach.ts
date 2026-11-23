@@ -7,6 +7,7 @@ import type { CardState, PlayerId } from '../scene';
 import { pickName } from './card-facts';
 import { RuleError } from './diagnostics';
 import type { CompiledGame } from './types';
+import { ON_SEAT_KEY } from './zones';
 import { BOX_ZONE, HOLDER_KEY, relocate, zoneIdFor, zoneInfo, zoneNameOf } from './zones';
 
 /** What a game with no zone for cards on cards is told when a line puts one there. */
@@ -19,39 +20,57 @@ export function holderIdOf(card: CardState): string | null {
   return typeof holder === 'string' ? holder : null;
 }
 
-/**
- * The cards that sit on each card, by the id of the card they sit on, for each cards array: a state's cards never change, while every
- * rule that reads the cards on a card, and every view, asks it again of cards nothing has moved since.
- */
-const heldBy = new WeakMap<readonly CardState[], Map<string, CardState[]>>();
+/** Whether a card sits on another player's card (R1): it keeps the seat it was put on. */
+const onAnotherSeat = (card: CardState): boolean => typeof card.data?.[ON_SEAT_KEY] === 'string';
 
-/** The cards that sit on the card `holderId`, by zone id, then slot; a new array each time. */
-export function cardsOn(state: GameState, holderId: string): CardState[] {
-  let held = heldBy.get(state.cards);
+/**
+ * The cards that sit on each card, by the id of the card they sit on, for each cards array, kept apart: the holder owner's own (`own`)
+ * and other players' (`others`).
+ */
+const heldIndex = new WeakMap<readonly CardState[], { own: Map<string, CardState[]>; others: Map<string, CardState[]> }>();
+
+function heldOf(state: GameState): { own: Map<string, CardState[]>; others: Map<string, CardState[]> } {
+  let held = heldIndex.get(state.cards);
   if (held === undefined) {
-    held = new Map();
+    held = { own: new Map(), others: new Map() };
     const zones = [...new Set(state.cards.filter((card) => holderIdOf(card) !== null).map((card) => card.zoneId))].sort();
     for (const zoneId of zones) {
       for (const card of zoneCards(state, zoneId)) {
         const holder = holderIdOf(card);
         if (holder === null) continue;
-        const on = held.get(holder);
-        if (on === undefined) held.set(holder, [card]);
+        const by = onAnotherSeat(card) ? held.others : held.own;
+        const on = by.get(holder);
+        if (on === undefined) by.set(holder, [card]);
         else on.push(card);
       }
     }
-    heldBy.set(state.cards, held);
+    heldIndex.set(state.cards, held);
   }
-  return held.get(holderId)?.slice() ?? [];
+  return held;
+}
+
+/** The cards that sit on the card `holderId`, by zone id, then slot; a new array each time. Other players' cards on it are left out (R1). */
+export function cardsOn(state: GameState, holderId: string): CardState[] {
+  return heldOf(state).own.get(holderId)?.slice() ?? [];
+}
+
+/** The cards of other players that sit on the card `holderId`, by zone id, then slot. */
+export function othersOn(state: GameState, holderId: string): CardState[] {
+  return heldOf(state).others.get(holderId)?.slice() ?? [];
 }
 
 /** Moves the cards to the end of the zone, in the order given, each to sit on the card `holderId`. */
 export function putOn(state: GameState, cardIds: string[], zoneId: string, holderId: string, game: CompiledGame): GameState {
   const moved = relocate(state, cardIds, zoneId, game);
   const placed = new Set(cardIds);
+  // In a zone whose cards sit on other players' cards, each keeps the seat of the holder's zone now (R1).
+  const across = zoneInfo(game, zoneId)?.spec.across === true;
+  const holder = across ? moved.cards.find((card) => card.id === holderId) : undefined;
+  const seat = holder === undefined ? null : zoneInfo(game, holder.zoneId)?.seat ?? null;
+  const kept = across && seat !== null ? { [ON_SEAT_KEY]: seat } : {};
   return {
     ...moved,
-    cards: moved.cards.map((card) => (placed.has(card.id) ? { ...card, data: { ...card.data, [HOLDER_KEY]: holderId } } : card)),
+    cards: moved.cards.map((card) => (placed.has(card.id) ? { ...card, data: { ...card.data, [HOLDER_KEY]: holderId, ...kept } } : card)),
   };
 }
 
@@ -100,6 +119,8 @@ export function attachmentProblem(game: CompiledGame, state: GameState): string 
   return problem;
 }
 
+const ACROSS_OWN = (card: string, holder: string) => `${card} is on the ${holder}, but cards there sit only on other players' cards.`;
+
 /** `attachmentProblem` worked out from the cards. */
 function findProblem(game: CompiledGame, state: GameState): string | null {
   if (!game.zones.some((zone) => zone.onCards !== undefined)) return null;
@@ -119,6 +140,14 @@ function findProblem(game: CompiledGame, state: GameState): string | null {
     const holder = byId.get(holderId);
     if (!holder || holder.zoneId === BOX_ZONE) return `${theCard(card)} is on a card that is no longer on the table.`;
     const at = zoneInfo(game, holder.zoneId);
+    if (info.spec.across === true) {
+      // R1: a card on another player's card is held to the seat that card had when it was put there, in a zone everyone sees.
+      const onSeat = card.data?.[ON_SEAT_KEY];
+      if (onSeat === info.seat) return ACROSS_OWN(theCard(card), pickName(holder, game));
+      if (at?.spec.visibility === 'public' && at.seat !== null && at.seat === onSeat) continue;
+      const now = zoneNameOf(game, holder.zoneId);
+      return `${theCard(card)} is on the ${pickName(holder, game)}, which is now in ${now}. Move the cards on a card along with it.`;
+    }
     // A zone that names the zone of the cards its cards sit on holds them to that zone, and still to one everyone can see of the same
     // player's: the compiler refuses a hidden one, but a game built without it is held to it too.
     const strayed = info.spec.holders !== undefined && at?.spec.name !== info.spec.holders;

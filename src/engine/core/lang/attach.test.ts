@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { cardById, zoneCards, type GameState } from '../game-state';
 import { attachmentProblem, cardsOn, holderIdOf, onCardsZoneOf, putOn } from './attach';
+import { othersOn } from './attach';
+import { makeCard } from './cards';
 import { initialState } from './build';
 import { compileGame } from './compile';
 import { RuleError } from './diagnostics';
@@ -8,6 +10,7 @@ import { createDefaultLibrary } from './library';
 import { COUNTER_GAME, CREW_GAME, TEST_DUEL } from './testing';
 import { BOX_ZONE, HOLDER_KEY, relocate } from './zones';
 import { YARD_GAME } from './testing';
+import { POST_GAME } from './testing';
 import type { ZoneSpec } from './types';
 
 const lib = createDefaultLibrary();
@@ -198,5 +201,46 @@ describe('a zone where some cards sit on cards in a zone it names', () => {
       expect(() => onCardsZoneOf(onlyYard, 'p0', 'workshop'))
         .toThrow(new RuleError('No zone each player has holds cards on cards in their workshop.'));
     });
+  });
+});
+
+describe("a zone whose cards sit on other players' cards (7-1 Task 5)", () => {
+  const post = compileGame(POST_GAME, lib).game!;
+  const stake = (state: GameState, zoneId: string, maker: string) => makeCard(state, post, { name: 'Stake', maker }, zoneId)!;
+  const base = initialState(post, 1);
+  const vase = base.cards.find((card) => card.data?.name === 'Vase')!.id;
+  const potter = zoneCards(base, 'hall').find((card) => card.data?.name === 'Potter')!.id;
+  const made = stake(relocate(base, [vase], 'workshop-p0', post), 'holdings-p1', 'p0');
+  const stakeId = made.id;
+  const posted = putOn(made.state, [stakeId], 'holdings-p1', vase, post);
+  const moved = (zoneId: string) => relocate(posted, [vase], zoneId, post);
+  const LEFT = (where: string) => `The Stake in p1's holdings is on the Vase, which is now in ${where}. Move the cards on a card along with it.`;
+
+  it('lets a stake be on nothing, on the Vase, and on the Vase shelved', () => {
+    expect(attachmentProblem(post, made.state)).toBeNull();
+    expect(attachmentProblem(post, posted)).toBeNull();
+    const card = cardById(posted, stakeId)!;
+    expect(card.data?.['lang:on']).toBe(vase);
+    expect(card.data?.['lang:on-seat']).toBe('p0');
+    expect(attachmentProblem(post, moved('shelf-p0'))).toBeNull();
+  });
+  it('refuses the Vase moved where its seat or everyone loses it', () => {
+    expect(attachmentProblem(post, moved('stash-p0'))).toBe(LEFT("p0's stash"));
+    expect(attachmentProblem(post, moved('workshop-p2'))).toBe(LEFT("p2's workshop"));
+    expect(attachmentProblem(post, moved('scrap'))).toBe(LEFT('the scrap'));
+  });
+  it('refuses a stake put on its own player’s card (Review Focus)', () => {
+    const own = putOn(relocate(made.state, [vase], 'workshop-p1', post), [stakeId], 'holdings-p1', vase, post);
+    expect(attachmentProblem(post, own)).toBe("The Stake in p1's holdings is on the Vase, but cards there sit only on other players' cards.");
+  });
+  it('reads the cards on a card as its own player’s, and the others apart', () => {
+    const crewed = putOn(posted, [potter], 'crew-p0', vase, post);
+    expect(cardsOn(crewed, vase).map((card) => card.id)).toEqual([potter]);
+    expect(othersOn(crewed, vase).map((card) => card.id)).toEqual([stakeId]);
+  });
+  it('drops both keys when the stake moves', () => {
+    const scrapped = cardById(relocate(posted, [stakeId], 'scrap', post), stakeId)!;
+    expect(scrapped.data).not.toHaveProperty('lang:on');
+    expect(scrapped.data).not.toHaveProperty('lang:on-seat');
   });
 });

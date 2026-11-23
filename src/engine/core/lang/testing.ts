@@ -438,6 +438,22 @@ export const MAKER_GAME = CREW_GAME
   .replace('  Deal 2 cards from the pile to each stash.',
     '  Deal 2 cards from the pile to each stash.\n  2 new Stake cards go to each purse, each naming its owner as its maker.');
 
+/**
+ * MAKER_GAME where a stake can be posted on a job in its maker's workshop and stays in its holder's holdings, on that job. A job can be
+ * shelved (to a zone everyone sees, its crew going idle) or hidden (to the stash).
+ */
+export const POST_GAME = MAKER_GAME
+  .replace('  Each player has a holdings row that everyone can see.', [
+    "  Each player has a holdings row that everyone can see, where some cards are on other players' cards.",
+    '  Each player has a shelf row that everyone can see.'].join('\n'))
+  .replace('  A player may stop.', [
+    "  A player may post a card from their holdings to a card in another player's workshop.", '    It costs 1 move.',
+    "    Only if the target card's owner is its maker.", '    Only if it is not on the target card.', '    Then:',
+    '      It goes to their holdings, on the target card.',
+    '  A player may shelve a card from their workshop to their shelf.', '    It costs 1 move.', '    Then:', '      Every card on it goes to their idle.',
+    '  A player may hide a card from their workshop to their stash.', '    It costs 1 move.',
+    '  A player may stop.'].join('\n'));
+
 /** MAKER_GAME where a player may buy a card in another player's purse for 1 move, into their holdings. */
 export const BUY_GAME = MAKER_GAME.replace('  A player may stop.', [
   "  A player may buy a card in another player's purse.", '    It costs 1 move.', '    Then:', '      Move it to their holdings.',

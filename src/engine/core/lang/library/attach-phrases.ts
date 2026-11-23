@@ -3,11 +3,13 @@ import { cardById } from '../zone-index';
 import type { PlayerId } from '../../scene';
 import { cardsOn, holderIdOf, onCardsZoneOf, putOn } from '../attach';
 import { changeCard } from '../card-facts';
+import { pickName } from '../card-facts';
 import { RuleError } from '../diagnostics';
 import type { PhraseLibrary } from '../phrases';
 import { joinAnd } from '../refs';
 import type { CardMatch, ConditionFn, EffectFn, ExpectFn, MomentFn, PhraseEnv, ZoneRef } from '../types';
 import { matchesCard, relocate, zoneInfo } from '../zones';
+import { zoneNameOf } from '../zones';
 import { changeable } from './card-number-phrases';
 import { claimCards, coversExactly, describeCard, describeCards } from './example-phrases';
 import { namingFacts } from './example-phrases';
@@ -192,6 +194,43 @@ const cardHasOnItGiven: EffectFn = (env, [match, zone, wanted]) => {
   return putOn(state, ids, onCardsZoneOf(env.game, at.seat, at.spec.name), holder.id, env.game);
 };
 
+/**
+ * Puts the named card of a zone on the named card of another, where it is, through `putOn`: the first must be in a zone marked for cards
+ * on cards. It works for any marked zone, a zone whose cards sit on other players' cards keeping the seat of the second's zone. No join is
+ * told: the Given sets the table as it already is.
+ */
+const cardIsOnGiven: EffectFn = (env, [match, zone, holderMatch, holderZone]) => {
+  const zoneId = onCardsZone(env, zone as ZoneRef);
+  const card = namedCardIn(env, match as CardMatch, zone as ZoneRef);
+  if (!card) throw new RuleError(`There is ${noCardIn(match as CardMatch, zone as ZoneRef)}.`);
+  const holder = namedCardIn(env, holderMatch as CardMatch, holderZone as ZoneRef);
+  if (!holder) throw new RuleError(`There is ${noCardIn(holderMatch as CardMatch, holderZone as ZoneRef)}.`);
+  return putOn(env.state, [card.id], zoneId, holder.id, env.game);
+};
+
+/** Whether the named card of a zone sits on the named card of another, or on none (`holderMatch` null). */
+function isOnIs(env: PhraseEnv, match: CardMatch, zone: ZoneRef, holderMatch: CardMatch | null, holderZone: ZoneRef | null): true | string {
+  const wanted = holderMatch === null ? 'on no card' : `on ${theCard(holderMatch)} in ${describeZone(holderZone as ZoneRef)}`;
+  const expected = `Expected ${theCard(match)} in ${describeZone(zone)} to be ${wanted}`;
+  const card = namedCardIn(env, match, zone);
+  if (!card) return `${expected}, but there is ${noCardIn(match, zone)}.`;
+  const on = holderIdOf(card);
+  if (holderMatch === null) {
+    if (on === null) return true;
+  } else {
+    const holder = namedCardIn(env, holderMatch, holderZone as ZoneRef);
+    if (!holder) return `${expected}, but there is ${noCardIn(holderMatch, holderZone as ZoneRef)}.`;
+    if (on === holder.id) return true;
+  }
+  const sits = on === null ? undefined : cardById(env.state, on);
+  return `${expected}, but it is ${sits === undefined ? 'on no card' : `on the ${pickName(sits, env.game)} in ${zoneNameOf(env.game, sits.zoneId)}`}.`;
+}
+
+const cardIsOnExpected: ExpectFn = (env, [match, zone, holderMatch, holderZone]) =>
+  isOnIs(env, match as CardMatch, zone as ZoneRef, holderMatch as CardMatch, holderZone as ZoneRef);
+
+const cardIsOnNoCardExpected: ExpectFn = (env, [match, zone]) => isOnIs(env, match as CardMatch, zone as ZoneRef, null, null);
+
 /** Whether exactly the wanted cards sit on the named card of a zone, `list` saying them; otherwise what an example should say about it. */
 function onItIs(env: PhraseEnv, named: CardMatch, where: ZoneRef, wanted: CardMatch[], list: string): true | string {
   const expected = `Expected ${theCard(named)} in ${describeZone(where)} to have ${list} on it`;
@@ -238,5 +277,8 @@ export function registerAttachPhrases(lib: PhraseLibrary): PhraseLibrary {
     .effect('the card it joins gains {int} {attribute}', joinedCardGains, { needsOnto: true, writes: 1 })
     .given('{card} in {zone} has {cardlist} on it', cardHasOnItGiven)
     .expect('{card} in {zone} has {cardlist} on it', cardHasOnItExpected)
-    .expect('{card} in {zone} has no cards on it', cardHasNothingOnItExpected);
+    .expect('{card} in {zone} has no cards on it', cardHasNothingOnItExpected)
+    .given('{card} in {zone} is on {card} in {zone}', cardIsOnGiven)
+    .expect('{card} in {zone} is on {card} in {zone}', cardIsOnExpected)
+    .expect('{card} in {zone} is on no card', cardIsOnNoCardExpected);
 }

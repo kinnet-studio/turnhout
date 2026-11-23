@@ -14,6 +14,8 @@ import { JOIN_GAME } from '../testing';
 import { YARD_GAME } from '../testing';
 import { BOOST_GAME } from '../testing';
 import { SORT_GAME } from '../testing';
+import { POST_GAME } from '../testing';
+import { makeCard } from '../cards';
 import { relocate } from '../zones';
 import { createDefaultLibrary } from './index';
 
@@ -683,5 +685,93 @@ describe('a join rule whose lines name the joined card after a shuffle renamed i
     expect(engine.dispatch(hire)).toMatchObject({ ok: true });
     const state = engine.getState();
     expect(zoneCards(state, 'idle-p0').map((card) => [card.data?.name, card.id === smith, dealtIdOf(state, card.id)])).toEqual([['Smith', false, smith]]);
+  });
+});
+
+describe("a stake posted on another player's job (7-1 Task 5)", () => {
+  const post = compileGame(POST_GAME, lib);
+  it('compiles', () => expect(post.diagnostics).toEqual([]));
+  const g = post.game!;
+  const POST = "post a card from their holdings to a card in another player's workshop";
+  const base = initialState(g, 1);
+  const vase = base.cards.find((card) => card.data?.name === 'Vase')!.id;
+  const statue = base.cards.find((card) => card.data?.name === 'Statue')!.id;
+  const potter = zoneCards(base, 'hall').find((card) => card.data?.name === 'Potter')!.id;
+  // p1's holdings hold a Stake whose maker is p0; p0's workshop the Vase, a Potter on it; p2's workshop the Statue.
+  const made = makeCard(relocate(relocate(base, [vase], 'workshop-p0', g), [statue], 'workshop-p2', g), g, { name: 'Stake', maker: 'p0' }, 'holdings-p1')!;
+  const stakeId = made.id;
+  const laid = putOn(made.state, [potter], 'crew-p0', vase, g);
+  const engineOn = (seat: string, state: GameState) => createEngine(g, lib, 3, { ...state, turn: { current: seat, phase: 'working' } }).engine;
+  const STASHED = "The Stake in p1's holdings is on the Vase, which is now in p0's stash. Move the cards on a card along with it.";
+  const SCRAPPED = "The Stake in p1's holdings is on the Vase, which is now in the scrap. Move the cards on a card along with it.";
+
+  it("posts the stake on its maker's job, for a move", () => {
+    const engine = engineOn('p1', laid);
+    expect(engine.dispatch({ type: POST, by: 'p1', cardId: stakeId, onto: vase }).reason).toBeUndefined();
+    const state = engine.getState();
+    expect(cardById(state, stakeId)).toMatchObject({ zoneId: 'holdings-p1', data: expect.objectContaining({ 'lang:on': vase, 'lang:on-seat': 'p0' }) });
+    expect(counterOf(state, 'moves', 'p1')).toBe(2);
+  });
+  it("refuses it on a job of another player's", () => {
+    const engine = engineOn('p1', laid);
+    expect(engine.dispatch({ type: POST, by: 'p1', cardId: stakeId, onto: statue })).toMatchObject({ ok: false, reason: "the target card's owner is its maker" });
+  });
+  describe('with the stake already posted, on p0’s turn', () => {
+    const postedOn = () => engineOn('p0', putOn(laid, [stakeId], 'holdings-p1', vase, g));
+    it('shelves the Vase with the stake still on it, the Potter going idle', () => {
+      const engine = postedOn();
+      expect(engine.dispatch({ type: 'shelve a card from their workshop to their shelf', by: 'p0', cardId: vase }).reason).toBeUndefined();
+      const state = engine.getState();
+      expect(cardById(state, vase)?.zoneId).toBe('shelf-p0');
+      expect(holderOf(state, stakeId)).toBe(vase);
+      expect(cardById(state, potter)?.zoneId).toBe('idle-p0');
+    });
+    it('refuses hiding the Vase, and keeps the state (Review Focus)', () => {
+      // No Potter on the Vase here: the check names the first card in table order that is left behind, and a Potter comes before a Stake.
+      const engine = engineOn('p0', putOn(made.state, [stakeId], 'holdings-p1', vase, g));
+      const before = engine.getState();
+      expect(() => engine.dispatch({ type: 'hide a card from their workshop to their stash', by: 'p0', cardId: vase })).toThrow(STASHED);
+      expect(engine.getState()).toBe(before);
+    });
+    it('refuses finishing the Vase (Review Focus; Task 6 writes its return)', () => {
+      const engine = postedOn();
+      expect(() => engine.dispatch({ type: 'finish a card in their workshop', by: 'p0', cardId: vase })).toThrow(SCRAPPED);
+    });
+  });
+  const run = (examples: string) => {
+    const compiled = compileGame(`${POST_GAME}\n\n${examples}`, lib);
+    expect(compiled.diagnostics).toEqual([]);
+    return runExamples(compiled.game!, lib);
+  };
+  it('runs the examples', () => {
+    expect(run([
+      "Example: a stake on another player's job stays on it as the job is shelved, and the cards on the job are only its own player's",
+      "  Given p1's holdings has a Stake whose maker is p0",
+      "  And p0's workshop has a Vase",
+      "  And the Vase in p0's workshop has a Potter on it",
+      "  And the Stake in p1's holdings is on the Vase in p0's workshop",
+      "  Then the Vase in p0's workshop has a Potter on it",
+      '  When p0 shelves the Vase',
+      "  Then the Stake in p1's holdings is on the Vase in p0's shelf",
+      "  And the Vase in p0's shelf has no cards on it",
+      "  And p0's idle has a Potter",
+      '',
+      'Example: a stake not yet posted is on no card',
+      "  Given p1's holdings has a Stake whose maker is p0",
+      "  Then the Stake in p1's holdings is on no card",
+    ].join('\n'))).toEqual([
+      expect.objectContaining({ status: 'pass', message: null }),
+      expect.objectContaining({ status: 'pass', message: null }),
+    ]);
+  });
+  it('fails a Given that puts a stake on its own player’s job (Review Focus)', () => {
+    const [result] = run([
+      'Example: a stake on its own job',
+      "  Given p0's holdings has a Stake whose maker is p1",
+      "  And p0's workshop has a Vase",
+      "  And the Stake in p0's holdings is on the Vase in p0's workshop",
+    ].join('\n'));
+    expect(result).toMatchObject({ status: 'fail' });
+    expect(result.message).toContain("The Stake in p0's holdings is on the Vase, but cards there sit only on other players' cards.");
   });
 });

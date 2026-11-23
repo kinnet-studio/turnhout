@@ -45,6 +45,8 @@ export type CardGroup =
 export type ZoneSpec = {
   name: string; perPlayer: boolean; layout: 'pile' | 'row' | 'hand'; visibility: 'secret' | 'owner' | 'public'; onCards?: 'every' | 'some';
   holders?: string;
+  /** A row each player has, everyone sees, onCards 'some': its cards sit on other players' cards (R1). */
+  across?: true;
 };
 export type CardIdentity = { attrs: { [k: string]: Json }; faceKey: string };
 /**

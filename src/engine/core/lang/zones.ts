@@ -177,11 +177,15 @@ export function topCard(state: GameState, zoneId: string): CardState | undefined
   return zoneCards(state, zoneId).at(-1);
 }
 
+/** The seat of the card a card sat on when it was put there, kept with a card in a zone whose cards sit on other players' cards (R1). */
+export const ON_SEAT_KEY = 'lang:on-seat';
+
 /** The card off whatever card it sat on; a card that sat on none comes back as it is, `data` and all. */
 export function withoutHolder(card: CardState): CardState {
-  if (card.data === undefined || !Object.hasOwn(card.data, HOLDER_KEY)) return card;
+  if (card.data === undefined || (!Object.hasOwn(card.data, HOLDER_KEY) && !Object.hasOwn(card.data, ON_SEAT_KEY))) return card;
   const data = { ...card.data };
   delete data[HOLDER_KEY];
+  delete data[ON_SEAT_KEY];
   return { ...card, data };
 }
 
