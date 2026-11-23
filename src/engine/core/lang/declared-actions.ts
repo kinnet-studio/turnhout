@@ -223,7 +223,7 @@ function aboutPress(action: DeclaredAction, runtime: LangRuntime, state: GameSta
   return runtime.allowsTarget(action.target, state, subject, space) ? { subject } : `That isn't ${secondPersonWords(action.target.text.toLowerCase())}.`;
 }
 
-/** Whether the button costs part of the turn budget: it is “an action”, the kind a veto may answer. */
+/** Whether the button costs part of the turn budget: it is “an action”, the kind the players asked may answer before it goes ahead. */
 export function hasCost(action: DeclaredAction): boolean {
   return action.cost !== undefined;
 }
@@ -384,6 +384,13 @@ export function declaredActionHandler(move: string, runtime: LangRuntime): MoveH
       const recorded = action.anyone ? state : recordAction(state, by, move);
       // Spent first, so that the Then lines see what is left.
       const paid = payCost(action, recorded, by);
+      // An action with a cost waits while the players the window asks answer it: no card moves and no Then: line runs yet.
+      if (runtime.game.everyPhase.window && hasCost(action)) {
+        const asked = runtime.askedFor(paid, by);
+        if (asked.length > 0) {
+          return runtime.openWindow(paid, { by, from: phase.id, move, subject, ...(info ? { info } : {}), ...(relocation ? { relocation } : {}), asked });
+        }
+      }
       const moved = relocation ? relocate(paid, relocation.ids, relocation.to, runtime.game) : paid;
       const done = runtime.runLines(action.effects, moved, info, undefined, subject);
       // Only a turn of this phase passes: lines that went back to an interrupted turn leave that turn's log as it was.

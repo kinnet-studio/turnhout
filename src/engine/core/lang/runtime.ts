@@ -22,6 +22,9 @@ import type {
   PhraseEnv, PhraseKind, PhraseRef, ScoreFn, Subject, TargetFn, TurnFn, ValueFn, WhichFn, WhoFn, WinnerFn, WorkedValue,
 } from './types';
 import { chooseNext } from './zones';
+import { relocate } from './zones';
+import { WINDOW_KEY, waitingOf, type Waiting } from './action-window';
+import { TURN_KEY, TURN_ROLLS_KEY, type InterruptedTurn } from './board-state';
 import { currentIdOf, RENAMED_KEY } from './cards';
 
 type Checker = (state: GameState, move: Move) => true | string;
@@ -347,7 +350,7 @@ export class LangRuntime {
    * they hand it back.
    */
   turnWaiting(state: GameState): boolean {
-    return state.result === undefined && this.inGamePhase(state) && interruptedTurn(state) === null
+    return state.result === undefined && this.inGamePhase(state) && interruptedTurn(state) === null && waitingOf(state) === null
       && state.data[TURN_OF_KEY] !== state.turn?.current && state.data[END_STEPS_KEY] === undefined && !this.endWaiting(state)
       && !this.roundStepsRun(state);
   }
@@ -378,7 +381,66 @@ export class LangRuntime {
   endStepsDue(state: GameState): boolean {
     const end = this.game.end;
     return end?.steps !== undefined && state.data[END_STEPS_KEY] === undefined && state.result === undefined && this.inGamePhase(state)
-      && !this.roundStepsRun(state) && this.test(end.when, state);
+      && !this.roundStepsRun(state) && waitingOf(state) === null && this.test(end.when, state);
+  }
+
+  /**
+   * The seats still in, other than `by`, from `by`'s left round to `by`'s right, for whom the window's clause holds. It is judged on `state`
+   * with a Waiting naming `by` under WINDOW_KEY, so that “the player acting” reads `by`.
+   */
+  askedFor(state: GameState, by: PlayerId): PlayerId[] {
+    const answering = this.game.everyPhase.window;
+    if (!answering) return [];
+    const judged: GameState = { ...state, data: { ...state.data, [WINDOW_KEY]: { by } } };
+    const at = this.seats.indexOf(by);
+    const round = this.seats.map((_, i) => this.seats[(at + 1 + i) % this.seats.length]).filter((seat) => seat !== by && !isOut(state, seat));
+    return round.filter((seat) => this.test(answering.who, judged, undefined, undefined, { player: seat, space: null, card: null }));
+  }
+
+  /**
+   * Writes the Waiting with `at` 0 and `back` the turn as it stands (its phase, seat, and what was done and rolled), then goes to the window
+   * phase with asked[0] current, and runs that phase's start lines about them, the table checked after each.
+   */
+  openWindow(state: GameState, waiting: Omit<Waiting, 'phase' | 'at' | 'back'>): GameState {
+    const answering = this.game.everyPhase.window;
+    const { turn } = state;
+    if (!answering || !turn) throw new Error('An action waited with no window or no turn.');
+    const back: InterruptedTurn = {
+      phase: turn.phase ?? null, current: turn.current, log: state.data[TURN_KEY] ?? null, rolls: state.data[TURN_ROLLS_KEY] ?? null,
+    };
+    const written: Waiting = { ...waiting, phase: answering.phase, at: 0, back };
+    const opened = chooseNext(setPhase(state, answering.phase), waiting.asked[0]);
+    const begun: GameState = { ...opened, data: { ...opened.data, [WINDOW_KEY]: written as unknown as Json } };
+    const startLines = this.game.phases.find((p) => p.id === answering.phase)?.onEnter ?? [];
+    return startLines.reduce((s, ref) => this.checkAttachments(this.runInPhase(answering.phase, ref, s), ref), begun);
+  }
+
+  /** Whether the players asked have answered the waiting action: a verdict is set. */
+  windowAnswered(state: GameState): boolean {
+    return waitingOf(state)?.verdict !== undefined;
+  }
+
+  /**
+   * Puts the turn back as `back` holds it and drops WINDOW_KEY. On 'ahead' it then moves the relocation's cards and runs the button's Then:
+   * lines about the stored subject with the stored card move, as the press would have, the table checked on the button's line.
+   */
+  closeWindow(state: GameState): GameState {
+    const waiting = waitingOf(state);
+    if (waiting === null || waiting.verdict === undefined) throw new Error('No answered action to close.');
+    const { back } = waiting;
+    const { [WINDOW_KEY]: _window, [TURN_KEY]: _log, [TURN_ROLLS_KEY]: _rolls, ...data } = state.data;
+    if (back.log !== null) data[TURN_KEY] = back.log;
+    if (back.rolls !== null) data[TURN_ROLLS_KEY] = back.rolls;
+    const turn = { ...state.turn, current: back.current };
+    if (back.phase === null) delete turn.phase;
+    else turn.phase = back.phase;
+    const closed: GameState = { ...state, turn, data };
+    if (waiting.verdict === 'stopped') return closed;
+    const action = this.game.phases.find((p) => p.id === waiting.from)?.actions.find((a) => a.words === waiting.move);
+    if (!action) throw new Error(`No button “${waiting.move}” in the phase “${waiting.from}”.`);
+    const { relocation } = waiting;
+    const moved = relocation ? relocate(closed, relocation.ids, relocation.to, this.game) : closed;
+    return this.checkAttachments(this.runLines(action.effects, moved, waiting.info, undefined, waiting.subject), { line: action.line });
   }
 
   /**

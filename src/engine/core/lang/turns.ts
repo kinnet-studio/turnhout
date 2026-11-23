@@ -3,6 +3,7 @@
 import type { GameState } from '../game-state';
 import type { PlayerId } from '../scene';
 import { interruptedTurn } from './board-state';
+import { WINDOW_KEY } from './action-window';
 import { playersIn } from './board-state';
 import { innerEffect } from './compile-util';
 import type { CompiledGame } from './types';
@@ -101,7 +102,7 @@ export function roundOf(state: GameState): number {
 export function roundFinished(state: GameState, seats: PlayerId[]): boolean {
   const current = state.turn?.current;
   return roundOf(state) >= 1 && current === startPlayerOf(state, seats) && state.data[TURN_OF_KEY] !== current
-    && interruptedTurn(state) === null && state.data[ROUND_STEPS_KEY] === undefined;
+    && interruptedTurn(state) === null && state.data[ROUND_STEPS_KEY] === undefined && state.data[WINDOW_KEY] === undefined;
 }
 
 /**
@@ -130,7 +131,7 @@ export function clearTurnOf(state: GameState): GameState {
 export function clearTurnMarkers(state: GameState): GameState {
   const {
     [TURN_OF_KEY]: _turnOf, [LAST_TURN_KEY]: _lastTurn, [ROUND_KEY]: _round, [START_PLAYER_KEY]: _start, [END_STEPS_KEY]: _steps,
-    [ROUND_STEPS_KEY]: _roundSteps, ...data
+    [ROUND_STEPS_KEY]: _roundSteps, [WINDOW_KEY]: _window, ...data
   } = state.data;
   return { ...state, data };
 }

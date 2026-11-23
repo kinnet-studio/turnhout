@@ -30,6 +30,8 @@ export const SETUP_PHASE = '__setup';
 const TURN_START_RULE = 'a turn starts';
 /** The flow's name for the rule that starts the steps each player takes before the score, in a game whose End has them. */
 const END_STEPS_RULE = 'the steps before the score start';
+/** The flow's name for the rule that closes the window once the players asked have answered the waiting action. */
+const WINDOW_RULE = 'an action is answered';
 
 export function seatsFor(players: number): PlayerId[] {
   return Array.from({ length: players }, (_, i) => `p${i}`);
@@ -106,7 +108,11 @@ export function flowDefFor(game: CompiledGame, seats: PlayerId[]): FlowDef {
   const endSteps: TriggerDef[] = game.end?.steps
     ? [{ id: END_STEPS_RULE, when: { name: 'lang:end-steps-due' }, then: [{ name: 'lang:end-steps-start' }] }]
     : [];
-  const triggers = [...endSteps, ...turnStart, ...ruleTriggers];
+  // An answered action is closed ahead of every other rule: its turn is put back, and it goes ahead or not, before anything else runs.
+  const answering: TriggerDef[] = game.everyPhase.window
+    ? [{ id: WINDOW_RULE, when: { name: 'lang:window-answered' }, then: [{ name: 'lang:window-close' }] }]
+    : [];
+  const triggers = [...answering, ...endSteps, ...turnStart, ...ruleTriggers];
 
   // A rule about a card tidies the table, and the game is decided on the tidied table: the flow checks End before it fires any
   // rule, so End would otherwise count a card (at 0 health, say) that such a rule is about to move away. A rule for every phase
@@ -168,6 +174,8 @@ function flowRegistryFor(runtime: LangRuntime): FlowRegistry {
       const { phase, trigger } = rule(params);
       return runtime.checkAttachments(runtime.fireTrigger(phase, trigger, state), trigger);
     })
+    .registerPredicate('lang:window-answered', (state) => runtime.windowAnswered(state))
+    .registerEffect('lang:window-close', (state) => runtime.closeWindow(state))
     .registerPredicate('lang:turn-waiting', (state) => runtime.turnWaiting(state))
     .registerEffect('lang:turn-start', (state) => runtime.startTurn(state))
     .registerPolicy('lang:turn', (state, _order, _ctx, params) => runtime.pick(ref(params), state))

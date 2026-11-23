@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest';
 import type { GameState } from '../game-state';
 import { actingPlayer, NO_ACTION_WAITING, WINDOW_KEY, type Waiting } from './action-window';
 import { flowDefFor, initialState, seatsFor } from './build';
+import { zoneCards, cardById } from '../game-state';
+import type { Move } from '../moves';
+import { waitingOf } from './action-window';
+import { counterOf, didThisTurn, interruptedTurn, markOut, setCounter, withBoardData } from './board-state';
+import { createEngine } from './build';
+import { runExamples } from './examples';
+import { ROUND_KEY, TURN_OF_KEY, markTurnStarted, roundFinished } from './turns';
+import { relocate } from './zones';
 import { makeCard } from './cards';
 import { compileGame } from './compile';
 import { createDefaultLibrary } from './library';
@@ -155,5 +163,214 @@ describe('the line and its refusals', () => {
       expect(() => runPhrase(lib, 'effect', 'the action does not go ahead', about(base, 'p1'))).toThrow(NO_ACTION_WAITING);
       expect(() => actingPlayer(base)).toThrow(NO_ACTION_WAITING);
     });
+  });
+});
+
+describe('the window played', () => {
+  const objectGame = compiled(OBJECT_GAME);
+  type Prepare = (state: GameState) => GameState;
+  /** A 3-player engine whose turn is p0's in working, p0's turn started; the Vase is in p0's workshop. */
+  function table(game = objectGame, prepare: Prepare = (state) => state) {
+    const fresh = initialState(game, 1);
+    const vase = fresh.cards.find((card) => card.data?.name === 'Vase')!.id;
+    const start = withBoardData({ ...relocate(fresh, [vase], 'workshop-p0', game), turn: { current: 'p0', phase: 'working' } }, game, SEATS);
+    return createEngine(game, lib, 3, prepare(markTurnStarted(start))).engine;
+  }
+  type Engine = ReturnType<typeof table>;
+  const base = initialState(objectGame, 1);
+  const vase = base.cards.find((card) => card.data?.name === 'Vase')!.id;
+  const potter = zoneCards(base, 'hall').find((card) => card.data?.name === 'Potter')!.id;
+  /** Stakes of `maker` in each zone, made in order. */
+  const stake = (maker: string, ...zones: string[]): Prepare => (state) =>
+    zones.reduce((s, zone) => makeCard(s, objectGame, { name: 'Stake', maker }, zone)!.state, state);
+  const stakesIn = (state: GameState, zoneId: string) => zoneCards(state, zoneId).filter((card) => card.data?.name === 'Stake');
+  const HIRE = 'hire some cards from the hall to a card in their workshop';
+  const hire = (engine: Engine, by = 'p0') => engine.dispatch({ type: HIRE, by, cardIds: [potter], onto: vase });
+  const press = (engine: Engine, type: string, by: string, extra: Partial<Move> = {}) => {
+    const result = engine.dispatch({ type, by, ...extra } as Move);
+    expect(result.reason, `${by} ${type}`).toBeUndefined();
+    return engine.getState();
+  };
+  const LET_GO = 'let it go';
+  const OBJECT = 'object with a card in their holdings';
+  const moves = (state: GameState, seat: string) => counterOf(state, 'moves', seat);
+  const then = (...prepares: Prepare[]): Prepare => (state) => prepares.reduce((s, p) => p(s), state);
+
+  describe('a stopped action', () => {
+    const prepare = stake('p0', 'holdings-p1');
+    it('waits for p1, with the press paid for and nothing moved', () => {
+      const engine = table(objectGame, prepare);
+      expect(hire(engine).reason).toBeUndefined();
+      const state = engine.getState();
+      expect([state.turn?.phase, state.turn?.current, moves(state, 'p0')]).toEqual(['objection', 'p1', 2]);
+      expect(cardById(state, potter)?.zoneId).toBe('hall');
+      expect(waitingOf(state)).toMatchObject({ by: 'p0', from: 'working', asked: ['p1'], at: 0, back: { phase: 'working', current: 'p0' } });
+      // (amendment) The flow's phase gate answers first: stop is no button of the objection. An answer of p0's is refused as not their turn.
+      expect(engine.dispatch({ type: 'stop', by: 'p0' })).toMatchObject({ ok: false, reason: 'move stop not allowed in phase objection' });
+      expect(engine.dispatch({ type: LET_GO, by: 'p0' })).toMatchObject({ ok: false, reason: "not p0's turn" });
+    });
+    it('stops when p1 objects, and gives the turn back', () => {
+      const engine = table(objectGame, prepare);
+      hire(engine);
+      const stakeId = stakesIn(engine.getState(), 'holdings-p1')[0].id;
+      const state = press(engine, OBJECT, 'p1', { cardId: stakeId });
+      expect(cardById(state, stakeId)?.zoneId).toBe('purse-p0');
+      expect(cardById(state, stakeId)?.data).not.toHaveProperty('lang:on');
+      expect([state.turn?.phase, state.turn?.current, moves(state, 'p0')]).toEqual(['working', 'p0', 2]);
+      expect(cardById(state, potter)?.zoneId).toBe('hall');
+      expect(state.data).not.toHaveProperty(WINDOW_KEY);
+      expect(state.data[TURN_OF_KEY]).toBe('p0');
+      expect(didThisTurn(state, 'p0', HIRE)).toBe(true);
+    });
+  });
+
+  describe('an action that goes ahead', () => {
+    const prepare = stake('p0', 'holdings-p1', 'holdings-p2');
+    it('asks p1 then p2, and goes ahead once both let it go', () => {
+      const engine = table(objectGame, prepare);
+      hire(engine);
+      expect(waitingOf(engine.getState())?.asked).toEqual(['p1', 'p2']);
+      let state = press(engine, LET_GO, 'p1');
+      expect([state.turn?.current, waitingOf(state)?.at]).toEqual(['p2', 1]);
+      state = press(engine, LET_GO, 'p2');
+      expect(cardById(state, potter)).toMatchObject({ zoneId: 'crew-p0', data: expect.objectContaining({ 'lang:on': vase }) });
+      expect([state.turn?.phase, state.turn?.current, moves(state, 'p0')]).toEqual(['working', 'p0', 2]);
+    });
+    it('asks from the left of the player acting', () => {
+      // (amendment) p1 hires to a job of their own: the Statue in their workshop.
+      const statue = base.cards.find((card) => card.data?.name === 'Statue')!.id;
+      const engine = table(objectGame, then(stake('p1', 'holdings-p2', 'holdings-p0'), (s) => relocate(s, [statue], 'workshop-p1', objectGame),
+        (s) => markTurnStarted({ ...s, turn: { current: 'p1', phase: 'working' } })));
+      expect(engine.dispatch({ type: HIRE, by: 'p1', cardIds: [potter], onto: statue }).reason).toBeUndefined();
+      expect(waitingOf(engine.getState())?.asked).toEqual(['p2', 'p0']);
+    });
+  });
+
+  describe('no window', () => {
+    it('hires at once with no stake held', () => {
+      const engine = table();
+      hire(engine);
+      expect(cardById(engine.getState(), potter)?.zoneId).toBe('crew-p0');
+      expect(engine.getState().data).not.toHaveProperty(WINDOW_KEY);
+    });
+    it('starts a card at once: a button with no cost is never answered', () => {
+      // (amendment) Setup is skipped, so the stash is empty: a job is put there.
+      const statue = base.cards.find((card) => card.data?.name === 'Statue')!.id;
+      const engine = table(objectGame, then(stake('p0', 'holdings-p1'), (s) => relocate(s, [statue], 'stash-p0', objectGame)));
+      const card = zoneCards(engine.getState(), 'stash-p0')[0];
+      expect(card).toBeDefined();
+      press(engine, 'start a card in their stash', 'p0', { cardId: card.id });
+      expect(cardById(engine.getState(), card.id)?.zoneId).toBe('workshop-p0');
+    });
+  });
+
+  it("lets the maker answer a trade of their own stake (R2's shape)", () => {
+    const engine = table(objectGame, then(stake('p1', 'holdings-p0'), stake('p0', 'holdings-p1'), (s) => ({ ...s, turn: { current: 'p1', phase: 'working' } })));
+    const before = engine.getState();
+    const own = stakesIn(before, 'holdings-p1')[0].id;
+    const theirs = stakesIn(before, 'holdings-p0')[0].id;
+    press(engine, 'sell a card in their holdings', 'p1', { cardId: own });
+    expect(waitingOf(engine.getState())?.asked).toEqual(['p0']);
+    const state = press(engine, OBJECT, 'p0', { cardId: theirs });
+    expect(cardById(state, theirs)?.zoneId).toBe('purse-p1');
+    expect(cardById(state, own)?.zoneId).toBe('holdings-p1');
+    expect(zoneCards(state, 'scrap')).toEqual(zoneCards(before, 'scrap'));
+    expect(moves(state, 'p1')).toBe(2);
+  });
+
+  describe('Review Focus', () => {
+    it('asks no seat that is out', () => {
+      const engine = table(objectGame, then(stake('p0', 'holdings-p1', 'holdings-p2'), (s) => markOut(s, 'p2')));
+      hire(engine);
+      expect(waitingOf(engine.getState())?.asked).toEqual(['p1']);
+    });
+    it('passes the turn after the last move, once the window closes', () => {
+      for (const answer of ['let', 'object'] as const) {
+        const engine = table(objectGame, then(stake('p0', 'holdings-p1'), (s) => setCounter(s, 'moves', 'p0', 1)));
+        hire(engine);
+        expect(moves(engine.getState(), 'p0')).toBe(0);
+        const stakeId = stakesIn(engine.getState(), 'holdings-p1')[0].id;
+        const state = answer === 'let' ? press(engine, LET_GO, 'p1') : press(engine, OBJECT, 'p1', { cardId: stakeId });
+        if (answer === 'let') expect(cardById(state, potter)?.data?.['lang:on']).toBe(vase);
+        expect([answer, state.turn?.current, state.data[TURN_OF_KEY]]).toEqual([answer, 'p1', 'p1']);
+      }
+    });
+    it('keeps the choices of the press', () => {
+      const TIDY = 'tidy a card in their workshop';
+      const tired = table(objectGame, stake('p0', 'holdings-p1'));
+      press(tired, TIDY, 'p0', { cardId: vase, choices: ['Tire'] });
+      expect(cardById(press(tired, LET_GO, 'p1'), vase)?.data?.tired).toBe(true);
+      const paid = table(objectGame, stake('p0', 'holdings-p1'));
+      press(paid, TIDY, 'p0', { cardId: vase, choices: ['Pay'] });
+      expect(counterOf(press(paid, LET_GO, 'p1'), 'coins', 'p0')).toBe(10);
+    });
+    it('starts another phase once the action goes ahead', () => {
+      const engine = table(objectGame, stake('p0', 'holdings-p1', 'holdings-p2'));
+      const called = stakesIn(engine.getState(), 'holdings-p1')[0].id;
+      press(engine, "call a card in another player's holdings", 'p0', { cardId: called });
+      press(engine, LET_GO, 'p1');
+      const state = press(engine, LET_GO, 'p2');
+      expect([state.turn?.phase, state.turn?.current]).toEqual(['answer', 'p1']);
+      expect(interruptedTurn(state)).toMatchObject({ phase: 'working', current: 'p0' });
+      const back = press(engine, 'refuse', 'p1');
+      expect([back.turn?.phase, back.turn?.current]).toEqual(['working', 'p0']);
+    });
+    it('undoes and replays', () => {
+      const prepare = stake('p0', 'holdings-p1', 'holdings-p2');
+      const engine = table(objectGame, prepare);
+      hire(engine);
+      press(engine, LET_GO, 'p1');
+      const replayed = table(objectGame, prepare);
+      replayed.loadLog([...engine.getLog()]);
+      expect(replayed.getState()).toEqual(engine.getState());
+      engine.undo();
+      expect([engine.getState().turn?.current, waitingOf(engine.getState())?.at]).toEqual(['p1', 0]);
+    });
+    it('finishes no round while an action waits', () => {
+      const state: GameState = {
+        ...base, turn: { current: 'p2', phase: 'objection' },
+        data: { [WINDOW_KEY]: { by: 'p0' }, [ROUND_KEY]: 1, [TURN_OF_KEY]: 'p0' },
+      };
+      expect(roundFinished({ ...state, data: { ...state.data, [WINDOW_KEY]: null } as GameState['data'] }, SEATS)).toBe(false);
+      expect(roundFinished(state, SEATS)).toBe(false);
+    });
+  });
+
+  describe('refused while playing', () => {
+    it('refuses passing the turn in the window', () => {
+      const text = withLine(OBJECT_GAME, 'Phase: objection', '  When they have at least 1 coin:\n    The turn passes to the left.');
+      const game = compileGame(text, lib).game!;
+      const engine = table(game, stake('p0', 'holdings-p1'));
+      const before = engine.getState();
+      expect(() => engine.dispatch({ type: HIRE, by: 'p0', cardIds: [potter], onto: vase }))
+        .toThrow('The turn does not pass while the players answer an action in the objection: write “The objection passes to the left.” instead.');
+      expect(engine.getState()).toBe(before);
+    });
+    it('refuses passing an answer with no action waiting', () => {
+      const state: GameState = { ...base, turn: { current: 'p1', phase: 'objection' } };
+      expect(() => runPhrase(lib, 'effect', 'the objection passes to the left', fixtureEnv(state, { game: objectGame, seats: SEATS })))
+        .toThrow('The objection passes to the left only while an action waits for the players to answer it.');
+    });
+  });
+
+  it('runs the example', () => {
+    const text = [OBJECT_GAME, '',
+      "Example: holding a player's stake lets you stop their action, which spends its move and nothing else",
+      '  Given 3 players',
+      "  And p1's holdings has a Stake whose maker is p0",
+      "  And p0's workshop has a Vase",
+      '  When p0 hires a Potter to the Vase',
+      '  Then the phase is objection',
+      "  And it is p1's turn",
+      '  When p1 objects with the Stake whose maker is p0',
+      '  Then the phase is working',
+      "  And it is p0's turn",
+      '  And p0 has 2 moves',
+      "  And p0's crew is empty",
+      "  And p0's purse has a Stake whose maker is p0",
+    ].join('\n');
+    const { game, diagnostics } = compileGame(text, lib);
+    expect(diagnostics).toEqual([]);
+    expect(runExamples(game!, lib)).toEqual([expect.objectContaining({ status: 'pass', message: null })]);
   });
 });

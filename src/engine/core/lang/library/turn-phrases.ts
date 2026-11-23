@@ -20,6 +20,9 @@ const TURN_IN_THE_STEPS = (phase: string) =>
   `The turn does not pass while the players take the ${phase} before the score: write “The ${phase} passes to the left.” instead.`;
 const STEP_OUTSIDE_THE_STEPS = (phase: string) => `The ${phase} passes to the left only while the players take it before the score.`;
 const ROUND_STEP_OUTSIDE = (phase: string) => `The ${phase} passes to the left only while the players take it in turn at the start of a round.`;
+const WINDOW_PASS_OUTSIDE = (phase: string) => `The ${phase} passes to the left only while an action waits for the players to answer it.`;
+const TURN_IN_THE_WINDOW = (phase: string) =>
+  `The turn does not pass while the players answer an action in the ${phase}: write “The ${phase} passes to the left.” instead.`;
 const TURN_IN_THE_ROUND_STEPS = (phase: string) =>
   `The turn does not pass while the players take the ${phase} at the start of a round: write “The ${phase} passes to the left.” instead.`;
 
@@ -50,6 +53,9 @@ const turnPassesLeft: EffectFn = (env) => {
   // A round's steps come before the start player's turn, which starts once they are passed on: passing the turn would skip it.
   const roundSteps = roundStepsOf(env.state);
   if (roundSteps !== null && roundSteps !== true) throw new RuleError(TURN_IN_THE_ROUND_STEPS(roundSteps.phase));
+  // An action waits while the players asked answer it: the turn is the acting player's, and comes back to them once they have.
+  const waiting = waitingOf(env.state);
+  if (waiting !== null) throw new RuleError(TURN_IN_THE_WINDOW(waiting.phase));
   const next = env.seats.length === 1 ? turn.current : nextIn(env.state, turn.current, env.seats);
   const passed = clearTurnOf(chooseNext(env.state, next));
   return { ...passed, turn: { ...passed.turn, current: next, phase: env.game.phases[0].id } };
@@ -109,10 +115,28 @@ export function passStep(env: PhraseEnv, state: GameState, name: string): GameSt
 /** A step ends and is passed on (`passStep`). Refused anywhere but in the steps, in the phase the End or the round's start names for them. */
 const stepPassesLeft: EffectFn = (env, [phase]) => {
   const name = phase as string;
+  const answered = passAnswer(env, env.state, name);
+  if (answered !== null) return answered;
   const passed = passStep(env, env.state, name);
   if (passed !== null) return passed;
+  if (env.game.everyPhase.window?.phase === name) throw new RuleError(WINDOW_PASS_OUTSIDE(name));
   throw new RuleError(env.game.everyPhase.roundSteps?.phase === name ? ROUND_STEP_OUTSIDE(name) : STEP_OUTSIDE_THE_STEPS(name));
 };
+
+/**
+ * An answer is passed on, while an action waits with no verdict and `name` is its phase, the game's window phase and the phase the game is
+ * in: the next seat asked becomes current, and the phase's start lines run about them; after the last, the action goes ahead. Null
+ * otherwise.
+ */
+function passAnswer(env: PhraseEnv, state: GameState, name: string): GameState | null {
+  const waiting = waitingOf(state);
+  if (waiting === null || waiting.verdict !== undefined || waiting.phase !== name || env.game.everyPhase.window?.phase !== name) return null;
+  if (state.turn?.phase !== name) return null;
+  const at = waiting.at + 1;
+  if (at >= waiting.asked.length) return { ...state, data: { ...state.data, [WINDOW_KEY]: { ...waiting, verdict: 'ahead' } as unknown as Json } };
+  const moved: GameState = { ...state, data: { ...state.data, [WINDOW_KEY]: { ...waiting, at } as unknown as Json } };
+  return takeStep(env, name, moved, waiting.asked[at]);
+}
 
 /**
  * A round's steps begin, as the last line that starts the round: the start player, or the next seat still in when they are out, takes
