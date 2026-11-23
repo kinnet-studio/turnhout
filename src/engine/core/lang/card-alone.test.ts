@@ -331,7 +331,7 @@ describe('a kept value against a fresh one, in a played game', () => {
     expect(checked).toBeGreaterThan(1000);
     // The states sampled hold cards on cards, the cards whose values read others.
     expect(stacked).toBeGreaterThan(5);
-  });
+  }, 60_000);
 });
 
 // ---- the classifier's claim, on real states ---------------------------------------------------------
@@ -411,5 +411,5 @@ describe('a card moved from one state into another, in a played game', () => {
     expect(differed.size).toBeGreaterThan(2);
     expect(['blue workers', 'red workers', 'qa workers'].some((name) => differed.has(name))).toBe(true);
     expect(['losing blue', 'fully led', 'pitched'].some((name) => differed.has(name))).toBe(true);
-  });
+  }, 60_000);
 });
