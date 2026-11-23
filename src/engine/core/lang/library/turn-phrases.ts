@@ -1,10 +1,12 @@
 import type { GameState } from '../../game-state';
+import type { Json } from '../../table-def';
 import { setPhase } from '../../game-state';
 import { nextInt } from '../../rng';
 import type { PlayerId } from '../../scene';
 import { nextIn, playersIn } from '../board-state';
 import { isOut } from '../board-state';
 import { RuleError } from '../diagnostics';
+import { NO_ACTION_WAITING, WINDOW_KEY, waitingOf } from '../action-window';
 import type { PhraseLibrary } from '../phrases';
 import { END_STEPS_KEY, START_PLAYER_KEY, START_PLAYER_PHRASE, STEP_PASSES_PHRASE, clearTurnOf } from '../turns';
 import { ROUND_STEPS_KEY, ROUND_STEPS_PHRASE, roundStepsOf, startPlayerOf, type RoundSteps } from '../turns';
@@ -22,6 +24,16 @@ const TURN_IN_THE_ROUND_STEPS = (phase: string) =>
   `The turn does not pass while the players take the ${phase} at the start of a round: write “The ${phase} passes to the left.” instead.`;
 
 // ---- effects ---------------------------------------------------------------------------------
+
+export const STOP_PHRASE = 'the action does not go ahead';
+
+/** The waiting action is stopped: once the window closes it does not go ahead. RuleError NO_ACTION_WAITING when none waits. */
+const actionStopped: EffectFn = (env) => {
+  const waiting = waitingOf(env.state);
+  if (waiting === null) throw new RuleError(NO_ACTION_WAITING);
+  // `Waiting.info` is a MoveInfo, an interface, which TypeScript does not take as Json though it is one.
+  return { ...env.state, data: { ...env.state.data, [WINDOW_KEY]: { ...waiting, verdict: 'stopped' } as unknown as Json } };
+};
 
 /**
  * The turn's last step: the next player still in takes the turn, back at the game's first phase. A lone player keeps it, as with
@@ -142,6 +154,7 @@ const isStartPlayer: EffectFn = (env, [seat]) => ({ ...env.state, data: { ...env
 export function registerTurnPhrases(lib: PhraseLibrary): PhraseLibrary {
   return lib
     .effect('the turn passes to the left', turnPassesLeft)
+    .effect(STOP_PHRASE, actionStopped, { needsActing: true })
     .effect(STEP_PASSES_PHRASE, stepPassesLeft)
     .effect(ROUND_STEPS_PHRASE, roundStepsBegin)
     .effect(START_PLAYER_PHRASE, startPlayerChosen)

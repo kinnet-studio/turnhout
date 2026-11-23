@@ -26,7 +26,7 @@ export type CardFilter =
   | { flag: string; wanted: boolean }
   | { names: string; player: PlayerWho };
 /** Whom a card's test compares the player it names with: the player the line is about, or the target card's owner (Task 7 adds 'acting'). */
-export type PlayerWho = 'them' | 'target owner';
+export type PlayerWho = 'them' | 'target owner' | 'acting';
 /**
  * Some cards a rule adds up or walks through: those in the zones, slot by slot; those on “it”, the card the rule is about; or the set a
  * button's press picked. Of any of them, only the cards that pass every test of `whose`, when there are some: a group written “that
@@ -144,6 +144,8 @@ export type CompiledPhase = {
 export type EveryPhase = {
   triggers: CompiledTrigger[]; roundStarts: PhraseRef[]; turnStarts: PhraseRef[]; moments?: CompiledMoment[];
   roundSteps?: { phase: string; line: number };
+  /** The line that lets players answer an action before it goes ahead: the phase they answer in, and the clause about “they” asked. */
+  window?: { phase: string; who: PhraseRef; line: number };
 };
 /**
  * `steps` is the phase each player takes in turn from the start player once the game is decided and before it is scored (“Before the

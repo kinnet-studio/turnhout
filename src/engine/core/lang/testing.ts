@@ -471,6 +471,28 @@ export const RIVAL_GAME = [
   'Reach:', "  A player's reach is the total crew wage of the cards in their workshop.",
 ].join('\n');
 
+/**
+ * MAKER_GAME where, before an action goes ahead, each player holding a stake of the player acting is asked in turn from their left: they
+ * may object with that stake, which goes back to its maker's purse and stops the action, or let it go. Buttons with and without a cost,
+ * with a choice, with a card from the stash, and one that starts an answer phase, are there to answer.
+ */
+export const OBJECT_GAME = MAKER_GAME
+  .replace('  A player may stop.', [
+    '  A player may sell a card in their holdings.', '    It costs 1 move.', '    Then:', '      Move it to the scrap.',
+    '  A player may tidy a card in their workshop.', '    It costs 1 move.', '    Then:', '      They choose one:', '        Tire:',
+    '          It is tired.', '        Pay:', '          They get 1 coin.',
+    '  A player may swap a card from their stash to their workshop.', '    It costs 1 move.',
+    "  A player may call a card in another player's holdings.", '    It costs 1 move.', '    Then:', '      The answer phase starts with its owner.',
+    '  A player may stop.'].join('\n'))
+  .replace('Phase: working', ['In every phase:',
+    '  Before an action goes ahead, each player who has a card in their holdings whose maker is the player acting has the objection, in turn from the left of the player acting.',
+    '', 'Phase: working'].join('\n'))
+  .replace('End:', ['Phase: objection', '  Players take turns.',
+    '  A player may object with a card in their holdings.', '    Only if it is a card whose maker is the player acting.', '    Then:',
+    "      Move it to its maker's purse.", '      The action does not go ahead.',
+    '  A player may let it go.', '    Then:', '      The objection passes to the left.', '',
+    'Phase: answer', '  Players take turns.', '  A player may refuse.', '    Then:', '      Go back to the interrupted turn.', '', 'End:'].join('\n'));
+
 /** MAKER_GAME where a player may buy a card in another player's purse for 1 move, into their holdings. */
 export const BUY_GAME = MAKER_GAME.replace('  A player may stop.', [
   "  A player may buy a card in another player's purse.", '    It costs 1 move.', '    Then:', '      Move it to their holdings.',

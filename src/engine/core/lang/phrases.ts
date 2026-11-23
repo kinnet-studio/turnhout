@@ -233,6 +233,8 @@ export type PhraseOpts = {
   needsMove?: boolean; needsPlayer?: boolean; needsSpace?: boolean; needsCard?: boolean; needsDrawnCard?: boolean; needsPayment?: boolean;
   needsBoard?: boolean; needsDice?: boolean; needsTwoDice?: boolean; needsAmount?: boolean; needsPick?: boolean; needsCards?: boolean;
   needsOnto?: boolean; entersPhase?: boolean; writes?: number;
+  /** The line reads the action waiting for the players to answer it: only the answering phase and the window's clause have one. */
+  needsActing?: boolean;
 };
 /** A registered phrase's options: every need true or false, and `writes` only on a phrase that writes a card's number or flag. */
 export type RegisteredOpts = Required<Omit<PhraseOpts, 'writes'>> & Pick<PhraseOpts, 'writes'>;
@@ -382,7 +384,7 @@ export class PhraseLibrary {
       fn: entry.fn, needsMove: entry.needsMove, needsPlayer: entry.needsPlayer, needsSpace: entry.needsSpace, needsCard: entry.needsCard,
       needsDrawnCard: entry.needsDrawnCard, needsPayment: entry.needsPayment, needsBoard: entry.needsBoard, needsDice: entry.needsDice,
       needsTwoDice: entry.needsTwoDice, needsAmount: entry.needsAmount, needsPick: entry.needsPick, needsCards: entry.needsCards,
-      needsOnto: entry.needsOnto, entersPhase: entry.entersPhase, ...(entry.writes === undefined ? {} : { writes: entry.writes }),
+      needsOnto: entry.needsOnto, entersPhase: entry.entersPhase, needsActing: entry.needsActing, ...(entry.writes === undefined ? {} : { writes: entry.writes }),
     };
   }
 
@@ -477,7 +479,7 @@ export class PhraseLibrary {
       needsCard: opts.needsCard ?? false, needsDrawnCard: opts.needsDrawnCard ?? false, needsPayment: opts.needsPayment ?? false,
       needsBoard: opts.needsBoard ?? false, needsDice: opts.needsDice ?? false, needsTwoDice: opts.needsTwoDice ?? false,
       needsAmount: opts.needsAmount ?? false, needsPick: opts.needsPick ?? false, needsCards: opts.needsCards ?? false,
-      needsOnto: opts.needsOnto ?? false, entersPhase: opts.entersPhase ?? false, ...(opts.writes === undefined ? {} : { writes: opts.writes }),
+      needsOnto: opts.needsOnto ?? false, entersPhase: opts.entersPhase ?? false, needsActing: opts.needsActing ?? false, ...(opts.writes === undefined ? {} : { writes: opts.writes }),
     });
     return this;
   }

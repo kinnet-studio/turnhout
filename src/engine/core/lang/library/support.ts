@@ -3,6 +3,7 @@ import type { CardState, PlayerId } from '../../scene';
 import type { Json } from '../../table-def';
 import { cardsOn } from '../attach';
 import { othersOn } from '../attach';
+import { actingPlayer } from '../action-window';
 import { pieceAt } from '../board-state';
 import { cardAttribute, cardFact } from '../card-facts';
 import { WORKED_KEPT } from '../compile-util';
@@ -193,7 +194,7 @@ export function passes(env: PhraseEnv, card: CardState, filters: CardFilter[]): 
     if ('names' in filter) {
       // A card that names no one, or a target card in no player's zone, never passes.
       const named = card.data?.[filter.names];
-      const whom = filter.player === 'them' ? theyOf(env) : ownerOf(env, theTargetCard(env));
+      const whom = filter.player === 'them' ? theyOf(env) : filter.player === 'acting' ? actingPlayer(env.state) : ownerOf(env, theTargetCard(env));
       return typeof named === 'string' && whom !== null && named === whom;
     }
     if ('above' in filter) {

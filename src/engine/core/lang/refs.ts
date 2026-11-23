@@ -574,8 +574,8 @@ const NOT_WRITTEN = `(?!more than |the card${APOSTROPHE}s |its )`;
 const cardFilterSource = (vocab: Vocab): string => {
   const attribute = ATTRIBUTE.source(vocab);
   const written = `${attribute} (?:(?:is|are) more than -?\\d+|is the card${APOSTROPHE}s ${attribute}|is its ${attribute}|is ${NOT_WRITTEN}${ANY_TEXT})`;
-  // A fact naming a player is tested against them, or the target card's owner.
-  return `(?:${written}|${CARDPLAYER.source(vocab)} is (?:them|the target card${APOSTROPHE}s owner))`;
+  // A fact naming a player is tested against them, the target card's owner, or the player whose action waits.
+  return `(?:${written}|${CARDPLAYER.source(vocab)} is (?:them|the target card${APOSTROPHE}s owner|the player acting))`;
 };
 
 /** group 1 = the attribute tested; then one of: 2 = the number to be more than, 3 = an attribute of the card, 4 = one of it, 5 = a value */
@@ -599,14 +599,15 @@ function writtenValue(attribute: string, text: string, vocab: Vocab): Parsed {
 }
 
 /** group 1 = the fact naming a player; 2 = whom it is compared with */
-const PLAYER_TEST = new RegExp(`^(.+) is (them|the target card${APOSTROPHE}s owner)$`, 'i');
+const PLAYER_TEST = new RegExp(`^(.+) is (them|the target card${APOSTROPHE}s owner|the player acting)$`, 'i');
 const playerFacts = (vocab: Vocab): string[] => factNames('card', 'player')(vocab);
 
 function resolveCardFilter(text: string, vocab: Vocab): Parsed {
   const player = PLAYER_TEST.exec(text);
   if (player !== null) {
     const fact = playerFacts(vocab).find((name) => canon(name) === canon(player[1]));
-    if (fact !== undefined) return { value: { names: fact, player: canon(player[2]) === 'them' ? 'them' : 'target owner' } };
+    const who = canon(player[2]) === 'them' ? 'them' : canon(player[2]) === 'the player acting' ? 'acting' : 'target owner';
+    if (fact !== undefined) return { value: { names: fact, player: who } };
     // A test of whom a card names, by a fact no card has: told as a fact naming a player, not as a value.
     if (playerFacts(vocab).length > 0 && !vocab.attributes.some((a) => canon(a) === canon(player[1]))) {
       return { error: missing('card fact', player[1], closestOrFirst(player[1], playerFacts(vocab))).message };

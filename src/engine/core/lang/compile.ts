@@ -19,6 +19,10 @@ import type {
   PhraseRef, PlayerValue, SpaceSpec, Vocab, WorkedValue, ZoneFn, ZoneSpec,
 } from './types';
 import { CHOOSE_ONE, CHOOSE_PLAYER, type ChoiceOption } from './choices';
+import { WINDOW_LINE } from './action-window';
+import { theyForm } from './refs';
+import { describeZone } from './library/support';
+import type { CardFilter, CardGroup, ZoneRef } from './types';
 
 export type CompileResult = { game?: CompiledGame; diagnostics: Diagnostic[] };
 
@@ -66,6 +70,19 @@ const HOLD_BACK_SAYS = (line: number) => `Some card lines can't be checked until
 // The example uses one of the game's own counters, so the compiler needs no word of its own for a thing players have.
 const SAYS_NOTHING = (counter: string) => `Say what this card does, like “They get 50 ${counter}.”`;
 const SAYS_EXAMPLE_COUNTER = 'coins';
+const WINDOW_TWICE = 'There is already a line saying who may answer an action before it goes ahead.';
+const WINDOW_AT_ONCE = (phase: string) => `The players answer an action in turn, so “${phase}” can't be a phase where everyone acts at once.`;
+const WINDOW_GO_TO = (phase: string) => `The players answer an action in the ${phase} in turn, so it can't go to another phase: pass it on with `
+  + `“The ${phase} passes to the left.”, or stop the action with “The action does not go ahead.”`;
+const WINDOW_AFTER = (phase: string) => `The players answer an action in the ${phase} in turn, so it can't have an After line: pass it on with `
+  + `“The ${phase} passes to the left.”`;
+const WINDOW_COST = (phase: string) => `The players answer an action in the ${phase}, so a button there can't cost anything: an answer is no action.`;
+const WINDOW_FIRST = (phase: string) => `The ${phase} is only for answering an action, so it can't be the game's first phase.`;
+const WINDOW_IS_STEPS = (phase: string) => `The ${phase} is where players answer an action, so it can't also be where they take steps in turn.`;
+const AFTER_NAMES_ACTION = 'Players may answer an action that costs something before it goes ahead, so an After line can\'t name one: '
+  + 'write “The turn passes to the left.” in its Then: lines instead.';
+const WINDOW_READS_HIDDEN = (zone: string) =>
+  `Every player sees who is asked to answer an action, so whether a player is asked can't depend on ${zone}, which not everyone can see.`;
 const ONLY_WHEN_RULES = 'Only “When …:” rules go under In every phase:, like “When the shop has fewer than 4 cards:”.';
 /** The first phase starts once, as the game does: each turn after the first goes back to it without starting it again. */
 const FIRST_PHASE_STARTS =
@@ -702,9 +719,31 @@ function compileEveryPhase(sections: Section[], ctx: LineCtx): EveryPhase {
     else if (TURN_STARTS.test(clean)) everyPhase.turnStarts.push(...effects(node, { ...ctx, player: true }));
     else if (join) moments.push(compileMoment(node, clean, join[1], ctx));
     else if (rule) everyPhase.triggers.push(compileTrigger(node, clean, rule[1], ctx, false));
+    else if (WINDOW_LINE.test(clean)) readWindow(everyPhase, node, clean, ctx);
     else addProblem(ctx.diagnostics, node.line, ONLY_WHEN_RULES, { text: clean });
   }
   return moments.length > 0 ? { ...everyPhase, moments } : everyPhase;
+}
+
+/**
+ * “Before an action goes ahead, each player who … has the …, in turn from the left of the player acting.”: the clause read as a condition
+ * about “they”, where the player acting is known, and the phase they answer in. A phase the game doesn't have is reported, and gives no
+ * window; so is a second such line.
+ */
+function readWindow(everyPhase: EveryPhase, node: OutlineNode, clean: string, ctx: LineCtx): void {
+  rejectChildren(node, ctx.diagnostics);
+  const [, clause, name] = WINDOW_LINE.exec(clean)!;
+  if (everyPhase.window) {
+    addProblem(ctx.diagnostics, node.line, WINDOW_TWICE, { text: clean });
+    return;
+  }
+  const who = matchLine('condition', `they ${theyForm(clause)}`, node.line, { ...ctx, player: true, acting: true });
+  const found = parseParam('phase', name, ctx.vocab);
+  if (found === null || !('value' in found)) {
+    addProblem(ctx.diagnostics, node.line, `There is no phase called “${name}”.`, { text: name, suggestions: suggestNames(name, ctx.vocab.phases) });
+    return;
+  }
+  everyPhase.window = { phase: found.value as string, who, line: node.line };
 }
 
 /** Every line of the `In every phase:` sections that does something. */
@@ -743,6 +782,93 @@ function warnUnreachable(
     if (phases.some((p, i) => p.id !== phase.id && (p.goTo?.to === phase.id || startedBy[i].has(phase.id)))) return;
     addProblem(diagnostics, phase.line, `Nothing leads to the phase “${phase.id}”.`, { severity: 'warning' });
   });
+}
+
+/**
+ * The checks on the line that lets players answer an action (`window`), each on the line named; the window, or null when its phase is one
+ * where everyone acts at once. On the window line: that, its phase coming first, its phase being one where steps are taken in turn, no
+ * line of the game (`lines`) passing it on, and the first zone not everyone sees that its clause reads. In its phase: a go-to line and any
+ * `go to` among its lines, its After line, and a cost line of one of its buttons. In any phase, an After line naming a button with a cost.
+ */
+function checkWindow(
+  answering: NonNullable<EveryPhase['window']>, phases: CompiledPhase[], end: CompiledEnd | null, roundSteps: EveryPhase['roundSteps'] | null,
+  lines: PhraseRef[], zones: ZoneSpec[], read: ValuesRead, ctx: LineCtx,
+): NonNullable<EveryPhase['window']> | null {
+  const { diagnostics } = ctx;
+  const id = answering.phase;
+  const phase = phases.find((p) => p.id === id);
+  if (phase?.actor === 'any') {
+    addProblem(diagnostics, answering.line, WINDOW_AT_ONCE(id));
+    return null;
+  }
+  if (phases[0]?.id === id) addProblem(diagnostics, answering.line, WINDOW_FIRST(id));
+  if (end?.steps?.phase === id || roundSteps?.phase === id) addProblem(diagnostics, answering.line, WINDOW_IS_STEPS(id));
+  const passes = (ref: PhraseRef) => ref.kind === 'effect' && ref.phrase === STEP_PASSES_PHRASE && ref.args[0] === id;
+  if (!lines.flatMap(linesDoing).some(passes)) addProblem(diagnostics, answering.line, STEPS_NEVER_PASS(id));
+  const hidden = hiddenZoneRead(answering.who, zones, read);
+  if (hidden !== null) addProblem(diagnostics, answering.line, WINDOW_READS_HIDDEN(hidden));
+  if (phase) {
+    if (phase.goTo) addProblem(diagnostics, phase.goTo.line, WINDOW_GO_TO(id));
+    for (const ref of effectsOf(phase).flatMap(linesDoing)) {
+      if (ref.kind === 'effect' && ref.phrase === GO_TO_PHRASE) addProblem(diagnostics, ref.line, WINDOW_GO_TO(id));
+    }
+    if (phase.after) addProblem(diagnostics, phase.after.line, WINDOW_AFTER(id));
+    for (const action of phase.actions) if (action.cost) addProblem(diagnostics, action.cost.line, WINDOW_COST(id));
+  }
+  const costly = new Set(phases.flatMap((p) => p.actions).filter((action) => action.cost !== undefined).map((action) => action.words));
+  for (const p of phases) if (p.after && p.after.moves.some((move) => costly.has(move))) addProblem(diagnostics, p.after.line, AFTER_NAMES_ACTION);
+  return answering;
+}
+
+const ZONE_PARAM = /\{([^{}]+)\}/g;
+/** The values a game works out for cards and for players, by name, as compiled. */
+type ValuesRead = { worked: { [name: string]: WorkedValue }; players: { [name: string]: PlayerValue } };
+
+/**
+ * The first zone not everyone sees that a line reads, said as a designer would say it, or null: a zone named by its arguments (a `{zone}`,
+ * `{zones}`, `{perzone}` or `{sharedzone}`, the zones of a `{cardgroup}`), and each zone the lines of every player value and worked value it reads read,
+ * all the way down. `seen` holds the values looked at already.
+ */
+function hiddenZoneRead(ref: PhraseRef, zones: ZoneSpec[], valuesRead: ValuesRead, seen = new Set<string>()): string | null {
+  const hiddenName = (name: string) => zones.some((zone) => zone.name === name && zone.visibility !== 'public');
+  const nameOf = (zone: ZoneRef) => ('shared' in zone ? zone.shared : 'each' in zone ? zone.each : 'others' in zone ? zone.others : zone.zone);
+  const ofZone = (zone: ZoneRef) => (hiddenName(nameOf(zone)) ? describeZone(zone) : null);
+  const values = (name: string): PhraseRef[] => {
+    if (seen.has(name)) return [];
+    seen.add(name);
+    const worked = valuesRead.worked[name];
+    if (worked) return worked.kind === 'number' ? worked.refs : worked.conditions.flatMap((group) => group.refs);
+    return valuesRead.players[name]?.refs ?? [];
+  };
+  const testNames = (filter: CardFilter): string[] => {
+    if ('flag' in filter) return [filter.flag];
+    if ('names' in filter) return [];
+    return [filter.attribute, ...('sameAs' in filter ? [filter.sameAs.attribute] : [])];
+  };
+  const read: PhraseRef[] = [];
+  const names: string[] = [];
+  for (const [i, [, type]] of [...ref.phrase.matchAll(ZONE_PARAM)].entries()) {
+    const arg = ref.args[i];
+    if (type === 'zone') { const found = ofZone(arg as ZoneRef); if (found) return found; }
+    if (type === 'zones') for (const zone of arg as ZoneRef[]) { const found = ofZone(zone); if (found) return found; }
+    if (type === 'perzone' && hiddenName(arg as string)) return describeZone({ of: { who: 'actor' }, zone: arg as string });
+    if (type === 'sharedzone' && hiddenName(arg as string)) return describeZone({ shared: arg as string });
+    if (type === 'cardgroup') {
+      const group = arg as CardGroup;
+      if (group.kind === 'in') for (const zone of group.zones) { const found = ofZone(zone); if (found) return found; }
+      names.push(...(group.whose ?? []).flatMap(testNames));
+    }
+    if (type === 'attribute' || type === 'cardflag' || type === 'playervalue') names.push(arg as string);
+    if (type === 'cardclause') names.push(...(arg as CardFilter[]).flatMap(testNames));
+    if (type === 'cardfilter') names.push(...testNames(arg as CardFilter));
+  }
+  for (const arg of ref.args) if (arg !== null && typeof arg === 'object' && !Array.isArray(arg) && 'phrase' in arg) read.push(arg as unknown as PhraseRef);
+  for (const name of names) read.push(...values(name));
+  for (const line of read) {
+    const found = hiddenZoneRead(line, zones, valuesRead, seen);
+    if (found) return found;
+  }
+  return null;
 }
 
 /** A winner phrase, or the placeholder for one nobody has written yet. */
@@ -994,7 +1120,8 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   const seen = new Set<string>();
   const uses: VerbUses = { moves: new Set(), actions: new Set() };
   for (const node of named) {
-    const phase = compilePhase(node, ctx, uses);
+    // The phase where players answer an action reads that action: “the player acting” is known there.
+    const phase = compilePhase(node, phaseId(node) === everyPhase.window?.phase ? { ...ctx, acting: true } : ctx, uses);
     // A phase is read without the table, so whether a pick's cards can be hidden from the player who presses it is asked here.
     reportHiddenCardReads(phase, zones, ctx);
     if (seen.has(phase.id)) addProblem(diagnostics, node.line, `There are two phases called “${phase.id}”.`);
@@ -1011,7 +1138,15 @@ function compile(text: string, library: PhraseLibrary, diagnostics: Diagnostic[]
   // Either kind of steps is reached only as it begins, never by a line that goes to its phase.
   if (end?.steps) refuseEnteringSteps(end.steps.phase, STEPS_ENTERED(end.steps.phase), elsewhere, phases, library, diagnostics);
   if (roundSteps) refuseEnteringSteps(roundSteps.phase, ROUND_STEPS_ENTERED(roundSteps.phase), elsewhere, phases, library, diagnostics);
-  const reached = [...(end?.steps ? [end.steps.phase] : []), ...(roundSteps ? [roundSteps.phase] : [])];
+  if (everyPhase.window) {
+    const read: ValuesRead = { worked: values, players: valuesAboutPlayers };
+    const answering = checkWindow(everyPhase.window, phases, end, roundSteps, [...elsewhere, ...phases.flatMap(effectsOf)], zones, read, ctx);
+    if (answering) everyPhase.window = answering;
+    else delete everyPhase.window;
+  }
+  const reached = [
+    ...(end?.steps ? [end.steps.phase] : []), ...(roundSteps ? [roundSteps.phase] : []), ...(everyPhase.window ? [everyPhase.window.phase] : []),
+  ];
   warnUnreachable(phases, elsewhere, library, diagnostics, reached);
   warnStepsNeverPass(end?.steps, [...elsewhere, ...phases.flatMap(effectsOf)], diagnostics);
 

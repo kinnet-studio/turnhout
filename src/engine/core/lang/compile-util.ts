@@ -4,6 +4,7 @@ import type { OutlineNode } from './outline';
 import { normalizeLine, stubFor, type MatchResult, type Misnamed, type PhraseLibrary, type RegisteredOpts } from './phrases';
 import { misnamedParam, parseParam } from './refs';
 import type { CardFilter, CardGroup, CondGroup, ParamType, PhraseKind, PhraseRef, Vocab } from './types';
+import type { PlayerWho } from './types';
 
 /**
  * What every line of one compile stage shares. Never change `vocab` after a line has been matched with it. `inMove`,
@@ -19,6 +20,8 @@ import type { CardFilter, CardGroup, CondGroup, ParamType, PhraseKind, PhraseRef
 export type LineCtx = {
   library: PhraseLibrary; vocab: Vocab; gameName: string; inMove: boolean; player: boolean; space: boolean; card: boolean; drawn: boolean;
   amount: boolean; picked: boolean; cards?: boolean; onto?: boolean; choices?: boolean; worked?: readonly string[]; diagnostics: Diagnostic[];
+  /** Set in the phase where players answer an action, and in the window line's clause: “the player acting” is known there. */
+  acting?: boolean;
 };
 
 const MAX_SUGGESTIONS = 3;
@@ -36,6 +39,8 @@ const NEEDS_AMOUNT = (clean: string) =>
   `“${clean}” only makes sense in a button whose wording ends in “an amount”, like “A player may give an amount.”`;
 const NEEDS_PICK = (clean: string) =>
   `“${clean}” only makes sense in a button whose wording ends in “another player”, like “A player may challenge another player.”`;
+export const ACTING_ELSEWHERE = (clean: string) =>
+  `“${clean}” only makes sense while an action waits for the players to answer it: in the phase where they answer it, or in the line that says who does.`;
 const NEEDS_CARDS = (clean: string) => `“${clean}” only makes sense in a button that picks some cards, like “A player may discard some cards from their hand.”`;
 const NEEDS_ONTO = (clean: string) =>
   `“${clean}” only makes sense in a button that picks a card and the card it goes to, like “A player may stack a card from their hand to a card in the row.”`;
@@ -235,7 +240,7 @@ const readsItsCard = ({ groups, filters }: CardArgs): boolean =>
 const readsMovedCard = ({ filters }: CardArgs): boolean => filters.some(comparesWith('the card'));
 const readsPickedCards = ({ groups }: CardArgs): boolean => groups.some((group) => group.kind === 'picked');
 /** Whether a test compares the player a card names with the player the line is about, or with the target card's owner. */
-const testsPlayer = (who: 'them' | 'target owner') => ({ filters }: CardArgs): boolean =>
+const testsPlayer = (who: PlayerWho) => ({ filters }: CardArgs): boolean =>
   filters.some((filter) => 'names' in filter && filter.player === who);
 
 /**
@@ -282,6 +287,7 @@ function unmetNeed(entry: RegisteredOpts | undefined, args: Json[], clean: strin
   if (!ctx.picked && entry?.needsPick) return NEEDS_PICK(clean);
   if (!ctx.cards && (entry?.needsCards || readsPickedCards(cards))) return NEEDS_CARDS(clean);
   if (!ctx.onto && (entry?.needsOnto || testsPlayer('target owner')(cards))) return NEEDS_ONTO(clean);
+  if (!ctx.acting && (entry?.needsActing || testsPlayer('acting')(cards))) return ACTING_ELSEWHERE(clean);
   if (entry?.needsPayment && ctx.vocab.payWith === null) return NEEDS_PAYMENT;
   return null;
 }
