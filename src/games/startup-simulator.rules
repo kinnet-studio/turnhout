@@ -176,6 +176,7 @@ Cards:
   Cards can be blue consultant.
   Cards can be red consultant.
   Cards can be qa consultant.
+  Cards can be moved this round.
 
 Table:
   The talent deck is a pile in the center that no one can see.
@@ -874,6 +875,7 @@ In every phase:
     If the event in play has the Intern Season, the junior price is 0.
     If the event in play has the Intern Season, the hardware junior price is 0.
     If the event in play has the Chip Shortage, the hardware junior price goes up by 3.
+    No card is moved this round.
     Each player has the event check, in turn from the start player.
   When a player's turn starts:
     No card is onboarding.
@@ -1641,8 +1643,10 @@ Phase: event check
   A player may place a card from their portfolio to a card in another player's development or another player's operations.
     Only if the target card's owner is its founder.
     Only if it is not on the target card.
+    Only if it is not moved this round.
     Then:
       It goes to their portfolio, on the target card.
+      It is moved this round.
       It is not blue consultant.
       It is not red consultant.
       It is not qa consultant.
@@ -6138,3 +6142,46 @@ Example: an Investor's Round Start step also pays a Regulation Audit, letting st
   Then it is p0's turn
   And p1 has 0 capital
   And the open job market has the Veteran
+
+Example: an Investor moves a Consultant at most once at a Round Start, never back or on again until the next one (section 5, section 17.B.4)
+  Given 3 players
+  And it is p2's turn
+  And p0's development has a Smart Lock and a Dating App
+  And p1's portfolio has an Equity whose founder is p0
+  And the Equity whose founder is p0 in p1's portfolio is on the Smart Lock in p0's development
+  And the Equity whose founder is p0 in p1's portfolio is red consultant
+  When p2 ends their actions
+  Then the phase is event check
+  And it is p1's turn
+  When p1 places the Equity whose founder is p0 to the Dating App, choosing qa
+  And p1 places the Equity whose founder is p0 to the Smart Lock, choosing red
+  Then it is rejected because "it is not moved this round"
+  When p1 places the Equity whose founder is p0 to the Dating App, choosing blue
+  Then it is rejected because "it is not on the target card"
+  When p1 confirms their consultants
+  Then the Equity whose founder is p0 in p1's portfolio is on the Dating App in p0's development
+  And the Equity whose founder is p0 in p1's portfolio is qa consultant
+
+Example: a Consultant moved at one Round Start may move again at the next (section 5, section 17.B.4)
+  Given 3 players
+  And it is p2's turn
+  And p0's development has a Smart Lock and a Dating App
+  And p1's portfolio has an Equity whose founder is p0
+  And the Equity whose founder is p0 in p1's portfolio is on the Smart Lock in p0's development
+  And the Equity whose founder is p0 in p1's portfolio is red consultant
+  When p2 ends their actions
+  And p1 places the Equity whose founder is p0 to the Dating App, choosing qa
+  And p1 confirms their consultants
+  And p2 confirms their consultants
+  And p0 confirms their consultants
+  Then it is p0's turn
+  And the phase is actions
+  When p0 ends their actions
+  And p1 ends their actions
+  And p2 ends their actions
+  Then the phase is event check
+  And it is p1's turn
+  When p1 places the Equity whose founder is p0 to the Smart Lock, choosing blue
+  And p1 confirms their consultants
+  Then the Equity whose founder is p0 in p1's portfolio is on the Smart Lock in p0's development
+  And the Equity whose founder is p0 in p1's portfolio is blue consultant
