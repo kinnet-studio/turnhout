@@ -587,7 +587,7 @@ describe("the target card's owner", () => {
   it('holds for the maker\'s card, not another player\'s, nor one in the center', () => {
     expect(holds(vases[0])).toBe(true);
     expect(holds(vases[1])).toBe(false);
-    // A Vase in the scrap has no owner.
-    expect(holds(vases[1], relocate(made.state, [vases[1]], 'scrap', maker))).toBe(false);
+    // The maker's own Vase, once in the scrap, has no owner.
+    expect(holds(vases[0], relocate(made.state, [vases[0]], 'scrap', maker))).toBe(false);
   });
 });
