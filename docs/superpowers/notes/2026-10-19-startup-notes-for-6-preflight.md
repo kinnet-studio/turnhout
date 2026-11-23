@@ -38,3 +38,5 @@
 - 6-2b: the price floor above still applies to Online Course Boom and Chip Shortage; 6-2a's only discount (TechCrunch: the lower of $5 and $2) can't go below 0.
 - Long-runs follow-up: 6-2a requires only the 18 new keys held by 2+ games; 11 new keys and the old `hire some cards from their scouting to their ops team` (3 games → 1 under every Buff cadence that keeps the other tests) are counted-not-required with arranged pins. A later cadence change may promote them.
 - Speed: the Startup file's `tests` figure goes from ~20.1 s to ~27.5 s (best) in 6-2a; ceiling 30 s (the watch). A speed-up mini plan follows 6-2a, before 6-2b.
+- 6-2b (from 6-2a Task 6): the README's Startup heading still reads "(slice 5)"; 5-2b, the slice's last rules plan, moved it to slice 5 (2a6147d), so 6-2b moves it to "(slice 6)".
+- Long-runs follow-up (from 6-2a Task 6): four older counted-not-required keys now reach 2+ games (reshuffle, Full Stack Founder, Revenue Leader, mode carried); promote them at the next long-runs touch if they still do. 3 players seed 1 has no Launch (19 of 20 games Launch).
