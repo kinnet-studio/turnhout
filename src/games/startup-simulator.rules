@@ -177,6 +177,7 @@ Cards:
   Cards can be red consultant.
   Cards can be qa consultant.
   Cards can be moved this round.
+  Cards can be offered.
 
 Table:
   The talent deck is a pile in the center that no one can see.
@@ -1430,6 +1431,19 @@ Phase: actions
           It is red consultant.
         QA:
           It is qa consultant.
+  A player may buy back a card in another player's portfolio.
+    It costs 1 action.
+    Only if it is a card whose founder is them.
+    Only if they have at least its founder's share price in capital.
+    Then:
+      It is offered.
+      The offer phase starts with its owner.
+  A player may sell a card in their portfolio.
+    It costs 1 action.
+    Only if some other player is not the card's founder.
+    Then:
+      It is offered.
+      Hand the offer phase to another player of their choice who is not the card's founder.
   A player may end their actions.
     Then:
       Their actions go back to 0.
@@ -1682,6 +1696,54 @@ Phase: veto
   A player may let the action go ahead.
     Then:
       The veto passes to the left.
+
+Phase: offer
+  Players take turns.
+  Hint: You are offered an Equity token at its Founder's Share Price. Accept it, placing it on one of the Founder's products if you like, or decline.
+  A player may sell back a card in their portfolio.
+    Only if it is offered.
+    Then:
+      They get its founder's share price from its founder.
+      It is not offered.
+      It is not blue consultant.
+      It is not red consultant.
+      It is not qa consultant.
+      Move it to its founder's equity.
+      Go back to the interrupted turn.
+  A player may take a card in another player's portfolio.
+    Only if it is offered.
+    Only if they have at least its founder's share price in capital.
+    Then:
+      They pay its founder's share price to its owner.
+      It is not offered.
+      It is not blue consultant.
+      It is not red consultant.
+      It is not qa consultant.
+      Move it to their portfolio.
+      Go back to the interrupted turn.
+  A player may take a card from another player's portfolio to a card in another player's development or another player's operations.
+    Only if it is offered.
+    Only if the target card's owner is its founder.
+    Only if they have at least its founder's share price in capital.
+    Then:
+      They pay its founder's share price to its owner.
+      It is not offered.
+      It goes to their portfolio, on the target card.
+      It is not blue consultant.
+      It is not red consultant.
+      It is not qa consultant.
+      They choose one:
+        Blue:
+          It is blue consultant.
+        Red:
+          It is red consultant.
+        QA:
+          It is qa consultant.
+      Go back to the interrupted turn.
+  A player may decline the offer.
+    Then:
+      No card is offered.
+      Go back to the interrupted turn.
 
 End:
   The game ends when the crash pile is not empty and the round is finished.
@@ -6279,3 +6341,164 @@ Example: a Veto of the Founder's last action still spends it, so they can only e
   And the Equity whose founder is p0 in p0's equity is not blue consultant
   And the Equity whose founder is p0 in p0's equity is not red consultant
   And the Equity whose founder is p0 in p0's equity is not qa consultant
+
+Example: Buyback: the Founder offers to buy a token back at their current Share Price, and the Investor consents (section 6, section 17, ruling 22)
+  Given the phase is actions
+  And p0 has 10 capital
+  And p0's operations has a Neobank
+  And p1's portfolio has an Equity whose founder is p0
+  And the Equity whose founder is p0 in p1's portfolio is on the Neobank in p0's operations
+  And the Equity whose founder is p0 in p1's portfolio is blue consultant
+  And the Equity whose founder is p0 in p1's portfolio is red consultant
+  And the Equity whose founder is p0 in p1's portfolio is qa consultant
+  When p0 buys back the Equity whose founder is p0
+  Then the phase is veto
+  And it is p1's turn
+  When p1 lets the action go ahead
+  Then the phase is offer
+  And it is p1's turn
+  And the Equity whose founder is p0 in p1's portfolio is offered
+  When p1 sells back the Equity whose founder is p0
+  Then the phase is actions
+  And it is p0's turn
+  And p0 has 2 actions
+  And p0 has 0 capital
+  And p1 has 17 capital
+  And p0's equity has an Equity whose founder is p0
+  And the Equity whose founder is p0 in p0's equity is not offered
+  And the Equity whose founder is p0 in p0's equity is on no card
+  And the Equity whose founder is p0 in p0's equity is not blue consultant
+  And the Equity whose founder is p0 in p0's equity is not red consultant
+  And the Equity whose founder is p0 in p0's equity is not qa consultant
+  And p1's portfolio is empty
+
+Example: a Buyback is refused for another Founder's token or without the price, and an Investor may decline it, the Founder's action spent (section 17, the spec's call)
+  Given 3 players
+  And p0 has 4 capital
+  And p1's portfolio has an Equity whose founder is p0 and an Equity whose founder is p2
+  When p0 buys back the Equity whose founder is p2
+  Then it is rejected because "it is a card whose founder is them"
+  When p0 buys back the Equity whose founder is p0
+  Then it is rejected because "they have at least its founder's share price in capital"
+  Given p0 has 5 capital
+  When p0 buys back the Equity whose founder is p0
+  And p1 lets the action go ahead
+  And p1 sells back the Equity whose founder is p2
+  Then it is rejected because "it is offered"
+  When p1 declines the offer
+  Then the phase is actions
+  And it is p0's turn
+  And p0 has 2 actions
+  And p0 has 5 capital
+  And p1 has 7 capital
+  And p1's portfolio has an Equity whose founder is p0 and an Equity whose founder is p2
+  And the Equity whose founder is p0 in p1's portfolio is not offered
+
+Example: a Secondary Trade sells a token to a third player at its Founder's Share Price, with the buyer's consent; the Founder is never asked, and Venture Capital Rain pays nothing (section 6, section 17, section 20, ruling 25)
+  Given 3 players
+  And it is p1's turn
+  And the phase is actions
+  And the event in play has the Venture Capital Rain
+  And p0's operations has a Neobank
+  And p1's portfolio has an Equity whose founder is p0
+  And the Equity whose founder is p0 in p1's portfolio is on the Neobank in p0's operations
+  And the Equity whose founder is p0 in p1's portfolio is blue consultant
+  And the Equity whose founder is p0 in p1's portfolio is red consultant
+  And the Equity whose founder is p0 in p1's portfolio is qa consultant
+  And p2 has 10 capital
+  When p1 sells the Equity whose founder is p0
+  Then the phase is offer
+  And it is p2's turn
+  When p2 takes the Equity whose founder is p0
+  Then the phase is actions
+  And it is p1's turn
+  And p1 has 2 actions
+  And p1 has 17 capital
+  And p2 has 0 capital
+  And p0 has 7 capital
+  And p2's portfolio has an Equity whose founder is p0
+  And the Equity whose founder is p0 in p2's portfolio is not offered
+  And the Equity whose founder is p0 in p2's portfolio is on no card
+  And the Equity whose founder is p0 in p2's portfolio is not blue consultant
+  And the Equity whose founder is p0 in p2's portfolio is not red consultant
+  And the Equity whose founder is p0 in p2's portfolio is not qa consultant
+
+Example: a Founder who holds the seller's Equity may Veto the sale of their own token, burning the seller's token back to the seller's supply (the slice's R2, section 17)
+  Given 3 players
+  And it is p1's turn
+  And the phase is actions
+  And p0's portfolio has an Equity whose founder is p1
+  And p1's portfolio has an Equity whose founder is p0
+  When p1 sells the Equity whose founder is p0
+  Then the phase is veto
+  And it is p0's turn
+  When p0 vetoes with the Equity whose founder is p1
+  Then the phase is actions
+  And it is p1's turn
+  And p1 has 2 actions
+  And p1's equity has an Equity whose founder is p1
+  And p1's portfolio has an Equity whose founder is p0
+  And p0's portfolio is empty
+
+Example: a buyer who can't pay the Share Price can only decline, and the seller's action is spent (section 17, ruling 25)
+  Given 3 players
+  And it is p1's turn
+  And the phase is actions
+  And p0's development has a Dating App
+  And p1's portfolio has an Equity whose founder is p0 and an Equity whose founder is p2
+  And p2 has 4 capital
+  When p1 sells the Equity whose founder is p0
+  And p2 takes the Equity whose founder is p2
+  Then it is rejected because "it is offered"
+  When p2 takes the Equity whose founder is p0
+  Then it is rejected because "they have at least its founder's share price in capital"
+  When p2 takes the Equity whose founder is p0 to the Dating App, choosing blue
+  Then it is rejected because "they have at least its founder's share price in capital"
+  When p2 declines the offer
+  Then the phase is actions
+  And it is p1's turn
+  And p1 has 2 actions
+  And p1's portfolio has an Equity whose founder is p0 and an Equity whose founder is p2
+  And the Equity whose founder is p0 in p1's portfolio is not offered
+
+Example: in a two-player game there is no third player, so no Secondary Trade (section 6, section 17)
+  Given p0's portfolio has an Equity whose founder is p1
+  When p0 sells the Equity whose founder is p1
+  Then it is rejected because "some other player is not the card's founder"
+  And p0 has 3 actions
+
+Example: a buyer may place the token as a Consultant as they take it, picking its colour afresh, never on another Founder's product (section 17, the overview's call)
+  Given 4 players
+  And p0's portfolio has an Equity whose founder is p1, an Equity whose founder is p2 and an Equity whose founder is p3
+  And the Equity whose founder is p1 in p0's portfolio is blue consultant
+  And the Equity whose founder is p1 in p0's portfolio is qa consultant
+  And the Equity whose founder is p2 in p0's portfolio is red consultant
+  And p1's development has a Smart Lock
+  And p2's development has a Dating App
+  And p3's development has a To-Do List
+  When p0 sells the Equity whose founder is p1, choosing p3
+  Then the phase is offer
+  And it is p3's turn
+  When p3 takes the Equity whose founder is p1 to the Dating App, choosing red
+  Then it is rejected because "the target card's owner is its founder"
+  When p3 takes the Equity whose founder is p2 to the Dating App, choosing red
+  Then it is rejected because "it is offered"
+  When p3 takes the Equity whose founder is p1 to the Smart Lock, choosing red
+  And p0 sells the Equity whose founder is p2, choosing p1
+  And p1 takes the Equity whose founder is p2 to the Dating App, choosing blue
+  And p0 sells the Equity whose founder is p3, choosing p2
+  And p2 takes the Equity whose founder is p3 to the To-Do List, choosing qa
+  Then p0 has 22 capital
+  And p1 has 2 capital
+  And p2 has 2 capital
+  And p3 has 2 capital
+  And the Equity whose founder is p1 in p3's portfolio is on the Smart Lock in p1's development
+  And the Equity whose founder is p1 in p3's portfolio is red consultant
+  And the Equity whose founder is p1 in p3's portfolio is not offered
+  And the Equity whose founder is p1 in p3's portfolio is not blue consultant
+  And the Equity whose founder is p1 in p3's portfolio is not qa consultant
+  And the Equity whose founder is p2 in p1's portfolio is on the Dating App in p2's development
+  And the Equity whose founder is p2 in p1's portfolio is blue consultant
+  And the Equity whose founder is p2 in p1's portfolio is not red consultant
+  And the Equity whose founder is p3 in p2's portfolio is on the To-Do List in p3's development
+  And the Equity whose founder is p3 in p2's portfolio is qa consultant

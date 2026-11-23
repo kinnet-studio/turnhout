@@ -22,6 +22,7 @@ import { HIDDEN_FACE_KEY, deriveScene } from '@/engine/core/derive-scene';
 import type { GameState } from '@/engine/core/game-state';
 import { cardById, zoneCards } from '@/engine/core/lang/zone-index';
 import { waitingOf } from '@/engine/core/lang/action-window';
+import { interruptedTurn } from '@/engine/core/lang/board-state';
 import type { GameEngine } from '@/engine/core/game-engine';
 import type { Move } from '@/engine/core/moves';
 import type { CardState, PlayerId } from '@/engine/core/scene';
@@ -265,7 +266,7 @@ const FINAL_CHECK = 'final check';
  */
 const PHASES = [
   'modes', 'ops check', 'income', 'actions', 'research', 'sourcing', 'graduation', 'brainstorm', 'engine', 'commit', 'bench cleanup',
-  'strategy cleanup', 'backlog cleanup', FINAL_CHECK, 'event check', 'veto',
+  'strategy cleanup', 'backlog cleanup', FINAL_CHECK, 'event check', 'veto', 'offer',
 ];
 /**
  * The step each player takes in turn from the start player at each Round Start: Angel Investors' $3, Regulation Audit's tax and the
@@ -278,8 +279,15 @@ const CONFIRM_CONSULTANTS = 'confirm their consultants';
 /** The Veto window's two answers (§17.B.5). */
 const VETO = 'veto with a card in their portfolio';
 const LET_IT_GO_AHEAD = 'let the action go ahead';
-/** The moves a seat makes in another seat's turn, answering it: Task 2 adds the offer phase's. */
-const ANSWERS: string[] = [VETO, LET_IT_GO_AHEAD];
+/** Buyback and Secondary Trade (§6, §17.C.4–5): the proposals, and the offer phase's answers. */
+const BUY_BACK = "buy back a card in another player's portfolio";
+const SELL_EQUITY = 'sell a card in their portfolio';
+const SELL_BACK = 'sell back a card in their portfolio';
+const TAKE = "take a card in another player's portfolio";
+const TAKE_PLACING = "take a card from another player's portfolio to a card in another player's development or another player's operations";
+const DECLINE = 'decline the offer';
+/** The moves a seat makes in another seat's turn, answering it. */
+const ANSWERS: string[] = [VETO, LET_IT_GO_AHEAD, SELL_BACK, TAKE, TAKE_PLACING, DECLINE];
 /**
  * A move as the long runs judge it across the Veto window (7-1 Task 8):
  * - a press that opened a window spent its cost and did nothing else ('cost');
@@ -311,7 +319,8 @@ function windowJudge(): (before: GameState, move: Move, after: GameState) => Jud
 function turnOf(state: GameState): { seat: PlayerId; phase: string } {
   // A round's steps and the final check's are no turn: TURN_OF_KEY is unset in them, and the seat is the one whose step it is.
   const seat = (state.data[TURN_OF_KEY] ?? state.turn!.current) as PlayerId;
-  return { seat, phase: (waitingOf(state)?.back.phase ?? state.turn!.phase) as string };
+  const offered = state.turn!.phase === 'offer' ? interruptedTurn(state)?.phase : undefined;
+  return { seat, phase: (waitingOf(state)?.back.phase ?? offered ?? state.turn!.phase) as string };
 }
 // The two buttons that pick a card from a project's staff.
 const REASSIGN_FROM_PROJECT = 'reassign a card from their development team to a card in their development';
@@ -664,6 +673,11 @@ const equitiesFrom = (seats: PlayerId[], by: PlayerId): string[] => {
   const at = seats.indexOf(by);
   return [...seats.slice(at + 1), ...seats.slice(0, at)].map((seat) => zoneIdFor('equity', seat));
 };
+/** Every other seat's portfolio, seat by seat from `by`'s left: the zones a Buyback or a take picks in. */
+const portfoliosFrom = (seats: PlayerId[], by: PlayerId): string[] => {
+  const at = seats.indexOf(by);
+  return [...seats.slice(at + 1), ...seats.slice(0, at)].map((seat) => zoneIdFor('portfolio', seat));
+};
 /**
  * The colors `seat` is short of in `state`: its ops team's supply of each is below the maintenance its online products demand, as the
  * rules work both out (§5 Phase B, ruling 19).
@@ -940,22 +954,22 @@ function playTurn(
   const capital = () => counterOf(engine.getState(), 'capital', by);
   const press = (type: string): Move => ({ type, by });
   /** The page's view of the seat, read once for each state a card is picked in. */
-  let view: { of: GameState; extras: SeatExtras } | null = null;
+  let view: { of: GameState; seat: PlayerId; extras: SeatExtras } | null = null;
   /** The view's word on each card of each move whose cards were found through the view, on the card it goes on when it goes on one. */
   const verdicts = new Map<Move, { id: string; allowed: true | string }[]>();
   /**
    * The cards `type` offers from `zoneId`, and for each the cards of `ontoZoneId` it may go on: the zones' cards, or, through the view,
    * the ones the page's view lists, with the view itself. Targets in several zones are the cards of each zone in turn.
    */
-  const offers = (type: string, zoneId: string | string[], ontoZoneId: string | string[] | null) => {
+  const offers = (type: string, zoneId: string | string[], ontoZoneId: string | string[] | null, seat: PlayerId = by) => {
     const state = engine.getState();
     const byId = (id: string) => cardById(state, id)!;
     if (!throughView) {
       const targetsOf = (_id: string) => (ontoZoneId === null ? [] : [ontoZoneId].flat().flatMap((onto) => zoneCards(state, onto)));
       return { row: [zoneId].flat().flatMap((from) => zoneCards(state, from)), targetsOf, seen: null };
     }
-    if (view?.of !== state) view = { of: state, extras: seatExtras(engine, runtime, state, by) };
-    const seen = viewedCards(runtime, view.extras, state, by, type, zoneId, ontoZoneId);
+    if (view?.of !== state || view.seat !== seat) view = { of: state, seat, extras: seatExtras(engine, runtime, state, seat) };
+    const seen = viewedCards(runtime, view.extras, state, seat, type, zoneId, ontoZoneId);
     return { row: seen.cards.map(({ id }) => byId(id)), targetsOf: (id: string) => seen.onto!.targets[id].map((target) => byId(target.id)), seen };
   };
   /**
@@ -963,9 +977,9 @@ function playTurn(
    * button that puts them on a card, on the card `onto` finds; null when either finds none. `which` may ask whether a press of a card
    * alone is allowed: as the view says through it, else when the rules don't refuse it before its choices (`pressChoices`).
    */
-  const pickFrom = (type: string, zoneId: string | string[], some: boolean, which: Which, onto?: Onto): Move | null => {
-    const { row, targetsOf, seen } = offers(type, zoneId, onto?.zoneId ?? null);
-    const alone = (card: CardState) => pressChoices(runtime, engine.getState(), { type, by, cardId: card.id });
+  const pickFrom = (type: string, zoneId: string | string[], some: boolean, which: Which, onto?: Onto, seat: PlayerId = by): Move | null => {
+    const { row, targetsOf, seen } = offers(type, zoneId, onto?.zoneId ?? null, seat);
+    const alone = (card: CardState) => pressChoices(runtime, engine.getState(), { type, by: seat, cardId: card.id });
     const viewOf = (card: CardState) => seen!.cards.find(({ id }) => id === card.id)!;
     const pressing: Pressing = seen === null
       ? {
@@ -984,7 +998,7 @@ function playTurn(
     const target = onto?.which(targetsOf(picked[0].id), picked[0]);
     if (onto && !target) return null;
     const pressed: Move = {
-      type, by, ...(some ? { cardIds: picked.map((card) => card.id) } : { cardId: picked[0].id }), ...(target ? { onto: target.id } : {}),
+      type, by: seat, ...(some ? { cardIds: picked.map((card) => card.id) } : { cardId: picked[0].id }), ...(target ? { onto: target.id } : {}),
     };
     // The choices the press asks, as the view lists them for the card (on its target, when it has one) or as the rules ask them.
     const asked = (): { at: number; options: string[] }[] => {
@@ -1014,11 +1028,11 @@ function playTurn(
     }
     return move;
   };
-  const pick = (type: string, zoneId: string | string[], which: Which<CardState | undefined>, onto?: Onto) =>
+  const pick = (type: string, zoneId: string | string[], which: Which<CardState | undefined>, onto?: Onto, seat: PlayerId = by) =>
     pickFrom(type, zoneId, false, (row, pressing) => {
       const card = which(row, pressing);
       return card ? [card] : [];
-    }, onto);
+    }, onto, seat);
   const pickSome = (type: string, zoneId: string, which: Which, onto?: Onto) =>
     pickFrom(type, zoneId, true, which, onto);
   const first = (type: string, zoneId: string) => pick(type, zoneId, (row) => row[0]);
@@ -1515,6 +1529,16 @@ function playTurn(
    */
   const capped = (a: number): Move | null => ((t + a) % 7 !== 0 ? null
     : pick(INVEST, equitiesFrom(runtime.seats, by), (row) => row.find((card) => cards(card.zoneId).length === 1)));
+  /**
+   * A Buyback as the turn's action `a`, when `(t + a) % 9 === 6` at 3 or more players: the first own token held by another seat, when the
+   * seat's Share Price leaves it 2 or more capital (§17.C.4). Null otherwise. Not at 2 players, where a Buyback reshuffles the games that
+   * hold the 2-player paths (2 players seed 2's Strategy reshuffle, which plan 6-1's Review Focus test reads).
+   */
+  const buyingBack = (a: number): Move | null => ((t + a) % 9 !== 6 || runtime.seats.length < 3 ? null
+    : pick(BUY_BACK, portfoliosFrom(runtime.seats, by), (row) => row.find((c) => founderOf(c) === by && capital() - sharePriceOf(runtime, engine.getState(), by) >= 2)));
+  /** A Secondary Trade as the turn's action `a`, when `(t + a) % 9 === 2` at 3 or more players: the first card of its portfolio (§17.C.5). */
+  const selling = (a: number): Move | null => ((t + a) % 9 !== 2 || runtime.seats.length < 3 ? null
+    : pick(SELL_EQUITY, own('portfolio'), (row) => row[0]));
   /** The move the action numbered `action` makes, or null when it has nothing to pick (see above). */
   const boardAction = (action: number): Move | null => {
     const projects = cards(own('development'));
@@ -1610,9 +1634,40 @@ function playTurn(
       let row = zoneCards(state, portfolio);
       if (throughView) row = viewedCards(runtime, seatExtras(engine, runtime, state, answerer), state, answerer, VETO, portfolio, null).cards.map(({ id }) => cardById(state, id)!);
       const token = row.find((c) => founderOf(c) === by);
-      const veto: Move | null = lastRound() && (t + w) % 7 === 3 && token !== undefined ? { type: VETO, by: answerer, cardId: token.id } : null;
+      // R2: it always vetoes a sale of a token whose founder it is, when it holds one of the seller's tokens.
+      const waiting = waitingOf(state)!;
+      const selling = waiting.move === SELL_EQUITY && founderOf(cardById(state, waiting.subject.card as string)!) === answerer;
+      const veto: Move | null = (selling || (lastRound() && (t + w) % 7 === 3)) && token !== undefined ? { type: VETO, by: answerer, cardId: token.id } : null;
       const answer = [veto, { type: LET_IT_GO_AHEAD, by: answerer }].find((m) => m !== null && accepts(m))!;
       play(engine, answer, watch);
+      continue;
+    }
+    if (phase === 'offer') {
+      // The current seat answers: holding the offered card, it sells it back unless t % 3 === 1, when it declines; else, when it can pay
+      // and t % 4 !== 3, it takes it, placing it on the founder's first card in `foundersBoards` order when t % 2 === 0 and the founder has
+      // one; else it declines.
+      const state = engine.getState();
+      const answerer = state.turn!.current as PlayerId;
+      const card = state.cards.find((c) => c.data?.offered === true)!;
+      const founder = founderOf(card)!;
+      const decline: Move = { type: DECLINE, by: answerer };
+      const portfolios = portfoliosFrom(runtime.seats, answerer);
+      const it = (row: CardState[]) => row.find((c) => c.id === card.id);
+      let answers: (Move | null)[];
+      if (card.zoneId === zoneIdFor('portfolio', answerer)) {
+        answers = [t % 3 === 1 ? null : pick(SELL_BACK, zoneIdFor('portfolio', answerer), it, undefined, answerer), decline];
+      } else {
+        const pays = counterOf(state, 'capital', answerer) >= sharePriceOf(runtime, state, founder);
+        const products = [...zoneCards(state, zoneIdFor('development', founder)), ...zoneCards(state, zoneIdFor('operations', founder))];
+        const onFounders: Onto = {
+          zoneId: foundersBoards(runtime.seats, answerer),
+          which: (targets) => targets.find((target) => [zoneIdFor('development', founder), zoneIdFor('operations', founder)].includes(target.zoneId)),
+        };
+        const take = !pays || t % 4 === 3 ? null
+          : t % 2 === 0 && products.length > 0 ? pick(TAKE_PLACING, portfolios, it, onFounders, answerer) : pick(TAKE, portfolios, it, undefined, answerer);
+        answers = [take, decline];
+      }
+      play(engine, choose(answers), watch);
       continue;
     }
     if (phase === 'modes') {
@@ -1646,7 +1701,7 @@ function playTurn(
         : ideation());
       const planned = a === 0 ? [launch(), ...ideas()] : [
         reassignDiva(), launch(), internRecruit(a), qaForBugs(), hireGrowthHacker(action), hireHacker(), moveGrowthHacker(), pmToProject(),
-        pivotDiva(), divaToOps(), hireDiva(), makersToProject(), capped(a), investing(a), brainstorming(a), ...board(),
+        pivotDiva(), divaToOps(), hireDiva(), makersToProject(), capped(a), investing(a), buyingBack(a), selling(a), brainstorming(a), ...board(),
       ];
       const move = choose([...planned, recruitMaker(a), press(END_ACTIONS)]);
       if (move.type === REASSIGN_TO_PRODUCT) movedOnProducts = true;
@@ -1924,10 +1979,10 @@ function enteredIncome(before: GameState, after: GameState): PlayerId | null {
 
 /** Whether the Engine ran for `by` in the move from `before` to `after`: its turn was short of the Engine before, and is past it after. */
 function ranTheEngine(before: GameState, after: GameState, by: PlayerId): boolean {
-  const { current, phase } = after.turn!;
-  const was = turnOf(before);
+  // Both sides read the turn, not the seat answering: a press that hands an offer to another seat is still short of the Engine.
+  const [was, now] = [turnOf(before), turnOf(after)];
   return was.seat === by && BEFORE_THE_ENGINE.includes(was.phase)
-    && (after.result !== undefined || current !== by || !BEFORE_THE_ENGINE.includes(phase!));
+    && (after.result !== undefined || now.seat !== by || !BEFORE_THE_ENGINE.includes(now.phase));
 }
 
 /**
@@ -2477,8 +2532,9 @@ function happenings(runtime: LangRuntime, before: GameState, move: Move, after: 
  * the final check, and after it the turn is another seat's, the game is in the final check or it is over.
  */
 function passedTurn(before: GameState, after: GameState, by: PlayerId): boolean {
-  if (before.turn!.current !== by || before.turn!.phase === FINAL_CHECK) return false;
-  return after.result !== undefined || after.turn!.phase === FINAL_CHECK || after.turn!.current !== by;
+  // The turn, not the seat answering a window or an offer: handing an offer on, or answering it, passes no turn.
+  if (turnOf(before).seat !== by || before.turn!.phase === FINAL_CHECK) return false;
+  return after.result !== undefined || after.turn!.phase === FINAL_CHECK || turnOf(after).seat !== by;
 }
 
 /**
@@ -2637,8 +2693,8 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       return { workedOf, costOf };
     };
     const { workedOf, costOf } = rulesPart2();
-    // The Invest price is worked out here from the Founder's online products' tiers, not read from the rules' share price: $5 with no
-    // Active Tier 2 or 3 product, $10 with a Tier 2, $15 with a Tier 3 (§17.A).
+    // The Share Price an Invest, a take or a sale back pays is worked out here from the Founder's online products' tiers, not read from the
+    // rules' share price: $5 with no Active Tier 2 or 3 product, $10 with a Tier 2, $15 with a Tier 3 (§17.A, §17.C.4–5).
     const rulesPart3 = () => {
       const investPriceOf = (state: GameState, founder: PlayerId) => {
         const tiers = operationsOf(state, founder).filter((product) => product.data?.offline !== true)
@@ -2653,14 +2709,20 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
               : move.type === PAY_SALARIES ? payrollOf(runtime, before, by)
                 : [PLAY_TRAINING, PLAY_DEBUFF].includes(move.type) ? (runtime.workedValue(before, move.cardId as string, 'price') as number)
                   : move.type === PLAY_TO_PRODUCT ? techCrunchPrice(runtime, before, move.cardId as string, move.onto as string)
-                    : [INVEST, INVEST_PLACING].includes(move.type) ? investPriceOf(before, founderOf(card!)!) : 0;
+                    : [INVEST, INVEST_PLACING].includes(move.type) ? investPriceOf(before, founderOf(card!)!)
+                      // A buyer pays the Share Price to the card's holder, and a seller back gets it from the Founder (§17.C.4–5).
+                      : [TAKE, TAKE_PLACING].includes(move.type) ? investPriceOf(before, founderOf(card!)!)
+                        : move.type === SELL_BACK ? -investPriceOf(before, founderOf(card!)!) : 0;
       return { paid };
     };
     const { paid } = rulesPart3();
     // An Invest pays its price to the token's Founder, and Venture Capital Rain adds $3 from the bank (§17.A, §20.D 1).
     const rulesPart4 = () => {
       const investedIn = [INVEST, INVEST_PLACING].includes(move.type) ? founderOf(card!) : undefined;
-      const proceeds = (seat: PlayerId) => (seat === investedIn ? paid + (eventOf(before) === 'Venture Capital Rain' ? 3 : 0) : 0);
+      const proceeds = (seat: PlayerId) => (seat === investedIn ? paid + (eventOf(before) === 'Venture Capital Rain' ? 3 : 0)
+        // No Venture Capital Rain on a trade or a Buyback (§20.D 1): the holder gets what the buyer pays, the Founder pays the seller back.
+        : [TAKE, TAKE_PLACING].includes(move.type) && seat === from?.replace(/^portfolio-/, '') ? paid
+          : move.type === SELL_BACK && seat === founderOf(card!) ? paid : 0);
       return { proceeds };
     };
     const { proceeds } = rulesPart4();
@@ -2833,6 +2895,17 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
         sameAs(zoneCards(before, from!).length >= 2, true, () => `whether ${from} held 2 or more ${at}`);
       }
       noneOf([...equityProblems, ...stray], () => `the Equity tokens ${at}`);
+      // An offer (§17.C.4–5): at most one card is offered, only while the phase is offer; a sale hands the offer to neither the seller nor the
+      // card's founder; a sale back returns the card to its founder's equity, and a take puts it in the mover's portfolio.
+      const offered = after.cards.filter((c) => c.data?.offered === true);
+      if (offered.length > 1 || (offered.length === 1 && after.turn!.phase !== 'offer')) {
+        expect(offered.map((c) => `${c.id} in ${c.zoneId}`), `the cards offered in ${after.turn!.phase} ${at}`).toHaveLength(0);
+      }
+      if (move.type === SELL_EQUITY && after.turn!.phase === 'offer') {
+        noneOf([by, founderOf(card!)].filter((seat) => seat === after.turn!.current), () => `the seat offered ${card!.id} ${at}`);
+      }
+      if (move.type === SELL_BACK) sameAs(cardById(after, card!.id)?.zoneId, zoneIdFor('equity', founderOf(card!)!), () => `where ${at} put its card`);
+      if ([TAKE, TAKE_PLACING].includes(move.type)) sameAs(cardById(after, card!.id)?.zoneId, zoneIdFor('portfolio', by), () => `where ${at} put its card`);
     };
     rulesPart11();
 
@@ -3005,16 +3078,17 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
         const was = cardById(before, c.id);
         const on = c.data?.[HOLDER_KEY];
         const wasOn = was?.data?.[HOLDER_KEY];
-        const pressed = [INVEST_PLACING, PLACE].includes(move.type) && move.cardId === c.id;
+        // A placement: a placing Invest, a Round Start move or a buyer's take that places it (§17.B.4, §17.C.5).
+        const pressed = [INVEST_PLACING, PLACE, TAKE_PLACING].includes(move.type) && move.cardId === c.id;
         const placed = pressed && on === move.onto;
         const returned = move.type === PIVOT && wasOn === move.cardId && on === undefined && c.zoneId === was?.zoneId;
         // … or in a Veto of it, which leaves it on no card (§17.B.5).
-        const vetoed = move.type === VETO && move.cardId === c.id && on === undefined;
-        // Its three colour flags change only in a placement of that token, the Pivot that returns it, or the Veto that burns it, which
-        // clears all three; a placement leaves exactly the colour the press chose, answered in the button's order Blue, Red, QA
-        // (§17.B.4, §17.B.5).
+        const vetoed = [VETO, SELL_BACK, TAKE].includes(move.type) && move.cardId === c.id && on === undefined;
+        // Its three colour flags change only in a placement of that token, the Pivot that returns it, or the Veto, sale back or take of it,
+        // which clears all three; a placement leaves exactly the colour the press chose, answered in the button's order Blue, Red, QA
+        // (§17.B.4, §17.B.5, §17.C).
         const flagsOf = (card: CardState | undefined) => Object.values(CONSULTANT_COLOURS).filter((flag) => card?.data?.[flag] === true);
-        const cleared = [VETO].includes(move.type) && move.cardId === c.id;
+        const cleared = [VETO, SELL_BACK, TAKE].includes(move.type) && move.cardId === c.id;
         if (pressed) {
           const asked = pressChoices(runtime, before, move);
           const named = answersOf(move)[0] ?? (typeof asked === 'string' ? undefined : asked[0]?.options[0]);
@@ -3677,7 +3751,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(338);
+    expect(results).toHaveLength(345);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
