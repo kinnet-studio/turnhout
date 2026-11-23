@@ -1439,8 +1439,17 @@ function playTurn(
   const investing = (a: number): Move | null => {
     const raining = eventOf(engine.getState()) === 'Venture Capital Rain';
     if ((t + a) % 7 !== 0 && !raining) return null;
-    const priceOf = (card: CardState) => sharePriceOf(runtime, engine.getState(), founderOf(card)!);
-    const revenueOf = (card: CardState) => runtime.playerValue(engine.getState(), founderOf(card)!, 'operational revenue') as number;
+    // Each Founder's price and revenue are read once: the state does not change while the seat picks (time).
+    const state = engine.getState();
+    const prices = new Map<PlayerId, number>();
+    const revenues = new Map<PlayerId, number>();
+    const once = (known: Map<PlayerId, number>, work: (seat: PlayerId) => number) => (card: CardState) => {
+      const founder = founderOf(card)!;
+      if (!known.has(founder)) known.set(founder, work(founder));
+      return known.get(founder)!;
+    };
+    const priceOf = once(prices, (founder) => sharePriceOf(runtime, state, founder));
+    const revenueOf = once(revenues, (founder) => runtime.playerValue(state, founder, 'operational revenue') as number);
     const keeps = (card: CardState) => capital() - priceOf(card) >= 2;
     const second = (card: CardState) => cards(own('portfolio')).some((c) => founderOf(c) === founderOf(card));
     const wanted = (card: CardState) => !second(card) || raining || priceOf(card) > 5;
@@ -2022,343 +2031,374 @@ function happenings(runtime: LangRuntime, before: GameState, move: Move, after: 
   }
 
   // Slice 4's paths.
-  if (Object.values(DECLARE).includes(move.type)) {
-    const asked = pressChoices(runtime, before, move);
-    keys.push(`${MODE_DECLARED}: ${answersOf(move)[0] ?? (typeof asked === 'string' ? undefined : asked[0]?.options[0])}`);
-  }
-  if (reached !== null) {
-    const products = operationsOf(after, reached);
-    const online = products.filter((product) => product.data?.offline !== true);
-    keys.push(...products.filter((product) => product.data?.offline === true).map(() => OFFLINE_AT_INCOME));
-    keys.push(...online.filter((product) => bugsOn(product) > 0).map(() => EARNING_LESS));
-    keys.push(...online.filter((product) => runtime.workedFlag(after, product.id, 'viral')).map(() => GROWTH_HACKER_EARNED));
-  }
-  const wasById = new Map(before.cards.map((c) => [c.id, c]));
-  const engineRan = ranTheEngine(before, after, by);
-  const inMode = (c: CardState | undefined) => [...MODES, BLUE_MODE].filter((mode) => c?.data?.[mode] === true);
-  for (const c of after.cards) {
-    const was = wasById.get(c.id);
-    const [row, wasRow] = [zoneInfo(game!, c.zoneId)?.spec.name, was === undefined ? undefined : zoneInfo(game!, was.zoneId)?.spec.name];
-    if (row === 'development' || row === 'operations') {
-      const bugs = bugsOn(c) - (was === undefined ? 0 : bugsOn(was));
-      if (bugs > 0) keys.push(row === 'development' ? BUG_ON_PROJECT : BUG_ON_PRODUCT);
-      if (bugs < 0 && row === 'development' && engineRan) keys.push(CLEANED_ON_PROJECT);
-      if (bugs < 0 && row === 'operations' && move.type !== CLEAN) keys.push(CLEANED_IN_OPS);
+  const happeningsPart1 = () => {
+    if (Object.values(DECLARE).includes(move.type)) {
+      const asked = pressChoices(runtime, before, move);
+      keys.push(`${MODE_DECLARED}: ${answersOf(move)[0] ?? (typeof asked === 'string' ? undefined : asked[0]?.options[0])}`);
     }
-    if (row === 'bench' && inMode(was).length > 0) keys.push(MODE_FORGOTTEN);
-    const teams = ['development team', 'ops team'];
-    const kept = inMode(was).filter((mode) => inMode(c).includes(mode));
-    if (teams.includes(row!) && teams.includes(wasRow!) && row !== wasRow && kept.length > 0) keys.push(MODE_CARRIED);
-  }
-  if (before.turn!.phase === FINAL_CHECK && move.type === SWITCH_OFF) keys.push(SWITCHED_OFF_AT_THE_END);
-  if (before.turn!.phase === FINAL_CHECK && move.type === SWITCH_ON) keys.push(SWITCHED_ON_AT_THE_END);
+    if (reached !== null) {
+      const products = operationsOf(after, reached);
+      const online = products.filter((product) => product.data?.offline !== true);
+      keys.push(...products.filter((product) => product.data?.offline === true).map(() => OFFLINE_AT_INCOME));
+      keys.push(...online.filter((product) => bugsOn(product) > 0).map(() => EARNING_LESS));
+      keys.push(...online.filter((product) => runtime.workedFlag(after, product.id, 'viral')).map(() => GROWTH_HACKER_EARNED));
+    }
+    const wasById = new Map(before.cards.map((c) => [c.id, c]));
+    const engineRan = ranTheEngine(before, after, by);
+    const inMode = (c: CardState | undefined) => [...MODES, BLUE_MODE].filter((mode) => c?.data?.[mode] === true);
+    for (const c of after.cards) {
+      const was = wasById.get(c.id);
+      const [row, wasRow] = [zoneInfo(game!, c.zoneId)?.spec.name, was === undefined ? undefined : zoneInfo(game!, was.zoneId)?.spec.name];
+      if (row === 'development' || row === 'operations') {
+        const bugs = bugsOn(c) - (was === undefined ? 0 : bugsOn(was));
+        if (bugs > 0) keys.push(row === 'development' ? BUG_ON_PROJECT : BUG_ON_PRODUCT);
+        if (bugs < 0 && row === 'development' && engineRan) keys.push(CLEANED_ON_PROJECT);
+        if (bugs < 0 && row === 'operations' && move.type !== CLEAN) keys.push(CLEANED_IN_OPS);
+      }
+      if (row === 'bench' && inMode(was).length > 0) keys.push(MODE_FORGOTTEN);
+      const teams = ['development team', 'ops team'];
+      const kept = inMode(was).filter((mode) => inMode(c).includes(mode));
+      if (teams.includes(row!) && teams.includes(wasRow!) && row !== wasRow && kept.length > 0) keys.push(MODE_CARRIED);
+    }
+    if (before.turn!.phase === FINAL_CHECK && move.type === SWITCH_OFF) keys.push(SWITCHED_OFF_AT_THE_END);
+    if (before.turn!.phase === FINAL_CHECK && move.type === SWITCH_ON) keys.push(SWITCHED_ON_AT_THE_END);
+    return { wasById, engineRan };
+  };
+  const { wasById, engineRan } = happeningsPart1();
   // The rule that brings every product back online runs as a seat's step starts, which may be in the move that reaches the final check
   // or in the one that sets the result, whatever phase the game shows after it (§12).
-  const atTheEnd = [before.turn!, after.turn!].some(({ phase }) => phase === FINAL_CHECK)
-    || (before.result === undefined && after.result !== undefined);
-  if (atTheEnd) {
-    const back = after.cards.filter((c) => c.data?.offline !== true && wasById.get(c.id)?.data?.offline === true);
-    keys.push(...back.filter((c) => !(move.type === SWITCH_ON && c.id === move.cardId)).map(() => BACK_ONLINE_AT_THE_END));
-  }
-  if (passedTurn(before, after, by)) {
-    // The turn passes as the step it ran in ends, before the next turn starts and lets every card settle in: so the cards on its
-    // products and in its ops team onboard as they did before the move, as at the Engine.
-    const passing = atTheEngine(before, move, after);
-    const shielded = zoneCards(passing, zoneIdFor('ops team', by))
-      .some((staff) => staff.data?.trait === 'Clean Code' && staff.data?.onboarding !== true);
-    const stopped = operationsOf(passing, by).filter((product) => runtime.workedFlag(passing, product.id, 'viral')
-      && bugsOn(product) <= bugsOn(wasById.get(product.id) ?? product));
-    if (shielded) keys.push(...stopped.map(() => BUG_STOPPED));
-  }
+  const happeningsPart2 = () => {
+    const atTheEnd = [before.turn!, after.turn!].some(({ phase }) => phase === FINAL_CHECK)
+      || (before.result === undefined && after.result !== undefined);
+    if (atTheEnd) {
+      const back = after.cards.filter((c) => c.data?.offline !== true && wasById.get(c.id)?.data?.offline === true);
+      keys.push(...back.filter((c) => !(move.type === SWITCH_ON && c.id === move.cardId)).map(() => BACK_ONLINE_AT_THE_END));
+    }
+    if (passedTurn(before, after, by)) {
+      // The turn passes as the step it ran in ends, before the next turn starts and lets every card settle in: so the cards on its
+      // products and in its ops team onboard as they did before the move, as at the Engine.
+      const passing = atTheEngine(before, move, after);
+      const shielded = zoneCards(passing, zoneIdFor('ops team', by))
+        .some((staff) => staff.data?.trait === 'Clean Code' && staff.data?.onboarding !== true);
+      const stopped = operationsOf(passing, by).filter((product) => runtime.workedFlag(passing, product.id, 'viral')
+        && bugsOn(product) <= bugsOn(wasById.get(product.id) ?? product));
+      if (shielded) keys.push(...stopped.map(() => BUG_STOPPED));
+    }
+  };
+  happeningsPart2();
 
   // Slice 5's paths.
-  for (const c of after.cards) {
-    const was = wasById.get(c.id);
-    for (const name of PENDING) {
-      if (tokenOn(c, name) > (was === undefined ? 0 : tokenOn(was, name))) keys.push(`${PENDING_GAINED}: ${name.slice('pending '.length)}`);
+  const happeningsPart3 = () => {
+    for (const c of after.cards) {
+      const was = wasById.get(c.id);
+      for (const name of PENDING) {
+        if (tokenOn(c, name) > (was === undefined ? 0 : tokenOn(was, name))) keys.push(`${PENDING_GAINED}: ${name.slice('pending '.length)}`);
+      }
+      if (move.type === LAUNCH && was !== undefined) {
+        if (XP_TOKENS.some((name) => tokenOn(c, name) > tokenOn(was, name))) keys.push(GRADUATED);
+        if (c.data?.badged === true && was.data?.badged !== true) keys.push(PROMOTED);
+      }
+      if (FIRES.includes(move.type) && c.zoneId === 'open-job-market' && was !== undefined && was.zoneId !== c.zoneId && holding(was) !== '') {
+        keys.push(STRIPPED);
+      }
     }
-    if (move.type === LAUNCH && was !== undefined) {
-      if (XP_TOKENS.some((name) => tokenOn(c, name) > tokenOn(was, name))) keys.push(GRADUATED);
-      if (c.data?.badged === true && was.data?.badged !== true) keys.push(PROMOTED);
+    if (Object.values(KEEP_PENDING).includes(move.type)) keys.push(KEPT_BY_CHOICE);
+    if (move.type === MENTOR) keys.push(MENTORS_SECOND);
+    if (move.type === PIVOT) {
+      const returning = cardsOn(before, move.cardId as string).filter((staff) => PENDING.some((name) => tokenOn(staff, name) > 0));
+      keys.push(...returning.map(() => PIVOT_RETURNED));
     }
-    if (FIRES.includes(move.type) && c.zoneId === 'open-job-market' && was !== undefined && was.zoneId !== c.zoneId && holding(was) !== '') {
-      keys.push(STRIPPED);
+    if (move.type === PAY_SALARIES) {
+      const board = ['development team', 'ops team'].flatMap((row) => zoneCards(before, zoneIdFor(row, by)));
+      keys.push(...board.filter((staff) => runtime.workedFlag(before, staff.id, 'experienced')).map(() => EXPERIENCED_PAID));
     }
-  }
-  if (Object.values(KEEP_PENDING).includes(move.type)) keys.push(KEPT_BY_CHOICE);
-  if (move.type === MENTOR) keys.push(MENTORS_SECOND);
-  if (move.type === PIVOT) {
-    const returning = cardsOn(before, move.cardId as string).filter((staff) => PENDING.some((name) => tokenOn(staff, name) > 0));
-    keys.push(...returning.map(() => PIVOT_RETURNED));
-  }
-  if (move.type === PAY_SALARIES) {
-    const board = ['development team', 'ops team'].flatMap((row) => zoneCards(before, zoneIdFor(row, by)));
-    keys.push(...board.filter((staff) => runtime.workedFlag(before, staff.id, 'experienced')).map(() => EXPERIENCED_PAID));
-  }
-  if (engineRan) {
-    const generating = atTheEngine(before, move, after);
-    const value = (id: string, name: string) => runtime.workedValue(generating, id, name) as number;
-    const synergy = zoneCards(generating, zoneIdFor('development', by)).filter((project) =>
-      !runtime.workedFlag(generating, project.id, 'stalled') && value(project.id, 'pm count') > 0
-      && WORKERS.some((name) => value(project.id, name) > 0));
-    keys.push(...synergy.map(() => SYNERGY));
-    const hunted = zoneCards(after, zoneIdFor('development', by)).filter((project) =>
-      cardsOn(after, project.id).some((staff) => staff.data?.trait === 'Bug Hunter')
-      && bugsOn(project) < bugsOn(wasById.get(project.id) ?? project));
-    keys.push(...hunted.map(() => QA_ENGINEER_CLEANED));
-  }
+    if (engineRan) {
+      const generating = atTheEngine(before, move, after);
+      const value = (id: string, name: string) => runtime.workedValue(generating, id, name) as number;
+      const synergy = zoneCards(generating, zoneIdFor('development', by)).filter((project) =>
+        !runtime.workedFlag(generating, project.id, 'stalled') && value(project.id, 'pm count') > 0
+        && WORKERS.some((name) => value(project.id, name) > 0));
+      keys.push(...synergy.map(() => SYNERGY));
+      const hunted = zoneCards(after, zoneIdFor('development', by)).filter((project) =>
+        cardsOn(after, project.id).some((staff) => staff.data?.trait === 'Bug Hunter')
+        && bugsOn(project) < bugsOn(wasById.get(project.id) ?? project));
+      keys.push(...hunted.map(() => QA_ENGINEER_CLEANED));
+    }
+  };
+  happeningsPart3();
   // The end of a seat's actions may start the next turn, whose start clears every Onboarding token, so only a move that starts
   // none shows what Agile spared; and Agile is read before the move, since a PM arriving in it spares no one (P8, §11.E.3, ruling 8).
-  if (turnStarted(before, after) === null && [REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS, ASSIGN_TO_PROJECT].includes(move.type)) {
-    const agile = cardsOn(before, move.onto as string).some((staff) => runtime.workedFlag(before, staff.id, 'agile'));
-    const onboarding = (state: GameState, id: string) => cardById(state, id)?.data?.onboarding === true;
-    const spared = !agile ? [] : move.type === ASSIGN_TO_PROJECT
-      ? (move.cardIds as string[]).filter((id) => onboarding(before, id) && !onboarding(after, id))
-      : [move.cardId as string].filter((id) => !onboarding(after, id));
-    keys.push(...spared.map(() => AGILE_SPARED));
-  }
-  if (reached !== null) {
-    const selling = (product: CardState) =>
-      cardsOn(after, product.id).some((staff) => staff.data?.trait === 'Rainmaker' && staff.data?.onboarding !== true);
-    keys.push(...operationsOf(after, reached).filter((product) => product.data?.offline !== true && selling(product)).map(() => SALES_BONUS));
-  }
+  const happeningsPart4 = () => {
+    if (turnStarted(before, after) === null && [REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS, ASSIGN_TO_PROJECT].includes(move.type)) {
+      const agile = cardsOn(before, move.onto as string).some((staff) => runtime.workedFlag(before, staff.id, 'agile'));
+      const onboarding = (state: GameState, id: string) => cardById(state, id)?.data?.onboarding === true;
+      const spared = !agile ? [] : move.type === ASSIGN_TO_PROJECT
+        ? (move.cardIds as string[]).filter((id) => onboarding(before, id) && !onboarding(after, id))
+        : [move.cardId as string].filter((id) => !onboarding(after, id));
+      keys.push(...spared.map(() => AGILE_SPARED));
+    }
+    if (reached !== null) {
+      const selling = (product: CardState) =>
+        cardsOn(after, product.id).some((staff) => staff.data?.trait === 'Rainmaker' && staff.data?.onboarding !== true);
+      keys.push(...operationsOf(after, reached).filter((product) => product.data?.offline !== true && selling(product)).map(() => SALES_BONUS));
+    }
+  };
+  happeningsPart4();
 
   // Plan 5-2b's paths: the Strategy deck, Training and the Milestones.
-  if ([BRAINSTORM, BRAINSTORM_FLUSHING].includes(move.type)) {
-    const hand = (state: GameState) => zoneCards(state, zoneIdFor('strategy hand', by));
-    const looking = after.turn!.current === by && after.turn!.phase === 'brainstorm';
-    // A single card drawn goes to the Strategy Hand at once (§6, R10): a card new there, or one flushed that a reshuffle brought back.
-    const stayed = new Set(hand(before).map((c) => c.id).filter((id) => !((move.cardIds ?? []) as string[]).includes(id)));
-    const kept = hand(after).filter((c) => !stayed.has(c.id));
-    const drawn = looking ? zoneCards(after, zoneIdFor('brainstorm', by)) : kept;
-    keys.push(`${BRAINSTORM_DRAWING} ${drawn.length}`);
-    if (!looking) keys.push(KEPT_AT_ONCE);
-    // With no reshuffle every card drawn, and every card left in the deck, was in the deck before the press (§15.C).
-    const inTheDeck = new Set(zoneCards(before, 'strategy-deck').map((c) => c.id));
-    if ([...zoneCards(after, 'strategy-deck'), ...drawn].some((c) => !inTheDeck.has(c.id))) keys.push(RESHUFFLED);
-  }
-  if (move.type === DISCARD_STRATEGY) keys.push(DISCARDED_AT_CLEANUP);
-  if (move.type === PLAY_TRAINING && isTraining(card!)) {
-    const target = cardById(before, move.onto as string)!;
-    keys.push(`${TRAINING_ON}: ${nameOf(card!)} on a ${target.data?.role === 'Junior' ? 'Junior' : nameOf(target)}`);
-  }
-  if (Object.values(DECLARE).includes(move.type) && (runtime.workedValue(before, card!.id, 'skills') as number) > 0) {
-    const asked = pressChoices(runtime, before, move);
-    const answer = (answersOf(move)[0] ?? (typeof asked === 'string' ? undefined : asked[0]?.options[0]))?.toLowerCase();
-    if (answer !== NATIVE_ANSWER[card!.data?.skill as string]) keys.push(`${TRAINED_DECLARED} ${answer}`);
-  }
-  if (engineRan) {
-    const generating = atTheEngine(before, move, after);
-    const leading = (staff: CardState) => ['leading software', 'leading hardware'].some((flag) => runtime.workedFlag(generating, staff.id, flag));
-    const led = zoneCards(generating, zoneIdFor('development', by)).filter((project) =>
-      cardsOn(generating, project.id).some((staff) => staff.data?.role === 'Junior' && staff.data?.badged === true && leading(staff)));
-    keys.push(...led.map(() => BADGED_LEADING));
-  }
-  if (reached !== null) {
-    const online = operationsOf(after, reached).filter((product) => product.data?.offline !== true);
-    const flagged = (flag: string) => (staff: CardState) => runtime.workedFlag(after, staff.id, flag);
-    const stopping = zoneCards(after, zoneIdFor('ops team', reached)).some(flagged('stopping decay'));
-    for (const product of online.filter((p) => bugsOn(p) > 0 && !runtime.workedFlag(after, p.id, 'decaying'))) {
-      if (cardsOn(after, product.id).some(flagged('waiving decay'))) keys.push(DECAY_WAIVED);
-      if (stopping) keys.push(DECAY_STOPPED);
+  const happeningsPart5 = () => {
+    if ([BRAINSTORM, BRAINSTORM_FLUSHING].includes(move.type)) {
+      const hand = (state: GameState) => zoneCards(state, zoneIdFor('strategy hand', by));
+      const looking = after.turn!.current === by && after.turn!.phase === 'brainstorm';
+      // A single card drawn goes to the Strategy Hand at once (§6, R10): a card new there, or one flushed that a reshuffle brought back.
+      const stayed = new Set(hand(before).map((c) => c.id).filter((id) => !((move.cardIds ?? []) as string[]).includes(id)));
+      const kept = hand(after).filter((c) => !stayed.has(c.id));
+      const drawn = looking ? zoneCards(after, zoneIdFor('brainstorm', by)) : kept;
+      keys.push(`${BRAINSTORM_DRAWING} ${drawn.length}`);
+      if (!looking) keys.push(KEPT_AT_ONCE);
+      // With no reshuffle every card drawn, and every card left in the deck, was in the deck before the press (§15.C).
+      const inTheDeck = new Set(zoneCards(before, 'strategy-deck').map((c) => c.id));
+      if ([...zoneCards(after, 'strategy-deck'), ...drawn].some((c) => !inTheDeck.has(c.id))) keys.push(RESHUFFLED);
     }
-    const trained = (product: CardState) => cardsOn(after, product.id).some((staff) => staff.data?.trait === 'Rainmaker'
-      && staff.data?.onboarding !== true && tokenOn(staff, 'training xp') > 0);
-    keys.push(...online.filter(trained).map(() => SALES_XP_BONUS));
-  }
-  const ended = before.result === undefined && after.result !== undefined;
-  for (const c of after.cards) {
-    const was = wasById.get(c.id);
-    if (zoneInfo(game!, c.zoneId)?.spec.name !== 'milestones' || was?.zoneId === c.zoneId) continue;
-    keys.push(`${CLAIMED}: ${nameOf(c)}`);
-    if (ended) keys.push(CLAIMED_AT_THE_LAST_CHECK);
-  }
+    if (move.type === DISCARD_STRATEGY) keys.push(DISCARDED_AT_CLEANUP);
+    if (move.type === PLAY_TRAINING && isTraining(card!)) {
+      const target = cardById(before, move.onto as string)!;
+      keys.push(`${TRAINING_ON}: ${nameOf(card!)} on a ${target.data?.role === 'Junior' ? 'Junior' : nameOf(target)}`);
+    }
+    if (Object.values(DECLARE).includes(move.type) && (runtime.workedValue(before, card!.id, 'skills') as number) > 0) {
+      const asked = pressChoices(runtime, before, move);
+      const answer = (answersOf(move)[0] ?? (typeof asked === 'string' ? undefined : asked[0]?.options[0]))?.toLowerCase();
+      if (answer !== NATIVE_ANSWER[card!.data?.skill as string]) keys.push(`${TRAINED_DECLARED} ${answer}`);
+    }
+    if (engineRan) {
+      const generating = atTheEngine(before, move, after);
+      const leading = (staff: CardState) => ['leading software', 'leading hardware'].some((flag) => runtime.workedFlag(generating, staff.id, flag));
+      const led = zoneCards(generating, zoneIdFor('development', by)).filter((project) =>
+        cardsOn(generating, project.id).some((staff) => staff.data?.role === 'Junior' && staff.data?.badged === true && leading(staff)));
+      keys.push(...led.map(() => BADGED_LEADING));
+    }
+    if (reached !== null) {
+      const online = operationsOf(after, reached).filter((product) => product.data?.offline !== true);
+      const flagged = (flag: string) => (staff: CardState) => runtime.workedFlag(after, staff.id, flag);
+      const stopping = zoneCards(after, zoneIdFor('ops team', reached)).some(flagged('stopping decay'));
+      for (const product of online.filter((p) => bugsOn(p) > 0 && !runtime.workedFlag(after, p.id, 'decaying'))) {
+        if (cardsOn(after, product.id).some(flagged('waiving decay'))) keys.push(DECAY_WAIVED);
+        if (stopping) keys.push(DECAY_STOPPED);
+      }
+      const trained = (product: CardState) => cardsOn(after, product.id).some((staff) => staff.data?.trait === 'Rainmaker'
+        && staff.data?.onboarding !== true && tokenOn(staff, 'training xp') > 0);
+      keys.push(...online.filter(trained).map(() => SALES_XP_BONUS));
+    }
+    const ended = before.result === undefined && after.result !== undefined;
+    for (const c of after.cards) {
+      const was = wasById.get(c.id);
+      if (zoneInfo(game!, c.zoneId)?.spec.name !== 'milestones' || was?.zoneId === c.zoneId) continue;
+      keys.push(`${CLAIMED}: ${nameOf(c)}`);
+      if (ended) keys.push(CLAIMED_AT_THE_LAST_CHECK);
+    }
+    return { ended };
+  };
+  const { ended } = happeningsPart5();
 
   // Plan 6-2a's paths: the Attributes, their effects, TechCrunch Feature, Hype and Design Sprint.
-  const rowOf = (zoneId: string) => zoneInfo(game!, zoneId)?.spec.name;
-  if ([PLAY_TRAINING, PLAY_DEBUFF].includes(move.type) && [...BUFFS, ...DEBUFFS].includes(nameOf(card!) as string)) {
-    keys.push(`${ATTRIBUTE_PLAYED}: ${nameOf(card!)}`);
-    const row = rowOf(cardById(before, move.onto as string)!.zoneId);
-    if (move.type === PLAY_TRAINING) keys.push(row === 'bench' ? BUFF_ON_BENCH : BUFF_ON_BOARD);
-    else keys.push(row === 'development team' ? DEBUFF_ON_DEV : DEBUFF_ON_OPS);
-  }
-  const firing = [...FIRES, PIVOT].includes(move.type);
-  for (const c of after.cards) {
-    const was = wasById.get(c.id);
-    if (was === undefined || attributesOn(was).length === 0) continue;
-    const [fromRow, toRow] = [rowOf(was.zoneId), rowOf(c.zoneId)];
-    if (firing && toRow === 'open job market' && ['development team', 'ops team'].includes(fromRow as string)) keys.push(ATTRIBUTES_FIRED);
-    if (fromRow === 'bench' && toRow === 'open job market') keys.push(ATTRIBUTES_KEPT);
-    if (move.type === HIRE_MARKET && c.id === move.cardId) keys.push(ATTRIBUTES_REHIRED);
-    if (c.zoneId === 'box' && was.zoneId !== 'box') keys.push(ATTRIBUTES_BOXED);
-  }
-  if (engineRan) {
-    const generating = atTheEngine(before, move, after);
-    const flagged = (flag: string) => (staff: CardState) => runtime.workedFlag(generating, staff.id, flag);
-    const leading = (staff: CardState) => ['leading software', 'leading hardware'].some((flag) => flagged(flag)(staff));
-    const makes = (staff: CardState) => ['blue output', 'red output', 'qa output']
-      .some((name) => ((runtime.workedValue(generating, staff.id, name) as number | null) ?? 0) > 0);
-    const losing = [['losing blue', TOXIC_BLUE], ['losing red', TOXIC_RED], ['losing qa', TOXIC_QA]] as const;
-    for (const project of zoneCards(generating, zoneIdFor('development', by))) {
-      const staff = cardsOn(generating, project.id);
-      if (!runtime.workedFlag(generating, project.id, 'stalled') && staff.some((s) => flagged('overworked')(s) && makes(s))) {
-        keys.push(WORKAHOLIC_AT_ENGINE);
-      }
-      const visionaries = staff.filter((s) => tokenOn(s, 'visionary') === 1 && leading(s));
-      if (project.data?.tier !== 'Tier 1' && visionaries.length > 0 && staff.filter(leading).length === visionaries.length) {
-        keys.push(VISIONARY_LEADING);
-      }
-      for (const [flag, key] of losing) if (runtime.workedFlag(generating, project.id, flag)) keys.push(key);
-      for (const burnedOut of staff.filter(flagged('burned out'))) {
-        keys.push(BURNOUT_IDLE);
-        if (flagged('managing')(burnedOut)) keys.push(BURNOUT_PM);
+  const happeningsPart6 = () => {
+    const rowOf = (zoneId: string) => zoneInfo(game!, zoneId)?.spec.name;
+    if ([PLAY_TRAINING, PLAY_DEBUFF].includes(move.type) && [...BUFFS, ...DEBUFFS].includes(nameOf(card!) as string)) {
+      keys.push(`${ATTRIBUTE_PLAYED}: ${nameOf(card!)}`);
+      const row = rowOf(cardById(before, move.onto as string)!.zoneId);
+      if (move.type === PLAY_TRAINING) keys.push(row === 'bench' ? BUFF_ON_BENCH : BUFF_ON_BOARD);
+      else keys.push(row === 'development team' ? DEBUFF_ON_DEV : DEBUFF_ON_OPS);
+    }
+    const firing = [...FIRES, PIVOT].includes(move.type);
+    for (const c of after.cards) {
+      const was = wasById.get(c.id);
+      if (was === undefined || attributesOn(was).length === 0) continue;
+      const [fromRow, toRow] = [rowOf(was.zoneId), rowOf(c.zoneId)];
+      if (firing && toRow === 'open job market' && ['development team', 'ops team'].includes(fromRow as string)) keys.push(ATTRIBUTES_FIRED);
+      if (fromRow === 'bench' && toRow === 'open job market') keys.push(ATTRIBUTES_KEPT);
+      if (move.type === HIRE_MARKET && c.id === move.cardId) keys.push(ATTRIBUTES_REHIRED);
+      if (c.zoneId === 'box' && was.zoneId !== 'box') keys.push(ATTRIBUTES_BOXED);
+    }
+    if (engineRan) {
+      const generating = atTheEngine(before, move, after);
+      const flagged = (flag: string) => (staff: CardState) => runtime.workedFlag(generating, staff.id, flag);
+      const leading = (staff: CardState) => ['leading software', 'leading hardware'].some((flag) => flagged(flag)(staff));
+      const makes = (staff: CardState) => ['blue output', 'red output', 'qa output']
+        .some((name) => ((runtime.workedValue(generating, staff.id, name) as number | null) ?? 0) > 0);
+      const losing = [['losing blue', TOXIC_BLUE], ['losing red', TOXIC_RED], ['losing qa', TOXIC_QA]] as const;
+      for (const project of zoneCards(generating, zoneIdFor('development', by))) {
+        const staff = cardsOn(generating, project.id);
+        if (!runtime.workedFlag(generating, project.id, 'stalled') && staff.some((s) => flagged('overworked')(s) && makes(s))) {
+          keys.push(WORKAHOLIC_AT_ENGINE);
+        }
+        const visionaries = staff.filter((s) => tokenOn(s, 'visionary') === 1 && leading(s));
+        if (project.data?.tier !== 'Tier 1' && visionaries.length > 0 && staff.filter(leading).length === visionaries.length) {
+          keys.push(VISIONARY_LEADING);
+        }
+        for (const [flag, key] of losing) if (runtime.workedFlag(generating, project.id, flag)) keys.push(key);
+        for (const burnedOut of staff.filter(flagged('burned out'))) {
+          keys.push(BURNOUT_IDLE);
+          if (flagged('managing')(burnedOut)) keys.push(BURNOUT_PM);
+        }
       }
     }
-  }
+    return { rowOf };
+  };
+  const { rowOf } = happeningsPart6();
   // No agency hire is here: the agency row's cards come from the talent deck, straight or through a scouting row, and it never
   // reshuffles, so they hold no Attributes (§13).
-  if ([ASSIGN_TO_PROJECT, REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS].includes(move.type)) {
-    for (const c of after.cards) {
-      const holder = c.data?.[HOLDER_KEY];
-      if (c.data?.trait !== 'Spaghetti Code' || tokenOn(c, 'clean coder') !== 1 || typeof holder !== 'string') continue;
-      if (wasById.get(c.id)?.data?.[HOLDER_KEY] === holder || rowOf(cardById(after, holder)!.zoneId) !== 'development') continue;
-      if (bugsOn(cardById(after, holder)!) <= bugsOn(cardById(before, holder)!)) keys.push(CLEAN_CODER_HACKER);
-    }
-  }
-  if (passedTurn(before, after, by)) {
-    // The viral cards spread their Bugs as the backlog cleanup ends, before the turn passes and lets every card settle in (§5).
-    const shields = (staff: CardState) => tokenOn(staff, 'clean coder') === 1 && runtime.workedFlag(before, staff.id, 'clean coding');
-    const guarding = zoneCards(before, zoneIdFor('ops team', by))
-      .some((staff) => shields(staff) && runtime.workedFlag(before, staff.id, 'guarding the pool'));
-    const shielded = operationsOf(before, by).filter((product) => {
-      const on = cardsOn(before, product.id);
-      return on.some((staff) => staff.data?.trait === 'Viral Loop') && (guarding || on.some(shields));
-    });
-    keys.push(...shielded.map(() => CLEAN_CODER_VIRAL));
-  }
-  if (reached !== null) {
-    const poolLosing = (staff: CardState) =>
-      ['pool losing blue', 'pool losing red', 'pool losing qa'].some((flag) => runtime.workedFlag(after, staff.id, flag));
-    keys.push(...zoneCards(after, zoneIdFor('ops team', reached)).filter(poolLosing).map(() => TOXIC_OPS));
-  }
-  if (move.type === PLAY_TO_PRODUCT) {
-    // A $2 TechCrunch Feature is the Sales Rep's only when the product's price is $2: Trade Show makes the card's $2 (plan 6-2b).
-    const pitched = runtime.workedValue(before, move.onto as string, 'price') === 2;
-    const price = techCrunchPrice(runtime, before, move.cardId as string, move.onto as string);
-    if (price === 5) keys.push(TECHCRUNCH_5);
-    else if (pitched) keys.push(TECHCRUNCH_2);
-  }
-  if (move.type === PLAY_ALONE) {
-    const backlog = zoneIdFor('backlog', by);
-    const dealt = zoneCards(after, backlog).filter((c) => cardById(before, c.id)?.zoneId !== backlog);
-    keys.push(dealt.length === 5 ? SPRINT_5 : SPRINT_FEWER);
-  }
-  if (ended) {
-    for (const seat of runtime.seats) {
-      const hyped = operationsOf(after, seat).some((product) => product.data?.offline !== true && tokenOn(product, 'hype') > 0);
-      if (hyped) keys.push(HYPE_SCORED);
-    }
-  }
-
-  // Plan 6-2b's paths: the Events.
-  const seats = runtime.seats as PlayerId[];
-  if ((after.data[ROUND_KEY] as number) > (before.data[ROUND_KEY] as number)) {
-    const revealed = eventOf(after);
-    keys.push(`${EVENT_REVEALED}: ${revealed}`);
-    if (zoneCards(before, 'event-deck').length === 0) keys.push(EVENTS_RESHUFFLED);
-    if (revealed === 'Angel Investors') {
-      const products = (seat: PlayerId) =>
-        [...zoneCards(before, zoneIdFor('development', seat)), ...zoneCards(before, zoneIdFor('operations', seat))];
-      keys.push(...seats.filter((seat) => products(seat).length > 0 && products(seat).every((product) => product.data?.tier === 'Tier 1'))
-        .map(() => ANGEL_PAID));
-    }
-  }
-  if (eventOf(after) === 'Regulation Audit') {
-    keys.push(...stepsEndedIn(before, after, seats).filter((seat) => payrollTaxOf(runtime, after, seat) > 0).map(() => AUDIT_PAID));
-  }
-  if (before.turn?.phase === EVENT_CHECK && Object.values(LET_GO).includes(move.type)) keys.push(AUDIT_LET_GO);
-  if (reached !== null) {
-    const online = operationsOf(after, reached).filter((product) => product.data?.offline !== true);
-    const event = eventOf(after);
-    if (event === 'Tech Bubble' && online.length > 0) keys.push(BUBBLE_AT_INCOME);
-    if (event === 'Legacy Code' && online.some((product) => bugsOn(product) > 0 && runtime.workedFlag(after, product.id, 'decaying'))) {
-      keys.push(LEGACY_AT_INCOME);
-    }
-    const blueOf = (staff: CardState) => ((runtime.workedValue(after, staff.id, 'blue output') as number | null) ?? 0) > 0;
-    if (event === 'Server Crash' && zoneCards(after, zoneIdFor('ops team', reached)).some(blueOf)) keys.push(CRASH_AT_INCOME);
-  }
-  if (engineRan) {
-    const event = eventOf(before);
-    const working = zoneCards(before, zoneIdFor('development', by)).filter((project) => !runtime.workedFlag(before, project.id, 'stalled'));
-    // A staff card counts only where the Event's +1 or -1 applied to it: it holds the Event's flag and its output line is not zeroed by
-    // onboarding, Burnout or a mode of another colour, whose lines come after the Event's (Blue output and Red output).
-    const makes = (project: CardState, flag: string, zeroed: string[]) => cardsOn(before, project.id).some((staff) =>
-      runtime.workedFlag(before, staff.id, flag) && !['onboarding', 'burned out', ...zeroed].some((name) => runtime.workedFlag(before, staff.id, name)));
-    const atWork = { 'Open Source Boom': ['open source boosted', ['red mode', 'qa mode'], BOOM_AT_WORK],
-      'Hardware Hackathon': ['hackathon boosted', ['qa mode', 'blue mode'], HACKATHON_AT_WORK],
-      'Supply Chain Logjam': ['logjammed', ['qa mode', 'blue mode'], LOGJAM_AT_WORK] } as Record<string, [string, string[], string]>;
-    if (event !== null && atWork[event] !== undefined) {
-      const [flag, zeroed, key] = atWork[event];
-      keys.push(...working.filter((project) => makes(project, flag, zeroed)).map(() => key));
-    }
-    if (event === 'Crunch Time') {
-      for (const project of working) {
-        keys.push(CRUNCH_CUBE, runtime.workedFlag(before, project.id, 'crunched') ? CRUNCH_BUG : CRUNCH_STOPPED);
+  const happeningsPart7 = () => {
+    if ([ASSIGN_TO_PROJECT, REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS].includes(move.type)) {
+      for (const c of after.cards) {
+        const holder = c.data?.[HOLDER_KEY];
+        if (c.data?.trait !== 'Spaghetti Code' || tokenOn(c, 'clean coder') !== 1 || typeof holder !== 'string') continue;
+        if (wasById.get(c.id)?.data?.[HOLDER_KEY] === holder || rowOf(cardById(after, holder)!.zoneId) !== 'development') continue;
+        if (bugsOn(cardById(after, holder)!) <= bugsOn(cardById(before, holder)!)) keys.push(CLEAN_CODER_HACKER);
       }
     }
-  }
-  const priced = eventOf(before);
-  if (move.type === GREENLIGHT && priced === 'Patent Trolls' && gameNumber(before, game!, 'license') === 5) {
-    const asked = pressChoices(runtime, before, move);
-    if (typeof asked !== 'string' && asked.some(({ kind }) => kind === 'player')) keys.push(TROLLS_LICENSE);
-  }
-  if (priced === 'Chip Shortage') {
-    const hired = move.type === RECRUITS[1] ? 1
-      : HIRES.includes(move.type) ? [move.cardId, ...((move.cardIds as string[] | undefined) ?? [])]
-        .filter((id): id is string => typeof id === 'string' && runtime.workedFlag(before, id, 'chip short')).length : 0;
-    for (let i = 0; i < hired; i++) keys.push(CHIP_HIRE);
-  }
-  if (priced === 'Intern Season' && RECRUITS.includes(move.type)) keys.push(INTERN_RECRUIT);
-  if (priced === 'Online Course Boom' && move.type === PLAY_TRAINING && isTraining(card!)) keys.push(COURSE_TRAINING);
-  if (priced === 'Trade Show' && move.type === PLAY_TO_PRODUCT) keys.push(SHOW_TECHCRUNCH);
+    if (passedTurn(before, after, by)) {
+      // The viral cards spread their Bugs as the backlog cleanup ends, before the turn passes and lets every card settle in (§5).
+      const shields = (staff: CardState) => tokenOn(staff, 'clean coder') === 1 && runtime.workedFlag(before, staff.id, 'clean coding');
+      const guarding = zoneCards(before, zoneIdFor('ops team', by))
+        .some((staff) => shields(staff) && runtime.workedFlag(before, staff.id, 'guarding the pool'));
+      const shielded = operationsOf(before, by).filter((product) => {
+        const on = cardsOn(before, product.id);
+        return on.some((staff) => staff.data?.trait === 'Viral Loop') && (guarding || on.some(shields));
+      });
+      keys.push(...shielded.map(() => CLEAN_CODER_VIRAL));
+    }
+    if (reached !== null) {
+      const poolLosing = (staff: CardState) =>
+        ['pool losing blue', 'pool losing red', 'pool losing qa'].some((flag) => runtime.workedFlag(after, staff.id, flag));
+      keys.push(...zoneCards(after, zoneIdFor('ops team', reached)).filter(poolLosing).map(() => TOXIC_OPS));
+    }
+    if (move.type === PLAY_TO_PRODUCT) {
+      // A $2 TechCrunch Feature is the Sales Rep's only when the product's price is $2: Trade Show makes the card's $2 (plan 6-2b).
+      const pitched = runtime.workedValue(before, move.onto as string, 'price') === 2;
+      const price = techCrunchPrice(runtime, before, move.cardId as string, move.onto as string);
+      if (price === 5) keys.push(TECHCRUNCH_5);
+      else if (pitched) keys.push(TECHCRUNCH_2);
+    }
+    if (move.type === PLAY_ALONE) {
+      const backlog = zoneIdFor('backlog', by);
+      const dealt = zoneCards(after, backlog).filter((c) => cardById(before, c.id)?.zoneId !== backlog);
+      keys.push(dealt.length === 5 ? SPRINT_5 : SPRINT_FEWER);
+    }
+    if (ended) {
+      for (const seat of runtime.seats) {
+        const hyped = operationsOf(after, seat).some((product) => product.data?.offline !== true && tokenOn(product, 'hype') > 0);
+        if (hyped) keys.push(HYPE_SCORED);
+      }
+    }
+  };
+  happeningsPart7();
+
+  // Plan 6-2b's paths: the Events.
+  const happeningsPart8 = () => {
+    const seats = runtime.seats as PlayerId[];
+    if ((after.data[ROUND_KEY] as number) > (before.data[ROUND_KEY] as number)) {
+      const revealed = eventOf(after);
+      keys.push(`${EVENT_REVEALED}: ${revealed}`);
+      if (zoneCards(before, 'event-deck').length === 0) keys.push(EVENTS_RESHUFFLED);
+      if (revealed === 'Angel Investors') {
+        const products = (seat: PlayerId) =>
+          [...zoneCards(before, zoneIdFor('development', seat)), ...zoneCards(before, zoneIdFor('operations', seat))];
+        keys.push(...seats.filter((seat) => products(seat).length > 0 && products(seat).every((product) => product.data?.tier === 'Tier 1'))
+          .map(() => ANGEL_PAID));
+      }
+    }
+    if (eventOf(after) === 'Regulation Audit') {
+      keys.push(...stepsEndedIn(before, after, seats).filter((seat) => payrollTaxOf(runtime, after, seat) > 0).map(() => AUDIT_PAID));
+    }
+    if (before.turn?.phase === EVENT_CHECK && Object.values(LET_GO).includes(move.type)) keys.push(AUDIT_LET_GO);
+    if (reached !== null) {
+      const online = operationsOf(after, reached).filter((product) => product.data?.offline !== true);
+      const event = eventOf(after);
+      if (event === 'Tech Bubble' && online.length > 0) keys.push(BUBBLE_AT_INCOME);
+      if (event === 'Legacy Code' && online.some((product) => bugsOn(product) > 0 && runtime.workedFlag(after, product.id, 'decaying'))) {
+        keys.push(LEGACY_AT_INCOME);
+      }
+      const blueOf = (staff: CardState) => ((runtime.workedValue(after, staff.id, 'blue output') as number | null) ?? 0) > 0;
+      if (event === 'Server Crash' && zoneCards(after, zoneIdFor('ops team', reached)).some(blueOf)) keys.push(CRASH_AT_INCOME);
+    }
+    if (engineRan) {
+      const event = eventOf(before);
+      const working = zoneCards(before, zoneIdFor('development', by)).filter((project) => !runtime.workedFlag(before, project.id, 'stalled'));
+      // A staff card counts only where the Event's +1 or -1 applied to it: it holds the Event's flag and its output line is not zeroed by
+      // onboarding, Burnout or a mode of another colour, whose lines come after the Event's (Blue output and Red output).
+      const makes = (project: CardState, flag: string, zeroed: string[]) => cardsOn(before, project.id).some((staff) =>
+        runtime.workedFlag(before, staff.id, flag) && !['onboarding', 'burned out', ...zeroed].some((name) => runtime.workedFlag(before, staff.id, name)));
+      const atWork = { 'Open Source Boom': ['open source boosted', ['red mode', 'qa mode'], BOOM_AT_WORK],
+        'Hardware Hackathon': ['hackathon boosted', ['qa mode', 'blue mode'], HACKATHON_AT_WORK],
+        'Supply Chain Logjam': ['logjammed', ['qa mode', 'blue mode'], LOGJAM_AT_WORK] } as Record<string, [string, string[], string]>;
+      if (event !== null && atWork[event] !== undefined) {
+        const [flag, zeroed, key] = atWork[event];
+        keys.push(...working.filter((project) => makes(project, flag, zeroed)).map(() => key));
+      }
+      if (event === 'Crunch Time') {
+        for (const project of working) {
+          keys.push(CRUNCH_CUBE, runtime.workedFlag(before, project.id, 'crunched') ? CRUNCH_BUG : CRUNCH_STOPPED);
+        }
+      }
+    }
+    const priced = eventOf(before);
+    if (move.type === GREENLIGHT && priced === 'Patent Trolls' && gameNumber(before, game!, 'license') === 5) {
+      const asked = pressChoices(runtime, before, move);
+      if (typeof asked !== 'string' && asked.some(({ kind }) => kind === 'player')) keys.push(TROLLS_LICENSE);
+    }
+    if (priced === 'Chip Shortage') {
+      const hired = move.type === RECRUITS[1] ? 1
+        : HIRES.includes(move.type) ? [move.cardId, ...((move.cardIds as string[] | undefined) ?? [])]
+          .filter((id): id is string => typeof id === 'string' && runtime.workedFlag(before, id, 'chip short')).length : 0;
+      for (let i = 0; i < hired; i++) keys.push(CHIP_HIRE);
+    }
+    if (priced === 'Intern Season' && RECRUITS.includes(move.type)) keys.push(INTERN_RECRUIT);
+    if (priced === 'Online Course Boom' && move.type === PLAY_TRAINING && isTraining(card!)) keys.push(COURSE_TRAINING);
+    if (priced === 'Trade Show' && move.type === PLAY_TO_PRODUCT) keys.push(SHOW_TECHCRUNCH);
+    return { seats };
+  };
+  const { seats } = happeningsPart8();
 
   // Plan 7-2a's paths: held Equity (§17).
-  if ([INVEST, INVEST_PLACING].includes(move.type)) {
-    keys.push(`${INVEST_AT} $${sharePriceOf(runtime, before, founderOf(card!)!)}`);
-    if (eventOf(before) === 'Venture Capital Rain') keys.push(INVEST_IN_RAIN);
-  }
-  if (reached !== null) {
-    const dividend = dividendOf(runtime, after, reached);
-    const paidTo = seats.filter((seat) => seat !== reached).flatMap((seat) => portfolioOf(after, seat).filter((c) => founderOf(c) === reached));
-    if (dividend > 0) keys.push(...paidTo.map(() => `${DIVIDEND_OF} $${dividend}`));
-  }
-  if (move.type === GREENLIGHT) {
-    const lacked = requirementsOf(card!).filter((tag) => !tagsOf(before, by).has(tag));
-    const partnered = (tag: string) => seats.some((seat) => seat !== by && tiedTo(before, by, seat) && tagsOf(before, seat).has(tag));
-    if (lacked.some(partnered)) keys.push(LICENSE_WAIVED);
-  }
-  if ([INVEST_PLACING, PLACE].includes(move.type)) {
-    const placed = cardById(after, move.cardId as string)!;
-    keys.push(...Object.entries(CONSULTANT_COLOURS).filter(([, flag]) => placed.data?.[flag] === true).map(([colour]) => `${CONSULTANT_PLACED}: ${colour}`));
-  }
-  if (move.type === PLACE) {
-    keys.push(typeof card?.data?.[HOLDER_KEY] === 'string' ? CONSULTANT_MOVED_AT_START : CONSULTANT_PLACED_AT_START);
-  }
-  if (reached !== null) {
-    const bandwidth = operationsOf(after, reached)
-      .reduce((total, product) => total + consultantsOn(runtime, after, product.id, 'Blue') + consultantsOn(runtime, after, product.id, 'Red'),
-        0);
-    if (bandwidth > 0) keys.push(CONSULTANT_BANDWIDTH);
-  }
-  for (const seat of seats) {
-    if (!ranTheEngine(before, after, seat)) continue;
-    const qa = operationsOf(before, seat).reduce((total, product) => total + consultantsOn(runtime, before, product.id, 'QA'), 0);
-    if (qa > 0 && ((runtime.playerValue(before, seat, 'bug load') as number | null) ?? 0) > 0) keys.push(CONSULTANT_OPS_QA);
-  }
-  if ((move.type === LAUNCH || move.type === PIVOT) && othersOn(before, move.cardId as string).length > 0) {
-    keys.push(move.type === LAUNCH ? CONSULTANT_LAUNCHED : CONSULTANT_PIVOTED);
-  }
-  if (after.cards.some((c) => othersOn(after, c.id).length >= 2)) keys.push(TWO_CONSULTANTS);
+  const happeningsPart9 = () => {
+    if ([INVEST, INVEST_PLACING].includes(move.type)) {
+      keys.push(`${INVEST_AT} $${sharePriceOf(runtime, before, founderOf(card!)!)}`);
+      if (eventOf(before) === 'Venture Capital Rain') keys.push(INVEST_IN_RAIN);
+    }
+    if (reached !== null) {
+      const dividend = dividendOf(runtime, after, reached);
+      const paidTo = seats.filter((seat) => seat !== reached).flatMap((seat) => portfolioOf(after, seat).filter((c) => founderOf(c) === reached));
+      if (dividend > 0) keys.push(...paidTo.map(() => `${DIVIDEND_OF} $${dividend}`));
+    }
+    if (move.type === GREENLIGHT) {
+      const lacked = requirementsOf(card!).filter((tag) => !tagsOf(before, by).has(tag));
+      const partnered = (tag: string) => seats.some((seat) => seat !== by && tiedTo(before, by, seat) && tagsOf(before, seat).has(tag));
+      if (lacked.some(partnered)) keys.push(LICENSE_WAIVED);
+    }
+    if ([INVEST_PLACING, PLACE].includes(move.type)) {
+      const placed = cardById(after, move.cardId as string)!;
+      keys.push(...Object.entries(CONSULTANT_COLOURS).filter(([, flag]) => placed.data?.[flag] === true).map(([colour]) => `${CONSULTANT_PLACED}: ${colour}`));
+    }
+    if (move.type === PLACE) {
+      keys.push(typeof card?.data?.[HOLDER_KEY] === 'string' ? CONSULTANT_MOVED_AT_START : CONSULTANT_PLACED_AT_START);
+    }
+    if (reached !== null) {
+      const bandwidth = operationsOf(after, reached)
+        .reduce((total, product) => total + consultantsOn(runtime, after, product.id, 'Blue') + consultantsOn(runtime, after, product.id, 'Red'),
+          0);
+      if (bandwidth > 0) keys.push(CONSULTANT_BANDWIDTH);
+    }
+    for (const seat of seats) {
+      if (!ranTheEngine(before, after, seat)) continue;
+      const qa = operationsOf(before, seat).reduce((total, product) => total + consultantsOn(runtime, before, product.id, 'QA'), 0);
+      if (qa > 0 && ((runtime.playerValue(before, seat, 'bug load') as number | null) ?? 0) > 0) keys.push(CONSULTANT_OPS_QA);
+    }
+    if ((move.type === LAUNCH || move.type === PIVOT) && othersOn(before, move.cardId as string).length > 0) {
+      keys.push(move.type === LAUNCH ? CONSULTANT_LAUNCHED : CONSULTANT_PIVOTED);
+    }
+    if (after.cards.some((c) => othersOn(after, c.id).length >= 2)) keys.push(TWO_CONSULTANTS);
+  };
+  happeningsPart9();
   return keys;
 }
 
@@ -2512,678 +2552,807 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     }
 
     // Money is conserved: paid to the bank by the mover, earned at Income by the seat that reached it.
-    const started = turnStarted(before, after);
-    const income = enteredIncome(before, after);
-    const capital = (state: GameState, seat: PlayerId) => counterOf(state, 'capital', seat);
+    const rulesPart1 = () => {
+      const started = turnStarted(before, after);
+      const income = enteredIncome(before, after);
+      const capital = (state: GameState, seat: PlayerId) => counterOf(state, 'capital', seat);
+      return { started, income, capital };
+    };
+    const { started, income, capital } = rulesPart1();
     // Every hiring price is read as the rules hold it before the move: the University's two game numbers, and each card's worked cost
     // and rehire price, which the Event in play may raise (§20.D 9, 14).
-    const workedOf = (id: string, name: string) => runtime.workedValue(before, id, name) as number;
-    const costOf = (ids: string[]) => ids.reduce((total, id) => total + workedOf(id, 'cost'), 0);
+    const rulesPart2 = () => {
+      const workedOf = (id: string, name: string) => runtime.workedValue(before, id, name) as number;
+      const costOf = (ids: string[]) => ids.reduce((total, id) => total + workedOf(id, 'cost'), 0);
+      return { workedOf, costOf };
+    };
+    const { workedOf, costOf } = rulesPart2();
     // The Invest price is worked out here from the Founder's online products' tiers, not read from the rules' share price: $5 with no
     // Active Tier 2 or 3 product, $10 with a Tier 2, $15 with a Tier 3 (§17.A).
-    const investPriceOf = (state: GameState, founder: PlayerId) => {
-      const tiers = operationsOf(state, founder).filter((product) => product.data?.offline !== true)
-        .map((product) => Number(/\d+/.exec(String(product.data?.tier))?.[0] ?? 0));
-      return Math.max(...tiers) >= 3 ? 15 : Math.max(...tiers) >= 2 ? 10 : 5;
-    };
-    const paid = move.type === RECRUITS[1] ? gameNumber(before, game!, 'hardware junior price')
-      : RECRUITS.includes(move.type) ? gameNumber(before, game!, 'junior price')
-      : AGENCY_HIRES.includes(move.type) ? workedOf(card!.id, 'cost')
-        : move.type === HIRE_MARKET ? workedOf(card!.id, 'rehire price')
-          : SOURCE_HIRES.includes(move.type) ? costOf(move.cardIds as string[])
-            : move.type === PAY_SALARIES ? payrollOf(runtime, before, by)
-              : [PLAY_TRAINING, PLAY_DEBUFF].includes(move.type) ? (runtime.workedValue(before, move.cardId as string, 'price') as number)
-                : move.type === PLAY_TO_PRODUCT ? techCrunchPrice(runtime, before, move.cardId as string, move.onto as string)
-                  : [INVEST, INVEST_PLACING].includes(move.type) ? investPriceOf(before, founderOf(card!)!) : 0;
-    // An Invest pays its price to the token's Founder, and Venture Capital Rain adds $3 from the bank (§17.A, §20.D 1).
-    const investedIn = [INVEST, INVEST_PLACING].includes(move.type) ? founderOf(card!) : undefined;
-    const proceeds = (seat: PlayerId) => (seat === investedIn ? paid + (eventOf(before) === 'Venture Capital Rain' ? 3 : 0) : 0);
-    // A Founder's Income also pays every other seat the Founder's dividend for each of their tokens it holds, from the bank (§9.B).
-    const dividendsTo = (seat: PlayerId) => (income === null || seat === income ? 0
-      : dividendOf(runtime, after, income) * portfolioOf(after, seat).filter((c) => founderOf(c) === income).length);
-    const earned = (seat: PlayerId) =>
-      (seat === income ? operationsOf(after, seat).reduce((total, product) => total + revOf(runtime, after, product), 0) : 0) + dividendsTo(seat);
-    const gained = seats.map((seat) => capital(after, seat) - capital(before, seat));
-    if (move.type === GREENLIGHT) {
-      // A License for each Tag neither the mover nor a Partner of theirs provides, paid to the seats that provide it, never to a Partner,
-      // read as the rules hold the license (§6, §14.B.2, §17.B.3, ruling 11).
-      const license = gameNumber(before, game!, 'license');
-      const required = requirementsOf(card!);
-      const partners = seats.filter((seat) => seat !== by && tiedTo(before, by, seat));
-      const missing = required.filter((tag) => !tagsOf(before, by).has(tag) && !partners.some((seat) => tagsOf(before, seat).has(tag)));
-      noneOf(required.filter((tag) => !seats.some((seat) => tagsOf(before, seat).has(tag))), () => `Tags no seat provides ${at}`);
-      const net = (seat: PlayerId) => gained[seats.indexOf(seat)] - earned(seat);
-      sameAs(net(by), 0 - license * missing.length, () => `capital ${by} paid in Licenses ${at}`);
-      const others = seats.filter((seat) => seat !== by);
-      noneOf(partners.filter((seat) => net(seat) !== 0), () => `a Partner paid a License ${at}`);
-      const overpaid = others.flatMap((seat) => {
-        const most = license * missing.filter((tag) => tagsOf(before, seat).has(tag)).length;
-        return net(seat) >= 0 && net(seat) % license === 0 && net(seat) <= most ? [] : [`${seat} gained ${net(seat)}, at most ${most}`];
-      });
-      noneOf(overpaid, () => `Licenses received ${at}`);
-      sameAs(others.reduce((total, seat) => total + net(seat), 0), license * missing.length, () => `Licenses received in all ${at}`);
-    } else {
-      // A move in the round's steps, or one that revealed Angel Investors or Regulation Audit, is checked as a whole (Review Focus 2):
-      // $3 to each seat the Angel Investors fund whose step started in it, as it stood before, and the tax of each seat whose step ended
-      // in it, on the Board it kept.
-      const revealed = (after.data[ROUND_KEY] as number) > (before.data[ROUND_KEY] as number) ? eventOf(after) : null;
-      const stepping = [before, after].some((state) => state.data[ROUND_STEPS_KEY] !== undefined)
-        || revealed === 'Angel Investors' || revealed === 'Regulation Audit';
-      const doneBefore = stepsDone(before, seats) ?? [];
-      const ended = stepping ? (stepsDone(after, seats) ?? seats).filter((seat) => !doneBefore.includes(seat)) : [];
-      const products = (state: GameState, seat: PlayerId) =>
-        [...zoneCards(state, zoneIdFor('development', seat)), ...zoneCards(state, zoneIdFor('operations', seat))];
-      // Angel Investors funds each seat as its step starts, and an Investor's step stops the steps (plan 7-2a), so a seat after it is
-      // funded in the move that starts its step.
-      const begun = (state: GameState) => {
-        const done = stepsDone(state, seats);
-        return done === null ? null : [...done, state.turn!.current as PlayerId];
+    const rulesPart3 = () => {
+      const investPriceOf = (state: GameState, founder: PlayerId) => {
+        const tiers = operationsOf(state, founder).filter((product) => product.data?.offline !== true)
+          .map((product) => Number(/\d+/.exec(String(product.data?.tier))?.[0] ?? 0));
+        return Math.max(...tiers) >= 3 ? 15 : Math.max(...tiers) >= 2 ? 10 : 5;
       };
-      const begunBefore = begun(before) ?? [];
-      const starting = stepping ? (begun(after) ?? seats).filter((seat) => !begunBefore.includes(seat)) : [];
-      const funded = (seat: PlayerId) => starting.includes(seat) && eventOf(after) === 'Angel Investors' && products(before, seat).length > 0
-        && products(before, seat).every((product) => product.data?.tier === 'Tier 1');
-      const taxOf = (seat: PlayerId) => (ended.includes(seat) && eventOf(after) === 'Regulation Audit' ? payrollTaxOf(runtime, after, seat) : 0);
-      const want = seats.map((seat) => earned(seat) - (seat === by ? paid : 0) + proceeds(seat) + (funded(seat) ? 3 : 0) - taxOf(seat));
-      sameList(gained, want, () => `capital gained by ${seats.join(', ')} ${at}`);
-    }
+      const paid = move.type === RECRUITS[1] ? gameNumber(before, game!, 'hardware junior price')
+        : RECRUITS.includes(move.type) ? gameNumber(before, game!, 'junior price')
+        : AGENCY_HIRES.includes(move.type) ? workedOf(card!.id, 'cost')
+          : move.type === HIRE_MARKET ? workedOf(card!.id, 'rehire price')
+            : SOURCE_HIRES.includes(move.type) ? costOf(move.cardIds as string[])
+              : move.type === PAY_SALARIES ? payrollOf(runtime, before, by)
+                : [PLAY_TRAINING, PLAY_DEBUFF].includes(move.type) ? (runtime.workedValue(before, move.cardId as string, 'price') as number)
+                  : move.type === PLAY_TO_PRODUCT ? techCrunchPrice(runtime, before, move.cardId as string, move.onto as string)
+                    : [INVEST, INVEST_PLACING].includes(move.type) ? investPriceOf(before, founderOf(card!)!) : 0;
+      return { paid };
+    };
+    const { paid } = rulesPart3();
+    // An Invest pays its price to the token's Founder, and Venture Capital Rain adds $3 from the bank (§17.A, §20.D 1).
+    const rulesPart4 = () => {
+      const investedIn = [INVEST, INVEST_PLACING].includes(move.type) ? founderOf(card!) : undefined;
+      const proceeds = (seat: PlayerId) => (seat === investedIn ? paid + (eventOf(before) === 'Venture Capital Rain' ? 3 : 0) : 0);
+      return { proceeds };
+    };
+    const { proceeds } = rulesPart4();
+    // A Founder's Income also pays every other seat the Founder's dividend for each of their tokens it holds, from the bank (§9.B).
+    const rulesPart5 = () => {
+      const dividendsTo = (seat: PlayerId) => (income === null || seat === income ? 0
+        : dividendOf(runtime, after, income) * portfolioOf(after, seat).filter((c) => founderOf(c) === income).length);
+      const earned = (seat: PlayerId) =>
+        (seat === income ? operationsOf(after, seat).reduce((total, product) => total + revOf(runtime, after, product), 0) : 0) + dividendsTo(seat);
+      const gained = seats.map((seat) => capital(after, seat) - capital(before, seat));
+      if (move.type === GREENLIGHT) {
+        // A License for each Tag neither the mover nor a Partner of theirs provides, paid to the seats that provide it, never to a Partner,
+        // read as the rules hold the license (§6, §14.B.2, §17.B.3, ruling 11).
+        const license = gameNumber(before, game!, 'license');
+        const required = requirementsOf(card!);
+        const partners = seats.filter((seat) => seat !== by && tiedTo(before, by, seat));
+        const missing = required.filter((tag) => !tagsOf(before, by).has(tag) && !partners.some((seat) => tagsOf(before, seat).has(tag)));
+        noneOf(required.filter((tag) => !seats.some((seat) => tagsOf(before, seat).has(tag))), () => `Tags no seat provides ${at}`);
+        const net = (seat: PlayerId) => gained[seats.indexOf(seat)] - earned(seat);
+        sameAs(net(by), 0 - license * missing.length, () => `capital ${by} paid in Licenses ${at}`);
+        const others = seats.filter((seat) => seat !== by);
+        noneOf(partners.filter((seat) => net(seat) !== 0), () => `a Partner paid a License ${at}`);
+        const overpaid = others.flatMap((seat) => {
+          const most = license * missing.filter((tag) => tagsOf(before, seat).has(tag)).length;
+          return net(seat) >= 0 && net(seat) % license === 0 && net(seat) <= most ? [] : [`${seat} gained ${net(seat)}, at most ${most}`];
+        });
+        noneOf(overpaid, () => `Licenses received ${at}`);
+        sameAs(others.reduce((total, seat) => total + net(seat), 0), license * missing.length, () => `Licenses received in all ${at}`);
+      } else {
+        // A move in the round's steps, or one that revealed Angel Investors or Regulation Audit, is checked as a whole (Review Focus 2):
+        // $3 to each seat the Angel Investors fund whose step started in it, as it stood before, and the tax of each seat whose step ended
+        // in it, on the Board it kept.
+        const revealed = (after.data[ROUND_KEY] as number) > (before.data[ROUND_KEY] as number) ? eventOf(after) : null;
+        const stepping = [before, after].some((state) => state.data[ROUND_STEPS_KEY] !== undefined)
+          || revealed === 'Angel Investors' || revealed === 'Regulation Audit';
+        const doneBefore = stepsDone(before, seats) ?? [];
+        const ended = stepping ? (stepsDone(after, seats) ?? seats).filter((seat) => !doneBefore.includes(seat)) : [];
+        const products = (state: GameState, seat: PlayerId) =>
+          [...zoneCards(state, zoneIdFor('development', seat)), ...zoneCards(state, zoneIdFor('operations', seat))];
+        // Angel Investors funds each seat as its step starts, and an Investor's step stops the steps (plan 7-2a), so a seat after it is
+        // funded in the move that starts its step.
+        const begun = (state: GameState) => {
+          const done = stepsDone(state, seats);
+          return done === null ? null : [...done, state.turn!.current as PlayerId];
+        };
+        const begunBefore = begun(before) ?? [];
+        const starting = stepping ? (begun(after) ?? seats).filter((seat) => !begunBefore.includes(seat)) : [];
+        const funded = (seat: PlayerId) => starting.includes(seat) && eventOf(after) === 'Angel Investors' && products(before, seat).length > 0
+          && products(before, seat).every((product) => product.data?.tier === 'Tier 1');
+        const taxOf = (seat: PlayerId) => (ended.includes(seat) && eventOf(after) === 'Regulation Audit' ? payrollTaxOf(runtime, after, seat) : 0);
+        const want = seats.map((seat) => earned(seat) - (seat === by ? paid : 0) + proceeds(seat) + (funded(seat) ? 3 : 0) - taxOf(seat));
+        sameList(gained, want, () => `capital gained by ${seats.join(', ')} ${at}`);
+      }
+    };
+    rulesPart5();
     // Market Share: 1 for each product that earned, when its owner reached Income.
-    const share = (state: GameState, seat: PlayerId) => counterOf(state, 'market share', seat);
-    const shares = seats.map((seat) => share(after, seat) - share(before, seat));
-    const earners = (seat: PlayerId) => (seat === income ? operationsOf(after, seat).filter(earns(runtime, after)).length : 0);
-    sameList(shares, seats.map(earners), () => `market share gained by ${seats.join(', ')} ${at}`);
+    const rulesPart6 = () => {
+      const share = (state: GameState, seat: PlayerId) => counterOf(state, 'market share', seat);
+      const shares = seats.map((seat) => share(after, seat) - share(before, seat));
+      const earners = (seat: PlayerId) => (seat === income ? operationsOf(after, seat).filter(earns(runtime, after)).length : 0);
+      sameList(shares, seats.map(earners), () => `market share gained by ${seats.join(', ')} ${at}`);
+    };
+    rulesPart6();
     // No one pays what they don't have.
-    const inDebt = seats.filter((seat) => capital(after, seat) < 0).map((seat) => `${seat} has ${capital(after, seat)} capital`);
-    noneOf(inDebt, () => `capital below 0 ${at}`);
+    const rulesPart7 = () => {
+      const inDebt = seats.filter((seat) => capital(after, seat) < 0).map((seat) => `${seat} has ${capital(after, seat)} capital`);
+      noneOf(inDebt, () => `capital below 0 ${at}`);
+    };
+    rulesPart7();
 
     // No zone over its capacity.
-    const atMost = (zoneId: string, most: number) => {
-      const held = size(zoneId);
-      if (!(held <= most)) expect(held, `${zoneId} ${at}`).toBeLessThanOrEqual(most);
+    const rulesPart8 = () => {
+      const atMost = (zoneId: string, most: number) => {
+        const held = size(zoneId);
+        if (!(held <= most)) expect(held, `${zoneId} ${at}`).toBeLessThanOrEqual(most);
+      };
+      atMost('agency-row', 4);
+      atMost('seed-market', 2);
+      atMost('growth-market', 2);
+      for (const pool of POOLS) atMost(pool, 5);
+      atMost('crash-pile', 1);
+      const { current, phase } = after.turn!;
+      for (const seat of seats) {
+        const own = (row: string) => zoneIdFor(row, seat);
+        if (seat === current) {
+          // 9 is the auto-player's bound, not the rules': it plays one Utility card a turn at most (see `utility`), so one Design Sprint
+          // deals up to 5 past the 4 a turn's research leaves. Two Sprints in one turn could legally take the backlog higher. Cleanup cuts
+          // it back to 3 either way (§20.A, §5 Phase D).
+          atMost(own('backlog'), 9);
+          atMost(own('research'), 3);
+          if (size(own('research')) > 0) sameAs(phase, 'research', () => `the phase while ${own('research')} has cards ${at}`);
+        } else {
+          atMost(own('bench'), 5);
+          atMost(own('backlog'), 3);
+          atMost(own('research'), 0);
+        }
+        atMost(own('development'), 3);
+        // A Layoff's cards wait in scouting only while their seat sources (§13.B).
+        if (seat !== current || phase !== 'sourcing') atMost(own('scouting'), 0);
+        // The Brainstorm look waits in its row only while its seat chooses the card it keeps, and a hand ends its turn at 3 at most
+        // (§5 Phase D step 7, §6, ruling 10).
+        atMost(own('brainstorm'), 3);
+        if (size(own('brainstorm')) > 0) {
+          sameAs(`${current} ${phase}`, `${seat} brainstorm`, () => `the turn while ${own('brainstorm')} has cards ${at}`);
+        }
+        if (seat !== current) atMost(own('strategy hand'), 3);
+      }
+      return { current, phase };
     };
-    atMost('agency-row', 4);
-    atMost('seed-market', 2);
-    atMost('growth-market', 2);
-    for (const pool of POOLS) atMost(pool, 5);
-    atMost('crash-pile', 1);
-    const { current, phase } = after.turn!;
-    for (const seat of seats) {
-      const own = (row: string) => zoneIdFor(row, seat);
-      if (seat === current) {
-        // 9 is the auto-player's bound, not the rules': it plays one Utility card a turn at most (see `utility`), so one Design Sprint
-        // deals up to 5 past the 4 a turn's research leaves. Two Sprints in one turn could legally take the backlog higher. Cleanup cuts
-        // it back to 3 either way (§20.A, §5 Phase D).
-        atMost(own('backlog'), 9);
-        atMost(own('research'), 3);
-        if (size(own('research')) > 0) sameAs(phase, 'research', () => `the phase while ${own('research')} has cards ${at}`);
-      } else {
-        atMost(own('bench'), 5);
-        atMost(own('backlog'), 3);
-        atMost(own('research'), 0);
-      }
-      atMost(own('development'), 3);
-      // A Layoff's cards wait in scouting only while their seat sources (§13.B).
-      if (seat !== current || phase !== 'sourcing') atMost(own('scouting'), 0);
-      // The Brainstorm look waits in its row only while its seat chooses the card it keeps, and a hand ends its turn at 3 at most
-      // (§5 Phase D step 7, §6, ruling 10).
-      atMost(own('brainstorm'), 3);
-      if (size(own('brainstorm')) > 0) {
-        sameAs(`${current} ${phase}`, `${seat} brainstorm`, () => `the turn while ${own('brainstorm')} has cards ${at}`);
-      }
-      if (seat !== current) atMost(own('strategy hand'), 3);
-    }
+    const { current, phase } = rulesPart8();
     // Every Strategy card stays in the strategy deck, its discard, a Strategy Hand or a brainstorm row (§20.A), and only a Brainstorm
     // shuffles the discard back into the deck (§15.C).
-    const strategyZones = [
-      'strategy-deck', 'strategy-discard', ...seats.flatMap((seat) => [zoneIdFor('strategy hand', seat), zoneIdFor('brainstorm', seat)]),
-    ];
-    const boxedStrategy = zoneCards(after, 'box').filter((c) => Object.hasOwn(STRATEGY_CARDS, nameOf(c) as string));
-    const strategy = nameCounts([...[...strategyZones, 'attributes-in-play'].flatMap((zoneId) => zoneCards(after, zoneId)), ...boxedStrategy]);
-    if (Object.keys({ ...strategy, ...STRATEGY_CARDS }).some((name) => strategy[name] !== STRATEGY_CARDS[name])) {
-      expect(strategy, `the Strategy cards ${at}`).toEqual(STRATEGY_CARDS);
-    }
-    const inTheDeck = new Set(zoneCards(before, 'strategy-deck').map((c) => c.id));
-    const newInTheDeck = zoneCards(after, 'strategy-deck').filter((c) => !inTheDeck.has(c.id)).map((c) => `${c.id} (${nameOf(c)})`);
-    noneOf([BRAINSTORM, BRAINSTORM_FLUSHING].includes(move.type) ? [] : newInTheDeck, () => `cards new in the strategy deck ${at}`);
+    const rulesPart9 = () => {
+      const strategyZones = [
+        'strategy-deck', 'strategy-discard', ...seats.flatMap((seat) => [zoneIdFor('strategy hand', seat), zoneIdFor('brainstorm', seat)]),
+      ];
+      const boxedStrategy = zoneCards(after, 'box').filter((c) => Object.hasOwn(STRATEGY_CARDS, nameOf(c) as string));
+      const strategy = nameCounts([...[...strategyZones, 'attributes-in-play'].flatMap((zoneId) => zoneCards(after, zoneId)), ...boxedStrategy]);
+      if (Object.keys({ ...strategy, ...STRATEGY_CARDS }).some((name) => strategy[name] !== STRATEGY_CARDS[name])) {
+        expect(strategy, `the Strategy cards ${at}`).toEqual(STRATEGY_CARDS);
+      }
+      const inTheDeck = new Set(zoneCards(before, 'strategy-deck').map((c) => c.id));
+      const newInTheDeck = zoneCards(after, 'strategy-deck').filter((c) => !inTheDeck.has(c.id)).map((c) => `${c.id} (${nameOf(c)})`);
+      noneOf([BRAINSTORM, BRAINSTORM_FLUSHING].includes(move.type) ? [] : newInTheDeck, () => `cards new in the strategy deck ${at}`);
+    };
+    rulesPart9();
 
     // Equity (the spec's Proof 2 and anti-goal): each Founder's 3 tokens are in their supply or a rival's portfolio, no other card is in
     // either, and no Founder sells their last (§2, §4.4, §17.D; slice 8's Vest and CTO will change the last line). A game arranged
     // without Setup, as the arranged tests below are, has none, as it has no Milestone out of the deck; no move changes how many.
-    const equityProblems = seats.flatMap((founder) => {
-      const named = after.cards.filter((c) => founderOf(c) === founder);
-      const was = before.cards.filter((c) => founderOf(c) === founder).length;
-      const misplaced = named.filter((c) => c.zoneId !== zoneIdFor('equity', founder)
-        && !seats.some((holder) => holder !== founder && c.zoneId === zoneIdFor('portfolio', holder)));
-      return [
-        ...([EQUITY_TOKENS, 0].includes(named.length) && named.length === was ? [] : [`${was} then ${named.length} tokens name ${founder}`]),
-        ...misplaced.map((c) => `${c.id} names ${founder} in ${c.zoneId}`),
-        ...(named.length === 0 || zoneCards(after, zoneIdFor('equity', founder)).length > 0 ? [] : [`${founder}'s equity is empty`]),
-      ];
-    });
-    const stray = seats.flatMap((seat) => [...zoneCards(after, zoneIdFor('equity', seat)), ...portfolioOf(after, seat)])
-      .filter((c) => founderOf(c) === undefined).map((c) => `${c.id} (${nameOf(c)}) in ${c.zoneId}`);
+    const rulesPart10 = () => {
+      /** The cards naming each Founder in `state`, in the order it holds them: each state's cards are read once (time). */
+      const namedIn = (state: GameState) => {
+        const byFounder = new Map<PlayerId, CardState[]>();
+        for (const c of state.cards) {
+          const founder = founderOf(c);
+          if (founder === undefined) continue;
+          const named = byFounder.get(founder);
+          if (named === undefined) byFounder.set(founder, [c]);
+          else named.push(c);
+        }
+        return byFounder;
+      };
+      const [namedAfter, namedBefore] = [namedIn(after), namedIn(before)];
+      const equityProblems = seats.flatMap((founder) => {
+        const named = namedAfter.get(founder) ?? [];
+        const was = (namedBefore.get(founder) ?? []).length;
+        const misplaced = named.filter((c) => c.zoneId !== zoneIdFor('equity', founder)
+          && !seats.some((holder) => holder !== founder && c.zoneId === zoneIdFor('portfolio', holder)));
+        return [
+          ...([EQUITY_TOKENS, 0].includes(named.length) && named.length === was ? [] : [`${was} then ${named.length} tokens name ${founder}`]),
+          ...misplaced.map((c) => `${c.id} names ${founder} in ${c.zoneId}`),
+          ...(named.length === 0 || zoneCards(after, zoneIdFor('equity', founder)).length > 0 ? [] : [`${founder}'s equity is empty`]),
+        ];
+      });
+      const stray = seats.flatMap((seat) => [...zoneCards(after, zoneIdFor('equity', seat)), ...portfolioOf(after, seat)])
+        .filter((c) => founderOf(c) === undefined).map((c) => `${c.id} (${nameOf(c)}) in ${c.zoneId}`);
+      return { equityProblems, stray };
+    };
+    const { equityProblems, stray } = rulesPart10();
     // An Invest, the one that places a Consultant too, moves exactly its card, from its Founder's equity to the mover's portfolio, and
     // only from an equity of 2 or more (§17.B.4, §17.D).
-    if ([INVEST, INVEST_PLACING].includes(move.type)) {
-      const moved = after.cards.filter((c) => cardById(before, c.id)?.zoneId !== c.zoneId).map((c) => c.id);
-      sameList(moved, [card!.id], () => `the cards moved ${at}`);
-      sameAs(from, zoneIdFor('equity', founderOf(card!)!), () => `where ${at} took its card`);
-      sameAs(cardById(after, card!.id)?.zoneId, zoneIdFor('portfolio', by), () => `where ${at} put its card`);
-      sameAs(zoneCards(before, from!).length >= 2, true, () => `whether ${from} held 2 or more ${at}`);
-    }
-    noneOf([...equityProblems, ...stray], () => `the Equity tokens ${at}`);
+    const rulesPart11 = () => {
+      if ([INVEST, INVEST_PLACING].includes(move.type)) {
+        const moved = after.cards.filter((c) => cardById(before, c.id)?.zoneId !== c.zoneId).map((c) => c.id);
+        sameList(moved, [card!.id], () => `the cards moved ${at}`);
+        sameAs(from, zoneIdFor('equity', founderOf(card!)!), () => `where ${at} took its card`);
+        sameAs(cardById(after, card!.id)?.zoneId, zoneIdFor('portfolio', by), () => `where ${at} put its card`);
+        sameAs(zoneCards(before, from!).length >= 2, true, () => `whether ${from} held 2 or more ${at}`);
+      }
+      noneOf([...equityProblems, ...stray], () => `the Equity tokens ${at}`);
+    };
+    rulesPart11();
 
     // The Milestones: Setup revealed 3 and boxed the rest (§4.3), and a revealed one is claimed into a milestones row for good, only at
     // its moment or once its seat meets it (§12.5, §20.G).
-    const claimRows = new Set(seats.map((seat) => zoneIdFor('milestones', seat)));
-    /** The milestone deck, the milestone row with the milestones rows, and the box: how many of the 6 each holds in `state`. */
-    const splitOf = (state: GameState) => {
-      const six = state.cards.filter((c) => MILESTONES.includes(nameOf(c) as string));
-      const sixIn = (zoneIds: (zoneId: string) => boolean) => six.filter((c) => zoneIds(c.zoneId)).length;
-      return [sixIn((z) => z === 'milestone-deck'), sixIn((z) => z === 'milestone-row' || claimRows.has(z)), sixIn((z) => z === 'box')];
+    const rulesPart12 = () => {
+      const claimRows = new Set(seats.map((seat) => zoneIdFor('milestones', seat)));
+      /** The milestone deck, the milestone row with the milestones rows, and the box: how many of the 6 each holds in `state`. */
+      const splitOf = (state: GameState) => {
+        const six = state.cards.filter((c) => MILESTONES.includes(nameOf(c) as string));
+        const sixIn = (zoneIds: (zoneId: string) => boolean) => six.filter((c) => zoneIds(c.zoneId)).length;
+        return [sixIn((z) => z === 'milestone-deck'), sixIn((z) => z === 'milestone-row' || claimRows.has(z)), sixIn((z) => z === 'box')];
+      };
+      return { splitOf };
     };
+    const { splitOf } = rulesPart12();
     // A game arranged without Setup, as the arranged tests below are, keeps all 6 in the milestone deck from its first move to its last,
     // and a game played from Setup never puts one back: no move changes the split.
-    const split = splitOf(after);
-    const where = 'in the milestone deck, the milestone row and the milestones rows, and the box';
-    const claims = (sameValues(split, [0, 3, 3]) || sameValues(split, [6, 0, 0])) && sameValues(splitOf(before), split) ? []
-      : [`${splitOf(before).join(', ')} before the move and ${split.join(', ')} after it ${where}`];
-    for (const seat of seats) {
-      const row = zoneIdFor('milestones', seat);
-      for (const c of zoneCards(before, row)) {
-        if (cardById(after, c.id)?.zoneId !== row) claims.push(`${c.id} (${nameOf(c)}) left ${row}`);
-      }
-      const launched = move.type === LAUNCH && by === seat;
-      const revenue = () => runtime.playerValue(after, seat, 'operational revenue');
-      // What a seat must meet after the move to claim the Milestones that wait on no moment (§20.G, ruling 25): 2 employees with 3 XP or
-      // more, on the bench or the Board; 3 different Tags among its products online; and products online on both sides of the stack.
-      const employees = () => ['bench', 'development team', 'ops team'].flatMap((name) => zoneCards(after, zoneIdFor(name, seat)));
-      const experienced = () => employees().filter((c) => ((runtime.workedValue(after, c.id, 'xp') as number | null) ?? 0) > 2).length;
-      const onSide = (side: string) => operationsOf(after, seat).some((c) => runtime.workedFlag(after, c.id, side));
-      const meets: Record<string, () => boolean> = {
-        'Talent Magnet': () => experienced() >= 2,
-        'Platform Power': () => runtime.playerValue(after, seat, 'active tags') >= 3,
-        'Full Stack Founder': () => onSide('hardware side') && onSide('software side'),
-      };
-      for (const c of zoneCards(after, row)) {
-        const was = cardById(before, c.id)?.zoneId;
-        if (was === row) continue;
-        const name = nameOf(c) as string;
-        const which = `${c.id} (${name}) entered ${row} from ${was}`;
-        if (was !== 'milestone-row') claims.push(which);
-        if (name === 'First Mover Advantage' && !(launched && card!.data?.tier === 'Tier 2')) claims.push(which);
-        if (name === 'Clean Launch' && !launched) claims.push(which);
-        if (name === 'Revenue Leader' && !(income === seat && revenue() >= 10)) {
-          claims.push(`${which}, with ${revenue()} operational revenue and ${income ?? 'no seat'} reaching Income`);
+    const rulesPart13 = () => {
+      const split = splitOf(after);
+      const where = 'in the milestone deck, the milestone row and the milestones rows, and the box';
+      const claims = (sameValues(split, [0, 3, 3]) || sameValues(split, [6, 0, 0])) && sameValues(splitOf(before), split) ? []
+        : [`${splitOf(before).join(', ')} before the move and ${split.join(', ')} after it ${where}`];
+      for (const seat of seats) {
+        const row = zoneIdFor('milestones', seat);
+        for (const c of zoneCards(before, row)) {
+          if (cardById(after, c.id)?.zoneId !== row) claims.push(`${c.id} (${nameOf(c)}) left ${row}`);
         }
-        if (name in meets && !meets[name]()) claims.push(`${which}, which ${seat} does not meet`);
-        // Not from an Offline set its seat is still choosing (R1). Another seat may be choosing by then: a claim made before the turn
-        // passed on to it stands.
-        if (['Platform Power', 'Full Stack Founder'].includes(name) && playerFact(after, seat, CHOOSING) === true) {
-          claims.push(`${which} while ${seat} is ${CHOOSING}`);
+        const launched = move.type === LAUNCH && by === seat;
+        const revenue = () => runtime.playerValue(after, seat, 'operational revenue');
+        // What a seat must meet after the move to claim the Milestones that wait on no moment (§20.G, ruling 25): 2 employees with 3 XP or
+        // more, on the bench or the Board; 3 different Tags among its products online; and products online on both sides of the stack.
+        const employees = () => ['bench', 'development team', 'ops team'].flatMap((name) => zoneCards(after, zoneIdFor(name, seat)));
+        const experienced = () => employees().filter((c) => ((runtime.workedValue(after, c.id, 'xp') as number | null) ?? 0) > 2).length;
+        const onSide = (side: string) => operationsOf(after, seat).some((c) => runtime.workedFlag(after, c.id, side));
+        const meets: Record<string, () => boolean> = {
+          'Talent Magnet': () => experienced() >= 2,
+          'Platform Power': () => runtime.playerValue(after, seat, 'active tags') >= 3,
+          'Full Stack Founder': () => onSide('hardware side') && onSide('software side'),
+        };
+        for (const c of zoneCards(after, row)) {
+          const was = cardById(before, c.id)?.zoneId;
+          if (was === row) continue;
+          const name = nameOf(c) as string;
+          const which = `${c.id} (${name}) entered ${row} from ${was}`;
+          if (was !== 'milestone-row') claims.push(which);
+          if (name === 'First Mover Advantage' && !(launched && card!.data?.tier === 'Tier 2')) claims.push(which);
+          if (name === 'Clean Launch' && !launched) claims.push(which);
+          if (name === 'Revenue Leader' && !(income === seat && revenue() >= 10)) {
+            claims.push(`${which}, with ${revenue()} operational revenue and ${income ?? 'no seat'} reaching Income`);
+          }
+          if (name in meets && !meets[name]()) claims.push(`${which}, which ${seat} does not meet`);
+          // Not from an Offline set its seat is still choosing (R1). Another seat may be choosing by then: a claim made before the turn
+          // passed on to it stands.
+          if (['Platform Power', 'Full Stack Founder'].includes(name) && playerFact(after, seat, CHOOSING) === true) {
+            claims.push(`${which} while ${seat} is ${CHOOSING}`);
+          }
         }
       }
-    }
+      return { claims };
+    };
+    const { claims } = rulesPart13();
     // And each one waiting on a moment is claimed at it while it is in the milestone row: Clean Launch by any Launch, First Mover
     // Advantage by a Launch of a Tier 2 card, both by the seat that launched, and Revenue Leader by the seat whose Income came to 10 or
     // more.
-    const due: [string, PlayerId][] = [];
-    if (move.type === LAUNCH) due.push(['Clean Launch', by]);
-    if (move.type === LAUNCH && card!.data?.tier === 'Tier 2') due.push(['First Mover Advantage', by]);
-    if (income !== null && runtime.playerValue(after, income, 'operational revenue') >= 10) due.push(['Revenue Leader', income]);
-    for (const [name, seat] of due) {
-      const revealed = zoneCards(before, 'milestone-row').some((c) => nameOf(c) === name);
-      if (revealed && !zoneCards(after, zoneIdFor('milestones', seat)).some((c) => nameOf(c) === name)) {
-        claims.push(`${name}, in the milestone row, not claimed by ${seat} at its moment`);
+    const rulesPart14 = () => {
+      const due: [string, PlayerId][] = [];
+      if (move.type === LAUNCH) due.push(['Clean Launch', by]);
+      if (move.type === LAUNCH && card!.data?.tier === 'Tier 2') due.push(['First Mover Advantage', by]);
+      if (income !== null && runtime.playerValue(after, income, 'operational revenue') >= 10) due.push(['Revenue Leader', income]);
+      for (const [name, seat] of due) {
+        const revealed = zoneCards(before, 'milestone-row').some((c) => nameOf(c) === name);
+        if (revealed && !zoneCards(after, zoneIdFor('milestones', seat)).some((c) => nameOf(c) === name)) {
+          claims.push(`${name}, in the milestone row, not claimed by ${seat} at its moment`);
+        }
       }
-    }
-    noneOf(claims, () => `the Milestones ${at}`);
+      noneOf(claims, () => `the Milestones ${at}`);
+    };
+    rulesPart14();
 
     // The Board: staff sit on their own seat's projects, the Growth Hacker on its own seat's products (§20.B), and the tracks hold at
     // most their need, the cost less the cut (§19.A).
-    const projectsOf = new Map(seats.map((seat) => [zoneIdFor('development team', seat), zoneIdFor('development', seat)]));
-    /** The zone of the cards each team's cards may sit on: a development team's on projects, an ops team's on products. */
-    const holdersOf = new Map([
-      ...projectsOf, ...seats.map((seat) => [zoneIdFor('ops team', seat), zoneIdFor('operations', seat)] as const),
-    ]);
-    const developments = new Set(seats.map((seat) => zoneIdFor('development', seat)));
-    const operations = new Set(seats.map((seat) => zoneIdFor('operations', seat)));
-    /**
-     * The rows a product with a cut or Bugs may be in: a project keeps its cut once Launched, and only a Pivot clears it (R3); its
-     * Bugs only a Pivot or QA clears, and a Launch takes none.
-     */
-    const built = new Set([...developments, ...operations]);
-    /** The seat whose development or operations each of those rows is. */
-    const ownerOf = new Map(seats.flatMap((seat) => [[zoneIdFor('development', seat), seat], [zoneIdFor('operations', seat), seat]] as const));
-    let generating: GameState | null = null;
-    /** The state the Engine generated in, made once a project is found to have gained cubes. */
-    const atGenerate = () => (generating ??= atTheEngine(before, move, after));
-    const board: string[] = [];
-    for (const c of after.cards) {
-      const which = () => `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
-      const holder = c.data?.[HOLDER_KEY];
-      const holderZone = typeof holder === 'string' ? cardById(after, holder)?.zoneId : undefined;
-      // A Consultant (R1): a card in a portfolio that sits on a card names its Founder F, sits on a card in F's development or operations,
-      // keeps F as the seat it was placed in, and is never on its own Investor's product (§17.B.4).
-      const investor = seats.find((seat) => c.zoneId === zoneIdFor('portfolio', seat));
-      if (investor !== undefined && holder !== undefined) {
-        const founder = founderOf(c);
-        const onFounders = founder !== undefined && [zoneIdFor('development', founder), zoneIdFor('operations', founder)].includes(holderZone!);
-        if (!onFounders || c.data?.[ON_SEAT_KEY] !== founder || founder === investor) {
-          board.push(`${which()} is on ${JSON.stringify(holder)}, in ${holderZone}, placed in ${JSON.stringify(c.data?.[ON_SEAT_KEY])}`);
+    const rulesPart15 = () => {
+      const projectsOf = new Map(seats.map((seat) => [zoneIdFor('development team', seat), zoneIdFor('development', seat)]));
+      /** The zone of the cards each team's cards may sit on: a development team's on projects, an ops team's on products. */
+      const holdersOf = new Map([
+        ...projectsOf, ...seats.map((seat) => [zoneIdFor('ops team', seat), zoneIdFor('operations', seat)] as const),
+      ]);
+      const developments = new Set(seats.map((seat) => zoneIdFor('development', seat)));
+      const operations = new Set(seats.map((seat) => zoneIdFor('operations', seat)));
+      /**
+       * The rows a product with a cut or Bugs may be in: a project keeps its cut once Launched, and only a Pivot clears it (R3); its
+       * Bugs only a Pivot or QA clears, and a Launch takes none.
+       */
+      const built = new Set([...developments, ...operations]);
+      /** The seat whose development or operations each of those rows is. */
+      const ownerOf = new Map(seats.flatMap((seat) => [[zoneIdFor('development', seat), seat], [zoneIdFor('operations', seat), seat]] as const));
+      /** The seat whose portfolio each portfolio is, and the Consultants' colour flags: read for every card (time). */
+      const investors = new Map(seats.map((seat) => [zoneIdFor('portfolio', seat), seat]));
+      const colourFlags = Object.values(CONSULTANT_COLOURS);
+      let generating: GameState | null = null;
+      /** The state the Engine generated in, made once a project is found to have gained cubes. */
+      const atGenerate = () => (generating ??= atTheEngine(before, move, after));
+      const board: string[] = [];
+      for (const c of after.cards) {
+        const which = () => `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
+        const holder = c.data?.[HOLDER_KEY];
+        const holderZone = typeof holder === 'string' ? cardById(after, holder)?.zoneId : undefined;
+        // A Consultant (R1): a card in a portfolio that sits on a card names its Founder F, sits on a card in F's development or operations,
+        // keeps F as the seat it was placed in, and is never on its own Investor's product (§17.B.4).
+        const investor = investors.get(c.zoneId);
+        if (investor !== undefined && holder !== undefined) {
+          const founder = founderOf(c);
+          const onFounders = founder !== undefined && [zoneIdFor('development', founder), zoneIdFor('operations', founder)].includes(holderZone!);
+          if (!onFounders || c.data?.[ON_SEAT_KEY] !== founder || founder === investor) {
+            board.push(`${which()} is on ${JSON.stringify(holder)}, in ${holderZone}, placed in ${JSON.stringify(c.data?.[ON_SEAT_KEY])}`);
+          }
+          const colours = colourFlags.filter((flag) => c.data?.[flag] === true);
+          if (colours.length !== 1) board.push(`${which()} sits on ${JSON.stringify(holder)} with the colours ${JSON.stringify(colours)}`);
+        } else if (founderOf(c) !== undefined && colourFlags.some((flag) => c.data?.[flag] === true)) {
+          // An unplaced token keeps no colour: the Pivot's return clears it (7-1's R8), and the page labels no stale one (7-3's G1).
+          board.push(`${which()} sits on no card with a colour`);
+        } else if (holder !== undefined && (!holdersOf.has(c.zoneId) || holderZone !== holdersOf.get(c.zoneId))) {
+          board.push(`${which()} is on ${JSON.stringify(holder)}, in ${holderZone}`);
         }
-        const colours = Object.values(CONSULTANT_COLOURS).filter((flag) => c.data?.[flag] === true);
-        if (colours.length !== 1) board.push(`${which()} sits on ${JSON.stringify(holder)} with the colours ${JSON.stringify(colours)}`);
-      } else if (founderOf(c) !== undefined && Object.values(CONSULTANT_COLOURS).some((flag) => c.data?.[flag] === true)) {
-        // An unplaced token keeps no colour: the Pivot's return clears it (7-1's R8), and the page labels no stale one (7-3's G1).
-        board.push(`${which()} sits on no card with a colour`);
-      } else if (holder !== undefined && (!holdersOf.has(c.zoneId) || holderZone !== holdersOf.get(c.zoneId))) {
-        board.push(`${which()} is on ${JSON.stringify(holder)}, in ${holderZone}`);
-      }
-      if (holder !== undefined && investor === undefined && !projectsOf.has(c.zoneId) && !runtime.workedFlag(after, c.id, 'attaching')) {
-        board.push(`${which()} is on ${JSON.stringify(holder)} but is not attaching`);
-      }
-      if (holder === undefined && projectsOf.has(c.zoneId)) board.push(`${which()} is on no card`);
-      const need = (color: string) => runtime.workedValue(after, c.id, `${color} need`) as number;
-      for (const [color, cubesKey, cutKey] of TRACK_KEYS) {
-        const cubes = cubesOn(c, cubesKey);
-        // Off the Board a card has no cut, so its need is its cost, at least 0: only one with cubes can hold more than it.
-        if ((cubes > 0 || built.has(c.zoneId)) && cubes > need(color)) {
-          board.push(`${which()} has ${cubes} ${color} cubes for a need of ${need(color)}`);
+        if (holder !== undefined && investor === undefined && !projectsOf.has(c.zoneId) && !runtime.workedFlag(after, c.id, 'attaching')) {
+          board.push(`${which()} is on ${JSON.stringify(holder)} but is not attaching`);
         }
-        const cut = c.data?.[cutKey];
-        if (cut !== undefined && !built.has(c.zoneId)) board.push(`${which()} keeps a cut of ${cut} ${color} cubes`);
+        if (holder === undefined && projectsOf.has(c.zoneId)) board.push(`${which()} is on no card`);
+        const need = (color: string) => runtime.workedValue(after, c.id, `${color} need`) as number;
+        for (const [color, cubesKey, cutKey] of TRACK_KEYS) {
+          const cubes = cubesOn(c, cubesKey);
+          // Off the Board a card has no cut, so its need is its cost, at least 0: only one with cubes can hold more than it.
+          if ((cubes > 0 || built.has(c.zoneId)) && cubes > need(color)) {
+            board.push(`${which()} has ${cubes} ${color} cubes for a need of ${need(color)}`);
+          }
+          const cut = c.data?.[cutKey];
+          if (cut !== undefined && !built.has(c.zoneId)) board.push(`${which()} keeps a cut of ${cut} ${color} cubes`);
+        }
+        // The Engine's counts wait on a card only while its owner's turn is in the Engine: the cubes it generated until it commits them,
+        // and the Bugs ops QA cleaned by a press until the step ends (§5 Phase D, R3).
+        const owner = ownerOf.get(c.zoneId);
+        const inTheEngine = owner !== undefined && current === owner && phase === 'engine';
+        for (const kind of ENGINE_COUNTS) {
+          if (cubesOn(c, kind) !== 0 && !inTheEngine) board.push(`${which()} keeps ${cubesOn(c, kind)} ${kind}`);
+        }
+        if (bugsOn(c) !== 0 && !built.has(c.zoneId)) board.push(`${which()} has ${bugsOn(c)} bugs`);
+        // A Bug costs its product $1 of revenue, and a product earns at least $0 (§5 Phase B).
+        if (operations.has(c.zoneId) && revOf(runtime, after, c) < 0) board.push(`${which()} earns ${revOf(runtime, after, c)}`);
+        if (!developments.has(c.zoneId)) continue;
+        for (const color of ['blue', 'red']) {
+          const [cut, cost] = [cubesOn(c, `cut ${color} cubes`), (c.data?.[`${color} cost`] as number | undefined) ?? 0];
+          if (cut > cost) board.push(`${which()} has a cut of ${cut} ${color} cubes for a cost of ${cost}`);
+        }
+        if (need('blue') + need('red') < 1) board.push(`${which()} needs ${need('blue')} blue and ${need('red')} red cubes`);
+        // A project gains cubes only from a team that has its leads, as the team was when the Engine generated them (§3).
+        const was = cardById(before, c.id);
+        const rose = ['blue', 'red'].some((color) => cubesOn(c, `${color} cubes`) > (was === undefined ? 0 : cubesOn(was, `${color} cubes`)));
+        if (rose && runtime.workedFlag(atGenerate(), c.id, 'stalled')) board.push(`${which()} gained cubes while it was stalled`);
       }
-      // The Engine's counts wait on a card only while its owner's turn is in the Engine: the cubes it generated until it commits them,
-      // and the Bugs ops QA cleaned by a press until the step ends (§5 Phase D, R3).
-      const owner = ownerOf.get(c.zoneId);
-      const inTheEngine = owner !== undefined && current === owner && phase === 'engine';
-      for (const kind of ENGINE_COUNTS) {
-        if (cubesOn(c, kind) !== 0 && !inTheEngine) board.push(`${which()} keeps ${cubesOn(c, kind)} ${kind}`);
-      }
-      if (bugsOn(c) !== 0 && !built.has(c.zoneId)) board.push(`${which()} has ${bugsOn(c)} bugs`);
-      // A Bug costs its product $1 of revenue, and a product earns at least $0 (§5 Phase B).
-      if (operations.has(c.zoneId) && revOf(runtime, after, c) < 0) board.push(`${which()} earns ${revOf(runtime, after, c)}`);
-      if (!developments.has(c.zoneId)) continue;
-      for (const color of ['blue', 'red']) {
-        const [cut, cost] = [cubesOn(c, `cut ${color} cubes`), (c.data?.[`${color} cost`] as number | undefined) ?? 0];
-        if (cut > cost) board.push(`${which()} has a cut of ${cut} ${color} cubes for a cost of ${cost}`);
-      }
-      if (need('blue') + need('red') < 1) board.push(`${which()} needs ${need('blue')} blue and ${need('red')} red cubes`);
-      // A project gains cubes only from a team that has its leads, as the team was when the Engine generated them (§3).
-      const was = cardById(before, c.id);
-      const rose = ['blue', 'red'].some((color) => cubesOn(c, `${color} cubes`) > (was === undefined ? 0 : cubesOn(was, `${color} cubes`)));
-      if (rose && runtime.workedFlag(atGenerate(), c.id, 'stalled')) board.push(`${which()} gained cubes while it was stalled`);
-    }
+      return { atGenerate, board };
+    };
+    const { atGenerate, board } = rulesPart15();
     // An Equity card's place on a card changes only by the placing Invest of it, or by the Pivot of the card it sat on, which leaves it in
     // the same portfolio on no card; a Launch leaves every Equity card on the launched product (Review Focus 1, R1, §17.B.4).
-    for (const c of after.cards) {
-      if (founderOf(c) === undefined) continue;
-      const was = cardById(before, c.id);
-      const on = c.data?.[HOLDER_KEY];
-      const wasOn = was?.data?.[HOLDER_KEY];
-      const pressed = [INVEST_PLACING, PLACE].includes(move.type) && move.cardId === c.id;
-      const placed = pressed && on === move.onto;
-      const returned = move.type === PIVOT && wasOn === move.cardId && on === undefined && c.zoneId === was?.zoneId;
-      // Its three colour flags change only in a placement of that token or the Pivot that returns it, and a placement leaves exactly the
-      // colour the press chose, answered in the button's order Blue, Red, QA (§17.B.4).
-      const flagsOf = (card: CardState | undefined) => Object.values(CONSULTANT_COLOURS).filter((flag) => card?.data?.[flag] === true);
-      if (pressed) {
-        const asked = pressChoices(runtime, before, move);
-        const named = answersOf(move)[0] ?? (typeof asked === 'string' ? undefined : asked[0]?.options[0]);
-        sameList(flagsOf(c), [CONSULTANT_COLOURS[named as string]], () => `the colour ${c.id} was placed in, answered ${named}, ${at}`);
-      } else if (!returned) {
-        sameList(flagsOf(c), flagsOf(was), () => `the colour flags of ${c.id} ${at}`);
+    const rulesPart16 = () => {
+      for (const c of after.cards) {
+        if (founderOf(c) === undefined) continue;
+        const was = cardById(before, c.id);
+        const on = c.data?.[HOLDER_KEY];
+        const wasOn = was?.data?.[HOLDER_KEY];
+        const pressed = [INVEST_PLACING, PLACE].includes(move.type) && move.cardId === c.id;
+        const placed = pressed && on === move.onto;
+        const returned = move.type === PIVOT && wasOn === move.cardId && on === undefined && c.zoneId === was?.zoneId;
+        // Its three colour flags change only in a placement of that token or the Pivot that returns it, and a placement leaves exactly the
+        // colour the press chose, answered in the button's order Blue, Red, QA (§17.B.4).
+        const flagsOf = (card: CardState | undefined) => Object.values(CONSULTANT_COLOURS).filter((flag) => card?.data?.[flag] === true);
+        if (pressed) {
+          const asked = pressChoices(runtime, before, move);
+          const named = answersOf(move)[0] ?? (typeof asked === 'string' ? undefined : asked[0]?.options[0]);
+          sameList(flagsOf(c), [CONSULTANT_COLOURS[named as string]], () => `the colour ${c.id} was placed in, answered ${named}, ${at}`);
+        } else if (!returned) {
+          sameList(flagsOf(c), flagsOf(was), () => `the colour flags of ${c.id} ${at}`);
+        }
+        if (on === wasOn) continue;
+        if (!placed && !returned) board.push(`${c.id} (${nameOf(c)}) in ${c.zoneId} went from ${JSON.stringify(wasOn)} to ${JSON.stringify(on)}`);
       }
-      if (on === wasOn) continue;
-      if (!placed && !returned) board.push(`${c.id} (${nameOf(c)}) in ${c.zoneId} went from ${JSON.stringify(wasOn)} to ${JSON.stringify(on)}`);
-    }
-    noneOf(board, () => `the Board ${at}`);
+      noneOf(board, () => `the Board ${at}`);
+    };
+    rulesPart16();
     // The Diva's Ego keeps her where she works: no reassign the rules take moves her (§6, §20.B.1).
-    if (REASSIGNS.includes(move.type) && Object.is(card!.data?.trait, 'Ego')) {
-      expect(card!.data?.trait, `the trait of the card ${by} reassigned ${at}`).not.toBe('Ego');
-    }
+    const rulesPart17 = () => {
+      if (REASSIGNS.includes(move.type) && Object.is(card!.data?.trait, 'Ego')) {
+        expect(card!.data?.trait, `the trait of the card ${by} reassigned ${at}`).not.toBe('Ego');
+      }
+    };
+    rulesPart17();
     // An Agile PM on a project spares the staff moved onto it the Onboarding token, as it was before the move: a PM arriving in the same
     // assign spares no one, and one reassigning itself is onboarding (§6, §11.E.3, ruling 8). The end of a seat's actions may start
     // the next turn, which clears every Onboarding token, so the check reads only a move that starts no turn (P8).
-    if (started === null && [REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS, ASSIGN_TO_PROJECT].includes(move.type)) {
-      const agile = cardsOn(before, move.onto as string).some((c) => runtime.workedFlag(before, c.id, 'agile'));
-      const onboarding = (state: GameState, id: string) => cardById(state, id)?.data?.onboarding === true;
-      const wrong = move.type === ASSIGN_TO_PROJECT
-        ? (move.cardIds as string[]).filter((id) => onboarding(before, id) && onboarding(after, id) === agile)
-        : [move.cardId as string].filter((id) => onboarding(after, id) === agile);
-      noneOf(wrong.map((id) => `${id} (${nameOf(cardById(after, id)!)}) is ${agile ? '' : 'not '}onboarding`),
-        () => `the staff moved onto ${move.onto}, which ${agile ? 'had' : 'had no'} Agile PM on it, ${at}`);
-    }
+    const rulesPart18 = () => {
+      if (started === null && [REASSIGN_FROM_PROJECT, REASSIGN_FROM_OPS, ASSIGN_TO_PROJECT].includes(move.type)) {
+        const agile = cardsOn(before, move.onto as string).some((c) => runtime.workedFlag(before, c.id, 'agile'));
+        const onboarding = (state: GameState, id: string) => cardById(state, id)?.data?.onboarding === true;
+        const wrong = move.type === ASSIGN_TO_PROJECT
+          ? (move.cardIds as string[]).filter((id) => onboarding(before, id) && onboarding(after, id) === agile)
+          : [move.cardId as string].filter((id) => onboarding(after, id) === agile);
+        noneOf(wrong.map((id) => `${id} (${nameOf(cardById(after, id)!)}) is ${agile ? '' : 'not '}onboarding`),
+          () => `the staff moved onto ${move.onto}, which ${agile ? 'had' : 'had no'} Agile PM on it, ${at}`);
+      }
+    };
+    rulesPart18();
     // A project Launches only with 0 Bugs (§6).
     if (move.type === LAUNCH) sameAs(bugsOn(card!), 0, () => `the Bugs on the project ${by} launched ${at}`);
     // Modes sit only on the Board, on a card that may take them, and change only by a declaration of that card or as it leaves the
     // Board (§11.C.2, ruling 24). A mode is on only when its flag is true: "It is not red mode." may leave the flag false.
-    const declared = Object.values(DECLARE).includes(move.type) ? move.cardId as string : undefined;
-    const wasById = new Map(before.cards.map((c) => [c.id, c]));
-    const modes: string[] = [];
-    for (const c of after.cards) {
-      const which = () => `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
-      const was = wasById.get(c.id);
-      const left = was !== undefined && teams.has(was.zoneId) && !teams.has(c.zoneId);
-      for (const mode of MODES) {
-        const now = c.data?.[mode] === true;
-        if (now && !teams.has(c.zoneId)) modes.push(`${which()} is ${mode} off the Board`);
-        // Red mode only on a declarable card; QA mode only on a QA Skill card, a qa card or one with a green Skill token.
-        if (now && !(mode === 'red mode' ? runtime.workedFlag(after, c.id, 'declarable')
-          : c.data?.trait === 'QA Skill' || c.data?.skill === 'qa' || tokenOn(c, 'green skill tokens') > 0)) modes.push(`${which()} is ${mode}, which it may not be`);
-        if (now !== (was?.data?.[mode] === true) && c.id !== declared && !left) modes.push(`${which()} became ${now ? '' : 'not '}${mode}`);
+    const rulesPart20 = () => {
+      const declared = Object.values(DECLARE).includes(move.type) ? move.cardId as string : undefined;
+      const wasById = new Map(before.cards.map((c) => [c.id, c]));
+      const modes: string[] = [];
+      for (const c of after.cards) {
+        const which = () => `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
+        const was = wasById.get(c.id);
+        const left = was !== undefined && teams.has(was.zoneId) && !teams.has(c.zoneId);
+        for (const mode of MODES) {
+          const now = c.data?.[mode] === true;
+          if (now && !teams.has(c.zoneId)) modes.push(`${which()} is ${mode} off the Board`);
+          // Red mode only on a declarable card; QA mode only on a QA Skill card, a qa card or one with a green Skill token.
+          if (now && !(mode === 'red mode' ? runtime.workedFlag(after, c.id, 'declarable')
+            : c.data?.trait === 'QA Skill' || c.data?.skill === 'qa' || tokenOn(c, 'green skill tokens') > 0)) modes.push(`${which()} is ${mode}, which it may not be`);
+          if (now !== (was?.data?.[mode] === true) && c.id !== declared && !left) modes.push(`${which()} became ${now ? '' : 'not '}${mode}`);
+        }
+        // Blue mode only on a Board card with a blue Skill token, and it changes as the other modes do.
+        const blue = c.data?.[BLUE_MODE] === true;
+        if (blue && !teams.has(c.zoneId)) modes.push(`${which()} is ${BLUE_MODE} off the Board`);
+        if (blue && tokenOn(c, 'blue skill tokens') === 0) modes.push(`${which()} is ${BLUE_MODE} with no blue Skill token`);
+        if (blue !== (was?.data?.[BLUE_MODE] === true) && c.id !== declared && !left) modes.push(`${which()} became ${blue ? '' : 'not '}${BLUE_MODE}`);
       }
-      // Blue mode only on a Board card with a blue Skill token, and it changes as the other modes do.
-      const blue = c.data?.[BLUE_MODE] === true;
-      if (blue && !teams.has(c.zoneId)) modes.push(`${which()} is ${BLUE_MODE} off the Board`);
-      if (blue && tokenOn(c, 'blue skill tokens') === 0) modes.push(`${which()} is ${BLUE_MODE} with no blue Skill token`);
-      if (blue !== (was?.data?.[BLUE_MODE] === true) && c.id !== declared && !left) modes.push(`${which()} became ${blue ? '' : 'not '}${BLUE_MODE}`);
-    }
-    noneOf(modes, () => `the modes ${at}`);
-    if (declared !== undefined) {
-      // A declaration leaves its card in the mode its answer names, or the press's only option, and in no other: Blue leaves a card with
-      // a blue Skill token in blue mode (§11.C.2).
-      const asked = pressChoices(runtime, before, move);
-      const named = answersOf(move)[0] ?? (typeof asked === 'string' ? undefined : asked[0]?.options[0]);
-      const held = [...MODES, BLUE_MODE].filter((mode) => cardById(after, declared)!.data?.[mode] === true);
-      const trained = named === 'Blue' && tokenOn(cardById(before, declared)!, 'blue skill tokens') > 0;
-      sameList(held, trained ? [BLUE_MODE] : MODES_DECLARED[named as string], () => `the modes ${declared} is in once declared ${named} ${at}`);
-    }
+      noneOf(modes, () => `the modes ${at}`);
+      if (declared !== undefined) {
+        // A declaration leaves its card in the mode its answer names, or the press's only option, and in no other: Blue leaves a card with
+        // a blue Skill token in blue mode (§11.C.2).
+        const asked = pressChoices(runtime, before, move);
+        const named = answersOf(move)[0] ?? (typeof asked === 'string' ? undefined : asked[0]?.options[0]);
+        const held = [...MODES, BLUE_MODE].filter((mode) => cardById(after, declared)!.data?.[mode] === true);
+        const trained = named === 'Blue' && tokenOn(cardById(before, declared)!, 'blue skill tokens') > 0;
+        sameList(held, trained ? [BLUE_MODE] : MODES_DECLARED[named as string], () => `the modes ${declared} is in once declared ${named} ${at}`);
+      }
+      return { wasById };
+    };
+    const { wasById } = rulesPart20();
     // XP and Skill tokens sit only on Juniors, never a Skill token in the colour a card works in already, and a Junior has at most 4 XP
     // (§3, §11.A, §11.C.3). XP tokens rise only as a Junior graduates: in a Launch, which graduates each Junior holding one Pending token,
     // by 1 at most on each card; or in a keep or a Mentor press, by 1 on the card pressed and on no other (§11.B.2, §20.B, ruling 25).
-    const graduates = Object.values(KEEP_PENDING).includes(move.type) || move.type === MENTOR ? move.cardId : undefined;
-    const tokens: string[] = [];
-    for (const c of after.cards) {
-      const which = () => `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
-      const junior = c.data?.role === 'Junior';
-      if (!junior) for (const name of JUNIOR_TOKENS) if (tokenOn(c, name) > 0) tokens.push(`${which()} has ${tokenOn(c, name)} ${name}`);
-      const native = NATIVE_SKILL[c.data?.skill as string];
-      if (native !== undefined && tokenOn(c, native) > 0) tokens.push(`${which()} has ${tokenOn(c, native)} ${native}, its own colour`);
-      const xp = junior ? runtime.workedValue(after, c.id, 'xp') as number : 0;
-      if (xp > 4) tokens.push(`${which()} has ${xp} xp`);
-      const was = wasById.get(c.id);
-      const gained = XP_TOKENS.reduce((total, name) => total + Math.max(0, tokenOn(c, name) - (was === undefined ? 0 : tokenOn(was, name))), 0);
-      if (c.id === graduates ? gained !== 1 : gained > (move.type === LAUNCH ? 1 : 0)) tokens.push(`${which()} gained ${gained} xp tokens`);
-    }
-    noneOf(tokens, () => `the XP and Skill tokens ${at}`);
+    const rulesPart21 = () => {
+      const graduates = Object.values(KEEP_PENDING).includes(move.type) || move.type === MENTOR ? move.cardId : undefined;
+      const tokens: string[] = [];
+      for (const c of after.cards) {
+        const which = () => `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
+        const junior = c.data?.role === 'Junior';
+        if (!junior) for (const name of JUNIOR_TOKENS) if (tokenOn(c, name) > 0) tokens.push(`${which()} has ${tokenOn(c, name)} ${name}`);
+        const native = NATIVE_SKILL[c.data?.skill as string];
+        if (native !== undefined && tokenOn(c, native) > 0) tokens.push(`${which()} has ${tokenOn(c, native)} ${native}, its own colour`);
+        const xp = junior ? runtime.workedValue(after, c.id, 'xp') as number : 0;
+        if (xp > 4) tokens.push(`${which()} has ${xp} xp`);
+        const was = wasById.get(c.id);
+        const gained = XP_TOKENS.reduce((total, name) => total + Math.max(0, tokenOn(c, name) - (was === undefined ? 0 : tokenOn(was, name))), 0);
+        if (c.id === graduates ? gained !== 1 : gained > (move.type === LAUNCH ? 1 : 0)) tokens.push(`${which()} gained ${gained} xp tokens`);
+      }
+      noneOf(tokens, () => `the XP and Skill tokens ${at}`);
+    };
+    rulesPart21();
     // Training plays only a Training card, which goes to the strategy discard, and changes nothing but its target's Skill tokens, Training
     // XP or Badge (§6, §20.A): never XP tokens, which rise only as a Junior graduates, nor any other card's tokens.
-    if (move.type === PLAY_TRAINING && isTraining(card!)) {
-      const hands = new Set(seats.map((seat) => zoneIdFor('strategy hand', seat)));
-      const played = after.cards.filter((c) => c.zoneId === 'strategy-discard' && hands.has(wasById.get(c.id)?.zoneId as string));
-      sameList(played.map((c) => c.id), [move.cardId], () => `the cards that left a Strategy Hand for the strategy discard ${at}`);
-      const notTraining = played.filter((c) => !isTraining(c)).map((c) => `${c.id} (${nameOf(c)})`);
-      noneOf(notTraining, () => `the Strategy cards played that are not Training ${at}`);
-      const trained = ['blue skill tokens', 'red skill tokens', 'green skill tokens', 'training xp', 'badged'];
-      /** A count read as a number, missing as 0, and the Badge as `=== true`, on a card that may not have been there before. */
-      const held = (c: CardState | undefined, name: string) =>
-        (name === 'badged' ? c?.data?.badged === true : c === undefined ? 0 : tokenOn(c, name));
-      const changed = after.cards.flatMap((c) => [...TOKENS, 'badged']
-        .filter((name) => held(c, name) !== held(wasById.get(c.id), name) && !(c.id === move.onto && trained.includes(name)))
-        .map((name) => `${c.id} (${nameOf(c)}) in ${c.zoneId}: ${name} ${held(wasById.get(c.id), name)} → ${held(c, name)}`));
-      noneOf(changed, () => `the tokens and Badges a Training press changed, other than its target's Skill tokens, Training XP or Badge ${at}`);
-      // And it gives its target exactly one thing: one Skill token, one point of Training XP, or the Badge it lacked (§20.A).
-      const [was, target] = [wasById.get(move.onto as string), cardById(after, move.onto as string)];
-      const effects = trained.filter((name) => held(target, name) !== held(was, name));
-      const once = (name: string) =>
-        (name === 'badged' ? held(target, name) === true : held(target, name) === (held(was, name) as number) + 1);
-      if (!(effects.length === 1 && once(effects[0]))) {
-        const what = effects.map((name) => `${name} ${held(was, name)} → ${held(target, name)}`).join(', ') || 'nothing';
-        sameAs(what, 'one Skill token, one Training XP or the Badge', () => `what ${move.cardId} gave its target ${move.onto} ${at}`);
+    const rulesPart22 = () => {
+      if (move.type === PLAY_TRAINING && isTraining(card!)) {
+        const hands = new Set(seats.map((seat) => zoneIdFor('strategy hand', seat)));
+        const played = after.cards.filter((c) => c.zoneId === 'strategy-discard' && hands.has(wasById.get(c.id)?.zoneId as string));
+        sameList(played.map((c) => c.id), [move.cardId], () => `the cards that left a Strategy Hand for the strategy discard ${at}`);
+        const notTraining = played.filter((c) => !isTraining(c)).map((c) => `${c.id} (${nameOf(c)})`);
+        noneOf(notTraining, () => `the Strategy cards played that are not Training ${at}`);
+        const trained = ['blue skill tokens', 'red skill tokens', 'green skill tokens', 'training xp', 'badged'];
+        /** A count read as a number, missing as 0, and the Badge as `=== true`, on a card that may not have been there before. */
+        const held = (c: CardState | undefined, name: string) =>
+          (name === 'badged' ? c?.data?.badged === true : c === undefined ? 0 : tokenOn(c, name));
+        const changed = after.cards.flatMap((c) => [...TOKENS, 'badged']
+          .filter((name) => held(c, name) !== held(wasById.get(c.id), name) && !(c.id === move.onto && trained.includes(name)))
+          .map((name) => `${c.id} (${nameOf(c)}) in ${c.zoneId}: ${name} ${held(wasById.get(c.id), name)} → ${held(c, name)}`));
+        noneOf(changed, () => `the tokens and Badges a Training press changed, other than its target's Skill tokens, Training XP or Badge ${at}`);
+        // And it gives its target exactly one thing: one Skill token, one point of Training XP, or the Badge it lacked (§20.A).
+        const [was, target] = [wasById.get(move.onto as string), cardById(after, move.onto as string)];
+        const effects = trained.filter((name) => held(target, name) !== held(was, name));
+        const once = (name: string) =>
+          (name === 'badged' ? held(target, name) === true : held(target, name) === (held(was, name) as number) + 1);
+        if (!(effects.length === 1 && once(effects[0]))) {
+          const what = effects.map((name) => `${name} ${held(was, name)} → ${held(target, name)}`).join(', ') || 'nothing';
+          sameAs(what, 'one Skill token, one Training XP or the Badge', () => `what ${move.cardId} gave its target ${move.onto} ${at}`);
+        }
       }
-    }
+    };
+    rulesPart22();
     // A Buff leaves its player's Strategy Hand for the attributes in play and gives its target 1 of its count (§20.A, the slice's R2),
     // and that is all it does on the table: no other card moves, and no card's tokens, flags or place on a card change but that one
     // count. What it costs is the money check's above, and the hand's other cards only slide along, which their zones and data don't show.
-    if (move.type === PLAY_TRAINING && BUFFS.includes(nameOf(card!) as string)) {
-      const count = ATTRIBUTES[nameOf(card!) as string];
-      /** The data keys whose values differ between `was` and `now`, a key missing on one side included. */
-      const differs = (was: CardState, now: CardState) =>
-        [...new Set([...Object.keys(was.data ?? {}), ...Object.keys(now.data ?? {})])]
-          .filter((key) => JSON.stringify(was.data?.[key]) !== JSON.stringify(now.data?.[key]));
-      const buffed: string[] = [];
-      for (const c of after.cards) {
-        const was = wasById.get(c.id);
-        const which = `${c.id} (${nameOf(c)})`;
-        if (was === undefined) {
-          buffed.push(`${which} appeared in ${c.zoneId}, expected no new card`);
-          continue;
+    const rulesPart23 = () => {
+      if (move.type === PLAY_TRAINING && BUFFS.includes(nameOf(card!) as string)) {
+        const count = ATTRIBUTES[nameOf(card!) as string];
+        /** The data keys whose values differ between `was` and `now`, a key missing on one side included. */
+        const differs = (was: CardState, now: CardState) =>
+          [...new Set([...Object.keys(was.data ?? {}), ...Object.keys(now.data ?? {})])]
+            .filter((key) => JSON.stringify(was.data?.[key]) !== JSON.stringify(now.data?.[key]));
+        const buffed: string[] = [];
+        for (const c of after.cards) {
+          const was = wasById.get(c.id);
+          const which = `${c.id} (${nameOf(c)})`;
+          if (was === undefined) {
+            buffed.push(`${which} appeared in ${c.zoneId}, expected no new card`);
+            continue;
+          }
+          const [from, to] = c.id === move.cardId ? [zoneIdFor('strategy hand', by), 'attributes-in-play'] : [was.zoneId, was.zoneId];
+          if (was.zoneId !== from || c.zoneId !== to) {
+            buffed.push(`${which} went from ${was.zoneId} to ${c.zoneId}, expected ${from} to ${to}`);
+          }
+          const changed = differs(was, c);
+          const expected = c.id === move.onto ? [count] : [];
+          if (!sameValues(changed, expected)) {
+            buffed.push(`${which} changed ${changed.join(', ') || 'nothing'}, expected ${expected.join(', ') || 'nothing'}`);
+          }
         }
-        const [from, to] = c.id === move.cardId ? [zoneIdFor('strategy hand', by), 'attributes-in-play'] : [was.zoneId, was.zoneId];
-        if (was.zoneId !== from || c.zoneId !== to) {
-          buffed.push(`${which} went from ${was.zoneId} to ${c.zoneId}, expected ${from} to ${to}`);
-        }
-        const changed = differs(was, c);
-        const expected = c.id === move.onto ? [count] : [];
-        if (!sameValues(changed, expected)) {
-          buffed.push(`${which} changed ${changed.join(', ') || 'nothing'}, expected ${expected.join(', ') || 'nothing'}`);
-        }
+        const [was, target] = [wasById.get(move.onto as string), cardById(after, move.onto as string)];
+        const [had, has] = [was === undefined ? 0 : tokenOn(was, count), target === undefined ? 0 : tokenOn(target, count)];
+        if (has !== had + 1) buffed.push(`${move.onto} went from ${had} to ${has} ${count}, expected ${had + 1}`);
+        noneOf(buffed, () => `what a Buff press changed, other than its card's place and its target's ${count} ${at}`);
       }
-      const [was, target] = [wasById.get(move.onto as string), cardById(after, move.onto as string)];
-      const [had, has] = [was === undefined ? 0 : tokenOn(was, count), target === undefined ? 0 : tokenOn(target, count)];
-      if (has !== had + 1) buffed.push(`${move.onto} went from ${had} to ${has} ${count}, expected ${had + 1}`);
-      noneOf(buffed, () => `what a Buff press changed, other than its card's place and its target's ${count} ${at}`);
-    }
+    };
+    rulesPart23();
     // The Attributes (§15.C, §20.A, the slice's R2): each Attribute card is in the attributes in play exactly when its count is 1 on some
     // card not in the box; no card holds more than 1 of any; only staff hold one; a count rises only on the target of a press of that
     // Attribute, by 1, and a Debuff's target is in another seat.
-    const attributes: string[] = [];
-    const inPlay = new Set(zoneCards(after, 'attributes-in-play').map((c) => nameOf(c) as string));
-    for (const [name, count] of Object.entries(ATTRIBUTES)) {
-      const held = after.cards.some((c) => c.zoneId !== 'box' && tokenOn(c, count) === 1);
-      if (inPlay.has(name) !== held) attributes.push(`${name} ${inPlay.has(name) ? 'is' : 'is not'} in the attributes in play, ${held ? '' : 'not '}held`);
-    }
-    const pressed = [PLAY_TRAINING, PLAY_DEBUFF].includes(move.type) ? ATTRIBUTES[nameOf(card!) as string] : undefined;
-    for (const c of after.cards) {
-      const was = wasById.get(c.id);
-      for (const count of ATTRIBUTE_COUNTS) {
-        const now = tokenOn(c, count);
-        if (now > 1) attributes.push(`${c.id} (${nameOf(c)}) holds ${now} ${count}`);
-        if (now > 0 && !['Senior Developer', 'Specialist', 'Junior'].includes(c.data?.role as string)) attributes.push(`${c.id} (${nameOf(c)}) holds ${count}`);
-        const rose = now - (was === undefined ? 0 : tokenOn(was, count));
-        if (rose > 0 && !(c.id === move.onto && count === pressed && rose === 1)) attributes.push(`${c.id} (${nameOf(c)}) gained ${rose} ${count}`);
+    const rulesPart24 = () => {
+      const attributes: string[] = [];
+      const inPlay = new Set(zoneCards(after, 'attributes-in-play').map((c) => nameOf(c) as string));
+      for (const [name, count] of Object.entries(ATTRIBUTES)) {
+        const held = after.cards.some((c) => c.zoneId !== 'box' && tokenOn(c, count) === 1);
+        if (inPlay.has(name) !== held) attributes.push(`${name} ${inPlay.has(name) ? 'is' : 'is not'} in the attributes in play, ${held ? '' : 'not '}held`);
       }
-      // Where a count falls (§15.A.3–4, §15.C, §18.B, R2): fired from the Board, it leaves and its card goes to the strategy discard;
-      // evicted to the box, its card goes there too; benched, laid off or rehired, the card keeps it.
-      if (was === undefined) continue;
-      const held = attributesOn(was);
-      // A card that held no count and holds none has none to keep, leave or lose: every branch below would find nothing.
-      if (held.length === 0 && attributesOn(c).length === 0) continue;
-      const [fromRow, toRow] = [rowOf(was.zoneId), rowOf(c.zoneId)];
-      const fired = ['development team', 'ops team'].includes(fromRow as string) && toRow === 'open job market'
-        && [DISMISS_FROM_PROJECT, DISMISS_FROM_OPS, ...Object.values(LET_GO), PIVOT].includes(move.type);
-      const evicted = fromRow === 'open job market' && toRow === 'box';
-      const kept = (fromRow === 'bench' && toRow === 'open job market' && [DISCARD_BENCH, LAY_OFF].includes(move.type))
-        || (['development team', 'ops team'].includes(fromRow as string) && toRow === 'bench' && [RECALL, PIVOT].includes(move.type))
-        || (fromRow === 'open job market' && toRow === 'bench' && move.type === HIRE_MARKET);
-      const parked = (name: string) => after.cards.find((a) => nameOf(a) === name)?.zoneId;
-      const named = (count: string) => Object.keys(ATTRIBUTES).find((name) => ATTRIBUTES[name] === count)!;
-      if (fired || evicted) {
-        if (attributesOn(c).length > 0) attributes.push(`${c.id} (${nameOf(c)}) still holds ${attributesOn(c).join(', ')} ${fired ? 'fired' : 'evicted'}`);
-        for (const count of held) {
-          const where = parked(named(count));
-          if (where !== (fired ? 'strategy-discard' : 'box')) attributes.push(`${named(count)} is in ${where} after ${c.id} was ${fired ? 'fired' : 'evicted'}`);
+      const pressed = [PLAY_TRAINING, PLAY_DEBUFF].includes(move.type) ? ATTRIBUTES[nameOf(card!) as string] : undefined;
+      for (const c of after.cards) {
+        const was = wasById.get(c.id);
+        for (const count of ATTRIBUTE_COUNTS) {
+          const now = tokenOn(c, count);
+          if (now > 1) attributes.push(`${c.id} (${nameOf(c)}) holds ${now} ${count}`);
+          if (now > 0 && !['Senior Developer', 'Specialist', 'Junior'].includes(c.data?.role as string)) attributes.push(`${c.id} (${nameOf(c)}) holds ${count}`);
+          const rose = now - (was === undefined ? 0 : tokenOn(was, count));
+          if (rose > 0 && !(c.id === move.onto && count === pressed && rose === 1)) attributes.push(`${c.id} (${nameOf(c)}) gained ${rose} ${count}`);
         }
-      } else if (kept) {
-        sameList(attributesOn(c), held, () => `the counts ${c.id} (${nameOf(c)}) kept ${at}`);
-      } else {
-        const fell = held.filter((count) => tokenOn(c, count) < tokenOn(was, count));
-        if (fell.length > 0) attributes.push(`${c.id} (${nameOf(c)}) lost ${fell.join(', ')} from ${fromRow} to ${toRow}`);
+        // Where a count falls (§15.A.3–4, §15.C, §18.B, R2): fired from the Board, it leaves and its card goes to the strategy discard;
+        // evicted to the box, its card goes there too; benched, laid off or rehired, the card keeps it.
+        if (was === undefined) continue;
+        const held = attributesOn(was);
+        // A card that held no count and holds none has none to keep, leave or lose: every branch below would find nothing.
+        if (held.length === 0 && attributesOn(c).length === 0) continue;
+        const [fromRow, toRow] = [rowOf(was.zoneId), rowOf(c.zoneId)];
+        const fired = ['development team', 'ops team'].includes(fromRow as string) && toRow === 'open job market'
+          && [DISMISS_FROM_PROJECT, DISMISS_FROM_OPS, ...Object.values(LET_GO), PIVOT].includes(move.type);
+        const evicted = fromRow === 'open job market' && toRow === 'box';
+        const kept = (fromRow === 'bench' && toRow === 'open job market' && [DISCARD_BENCH, LAY_OFF].includes(move.type))
+          || (['development team', 'ops team'].includes(fromRow as string) && toRow === 'bench' && [RECALL, PIVOT].includes(move.type))
+          || (fromRow === 'open job market' && toRow === 'bench' && move.type === HIRE_MARKET);
+        const parked = (name: string) => after.cards.find((a) => nameOf(a) === name)?.zoneId;
+        const named = (count: string) => Object.keys(ATTRIBUTES).find((name) => ATTRIBUTES[name] === count)!;
+        if (fired || evicted) {
+          if (attributesOn(c).length > 0) attributes.push(`${c.id} (${nameOf(c)}) still holds ${attributesOn(c).join(', ')} ${fired ? 'fired' : 'evicted'}`);
+          for (const count of held) {
+            const where = parked(named(count));
+            if (where !== (fired ? 'strategy-discard' : 'box')) attributes.push(`${named(count)} is in ${where} after ${c.id} was ${fired ? 'fired' : 'evicted'}`);
+          }
+        } else if (kept) {
+          sameList(attributesOn(c), held, () => `the counts ${c.id} (${nameOf(c)}) kept ${at}`);
+        } else {
+          const fell = held.filter((count) => tokenOn(c, count) < tokenOn(was, count));
+          if (fell.length > 0) attributes.push(`${c.id} (${nameOf(c)}) lost ${fell.join(', ')} from ${fromRow} to ${toRow}`);
+        }
       }
-    }
-    if (move.type === PLAY_DEBUFF && zoneInfo(game!, cardById(before, move.onto as string)!.zoneId)?.seat === by) {
-      attributes.push(`a Debuff on ${move.onto}, in ${by}'s own zone`);
-    }
-    noneOf(attributes, () => `the Attributes ${at}`);
+      if (move.type === PLAY_DEBUFF && zoneInfo(game!, cardById(before, move.onto as string)!.zoneId)?.seat === by) {
+        attributes.push(`a Debuff on ${move.onto}, in ${by}'s own zone`);
+      }
+      noneOf(attributes, () => `the Attributes ${at}`);
+      return { attributes };
+    };
+    const { attributes } = rulesPart24();
     // Hype (§20.A, §12.1): only on a product in operation; it rises only on a TechCrunch Feature's target, by 1, and never falls. A Design
     // Sprint deals to its player's backlog what the seed deck lost, 5 at most. No Utility card is ever parked with the Attributes.
-    const hype: string[] = [];
-    for (const c of after.cards) {
-      const now = tokenOn(c, 'hype');
-      const was = wasById.get(c.id);
-      const rose = now - (was === undefined ? 0 : tokenOn(was, 'hype'));
-      if (now > 0 && zoneInfo(game!, c.zoneId)?.spec.name !== 'operations') hype.push(`${c.id} (${nameOf(c)}) holds hype in ${c.zoneId}`);
-      if (rose < 0) hype.push(`${c.id} (${nameOf(c)}) lost ${-rose} hype`);
-      if (rose > 0 && !(move.type === PLAY_TO_PRODUCT && c.id === move.onto && rose === 1)) hype.push(`${c.id} (${nameOf(c)}) gained ${rose} hype`);
-    }
-    if (move.type === PLAY_ALONE) {
-      const backlog = zoneIdFor('backlog', by);
-      const lost = zoneCards(before, 'seed-deck').filter((c) => cardById(after, c.id)?.zoneId !== 'seed-deck').map((c) => c.id);
-      const dealt = zoneCards(after, backlog).filter((c) => cardById(before, c.id)?.zoneId !== backlog).map((c) => c.id);
-      sameList(dealt.sort(), lost.sort(), () => `the seed cards a Design Sprint dealt ${at}`);
-      if (dealt.length > 5) hype.push(`a Design Sprint dealt ${dealt.length}`);
-    }
-    for (const c of zoneCards(after, 'attributes-in-play')) {
-      if (['TechCrunch Feature', 'Design Sprint', 'Cease & Desist'].includes(nameOf(c) as string)) hype.push(`${nameOf(c)} in the attributes in play`);
-    }
-    noneOf(hype, () => `Hype and the Utility cards ${at}`);
+    const rulesPart25 = () => {
+      const hype: string[] = [];
+      for (const c of after.cards) {
+        const now = tokenOn(c, 'hype');
+        const was = wasById.get(c.id);
+        const rose = now - (was === undefined ? 0 : tokenOn(was, 'hype'));
+        if (now > 0 && zoneInfo(game!, c.zoneId)?.spec.name !== 'operations') hype.push(`${c.id} (${nameOf(c)}) holds hype in ${c.zoneId}`);
+        if (rose < 0) hype.push(`${c.id} (${nameOf(c)}) lost ${-rose} hype`);
+        if (rose > 0 && !(move.type === PLAY_TO_PRODUCT && c.id === move.onto && rose === 1)) hype.push(`${c.id} (${nameOf(c)}) gained ${rose} hype`);
+      }
+      if (move.type === PLAY_ALONE) {
+        const backlog = zoneIdFor('backlog', by);
+        const lost = zoneCards(before, 'seed-deck').filter((c) => cardById(after, c.id)?.zoneId !== 'seed-deck').map((c) => c.id);
+        const dealt = zoneCards(after, backlog).filter((c) => cardById(before, c.id)?.zoneId !== backlog).map((c) => c.id);
+        sameList(dealt.sort(), lost.sort(), () => `the seed cards a Design Sprint dealt ${at}`);
+        if (dealt.length > 5) hype.push(`a Design Sprint dealt ${dealt.length}`);
+      }
+      for (const c of zoneCards(after, 'attributes-in-play')) {
+        if (['TechCrunch Feature', 'Design Sprint', 'Cease & Desist'].includes(nameOf(c) as string)) hype.push(`${nameOf(c)} in the attributes in play`);
+      }
+      noneOf(hype, () => `Hype and the Utility cards ${at}`);
+    };
+    rulesPart25();
     // Workaholic's +$2 salary (§20.A): an overworked card on the Board is paid at least $2.
-    const staffZones = new Set(seats.flatMap((seat) => [zoneIdFor('development team', seat), zoneIdFor('ops team', seat)]));
-    noneOf(after.cards.filter((c) => staffZones.has(c.zoneId) && runtime.workedFlag(after, c.id, 'overworked')
-      && ((runtime.workedValue(after, c.id, 'salary') as number | undefined) ?? 0) < 2).map((c) => `${c.id} (${nameOf(c)})`),
-      () => `overworked staff paid less than $2 ${at}`);
+    const rulesPart26 = () => {
+      const staffZones = new Set(seats.flatMap((seat) => [zoneIdFor('development team', seat), zoneIdFor('ops team', seat)]));
+      noneOf(after.cards.filter((c) => staffZones.has(c.zoneId) && runtime.workedFlag(after, c.id, 'overworked')
+        && ((runtime.workedValue(after, c.id, 'salary') as number | undefined) ?? 0) < 2).map((c) => `${c.id} (${nameOf(c)})`),
+        () => `overworked staff paid less than $2 ${at}`);
+      return { staffZones };
+    };
+    const { staffZones } = rulesPart26();
     // Burnout (R3): its staff member makes nothing in any colour and gives no Synergy. Toxic Personality (R1): a team's made values and an
     // ops team's supplies are what it makes less exactly 1 cube, off the first colour made, while its Toxic card works (see `toxicCube`).
-    const toxicity: string[] = [];
-    for (const c of after.cards) {
-      if (staffZones.has(c.zoneId) && tokenOn(c, 'burnout') > 0) {
-        for (const name of ['blue output', 'red output', 'qa output']) {
-          const value = runtime.workedValue(after, c.id, name) as number | null;
-          if (value !== null && value !== 0) toxicity.push(`${c.id} (${nameOf(c)}) burned out with ${name} ${value}`);
+    const rulesPart27 = () => {
+      const toxicity: string[] = [];
+      for (const c of after.cards) {
+        if (staffZones.has(c.zoneId) && tokenOn(c, 'burnout') > 0) {
+          for (const name of ['blue output', 'red output', 'qa output']) {
+            const value = runtime.workedValue(after, c.id, name) as number | null;
+            if (value !== null && value !== 0) toxicity.push(`${c.id} (${nameOf(c)}) burned out with ${name} ${value}`);
+          }
+          if (runtime.workedFlag(after, c.id, 'giving synergy')) toxicity.push(`${c.id} (${nameOf(c)}) burned out giving synergy`);
         }
-        if (runtime.workedFlag(after, c.id, 'giving synergy')) toxicity.push(`${c.id} (${nameOf(c)}) burned out giving synergy`);
+        // Only a team with a Toxic card on it can make less than its team value, so only such a project is worked out (time).
+        const toxic = rowOf(c.zoneId) === 'development'
+          ? cardsOn(after, c.id).find((on) => tokenOn(on, 'toxic personality') > 0) : undefined;
+        if (toxic !== undefined) {
+          const read = (names: readonly string[]) => names.map((name) => runtime.workedValue(after, c.id, name) as number);
+          // A QA Consultant on it adds its Bug removed to what it makes, outside the team, and Toxic Personality never takes it (§17.B.4).
+          const consulted = consultantsOn(runtime, after, c.id, 'QA');
+          const made = read(MADE).map((value, i) => (MADE[i] === 'qa made' ? value - consulted : value));
+          toxicity.push(...toxicCube(`${c.id} (${nameOf(c)})`, read(TEAM), made, toxic.data?.onboarding !== true));
+        }
       }
-      // Only a team with a Toxic card on it can make less than its team value, so only such a project is worked out (time).
-      const toxic = rowOf(c.zoneId) === 'development'
-        ? cardsOn(after, c.id).find((on) => tokenOn(on, 'toxic personality') > 0) : undefined;
-      if (toxic !== undefined) {
-        const read = (names: readonly string[]) => names.map((name) => runtime.workedValue(after, c.id, name) as number);
-        // A QA Consultant on it adds its Bug removed to what it makes, outside the team, and Toxic Personality never takes it (§17.B.4).
-        const consulted = consultantsOn(runtime, after, c.id, 'QA');
-        const made = read(MADE).map((value, i) => (MADE[i] === 'qa made' ? value - consulted : value));
-        toxicity.push(...toxicCube(`${c.id} (${nameOf(c)})`, read(TEAM), made, toxic.data?.onboarding !== true));
-      }
-    }
+      return { toxicity };
+    };
+    const { toxicity } = rulesPart27();
     // An ops team's supplies likewise, from the Blue and Red bandwidth and the QA output its cards give, which is all a supply adds up
     // before the cube (§5): only a seat with a Toxic card in its ops team is worked out (time).
-    for (const seat of seats) {
-      const team = zoneCards(after, zoneIdFor('ops team', seat));
-      const toxic = team.find((on) => tokenOn(on, 'toxic personality') > 0);
-      if (toxic === undefined) continue;
-      const given = ['blue bandwidth', 'red bandwidth', 'qa output']
-        .map((name) => team.reduce((total, on) => total + ((runtime.workedValue(after, on.id, name) as number | null) ?? 0), 0));
-      // The Consultants on its products add to its supplies too, outside the team, and Toxic Personality never takes their cube (§17.B.4).
-      const products = zoneCards(after, zoneIdFor('operations', seat));
-      const consulted = (['Blue', 'Red', 'QA'] as const)
-        .map((colour) => products.reduce((total, on) => total + consultantsOn(runtime, after, on.id, colour), 0));
-      const supplies = ['blue supply', 'red supply', 'qa supply'].map((name, i) => runtime.playerValue(after, seat, name) - consulted[i]);
-      toxicity.push(...toxicCube(`${seat}'s ops team`, given, supplies, toxic.data?.onboarding !== true));
-    }
-    noneOf(toxicity, () => `Toxic Personality and Burnout ${at}`);
+    const rulesPart28 = () => {
+      for (const seat of seats) {
+        const team = zoneCards(after, zoneIdFor('ops team', seat));
+        const toxic = team.find((on) => tokenOn(on, 'toxic personality') > 0);
+        if (toxic === undefined) continue;
+        const given = ['blue bandwidth', 'red bandwidth', 'qa output']
+          .map((name) => team.reduce((total, on) => total + ((runtime.workedValue(after, on.id, name) as number | null) ?? 0), 0));
+        // The Consultants on its products add to its supplies too, outside the team, and Toxic Personality never takes their cube (§17.B.4).
+        const products = zoneCards(after, zoneIdFor('operations', seat));
+        const consulted = (['Blue', 'Red', 'QA'] as const)
+          .map((colour) => products.reduce((total, on) => total + consultantsOn(runtime, after, on.id, colour), 0));
+        const supplies = ['blue supply', 'red supply', 'qa supply'].map((name, i) => runtime.playerValue(after, seat, name) - consulted[i]);
+        toxicity.push(...toxicCube(`${seat}'s ops team`, given, supplies, toxic.data?.onboarding !== true));
+      }
+      noneOf(toxicity, () => `Toxic Personality and Burnout ${at}`);
+    };
+    rulesPart28();
     // The Events' output lines (Review Focus 4): no Board card's output or Blue bandwidth is below 0, and a card's Blue or Red output
     // changes only in a move that changed the Event in play or the card itself (its counts, mode flags, onboarding or zone): a modifier
     // never acts outside its round.
-    const outputs: string[] = [];
-    const eventMoved = eventOf(before) !== eventOf(after);
-    for (const c of after.cards) {
-      if (!staffZones.has(c.zoneId)) continue;
-      // Each value of `after` is read once: the Blue and Red outputs, first, are also what the second half compares.
-      const values = OUTPUT_NAMES.map((name) => runtime.workedValue(after, c.id, name) as number | null);
-      for (const [i, name] of OUTPUT_NAMES.entries()) {
-        const value = values[i];
-        if (value !== null && value < 0) outputs.push(`${c.id} (${nameOf(c)}) has ${name} ${value}`);
-      }
-      if (eventMoved || wasById.get(c.id) !== c) continue;
-      for (const [i, name] of OUTPUT_NAMES.slice(0, 2).entries()) {
-        const [was, now] = [runtime.workedValue(before, c.id, name), values[i]];
-        if (was !== now) outputs.push(`${c.id} (${nameOf(c)}): ${name} ${was} → ${now}`);
-      }
-    }
-    noneOf(outputs, () => `the outputs ${at}`);
-    // The Hacker with Clean Coder adds no Bug to a project he joins (§20.B "unless he has Clean Code himself").
-    if ([...REASSIGNS, ...HIRES, ASSIGN_TO_PROJECT].includes(move.type)) {
+    const rulesPart29 = () => {
+      const outputs: string[] = [];
+      const eventMoved = eventOf(before) !== eventOf(after);
       for (const c of after.cards) {
-        const was = wasById.get(c.id);
-        const holder = c.data?.[HOLDER_KEY] as string | undefined;
-        if (c.data?.trait !== 'Spaghetti Code' || tokenOn(c, 'clean coder') !== 1 || holder === undefined || was?.data?.[HOLDER_KEY] === holder) continue;
-        const project = cardById(after, holder)!;
-        if (bugsOn(project) > bugsOn(cardById(before, holder) ?? project)) attributes.push(`${holder} gained a Bug from ${c.id}`);
+        if (!staffZones.has(c.zoneId)) continue;
+        // Each value of `after` is read once: the Blue and Red outputs, first, are also what the second half compares.
+        const values = OUTPUT_NAMES.map((name) => runtime.workedValue(after, c.id, name) as number | null);
+        for (const [i, name] of OUTPUT_NAMES.entries()) {
+          const value = values[i];
+          if (value !== null && value < 0) outputs.push(`${c.id} (${nameOf(c)}) has ${name} ${value}`);
+        }
+        if (eventMoved || wasById.get(c.id) !== c) continue;
+        for (const [i, name] of OUTPUT_NAMES.slice(0, 2).entries()) {
+          const [was, now] = [runtime.workedValue(before, c.id, name), values[i]];
+          if (was !== now) outputs.push(`${c.id} (${nameOf(c)}): ${name} ${was} → ${now}`);
+        }
       }
-      noneOf(attributes, () => `the Hacker's Bugs ${at}`);
-    }
+      noneOf(outputs, () => `the outputs ${at}`);
+    };
+    rulesPart29();
+    // The Hacker with Clean Coder adds no Bug to a project he joins (§20.B "unless he has Clean Code himself").
+    const rulesPart30 = () => {
+      if ([...REASSIGNS, ...HIRES, ASSIGN_TO_PROJECT].includes(move.type)) {
+        for (const c of after.cards) {
+          const was = wasById.get(c.id);
+          const holder = c.data?.[HOLDER_KEY] as string | undefined;
+          if (c.data?.trait !== 'Spaghetti Code' || tokenOn(c, 'clean coder') !== 1 || holder === undefined || was?.data?.[HOLDER_KEY] === holder) continue;
+          const project = cardById(after, holder)!;
+          if (bugsOn(project) > bugsOn(cardById(before, holder) ?? project)) attributes.push(`${holder} gained a Bug from ${c.id}`);
+        }
+        noneOf(attributes, () => `the Hacker's Bugs ${at}`);
+      }
+    };
+    rulesPart30();
     // A card holds one Pending token of each colour at most, and gains one only as its owner's Engine runs, while it sits on a project
     // in their development that was not Stalled as the Engine generated, since a Stalled team makes nothing (see `atTheEngine`) (§3, §5
     // Phase D, §11.B, ruling 1). Only a Junior learns, so only a Junior holds one (§11.B). It holds one only in a development team, or in
     // the ops team of the seat whose turn is in Launch's graduation step: the step ends by returning every token its ops team still holds
     // to the supply (§11.B.2).
-    const engineRan = ranTheEngine(before, after, by);
-    const graduating = phase === GRADUATION ? current as PlayerId : null;
-    const developmentTeams = new Set(seats.map((seat) => zoneIdFor('development team', seat)));
-    const mayHoldPending = (zoneId: string) => developmentTeams.has(zoneId)
-      || (graduating !== null && zoneId === zoneIdFor('ops team', graduating));
-    const pending: string[] = [];
-    const [byTeam, byDevelopment] = [zoneIdFor('development team', by), zoneIdFor('development', by)];
-    for (const c of after.cards) {
-      const which = () => `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
-      const was = wasById.get(c.id);
-      const holder = c.data?.[HOLDER_KEY];
-      const onProject = c.zoneId === byTeam && typeof holder === 'string' && cardById(after, holder)?.zoneId === byDevelopment;
-      for (const name of PENDING) {
-        const held = tokenOn(c, name);
-        if (held > 1) pending.push(`${which()} has ${held} ${name}`);
-        if (held > 0 && c.data?.role !== 'Junior') pending.push(`${which()} holds ${held} ${name}, though it is no Junior`);
-        if (held > 0 && !mayHoldPending(c.zoneId)) pending.push(`${which()} holds ${held} ${name} out of a development team`);
-        const rose = held > (was === undefined ? 0 : tokenOn(was, name));
-        if (rose && !(engineRan && onProject)) {
-          pending.push(`${which()} gained ${name} ${engineRan ? `off a project of ${by}` : `with no Engine run for ${by}`}`);
-        }
-        if (rose && onProject && runtime.workedFlag(atGenerate(), holder as string, 'stalled')) {
-          pending.push(`${which()} gained ${name} on ${holder}, which was stalled`);
-        }
-      }
-      // A Junior is graduated only while its owner's graduation step runs, in their ops team: the step ends by clearing it (§11.B.2).
-      if (c.data?.graduated === true && !(graduating !== null && c.zoneId === zoneIdFor('ops team', graduating))) {
-        pending.push(`${which()} is graduated, with ${graduating === null ? 'no seat' : graduating} in graduation`);
-      }
-    }
-    // The Veteran's Mentor waits on a seat only through its graduation step, which ends by setting it back to 0 (§20.B).
-    for (const seat of seats) {
-      const mentoring = (playerFact(after, seat, 'mentoring') as number | null) ?? 0;
-      if (mentoring !== 0 && seat !== graduating) pending.push(`${seat} has ${mentoring} mentoring`);
-    }
-    // A Launch that leaves no choice to make graduates at once, so its team reaches the ops team holding no Pending token (§11.B.2).
-    if (move.type === LAUNCH && phase !== GRADUATION) {
+    const rulesPart31 = () => {
+      const engineRan = ranTheEngine(before, after, by);
+      const graduating = phase === GRADUATION ? current as PlayerId : null;
+      const developmentTeams = new Set(seats.map((seat) => zoneIdFor('development team', seat)));
+      const mayHoldPending = (zoneId: string) => developmentTeams.has(zoneId)
+        || (graduating !== null && zoneId === zoneIdFor('ops team', graduating));
+      const pending: string[] = [];
+      const [byTeam, byDevelopment] = [zoneIdFor('development team', by), zoneIdFor('development', by)];
       for (const c of after.cards) {
-        const held = PENDING.filter((name) => tokenOn(c, name) > 0);
-        if (zoneInfo(game!, c.zoneId)?.seat === by && !developmentTeams.has(c.zoneId) && held.length > 0) {
-          pending.push(`${c.id} (${nameOf(c)}) in ${c.zoneId} holds ${held.join(', ')} after a Launch with no graduation step`);
+        const which = () => `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
+        const was = wasById.get(c.id);
+        const holder = c.data?.[HOLDER_KEY];
+        const onProject = c.zoneId === byTeam && typeof holder === 'string' && cardById(after, holder)?.zoneId === byDevelopment;
+        for (const name of PENDING) {
+          const held = tokenOn(c, name);
+          if (held > 1) pending.push(`${which()} has ${held} ${name}`);
+          if (held > 0 && c.data?.role !== 'Junior') pending.push(`${which()} holds ${held} ${name}, though it is no Junior`);
+          if (held > 0 && !mayHoldPending(c.zoneId)) pending.push(`${which()} holds ${held} ${name} out of a development team`);
+          const rose = held > (was === undefined ? 0 : tokenOn(was, name));
+          if (rose && !(engineRan && onProject)) {
+            pending.push(`${which()} gained ${name} ${engineRan ? `off a project of ${by}` : `with no Engine run for ${by}`}`);
+          }
+          if (rose && onProject && runtime.workedFlag(atGenerate(), holder as string, 'stalled')) {
+            pending.push(`${which()} gained ${name} on ${holder}, which was stalled`);
+          }
+        }
+        // A Junior is graduated only while its owner's graduation step runs, in their ops team: the step ends by clearing it (§11.B.2).
+        if (c.data?.graduated === true && !(graduating !== null && c.zoneId === zoneIdFor('ops team', graduating))) {
+          pending.push(`${which()} is graduated, with ${graduating === null ? 'no seat' : graduating} in graduation`);
         }
       }
-    }
-    noneOf(pending, () => `the Pending tokens ${at}`);
+      return { graduating, developmentTeams, pending };
+    };
+    const { graduating, developmentTeams, pending } = rulesPart31();
+    // The Veteran's Mentor waits on a seat only through its graduation step, which ends by setting it back to 0 (§20.B).
+    const rulesPart32 = () => {
+      for (const seat of seats) {
+        const mentoring = (playerFact(after, seat, 'mentoring') as number | null) ?? 0;
+        if (mentoring !== 0 && seat !== graduating) pending.push(`${seat} has ${mentoring} mentoring`);
+      }
+    };
+    rulesPart32();
+    // A Launch that leaves no choice to make graduates at once, so its team reaches the ops team holding no Pending token (§11.B.2).
+    const rulesPart33 = () => {
+      if (move.type === LAUNCH && phase !== GRADUATION) {
+        for (const c of after.cards) {
+          const held = PENDING.filter((name) => tokenOn(c, name) > 0);
+          if (zoneInfo(game!, c.zoneId)?.seat === by && !developmentTeams.has(c.zoneId) && held.length > 0) {
+            pending.push(`${c.id} (${nameOf(c)}) in ${c.zoneId} holds ${held.join(', ')} after a Launch with no graduation step`);
+          }
+        }
+      }
+      noneOf(pending, () => `the Pending tokens ${at}`);
+    };
+    rulesPart33();
     // Training XP sits only on a QA Engineer or a Sales Rep, 2 at most, and no Senior Developer earns a Badge (§11.D, §11.F). A card is
     // fired only while the rules strip it, so none is fired once a move is over. Staff fired from the Board, dismissed or let go unpaid,
     // reach the open job market with no token and no Badge; staff discarded from a bench, at the bench cleanup or for a Layoff, keep
     // every one (§13.B, §15.A.3, §18.B).
-    const firing = FIRES.includes(move.type);
-    const staff: string[] = [];
-    for (const c of after.cards) {
-      const which = () => `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
-      const training = tokenOn(c, 'training xp');
-      if (training > 0 && !TRAINED.includes(c.data?.trait as string)) staff.push(`${which()} has ${training} training xp`);
-      if (training > 2) staff.push(`${which()} has ${training} training xp, more than 2`);
-      if (c.data?.role === 'Senior Developer' && c.data?.badged === true) staff.push(`${which()} is a badged Senior Developer`);
-      if (c.data?.fired === true) staff.push(`${which()} is fired`);
-      const was = wasById.get(c.id);
-      if (c.zoneId !== 'open-job-market' || was === undefined || was.zoneId === c.zoneId) continue;
-      if (firing && teams.has(was.zoneId) && holding(c) !== '') staff.push(`${which()}, fired from ${was.zoneId}, holds ${holding(c)}`);
-      if (benches.has(was.zoneId) && holding(c) !== holding(was)) {
-        staff.push(`${which()}, discarded from ${was.zoneId}, holds ${holding(c) || 'nothing'} where it held ${holding(was) || 'nothing'}`);
+    const rulesPart34 = () => {
+      const firing = FIRES.includes(move.type);
+      const staff: string[] = [];
+      for (const c of after.cards) {
+        const which = () => `${c.id} (${nameOf(c)}) in ${c.zoneId}`;
+        const training = tokenOn(c, 'training xp');
+        if (training > 0 && !TRAINED.includes(c.data?.trait as string)) staff.push(`${which()} has ${training} training xp`);
+        if (training > 2) staff.push(`${which()} has ${training} training xp, more than 2`);
+        if (c.data?.role === 'Senior Developer' && c.data?.badged === true) staff.push(`${which()} is a badged Senior Developer`);
+        if (c.data?.fired === true) staff.push(`${which()} is fired`);
+        const was = wasById.get(c.id);
+        if (c.zoneId !== 'open-job-market' || was === undefined || was.zoneId === c.zoneId) continue;
+        if (firing && teams.has(was.zoneId) && holding(c) !== '') staff.push(`${which()}, fired from ${was.zoneId}, holds ${holding(c)}`);
+        if (benches.has(was.zoneId) && holding(c) !== holding(was)) {
+          staff.push(`${which()}, discarded from ${was.zoneId}, holds ${holding(c) || 'nothing'} where it held ${holding(was) || 'nothing'}`);
+        }
       }
-    }
-    noneOf(staff, () => `the Training XP, Badges and firing of staff ${at}`);
+      noneOf(staff, () => `the Training XP, Badges and firing of staff ${at}`);
+    };
+    rulesPart34();
 
     // Online fits after every Income: the ops team's supply runs the products left online, in each color (§5 Phase B, ruling 19).
     if (income !== null) noneOf(shortOf(runtime, after, income), () => `the colors ${income} is short of at Income ${at}`);
@@ -3191,38 +3360,50 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     // Income (ruling 25). At the end, each step of the final check may bring its seat's products back online as it starts, and may
     // pass on in the move that starts it, up to the move that sets the result; but a product goes offline there only by its owner's
     // switch off (§12). A product is offline only when its flag is true: "It is not offline." may leave it false.
-    const offline = (c: CardState | undefined) => c?.data?.offline === true;
-    const finalCheck = [before.turn!, after.turn!].some(({ phase }) => phase === FINAL_CHECK)
-      || (before.result === undefined && after.result !== undefined);
-    const switchedOff = before.turn!.phase === FINAL_CHECK && move.type === SWITCH_OFF ? move.cardId : undefined;
-    const checking = (seat: PlayerId) => income === seat
-      || [before.turn!, after.turn!].some(({ current, phase }) => current === seat && phase === 'ops check');
-    const switched = after.cards.filter((c) => offline(c) !== offline(wasById.get(c.id))).flatMap((c) => {
-      const owner = seats.find((seat) => c.zoneId === zoneIdFor('operations', seat));
-      if (owner !== undefined && checking(owner)) return [];
-      if (owner !== undefined && finalCheck && (!offline(c) || (owner === by && c.id === switchedOff))) return [];
-      return [`${c.id} (${nameOf(c)}) in ${c.zoneId} went ${offline(c) ? 'offline' : 'online'}`];
-    });
-    noneOf(switched, () => `the products switched ${at}`);
+    const rulesPart36 = () => {
+      const offline = (c: CardState | undefined) => c?.data?.offline === true;
+      const finalCheck = [before.turn!, after.turn!].some(({ phase }) => phase === FINAL_CHECK)
+        || (before.result === undefined && after.result !== undefined);
+      const switchedOff = before.turn!.phase === FINAL_CHECK && move.type === SWITCH_OFF ? move.cardId : undefined;
+      const checking = (seat: PlayerId) => income === seat
+        || [before.turn!, after.turn!].some(({ current, phase }) => current === seat && phase === 'ops check');
+      const switched = after.cards.filter((c) => offline(c) !== offline(wasById.get(c.id))).flatMap((c) => {
+        const owner = seats.find((seat) => c.zoneId === zoneIdFor('operations', seat));
+        if (owner !== undefined && checking(owner)) return [];
+        if (owner !== undefined && finalCheck && (!offline(c) || (owner === by && c.id === switchedOff))) return [];
+        return [`${c.id} (${nameOf(c)}) in ${c.zoneId} went ${offline(c) ? 'offline' : 'online'}`];
+      });
+      noneOf(switched, () => `the products switched ${at}`);
+    };
+    rulesPart36();
     // A seat is choosing which products to run only while its own ops check waits on it, or its own step of the final check: the flag
     // clears as the check passes, by a confirm or on the way through it (§5 Phase B, §12, R1).
-    const choosing = seats.filter((seat) => playerFact(after, seat, CHOOSING) === true)
-      .filter((seat) => !(seat === current && (phase === 'ops check' || phase === FINAL_CHECK)));
-    noneOf(choosing.map((seat) => `${seat} is ${CHOOSING} in ${current}'s ${phase}`), () => `the seats choosing their products ${at}`);
+    const rulesPart37 = () => {
+      const choosing = seats.filter((seat) => playerFact(after, seat, CHOOSING) === true)
+        .filter((seat) => !(seat === current && (phase === 'ops check' || phase === FINAL_CHECK)));
+      noneOf(choosing.map((seat) => `${seat} is ${CHOOSING} in ${current}'s ${phase}`), () => `the seats choosing their products ${at}`);
+    };
+    rulesPart37();
     // And a seat whose ops check, or whose step of the final check, waits on its presses is choosing: the flag is set as each starts.
-    const waiting = after.result === undefined && (phase === 'ops check' || phase === FINAL_CHECK) ? [current as PlayerId] : [];
-    const undecided = waiting.filter((seat) => playerFact(after, seat, CHOOSING) !== true).map((seat) => `${seat} in its ${phase}`);
-    noneOf(undecided, () => `the seats not ${CHOOSING} while their check waits on them ${at}`);
+    const rulesPart38 = () => {
+      const waiting = after.result === undefined && (phase === 'ops check' || phase === FINAL_CHECK) ? [current as PlayerId] : [];
+      const undecided = waiting.filter((seat) => playerFact(after, seat, CHOOSING) !== true).map((seat) => `${seat} in its ${phase}`);
+      noneOf(undecided, () => `the seats not ${CHOOSING} while their check waits on them ${at}`);
+    };
+    rulesPart38();
 
     // Markets refill at once.
-    const refilled = (row: string, deck: string, full: number) => {
-      if (size(deck) > 0) sameAs(size(row), full, () => `${row} while ${deck} has cards ${at}`);
+    const rulesPart39 = () => {
+      const refilled = (row: string, deck: string, full: number) => {
+        if (size(deck) > 0) sameAs(size(row), full, () => `${row} while ${deck} has cards ${at}`);
+      };
+      refilled('agency-row', 'talent-deck', 4);
+      refilled('seed-market', 'seed-deck', 2);
+      refilled('growth-market', 'growth-deck', 2);
+      const crash = after.cards.find((c) => nameOf(c) === 'Market Crash')!;
+      if (!['growth-deck', 'crash-pile'].includes(crash.zoneId)) expect(['growth-deck', 'crash-pile'], `where the Market Crash is ${at}`).toContain(crash.zoneId);
     };
-    refilled('agency-row', 'talent-deck', 4);
-    refilled('seed-market', 'seed-deck', 2);
-    refilled('growth-market', 'growth-deck', 2);
-    const crash = after.cards.find((c) => nameOf(c) === 'Market Crash')!;
-    if (!['growth-deck', 'crash-pile'].includes(crash.zoneId)) expect(['growth-deck', 'crash-pile'], `where the Market Crash is ${at}`).toContain(crash.zoneId);
+    rulesPart39();
 
     // The pools hold the 5 newest.
     const letGoNow: string[] = [];
@@ -3246,8 +3427,11 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     // Only the pools fill the box, and only with their oldest cards: a pool that let go of a card the moment it entered would
     // show the same 5 cards as before, so this is what catches it.
     // Besides the pools, only an evicted Talent's Attribute cards go there, from the attributes in play (§15.A.4, R2).
-    const parkedBoxed = box.filter((id) => !boxed.has(id) && cardById(before, id)?.zoneId === 'attributes-in-play');
-    sameList(box.filter((id) => !boxed.has(id)).sort(), [...letGoNow, ...parkedBoxed].sort(), () => `cards new in the box ${at}`);
+    const rulesPart41 = () => {
+      const parkedBoxed = box.filter((id) => !boxed.has(id) && cardById(before, id)?.zoneId === 'attributes-in-play');
+      sameList(box.filter((id) => !boxed.has(id)).sort(), [...letGoNow, ...parkedBoxed].sort(), () => `cards new in the box ${at}`);
+    };
+    rulesPart41();
 
     // Turns: each one that starts is the next seat's. A round starts as the start player's turn starts or, when it opens with steps (the
     // event check), as they start: the start player's turn then waits for them, and starts in no new round (6-1's round steps).
@@ -3263,71 +3447,87 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     // The Events (§5 Phase A, §15.D, the spec's Proof 2): the 18 are conserved, by name, in the event deck, the event in play and the
     // event discard; one is in play once one has been revealed; the one in play changes only in a move in which a round started, the one
     // before then in the discard or, after a reshuffle, in the deck or in play again; and the deck gains cards only then, from empty.
-    const eventsIn = (state: GameState) => nameCounts(EVENT_ZONES.flatMap((zoneId) => zoneCards(state, zoneId)));
-    const allEvents = eventsIn(after);
-    if (Object.keys(allEvents).length !== EVENTS.length || EVENTS.some((name) => allEvents[name] !== 1)) {
-      expect(allEvents, `the Events ${at}`).toEqual(Object.fromEntries(EVENTS.map((name) => [name, 1])));
-    }
-    const [eventBefore, eventAfter] = [eventOf(before), eventOf(after)];
+    const rulesPart43 = () => {
+      const eventsIn = (state: GameState) => nameCounts(EVENT_ZONES.flatMap((zoneId) => zoneCards(state, zoneId)));
+      const allEvents = eventsIn(after);
+      if (Object.keys(allEvents).length !== EVENTS.length || EVENTS.some((name) => allEvents[name] !== 1)) {
+        expect(allEvents, `the Events ${at}`).toEqual(Object.fromEntries(EVENTS.map((name) => [name, 1])));
+      }
+      const [eventBefore, eventAfter] = [eventOf(before), eventOf(after)];
+      return { eventBefore, eventAfter };
+    };
+    const { eventBefore, eventAfter } = rulesPart43();
     // A game arranged without Setup starts with none in play, though its first round has started; its next Round Start reveals one.
     if (eventBefore !== null || rounds > 0) sameAs(zoneCards(after, 'event-in-play').length, 1, () => `the Events in play ${at}`);
     // The round's prices (Review Focus 3, the spec's anti-goal): set again at every Round Start, then changed by the Event in play only.
-    if (eventAfter !== null) {
-      sameAs(gameNumber(after, game!, 'license'), eventAfter === 'Patent Trolls' ? 5 : 3, () => `the license ${at}`);
-      sameAs(gameNumber(after, game!, 'junior price'), eventAfter === 'Intern Season' ? 0 : 2, () => `the junior price ${at}`);
-      const hardware = eventAfter === 'Intern Season' ? 0 : eventAfter === 'Chip Shortage' ? 5 : 2;
-      sameAs(gameNumber(after, game!, 'hardware junior price'), hardware, () => `the hardware junior price ${at}`);
-    }
+    const rulesPart45 = () => {
+      if (eventAfter !== null) {
+        sameAs(gameNumber(after, game!, 'license'), eventAfter === 'Patent Trolls' ? 5 : 3, () => `the license ${at}`);
+        sameAs(gameNumber(after, game!, 'junior price'), eventAfter === 'Intern Season' ? 0 : 2, () => `the junior price ${at}`);
+        const hardware = eventAfter === 'Intern Season' ? 0 : eventAfter === 'Chip Shortage' ? 5 : 2;
+        sameAs(gameNumber(after, game!, 'hardware junior price'), hardware, () => `the hardware junior price ${at}`);
+      }
+    };
+    rulesPart45();
     // Crunch Time (§20.D 10): a move that ran the mover's Engine gave each of their projects that was not Stalled exactly 1 Bug more,
     // unless a working Clean Code unit was on it, before Development QA cleaned what it could.
-    if (eventBefore === 'Crunch Time' && ranTheEngine(before, after, by)) {
-      const crunched: string[] = [];
-      for (const project of zoneCards(before, zoneIdFor('development', by))) {
-        const now = cardById(after, project.id);
-        if (now === undefined || now.zoneId !== project.zoneId || runtime.workedFlag(before, project.id, 'stalled')) continue;
-        const clean = cardsOn(before, project.id).some((c) => runtime.workedFlag(before, c.id, 'clean coding'));
-        const want = Math.max(0, bugsOn(project) + (clean ? 0 : 1) - (runtime.workedValue(before, project.id, 'qa made') as number));
-        if (bugsOn(now) !== want) crunched.push(`${project.id} (${nameOf(project)}) has ${bugsOn(now)} bugs, not ${want}`);
+    const rulesPart46 = () => {
+      if (eventBefore === 'Crunch Time' && ranTheEngine(before, after, by)) {
+        const crunched: string[] = [];
+        for (const project of zoneCards(before, zoneIdFor('development', by))) {
+          const now = cardById(after, project.id);
+          if (now === undefined || now.zoneId !== project.zoneId || runtime.workedFlag(before, project.id, 'stalled')) continue;
+          const clean = cardsOn(before, project.id).some((c) => runtime.workedFlag(before, c.id, 'clean coding'));
+          const want = Math.max(0, bugsOn(project) + (clean ? 0 : 1) - (runtime.workedValue(before, project.id, 'qa made') as number));
+          if (bugsOn(now) !== want) crunched.push(`${project.id} (${nameOf(project)}) has ${bugsOn(now)} bugs, not ${want}`);
+        }
+        noneOf(crunched, () => `Crunch Time's Bugs ${at}`);
       }
-      noneOf(crunched, () => `Crunch Time's Bugs ${at}`);
-    }
+    };
+    rulesPart46();
     // The event check runs only in the round's steps, and waits only on a seat that holds a card in its portfolio or is short of its
     // payroll tax; a let-go there takes a taxed card.
-    if (after.turn?.phase === EVENT_CHECK) {
-      const steps = roundStepsOf(after);
-      if (!(steps !== null && steps !== true && steps.phase === EVENT_CHECK)) expect(steps, `the round's steps in the event check ${at}`).toMatchObject({ phase: EVENT_CHECK });
-      const seat = after.turn.current as PlayerId;
-      if (portfolioOf(after, seat).length === 0 && capital(after, seat) >= payrollTaxOf(runtime, after, seat)) {
-        expect.fail(`${seat} waits in the event check with an empty portfolio and its tax in hand ${at}`);
-      }
-    }
-    if (before.turn?.phase === EVENT_CHECK && Object.values(LET_GO).includes(move.type)) {
-      if (runtime.workedFlag(before, move.cardId as string, 'taxed') !== true) expect.fail(`${move.cardId} let go in the event check untaxed ${at}`);
-    }
-    const deckNames = (state: GameState) => zoneCards(state, 'event-deck').map(nameOf).sort();
-    if (rounds === 0) {
-      sameAs(eventAfter, eventBefore, () => `the Event in play ${at}, in which no round started`);
-      const gained = deckNames(after).filter((name) => !deckNames(before).includes(name));
-      noneOf(gained, () => `Events new in the event deck ${at}, in which no round started`);
-    } else {
-      if (eventBefore !== null) {
-        const went = EVENT_ZONES.find((zoneId) => zoneCards(after, zoneId).some((c) => nameOf(c) === eventBefore));
-        const reshuffled = zoneCards(before, 'event-deck').length === 0;
-        if (!(went === 'event-discard' || (reshuffled && (went === 'event-deck' || went === 'event-in-play')))) {
-          sameAs(went, 'event-discard', () => `where the Event in play before ${at} went`);
+    const rulesPart47 = () => {
+      if (after.turn?.phase === EVENT_CHECK) {
+        const steps = roundStepsOf(after);
+        if (!(steps !== null && steps !== true && steps.phase === EVENT_CHECK)) expect(steps, `the round's steps in the event check ${at}`).toMatchObject({ phase: EVENT_CHECK });
+        const seat = after.turn.current as PlayerId;
+        if (portfolioOf(after, seat).length === 0 && capital(after, seat) >= payrollTaxOf(runtime, after, seat)) {
+          expect.fail(`${seat} waits in the event check with an empty portfolio and its tax in hand ${at}`);
         }
       }
-      const gained = deckNames(after).filter((name) => !deckNames(before).includes(name));
-      if (zoneCards(before, 'event-deck').length > 0) noneOf(gained, () => `Events new in the event deck ${at}, which was not empty`);
-    }
+      if (before.turn?.phase === EVENT_CHECK && Object.values(LET_GO).includes(move.type)) {
+        if (runtime.workedFlag(before, move.cardId as string, 'taxed') !== true) expect.fail(`${move.cardId} let go in the event check untaxed ${at}`);
+      }
+      const deckNames = (state: GameState) => zoneCards(state, 'event-deck').map(nameOf).sort();
+      if (rounds === 0) {
+        sameAs(eventAfter, eventBefore, () => `the Event in play ${at}, in which no round started`);
+        const gained = deckNames(after).filter((name) => !deckNames(before).includes(name));
+        noneOf(gained, () => `Events new in the event deck ${at}, in which no round started`);
+      } else {
+        if (eventBefore !== null) {
+          const went = EVENT_ZONES.find((zoneId) => zoneCards(after, zoneId).some((c) => nameOf(c) === eventBefore));
+          const reshuffled = zoneCards(before, 'event-deck').length === 0;
+          if (!(went === 'event-discard' || (reshuffled && (went === 'event-deck' || went === 'event-in-play')))) {
+            sameAs(went, 'event-discard', () => `where the Event in play before ${at} went`);
+          }
+        }
+        const gained = deckNames(after).filter((name) => !deckNames(before).includes(name));
+        if (zoneCards(before, 'event-deck').length > 0) noneOf(gained, () => `Events new in the event deck ${at}, which was not empty`);
+      }
+    };
+    rulesPart47();
 
     // Hidden zones: only the owner sees the face of a card in their bench, backlog, research, scouting, Strategy Hand or brainstorm row.
-    for (const viewer of seats) {
-      const wrong = deriveScene(tableDef, { cards: after.cards }, viewer).cards
-        .filter((c) => owners.has(c.zoneId) && (c.faceKey === HIDDEN_FACE_KEY) !== (owners.get(c.zoneId) !== viewer))
-        .map((c) => `${c.id} in ${c.zoneId}`);
-      noneOf(wrong, () => `cards ${viewer} sees wrongly ${at}`);
-    }
+    const rulesPart48 = () => {
+      for (const viewer of seats) {
+        const wrong = deriveScene(tableDef, { cards: after.cards }, viewer).cards
+          .filter((c) => owners.has(c.zoneId) && (c.faceKey === HIDDEN_FACE_KEY) !== (owners.get(c.zoneId) !== viewer))
+          .map((c) => `${c.id} in ${c.zoneId}`);
+        noneOf(wrong, () => `cards ${viewer} sees wrongly ${at}`);
+      }
+    };
+    rulesPart48();
   };
 }
 
