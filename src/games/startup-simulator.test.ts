@@ -3334,7 +3334,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(331);
+    expect(results).toHaveLength(333);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
