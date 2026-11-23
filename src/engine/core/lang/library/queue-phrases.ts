@@ -19,7 +19,10 @@ import { describeZone, soleZone, thePickedCards } from './support';
  */
 export const CENTRE_HAS = '{sharedzone} has {card}';
 
-/** Whether some card in the shared zone is that kind of card. */
+/**
+ * Whether some card in the shared zone is that kind of card. The runtime keeps a value whose lines test this by the cards the zone holds
+ * (`keptValues` in `card-alone.ts`), so this must read nothing but those cards' own facts: a card-alone test pins its code.
+ */
 const sharedZoneHas: ConditionFn = (env, args) => {
   const [zone, match] = args as [string, CardMatch];
   return zoneCards(env.state, zoneIdFor(zone)).some((card) => matchesCard(card, match));

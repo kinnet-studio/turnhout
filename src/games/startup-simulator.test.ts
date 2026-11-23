@@ -2799,7 +2799,7 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
         if (value !== null && value < 0) outputs.push(`${c.id} (${nameOf(c)}) has ${name} ${value}`);
       }
       if (eventMoved || wasById.get(c.id) !== c) continue;
-      for (const [i, name] of ['blue output', 'red output'].entries()) {
+      for (const [i, name] of OUTPUT_NAMES.slice(0, 2).entries()) {
         const [was, now] = [runtime.workedValue(before, c.id, name), values[i]];
         if (was !== now) outputs.push(`${c.id} (${nameOf(c)}): ${name} ${was} → ${now}`);
       }

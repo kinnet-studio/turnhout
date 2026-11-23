@@ -57,7 +57,8 @@ function namesRead(ref: PhraseRef): string[] | null {
 
 /**
  * The shared zone whose cards a line tests, when it is the test of what a shared zone holds (`CENTRE_HAS`): that test reads nothing but
- * the cards the zone holds, each by its own facts. Null for any other line.
+ * the cards the zone holds, each by its own facts. Null for any other line. It relies on `{sharedzone}` naming a zone with no seat (the
+ * vocabulary offers only shared zones), so `zoneIdFor` gives one id for it in every state.
  */
 const zoneTested = (ref: PhraseRef): string | null =>
   (ref.kind === 'condition' && ref.phrase === CENTRE_HAS ? zoneIdFor(ref.args[0] as string) : null);

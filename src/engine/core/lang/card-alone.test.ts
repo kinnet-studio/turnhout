@@ -113,6 +113,15 @@ describe('the phrases the classifier draws on', () => {
   });
 });
 
+describe('the test of what a shared zone holds', () => {
+  it('reads the cards of that zone and nothing else: its code is pinned, a change to what it reads needs the kept values looked at again', () => {
+    // Whitespace and the module wrappers the test transform puts round imported names are left out of the text.
+    const code = String(createDefaultLibrary().get('condition', CENTRE_HAS)?.fn)
+      .replace(/\(0,\s*__vite_ssr_import_\d+__\.(\w+)\)/g, '$1').replace(/\s+/g, '');
+    expect(code).toBe('(env,args)=>{const[zone,match]=args;returnzoneCards(env.state,zoneIdFor(zone)).some((card)=>matchesCard(card,match));}');
+  });
+});
+
 describe('which values read their card alone', () => {
   const alone = cardAloneValues(game);
 
@@ -186,7 +195,7 @@ describe('which values read their card and what shared zones hold', () => {
     expect(kept.get('both rows')).toEqual(['hall', 'scrap']);
   });
 
-  it('does not hold one that also reads the cards on it, nor one that reads another zone, another player or a game number', () => {
+  it('does not hold one that also reads the cards on it, nor the values that read another zone, another player or a game number alone', () => {
     expect(kept.has('scrap crowned')).toBe(false);
     for (const name of ['crew skill', 'crowned', 'carried', 'crowd', 'hall mate', 'owned', 'fee paid']) expect(kept.has(name), name).toBe(false);
   });
@@ -578,14 +587,13 @@ describe('a card moved from one state into another, in a played game', () => {
     // And it comes to the same in a state whose kept zones hold the very cards they held where it came from, every other card changed.
     // The game's values test what one shared zone holds.
     const zoned = new Set([...kept.values()].flat());
-    expect(zoned.size).toBe(1);
-    const [zone] = zoned;
+    expect(zoned.size).toBeGreaterThan(0);
     const allBut = (state: GameState, data: { [k: string]: Json }) => state.cards
       .reduce((all, card) => (zoned.has(card.zoneId) ? all : changeCard(all, card.id, data, startup)), state);
     const zoneKept = names.filter((name) => (kept.get(name)?.length ?? 0) > 0);
     let kept0 = 0;
     for (const [i, from] of played.entries()) {
-      if (i % 2 !== 0 || zoneCards(from, zone).length === 0) continue;
+      if (i % 2 !== 0 || [...zoned].every((zone) => zoneCards(from, zone).length === 0)) continue;
       for (const data of [{ 'toxic personality': 1 }, { visionary: 1 }, { trait: 'Rainmaker' }] as { [k: string]: Json }[]) {
         const into = allBut(from, data);
         expect(sameZones(from, into, [...zoned])).toBe(true);
