@@ -27,6 +27,7 @@ import { zoneIdFor, zoneInfo } from './zones';
 import { holderFlags, pressFlags, shownFlags, shownPlayerValues, standIns, thenRefs } from './worked-view';
 import { PAY_NUMBER } from './library/game-numbers';
 import { holderIdOf } from './attach';
+import { waitingOf } from './action-window';
 
 /**
  * `color` is the space's color when it is written as text; `details` is every other thing the table says about it. `facts` is
@@ -118,7 +119,18 @@ export type PlayerValuesView = { [seat: string]: { [name: string]: number } };
  * `worked` is there only when some card on a Board has something worked out to show (see `workedView`), and `playerValues` only when the
  * game shows some value about a player (see `shownPlayerValues`).
  */
-export type SeatExtras = { board: BoardView | null; actions: ActionView[]; worked?: WorkedView; playerValues?: PlayerValuesView };
+export type SeatExtras = {
+  board: BoardView | null; actions: ActionView[]; worked?: WorkedView; playerValues?: PlayerValuesView;
+  /** Left out while no action waits. */
+  waiting?: WaitingView;
+};
+/**
+ * An action that waits for the players to answer it, the same for every seat but for the cards: who pressed it, the button's label, the
+ * choices it carries, and the card it picked (or the picked cards, in the press's order) then the card they go to, each by its name where the
+ * seat sees its face, with the player each of its facts names (“Stake whose maker is p1”), and as “a face-down card” elsewhere. No card's
+ * id is in it: one that locates a hidden card would give it away.
+ */
+export type WaitingView = { by: PlayerId; label: string; cards: string[]; choices: string[] };
 
 const OUT_OF_GAME = "You're out of the game.";
 
@@ -593,9 +605,29 @@ function playerValuesView(runtime: LangRuntime, state: GameState): PlayerValuesV
 export function seatExtras(engine: GameEngine, runtime: LangRuntime, state: GameState, seat: PlayerId): SeatExtras {
   const worked = workedView(runtime, state, seat);
   const playerValues = playerValuesView(runtime, state);
+  const waiting = waitingView(runtime, state, seat);
   return {
     board: boardView(runtime, state, seat), actions: actionViews(engine, runtime, state, seat), ...(worked === null ? {} : { worked }),
-    ...(playerValues === null ? {} : { playerValues }),
+    ...(playerValues === null ? {} : { playerValues }), ...(waiting === null ? {} : { waiting }),
+  };
+}
+
+/** The action waiting for the players to answer it as `seat` sees it (see `WaitingView`); null while none waits. */
+function waitingView(runtime: LangRuntime, state: GameState, seat: PlayerId): WaitingView | null {
+  const waiting = waitingOf(state);
+  if (waiting === null) return null;
+  const action = runtime.game.phases.find((p) => p.id === waiting.from)?.actions.find((a) => a.words === waiting.move);
+  const { card, cards = [], onto, choices = [] } = waiting.subject;
+  const ids = [...(card === null ? cards : [card]), ...(onto === undefined ? [] : [onto])];
+  return {
+    by: waiting.by, label: action?.label ?? waiting.move,
+    cards: ids.map((id) => {
+      const { name, seen } = pickedAs(runtime, state, seat, id);
+      const data = cardById(state, id)?.data ?? {};
+      const naming = runtime.game.facts.filter((fact) => fact.on === 'card' && fact.kind === 'player' && typeof data[fact.name] === 'string');
+      return seen ? `${name}${naming.map((fact) => ` whose ${fact.name} is ${data[fact.name] as string}`).join('')}` : name;
+    }),
+    choices: choices.filter((choice): choice is string => choice !== null),
   };
 }
 
@@ -637,11 +669,15 @@ const isAction = (v: unknown): boolean =>
   && isChoices(v.choices);
 const isWorkedCard = (v: unknown): boolean => isRecord(v) && isMap(v.columns, isNumber) && isList(v.flags, isText);
 
+const isWaiting = (v: unknown): boolean =>
+  isRecord(v) && isText(v.by) && isText(v.label) && isList(v.cards, isText) && isList(v.choices, isText);
+
 /** For the page: the extras of a view when they have the shape `seatExtras` makes, null for anything else. */
 export function readSeatExtras(extras: Json | undefined): SeatExtras | null {
   if (!isRecord(extras) || !isList(extras.actions, isAction)) return null;
   if (extras.board !== null && !isBoard(extras.board)) return null;
   if (extras.worked !== undefined && !isMap(extras.worked, isWorkedCard)) return null;
   if (extras.playerValues !== undefined && !isMap(extras.playerValues, (values) => isMap(values, isNumber))) return null;
+  if (extras.waiting !== undefined && !isWaiting(extras.waiting)) return null;
   return extras as SeatExtras;
 }

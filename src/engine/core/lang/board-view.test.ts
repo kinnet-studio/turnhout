@@ -22,6 +22,9 @@ import { relocate, zoneIdFor } from './zones';
 import RENT_DAY from '@/games/rent-day.rules?raw';
 import { paidNumbers } from './board-view';
 import { OMEN_GAME, PRICE_GAME } from './testing';
+import { OBJECT_GAME } from './testing';
+import { makeCard } from './cards';
+import { markTurnStarted } from './turns';
 
 const lib = createDefaultLibrary();
 const game = compileGame(TINY_BOARD, lib).game!;
@@ -1384,5 +1387,76 @@ describe("a card picked in another player's zone the seat can't see", () => {
     const { engine, runtime } = createEngine(game!, lib, 3, { ...relocate(fresh, [vase], 'stash-p1', game!), turn: { current: 'p0', phase: 'working' } });
     const peek = seatExtras(engine, runtime, engine.getState(), 'p0').actions.find((a) => a.label.startsWith('peek') || a.move.startsWith('peek'))!;
     expect(peek.cards!.cards).toContainEqual(expect.objectContaining({ id: vase, name: 'a face-down card' }));
+  });
+});
+
+describe('a waiting action', () => {
+  const game = compileGame(OBJECT_GAME, lib).game!;
+  const SEATS3 = seatsFor(3);
+  const fresh = initialState(game, 1);
+  const vase = fresh.cards.find((card) => card.data?.name === 'Vase')!.id;
+  const statue = fresh.cards.find((card) => card.data?.name === 'Statue')!.id;
+  const potter = zoneCards(fresh, 'hall').find((card) => card.data?.name === 'Potter')!.id;
+  const HIRE = 'hire some cards from the hall to a card in their workshop';
+  /** A 3-player engine on p0's started turn, the Vase in p0's workshop, and p0's stakes held by `holders`. */
+  function table(holders: string[], prepare: (s: GameState) => GameState = (s) => s) {
+    const placed = relocate(fresh, [vase], 'workshop-p0', game);
+    const staked = holders.reduce((s, zone) => makeCard(s, game, { name: 'Stake', maker: 'p0' }, zone)!.state, placed);
+    const start = withBoardData(markTurnStarted({ ...prepare(staked), turn: { current: 'p0', phase: 'working' } }), game, SEATS3);
+    return createEngine(game, lib, 3, start);
+  }
+  const extras = (built: ReturnType<typeof table>, seat: string) => seatExtras(built.engine, built.runtime, built.engine.getState(), seat);
+  const hireAction = game.phases[0].actions.find((a) => a.words === HIRE)!;
+
+  it('shows every seat who pressed it, its label, its cards and no choices', () => {
+    const built = table(['holdings-p1', 'holdings-p2']);
+    expect(built.engine.dispatch({ type: HIRE, by: 'p0', cardIds: [potter], onto: vase }).reason).toBeUndefined();
+    const view = { by: 'p0', label: hireAction.label, cards: ['Potter', 'Vase'], choices: [] };
+    for (const seat of SEATS3) expect(extras(built, seat).waiting, seat).toEqual(view);
+  });
+  it('names a card a seat cannot see as a face-down card, with no id (Review Focus)', () => {
+    const built = table(['holdings-p1', 'holdings-p2'], (s) => relocate(s, [statue], 'stash-p0', game));
+    expect(built.engine.dispatch({ type: 'swap a card from their stash to their workshop', by: 'p0', cardId: statue }).reason).toBeUndefined();
+    const p1 = extras(built, 'p1');
+    expect(p1.waiting?.cards).toEqual(['a face-down card']);
+    expect(extras(built, 'p0').waiting?.cards).toEqual(['Statue']);
+    expect(JSON.stringify(p1.waiting)).not.toContain(statue);
+  });
+  it('names the player a card it shows names (A-T9)', () => {
+    const built = table(['holdings-p1', 'holdings-p2'], (s) => makeCard(s, game, { name: 'Stake', maker: 'p2' }, 'holdings-p0')!.state);
+    const sold = zoneCards(built.engine.getState(), 'holdings-p0')[0].id;
+    expect(built.engine.dispatch({ type: 'sell a card in their holdings', by: 'p0', cardId: sold }).reason).toBeUndefined();
+    for (const seat of SEATS3) expect(extras(built, seat).waiting?.cards, seat).toEqual(['Stake whose maker is p2']);
+  });
+  it('carries the choices of the press', () => {
+    const built = table(['holdings-p1', 'holdings-p2']);
+    expect(built.engine.dispatch({ type: 'tidy a card in their workshop', by: 'p0', cardId: vase, choices: ['Pay'] }).reason).toBeUndefined();
+    expect(extras(built, 'p1').waiting).toMatchObject({ choices: ['Pay'], cards: ['Vase'] });
+  });
+  it('offers p1 its answers, and p0 nothing', () => {
+    const built = table(['holdings-p1', 'holdings-p2']);
+    built.engine.dispatch({ type: HIRE, by: 'p0', cardIds: [potter], onto: vase });
+    const p1 = extras(built, 'p1').actions;
+    const object = p1.find((a) => a.move === 'object with a card in their holdings')!;
+    const held = zoneCards(built.engine.getState(), 'holdings-p1')[0].id;
+    expect(object.allowed).toBe(true);
+    expect(object.cards?.cards.map((card) => card.id)).toContain(held);
+    expect(p1.find((a) => a.move === 'let it go')?.allowed).toBe(true);
+    for (const action of extras(built, 'p0').actions) expect(action.allowed, action.move).not.toBe(true);
+  });
+  it('(guard) has no waiting key with no stake held, nor in CREW_GAME', () => {
+    const built = table([]);
+    built.engine.dispatch({ type: HIRE, by: 'p0', cardIds: [potter], onto: vase });
+    expect(extras(built, 'p1')).not.toHaveProperty('waiting');
+    const crew = compileGame(CREW_GAME, lib).game!;
+    const crewBuilt = createEngine(crew, lib, 2, initialState(crew, 1));
+    expect(seatExtras(crewBuilt.engine, crewBuilt.runtime, crewBuilt.engine.getState(), 'p0')).not.toHaveProperty('waiting');
+  });
+  it('is read back as it is, and refused with a card that is no name', () => {
+    const built = table(['holdings-p1']);
+    built.engine.dispatch({ type: HIRE, by: 'p0', cardIds: [potter], onto: vase });
+    const view = extras(built, 'p1') as unknown as Json;
+    expect(readSeatExtras(view)).toEqual(view);
+    expect(readSeatExtras({ ...(view as { [k: string]: Json }), waiting: { by: 'p0', label: 'Hire', cards: [1], choices: [] } })).toBeNull();
   });
 });
