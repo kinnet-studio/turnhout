@@ -180,6 +180,7 @@ Blue output:
   A flex card's blue output is its output.
   A blue mode card's blue output is its output.
   A card's blue output goes up by its working blue xp.
+  An overworked in blue card's blue output goes up by 2.
   A red mode card's blue output is 0.
   A qa mode card's blue output is 0.
   An onboarding card's blue output is 0.
@@ -188,6 +189,7 @@ Red output:
   A hardware card's red output is its output.
   A red mode card's red output is its output.
   A card's red output goes up by its working red xp.
+  An overworked in red card's red output goes up by 2.
   A qa mode card's red output is 0.
   A blue mode card's red output is 0.
   An onboarding card's red output is 0.
@@ -198,6 +200,7 @@ QA output:
   A card's qa output goes up by its working green xp.
   A Bug Hunter card's qa output is 1.
   A practised card's qa output is 2.
+  An overworked in qa card's qa output goes up by 2.
   A red mode card's qa output is 0.
   A blue mode card's qa output is 0.
   An onboarding card's qa output is 0.
@@ -259,20 +262,24 @@ Leading software:
   Only if one of:
     It is a Senior Developer card.
     It is a card whose badge points are more than 0.
+    It is a card whose visionary is more than 0.
   Only if one of:
     It is a software card.
     It is a flex card.
     It is a card whose blue skill tokens are more than 0.
+    It is a card whose visionary is more than 0.
   Only if it is not onboarding.
 
 Leading hardware:
   Only if one of:
     It is a Senior Developer card.
     It is a card whose badge points are more than 0.
+    It is a card whose visionary is more than 0.
   Only if one of:
     It is a hardware card.
     It is a flex card.
     It is a card whose red skill tokens are more than 0.
+    It is a card whose visionary is more than 0.
   Only if it is not onboarding.
 
 Managing:
@@ -356,6 +363,39 @@ Holding attributes:
     Its toxic personality is more than 0.
     Its burnout is more than 0.
     Its flight risk is more than 0.
+
+Overworked:
+  Only if it is a card whose workaholic is more than 0.
+
+Overworked in blue:
+  Only if it is overworked.
+  Only if one of:
+    It is a software card.
+    It is a flex card.
+    It is blue mode.
+
+Overworked in red:
+  Only if it is overworked.
+  Only if one of:
+    It is a hardware card.
+    It is red mode.
+
+Overworked in qa:
+  Only if it is overworked.
+  Only if one of:
+    It is a qa card.
+    It is qa mode.
+    It is a Bug Hunter card.
+
+Clean coding:
+  Only if one of:
+    It is a Clean Code card.
+    Its clean coder is more than 0.
+  Only if it is not onboarding.
+
+Guarding the pool:
+  Only if it is clean coding.
+  Only if it is not attaching.
 
 Stalled:
   Only if it is in a development.
@@ -452,6 +492,7 @@ Mentorable:
 Salary:
   An efficient in ops card's salary is 1.
   An experienced card's salary is 1.
+  An overworked card's salary goes up by 2.
 
 Declarable:
   Only if one of:
@@ -512,6 +553,7 @@ Spreading bugs:
 
 Viral:
   Only if some card on it is spreading bugs.
+  Only if no card on it is clean coding.
 
 Feature complete:
   Only if its blue cubes are at least its blue need.
@@ -601,6 +643,7 @@ In every phase:
   When a card in the open job market is blue mode:
     It is not blue mode.
   When a Spaghetti Code card joins a card in a development:
+    Only if its clean coder is 0.
     The card it joins gains 1 bug.
   When a card in the open job market is fired:
     It loses its blue xp tokens.
@@ -1242,7 +1285,7 @@ Phase: backlog cleanup
     Then:
       Move it to the open idea pool.
   When their backlog has fewer than 4 cards:
-    If they have no card in their ops team that is not onboarding and whose trait is Clean Code, each viral card in their operations gains 1 bug.
+    If they have no card in their ops team that is guarding the pool, each viral card in their operations gains 1 bug.
     The turn passes to the left.
 
 Phase: final check
@@ -4566,3 +4609,106 @@ Example: a Talent evicted with Flight Risk takes it to the box (section 15, the 
   Then the box has the Fixer and a Flight Risk
   And the Fixer in the box has 0 flight risk
   And the attributes in play is empty
+
+Example: Workaholic gives +2 output in the colour its staff member makes and +$2 salary (section 20)
+  Given p1's development has a Cloud Storage
+  And the Cloud Storage in p1's development has a Junior Software Dev and a Junior Hardware Eng on it
+  And the Junior Software Dev in p1's development team has 1 workaholic
+  And the Junior Hardware Eng in p1's development team has 1 workaholic
+  And the turn passes to the left
+  Then the phase is income
+  When p1 pays salaries
+  Then p1 has 3 capital
+  When p1 ends their actions
+  Then the Cloud Storage in p1's development has 3 blue cubes
+  And the Cloud Storage in p1's development has 3 red cubes
+
+Example: a Workaholic Junior PM gets only the +$2 salary, as it makes no output, and a Workaholic Junior QA Tester cleans 2 more Bugs (section 20, section 11)
+  Given p1's development has a Dating App
+  And the Dating App in p1's development has 3 bugs
+  And the Dating App in p1's development has a Junior PM, a Junior Software Dev and a Junior QA Tester on it
+  And the Junior PM in p1's development team has 1 workaholic
+  And the Junior QA Tester in p1's development team has 1 workaholic
+  And the turn passes to the left
+  Then the phase is income
+  When p1 pays salaries
+  Then p1 has 2 capital
+  When p1 ends their actions
+  Then the Dating App in p1's development has 2 blue cubes
+  And the Dating App in p1's development has 0 bugs
+
+Example: the Hacker with Clean Coder adds no Bug to the projects he joins (section 20)
+  Given the phase is actions
+  And p0's strategy hand has a Clean Coder
+  And p0's bench has the Hacker
+  And p0's development has a Dating App and a To-Do List
+  When p0 plays the Clean Coder to the Hacker
+  And p0 assigns the Hacker to the Dating App
+  Then the Dating App in p0's development has 0 bugs
+  When p0 reassigns the Hacker to the To-Do List
+  Then the To-Do List in p0's development has 0 bugs
+  And p0 has 4 capital
+
+Example: a Sales Rep with Clean Coder shields only the product it is on, so the Growth Hacker still adds its Bug to another (section 20, ruling 19)
+  Given the phase is actions
+  And p0's operations has a Dating App and a To-Do List
+  And p0's ops team has a Junior Software Dev and a Junior Software Dev
+  And the Dating App in p0's operations has a Growth Hacker on it
+  And the To-Do List in p0's operations has a Sales Rep on it
+  And the Sales Rep in p0's ops team has 1 clean coder
+  When p0 ends their actions
+  Then the Dating App in p0's operations has 1 bug
+  And the To-Do List in p0's operations has 0 bugs
+
+Example: a Sales Rep with Clean Coder on the Growth Hacker's own product stops its Bug (section 20, ruling 19)
+  Given the phase is actions
+  And p0's operations has a Dating App
+  And the Dating App in p0's operations has a Growth Hacker and a Sales Rep on it
+  And the Sales Rep in p0's ops team has 1 clean coder
+  When p0 ends their actions
+  Then the Dating App in p0's operations has 0 bugs
+
+Example: a Junior with Visionary leads in both colours, so a Tier 2 hybrid with no other lead progresses and Launches (section 20, section 11, section 3)
+  Given the phase is actions
+  And p0's development has a Drone Delivery
+  And the Drone Delivery in p0's development has 6 blue cubes
+  And the Drone Delivery in p0's development has 5 red cubes
+  And the Drone Delivery in p0's development has a Junior Software Dev and a Junior Hardware Eng on it
+  And the Junior Software Dev in p0's development team has 1 visionary
+  When p0 ends their actions
+  Then the Drone Delivery in p0's development has 6 red cubes
+  When p1 ends their actions
+  And p0 launches the Drone Delivery
+  Then it is accepted
+  And p0's operations has a Drone Delivery
+
+Example: Visionary makes any unit a lead, a Junior PM included, so its Tier 2 project isn't Stalled (section 11, section 20, the Rust engine's lead rule)
+  Given the phase is actions
+  And p0's development has a Neobank
+  And the Neobank in p0's development has a Junior PM and a Junior Software Dev on it
+  And the Junior PM in p0's development team has 1 visionary
+  When p0 ends their actions
+  Then the Neobank in p0's development has 2 blue cubes
+
+Example: Workaholic's +2 follows the mode a unit works in: a flex Senior makes Blue unless declared Red, a Junior in Blue mode makes Blue, and the Fixer in QA mode and a QA Engineer clean 2 more Bugs each (section 20, section 11)
+  Given the phase is actions
+  And p0's development has a Gig Economy, a Genetics Kit and a Dating App
+  And the Dating App in p0's development has 6 bugs
+  And the Gig Economy in p0's development has a Firmware Specialist and a Junior Hardware Eng on it
+  And the Genetics Kit in p0's development has a Full Stack Ninja on it
+  And the Dating App in p0's development has the Fixer and a QA Engineer on it
+  And the Junior Hardware Eng in p0's development team has 1 blue skill token
+  And the Junior Hardware Eng in p0's development team is blue mode
+  And the Full Stack Ninja in p0's development team is red mode
+  And the Fixer in p0's development team is qa mode
+  And the Firmware Specialist in p0's development team has 1 workaholic
+  And the Junior Hardware Eng in p0's development team has 1 workaholic
+  And the Full Stack Ninja in p0's development team has 1 workaholic
+  And the Fixer in p0's development team has 1 workaholic
+  And the QA Engineer in p0's development team has 1 workaholic
+  When p0 ends their actions
+  Then the Gig Economy in p0's development has 7 blue cubes
+  And the Genetics Kit in p0's development has 5 red cubes
+  And the Genetics Kit in p0's development has 0 blue cubes
+  And the Dating App in p0's development has 0 bugs
+  And the Dating App in p0's development has 0 blue cubes

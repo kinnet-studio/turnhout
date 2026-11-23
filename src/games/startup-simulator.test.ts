@@ -954,7 +954,22 @@ function playTurn(
           const kind = ['Junior', 'QA Engineer', 'Sales Rep'][t % 3];
           return taken.find((target) => kindOf(target) === kind) ?? taken[0];
         }
-        return taken.length === 0 ? undefined : taken[t % taken.length];
+        const byT = taken.length === 0 ? undefined : taken[t % taken.length];
+        const state = engine.getState();
+        // A Buff goes where it pays (§20.A): a Workaholic on a maker, a Clean Coder on the Hacker or an attached card in the ops team, and a
+        // Visionary on a Junior whose project is Stalled.
+        if (nameOf(card) === 'Workaholic') {
+          return taken.find((target) => ['blue output', 'red output', 'qa output'].some((v) => ((runtime.workedValue(state, target.id, v) as number | undefined) ?? 0) > 0)) ?? byT;
+        }
+        if (nameOf(card) === 'Clean Coder') {
+          return taken.find((target) => target.data?.trait === 'Spaghetti Code')
+            ?? taken.find((target) => target.zoneId === own('ops team') && attaching(target)) ?? byT;
+        }
+        if (nameOf(card) === 'Visionary') {
+          return taken.find((target) => target.data?.role === 'Junior' && target.zoneId === own('development team')
+            && runtime.workedFlag(state, target.data?.[HOLDER_KEY] as string, 'stalled')) ?? byT;
+        }
+        return byT;
       },
     });
   };
@@ -2230,6 +2245,22 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       attributes.push(`a Debuff on ${move.onto}, in ${by}'s own zone`);
     }
     noneOf(attributes, () => `the Attributes ${at}`);
+    // Workaholic's +$2 salary (§20.A): an overworked card on the Board is paid at least $2.
+    const staffZones = new Set(seats.flatMap((seat) => [zoneIdFor('development team', seat), zoneIdFor('ops team', seat)]));
+    noneOf(after.cards.filter((c) => staffZones.has(c.zoneId) && runtime.workedFlag(after, c.id, 'overworked')
+      && ((runtime.workedValue(after, c.id, 'salary') as number | undefined) ?? 0) < 2).map((c) => `${c.id} (${nameOf(c)})`),
+      () => `overworked staff paid less than $2 ${at}`);
+    // The Hacker with Clean Coder adds no Bug to a project he joins (§20.B "unless he has Clean Code himself").
+    if ([...REASSIGNS, ...HIRES, ASSIGN_TO_PROJECT].includes(move.type)) {
+      for (const c of after.cards) {
+        const was = wasById.get(c.id);
+        const holder = c.data?.[HOLDER_KEY] as string | undefined;
+        if (c.data?.trait !== 'Spaghetti Code' || tokenOn(c, 'clean coder') !== 1 || holder === undefined || was?.data?.[HOLDER_KEY] === holder) continue;
+        const project = cardById(after, holder)!;
+        if (bugsOn(project) > bugsOn(cardById(before, holder) ?? project)) attributes.push(`${holder} gained a Bug from ${c.id}`);
+      }
+      noneOf(attributes, () => `the Hacker's Bugs ${at}`);
+    }
     // A card holds one Pending token of each colour at most, and gains one only as its owner's Engine runs, while it sits on a project
     // in their development that was not Stalled as the Engine generated, since a Stalled team makes nothing (see `atTheEngine`) (§3, §5
     // Phase D, §11.B, ruling 1). Only a Junior learns, so only a Junior holds one (§11.B). It holds one only in a development team, or in
@@ -2411,7 +2442,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(252);
+    expect(results).toHaveLength(260);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -2516,6 +2547,8 @@ describe('Startup Simulator (designer language)', () => {
     for (const flag of ['hardware side', 'software side']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
     // The Diva's Ego, which her Pivot fires her for, and a card holding any Attribute count, which the box strips (§6, §15, R2).
     for (const flag of ['egotistic', 'holding attributes']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
+    // Workaholic's overwork, Clean Code from the Architect's trait or a Clean Coder count, and a pooled one guarding every product (§20.A, §20.B).
+    for (const flag of ['overworked', 'overworked in blue', 'overworked in red', 'overworked in qa', 'clean coding', 'guarding the pool']) expect(worked[flag], flag).toMatchObject({ kind: 'flag' });
   });
 
   // The next three tests each add to the rules an example that the rules refuse for naming no button alone, and then an example for each
@@ -4260,7 +4293,7 @@ describe('what the view says the rules work out', () => {
     // Every line of each reads only the card and the cards on it: its Tier, its need, the leads on it, its trait, its zone, its xp and
     // its training xp. A lead's Badge and Skill lines read the card alone too (`it is a card whose …`), so Stalled still shows. Decaying
     // reads its owner's ops team, so it is not shown.
-    expect(shownFlags(game!)).toEqual(['stalled', 'efficient in ops', 'experienced', 'practised']);
+    expect(shownFlags(game!)).toEqual(['overworked', 'overworked in blue', 'overworked in red', 'overworked in qa', 'stalled', 'efficient in ops', 'experienced', 'practised']);
   });
 
   it('gives a seat the needs and the flags of the cards on a Board, and nothing of a backlog (Review Focus: 3 players, seed 1)', () => {
@@ -4339,7 +4372,7 @@ describe('what the page shows of slice 5', () => {
   });
 
   it('(guard) shows the same flags beside a value, and the same values about each player, as before (Call 5)', () => {
-    expect(shownFlags(game!)).toEqual(['stalled', 'efficient in ops', 'experienced', 'practised']);
+    expect(shownFlags(game!)).toEqual(['overworked', 'overworked in blue', 'overworked in red', 'overworked in qa', 'stalled', 'efficient in ops', 'experienced', 'practised']);
     // Operational revenue reads its owner's ops team through each product's rev, and active tags is a count: neither is shown.
     expect(shownPlayerValues(game!)).toEqual([
       'blue supply', 'red supply', 'blue demand', 'red demand', 'blue load', 'red load', 'qa supply', 'bug load', 'qa spent',
