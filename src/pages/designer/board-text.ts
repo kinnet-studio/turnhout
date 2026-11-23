@@ -237,6 +237,21 @@ export function keptBadges(game: CompiledGame, cards: CardState[]): { [cardId: s
 }
 
 /**
+ * The facts a card's label says in its own words (`boardBadges`, `keptBadges`): its flags that are set and its counts that no column
+ * reads and are not 0 (`loneCounts`). The hover line leaves them off the card's columns when the label follows it, so each is said once. None for a face-down card.
+ */
+export function labelledFacts(card: CardState, game: CompiledGame): string[] {
+  if (isFaceDown(card)) return [];
+  const { counts, read } = countsRead(card, game);
+  const isRead = new Set(read.flatMap(({ count, riders }) => [count, ...riders]));
+  const lone = counts.filter((count) => {
+    const value = cardAttribute(card, count, game);
+    return !isRead.has(count) && typeof value === 'number' && value !== 0;
+  });
+  return [...flagsOn(card, game), ...lone];
+}
+
+/**
  * The ids of the cards on a Board (`onABoard`) that have a flag of `dimFlags(game)` set, in the order given: a card so marked counts
  * for nothing in a total a seat is shown (`… that are not resting`), so the page draws it faded. A face-down card shows no flag.
  */

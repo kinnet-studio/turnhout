@@ -1778,3 +1778,101 @@ describe('the Event in play and the prices on the page', () => {
     expect(gauges(N)).toBe('Blue supply 0 / demand 1 (short) · Red supply 0 / demand 0');
   });
 });
+
+/**
+ * How the numbers come (§20.A, ruling 23, R2):
+ * - Workaholic $2, TechCrunch Feature $5, Design Sprint $0, each 0 AP: 7 − 2 − 5 = 0;
+ * - Design Sprint deals 5 Seed cards to a backlog of 1;
+ * - a TechCrunch Feature adds 1 Hype;
+ * - Attributes ride with their Talent into the open job market (R2).
+ */
+describe('Attributes, Utility cards and Hype on the page', () => {
+  const tab = (name: string) => screen.getByRole('tab', { name });
+  const boardOf = (seat: string) => screen.getByTestId(`board-${seat}`).textContent;
+  const detail = () => screen.getByTestId('card-detail').textContent;
+  const hover = (id: string | null) => act(() => table!.onHover!(id));
+  const faceOf = (id: string) => table!.placement.cards.find((c) => c.id === id)!.faceKey;
+  const nameOf = (card: CardState) => parseTextFaceKey(card.faceKey)!.name;
+  const PLAY = 'Play a card from your strategy hand to a card in your bench, your development team or your ops team';
+  const DEBUFF = "Play a card from your strategy hand to a card in another player's development team or another player's ops team";
+  const TO_PRODUCT = 'Play a card from your strategy hand to a card in your operations';
+  const ALONE = 'Play a card in your strategy hand';
+  const FLUSH = 'Brainstorm after flushing some cards from your strategy hand';
+
+  it('Review Focus: labels an Attribute and Hype on their cards, plays a Workaholic, a TechCrunch Feature and a Design Sprint, and names the label on hover', () => {
+    let state = inPlay(setUp(), 'Whistleblower Protection Act');
+    const [workaholic, techcrunch, sprint] = ['Workaholic', 'TechCrunch Feature', 'Design Sprint'].map((name) => idOf(state, name));
+    const [todo, dating] = [idOf(state, 'To-Do List'), idOf(state, 'Dating App')];
+    const junior = idOf(state, 'Junior Software Dev', `bench-${S}`);
+    const market = state.cards.find((c) => c.data?.name === 'Junior QA Tester' && c.zoneId !== `bench-${S}`)!.id;
+    state = relocate(state, [workaholic, techcrunch, sprint], `strategy-hand-${S}`, game);
+    state = putOn(relocate(state, [todo], `development-${S}`, game), [junior], `development-team-${S}`, todo, game);
+    state = relocate(state, [dating], `operations-${S}`, game);
+    state = changeCard(relocate(state, [market], 'open-job-market', game), market, { 'clean coder': 1 }, game);
+    state = changeCard(state, idOf(state, 'Junior Hardware Eng', `bench-${N}`), { burnout: 1 }, game);
+    mount({ initial: state });
+
+    expect(table!.decor![market]).toEqual({ badge: '1 clean coder' });
+    expect(fittedLayout(game.zones, S).find((z) => z.id === 'attributes-in-play')?.layout).toBe('pile');
+    expect(inOrder('attributes-in-play')).toEqual([]);
+    expect(document.body.textContent).not.toContain('1 burnout');
+    fireEvent.click(tab(O));
+    expect(table!.decor![market]).toEqual({ badge: '1 clean coder' });
+    fireEvent.click(tab(`${S} — to act`));
+
+    click(workaholic);
+    expect(offered()).toEqual([
+      [PLAY, true], [DEBUFF, "There is no card in another player's development team or another player's ops team."],
+      [TO_PRODUCT, 'the card is a TechCrunch Feature'], [ALONE, 'it is a Design Sprint card'], [FLUSH, true],
+    ]);
+    choose(PLAY);
+    click(junior);
+    const label = 'overworked, overworked in blue, 1 workaholic';
+    expect(table!.decor![junior]?.badge).toBe(label);
+    expect(label.endsWith('1 workaholic')).toBe(true);
+    expect(boardOf(S)).toContain('with Junior Software Dev (overworked, overworked in blue) [1 workaholic]');
+    expect(lineOf(S)!.startsWith(`${S} 5 capital, 3 actions`), lineOf(S)!).toBe(true);
+    expect(inOrder('attributes-in-play').map((c) => [nameOf(c), c.faceUp])).toEqual([['Workaholic', true]]);
+    fireEvent.click(tab(O));
+    expect(inOrder('attributes-in-play').map((c) => [nameOf(c), c.faceUp])).toEqual([['Workaholic', true]]);
+    fireEvent.click(tab(`${S} — to act`));
+
+    hover(junior);
+    expect(detail()).toBe(`${cardDetail(faceOf(junior), ['workaholic'])} — ${label}`);
+    expect(detail()).toBe(`Junior Software Dev — cost 2 · skill software · output 1 · salary 0 · role Junior — ${label}`);
+    hover(dating);
+    expect(detail()).toBe(cardDetail(faceOf(dating)));
+
+    click(techcrunch);
+    choose(TO_PRODUCT);
+    pickNamed('Dating App');
+    expect(table!.decor![dating]).toEqual({ caption: 'Blue 0/6\nRed 0/0', badge: '1 hype' });
+    const DATING = 'Dating App (tier Tier 1, tag Social, sector Consumer) [Blue 0/6, Red 0/0, 1 hype]';
+    expect(boardOf(S)).toContain(DATING);
+    expect(lineOf(S)!.startsWith(`${S} 0 capital, 3 actions`), lineOf(S)!).toBe(true);
+    fireEvent.click(tab(N));
+    expect(boardOf(S)).toContain(DATING);
+    fireEvent.click(tab(`${S} — to act`));
+
+    press(ALONE);
+    pickNamed('Design Sprint');
+    expect(lineOf(S)).toContain('backlog 6');
+    fireEvent.click(tab(O));
+    expect(cardsIn(`backlog-${S}`)).toEqual([]);
+    expect(lineOf(S)).toContain('backlog 6');
+  });
+
+  it('names a whole label on the hover line, for a card a card hanging over it covers', () => {
+    let state = inPlay(setUp(), 'Whistleblower Protection Act');
+    const cloud = idOf(state, 'Cloud Storage');
+    const software = idOf(state, 'Junior Software Dev', `bench-${N}`);
+    const hardware = idOf(state, 'Junior Hardware Eng', `bench-${N}`);
+    state = changeCard(relocate(state, [cloud], `development-${N}`, game), software, { 'blue xp tokens': 1, workaholic: 1, burnout: 1 }, game);
+    mount({ initial: putOn(state, [software, hardware], `development-team-${N}`, cloud, game) });
+    fireEvent.click(tab(N));
+    const label = table!.decor![software]!.badge!;
+    expect(label).toBe('overworked, overworked in blue, burned out, 1 blue xp token, 1 workaholic, 1 burnout');
+    hover(software);
+    expect(detail()).toBe(`Junior Software Dev — cost 2 · skill software · output 1 · salary 0 · role Junior — ${label}`);
+  });
+});

@@ -23,7 +23,7 @@ import { designerFaceRenderer } from '@/engine/pixi/text-faces';
 import { makeInitApp } from '@/utils/init-app';
 import { ActionButtons, BANNER_SLOT, BANNER_STYLE, BUTTON_ROW, MoneyLine, PlayerPicker } from './board-controls';
 import { BoardGrid } from './board-grid';
-import { boardBadges, boardCaptions, boardDims, keptBadges } from './board-text';
+import { boardBadges, boardCaptions, boardDims, keptBadges, labelledFacts } from './board-text';
 import { cardDetail } from './card-detail';
 import { CardOffer } from './card-offer';
 import { NOTHING_TAKES, PICK_START, clickCard, liveAt, ringsOf, takersOf, type PickAt, type PickChosen } from './card-pick';
@@ -247,8 +247,11 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
   // A card's face has room for only some of its columns, so a fitted table shows the card under the pointer in full below it.
   const [hovered, setHovered] = useState<string | null>(null);
   const hoveredCard = placement.cards.find((card) => card.id === hovered);
-  // A face-down card is a back to this seat, so pointing at it shows nothing.
-  const detail = hoveredCard?.faceUp ? cardDetail(hoveredCard.faceKey) : null;
+  // A face-down card is a back to this seat, so pointing at it shows nothing. A card's label is named after its columns, in full: a
+  // card hanging over it may cover the corner it is drawn in (Call 5). The facts the label says are left off the columns.
+  const label = hoveredCard === undefined ? undefined : decor?.[hoveredCard.id]?.badge;
+  const whole = hoveredCard?.faceUp ? cardDetail(hoveredCard.faceKey, label === undefined ? [] : labelledFacts(hoveredCard, game)) : null;
+  const detail = whole !== null && label !== undefined ? `${whole} — ${label}` : whole;
   // A press whose view lists a choice of several answers is not sent yet: the offer and the picker close, and its questions open in
   // their place. Any other press goes at once.
   const askOrSend = (move: string, chosen: PickChosen | null, go: () => void) => {

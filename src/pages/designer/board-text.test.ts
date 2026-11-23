@@ -14,6 +14,7 @@ import { boardBadges } from './board-text';
 import { seatExtras } from '@/engine/core/lang/board-view';
 import { GUILD_GAME, SHOWN } from '@/engine/core/lang/testing';
 import { boardDims, loneCounts } from './board-text';
+import { labelledFacts } from './board-text';
 import { RESTING_GAME } from '@/engine/core/lang/testing';
 import { HIDDEN_FACE_KEY } from '@/engine/core/derive-scene';
 import { keptBadges } from './board-text';
@@ -245,6 +246,16 @@ describe('flags kept, counts no column reads, and faded cards', () => {
     it('says nothing of a face-down card, even if its data were left on it', () => {
       const card = cardOf(withCounts(dented, { dents: 2 }), dented);
       expect(loneCounts({ ...card, faceUp: false, faceKey: 'back' }, marked)).toEqual([]);
+    });
+  });
+
+  describe('labelledFacts', () => {
+    it("names the flags set and the counts no column reads, which a label says, and never a count a column reads", () => {
+      const card = cardOf(withCounts(potter, { dents: 1, 'fixed dents': 2 }), potter);
+      expect(labelledFacts(card, marked)).toEqual(['tired', 'dents', 'fixed dents']);
+      expect(cardOf(laid, dented).data).toMatchObject({ 'red done': 1, 'new red done': 3 });
+      expect(labelledFacts(cardOf(laid, dented), marked)).toEqual([]);
+      expect(labelledFacts({ ...card, faceUp: false, faceKey: 'back' }, marked)).toEqual([]);
     });
   });
 
