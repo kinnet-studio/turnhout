@@ -64,6 +64,10 @@ The other inputs:
 ## Global Constraints
 
 - **All of plan 7-2a's Global Constraints apply**, its controller amendments (counts from the committed test, the removal probe each task, the auto-player steered when a tallied path would stay at 0, counts as numbers and flags as `=== true`) and its pre-flight notes included. They are repeated here where they bind.
+- **Amended from its pre-flight** (`docs/superpowers/notes/2026-11-23-startup-7-2b-preflight.md`): this plan carries R1–R24, with R9 ruled (a), R21 ruled (b) and R23 ruled: R21(b), and the long-runs speed-up 4 runs first.
+  - BASE is the speed-up 4 mini plan's finished head, not 7-2a's: Startup has 333 examples there (7-2a's fix wave added 2), so N₉ = 333 and the end is 348; the pre-flight's probe had 331. Under R21(b) the 4-player replay `it()` is not added, so the end is one new `it()` (the slice-7 moving-Equity tally test): at the probe's BASE the full suite goes 4029 → 4030 and Startup's file 114 → 115.
+  - A second amendment follows from the probe rebased onto that head (the 7-2a fix wave's colour checks and `moved this round`).
+  - At the plan's end the controller times Startup's test file, alternating BASE and HEAD.
 - **Branch and commits.** Develop on `claude/peaceful-curie-rdfkow`. Commit by pathspec, never `git add -A`. Every commit message ends with these two lines and contains no model identifiers:
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`
   `Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC`
@@ -89,13 +93,13 @@ The other inputs:
   - an auto-player that hides a rule that never fires.
 - **Every rules line is pinned.** Each line this plan adds or changes fails some example when it alone is removed. Excepted are `Hint:` lines, `Players take turns.` lines, table rows and `Cards can …` declarations. Each task's Step 4 runs plan 5-2a's removal probe.
 - **Example counts.** N₉ is the count the committed test pins when Task 1 starts: plan 7-2a's N₈ + 24, plus whatever fix waves add.
-  - The tasks end at N₉ + 5, + 12 and + 15.
+  - The tasks end at N₉ + 5, + 12 and + 15 (at N₉ = 333: 338, 345 and 348).
   - Each task updates `results` in `startup-simulator.test.ts`, the Startup test in `designer-page.test.tsx` and the README's "Its N examples".
 - **Commands.**
   - Single file: `bunx vitest run src/games/startup-simulator.test.ts`. Full suite: `bun run test`. Types: `bun run typecheck`.
   - Before Task 1: record `BASE=$(git rev-parse HEAD)`; run `bun run test` once for the passing count and the long runs' time; note N₉.
 - **Existing tests.** Only the lines each task names change. If any other existing test fails, stop and report it.
-- **Long runs.** If an invariant shows a wrong rule, fix the rules text. If a required tally stays at 0, change the auto-player, never the rules; report a key that stays unreachable and pin its path with an arranged test. If a rule can't be written with plans 4-1 to 7-1's phrases, report it. If the long runs take more than a third longer than at BASE, report the timing.
+- **Long runs.** If an invariant shows a wrong rule, fix the rules text. If a required tally stays at 0, change the auto-player, never the rules; report a key that stays unreachable and pin its path with an arranged test. If a rule can't be written with plans 4-1 to 7-1's phrases, report it. If the long runs take more than a third longer than at BASE, report the timing, and if the Startup file's best is over 30 s (7-2a's line).
 - **Style.**
   - 2-space indent, single quotes, comments that say why.
   - Commit prefix `feat(games):` (`docs:` for a README-only commit).
@@ -107,7 +111,7 @@ The other inputs:
 ## Review Focus
 
 - **A vetoed action that was the Founder's last, or one that would have started research, a brainstorm or an offer.**
-  - Expected: its AP is spent and nothing else happens. The turn then goes on exactly as after any last action: the Engine, the cleanups, the next seat.
+  - Expected: its AP is spent and nothing else happens. The turn then goes on exactly as after any last action: at 0 actions the Founder can only end their actions, and then the Engine, the cleanups and the next seat follow.
   - Tests: Task 1 example 5, and the long-run Veto invariant.
 - **A window that asks the very player the action is aimed at:** the Investor of a Buyback, or the Founder of a token being sold (R2).
   - Expected: they are asked like any holder, in turn from the actor's left. A Veto burns the vetoer's token of the actor, never the token being traded.
@@ -174,7 +178,7 @@ const ANSWERS: string[];                      // [VETO, LET_IT_GO_AHEAD]
 type Judged = { press: Move; as: 'own' | 'cost' | 'ahead' };
 /** Follows one game's windows: keeps the press that opened the one now open, and judges each move. */
 function windowJudge(): (before: GameState, move: Move, after: GameState) => Judged;
-/** The seat whose turn it is (`TURN_OF_KEY`), and the phase its turn stands in: the phase it was interrupted from, during a window or an offer. */
+/** The seat whose turn it is (`TURN_OF_KEY`, or `turn.current` where no turn is under way: a round's steps and the final check), and the phase its turn stands in: `waitingOf(state).back.phase` during a window; the interrupted phase during an offer (Task 2) or a lawsuit (Task 3), but not during research, a brainstorm, graduation or sourcing, which also set `INTERRUPTED_KEY` and are the turn's own phases; else `turn.phase`. */
 function turnOf(state: GameState): { seat: PlayerId; phase: string };
 ```
 
@@ -182,16 +186,19 @@ function turnOf(state: GameState): { seat: PlayerId; phase: string };
   - **Pins.**
     - `results` is N₉ + 5; the designer page's count too.
     - `PHASES` gains `'veto'` last.
+    - 'takes back every move with undo, and rebuilds the game from its log, through recruits and research (3 players, seed 1)': 52 → 57 in its comment and both `toHaveLength`s. It stays 57 through Task 4.
   - **Every check and tally reads `Judged`, never the raw move:**
     - `keepsTheRules`, `happenings` and the tally of move types see `press` for `own` and `ahead`, and see nothing for `cost`;
     - `keepsTheBudget` charges `press`'s cost for `cost`, and nothing for `ahead`;
-    - the long run's watch builds one `windowJudge()` per game.
-  - **`ranTheEngine` and `atTheEngine`** read the seat and phase from `turnOf(before)`, not `before.turn`. A move that closes a window on the actor's last action runs the Engine for the actor, though another seat made it.
-  - **`turnsIn`.** `playGame` adds to the skipped set the log index of each move whose `before.turn.phase` is `veto` (Task 2 adds `offer`), so turns are still runs of the actor's moves.
+    - `keepsTheRules`' per-seat limits read the seat and phase from `turnOf(after)`, not `after.turn`: a seat answering a window holds only what it holds outside its turn;
+    - the long run's watch builds one `windowJudge()` per game;
+    - `keepingForReplay` builds its own `windowJudge()` and counts the judged press, skipping `cost`. Plan 6-1 Task 6's reshuffle test ('leaves no id a seat saw face up in the strategy discard …, at 2 players seed 2') judges moves the same way.
+  - **`ranTheEngine` and `passedTurn`** read the seat and phase from `turnOf` on both sides (`before` and `after`), not `turn`: handing an offer on, or answering a window or an offer, passes no turn and runs no Engine. `atTheEngine` stays as it is. No window move runs the Engine: after a last action, vetoed or let go ahead, the turn waits at 0 actions for `end their actions` (7-1's retune).
+  - **`turnsIn`.** `playGame` adds to the skipped set the log index of each move whose type is in `ANSWERS`, so turns are still runs of the actor's moves.
   - **`playTurn`.**
-    - It goes on while `TURN_OF_KEY` is `by`'s, not while `turn.current` is.
+    - It goes on while `turnOf(state).seat` is `by`, not while `turn.current` is.
     - In `veto`, the current seat answers:
-      - it vetoes with the first card of its portfolio whose `founder` is the actor when `(t + w) % 7 === 3`, where `w` counts the windows opened so far in this turn;
+      - in the last round (`lastRound()`), it vetoes with the first card of its portfolio whose `founder` is the actor when `(t + w) % 7 === 3`, where `w` counts the windows opened so far in this turn. A Veto changes the game from there on, so vetoes wait for the last round;
       - else it presses `LET_IT_GO_AHEAD` (Task 2 adds R2's case).
     - Its picks go through the view when the run does.
   - **Invariants (Review Focus 1, the spec's anti-goal):**
@@ -199,7 +206,7 @@ function turnOf(state: GameState): { seat: PlayerId; phase: string };
     - when a press opens one, its `asked` is every seat still in, from the actor's left round to its right, whose portfolio held a card naming the actor in `before`;
     - a `VETO` move moves exactly one card, from the vetoer's portfolio to the actor's equity, on no card. It changes no capital, no counter and no other card, and the actor's actions are as the opening move left them. Later steps the closing move runs are judged as their own moves: the Engine, the cleanups and the next turn after a last action.
     - 7-2a Task 5's `lang:on` invariant gains: … or in a `VETO` of it, which leaves it on no card.
-  - **The view (Review Focus 5).** In the run through the view (seed 1), for each move that opens a window, every seat's `seatExtras(…).waiting` has `by` the actor. The `JSON.stringify` of it holds no card id, and no name of a card in a zone that seat can't see.
+  - **The view (Review Focus 5).** In the run through the view (seed 1), for each move that opens a window, every seat's `seatExtras(…).waiting` has `by` the actor. The `JSON.stringify` of it holds no card id as a quoted string (`"c12"`), and each card the press picked (`subject.card` or `subject.cards`, and `subject.onto`) from a zone that seat can't see shows as `a face-down card` in its `waiting.cards`. A label may name a card's kind.
 - [ ] **Step 2: Run** the file. Expected: FAIL.
 - [ ] **Step 3: Change the rules text.**
   - **The window** (§17.B.5, the overview's Veto calls, R2). Right after `In every phase:` (before its first rule) add:
@@ -217,6 +224,9 @@ Phase: veto
   A player may veto with a card in their portfolio.
     Only if it is a card whose founder is the player acting.
     Then:
+      It is not blue consultant.
+      It is not red consultant.
+      It is not qa consultant.
       Move it to its founder's equity.
       The action does not go ahead.
   A player may let the action go ahead.
@@ -279,26 +289,43 @@ Example: only one of the Founder's own tokens can Veto their action (section 17)
   And p0's equity has an Equity whose founder is p0
   And p0's bench is empty
 
-Example: a Veto of the Founder's last action still spends it, so their turn goes on to the Engine, and a Consultant burned in a Veto leaves its product (section 17, the overview's call)
+Example: a Veto of the Founder's last action still spends it, so they can only end their actions, and a Consultant burned in a Veto leaves its product (section 17, the overview's call)
   Given p0 has 1 action
   And p0's development has a Dating App
   And p1's portfolio has an Equity whose founder is p0
   And the Equity whose founder is p0 in p1's portfolio is on the Dating App in p0's development
   And the Equity whose founder is p0 in p1's portfolio is blue consultant
+  And the Equity whose founder is p0 in p1's portfolio is red consultant
+  And the Equity whose founder is p0 in p1's portfolio is qa consultant
   When p0 recruits a junior software dev
   And p1 vetoes with the Equity whose founder is p0
+  Then the phase is actions
+  And it is p0's turn
+  And p0 has 0 actions
+  When p0 ends their actions
   Then it is p1's turn
-  And the phase is actions
   And the Dating App in p0's development has 0 blue cubes
   And p0's equity has an Equity whose founder is p0
   And the Equity whose founder is p0 in p0's equity is on no card
+  And the Equity whose founder is p0 in p0's equity is not blue consultant
+  And the Equity whose founder is p0 in p0's equity is not red consultant
+  And the Equity whose founder is p0 in p0's equity is not qa consultant
 ```
 
   **How the numbers come** (§6, §13.A, §17.B.5, the overview's Veto calls):
   - **The Veto:** a holder burns the token back to the Founder, the action is cancelled and the AP is wasted (§17.B.5). It is raised at declaration, before anything is paid, and only against an action that costs AP (the overview). A Recruit costs 1 action and $2 (§6, §13.A): the action is spent, the $2 never paid.
   - **Turn order:** holders are asked from the Founder's left (the spec's call). p1 holds no token of p0's and is not asked. After the Recruit goes ahead: 7 − 2 = 5.
-  - **Example 5:** the Founder's last action is spent, so the Engine runs. The burned Consultant no longer sits on the Dating App, which gets no cube (§17.B.4).
-  - **Lines each example pins:** 1 the window line, `Move it to its founder's equity.` and `The action does not go ahead.`; 3 `The veto passes to the left.`; 4 the veto button's guard. 2 and 5 are guards of the overview's calls.
+  - **Example 5:** the Founder's last action is spent, so at 0 actions they can only end their actions, and the Engine runs after that. The burned Consultant no longer sits on the Dating App, which gets no cube (§17.B.4), and keeps none of its colours.
+  - **Lines each example pins:** 1 the window line, `Move it to its founder's equity.`, `The action does not go ahead.` and, with 5, the Veto's three clearing lines; 3 `The veto passes to the left.`; 4 the veto button's guard. 2 and 5 are guards of the overview's calls.
+  - **Existing examples that change.** Two of 7-2a's examples now open a window, since a Launch and a Pivot cost AP and p1–p3 hold p0's Equity (R3):
+    - In 'a Launch moves the Founder's staff to the ops team and leaves the Investor's Consultant on the product (section 6, section 17, the slice's R1)', after `  When p0 launches the Dating App` add `  And p1 lets the action go ahead`.
+    - In 'a Pivot sends the Founder's staff to the bench and the Investors' Consultants back to them, unplaced and with no colour (…)', after `  When p0 pivots the Dating App` add these three lines:
+
+      ```text
+        And p1 lets the action go ahead
+        And p2 lets the action go ahead
+        And p3 lets the action go ahead
+      ```
 - [ ] **Step 4: Run** `bunx vitest run src/games src/pages/designer`, then `bun run test` and `bun run typecheck`, then the removal probe.
   - 7-1's checks give no diagnostic: the veto phase takes turns, passes on, has no go-to, After line or cost, isn't first and isn't a step phase, and its clause reads only public portfolios.
   - The long runs pass with windows opening once a seat holds Equity.
@@ -331,7 +358,6 @@ EOF
   - **Pins.**
     - `results` is N₉ + 12; the designer page's count too.
     - `PHASES` gains `'offer'` after `'veto'`.
-    - `playGame`'s skipped set adds moves whose `before.turn.phase` is `offer`.
   - **Money (`keepsTheRules`, judged moves):**
     - `BUY_BACK` and `SELL_EQUITY` change no capital;
     - `SELL_BACK`: the mover gains the card's founder's `share price` (in `before`) from that founder;
@@ -345,7 +371,7 @@ EOF
     - 7-2a Task 5's `lang:on` invariant gains: … or in a `SELL_BACK` or `TAKE` of it (on no card after), or a `TAKE_PLACING` of it (on its target).
   - **The auto-player.**
     - **In `veto` (R2):** the asked seat always vetoes a waiting `SELL_EQUITY` of a token whose `founder` it is, when it holds one of the seller's tokens.
-    - **`buyingBack()`**, planned when `(t + a) % 9 === 6`: buy back the first own token held by another seat whose price leaves the seat 2 or more capital.
+    - **`buyingBack()`**, planned when `(t + a) % 9 === 6` at 3 or more players: buy back the first own token held by another seat whose price leaves the seat 2 or more capital (any capital at 4 or more players, R21).
     - **`selling()`**, planned when `(t + a) % 9 === 2` at 3 or more players: sell the first card of its portfolio. The buyer is the choice's answer as any press's is.
     - **In `offer`, the current seat answers:**
       - holding the offered card, it sells it back unless `t % 3 === 1`, when it declines;
@@ -383,6 +409,9 @@ Phase: offer
     Then:
       They get its founder's share price from its founder.
       It is not offered.
+      It is not blue consultant.
+      It is not red consultant.
+      It is not qa consultant.
       Move it to its founder's equity.
       Go back to the interrupted turn.
   A player may take a card in another player's portfolio.
@@ -391,6 +420,9 @@ Phase: offer
     Then:
       They pay its founder's share price to its owner.
       It is not offered.
+      It is not blue consultant.
+      It is not red consultant.
+      It is not qa consultant.
       Move it to their portfolio.
       Go back to the interrupted turn.
   A player may take a card from another player's portfolio to a card in another player's development or another player's operations.
@@ -426,6 +458,10 @@ Example: Buyback: the Founder offers to buy a token back at their current Share 
   And p0 has 10 capital
   And p0's operations has a Neobank
   And p1's portfolio has an Equity whose founder is p0
+  And the Equity whose founder is p0 in p1's portfolio is on the Neobank in p0's operations
+  And the Equity whose founder is p0 in p1's portfolio is blue consultant
+  And the Equity whose founder is p0 in p1's portfolio is red consultant
+  And the Equity whose founder is p0 in p1's portfolio is qa consultant
   When p0 buys back the Equity whose founder is p0
   Then the phase is veto
   And it is p1's turn
@@ -440,6 +476,10 @@ Example: Buyback: the Founder offers to buy a token back at their current Share 
   And p0 has 0 capital
   And p1 has 17 capital
   And p0's equity has an Equity whose founder is p0
+  And the Equity whose founder is p0 in p0's equity is on no card
+  And the Equity whose founder is p0 in p0's equity is not blue consultant
+  And the Equity whose founder is p0 in p0's equity is not red consultant
+  And the Equity whose founder is p0 in p0's equity is not qa consultant
   And the Equity whose founder is p0 in p0's equity is not offered
   And p1's portfolio is empty
 
@@ -454,7 +494,9 @@ Example: a Buyback is refused for another Founder's token or without the price, 
   Given p0 has 5 capital
   When p0 buys back the Equity whose founder is p0
   And p1 lets the action go ahead
-  And p1 declines the offer
+  And p1 sells back the Equity whose founder is p2
+  Then it is rejected because "it is offered"
+  When p1 declines the offer
   Then the phase is actions
   And it is p0's turn
   And p0 has 2 actions
@@ -470,6 +512,10 @@ Example: a Secondary Trade sells a token to a third player at its Founder's Shar
   And the event in play has the Venture Capital Rain
   And p0's operations has a Neobank
   And p1's portfolio has an Equity whose founder is p0
+  And the Equity whose founder is p0 in p1's portfolio is on the Neobank in p0's operations
+  And the Equity whose founder is p0 in p1's portfolio is blue consultant
+  And the Equity whose founder is p0 in p1's portfolio is red consultant
+  And the Equity whose founder is p0 in p1's portfolio is qa consultant
   And p2 has 10 capital
   When p1 sells the Equity whose founder is p0
   Then the phase is offer
@@ -482,6 +528,10 @@ Example: a Secondary Trade sells a token to a third player at its Founder's Shar
   And p2 has 0 capital
   And p0 has 7 capital
   And p2's portfolio has an Equity whose founder is p0
+  And the Equity whose founder is p0 in p2's portfolio is on no card
+  And the Equity whose founder is p0 in p2's portfolio is not blue consultant
+  And the Equity whose founder is p0 in p2's portfolio is not red consultant
+  And the Equity whose founder is p0 in p2's portfolio is not qa consultant
   And the Equity whose founder is p0 in p2's portfolio is not offered
 
 Example: a Founder who holds the seller's Equity may Veto the sale of their own token, burning the seller's token back to the seller's supply (the slice's R2, section 17)
@@ -505,16 +555,21 @@ Example: a buyer who can't pay the Share Price can only decline, and the seller'
   Given 3 players
   And it is p1's turn
   And the phase is actions
-  And p1's portfolio has an Equity whose founder is p0
+  And p0's development has a Dating App
+  And p1's portfolio has an Equity whose founder is p0 and an Equity whose founder is p2
   And p2 has 4 capital
   When p1 sells the Equity whose founder is p0
-  And p2 takes the Equity whose founder is p0
+  And p2 takes the Equity whose founder is p2
+  Then it is rejected because "it is offered"
+  When p2 takes the Equity whose founder is p0
+  Then it is rejected because "they have at least its founder's share price in capital"
+  When p2 takes the Equity whose founder is p0 to the Dating App, choosing blue
   Then it is rejected because "they have at least its founder's share price in capital"
   When p2 declines the offer
   Then the phase is actions
   And it is p1's turn
   And p1 has 2 actions
-  And p1's portfolio has an Equity whose founder is p0
+  And p1's portfolio has an Equity whose founder is p0 and an Equity whose founder is p2
   And the Equity whose founder is p0 in p1's portfolio is not offered
 
 Example: in a two-player game there is no third player, so no Secondary Trade (section 6, section 17)
@@ -532,15 +587,17 @@ Example: a buyer may place the token as a Consultant as they take it, picking it
   And p1's development has a Smart Lock
   And p2's development has a Dating App
   And p3's development has a To-Do List
-  When p0 sells the Equity whose founder is p1, paying p3
+  When p0 sells the Equity whose founder is p1, choosing p3
   Then the phase is offer
   And it is p3's turn
   When p3 takes the Equity whose founder is p1 to the Dating App, choosing red
   Then it is rejected because "the target card's owner is its founder"
+  When p3 takes the Equity whose founder is p2 to the Dating App, choosing red
+  Then it is rejected because "it is offered"
   When p3 takes the Equity whose founder is p1 to the Smart Lock, choosing red
-  And p0 sells the Equity whose founder is p2, paying p1
+  And p0 sells the Equity whose founder is p2, choosing p1
   And p1 takes the Equity whose founder is p2 to the Dating App, choosing blue
-  And p0 sells the Equity whose founder is p3, paying p2
+  And p0 sells the Equity whose founder is p3, choosing p2
   And p2 takes the Equity whose founder is p3 to the To-Do List, choosing qa
   Then p0 has 22 capital
   And p1 has 2 capital
@@ -548,6 +605,7 @@ Example: a buyer may place the token as a Consultant as they take it, picking it
   And p3 has 2 capital
   And the Equity whose founder is p1 in p3's portfolio is on the Smart Lock in p1's development
   And the Equity whose founder is p1 in p3's portfolio is red consultant
+  And the Equity whose founder is p1 in p3's portfolio is not offered
   And the Equity whose founder is p1 in p3's portfolio is not blue consultant
   And the Equity whose founder is p1 in p3's portfolio is not qa consultant
   And the Equity whose founder is p2 in p1's portfolio is on the Dating App in p2's development
@@ -564,14 +622,14 @@ Example: a buyer may place the token as a Consultant as they take it, picking it
     - p2 pays $10 to p1: p2 0, p1 17; p0 is untouched.
     - Venture Capital Rain is "not on Secondary Trades or Buybacks" (§20.D 1).
   - **R2:** the Veto covers every AP action (§17.B.5), so p0, holding p1's token, vetoes p1's sale of p0's own token, burning p1's token back to p1.
-  - **Example 7:** three sales of $5 each: 7 + 15 = 22, and each buyer 7 − 5 = 2. Each buyer is named with `, paying …`, the words examples have for a player chosen.
+  - **Example 7:** three sales of $5 each: 7 + 15 = 22, and each buyer 7 − 5 = 2. Each buyer is named with `, choosing …`, the words examples have for a player chosen.
   - **Lines each example pins:**
-    - 1: the Buyback button's lines, `offered`, `sell back`'s four lines;
-    - 2: the Buyback's two guards and `decline the offer`'s two lines;
-    - 3: the sale's lines and `take`'s lines;
-    - 5: `take`'s capital guard;
+    - 1: the Buyback button's lines, `offered`, `sell back`'s lines, its three clearing lines included;
+    - 2: the Buyback's two guards, `sell back`'s `offered` guard and `decline the offer`'s two lines;
+    - 3: the sale's lines and `take`'s lines, its clearing lines included;
+    - 5: `take`'s `offered` and capital guards, and `take … to a card …`'s capital guard;
     - 6: the sale's guard;
-    - 7: `take … to a card …`'s target guard, placement, clearing lines and options.
+    - 7: `take … to a card …`'s target and `offered` guards, placement, `It is not offered.`, clearing lines and options.
     - 4 is R2's guard.
 - [ ] **Step 4: Run** `bunx vitest run src/games src/pages/designer`, then `bun run test` and `bun run typecheck`, then the removal probe.
 - [ ] **Step 5: Commit**
@@ -607,9 +665,14 @@ EOF
 - [ ] **Step 1: Change the tests.**
   - **Pins.**
     - `results` is N₉ + 15; the designer page's count too.
-    - `PHASES` gains `'lawsuit'` after `'offer'`.
+    - `PHASES` gains `'lawsuit'` after `'offer'`. `turnOf` reads the interrupted phase during `lawsuit` as during `offer`.
     - The values test adds `buyout` and `suit cost` (numbers); `playerValues` gains `'buyout due'` right after `'dividend'`.
-    - `'lays out the table …'`: after `['event-discard', false, 'pile', 'public']` add `['court', false, 'pile', 'public']`.
+    - `'lays out the table …'`: after `['growth-deck', false, 'pile', 'secret']` add `['court', false, 'pile', 'public']`.
+    - Three tests pin the shown values; add `'buyout due'` after `'qa spent'` in their lists, and `'buyout due': 0` in both value sets:
+      - 'shows the values that add up cards everyone sees …';
+      - 'gives every seat the same values of each player … (3 players, seed 1)';
+      - '(guard) shows the same flags beside a value … (Call 5)'.
+    - Playtest-fitted: `const FILE = 'File a card in your strategy hand'`, and the row `[FILE, 'it is a Non-Compete Suit card']` in both 'Review Focus: plays Training onto a card …' and 'Review Focus: labels an Attribute and Hype …'.
   - **The Strategy-card conservation invariant** counts the court with the deck, the discard, the hands, the brainstorm rows and the attributes in play.
   - **Invariant:** the court holds a card only while the turn stands in `lawsuit`, and then exactly one, a Non-Compete Suit.
   - **7-2a Task 5's `lang:on` invariant** gains: … or in a `SUE` of it, which leaves it on no card in its founder's equity.
@@ -617,12 +680,12 @@ EOF
     - a `FILE` press pays the Suit's `price` (in `before`) to the bank;
     - a `SUE` press pays the mover's `buyout due` (in `before`) to the holder of the card it moves.
   - **The auto-player.**
-    - **`suing()`**, a free move made at most once a turn, right after `debuffing()`: when its strategy hand holds a Non-Compete Suit, another seat's portfolio holds a card naming it, and the press is allowed, it files the Suit.
+    - **`suing()`**, a free move made at most once a turn, right after `debuffing()`, at 3 or more players: when its strategy hand holds a Non-Compete Suit, another seat's portfolio holds a card naming it, and the press is allowed, it files the Suit.
     - **In `lawsuit`** it sues the card at `t % n` among the press's candidates (other seats' portfolio cards naming it, `fromZoneIds` order).
     - **`isPlayable`** counts a Non-Compete Suit as playable, so the brainstorm keeps it and the cleanup and flush spare it.
 - [ ] **Step 2: Run** the file. Expected: FAIL.
 - [ ] **Step 3: Change the rules text.**
-  - **Table.** After `  The event discard is a pile in the center that everyone can see.` add `  The court is a pile in the center that everyone can see.`
+  - **Table.** After `  The growth deck is a pile in the center that no one can see.` add `  The court is a pile in the center that everyone can see.`
   - **The Suit's numbers** (§17.C.2, §20.A). Right after 7-2a's `Consultant qa:` section add:
 
 ```text
@@ -663,6 +726,9 @@ Phase: lawsuit
     Only if it is a card whose founder is them.
     Then:
       They pay its founder's buyout due to its owner.
+      It is not blue consultant.
+      It is not red consultant.
+      It is not qa consultant.
       Move it to their equity.
       Move the court to the strategy discard.
       Go back to the interrupted turn.
@@ -675,7 +741,12 @@ Example: the Non-Compete Suit costs $4 and pays the Investor $5, who must return
   Given the phase is actions
   And p0 has 9 capital
   And p0's strategy hand has a Non-Compete Suit
+  And p0's operations has a Neobank
   And p1's portfolio has an Equity whose founder is p0
+  And the Equity whose founder is p0 in p1's portfolio is on the Neobank in p0's operations
+  And the Equity whose founder is p0 in p1's portfolio is blue consultant
+  And the Equity whose founder is p0 in p1's portfolio is red consultant
+  And the Equity whose founder is p0 in p1's portfolio is qa consultant
   When p0 files the Non-Compete Suit
   Then the phase is lawsuit
   And it is p0's turn
@@ -686,6 +757,10 @@ Example: the Non-Compete Suit costs $4 and pays the Investor $5, who must return
   And p1 has 12 capital
   And p0 has 3 actions
   And p0's equity has an Equity whose founder is p0
+  And the Equity whose founder is p0 in p0's equity is on no card
+  And the Equity whose founder is p0 in p0's equity is not blue consultant
+  And the Equity whose founder is p0 in p0's equity is not red consultant
+  And the Equity whose founder is p0 in p0's equity is not qa consultant
   And p1's portfolio is empty
   And the strategy discard has a Non-Compete Suit
   And the court is empty
@@ -725,7 +800,7 @@ Example: a Founder can't file the Suit when no Investor holds their Equity, and 
   - **The Suit:** a Strategy card played for 0 AP at its printed price, $4 (§20.A). The Founder pays an Investor holding their Equity $5, and the Investor must return 1 token (§17.C.2, §20.A).
   - 9 − 4 = 5, then 5 − 5 = 0, and p1 has 7 + 5 = 12. Filing needs $4 + $5 = $9, so $8 is refused before anything is paid (suwa's `non_compete_suit` refuses a Founder who can't pay the $5).
   - **Lines each example pins:**
-    - 1: `Buyout:`, `Buyout due:`, the court line in Table (a diagnostic without it), the filing button's pay, move and phase lines, and the lawsuit's four lines;
+    - 1: `Buyout:`, `Buyout due:`, the court line in Table (a diagnostic without it), the filing button's pay, move and phase lines, and the lawsuit's lines, its three clearing lines included;
     - 2: both `Suit cost:` lines and the filing's capital guard, and the lawsuit's guard;
     - 3: the filing's Investor guard and its card guard.
 - [ ] **Step 4: Run** `bunx vitest run src/games src/pages/designer`, then `bun run test` and `bun run typecheck`, then the removal probe.
@@ -752,9 +827,9 @@ EOF
 - Consumes: every constant and policy above and in plan 7-2a; `windowJudge`, `turnOf`, `waitingOf`.
 - **`happenings` gains these keys** (on judged moves, read through the runtime):
   - **The window:**
-    - `a window asked one holder` and `a window asked two or more holders`, for a move that opened one, by `waitingOf(after).asked.length`;
+    - `a window asked one holder` and `a window asked two or more holders`, for the move that closes one (a `VETO` or the closing let-go), by `waitingOf(before).asked.length`;
     - `an action vetoed`, for a `VETO`; `an action let go ahead`, for a move judged `ahead`;
-    - `a last action vetoed`, for a `VETO` after which the Engine had run for the actor (`ranTheEngine` with `turnOf`);
+    - `a last action vetoed`, for a `VETO` after which the actor has 0 actions (`counterOf(after, 'actions', waiting.by) === 0`);
     - `a Consultant burned in a Veto`, for a `VETO` whose card sat on a card in `before`;
     - `a Secondary Trade vetoed by its token's Founder`, for a `VETO` of a waiting `SELL_EQUITY` whose card names the vetoer (R2).
   - **The offers:** `a Buyback accepted`, for `SELL_BACK`; `a Buyback declined` and `a Secondary Trade declined`, for a `DECLINE`, by whether the offered card was in the decliner's portfolio; `a Secondary Trade accepted`, for `TAKE` or `TAKE_PLACING`; `a Consultant placed by a buyer`, for `TAKE_PLACING`.
@@ -763,12 +838,8 @@ EOF
 - [ ] **Step 1: Write the tests.**
   - **`'made every move in those runs …'`** also expects `VETO`, `LET_IT_GO_AHEAD`, `BUY_BACK`, `SELL_EQUITY`, `SELL_BACK`, `TAKE`, `TAKE_PLACING`, `DECLINE`, `FILE` and `SUE` above 0.
   - **Append `it('played slice 7’s moving Equity in those runs: windows asking one holder and several, actions vetoed and let go ahead, a last action vetoed, a Consultant burned, a sale vetoed by its token’s Founder, Buybacks and Secondary Trades accepted and declined, a buyer’s placement, and Suits filed and won')`.** It expects every key above to be above 0.
-  - **Append `it('takes back the last move and rebuilds whole games from their logs, through windows, offers and lawsuits (Review Focus: 4 players, seeds 1 to 5)')`.**
-    - Play each game to its result, keeping the state before each move.
-    - A fresh engine given `loadLog(log)` equals the final state, and `engine.undo()` gives the state before the last move.
-    - Across the five logs, some log holds a `VETO`, a `SELL_BACK` and a `SUE` (count them through the watch).
-    - For one move in a window, `engine.undo()` gives the state before it, its `waitingOf` equal to the stored one.
-  - **Kept as they are:** `'plays the same game through the page’s view as without it'` (now through windows and offers, answered by other seats) and every earlier tally.
+  - Extend the 3-player replay test ('… (3 players, seeds 1 to 5)'): across its logs some log holds a `VETO`, a `SELL_BACK` and a `SUE`, counted through `keepingForReplay`; and for the first move made while a window is open, `engine.undo()` gives the state before it, its `waitingOf` equal to the stored one. The 2-player replay leaves those three counts to it.
+  - **Kept as they are:** `'plays the same game through the page’s view as without it'` (now through windows, answered by the other seat; offers and lawsuits come at 3 or more players) and every earlier tally.
 - [ ] **Step 2: Run** `bunx vitest run src/games/startup-simulator.test.ts`.
   - If a required key stays at 0, print the tally and change the auto-player, never the rules. Ways to reach each key:
     - **R2:** at 3 or more players, sell a token whose founder holds one of the seller's;
@@ -777,19 +848,23 @@ EOF
     - **the Suit:** keep a Non-Compete Suit until an Investor holds the seat's token;
     - **declines:** decline more often at odd `t`.
   - Report a key that stays unreachable, with the tally, and pin its path with an arranged test in the shape of 6-2b Task 5's.
+  - Add to `HELD_BY_FEWER_THAN_TWO`, with a comment naming each pin:
+    - `"take a card in another player's portfolio"`, pinned by 'a Secondary Trade sells a token to a third player at its Founder's Share Price, …';
+    - 'a Tier 2 or 3 card launched' and 'a milestone claimed: Platform Power', pinned by 'claims First Mover Advantage, Platform Power and Full Stack Founder at one auto-player Launch of a Tier 2 card, …';
+    - 'a license paid to a chosen provider', pinned by 'the player chooses whom to pay when several provide the Tag (section 6, ruling 25)'.
 - [ ] **Step 3: Write the README.**
   - **The Startup paragraph** becomes "**Startup Simulator (slice 7)**". After plan 7-2a's sentence, add:
     - an Investor may Veto an action its Founder declares that costs AP, burning a token back to the Founder's supply, the action spent and nothing else done;
     - Founders buy tokens back and Investors sell them to a third player, at the Share Price, with consent;
     - the Non-Compete Suit forces a token back for $5.
     - Its rulings list adds 22.
-  - **"It still leaves out"** drops the Veto, Buyback, Secondary Trade and the Non-Compete Suit.
+  - **"It still leaves out"** drops the Veto, Buyback, Secondary Trade and the Non-Compete Suit, and 'selling and poaching' becomes 'selling products (Divest) and poaching'.
   - **Plan 7-1's README paragraph**'s Startup bullet (7-2a's) also names these lines:
     - the window line;
     - `Move it to its founder's equity.` and `The action does not go ahead.`;
     - `Hand the offer phase to another player of their choice who is not the card's founder.`;
     - `They pay its founder's buyout due to its owner.`
-- [ ] **Step 4: Run** `bun run test` and `bun run typecheck`. The passing count is the starting count plus this plan's new tests.
+- [ ] **Step 4: Run** `bun run test` and `bun run typecheck`. The passing count is the starting count plus this plan's new tests: one, the slice-7 moving-Equity tally test (at the pre-flight's BASE, 4029 → 4030; Startup's file 114 → 115). The 4-player replay stays dropped (7-2a's R29(a), R21(b)).
 - [ ] **Step 5: Run the checks.** The first three print nothing. The fourth prints only the Startup count line in `designer-page.test.tsx` and any pin a task reported.
 
 ```bash
@@ -826,8 +901,13 @@ EOF
 - **Plan 7-3 (the page):**
   - the waiting action (`SeatExtras.waiting`) in the asked seat's strip, with its veto and let-go buttons;
   - the offer and lawsuit prompts;
-  - the seat switcher following `turn.current` into `veto` and `offer` and back;
-  - the court on the shared table;
+  - the seat switcher following `turn.current` into `veto` and `offer` and back: it must follow the veto and offer phases to the answering seat (`turn.current`) while the turn stays the actor's; the lawsuit stays with the filer;
+  - the court on the shared table: it sits on the center's first line, after the growth deck (R16), and it is empty except during a lawsuit;
+  - `buyout due` shows on every player's panel (R17); 7-3 rules whether to show it;
+  - the File button shows greyed on every Strategy card but the Suit (R18);
+  - after a vetoed last action the page must offer End at 0 actions (R4);
+  - waiting labels may name a card's kind; a picked card from a zone the viewer can't see shows face down (R6);
+  - starting budget: the pre-flight projected ≈30.0 s for Startup's test file with R21(b)'s cut (R21, R23), on a BASE before speed-up 4; the controller's timing at this plan's end is the figure 7-3 starts from;
   - the browser check of a veto, a let-go, a Buyback and a trade.
 - **Slice 8:**
   - Divest of a product is a second kind of sale. Its consent can reuse the `offer` phase's shape, but its button words must differ from `sell a card in their portfolio`.
@@ -841,6 +921,10 @@ None that needs a new phrase: every line above is written with plans 4-1 to 7-1'
 - **The Non-Compete Suit is two presses.**
   - Nothing reads it as one: no button picks both a card in the hand and a card in another player's zone, no test of `the target card` reads the player a card names, and no guard adds a card's number to a fixed amount.
   - So `file` pays the price, parks the Suit in the public `court` and starts `lawsuit`, where the token is picked. The buyout lives on the Suit (`buyout`), its total with the price on the Suit (`suit cost`), and the payment reads it from the court (`buyout due`). Each number is written once.
-- **An example names a Secondary Trade's buyer with `, paying p3`.** That is the only wording an example has for a player choice (`compile-example.ts`), so it reads oddly for a sale.
-- **The buyer's placement repeats 7-2a's three clearing lines and colour options,** a third copy (see 7-2a's Gaps: no line clears a card's flags as it leaves a card).
+- **The buyer's placement repeats 7-2a's three clearing lines and colour options,** seven copies in all (R5): 7-2a's Invest and Round Start placements, plus the Veto, `sell back`, `take`, `take … to a card` and `sue` (see 7-2a's Gaps: no line clears a card's flags as it leaves a card). Home: a language phrase that clears a card's flags as it leaves a card (a later language plan).
+- **`buyout due` is a per-player value over a shared pile.** It shows on every panel, at 0 outside a lawsuit. Home: 7-3's view.
+- **The File button is greyed on every Strategy card but the Suit** ("it is a Non-Compete Suit card"). Home: 7-3's page.
+- **A plain `take` comes in one game only,** because buyers are short of cash. Home: a later retune.
+- **2-player games hold no Buyback, trade or Suit.** For trades that is the rule; for Buybacks and Suits it is the auto-player (R12, R19). Examples pin them. Home: a later retune, if wanted.
+- **Two keys sit at exactly 2 games** ('a window asked two or more holders' and 'a Secondary Trade vetoed by its token's Founder', 3p5 and 4p2), so they are fragile. Home: the next retune.
 - **Plan 7-1's recorded limit holds:** a window button that changes what the waiting action reads could make it throw as it goes ahead. Here the veto phase's only such button stops the action, and `let the action go ahead` touches nothing.

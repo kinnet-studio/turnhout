@@ -58,7 +58,9 @@ The game after this slice:
   Talent card. Moving it picks its color again.
 - **The Veto window opens for each AP action of a Founder who has an Investor**, at declaration, and asks each holder in
   turn order from the Founder's left; the first to veto cancels it, and the action goes ahead when all pass. The
-  auto-player passes. The window cost (one press per holder per action) is accepted for faithfulness.
+  auto-player passes, except in the last round, where it sometimes vetoes (a Veto earlier would reshuffle the long runs'
+  earlier paths); a sale its token's Founder vetoes stays unconditional (R2). The window cost (one press per holder per
+  action) is accepted for faithfulness.
 - **A vetoed action spends its AP even if it would have been refused for another reason later** (the overview's ruling:
   nothing is paid before the window).
 - **Buyback and Secondary Trade use the Rent Day consent pattern** (propose, accept or decline), and a decline costs the
