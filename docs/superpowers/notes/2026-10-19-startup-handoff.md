@@ -1,19 +1,21 @@
-# Startup Simulator: where the work stands (handoff, paused 2026-10-19; updated 2026-11-16)
+# Startup Simulator: where the work stands (handoff, paused 2026-10-19; updated 2026-11-23)
 
-Everything below is on `claude/peaceful-curie-rdfkow`; 3774 tests pass. Plan 6-1 finished 2026-11-16 (last code commit `9677b98`); the owner asked to pause after it.
+Everything below is on `claude/peaceful-curie-rdfkow`; 3777 tests pass. Plan 6-1 finished 2026-11-16 (last code commit `9677b98`); the owner asked to pause after it. The long-runs retune finished 2026-11-23 (`989b9e0`, `e824269`).
 
 ## Done
 - Slices 1, 3, 4 (all plans), the long-runs speed-up.
 - Slice 5, all four plans: 5-1 (language), 5-2a (talent rules), 5-2b (Strategy, Training, Milestones), 5-3 (the page: the taller fitted table `bbe5c92`, labels for the flags a press reads `cca9bf1`, labels off a Board and slice 5 on the page `db57012`/`99db1ce`/`e21f718`, the browser check and README `ef32883`, final-review fixes `fd0c4a3`). 5-3's ledger: `2026-10-19-startup-5-3-ledger.md`.
 - Slice 6, plan 6-1 (language): targets in another player's zone (`b386c61`), lines a flag turns on (`e3088eb`, `02d7dd3`), the lower of two prices and a game number that goes up (`0df1870`), steps each player takes when a round starts (`772e981`, `2b59c5b`), an example for each piece and the README (`a880885`), fresh ids for cards shuffled into a pile some seat can't see (`24a4264`, `deb140c`, `6ad2a9e`, closing 5-2b's G1), and the final fix wave (`c7edb1a` … `9677b98`: no line can send play into a steps phase from elsewhere, a seat that goes out in its own step passes it on). 6-1's ledger: `2026-11-16-startup-6-1-ledger.md`; its pre-flight: `2026-11-16-startup-6-1-preflight.md`.
+- The long-runs retune (plan `2026-11-23-startup-long-runs-retune.md`): the actions phase waits for the player to end their actions (`989b9e0`); the auto-player builds what it greenlights, so all 20 long runs Launch, and every required key is held by two games (`e824269`). Its pre-flight: `2026-11-23-startup-retune-preflight.md`; its ledger: `2026-11-23-startup-retune-ledger.md` (the controller adds the ledger at the end).
 
 ## Next, in order
 1. (done) Plan 5-3.
 2. (done) Plan 6-1, with the added Task 6 for 5-2b's G1 (fresh ids on a reshuffle into a hidden pile; 9-1 reuses `lang:renamed`, `dealtIdOf`, `renameCards`, `renameShuffled` and the runners' `currentIdOf`).
-3. **Next to do: a "long runs retune" mini plan, before 6-2a** (not yet written):
-   - retune the auto-player so at least 18 of 20 long-run games Launch (5-2b's Brainstorm cadence halved Board play: Launches 45 → 23, games with a Launch 19 → 11), then re-settle the required keys held by one game (ten, six on 3 players seed 4);
-   - keep Startup's test file under its 30 s watch (≈12–15 s now, after the speed-up);
-   - the free-actions call: the actions phase must not end by itself at 0 AP while a free action is possible — rulebook "Free actions … can be done at any time during your Action Phase (Phase C)"; the player ends their actions (the auto-player presses it), and examples that relied on the automatic end gain that line.
+3. (done 2026-11-23) The long-runs retune, before 6-2a (`989b9e0`, `e824269`):
+   - Launches 23 → 60, games with a Launch 11 → 20 (per seat count: 2p 5/5, 3p 5/5, 4p 5/5, 5p 5/5);
+   - 95 required keys (four counted keys the retune brings to two games or more were promoted), none held by fewer than 2 games; of the ten single-game keys, seven are now held by 2 or more, and the agency row's hire to the ops team and the reshuffle moved, with the bench's discard, to "counted, not required", pinned by arranged tests and examples;
+   - the free-actions call is done: the actions phase waits at 0 actions until the player ends their actions (the auto-player presses it), so a free action can be taken at 0;
+   - test time (vitest `tests` figure on Startup's test file, best of 3, alternating with BASE `5b1f1d9`): BASE 13.02 s, after the retune 18.92 s (single runs 18.9–19.8 s; BASE 13.0–13.9 s). This is under the 30 s watch and just under the 20 s aim by the `tests` figure, but over 20 s by wall Duration (22.3–23.0 s); the plan's gate ruling is that a time between 20 s and 30 s is recorded, not fixed. Next candidates, if it is wanted lower: the 3-player seed-2 undo test (2.0 s) and the 4-player Greenlight test (1.8 s, seeds 1–7), either of which could take its game's moves from the long run's logs instead of playing them again (the shared 2-player runs are already memoized, `twoPlayerGames`, `656d6eb`).
 4. Plans 6-2a, 6-2b, 6-3; 7-1 … 7-3; 8-1 … 8-3; 9-1 … 9-3; 10-1 … 10-3 (all written; each gets a pre-flight first).
 
 ## Notes carried to later pre-flights
@@ -21,6 +23,7 @@ Everything below is on `claude/peaceful-curie-rdfkow`; 3774 tests pass. Plan 6-1
 - **7:** `some card on the target card is …` / `some card on it is …` read the cards-on zone through `cardsOn`, which `reportHiddenCardReads` doesn't check; slice 7's narrowing of `cardsOn` by owner won't close it — if slice 7 makes an owner-only zone of cards on a public card, fix it in `mayHideFromPresser`/`reportHiddenCardReads`.
 - **9-1:** reuse 6-1's re-keying rather than building it twice (what 6-1 built, and two gaps it left — `announceJoins`, `goes into the bottom fifth of` — are in `…-notes-for-9-preflight.md`).
 - **6-2a / 6-2b (from 6-1):** floor every price a discount touches (a price below 0 is paid as given today, so paying it gives coins); write a flag the view should count as `it is a card whose … is more than …` (G4); a `Then:` payment against a hidden target tells its number (G1, park to the first slice that does it). Details in `…-notes-for-6-preflight.md`.
+- **7-2b / 8-2a (from the long-runs retune):** the turn no longer moves on by itself at the last action, and the line 8-2a rewrites to go to the crisis moved into the end button's Then (details in `…-notes-for-7-preflight.md` and `…-notes-for-8-preflight.md`).
 - **10-3:** its writer's gaps G1–G7 (the Settlement not shown as a number; the Fire Sale price not in the picker; kept turns listed as a count; a long badge possibly covered; …).
 - **Page (later):** milestone faces break names mid-word ("Clean Launc|h"); greyed reasons from `Only if one of:` groups have mid-sentence capitals; 4-3's `countsRead` pairs any count named `<colour> <word>` with a column `<colour> <other>`.
 
@@ -30,7 +33,7 @@ Everything below is on `claude/peaceful-curie-rdfkow`; 3774 tests pass. Plan 6-1
 Running list for the final report. Each is a call made under delegation; none blocked work.
 
 ## Rule readings (rulebook silent or ambiguous)
-- 1a: a free "End my actions" button; a turn moves on by itself at 0 AP; Ideation refused at a 4th Backlog card (the "Overflow Flush" lets the 4th in, Cleanup cuts to 3).
+- 1a: a free "End my actions" button; a turn moved on by itself at 0 AP until the long-runs retune, which makes the player end their actions so a free action can be taken at 0 (rulebook l.172–173; this reverses 1a's call); Ideation refused at a 4th Backlog card (the "Overflow Flush" lets the 4th in, Cleanup cuts to 3).
 - 1a: Research leftovers enter the Open Idea Pool in deck order (top card last).
 - 1a: the Crash in Research is replaced by the next growth card when the deck isn't empty; a deck holding only the Crash ends Research with nothing kept.
 - 1b: Source's passed cards enter the Agency Row one at a time at the left in reveal order (last revealed leftmost), following the Rust engine.
@@ -132,7 +135,7 @@ Running list for the final report. Each is a call made under delegation; none bl
 - Timing note (5-2a final review): Startup's test file ≈15.6 s; the 2-player seeds 1–5 games are played three times (long run + two replay tests) and 2p s1 twice more; a memoized shared 2-player run would save ≈4 s. Candidate for a later speed-up if the file nears 30 s.
 - 5-2b G1: a reshuffle kept card ids, so a rival could name cards in another player's hidden Brainstorm or Strategy Hand after seeing them in the public discard. 5-2b is built as planned (rules text can't fix it); plan 6-1 gains a task giving shuffled cards fresh ids. Until 6-1 lands, the README lists it as not yet handled.
 - Timing (5-2b T5): Startup's test file is ≈26.5 s (30.7 s once under load), at the 30 s watch. A speed-up (memoize the shared 2-player runs, ≈4 s per 5-2a's final review) should run before slice 6 adds more.
-- 5-2b final review: the actions phase ended at 0 AP, so a free action (e.g. a Training card drawn by the last Brainstorm) couldn't be taken after the last paid action. The rulebook says free actions can be taken at any time during the Action Phase, so a mini plan before slice 6's rules makes the player end their actions themselves.
+- 5-2b final review (done by the long-runs retune): the actions phase ended at 0 AP, so a free action (e.g. a Training card drawn by the last Brainstorm) couldn't be taken after the last paid action. The rulebook says free actions can be taken at any time during the Action Phase, so a mini plan before slice 6's rules makes the player end their actions themselves.
 - 5-3 pre-flight gaps parked for a later page plan: milestone faces break names mid-word ('Clean Launc|h'); greyed reasons from 'Only if one of:' groups read with mid-sentence capitals.
 - 6 (plan 6-1 Task 6): a card shuffled into a pile some seat can't see takes a fresh id only during play; Setup's shuffles keep the ids `buildCards` gave (no seat has seen a card yet), and so do shuffles of a pile everyone sees. Renamed cards lie face down. The rename map is flattened (`{ new id: dealt id }`), not 9-1's "the id it had before".
 - 6 (plan 6-1 Task 6): a press, rule or moment follows its own cards through a rename made by one of its lines, so a button that shuffles its card into a hidden pile and then names it again still works.
@@ -145,4 +148,5 @@ Running list for the final report. Each is a call made under delegation; none bl
 - `2026-10-19-startup-5-3-preflight-task-1.md` and `2026-10-19-startup-5-3-preflight-tasks-2-4.md`: plan 5-3's pre-flight reports. The plan's "Controller amendment" bullets point at their §4 and §6 for exact texts.
 - `2026-10-19-startup-5-3-ledger.md`: plan 5-3's ledger (complete).
 - `2026-11-16-startup-6-1-preflight.md` and `2026-11-16-startup-6-1-ledger.md`: plan 6-1's pre-flight report and its ledger (complete; the parked findings are its appendix).
+- `2026-11-23-startup-retune-preflight.md` and `2026-11-23-startup-retune-ledger.md`: the long-runs retune's pre-flight report and its ledger.
 - `2026-10-19-startup-notes-for-<plan>-preflight.md`: the notes carried to each later plan's pre-flight (6, 7, 8, 9, 10, and 5-3's).
