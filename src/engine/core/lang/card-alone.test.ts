@@ -7,11 +7,12 @@ import { cardsOn, putOn } from './attach';
 import { seatExtras, type ActionView, type PickCardView } from './board-view';
 import { createEngine, initialState } from './build';
 import { changeCard } from './card-facts';
-import { cardAloneValues, testedBy } from './card-alone';
+import { cardAloneValues, keptValues, testedBy } from './card-alone';
 import { registerCardNumberPhrases } from './library/card-number-phrases';
 import { registerCardSubjectPhrases } from './library/card-subject-phrases';
 import { registerCardValuePhrases } from './library/card-value-phrases';
 import { registerFactPhrases, IT_IS_FLAGGED } from './library/fact-phrases';
+import { CENTRE_HAS, registerQueuePhrases } from './library/queue-phrases';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
 import { compileGame } from './compile';
@@ -19,6 +20,7 @@ import { createDefaultLibrary } from './library';
 import { LangRuntime } from './runtime';
 import { WORKED_GAME } from './testing';
 import type { CompiledGame } from './types';
+import { zoneCards } from './zone-index';
 import { relocate } from './zones';
 
 const lib = createDefaultLibrary();
@@ -47,7 +49,16 @@ const SECTIONS = [
   'Whose above:', '  Only if it is a card whose skill is more than 0.', '',
   'Looping:', '  Only if it is a Vase card.', '  Only if it is not looping.', '',
   'Ping:', '  Only if it is a Vase card.', '  Only if it is not pong.', '',
-  'Pong:', '  Only if it is not ping.',
+  'Pong:', '  Only if it is not ping.', '',
+  // Values that test what a shared zone holds, as well as or instead of the card.
+  'Scrapped:', '  Only if the scrap has a Statue.', '',
+  'Scrap skilled:', '  Only if the scrap has a Statue.', '  Only if it is skilled.', '',
+  'Scrap handy:', '  Only if it is scrapped.', '  Only if it is handy.', '',
+  'Scrap sturdy:', "  A card's scrap sturdy is its skill.", "  A scrapped card's scrap sturdy goes up by 2.", '',
+  'Scrap crowned:', '  Only if the scrap has a Statue.', '  Only if it is crowned.', '',
+  'Both rows:', '  Only if the scrap has a Statue.', '  Only if the hall has a Smith.', '',
+  'Scrap looping:', '  Only if the scrap has a Statue.', '  Only if it is not scrap looping.', '',
+  'Scrap crafty:', '  Only if the scrap has a Statue.', '  Only if its craft is more than 0.',
 ].join('\n');
 const GAME_TEXT = [WORKED_GAME.replace('  Players pay with coins.', '  Players pay with coins.\n  The game has a fee of 2.'), '', SECTIONS].join('\n');
 const game = compiled(GAME_TEXT);
@@ -89,8 +100,10 @@ describe('the phrases the classifier draws on', () => {
     const pairs = [
       ...TRUSTED.map((trusted) => [trusted.split(': ')[0] as 'condition' | 'value', trusted.slice(trusted.indexOf(': ') + 2), own] as const),
       ['condition', IT_IS_FLAGGED, flagged] as const,
+      // The test of what a shared zone holds, which the runtime keeps for the card and the cards in that zone (`keptValues`).
+      ['condition', CENTRE_HAS, registerQueuePhrases(bareLibrary())] as const,
     ];
-    expect(pairs.length).toBe(TRUSTED.length + 1);
+    expect(pairs.length).toBe(TRUSTED.length + 2);
     for (const [kind, pattern, from] of pairs) {
       const want = from.get(kind, pattern);
       const got = real.get(kind, pattern);
@@ -152,6 +165,39 @@ describe('which values read their card alone', () => {
 
   it('is the same set every time, kept for the game', () => {
     expect(cardAloneValues(game)).toBe(alone);
+  });
+});
+
+describe('which values read their card and what shared zones hold', () => {
+  const kept = keptValues(game);
+
+  it('holds a value that tests what a shared zone holds, with that zone, and it does not read its card alone', () => {
+    expect(kept.get('scrapped')).toEqual(['scrap']);
+    expect(cardAloneValues(game).has('scrapped')).toBe(false);
+  });
+
+  it('holds one that also reads its card, one that reads such a value, and a number that does, each with the zone it comes to test', () => {
+    expect(kept.get('scrap skilled')).toEqual(['scrap']);
+    expect(kept.get('scrap handy')).toEqual(['scrap']);
+    expect(kept.get('scrap sturdy')).toEqual(['scrap']);
+  });
+
+  it('holds the zones of a value that tests two, sorted', () => {
+    expect(kept.get('both rows')).toEqual(['hall', 'scrap']);
+  });
+
+  it('does not hold one that also reads the cards on it, nor one that reads another zone, another player or a game number', () => {
+    expect(kept.has('scrap crowned')).toBe(false);
+    for (const name of ['crew skill', 'crowned', 'carried', 'crowd', 'hall mate', 'owned', 'fee paid']) expect(kept.has(name), name).toBe(false);
+  });
+
+  it('holds every value that reads its card alone, with no zone, and only those with none', () => {
+    const zoneless = [...kept].filter(([, zones]) => zones.length === 0).map(([name]) => name);
+    expect(zoneless.sort()).toEqual([...cardAloneValues(game)].sort());
+  });
+
+  it('is the same map every time, kept for the game', () => {
+    expect(keptValues(game)).toBe(kept);
   });
 });
 
@@ -248,6 +294,111 @@ describe('a runtime keeping the values that read their card alone', () => {
   });
 });
 
+/** `arranged`, with the other Statue in the scrap and the ids of the cards these tests move. */
+function scrapArranged(g: CompiledGame) {
+  const found = arranged(g);
+  const [spare] = found.state.cards.filter((card) => card.data?.name === 'Statue' && card.id !== found.statue).map((card) => card.id);
+  return { ...found, spare, state: relocate(found.state, [spare], 'scrap', g) };
+}
+
+/** Whether two lists hold the same objects in the same order. */
+const sameObjects = (a: readonly object[], b: readonly object[]) => a.length === b.length && a.every((item, i) => item === b[i]);
+
+describe('a runtime keeping the values that read their card and what shared zones hold', () => {
+  const callsOf = (runtime: LangRuntime) => vi.spyOn(runtime as unknown as { call: (...args: unknown[]) => unknown }, 'call');
+
+  it('works a value out once for a card in two states whose zones hold the same cards', () => {
+    const { state, potter, statue, runtime } = scrapArranged(game);
+    const call = callsOf(runtime);
+    const read = (s: GameState) => [runtime.workedFlag(s, potter, 'scrapped'), runtime.workedFlag(s, potter, 'scrap handy'),
+      runtime.workedValue(s, potter, 'scrap sturdy'), runtime.workedFlag(s, potter, 'both rows')];
+    expect(read(state)).toEqual([true, true, 3, true]);
+    const calls = call.mock.calls.length;
+    expect(calls).toBeGreaterThan(0);
+    // Another card moves, the Statue in p0's workshop: a new state, the same Potter object, the same cards in the scrap and in the hall.
+    const later = relocate(state, [statue], 'idle-p0', game);
+    expect(later).not.toBe(state);
+    expect(later.cards.find((card) => card.id === potter)).toBe(state.cards.find((card) => card.id === potter));
+    expect(sameObjects(zoneCards(later, 'scrap'), zoneCards(state, 'scrap'))).toBe(true);
+    expect(sameObjects(zoneCards(later, 'hall'), zoneCards(state, 'hall'))).toBe(true);
+    expect(read(later)).toEqual([true, true, 3, true]);
+    expect(call.mock.calls.length).toBe(calls);
+  });
+
+  it('works it out afresh when a card in the zone changes, leaves or is replaced, and keeps what it had for the states before', () => {
+    const { state, vase, potter, statue, spare, runtime } = scrapArranged(game);
+    const call = callsOf(runtime);
+    const potterOf = (s: GameState) => s.cards.find((card) => card.id === potter);
+    expect(runtime.workedFlag(state, potter, 'scrapped')).toBe(true);
+    expect(runtime.workedValue(state, potter, 'scrap sturdy')).toBe(3);
+    // The Statue in the scrap becomes a Vase: the Potter is the same object, the scrap holds another.
+    const renamed = changeCard(state, spare, { name: 'Vase' }, game);
+    expect(potterOf(renamed)).toBe(potterOf(state));
+    expect(runtime.workedFlag(renamed, potter, 'scrapped')).toBe(false);
+    expect(runtime.workedValue(renamed, potter, 'scrap sturdy')).toBe(1);
+    // The scrap empties.
+    const emptied = relocate(state, [spare], 'idle-p0', game);
+    expect(zoneCards(emptied, 'scrap')).toEqual([]);
+    expect(potterOf(emptied)).toBe(potterOf(state));
+    expect(runtime.workedFlag(emptied, potter, 'scrapped')).toBe(false);
+    expect(runtime.workedFlag(emptied, potter, 'both rows')).toBe(false);
+    // The other Statue takes its place: another card object, so it is worked out again, and comes to the same.
+    const replaced = relocate(emptied, [statue], 'scrap', game);
+    const before = call.mock.calls.length;
+    expect(runtime.workedFlag(replaced, potter, 'scrapped')).toBe(true);
+    expect(call.mock.calls.length).toBeGreaterThan(before);
+    // A Vase joins the Statue: the scrap holds a card more, and the value still holds.
+    const [spareVase] = state.cards.filter((card) => card.data?.name === 'Vase' && card.id !== vase).map((card) => card.id);
+    const joined = relocate(replaced, [spareVase], 'scrap', game);
+    expect(zoneCards(joined, 'scrap').length).toBe(2);
+    expect(runtime.workedFlag(joined, potter, 'scrapped')).toBe(true);
+    // Each state keeps its own answer.
+    expect([state, renamed, emptied, replaced].map((s) => runtime.workedFlag(s, potter, 'scrapped'))).toEqual([true, false, false, true]);
+    expect([state, renamed, emptied].map((s) => runtime.workedValue(s, potter, 'scrap sturdy'))).toEqual([3, 1, 1]);
+  });
+
+  it('works a value out afresh when either of the two zones it tests changes', () => {
+    const { state, potter, spare, runtime } = scrapArranged(game);
+    const smiths = state.cards.filter((card) => card.data?.name === 'Smith').map((card) => card.id);
+    expect(runtime.workedFlag(state, potter, 'both rows')).toBe(true);
+    const noSmith = relocate(state, smiths, 'idle-p1', game);
+    expect(sameObjects(zoneCards(noSmith, 'scrap'), zoneCards(state, 'scrap'))).toBe(true);
+    expect(runtime.workedFlag(noSmith, potter, 'both rows')).toBe(false);
+    const noStatue = relocate(state, [spare], 'idle-p1', game);
+    expect(sameObjects(zoneCards(noStatue, 'hall'), zoneCards(state, 'hall'))).toBe(true);
+    expect(runtime.workedFlag(noStatue, potter, 'both rows')).toBe(false);
+    expect(runtime.workedFlag(state, potter, 'both rows')).toBe(true);
+  });
+
+  it('gives each of two runtimes over one state the values of its own game', () => {
+    const other = compiled(GAME_TEXT.replace('Scrapped:\n  Only if the scrap has a Statue.', 'Scrapped:\n  Only if the scrap has a Vase.'));
+    const { state, potter } = scrapArranged(game);
+    const first = new LangRuntime(game, lib, ['p0', 'p1']);
+    const second = new LangRuntime(other, lib, ['p0', 'p1']);
+    expect([first.workedFlag(state, potter, 'scrapped'), first.workedValue(state, potter, 'scrap sturdy')]).toEqual([true, 3]);
+    expect([second.workedFlag(state, potter, 'scrapped'), second.workedValue(state, potter, 'scrap sturdy')]).toEqual([false, 1]);
+    expect([first.workedFlag(state, potter, 'scrapped'), first.workedValue(state, potter, 'scrap sturdy')]).toEqual([true, 3]);
+    expect(keptValues(other)).not.toBe(keptValues(game));
+  });
+
+  it('throws every time for a value worked out from itself', () => {
+    const { state, vase, runtime } = scrapArranged(game);
+    for (let i = 0; i < 3; i++) {
+      expect(() => runtime.workedFlag(state, vase, 'scrap looping')).toThrow('“scrap looping” is worked out from itself.');
+    }
+  });
+
+  it('throws every time for a value whose line throws of itself, and keeps nothing of it', () => {
+    const { state, potter, spare, runtime } = scrapArranged(game);
+    const first = outcome(() => runtime.workedFlag(state, potter, 'scrap crafty'));
+    expect(first).toEqual({ threw: expect.stringContaining("isn't a number") });
+    expect(outcome(() => runtime.workedFlag(state, potter, 'scrap crafty'))).toEqual(first);
+    // With no Statue in the scrap the value stops at its first line, and with one it throws again.
+    expect(runtime.workedFlag(relocate(state, [spare], 'idle-p0', game), potter, 'scrap crafty')).toBe(false);
+    expect(outcome(() => runtime.workedFlag(state, potter, 'scrap crafty'))).toEqual(first);
+  });
+});
+
 // ---- a played game ----------------------------------------------------------------------------------
 
 /** The first card a button offers that it allows, with the first of that card's targets it allows when the button puts cards on a card. */
@@ -280,8 +431,10 @@ const outcome = (work: () => unknown): { value: unknown } | { threw: string } =>
 describe('a kept value against a fresh one, in a played game', () => {
   it('is the value a runtime made for that state alone works out, for every card and every such value', () => {
     const startup = compileGame(STARTUP_SIMULATOR, lib).game!;
-    const names = [...cardAloneValues(startup)];
+    // Those that read the card alone and those that read the card and what shared zones hold.
+    const names = [...keptValues(startup).keys()];
     expect(names.length).toBeGreaterThan(20);
+    expect(names.filter((name) => keptValues(startup).get(name)!.length > 0).length).toBeGreaterThan(10);
     const { engine, runtime } = createEngine(startup, lib, 2, initialState(startup, 1));
     const sample = (state: GameState, at: number): number => {
       const fresh = new LangRuntime(startup, lib, runtime.seats);
@@ -364,6 +517,7 @@ describe('a card moved from one state into another, in a played game', () => {
   it('has the same value that reads its card alone, and the values that read its surroundings are seen to differ', () => {
     const startup = compileGame(STARTUP_SIMULATOR, lib).game!;
     const alone = cardAloneValues(startup);
+    const kept = keptValues(startup);
     const names = Object.keys(startup.worked!);
     const played = [...sampledStates(startup, true, 140, 20), ...sampledStates(startup, false, 140, 20)];
     // The game rarely reaches a card with poisoning or leading hands on it, so some states have every card made so: the surroundings of a
@@ -384,6 +538,9 @@ describe('a card moved from one state into another, in a played game', () => {
     };
     const seen = states.map(valuesIn);
     const differed = new Set<string>();
+    // The values kept for the cards a shared zone holds that were seen to differ, with those cards.
+    const zonesDiffered = new Set<string>();
+    const sameZones = (a: GameState, b: GameState, zones: readonly string[]) => zones.every((zone) => sameObjects(zoneCards(a, zone), zoneCards(b, zone)));
     let moved = 0;
     let offered = 0;
     for (let i = 0; i < states.length; i++) {
@@ -400,8 +557,12 @@ describe('a card moved from one state into another, in a played game', () => {
           moved++;
           for (const [n, name] of names.entries()) {
             const now = read(rt, moving, card.id, name);
+            const zones = kept.get(name);
+            const differs = JSON.stringify(now) !== JSON.stringify(before[n]);
             if (alone.has(name)) expect(now, `${card.id} ${name}, state ${i} into ${j}`).toEqual(before[n]);
-            else if (JSON.stringify(now) !== JSON.stringify(before[n])) differed.add(name);
+            else if (zones !== undefined && sameZones(states[i], moving, zones)) {
+              expect(now, `${card.id} ${name}, state ${i} into ${j}, its zones holding the same cards`).toEqual(before[n]);
+            } else if (differs) (zones === undefined ? differed : zonesDiffered).add(name);
           }
         }
       }
@@ -411,5 +572,36 @@ describe('a card moved from one state into another, in a played game', () => {
     expect(differed.size).toBeGreaterThan(2);
     expect(['blue workers', 'red workers', 'qa workers'].some((name) => differed.has(name))).toBe(true);
     expect(['losing blue', 'fully led', 'pitched'].some((name) => differed.has(name))).toBe(true);
+    // A value kept for the cards of a shared zone was seen to differ when it moved into a state whose zone held other cards.
+    expect(zonesDiffered.size).toBeGreaterThan(2);
+
+    // And it comes to the same in a state whose kept zones hold the very cards they held where it came from, every other card changed.
+    // The game's values test what one shared zone holds.
+    const zoned = new Set([...kept.values()].flat());
+    expect(zoned.size).toBe(1);
+    const [zone] = zoned;
+    const allBut = (state: GameState, data: { [k: string]: Json }) => state.cards
+      .reduce((all, card) => (zoned.has(card.zoneId) ? all : changeCard(all, card.id, data, startup)), state);
+    const zoneKept = names.filter((name) => (kept.get(name)?.length ?? 0) > 0);
+    let kept0 = 0;
+    for (const [i, from] of played.entries()) {
+      if (i % 2 !== 0 || zoneCards(from, zone).length === 0) continue;
+      for (const data of [{ 'toxic personality': 1 }, { visionary: 1 }, { trait: 'Rainmaker' }] as { [k: string]: Json }[]) {
+        const into = allBut(from, data);
+        expect(sameZones(from, into, [...zoned])).toBe(true);
+        for (const [at, card] of into.cards.entries()) {
+          const own = from.cards[at];
+          if (own === card || at % 3 !== 0) continue;
+          const moving = { ...into, cards: into.cards.map((other, k) => (k === at ? own : other)) };
+          const rt = new LangRuntime(startup, lib, seats);
+          for (const name of zoneKept) {
+            expect(read(rt, moving, card.id, name), `${card.id} ${name}, state ${i} into itself with ${JSON.stringify(data)}`)
+              .toEqual(seen[i].get(card.id)![names.indexOf(name)]);
+            kept0++;
+          }
+        }
+      }
+    }
+    expect(kept0).toBeGreaterThan(5000);
   }, 60_000);
 });

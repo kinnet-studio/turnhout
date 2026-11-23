@@ -1,13 +1,13 @@
 import { MAX_FLOW_ITERATIONS } from '../flow';
 import { setPhase, type GameState } from '../game-state';
-import { cardById } from './zone-index';
+import { cardById, zoneCards } from './zone-index';
 import type { Move } from '../moves';
 import type { CardState, PlayerId } from '../scene';
 import type { Json } from '../table-def';
 import { attachmentProblem } from './attach';
 import { numberIn } from './board';
 import { holderOf, interruptedTurn, isOut, nextIn, playersIn, setCounter } from './board-state';
-import { cardAloneValues } from './card-alone';
+import { keptValues } from './card-alone';
 import { cardAttribute, cardFact } from './card-facts';
 import { CHOOSE_ONE, CHOOSE_PLAYER, type ChoiceOption } from './choices';
 import { isMissing, readsPressCard } from './compile-util';
@@ -73,6 +73,13 @@ function unlessNoSuchNumber<T>(line: () => T, otherwise: T): T {
 }
 
 /**
+ * A step of the key for the cards some zones hold (`LangRuntime.zoneCardsKey`): the step for each next card, the step once a zone's cards
+ * are done, and, at the last step, the values kept for each card object there.
+ */
+type ZoneCardsKey = { next: WeakMap<CardState, ZoneCardsKey>; end?: ZoneCardsKey; ofCard: WeakMap<CardState, Map<string, Json | null>> };
+const newKey = (): ZoneCardsKey => ({ next: new WeakMap(), ofCard: new WeakMap() });
+
+/**
  * Runs a compiled game's phrases against game states: the code behind each `PhraseRef`, plus the compiler's own
  * `lang` refs (all, any, phase, always, if, for, for each, missing). A ref nobody has written a phrase for throws a
  * MissingPhraseError when it is reached; whatever else a phrase throws comes out as a RuleError with its line.
@@ -99,7 +106,12 @@ export class LangRuntime {
    * value is the same in every state that holds that object. Weakly held, so a card no state holds any more takes its values with it.
    */
   private readonly ofCard = new WeakMap<CardState, Map<string, Json | null>>();
-  private cardAlone: ReadonlySet<string> | undefined;
+  /**
+   * What each value that reads its card and what shared zones hold (`keptValues`) came to, by the zones it reads, then by the card
+   * objects those zones hold, in order, then by the card object it was worked out for.
+   */
+  private readonly byZones = new Map<readonly string[], ZoneCardsKey>();
+  private kept: ReadonlyMap<string, readonly string[]> | undefined;
 
   constructor(
     readonly game: CompiledGame,
@@ -516,7 +528,7 @@ export class LangRuntime {
     const card = this.cardIn(state, cardId);
     const worked = this.workedOf(name);
     if (worked?.kind !== 'number') return cardAttribute(card, name, this.game);
-    return this.keptFor(card, name, () => {
+    return this.keptFor(state, card, name, () => {
       const own = cardFact(card, name);
       const env = this.env(state, undefined, undefined, { player: null, space: null, card: cardId });
       return this.workOut([cardId, name], name, () => worked.refs.reduce(
@@ -536,7 +548,7 @@ export class LangRuntime {
     const card = this.cardIn(state, cardId);
     const worked = this.workedOf(flag);
     if (worked?.kind !== 'flag') return cardFact(card, flag) === true;
-    return this.keptFor(card, flag, () => {
+    return this.keptFor(state, card, flag, () => {
       const subject: Subject = { player: null, space: null, card: cardId };
       const holds = (ref: PhraseRef) => unlessNoSuchNumber(() => this.test(ref, state, undefined, undefined, subject), false);
       const groupHolds = (group: CondGroup) => (group.mode === 'all' ? group.refs.every(holds) : group.refs.some(holds));
@@ -560,21 +572,49 @@ export class LangRuntime {
   };
 
   /**
-   * The value `name` of `card` as `work` works it out, or as it came to before for that card object when it reads the card alone
-   * (`cardAloneValues`): such a value reads nothing a state holds but the card, so it is the same in every state that holds it. A value
-   * whose lines threw is kept for no card, so it throws again, as before.
+   * The value `name` of `card` in `state` as `work` works it out, or as it came to before for that card object when it reads the card
+   * alone (`cardAloneValues`): such a value reads nothing a state holds but the card, so it is the same in every state that holds it. A
+   * value that also reads what shared zones hold (`keptValues`) is kept for that card object and the card objects those zones hold in
+   * `state`, in order: cards are never changed once made, so it is the same in every state where they are the same. A value whose lines
+   * threw is kept for no card, so it throws again, as before.
    */
-  private keptFor<T extends Json | null>(card: CardState, name: string, work: () => T): T {
-    if (!(this.cardAlone ??= cardAloneValues(this.game)).has(name)) return work();
-    let kept = this.ofCard.get(card);
+  private keptFor<T extends Json | null>(state: GameState, card: CardState, name: string, work: () => T): T {
+    const zones = (this.kept ??= keptValues(this.game)).get(name);
+    if (zones === undefined) return work();
+    const ofCard = zones.length === 0 ? this.ofCard : this.zoneCardsKey(state, zones).ofCard;
+    let kept = ofCard.get(card);
     if (kept === undefined) {
       kept = new Map();
-      this.ofCard.set(card, kept);
+      ofCard.set(card, kept);
     }
     if (kept.has(name)) return kept.get(name) as T;
     const value = work();
     kept.set(name, value);
     return value;
+  }
+
+  /**
+   * The key for the card objects `zones` hold in `state`: the same object for the same cards in the same order, zone by zone. Each step
+   * down is held weakly by its card object, so cards no state holds any more take what was kept for them with them.
+   */
+  private zoneCardsKey(state: GameState, zones: readonly string[]): ZoneCardsKey {
+    let key: ZoneCardsKey | undefined = this.byZones.get(zones);
+    if (key === undefined) {
+      key = newKey();
+      this.byZones.set(zones, key);
+    }
+    for (const zone of zones) {
+      for (const held of zoneCards(state, zone)) {
+        let next: ZoneCardsKey | undefined = key.next.get(held);
+        if (next === undefined) {
+          next = newKey();
+          key.next.set(held, next);
+        }
+        key = next;
+      }
+      key = key.end ??= newKey();
+    }
+    return key;
   }
 
   /** The value a section works out under this name, if one does. */

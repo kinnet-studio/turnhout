@@ -19,10 +19,30 @@ export function holderIdOf(card: CardState): string | null {
   return typeof holder === 'string' ? holder : null;
 }
 
-/** The cards that sit on the card `holderId`, by zone id, then slot. */
+/**
+ * The cards that sit on each card, by the id of the card they sit on, for each cards array: a state's cards never change, while every
+ * rule that reads the cards on a card, and every view, asks it again of cards nothing has moved since.
+ */
+const heldBy = new WeakMap<readonly CardState[], Map<string, CardState[]>>();
+
+/** The cards that sit on the card `holderId`, by zone id, then slot; a new array each time. */
 export function cardsOn(state: GameState, holderId: string): CardState[] {
-  const zones = [...new Set(state.cards.filter((card) => holderIdOf(card) === holderId).map((card) => card.zoneId))].sort();
-  return zones.flatMap((zoneId) => zoneCards(state, zoneId).filter((card) => holderIdOf(card) === holderId));
+  let held = heldBy.get(state.cards);
+  if (held === undefined) {
+    held = new Map();
+    const zones = [...new Set(state.cards.filter((card) => holderIdOf(card) !== null).map((card) => card.zoneId))].sort();
+    for (const zoneId of zones) {
+      for (const card of zoneCards(state, zoneId)) {
+        const holder = holderIdOf(card);
+        if (holder === null) continue;
+        const on = held.get(holder);
+        if (on === undefined) held.set(holder, [card]);
+        else on.push(card);
+      }
+    }
+    heldBy.set(state.cards, held);
+  }
+  return held.get(holderId)?.slice() ?? [];
 }
 
 /** Moves the cards to the end of the zone, in the order given, each to sit on the card `holderId`. */

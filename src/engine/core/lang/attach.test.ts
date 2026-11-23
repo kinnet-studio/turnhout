@@ -37,6 +37,40 @@ describe('a card that sits on a card', () => {
     expect(cardsOn(state, vase).map((card) => card.id)).toEqual([potter2, potter1]);
     expect(cardsOn(state, potter1)).toEqual([]);
   });
+  it('lists the cards on a card in two zones by zone id, then slot, and a new list each time', () => {
+    const smith = zoneCards(start, 'hall').find((card) => card.data?.name === 'Smith')!.id;
+    // A Smith in the hall said to sit on the Vase as well: 'crew-p0' sorts before 'hall'.
+    const state = forge(putOn(atWork, [potter2, potter1], 'crew-p0', vase, game), smith, vase);
+    const listed = cardsOn(state, vase);
+    expect(listed.map((card) => card.id)).toEqual([potter2, potter1, smith]);
+    listed.pop();
+    expect(cardsOn(state, vase).map((card) => card.id)).toEqual([potter2, potter1, smith]);
+    expect(cardsOn(state, vase)).not.toBe(cardsOn(state, vase));
+  });
+  it('reads each state\'s own cards, a state read before and one made from it alike', () => {
+    const both = putOn(atWork, [potter2, potter1], 'crew-p0', vase, game);
+    expect(cardsOn(both, vase).map((card) => card.id)).toEqual([potter2, potter1]);
+    const one = relocate(both, [potter2], 'hall', game);
+    expect(cardsOn(one, vase).map((card) => card.id)).toEqual([potter1]);
+    expect(cardsOn(both, vase).map((card) => card.id)).toEqual([potter2, potter1]);
+    expect(cardsOn(atWork, vase)).toEqual([]);
+  });
+  it('lists for every card what the cards of each zone, read one by one, say sits on it', () => {
+    // The cards on a card as the state's cards say, zone by zone in zone id order, each zone's in slot order.
+    const read = (state: GameState, holderId: string) => {
+      const zones = [...new Set(state.cards.filter((card) => holderIdOf(card) === holderId).map((card) => card.zoneId))].sort();
+      return zones.flatMap((zoneId) => zoneCards(state, zoneId).filter((card) => holderIdOf(card) === holderId));
+    };
+    let seed = 7;
+    const next = (below: number) => (seed = (seed * 1103515245 + 12345) % 2147483648) % below;
+    const ids = start.cards.map((card) => card.id);
+    for (let round = 0; round < 20; round++) {
+      // Some cards moved about and said to sit on some others, at random: a broken table, which this reads as it is.
+      let state = relocate(start, ids.filter(() => next(3) === 0), ['workshop-p0', 'crew-p1', 'idle-p0'][next(3)], game);
+      for (const id of ids) if (next(2) === 0) state = forge(state, id, ids[next(4)]);
+      for (const id of [...ids, 'none']) expect(cardsOn(state, id), `round ${round}, ${id}`).toEqual(read(state, id));
+    }
+  });
   it('finds the zone a seat keeps cards on cards in', () => {
     expect(onCardsZoneOf(game, 'p1')).toBe('crew-p1');
   });

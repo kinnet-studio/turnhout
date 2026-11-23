@@ -4,13 +4,19 @@
 // the runtime may keep what it worked out for that object (see `LangRuntime.workedValue`). Whether a value is one hangs on the rules
 // alone, read from the compiled game, as worked-view's `readsOnlyCards` reads them; but a line that reads the cards on it, or the card
 // it sits on, reads other cards, which change while this one stays as it is, so no such line counts here.
+//
+// A value whose lines also test what a shared zone holds (`CENTRE_HAS`), and read nothing else but the card, comes to the same for one
+// card object in every state where those zones hold the same card objects in the same order: the runtime may keep it for that card
+// and those cards (`keptValues`).
 import { registerCardNumberPhrases } from './library/card-number-phrases';
 import { CARDS_ON_IT, registerCardSubjectPhrases } from './library/card-subject-phrases';
 import { registerCardValuePhrases } from './library/card-value-phrases';
 import { IT_IS_FLAGGED } from './library/fact-phrases';
+import { CENTRE_HAS } from './library/queue-phrases';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
 import type { CardFilter, CompiledGame, PhraseRef } from './types';
+import { zoneIdFor } from './zones';
 
 /**
  * The phrases about the card a value is worked out for: its kind, numbers, flags and zone, and how its numbers compare. Two of them read
@@ -49,31 +55,58 @@ function namesRead(ref: PhraseRef): string[] | null {
   return names;
 }
 
+/**
+ * The shared zone whose cards a line tests, when it is the test of what a shared zone holds (`CENTRE_HAS`): that test reads nothing but
+ * the cards the zone holds, each by its own facts. Null for any other line.
+ */
+const zoneTested = (ref: PhraseRef): string | null =>
+  (ref.kind === 'condition' && ref.phrase === CENTRE_HAS ? zoneIdFor(ref.args[0] as string) : null);
+
 const isWorked = (game: CompiledGame, name: string): boolean => game.worked !== undefined && Object.hasOwn(game.worked, name);
 
 /**
- * Whether every line of the value `name` reads only the card, and so does every line of each value they read, all the way down. `seen`
- * holds the values looked at already: one met again is being looked at, and adds no line of its own.
+ * Whether every line of the value `name` reads only the card, or what a shared zone holds, and so does every line of each value they
+ * read, all the way down; the zones they test go into `zones`. `seen` holds the values looked at already: one met again is being looked
+ * at, and adds no line of its own.
  */
-function readsTheCardAlone(game: CompiledGame, name: string, seen: Set<string>): boolean {
+function readsTheCardAlone(game: CompiledGame, name: string, seen: Set<string>, zones: Set<string>): boolean {
   if (seen.has(name)) return true;
   seen.add(name);
   const value = game.worked![name];
   const refs = value.kind === 'number' ? value.refs : value.conditions.flatMap((group) => group.refs);
   return refs.every((ref) => {
+    const zone = zoneTested(ref);
+    if (zone !== null) {
+      zones.add(zone);
+      return true;
+    }
     const names = namesRead(ref);
-    return names !== null && names.filter((read) => isWorked(game, read)).every((read) => readsTheCardAlone(game, read, seen));
+    return names !== null && names.filter((read) => isWorked(game, read)).every((read) => readsTheCardAlone(game, read, seen, zones));
   });
 }
 
-const known = new WeakMap<CompiledGame, ReadonlySet<string>>();
+const known = new WeakMap<CompiledGame, { alone: ReadonlySet<string>; kept: ReadonlyMap<string, readonly string[]> }>();
+
+/** `cardAloneValues` and `keptValues` of a game, worked out once for each compiled game. */
+function classified(game: CompiledGame): { alone: ReadonlySet<string>; kept: ReadonlyMap<string, readonly string[]> } {
+  let found = known.get(game);
+  if (found === undefined) {
+    const kept = new Map<string, readonly string[]>();
+    for (const name of Object.keys(game.worked ?? {})) {
+      const zones = new Set<string>();
+      if (readsTheCardAlone(game, name, new Set(), zones)) kept.set(name, [...zones].sort());
+    }
+    found = { alone: new Set([...kept].filter(([, zones]) => zones.length === 0).map(([name]) => name)), kept };
+    known.set(game, found);
+  }
+  return found;
+}
 
 /** The values `game` works out for cards that read nothing but the card, worked out once for each compiled game. */
-export function cardAloneValues(game: CompiledGame): ReadonlySet<string> {
-  let names = known.get(game);
-  if (names === undefined) {
-    names = new Set(Object.keys(game.worked ?? {}).filter((name) => readsTheCardAlone(game, name, new Set())));
-    known.set(game, names);
-  }
-  return names;
-}
+export const cardAloneValues = (game: CompiledGame): ReadonlySet<string> => classified(game).alone;
+
+/**
+ * The values `game` works out for cards that read nothing but the card and what shared zones hold (`CENTRE_HAS`), each with the ids of
+ * those zones, sorted; none for a value that reads its card alone (`cardAloneValues`). Worked out once for each compiled game.
+ */
+export const keptValues = (game: CompiledGame): ReadonlyMap<string, readonly string[]> => classified(game).kept;
