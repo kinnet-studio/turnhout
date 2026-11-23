@@ -57,12 +57,19 @@
   - Every tally change is explained by the retune, never loosened to pass.
   - Every invariant still runs after every move; nothing is sampled.
 - **Language:** none of this needs a change in `src/engine/core/lang/**`. If one turns out to be needed, it stays game-neutral, and you stop and report first.
-- **Timing:** measure the Startup test file best of 3, alternating with BASE (HEAD 153cf28), before and after Tasks 1 and 2, and report both.
+- **Timing:** measure the Startup test file best of 3, alternating with BASE (e942193, the same code as 153cf28), before and after Tasks 1 and 2, and report both. "Time" is the `tests` figure on vitest's Duration line, not the wall Duration.
+- **Controller amendment (2026-11-23, after the pre-flight, `.superpowers/sdd/…/preflight.md` R1–R8):** the task text below already carries each ruling.
+  - R1: Task 2's ops-team hire test fails at Task 1 and passes from Step 3's recruit fix on; the bench-discard test passes at Task 1.
+  - R2: the two "first seed" comments get the exact words in Task 2 Step 7.
+  - R3: the four counted keys the retune brings to 2 or more games become required (the plan's own rule for secondary measures): `REASSIGN_TO_PRODUCT`, `HIRE_SCOUTED_TO_PRODUCT`, `EXPERIENCED_PAID`, `BADGED_LEADING`. Required keys: 95. Three comments the retune makes false are corrected.
+  - R4: time is the `tests` figure; a time over 20 s and under 30 s takes Task 3's record-and-go-on branch.
+  - R5: 7-2b's and 8-2a's later plans rely on the turn moving on at the last action; Task 3 notes both.
+  - R6: Step 7's lists are completed. R7: Step 5 builds the first action's ideas only at the first action (same games, faster). R8: small text points.
 
 ## Review Focus
 
 1. **A human at 0 AP has no obvious way to end the turn on the page.**
-   - The actions hint now ends "End your actions when you are done.", and it stays on the status line at 0.
+   - The actions hint now names Training among the free actions (its button has no cost line) and ends "End your actions when you are done.", and it stays on the status line at 0.
    - The new Startup test checks three things:
      - the page's view allows the end button and a Greenlight at 0;
      - it greys a recruit with "they have at least 1 action";
@@ -165,7 +172,7 @@
     - "the bench is cut to 5, …" (rules l.1303) and "a trained Junior discarded from the bench keeps its tokens, …" (l.3340);
     - "an agency hire may go straight onto the board" (l.1586), which hires the Veteran to the ops team.
   - The reshuffle keeps its examples (l.3927, l.3935) and 6-1's test "leaves no id a seat saw face up … at 2 players seed 4", which asserts that game's one reshuffle.
-- After Task 2 the tallies require 91 keys, and none is held by fewer than 2 games.
+- After Task 2 the tallies require 91 keys, and none is held by fewer than 2 games. Step 6 then promotes four counted keys the retune brings to 2 or more games (pre-flight R3), so 95.
 
 **Secondary measures** (each reached by at least 2 games would become a required key; none is, so none is added, and none is forced):
 
@@ -243,7 +250,7 @@ All probes are under `/tmp/claude-0/-home-user/fbd53c51-0292-5f8c-bf20-70c6ad4ed
 
 - [ ] **Step 1: Write the failing tests.**
 
-  **The page's view at 0.** Add this test right before `it('finds nothing wrong with a whole table: …')` (l.2913):
+  **The page's view at 0.** Add this test right before `it('finds nothing wrong with a whole table: …')` (l.2913), indented as its neighbours (`it(` at 2 spaces more than shown here):
 
   ```ts
   it('waits at 0 actions with the end button and a Greenlight allowed on the page and a recruit greyed by its cost, and ends the actions only on the seat’s press (rulebook l.172–173, Review Focus)', () => {
@@ -385,7 +392,7 @@ All probes are under `/tmp/claude-0/-home-user/fbd53c51-0292-5f8c-bf20-70c6ad4ed
 
   ```text
    *   lacking the Junior of kind `(t + a) % 3`, else ends its actions. At 0 actions the rules refuse every press but the free ones and
-   *   the end, so once the free moves are made it ends its actions there: the phase no longer ends by itself (rulebook l.172–173).
+   *   the end, and it ends its actions there at once: the phase no longer ends by itself (rulebook l.172–173).
   ```
 
   **The four comments that said a move spending the last action starts the next turn.** Each now says the end does.
@@ -436,6 +443,7 @@ Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC"
     - l.3161, the Strategy tally.
   - Two new tests before l.3952.
   - The re-counted comments: l.1034–1035, l.3073–3076, l.3106–3108, l.3132–3134, l.3156–3157, l.3186–3188, l.3530–3531.
+  - The four promoted keys (Step 6) and the comments the retune makes false (Step 7): l.3053–3058, l.3141, l.3149–3155, l.3170–3178, l.3193–3194, l.3302–3303, l.3718–3719.
 
 **Interfaces:** none. Everything is inside the test file.
 
@@ -481,7 +489,7 @@ Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC"
       });
   ```
 
-  - These two already pass at Task 1 (measured, with the logs above). They pin the auto-player's presses that the retune is about to stop reaching in the long runs, so they go in first.
+  - The bench-discard test passes at Task 1. The ops-team hire test fails at Task 1 on its second move: at t = 8, a = 1, the cycle's recruit is still `recruit(a)` = `RECRUITS[0]`, the Junior Software Dev, where the test expects Step 3's `RECRUITS[2]`. It passes from Step 3 on (measured). Both pin presses the retune is about to stop reaching in the long runs, so they go in first.
   - Run `npx vitest run src/games/startup-simulator.test.ts -t "first Senior it can pay for to the ops team|bench’s first card at the bench cleanup"`.
   - D2's failing check is the probe, not a test line. With Task 1's auto-player the long runs Launch in 11 of 20 games; the target is at least 18, and this plan measures 20 of 20 with 60 Launches. No test asserts the Launch count. The tallies and the tests that name seeds are what the retune must keep.
 
@@ -525,15 +533,16 @@ Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC"
 
   ```ts
         // A seat that researches takes a seed idea first until it runs a product: a Tier 1 card is the one it can build (D2).
-        const ideas = style === 'researches' && cards(own('operations')).length === 0
+        const ideas = () => (style === 'researches' && cards(own('operations')).length === 0
           ? [press(RESEARCH_SEED), first(DRAFT_SEED, 'seed-market'), ...ideation()]
-          : ideation();
-        const planned = a === 0 ? [launch(), ...ideas] : [
+          : ideation());
+        const planned = a === 0 ? [launch(), ...ideas()] : [
           reassignDiva(), launch(), qaForBugs(), hireGrowthHacker(action), hireHacker(), moveGrowthHacker(), pmToProject(), pivotDiva(),
           divaToOps(), hireDiva(), makersToProject(), brainstorming(a), ...board(),
         ];
   ```
 
+  - `ideas` is a function, so the first action's list is built only at the first action, as HEAD built `ideation()` (pre-flight R7: the same games, about 0.7 s less).
   - `hireDiva` comes after the PM's and the Diva's drivers.
   - Put before `pmToProject`, it took the arranged QA reassign test's action 5 (measured). After it, that test still needs Step 6's row change.
 
@@ -565,6 +574,10 @@ Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC"
             //   go to a product, …').
       ```
 
+  - **The four counted keys the retune brings to 2 or more games become required** (pre-flight R3; the same rule as the secondary measures). Each keeps its examples and its arranged test; its "Counted, but not required" bullet goes (for `BADGED_LEADING`, only its part of the bullet), and Step 7 names its holders.
+    - The every-move tally: `REASSIGN_TO_PRODUCT` (3 games: 2p s1, 3p s2, 3p s4) and `HIRE_SCOUTED_TO_PRODUCT` (2 games: 2p s1, 2p s4) join slice 4's line, which becomes `ASSIGN_TO_PRODUCT, HIRE_AGENCY_TO_PRODUCT, REASSIGN_TO_PRODUCT, HIRE_SCOUTED_TO_PRODUCT,`, and the comment above it gains `, and the reassign and the scouting's hire onto one` before `.`.
+    - The talent tally: `EXPERIENCED_PAID` (3 games: 3p s2, 4p s5, 5p s4) joins `paths` after `SALES_BONUS`.
+    - The Strategy tally: `BADGED_LEADING` (5 games: 2p s1, 2p s4, 3p s4, 4p s1, 5p s5) joins `paths` before `SALES_XP_BONUS`, and its bullet becomes `// - Bug Decay stopped by a QA Engineer or waived by a VP of Sales: each needs one Training card, or two, on one card that then works where it matters;` (re-wrapped).
   - **The Strategy tally** (l.3161).
     - `RESHUFFLED` leaves `paths`, whose first line becomes `` `${BRAINSTORM_DRAWING} 2`, DISCARDED_AT_CLEANUP, ``.
     - Its "Counted, but not required" list gains this first bullet:
@@ -578,19 +591,33 @@ Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC"
 
   | Where | New text |
   |---|---|
-  | The every-move tally (l.3073–3076) | Held by two games, the fewest: the agency row's hire to the bench (3 players seed 3, 4 players seed 4); by three: the scouting's hire to the ops team (2 and 3 players seed 4, 5 players seed 3); by four: the scouting's hire to the bench (3 players seeds 2 and 4, 4 players seed 2, 5 players seed 4); by five each: the assign to the ops team and the agency row's hire onto a product; the ops team's let go by eight, and the ops check's switch on by seven and its confirm by thirteen. |
-  | Slice 3 (l.3106–3108) | Held by two games each, the fewest: a Tier 2 or 3 card launched and a project launched with a cut (2 and 3 players, seed 4), and the Engineer paid $1 in the ops team (2 and 4 players, seed 4); by three: Cut 2 red (2 players seed 4, 3 and 4 players seed 2); by six each: the Diva refused a reassign from a project and fired by a pivot (2 and 3 players seeds 1 and 3, 4 and 5 players seed 3). |
+  | The every-move tally (l.3073–3076) | Held by two games each, the fewest: the agency row's hire to the bench (3 players seed 3, 4 players seed 4) and the scouting's hire onto a product (2 players, seeds 1 and 4); by three each: the scouting's hire to the ops team (2 and 3 players seed 4, 5 players seed 3) and the reassign from one product to another (2 players seed 1, 3 players seeds 2 and 4); by four: the scouting's hire to the bench (3 players seeds 2 and 4, 4 players seed 2, 5 players seed 4); by five each: the assign to the ops team, the assign onto a product and the agency row's hire onto a product; the ops team's let go by eight, and the ops check's switch on by seven and its confirm by thirteen. |
+  | Slice 3 (l.3106–3108) | Held by two games each, the fewest: a Tier 2 or 3 card launched and a project launched with a cut (2 and 3 players, seed 4), and the Engineer paid $1 in the ops team (2 and 4 players, seed 4); by three: Cut 2 red (2 players seed 4, 3 and 4 players seed 2); by four: Cut 1 of each (2 and 3 players seed 4, 4 players seeds 2 and 4); by six each: a cut chosen among options, and the Diva refused a reassign from a project and fired by a pivot (2 and 3 players seeds 1 and 3, 4 and 5 players seed 3). |
   | Slice 4 (l.3132–3134) | Held by three games, the fewest: a mode forgotten on a bench (2, 3 and 4 players, seed 2); by six: a mode declared QA (2 players seeds 2 and 4, 3 players seeds 3 and 4, 4 and 5 players seed 2); an offline product at Income by thirteen. |
-  | Slice 5's talent (l.3156–3157) | Held by two games, the fewest: Synergy at the Engine (2 and 4 players, seed 2); the Sales Rep's bonus by six. |
-  | Slice 5's Strategy (l.3186–3188) | Held by two games each, the fewest: Sales Seminar on a Sales Rep and the Sales Rep's XP bonus (2 and 4 players, seed 4); by three: a trained Junior declared red (2 players seed 3, 5 players seeds 1 and 3). |
+  | Slice 5's talent (l.3156–3157) | Held by two games, the fewest: Synergy at the Engine (2 and 4 players, seed 2); by three: an experienced Junior paid (3 players seed 2, 4 players seed 5, 5 players seed 4); the Sales Rep's bonus by six. |
+  | Slice 5's Strategy (l.3186–3188) | Held by two games each, the fewest: Sales Seminar on a Sales Rep and the Sales Rep's XP bonus (2 and 4 players, seed 4); by three: a trained Junior declared red (2 players seed 3, 5 players seeds 1 and 3); by five: a badged Junior leading at the Engine (2 players seeds 1 and 4, 3 players seed 4, 4 players seed 1, 5 players seed 5). |
   | The 2-player replay test (l.3530–3531) | The declarations are in every seed, the reshuffle in seed 4 only, and a final-check switch-off is the last move taken back in seeds 1 to 3. |
   | `hireGrowthHacker`'s doc (l.1035) | "off the long runs' only Cut 2 red" becomes "off what was then the long runs' only Cut 2 red". |
 
-  - **The two "first" claims** (not re-measured by the plan): the view test's "Seed 2 is the first 2-player game with a Greenlight that asks a choice" and the 3-player seed-2 undo test's comment. Check each against the retuned games (print the seeds' logs once, then drop the print). If one is no longer true, reword it to say what seed 2 has, without "first".
+  - **The two "first" comments** are false after the retune (pre-flight R2: 2p seed 1 now has two Greenlights that ask a choice; 3p seed 1 makes all four moves by its 116th). They become:
+    - the view test (HEAD l.3193–3194):
+      ```ts
+            // Seed 2 has a Greenlight that asks a choice (a cut, Cut 2 blue), which the view must list for the card. The game played without
+            // the view is the long run's, which plays seed 2 so.
+      ```
+    - the 3-player seed-2 undo test (HEAD l.3302–3303):
+      ```ts
+            // Seed 2 makes all four by its 83rd move, the soonest of the 3-player seeds 1 to 5 (seed 1 takes 116).
+      ```
+  - **Comments the retune makes false** (pre-flight R3; these keys stay counted, each held by one game):
+    - the talent tally's Agile spare bullet (HEAD l.3149): `which the runs never play (P8)` becomes `which the runs play once (4 players seed 2, P8)`;
+    - the Strategy tally's Milestones bullet (HEAD l.3177–3178): `and none both sides of the stack` becomes `and only 2 players seed 4 runs both sides of the stack (Full Stack Founder, once)`;
+    - the Training `it.each` (HEAD l.3718–3719): `spend their QA Certifications and Masterclasses on Juniors, which are nearly always there to take them, and no seat holds a Junior PM as an Agile Workshop comes (plan 5-2b's P8)` becomes `spend their QA Certifications and Masterclasses on Juniors, which are nearly always there to take them (a Masterclass reaches a QA Engineer once, at 4 players seed 4), and a seat seldom holds a Junior PM as an Agile Workshop comes (once, at 4 players seed 2; plan 5-2b's P8)` (re-wrapped).
   - Measured but unchanged: the 4-player Greenlight test still needs seeds up to 7.
   - The replay comment's "none a keep or Mentor press" still holds; the one keep is at 3p s2.
 
 - [ ] **Step 8: Update the doc comment.**
+  - In the sentence Task 1 added, `and it ends its actions there at once` becomes `so once the free moves are made it ends its actions there`.
   - "The first action" starts: `launches the first project the engine takes (see `launch`), else it is an Ideation. A seat that researches and runs no product yet first researches the seed deck, else drafts the seed market's first card, since a Tier 1 card is what it can build (the retune's D2). Else the Ideation goes by `t % 4`: …`
   - In "Each later action", after the Diva's assign to the ops team, add `Else it hires the agency row's Diva onto its first project when it can pay for her (see `hireDiva`). Else it assigns the bench's makers of a colour its first open project lacks, a project with a cut first, to that project (see `makersToProject`).`
 
@@ -600,11 +627,11 @@ Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC"
   - **The tallies** (re-run the probe if you can: `scripts/probe_patch.py` on a copy, then `run.sh <copy> <label> ""`):
     - 60 Launches; 20 of 20 games with a Launch.
     - Per seed: 2p 5 4 2 5 2, 3p 2 4 3 6 2, 4p 1 3 1 3 4, 5p 1 1 2 6 3.
-    - 91 required keys, none held by fewer than 2 games.
+    - 95 required keys (91 before Step 6's four promotions), none held by fewer than 2 games.
   - **The checks:**
     - Plan 6-1's checks as in Task 1. The removed-test-lines check prints only the lines this task names.
     - The other games' tests pass, with Rent Day's 108 examples.
-  - **Time:** the Startup file best of 3, alternating with BASE. Measured 19.04 s against 13.34 s.
+  - **Time:** the Startup file best of 3, alternating with BASE, reading the `tests` figure. Measured 19.04 s against 13.34 s by the drafter; the pre-flight measured 19.69 and 21.16 s (two sets) against 13.07 and 13.35 s, before R7's saving.
 
 - [ ] **Step 10: Commit.**
 
@@ -612,7 +639,7 @@ Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC"
 git add src/games/startup-simulator.test.ts
 git commit -m "test(games): Startup Simulator's auto-player builds what it greenlights, so all 20 long runs Launch (11 before), and every required key is held by two games
 
-It launches first, takes a seed idea while it researches and runs no product, puts the bench's makers on its first open project, hires the agency row's Diva onto a project, and recruits each kind of Junior at the cycle's recruit. Free moves run at 0 actions too. The bench's discard, the agency row's hire to the ops team and the reshuffle are counted, not required, each pinned by its examples and a test.
+It launches first, takes a seed idea while it researches and runs no product, puts the bench's makers on its first open project, hires the agency row's Diva onto a project, and recruits each kind of Junior at the cycle's recruit. Free moves run at 0 actions too. The bench's discard, the agency row's hire to the ops team and the reshuffle are counted, not required, each pinned by its examples and a test; the reassign onto a product, the scouting's hire onto one, an experienced Junior paid and a badged Junior leading, now each held by two games or more, become required.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC"
@@ -623,9 +650,10 @@ Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC"
 **Files:**
 - Modify: `docs/superpowers/notes/2026-10-19-startup-handoff.md`.
 - Modify: `docs/superpowers/notes/2026-10-19-startup-notes-for-8-preflight.md`.
+- Modify: `docs/superpowers/notes/2026-10-19-startup-notes-for-7-preflight.md`.
 - Modify: `docs/superpowers/notes/2026-10-19-startup-notes-for-6-preflight.md`.
 
-- [ ] **Step 1: The D4 gate.** Time `npx vitest run src/games/startup-simulator.test.ts`, best of 3, alternating with BASE.
+- [ ] **Step 1: The D4 gate.** Time `npx vitest run src/games/startup-simulator.test.ts`, best of 3, alternating with BASE, reading the `tests` figure on vitest's Duration line (not the wall Duration). A result just over 20 s takes the "over 20 s" branch.
   - **At 20 s or less** (measured 19.04 s), nothing changes.
   - **Over 20 s but under 30 s:** no code change. Don't improvise a memo. Record the times in the handoff (Step 2) as over the 20 s aim, and name the next candidates there as a follow-up. The shared 2-player runs are already memoized (`twoPlayerGames`, 656d6eb). The candidates are:
     - the 3-player seed-2 undo test (2.0 s);
@@ -639,15 +667,16 @@ Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC"
     - the ten single-game keys now held by 2 or more, but for the agency row's hire to the ops team and the reshuffle, which moved with the bench's discard to arranged tests;
     - test time as measured in Step 1, against BASE's.
   - **"Rule readings"**, the 1a line: `a turn moves on by itself at 0 AP` becomes `a turn moved on by itself at 0 AP until the long-runs retune, which makes the player end their actions so a free action can be taken at 0 (rulebook l.172–173; this reverses 1a's call)`.
-  - **`…-notes-for-8-preflight.md`** gains this line: `- 8-2a (from the long-runs retune): its step "In Phase: actions, When they have less than 1 action, go to engine. becomes … go to crisis." (plan l.759) and its l.210 summary name a line the retune removed; the end button's Then line Go to engine. is the one to change (and re-check for any other go to engine).`
-  - **"Notes carried to later pre-flights"** in the handoff gains a one-line pointer: `- **8-2a:** the line it rewrites to go to the crisis moved into the end button's Then (details in …-notes-for-8-preflight.md).`
+  - **`…-notes-for-8-preflight.md`** gains this line: `- 8-2a (from the long-runs retune): its step "In Phase: actions, When they have less than 1 action, go to engine. becomes … go to crisis." (plan l.759) and its l.210 summary name a line the retune removed; the end button's Then line Go to engine. is the one to change (and re-check for any other go to engine); also its Divest on the seller's last action (Review Focus l.163–167, test l.505) expects the turn to pass on by itself: the seller now ends their actions.`
+  - **`…-notes-for-7-preflight.md`** gains this line: `- 7-2b (from the long-runs retune): the actions phase no longer ends at 0 actions; the player presses "end their actions", whose Then goes to the Engine. Its Review Focus (l.110), ranTheEngine/atTheEngine note (l.189), Example "a Veto of the Founder's last action …" (l.282–300) and the "a last action vetoed" key (l.757, l.765, l.776) assume the turn moves on by itself after a last action: add the end press, or re-key "a last action vetoed" to the vetoed action that left 0 actions.`
+  - **"Notes carried to later pre-flights"** in the handoff gains a one-line pointer: `- **7-2b / 8-2a (from the long-runs retune):** the turn no longer moves on by itself at the last action, and the line 8-2a rewrites to go to the crisis moved into the end button's Then (details in …-notes-for-7-preflight.md and …-notes-for-8-preflight.md).`
   - **`…-notes-for-6-preflight.md`**, "From 5-2b's final review": the first bullet (the retune mini plan) gains `(done: the long-runs retune, 2026-11-23)`.
-  - **The 5-2b entry** about free actions at 0 AP gains `(done by the long-runs retune)`.
+  - **The 5-2b entry** about free actions at 0 AP (the handoff's l.135, `- 5-2b final review: the actions phase ended at 0 AP, …`) gains `(done by the long-runs retune)`.
 
 - [ ] **Step 3: Commit.**
 
 ```bash
-git add docs/superpowers/notes/2026-10-19-startup-handoff.md docs/superpowers/notes/2026-10-19-startup-notes-for-8-preflight.md docs/superpowers/notes/2026-10-19-startup-notes-for-6-preflight.md
+git add docs/superpowers/notes/2026-10-19-startup-handoff.md docs/superpowers/notes/2026-10-19-startup-notes-for-8-preflight.md docs/superpowers/notes/2026-10-19-startup-notes-for-7-preflight.md docs/superpowers/notes/2026-10-19-startup-notes-for-6-preflight.md
 git commit -m "docs: the long-runs retune is done; the handoff's numbers, 1a's reversed call on the end of the actions, and 8-2a's note
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
