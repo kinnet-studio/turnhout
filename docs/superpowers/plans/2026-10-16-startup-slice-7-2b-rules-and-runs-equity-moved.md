@@ -34,7 +34,7 @@ The long runs play all of it at 2 to 5 players.
     - The Investor answering a Buyback can only `sell back` (its own portfolio holds the token); a buyer can only `take` (the token is in another's portfolio).
     - A decline costs the proposer the action they spent (the spec's call).
     - The price is read as the answer is given; nothing can change it between the offer and the answer.
-  - **A buyer may place the token as they take it** (the overview's "placed when the Equity is bought"; builder check, settled). The take-and-place button repeats 7-2a Task 5's three clearing lines and colour options.
+  - **A buyer may place the token as they take it** (the overview's "placed when the Equity is bought"; builder check, settled). The take-and-place button repeats 7-2a Task 5's three clearing lines and colour options. It does not touch `moved this round`, which only gates the Round Start place button and is cleared as each round starts, before the event check: a token a buyer places may move at the next Round Start, and a token that leaves its card in a Veto, sale back, take or suit may keep the flag until then, harmlessly.
   - **The Non-Compete Suit is two presses** (see Gaps):
     - the free `file a card in their strategy hand` pays the Suit's price, parks it in a public pile `the court` and starts `lawsuit`;
     - there the Founder `sue`s one of their tokens in an Investor's portfolio, paying the Suit's `buyout` ($5, read from the court) to its holder, and the Suit goes to the strategy discard.
@@ -65,8 +65,21 @@ The other inputs:
 
 - **All of plan 7-2a's Global Constraints apply**, its controller amendments (counts from the committed test, the removal probe each task, the auto-player steered when a tallied path would stay at 0, counts as numbers and flags as `=== true`) and its pre-flight notes included. They are repeated here where they bind.
 - **Amended from its pre-flight** (`docs/superpowers/notes/2026-11-23-startup-7-2b-preflight.md`): this plan carries R1–R24, with R9 ruled (a), R21 ruled (b) and R23 ruled: R21(b), and the long-runs speed-up 4 runs first.
-  - BASE is the speed-up 4 mini plan's finished head, not 7-2a's: Startup has 333 examples there (7-2a's fix wave added 2), so N₉ = 333 and the end is 348; the pre-flight's probe had 331. Under R21(b) the 4-player replay `it()` is not added, so the end is one new `it()` (the slice-7 moving-Equity tally test): at the probe's BASE the full suite goes 4029 → 4030 and Startup's file 114 → 115.
-  - A second amendment follows from the probe rebased onto that head (the 7-2a fix wave's colour checks and `moved this round`).
+  - BASE is the speed-up 4 mini plan's finished head, not 7-2a's: Startup has 333 examples there (7-2a's fix wave added 2), so N₉ = 333 and the end is 348; the pre-flight's probe had 331. Under R21(b) the 4-player replay `it()` is not added, so the end is one new `it()` (the slice-7 moving-Equity tally test): at BASE (speed-up 4's head) the full suite goes 4034 → 4035 (speed-up 4's E1 added 5) and Startup's file 114 → 115.
+  - Amended a second time from the probe rebased onto that head (`docs/superpowers/notes/2026-11-23-startup-7-2b-rebase.md`): the fix wave's two colour checks read this plan's moves, a trade is priced as the fix wave prices an Invest, and the test changes go into the split sections.
+  - **The split test file** (speed-up 4; the handoff's "Every later plan (from speed-up 4)" rules). The long runs' rules check and `happenings` are one arrow function per section.
+    - A task puts each change inside the section where its anchor now sits, indented 2 more spaces.
+    - A name a later section reads joins that section's `return { … }` and its caller's `const { … }`. This plan adds none.
+    - A block that is a section of its own may stand unwrapped between sections.
+    - Hazard: a section may read a returned name only after that name's `const { … } = rulesPartN();`. tsc misses an earlier read, which throws "Cannot access … before initialization".
+    - Hazard: a `return` inside a section ends only that section, so a check that ends the move early stays unwrapped.
+    - This plan hits neither hazard. It adds no early return, and its section changes read only outer names (`move`, `card`, `from`, `by`, `at`) and names returned earlier (`paid`, `board`).
+    - Where the changes go:
+      - Task 1: `rulesPart8` (the limits) and `rulesPart16`.
+      - Task 2: `rulesPart3` (price), `rulesPart4` (proceeds), the end of `rulesPart11` (offer checks) and `rulesPart16`.
+      - Task 3: the same sections, plus `rulesPart9` (court).
+      - Task 4: its keys go in one unwrapped block after `happeningsPart9();`.
+    - `playTurn`, `keepsTheBudget`, the window watch and `keepingForReplay` are not split. Never rerun `split.py`.
   - At the plan's end the controller times Startup's test file, alternating BASE and HEAD.
 - **Branch and commits.** Develop on `claude/peaceful-curie-rdfkow`. Commit by pathspec, never `git add -A`. Every commit message ends with these two lines and contains no model identifiers:
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`
@@ -131,10 +144,10 @@ The other inputs:
 Re-read each item at HEAD by name. If one is missing or differs, stop and report it.
 
 - **Plan 7-2a, built:**
-  - the zones `equity`, `portfolio`; the fact `founder`; the flags `blue consultant`, `red consultant`, `qa consultant`;
+  - the zones `equity`, `portfolio`; the fact `founder`; the flags `blue consultant`, `red consultant`, `qa consultant`, `moved this round` (7-2a's fix wave: cleared by `No card is moved this round.` as each round starts; the place button's `Only if it is not moved this round.` and `It is moved this round.`);
   - `Share price:`, `Dividend:`, `Consultant qa:`;
   - the two Invest buttons; the `event check` step with `place …` and `confirm their consultants`;
-  - in the test file: `EQUITY_TOKENS`, `founderOf`, `portfolioOf`, `sharePriceOf`, `dividendOf`, `tiedTo`, `INVEST`, `INVEST_PLACING`, `PLACE`, `CONFIRM_CONSULTANTS`, `CONSULTANT_COLOURS`, `foundersBoards`, `equitiesFrom`, `investing()`, the Equity conservation invariant, the attachment and colour invariants.
+  - in the test file: `EQUITY_TOKENS`, `founderOf`, `portfolioOf`, `sharePriceOf`, `dividendOf`, `tiedTo`, `INVEST`, `INVEST_PLACING`, `PLACE`, `CONFIRM_CONSULTANTS`, `CONSULTANT_COLOURS`, `foundersBoards`, `equitiesFrom`, `investing()`, the Equity conservation invariant, the attachment and colour invariants; the fix wave's `investPriceOf` (`rulesPart3`), `consultantsOn`, and in `rulesPart16` the colour-chosen check and the "colour flags change only with their token" check.
 - **Plan 7-1, built:**
   - `WINDOW_LINE` and the window's checks;
   - `The {phase} passes to the left.` in the window phase and `The action does not go ahead.`;
@@ -205,7 +218,7 @@ function turnOf(state: GameState): { seat: PlayerId; phase: string };
     - a window is open (`waitingOf` not null) only in the `veto` phase, and its `by` is `turnOf(state).seat`;
     - when a press opens one, its `asked` is every seat still in, from the actor's left round to its right, whose portfolio held a card naming the actor in `before`;
     - a `VETO` move moves exactly one card, from the vetoer's portfolio to the actor's equity, on no card. It changes no capital, no counter and no other card, and the actor's actions are as the opening move left them. Later steps the closing move runs are judged as their own moves: the Engine, the cleanups and the next turn after a last action.
-    - 7-2a Task 5's `lang:on` invariant gains: … or in a `VETO` of it, which leaves it on no card.
+    - 7-2a Task 5's `lang:on` invariant gains: … or in a `VETO` of it, which leaves it on no card. Its colour-flags check gains the burned token: a `VETO` of it leaves it no colour.
   - **The view (Review Focus 5).** In the run through the view (seed 1), for each move that opens a window, every seat's `seatExtras(…).waiting` has `by` the actor. The `JSON.stringify` of it holds no card id as a quoted string (`"c12"`), and each card the press picked (`subject.card` or `subject.cards`, and `subject.onto`) from a zone that seat can't see shows as `a face-down card` in its `waiting.cards`. A label may name a card's kind.
 - [ ] **Step 2: Run** the file. Expected: FAIL.
 - [ ] **Step 3: Change the rules text.**
@@ -360,15 +373,15 @@ EOF
     - `PHASES` gains `'offer'` after `'veto'`.
   - **Money (`keepsTheRules`, judged moves):**
     - `BUY_BACK` and `SELL_EQUITY` change no capital;
-    - `SELL_BACK`: the mover gains the card's founder's `share price` (in `before`) from that founder;
+    - `SELL_BACK`: the mover gains from that founder the Share Price `investPriceOf` works out from the founder's online tiers in `before`, as an Invest's (7-2a's fix wave);
     - `TAKE` and `TAKE_PLACING`: the mover pays it to the card's holder in `before`;
     - `DECLINE` changes nothing. No Venture Capital Rain bonus on any of them (§20.D 1).
   - **Invariants:**
     - at most one card is `offered`, and only while the phase is `offer`;
     - in a `SELL_EQUITY` press, the seat the offer phase is handed to is neither the seller nor the card's founder (§17.C.5);
     - a `SELL_BACK` moves its card to its founder's equity, and a `TAKE` or `TAKE_PLACING` to the mover's portfolio;
-    - a `TAKE_PLACING` card sits on a card of its founder's with one colour (7-2a's invariants);
-    - 7-2a Task 5's `lang:on` invariant gains: … or in a `SELL_BACK` or `TAKE` of it (on no card after), or a `TAKE_PLACING` of it (on its target).
+    - a `TAKE_PLACING` card sits on a card of its founder's with one colour (7-2a's invariants), and the colour-chosen check reads `TAKE_PLACING` as a placement (`pressed` gains it): it leaves exactly the colour the buyer chose;
+    - 7-2a Task 5's `lang:on` invariant gains: … or in a `SELL_BACK` or `TAKE` of it (on no card after), or a `TAKE_PLACING` of it (on its target); the colour-flags check gains a `SELL_BACK` or `TAKE` of the token, which leaves it no colour.
   - **The auto-player.**
     - **In `veto` (R2):** the asked seat always vetoes a waiting `SELL_EQUITY` of a token whose `founder` it is, when it holds one of the seller's tokens.
     - **`buyingBack()`**, planned when `(t + a) % 9 === 6` at 3 or more players: buy back the first own token held by another seat whose price leaves the seat 2 or more capital (any capital at 4 or more players, R21).
@@ -379,7 +392,7 @@ EOF
       - else it declines.
 - [ ] **Step 2: Run** the file. Expected: FAIL.
 - [ ] **Step 3: Change the rules text.**
-  - **Cards.** After `  Cards can be qa consultant.` add `  Cards can be offered.`
+  - **Cards.** After `  Cards can be moved this round.` (7-2a's fix wave) add `  Cards can be offered.`
   - **The proposals** (§6, §17.C.4–5, ruling 25). In `Phase: actions`, right before `  A player may end their actions.` add:
 
 ```text
@@ -675,7 +688,7 @@ EOF
     - Playtest-fitted: `const FILE = 'File a card in your strategy hand'`, and the row `[FILE, 'it is a Non-Compete Suit card']` in both 'Review Focus: plays Training onto a card …' and 'Review Focus: labels an Attribute and Hype …'.
   - **The Strategy-card conservation invariant** counts the court with the deck, the discard, the hands, the brainstorm rows and the attributes in play.
   - **Invariant:** the court holds a card only while the turn stands in `lawsuit`, and then exactly one, a Non-Compete Suit.
-  - **7-2a Task 5's `lang:on` invariant** gains: … or in a `SUE` of it, which leaves it on no card in its founder's equity.
+  - **7-2a Task 5's `lang:on` invariant** gains: … or in a `SUE` of it, which leaves it on no card in its founder's equity; the colour-flags check gains a `SUE` of the token, which leaves it no colour.
   - **Money:**
     - a `FILE` press pays the Suit's `price` (in `before`) to the bank;
     - a `SUE` press pays the mover's `buyout due` (in `before`) to the holder of the card it moves.
@@ -825,7 +838,7 @@ EOF
 
 **Interfaces:**
 - Consumes: every constant and policy above and in plan 7-2a; `windowJudge`, `turnOf`, `waitingOf`.
-- **`happenings` gains these keys** (on judged moves, read through the runtime):
+- **`happenings` gains these keys** (on judged moves, read through the runtime), in one block unwrapped after `happeningsPart9();`, under `// Plan 7-2b's paths: Equity moved (§17.B.5, §17.C).`:
   - **The window:**
     - `a window asked one holder` and `a window asked two or more holders`, for the move that closes one (a `VETO` or the closing let-go), by `waitingOf(before).asked.length`;
     - `an action vetoed`, for a `VETO`; `an action let go ahead`, for a move judged `ahead`;
@@ -864,7 +877,7 @@ EOF
     - `Move it to its founder's equity.` and `The action does not go ahead.`;
     - `Hand the offer phase to another player of their choice who is not the card's founder.`;
     - `They pay its founder's buyout due to its owner.`
-- [ ] **Step 4: Run** `bun run test` and `bun run typecheck`. The passing count is the starting count plus this plan's new tests: one, the slice-7 moving-Equity tally test (at the pre-flight's BASE, 4029 → 4030; Startup's file 114 → 115). The 4-player replay stays dropped (7-2a's R29(a), R21(b)).
+- [ ] **Step 4: Run** `bun run test` and `bun run typecheck`. The passing count is the starting count plus this plan's new tests: one, the slice-7 moving-Equity tally test (at BASE, 4034 → 4035; Startup's file 114 → 115). The 4-player replay stays dropped (7-2a's R29(a), R21(b)).
 - [ ] **Step 5: Run the checks.** The first three print nothing. The fourth prints only the Startup count line in `designer-page.test.tsx` and any pin a task reported.
 
 ```bash
@@ -907,7 +920,7 @@ EOF
   - the File button shows greyed on every Strategy card but the Suit (R18);
   - after a vetoed last action the page must offer End at 0 actions (R4);
   - waiting labels may name a card's kind; a picked card from a zone the viewer can't see shows face down (R6);
-  - starting budget: the pre-flight projected ≈30.0 s for Startup's test file with R21(b)'s cut (R21, R23), on a BASE before speed-up 4; the controller's timing at this plan's end is the figure 7-3 starts from;
+  - starting budget: the rebased probe's best was 23.93 s against BASE's 23.01 s (alternating, best of 3; ×1.04, CPU 38.5 s against 36.4 s); the controller's timing at this plan's end is the figure 7-3 starts from;
   - the browser check of a veto, a let-go, a Buyback and a trade.
 - **Slice 8:**
   - Divest of a product is a second kind of sale. Its consent can reuse the `offer` phase's shape, but its button words must differ from `sell a card in their portfolio`.
@@ -925,6 +938,7 @@ None that needs a new phrase: every line above is written with plans 4-1 to 7-1'
 - **`buyout due` is a per-player value over a shared pile.** It shows on every panel, at 0 outside a lawsuit. Home: 7-3's view.
 - **The File button is greyed on every Strategy card but the Suit** ("it is a Non-Compete Suit card"). Home: 7-3's page.
 - **A plain `take` comes in one game only,** because buyers are short of cash. Home: a later retune.
+- **A `SUE` press's money is read from the rules' own `buyout due`,** while trades and Invests are priced from card data (`investPriceOf`; the second amendment). A broken `buyout` or `suit cost` line is caught by Task 3's examples, not by the long runs. Home: a later retune, which can work out the $5 per Suit in the court on its own.
 - **2-player games hold no Buyback, trade or Suit.** For trades that is the rule; for Buybacks and Suits it is the auto-player (R12, R19). Examples pin them. Home: a later retune, if wanted.
 - **Two keys sit at exactly 2 games** ('a window asked two or more holders' and 'a Secondary Trade vetoed by its token's Founder', 3p5 and 4p2), so they are fragile. Home: the next retune.
 - **Plan 7-1's recorded limit holds:** a window button that changes what the waiting action reads could make it throw as it goes ahead. Here the veto phase's only such button stops the action, and `let the action go ahead` touches nothing.
