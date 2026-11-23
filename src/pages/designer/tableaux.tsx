@@ -3,8 +3,11 @@ import type { BoardView, PlayerValuesView, WorkedView } from '@/engine/core/lang
 import type { CompiledGame } from '@/engine/core/lang/types';
 import { zoneIdFor } from '@/engine/core/lang/zones';
 import type { CardState, PlayerId } from '@/engine/core/scene';
+import { cardsByZone } from '@/engine/core/scene';
+import { inPlayZones } from '@/engine/core/lang/worked-view';
 import { bankLine, entryFor } from './board-controls';
 import { boardText } from './board-text';
+import { cardDetail } from './card-detail';
 import { gaugesOf } from './gauges';
 import { seatColor } from './seat-colors';
 
@@ -27,6 +30,23 @@ export function tableauLine(game: CompiledGame, board: BoardView | null, cards: 
     });
   const start = board?.startPlayer === seat ? ['start player'] : [];
   return [board ? entryFor(board, seat, false) : seat, ...counts, ...start].join(' · ');
+}
+
+/**
+ * Each zone of `inPlayZones(game)` that holds cards, by zone id, in Table order: `{zone}: {card}; {card}`, each card in full as the hover
+ * line gives it (`cardDetail`), in slot order. The cards there change what the rules work out for every card, and a face has no room
+ * for what they say (Call 2). A card with no words on its face (a back) gives nothing.
+ */
+export function inPlayLines(game: CompiledGame, cards: CardState[]): { zoneId: string; text: string }[] {
+  const byZone = cardsByZone({ cards, zones: [] });
+  return inPlayZones(game).flatMap((zone) => {
+    const zoneId = zoneIdFor(zone);
+    const named = (byZone.get(zoneId) ?? []).flatMap((card) => {
+      const detail = card.faceUp ? cardDetail(card.faceKey) : null;
+      return detail === null ? [] : [detail];
+    });
+    return named.length === 0 ? [] : [{ zoneId, text: `${zone}: ${named.join('; ')}` }];
+  });
 }
 
 /**
@@ -56,8 +76,11 @@ export function Tableaux({ game, seats, board, cards, worked, playerValues }: {
     () => new Map(seats.map((seat) => [seat, gaugesOf(game, playerValues?.[seat])])),
     [game, seats, playerValues],
   );
+  // The card in play changes only with the cards.
+  const inPlay = useMemo(() => inPlayLines(game, cards), [game, cards]);
   return (
     <div data-testid="tableaux" style={{ display: 'flex', flexDirection: 'column', gap: 4, font: 'bold 14px sans-serif' }}>
+      {inPlay.map(({ zoneId, text }) => <div key={zoneId} data-testid={`in-play-${zoneId}`} style={{ color: '#d1d5db' }}>{text}</div>)}
       {seats.map((seat) => {
         const text = texts.get(seat)!;
         const shown = board?.out.includes(seat) ? [] : gauges.get(seat)!;

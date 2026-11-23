@@ -24,7 +24,8 @@ import type { LangRuntime } from './runtime';
 import { startPlayerOf, usesTurns } from './turns';
 import type { CompiledGame, DeclaredAction } from './types';
 import { zoneIdFor, zoneInfo } from './zones';
-import { holderFlags, pressFlags, shownFlags, shownPlayerValues, standIns } from './worked-view';
+import { holderFlags, pressFlags, shownFlags, shownPlayerValues, standIns, thenRefs } from './worked-view';
+import { PAY_NUMBER } from './library/game-numbers';
 import { holderIdOf } from './attach';
 
 /**
@@ -173,12 +174,37 @@ function debtsIn(runtime: LangRuntime, state: GameState): { [seat: string]: Cred
   return owes;
 }
 
-/** The numbers of the game that are not 0, in the order the game declares them: one at 0 is as good as none for the page to show. */
+/**
+ * The game numbers a button or a card move pays to the bank (an effect ref with the phrase PAY_NUMBER), in the order declared: prices
+ * (Call 4).
+ */
+export function paidNumbers(game: CompiledGame): string[] {
+  const paid = new Set(game.phases.flatMap((phase) => [...phase.actions, ...phase.moves]).flatMap(thenRefs)
+    .filter((ref) => ref.kind === 'effect' && ref.phrase === PAY_NUMBER).map((ref) => ref.args[0] as string));
+  return game.facts.filter((fact) => fact.on === 'game' && paid.has(fact.name)).map((fact) => fact.name);
+}
+
+const paidByGame = new WeakMap<CompiledGame, ReadonlySet<string>>();
+/** `paidNumbers`, kept for each compiled game, which never changes once made. */
+function paidOf(game: CompiledGame): ReadonlySet<string> {
+  let paid = paidByGame.get(game);
+  if (paid === undefined) {
+    paid = new Set(paidNumbers(game));
+    paidByGame.set(game, paid);
+  }
+  return paid;
+}
+
+/**
+ * The numbers of the game, in the order the game declares them, but those at 0: one at 0 is as good as none for the page to show, but a
+ * price a button pays (`paidNumbers`), which is worth showing at 0 too.
+ */
 function gameNumbersIn(runtime: LangRuntime, state: GameState): { name: string; value: number }[] {
+  const paid = paidOf(runtime.game);
   return runtime.game.facts
     .filter((fact) => fact.on === 'game')
     .map(({ name }) => ({ name, value: gameNumber(state, runtime.game, name) }))
-    .filter(({ value }) => value !== 0);
+    .filter(({ name, value }) => value !== 0 || paid.has(name));
 }
 
 /**

@@ -134,25 +134,25 @@ Cards:
     | Clean Launch          | 5  | 1      |
     | Full Stack Founder    | 7  | 1      |
   A deck called events, starting in the event deck:
-    | name                         | copies |
-    | Venture Capital Rain         | 1      |
-    | Tech Bubble                  | 1      |
-    | Patent Trolls                | 1      |
-    | Angel Investors              | 1      |
-    | Legacy Code                  | 1      |
-    | Regulation Audit             | 1      |
-    | Open Source Boom             | 1      |
-    | Hardware Hackathon           | 1      |
-    | Chip Shortage                | 1      |
-    | Crunch Time                  | 1      |
-    | Server Crash                 | 1      |
-    | Supply Chain Logjam          | 1      |
-    | Recruiter Frenzy             | 1      |
-    | Intern Season                | 1      |
-    | Headhunter Holiday           | 1      |
-    | Online Course Boom           | 1      |
-    | Whistleblower Protection Act | 1      |
-    | Trade Show                   | 1      |
+    | name                         | effect | copies |
+    | Venture Capital Rain         | Whenever a player Invests in a Founder this round, the Bank pays that Founder $3 extra cash (not on Secondary Trades or Buybacks). Not in effect yet. | 1 |
+    | Tech Bubble                  | All Active Maintenance Products generate +$1 Revenue this round. | 1 |
+    | Patent Trolls                | This round the Tag Owner's share of every license fee is $5 instead of $3; Bank fees don't change. Only the Greenlight License is in effect yet. | 1 |
+    | Angel Investors              | When revealed, each player with at least one Tier 1 product and no Tier 2 or 3 product, in Development or Maintenance, gains $3. | 1 |
+    | Legacy Code                  | Revenue Decay is -$2 per Bug instead of -$1 this round. | 1 |
+    | Regulation Audit             | When revealed, every player pays $1 for each Employee on their Board whose Salary is above $0 (Juniors with 0-1 XP are exempt); a player who can't pay lets staff go, choosing who. | 1 |
+    | Open Source Boom             | Every staff member working in Software gets +1 Output this round, in Development and in Ops bandwidth. | 1 |
+    | Hardware Hackathon           | Every staff member working in Hardware gets +1 Output this round, in Development and in Ops bandwidth. | 1 |
+    | Chip Shortage                | Hiring any talent whose native skill is Hardware costs +$3 this round, from any source; Flex staff are not affected. | 1 |
+    | Crunch Time                  | Every Development project that isn't Stalled produces +1 Cube (Blue if it still needs Blue, otherwise Red), staffed or not, and adds 1 Bug unless a Clean Code unit works on it. | 1 |
+    | Server Crash                 | All Software staff in the Ops Zone produce -1 Bandwidth this round. | 1 |
+    | Supply Chain Logjam          | All Hardware output is -1 this round, in Development and Ops. | 1 |
+    | Recruiter Frenzy             | The poach multiplier is x1 instead of x2 this round; Token Value still counts. Not in effect yet. | 1 |
+    | Intern Season                | Recruiting from the University costs $0 this round. | 1 |
+    | Headhunter Holiday           | Hostile Offers (Poaching) are suspended this round. Not in effect yet. | 1 |
+    | Online Course Boom           | Every Training card costs $1 instead of its printed price this round. | 1 |
+    | Whistleblower Protection Act | The Bank Reward for a successful Audit (Settlement) is doubled to $8. Not in effect yet. | 1 |
+    | Trade Show                   | TechCrunch Feature costs $2 instead of $5 this round; it doesn't stack with the Sales Rep perk. | 1 |
   Cards can be onboarding.
   Cards can be red mode.
   Cards can be qa mode.

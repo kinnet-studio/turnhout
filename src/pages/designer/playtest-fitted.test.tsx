@@ -34,6 +34,7 @@ import { TableInputTracker } from '@/engine/input/table-input-tracker';
 import { STACK_STEP } from '@/engine/core/lang/fit-layout';
 import { fittedBounds, HANG_ONE } from '@/engine/core/lang/fit-layout';
 import { TALL_GAME } from '@/engine/core/lang/testing';
+import { setGameNumber } from '@/engine/core/lang/board-state';
 
 // The canvas a seat is drawn on: keep what its app was last made with.
 let canvasMadeWith: unknown = null;
@@ -1682,5 +1683,98 @@ describe('slice 5 on the page', () => {
 
     fireEvent.click(tab(O));
     expect(boardOf(S)).toContain('milestones: Clean Launch');
+  });
+});
+
+/**
+ * `state` with the named card the only one in the event in play (any other there goes to the event discard), and license 3, junior price
+ * 2, hardware junior price 2 (§20.D's printed prices).
+ */
+const inPlay = (state: GameState, name: string): GameState => {
+  const shown = relocate(state, state.cards.filter((c) => c.zoneId === 'event-in-play').map((c) => c.id), 'event-discard', game);
+  const played = relocate(shown, [idOf(shown, name)], 'event-in-play', game);
+  return [['license', 3], ['junior price', 2], ['hardware junior price', 2]].reduce(
+    (next, [number, value]) => setGameNumber(next, number as string, value as number), played);
+};
+/** `state` with the named card moved to the top of the event deck (relocated there, so last in slot order). */
+const onTop = (state: GameState, name: string): GameState => relocate(state, [idOf(state, name)], 'event-deck', game);
+/** A 2-player state after Setup at SEED, its start player and the other seat. */
+const setUpTwo = (): GameState => createEngine(game, lib, 2, initialState(game, SEED)).engine.getState();
+const FIRST2 = setUpTwo().data['lang:start-player'] as string;
+const SECOND2 = seatsOf(2).find((seat) => seat !== FIRST2)!;
+const inPlayLine = () => screen.getByTestId('in-play-event-in-play').textContent;
+const bankText = () => within(screen.getByTestId('tableaux')).getByText(/^license /).textContent;
+
+/**
+ * How the numbers come:
+ * - §20.D 14: Intern Season makes the University $0; §6: a recruit costs 1 action, 3 − 1 = 2; the bench held 3 Juniors (setup);
+ * - §20.D: each round start resets the License to $3 and the University to $2;
+ * - §20.B: a Junior Software Dev's output is 1 Blue; §20.C.1: the Dating App's maintenance is 1 Blue / 0 Red;
+ * - §20.D 11: Server Crash takes 1 Bandwidth from each Software staff member in Ops; §20.A and R1: Toxic Personality takes one cube, Blue
+ *   first, off its team's total, here the ops pool.
+ */
+describe('the Event in play and the prices on the page', () => {
+  const tab = (name: string) => screen.getByRole('tab', { name });
+  const detail = () => screen.getByTestId('card-detail').textContent;
+  const hover = (id: string | null) => act(() => table!.onHover!(id));
+  const gauges = (seat: string) => screen.getByTestId(`gauges-${seat}`).textContent;
+  const WHISTLE = 'event in play: Whistleblower Protection Act — effect The Bank Reward for a successful Audit (Settlement) is doubled to $8. Not in effect yet.';
+  const INTERN = 'event in play: Intern Season — effect Recruiting from the University costs $0 this round.';
+
+  it('reveals the next Event at the round start, writes it out above the table with the prices it sets, and Undo brings the last one back', () => {
+    mount({ initial: onTop(inPlay(setUpTwo(), 'Whistleblower Protection Act'), 'Intern Season'), players: 2 });
+    expect(inPlayLine()).toBe(WHISTLE);
+    expect(bankText()).toBe('license 3 · junior price 2 · hardware junior price 2');
+
+    press('End your actions');
+    expect(tab(`${SECOND2} — to act`).getAttribute('aria-selected')).toBe('true');
+    expect(inPlayLine()).toBe(WHISTLE);
+    press('End your actions');
+    expect(tab(`${FIRST2} — to act`).getAttribute('aria-selected')).toBe('true');
+    expect(inPlayLine()).toBe(INTERN);
+    expect(bankText()).toBe('license 3 · junior price 0 · hardware junior price 0');
+    const shown = inOrder('event-in-play');
+    expect(shown.map((c) => parseTextFaceKey(c.faceKey)!.name)).toEqual(['Intern Season']);
+    expect(table!.decor?.[shown[0].id]?.badge).toBeUndefined();
+    hover(shown[0].id);
+    expect(detail()).toBe(cardDetail(shown[0].faceKey));
+
+    press('Recruit a junior software dev');
+    expect(lineOf(FIRST2)!.startsWith(`${FIRST2} 7 capital, 2 actions`), lineOf(FIRST2)!).toBe(true);
+    expect(lineOf(FIRST2)).toContain('bench 4');
+
+    press('Undo');
+    press('Undo');
+    expect(inPlayLine()).toBe(WHISTLE);
+    expect(bankText()).toBe('license 3 · junior price 2 · hardware junior price 2');
+  });
+
+  /** A Dating App in N's operations, run by N's Junior Software Dev in the ops team, under `event`. */
+  const ops = (event: string, toxic = false): GameState => {
+    let state = inPlay(setUp(), event);
+    state = relocate(state, [idOf(state, 'Dating App')], `operations-${N}`, game);
+    const junior = idOf(state, 'Junior Software Dev', `bench-${N}`);
+    state = relocate(state, [junior], `ops-team-${N}`, game);
+    return toxic ? changeCard(state, junior, { 'toxic personality': 1 }, game) : state;
+  };
+
+  it('gauges the ops pool with no Event at work', () => {
+    mount({ initial: ops('Whistleblower Protection Act') });
+    expect(gauges(N)).toBe('Blue supply 1 / demand 1 · Red supply 0 / demand 0');
+  });
+
+  it('Review Focus: counts Server Crash in the gauges, and labels no card with it', () => {
+    const state = ops('Server Crash');
+    const junior = idOf(state, 'Junior Software Dev', `ops-team-${N}`);
+    mount({ initial: state });
+    expect(gauges(N)).toBe('Blue supply 0 / demand 1 (short) · Red supply 0 / demand 0');
+    expect(inPlayLine()).toBe('event in play: Server Crash — effect All Software staff in the Ops Zone produce -1 Bandwidth this round.');
+    fireEvent.click(tab(N));
+    expect(table!.decor?.[junior]).toBeUndefined();
+  });
+
+  it('counts Toxic Personality in the gauges', () => {
+    mount({ initial: ops('Whistleblower Protection Act', true) });
+    expect(gauges(N)).toBe('Blue supply 0 / demand 1 (short) · Red supply 0 / demand 0');
   });
 });

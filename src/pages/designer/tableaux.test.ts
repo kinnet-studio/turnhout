@@ -18,6 +18,9 @@ import { putOn } from '@/engine/core/lang/attach';
 import { GAUGED_GAME } from '@/engine/core/lang/testing';
 import { relocate } from '@/engine/core/lang/zones';
 import { SHORT_COLOR } from './tableaux';
+import { inPlayLines } from './tableaux';
+import { setGameNumber } from '@/engine/core/lang/board-state';
+import { zoneCards } from '@/engine/core/game-state';
 
 const lib = createDefaultLibrary();
 const startup = compileGame(STARTUP_SIMULATOR, lib).game!;
@@ -121,5 +124,46 @@ describe('gauges', () => {
     const { board } = seatExtras(engine, runtime, start, 'p0');
     render(createElement(Tableaux, { game: startup, seats: SEATS, board, cards: start.cards }));
     expect(screen.queryByTestId(/^gauges-/)).toBeNull();
+  });
+});
+
+/**
+ * How the numbers come (§20.D): Intern Season makes the University $0 for its round (14), and the License stays at its printed $3.
+ */
+describe('the card in play and the prices', () => {
+  const INTERN = 'event in play: Intern Season — effect Recruiting from the University costs $0 this round.';
+  const intern = start.cards.find((card) => card.data?.name === 'Intern Season')!.id;
+  const shown = relocate(start, zoneCards(start, 'event-in-play').map((card) => card.id), 'event-discard', startup);
+  const arranged = [
+    (state: GameState) => relocate(state, [intern], 'event-in-play', startup),
+    (state: GameState) => setGameNumber(state, 'junior price', 0),
+    (state: GameState) => setGameNumber(state, 'hardware junior price', 0),
+    (state: GameState) => setGameNumber(state, 'license', 3),
+  ].reduce((state, arrange) => arrange(state), shown);
+  const draw = (state: GameState) => {
+    const { board } = seatExtras(engine, runtime, state, 'p0');
+    render(createElement(Tableaux, { game: startup, seats: SEATS, board, cards: state.cards }));
+  };
+
+  it('writes out the card in play first, and shows the prices a button pays at 0 on the bank line', () => {
+    expect(inPlayLines(startup, arranged.cards)).toEqual([{ zoneId: 'event-in-play', text: INTERN }]);
+    draw(arranged);
+    const tableaux = screen.getByTestId('tableaux');
+    expect(tableaux.firstElementChild!.getAttribute('data-testid')).toBe('in-play-event-in-play');
+    expect(tableaux.firstElementChild!.textContent).toBe(INTERN);
+    expect(tableaux.lastElementChild!.textContent).toBe('license 3 · junior price 0 · hardware junior price 0');
+  });
+
+  it('has no line once the card in play is gone', () => {
+    const gone = relocate(arranged, [intern], 'event-discard', startup);
+    expect(inPlayLines(startup, gone.cards)).toEqual([]);
+    draw(gone);
+    expect(screen.queryByTestId(/^in-play-/)).toBeNull();
+  });
+
+  it('(guard) has no line in a game whose values read no card in the centre', () => {
+    const state = createEngine(colorMatch, lib, 3, initialState(colorMatch, SEED)).engine.getState();
+    render(createElement(Tableaux, { game: colorMatch, seats: SEATS, board: null, cards: state.cards }));
+    expect(screen.queryByTestId(/^in-play-/)).toBeNull();
   });
 });

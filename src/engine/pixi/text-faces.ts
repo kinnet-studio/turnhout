@@ -1,5 +1,5 @@
 import { Graphics, Text } from 'pixi.js';
-import { parseTextFaceKey } from '../core/lang/cards';
+import { isSentence, parseTextFaceKey } from '../core/lang/cards';
 import type { CardState } from '../core/scene';
 import { CARD_HEIGHT, CARD_WIDTH } from '../core/scene';
 import type { FaceDraw, FaceRenderer } from './face-texture-cache';
@@ -35,10 +35,14 @@ const NUMBER = /^-?\d+$/;
 /** The big label: the card's name, else every value in column order ("red 7"). */
 const labelOf = (attrs: Record<string, string>): string => attrs.name ?? Object.values(attrs).join(' ');
 
-/** Attributes the label does not already say, as small 'key: value' lines: the first FACE_DETAILS of them. */
+/**
+ * Attributes the label does not already say, as small 'key: value' lines: the first FACE_DETAILS of them. A value that is a sentence
+ * has no room on a face, so it is left off and gives up its place; the hover line says it.
+ */
 const detailsOf = (attrs: Record<string, string>): string[] =>
   'name' in attrs
-    ? Object.entries(attrs).filter(([key]) => key !== 'name').map(([key, value]) => `${key}: ${value}`).slice(0, FACE_DETAILS)
+    ? Object.entries(attrs).filter(([key, value]) => key !== 'name' && !isSentence(value)).map(([key, value]) => `${key}: ${value}`)
+      .slice(0, FACE_DETAILS)
     : [];
 
 /**

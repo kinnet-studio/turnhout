@@ -27,6 +27,8 @@ import { dimFlags, gaugePairs, shownFlags, shownPlayerValues, standIns } from '@
 import { holderFlags, pressFlags } from '@/engine/core/lang/worked-view';
 import { parseTextFaceKey } from '@/engine/core/lang/cards';
 import { inPlayZones } from '@/engine/core/lang/worked-view';
+import { isSentence } from '@/engine/core/lang/cards';
+import { paidNumbers } from '@/engine/core/lang/board-view';
 
 // The long runs check every rule after every move, thousands of checks a game, and an `expect` costs vitest far more to build than the
 // check costs to make. So the checks that run after every move make theirs first and ask vitest only when it fails, with the same matcher
@@ -5417,4 +5419,17 @@ describe('what the view reads in the centre', () => {
       'past tier 1', 'taxed'];
     expect(shownFlags(game!).filter((flag) => eventFlags.includes(flag))).toEqual([]);
   });
+});
+
+it('gives every Event its effect, a sentence the page shows while it is in play, and makes the University prices the numbers a button pays (§20.D)', () => {
+  // §20.D's text of each Event, shortened only where the rulebook adds flavour; the four of later slices end "Not in effect yet."
+  const effects = zoneCards(fresh(), 'event-deck').map((card) => card.data?.effect as string);
+  expect(effects).toHaveLength(EVENTS.length);
+  for (const effect of effects) expect(isSentence(effect), effect).toBe(true);
+  expect(new Set(effects).size).toBe(EVENTS.length);
+  // A face has no room for a sentence, and no other card's value is one.
+  const sentences = setUp(5, 1).cards.flatMap((card) => Object.values(parseTextFaceKey(card.faceKey) ?? {})).filter(isSentence);
+  expect([...new Set(sentences)].sort()).toEqual([...effects].sort());
+  // §6, §20.D: a recruit pays the University's price to the bank; the License is paid to a player.
+  expect(paidNumbers(game!)).toEqual(['junior price', 'hardware junior price']);
 });

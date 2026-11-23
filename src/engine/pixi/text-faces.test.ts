@@ -198,3 +198,20 @@ describe('the faces of the four games', () => {
     });
   }
 });
+
+describe('a sentence on a face', () => {
+  it('leaves a value that is a sentence off the face, so a card with only that keeps the big centred label', () => {
+    const container = drawn(card({ faceKey: textFaceKey({ name: 'Gale', effect: 'The fee goes up by 2 this round.' }) }));
+    expect(labels(container)).toEqual(expect.arrayContaining(['Gale', 'Gal']));
+    expect(labels(container).filter((text) => text.startsWith('effect:'))).toEqual([]);
+    const label = container.children.find((ch): ch is Text => ch instanceof Text && ch.text === 'Gale')!;
+    expect({ fontSize: label.style.fontSize, wordWrapWidth: label.style.wordWrapWidth, anchorY: label.anchor.y, y: label.y })
+      .toEqual({ fontSize: 24, wordWrapWidth: 80, anchorY: 0.5, y: -12 });
+  });
+
+  it('gives the sentence\'s place to the next value', () => {
+    const container = drawn(card({ faceKey: textFaceKey({ name: 'Goblin', motto: 'Strike first!', attack: 3, defense: 2, speed: 1 }) }));
+    expect(labels(container)).toEqual(expect.arrayContaining(['attack: 3', 'defense: 2', 'speed: 1']));
+    expect(labels(container).filter((text) => text.startsWith('motto:'))).toEqual([]);
+  });
+});

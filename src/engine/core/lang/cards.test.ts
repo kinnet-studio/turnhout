@@ -3,6 +3,7 @@ import { buildCards, deckOf, expandCardTable, makeCard, NEXT_CARD_KEY, parseText
 import { makeRng, shuffleWithRng } from '../rng';
 import type { CardSetSpec } from './types';
 import { fixtureGame, fixtureState } from './testing';
+import { isSentence } from './cards';
 
 const COLOR_TABLE = { columns: ['color', 'number', 'copies'], rows: ['red', 'yellow', 'green', 'blue'].map((c, i) => ({ cells: [c, '1 to 9', '2'], line: 10 + i })) };
 
@@ -284,5 +285,12 @@ describe('the id a card has now', () => {
     expect(['c0', 'c1', 'c2', 'c3'].map((id) => currentIdOf(fresh, twice, id))).toEqual(['c6', 'c1', 'c4', 'c3']);
     expect(['c4', 'c5'].map((id) => currentIdOf(once, twice, id))).toEqual(['c4', 'c6']);
     expect(['c0', 'c1'].map((id) => currentIdOf(fresh, fresh, id))).toEqual(['c0', 'c1']);
+  });
+});
+
+describe('isSentence', () => {
+  it('finds a sentence by its space and its last mark, and nothing else', () => {
+    for (const value of ['They pay 50.', 'Strike first!', 'Who goes?']) expect(isSentence(value), value).toBe(true);
+    for (const value of ['Red Dragon', 'St.', '7', '']) expect(isSentence(value), value).toBe(false);
   });
 });

@@ -59,6 +59,11 @@ export const SAYS = 'says';
 /** Whether a table column is the says column: any capitals, spaces around the name ignored. */
 export const isSaysColumn = (name: string): boolean => name.trim().toLowerCase() === SAYS;
 
+/** Whether a card's value is a sentence: it has a space and ends with '.', '!' or '?'. A face has no room to say one (Call 3). */
+export function isSentence(value: string): boolean {
+  return value.includes(' ') && /[.!?]$/.test(value);
+}
+
 /** What a table cell says: 'a to b' counts up from a to b; anything else is one value, whole numbers as numbers. */
 type Cell = { from: number; to: number } | { value: Json };
 

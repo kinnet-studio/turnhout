@@ -19,6 +19,8 @@ import { START_PLAYER_KEY } from './turns';
 import type { CompiledGame } from './types';
 import { relocate, zoneIdFor } from './zones';
 import RENT_DAY from '@/games/rent-day.rules?raw';
+import { paidNumbers } from './board-view';
+import { OMEN_GAME, PRICE_GAME } from './testing';
 
 const lib = createDefaultLibrary();
 const game = compileGame(TINY_BOARD, lib).game!;
@@ -1340,5 +1342,32 @@ describe("a button whose target card is in another player's zone", () => {
     expect(jinx.cards!.onto!.targets[statue]).toEqual([expect.objectContaining({ id: vase, name: 'a face-down card' })]);
     // Nothing the button shows p0 names the card.
     expect(JSON.stringify(jinx)).not.toContain('Vase');
+  });
+});
+
+describe('prices', () => {
+  const omen = compileGame(OMEN_GAME, lib).game!;
+  const price = compileGame(PRICE_GAME, lib).game!;
+  const rentDay = compileGame(RENT_DAY, lib).game!;
+  /** The game numbers p0 is given in a 2-player game of `played` with the fee set to 0. */
+  const atZero = (played: CompiledGame) => {
+    const { engine, runtime } = createEngine(played, lib, 2, initialState(played, 1));
+    return seatExtras(engine, runtime, setGameNumber(engine.getState(), 'fee', 0), 'p0').board!.gameNumbers;
+  };
+
+  it('names the numbers a button pays to the bank, and no number a rule pays, one a button raises or one paid to a player', () => {
+    expect(paidNumbers(omen)).toEqual(['fee']);
+    // Raising the fee pays nothing.
+    expect(paidNumbers(price)).toEqual([]);
+    // Rent Day's `They pay the high bid.` is a rule's, and its cash numbers are paid to a player.
+    expect(paidNumbers(rentDay)).toEqual([]);
+  });
+
+  it('shows a price at 0', () => {
+    expect(atZero(omen)).toEqual([{ name: 'fee', value: 0 }]);
+  });
+
+  it('(guard) Review Focus: leaves any other number at 0 off', () => {
+    expect(atZero(price)).toEqual([]);
   });
 });

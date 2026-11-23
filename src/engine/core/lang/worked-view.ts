@@ -1,8 +1,9 @@
 // Which of the values a game works out for cards (R4) the page may show beside a card on a Board, read from the compiled game alone:
 // a number that stands in for a column of a card table, and a flag that changes a value. A value is shown only when its lines, and the
-// lines of every value they read, all the way down, read nothing but the card and the cards on it; and a line that reads the cards on a
-// card counts only in a game where everyone sees every card that sits on a card. So a seat that sees a card sees all that its shown
-// values read, however deep the cards on cards go, and whether a value is shown hangs on the rules alone, never on where cards are.
+// lines of every value they read, all the way down, read nothing but the card, the cards on it and what a shared zone everyone can see
+// holds; and a line that reads the cards on a card counts only in a game where everyone sees every card that sits on a card. So a seat
+// that sees a card sees all that its shown values read, however deep the cards on cards go, and whether a value is shown hangs on the
+// rules alone, never on where cards are.
 // So does which values about a player the page may show: a total of cards everyone sees, each read through what reads that card alone,
 // or what its owner has in a zone everyone sees, so every seat may know it for every player; with the pairs of them a button waits on,
 // and the flags that leave a card out of one.
@@ -21,7 +22,7 @@ import { OWNER_HAS_PHRASES } from './library/compare-phrases';
 import { CENTRE_HAS } from './library/queue-phrases';
 import { PhraseLibrary, STATIC_TYPES } from './phrases';
 import { VOCAB_TYPES } from './refs';
-import type { CardFilter, CardGroup, CompiledGame, PhraseRef, WorkedValue, ZoneRef } from './types';
+import type { CardFilter, CardGroup, CompiledGame, DeclaredAction, PhraseRef, WorkedValue, ZoneRef } from './types';
 
 /**
  * The phrases about the card a value is worked out for and the cards on it: what kind of card it is, its own numbers and flags, its zone
@@ -90,6 +91,9 @@ function ownerSeenNames(game: CompiledGame, ref: PhraseRef): string[] | null {
 const readsSeenCentre = (game: CompiledGame, ref: PhraseRef): boolean => ref.kind === 'condition' && ref.phrase === CENTRE_HAS
   && game.zones.some((zone) => zone.name === ref.args[0] && !zone.perPlayer && zone.visibility === 'public');
 
+/** What else `readsOnlyCards` counts as read, besides the card and the cards on it; each is off unless given. */
+type Reads = { holder?: boolean; owner?: boolean; centre?: boolean };
+
 /**
  * Whether every line of the value `name` reads only the card and the cards on it, and so does every line of each value they read, all the
  * way down. `seen` holds the values looked at already: one met again is being looked at, and adds no line of its own. With `holder`, a
@@ -97,26 +101,26 @@ const readsSeenCentre = (game: CompiledGame, ref: PhraseRef): boolean => ref.kin
  * face alone. With `owner`, so does a line that asks what its owner has in a zone everyone sees (`ownerSeenNames`), at every depth, when
  * each value its clause tests reads only cards too. Only a total about a player asks that (`readsTheCardAlone`): the flags and numbers a
  * face shows keep to the card, the cards on it and the card it sits on. With `centre`, a line that tests what a shared zone everyone sees
- * holds (`readsSeenCentre`) counts as read too, at every depth.
+ * holds (`readsSeenCentre`) counts as read too, at every depth. card-alone.ts keeps a value that reads so by the cards that zone holds as
+ * well as by the card (`keptValues`, speed-up 3): what such a zone holds changes while the card stays as it is.
  */
-function readsOnlyCards(game: CompiledGame, name: string, seen = new Set<string>(), holder = false, owner = false, centre = false): boolean {
+function readsOnlyCards(game: CompiledGame, name: string, reads: Reads = {}, seen = new Set<string>()): boolean {
   if (seen.has(name)) return true;
   seen.add(name);
   const value = game.worked![name];
   const refs = value.kind === 'number' ? value.refs : value.conditions.flatMap((group) => group.refs);
   return refs.every((ref) => {
-    if (holder && ref.kind === 'condition' && holderPhrases.includes(ref.phrase)) return true;
-    if (centre && readsSeenCentre(game, ref)) return true;
-    const names = cardOnlyNames(game, ref) ?? (owner ? ownerSeenNames(game, ref) : null);
-    return names !== null && names.filter((read) => isWorked(game, read))
-      .every((read) => readsOnlyCards(game, read, seen, holder, owner, centre));
+    if (reads.holder && ref.kind === 'condition' && holderPhrases.includes(ref.phrase)) return true;
+    if (reads.centre && readsSeenCentre(game, ref)) return true;
+    const names = cardOnlyNames(game, ref) ?? (reads.owner ? ownerSeenNames(game, ref) : null);
+    return names !== null && names.filter((read) => isWorked(game, read)).every((read) => readsOnlyCards(game, read, reads, seen));
   });
 }
 
 /**
  * Each column that a worked number's section starts from (its first line is `A card's red left is its red need.`), mapped to that number's
  * name: the page reads a count against it in place of the column. Of several such numbers for one column, the first in section order wins.
- * A number whose lines read anything but the card and the cards on it stands in for nothing.
+ * A number whose lines read anything but the card, the cards on it and what a shared zone everyone can see holds stands in for nothing.
  */
 export function standIns(game: CompiledGame): { [column: string]: string } {
   const found: { [column: string]: string } = {};
@@ -124,7 +128,7 @@ export function standIns(game: CompiledGame): { [column: string]: string } {
     const first = value.kind === 'number' ? value.refs[0] : undefined;
     if (first?.phrase !== FROM_COLUMN) continue;
     const column = first.args[1] as string;
-    if (!Object.hasOwn(found, column) && readsOnlyCards(game, name, new Set(), false, false, true)) found[column] = name;
+    if (!Object.hasOwn(found, column) && readsOnlyCards(game, name, { centre: true })) found[column] = name;
   }
   return found;
 }
@@ -132,7 +136,8 @@ export function standIns(game: CompiledGame): { [column: string]: string } {
 /**
  * The worked flags a line of some worked number turns a value on by (`A busy card's red pay is 1.`), in the order the game works them
  * out, each once: they change what a card makes or costs. A flag cards keep is never one, since the page shows those already, and nor is
- * one whose lines read anything but the card and the cards on it.
+ * one whose lines read anything but the card, the cards on it and what a shared zone everyone can see holds, or one that tests such a zone
+ * itself.
  */
 export function shownFlags(game: CompiledGame): string[] {
   const worked = game.worked ?? {};
@@ -142,9 +147,10 @@ export function shownFlags(game: CompiledGame): string[] {
       .filter((ref) => flagged.includes(ref.phrase)).map((ref) => ref.args[0] as string),
   );
   // A flag that tests the centre itself holds for every card alike, so the card there says it once and no face is labelled with it.
-  const testsCentre = (value: WorkedValue) => value.kind === 'flag' && value.conditions.some((group) => group.refs.some((ref) => ref.phrase === CENTRE_HAS));
+  const testsCentre = (value: WorkedValue) => value.kind === 'flag'
+    && value.conditions.some((group) => group.refs.some((ref) => ref.phrase === CENTRE_HAS));
   return Object.entries(worked).filter(([name, value]) => value.kind === 'flag' && turnedOn.has(name)
-    && readsOnlyCards(game, name, new Set(), false, false, true) && !testsCentre(value))
+    && readsOnlyCards(game, name, { centre: true }) && !testsCentre(value))
     .map(([name]) => name);
 }
 
@@ -160,23 +166,33 @@ export function inPlayZones(game: CompiledGame): string[] {
 }
 
 /**
- * The names a `Then:` line tests cards by, its own and those of the lines it holds: each flag it names, and the tests of each group of
- * cards and each clause (`… that are eager`). The condition of an `If` line counts, both halves of one joined by “and”, and so do the
- * cards a `For each card` line walks. A button's `Only if` lines never do, an option's own included, and nor does the clause a picked
- * player must meet: those are the button's verdicts, which the page shows already.
+ * Every ref a button's `Then:` lines can run, or a card move's: each line, and into an `If` line's condition and effect, a `For` and a
+ * `For each` line's effect, each option's effects of a choice of one, and the effect of a choice of a player. A button's `Only if` lines
+ * never come in, an option's own included, and nor does the clause a picked player must meet: those are the button's verdicts.
  */
-function namedByLine(ref: PhraseRef): string[] {
-  if (ref.kind === 'lang') {
+export function thenRefs(action: Pick<DeclaredAction, 'effects'>): PhraseRef[] {
+  const walk = (ref: PhraseRef): PhraseRef[] => {
+    if (ref.kind !== 'lang') return [ref];
     switch (ref.phrase) {
-      case 'if': return [...namedByLine(ref.args[0] as PhraseRef), ...namedByLine(ref.args[1] as PhraseRef)];
-      case 'all': return (ref.args as PhraseRef[]).flatMap(namedByLine);
-      case 'for': return namedByLine(ref.args[1] as PhraseRef);
-      case 'for each': return [...((ref.args[0] as CardGroup).whose ?? []).flatMap(testNames), ...namedByLine(ref.args[1] as PhraseRef)];
-      case CHOOSE_ONE: return (ref.args[2] as ChoiceOption[]).flatMap((option) => option.effects.flatMap(namedByLine));
-      case CHOOSE_PLAYER: return namedByLine(ref.args[3] as PhraseRef);
-      default: return [];
+      case 'if': return [ref, ...walk(ref.args[0] as PhraseRef), ...walk(ref.args[1] as PhraseRef)];
+      case 'all': return [ref, ...(ref.args as PhraseRef[]).flatMap(walk)];
+      case 'for': return [ref, ...walk(ref.args[1] as PhraseRef)];
+      case 'for each': return [ref, ...walk(ref.args[1] as PhraseRef)];
+      case CHOOSE_ONE: return [ref, ...(ref.args[2] as ChoiceOption[]).flatMap((option) => option.effects.flatMap(walk))];
+      case CHOOSE_PLAYER: return [ref, ...walk(ref.args[3] as PhraseRef)];
+      default: return [ref];
     }
-  }
+  };
+  return action.effects.flatMap(walk);
+}
+
+/**
+ * The names a ref of a `Then:` line tests cards by: each flag it names, and the tests of each group of cards and each clause (`… that are
+ * eager`), the cards a `For each card` line walks included. The condition of an `If` line counts, both halves of one joined by “and”, as
+ * `thenRefs` walks into it.
+ */
+function namedByRef(ref: PhraseRef): string[] {
+  if (ref.kind === 'lang') return ref.phrase === 'for each' ? ((ref.args[0] as CardGroup).whose ?? []).flatMap(testNames) : [];
   return [...ref.phrase.matchAll(PARAM)].flatMap(([, type], i) => {
     if (type === 'cardflag') return [ref.args[i] as string];
     if (type === 'cardclause') return (ref.args[i] as CardFilter[]).flatMap(testNames);
@@ -191,9 +207,9 @@ function namedByLine(ref: PhraseRef): string[] {
  * cards it moves and the cards they join. Whether one is shown hangs on the rules alone, as for `shownFlags`.
  */
 export function pressFlags(game: CompiledGame): string[] {
-  const named = new Set(game.phases.flatMap((phase) => phase.actions).flatMap((action) => action.effects).flatMap(namedByLine));
+  const named = new Set(game.phases.flatMap((phase) => phase.actions).flatMap(thenRefs).flatMap(namedByRef));
   return Object.entries(game.worked ?? {})
-    .filter(([name, value]) => value.kind === 'flag' && named.has(name) && readsOnlyCards(game, name, new Set(), true))
+    .filter(([name, value]) => value.kind === 'flag' && named.has(name) && readsOnlyCards(game, name, { holder: true }))
     .map(([name]) => name);
 }
 
@@ -221,7 +237,7 @@ function everyoneSees(game: CompiledGame, zone: ZoneRef): boolean {
  * seat sees what their owners have there, so each may know the total for every player.
  */
 const readsTheCardAlone = (game: CompiledGame, name: string): boolean =>
-  !isWorked(game, name) || readsOnlyCards(game, name, new Set(), false, true, true);
+  !isWorked(game, name) || readsOnlyCards(game, name, { owner: true, centre: true });
 
 /**
  * Whether a line of a value about a player adds up, over zones everyone sees, a number read from each card alone, of the cards that pass
