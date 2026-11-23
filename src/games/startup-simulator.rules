@@ -1117,22 +1117,28 @@ Phase: actions
     Only if one of:
       The card has no requires.
       They have a card in their operations whose tag is the card's requires.
+      Another player tied to them by a card in their portfolio has a card in their operations whose tag is the card's requires.
       They have at least the license in capital.
     Only if one of:
       The card has no also requires.
       They have a card in their operations whose tag is the card's also requires.
+      Another player tied to them by a card in their portfolio has a card in their operations whose tag is the card's also requires.
       They have at least the license in capital.
     Only if one of:
       The card has no requires.
       The card has no also requires.
       They have a card in their operations whose tag is the card's requires.
       They have a card in their operations whose tag is the card's also requires.
+      Another player tied to them by a card in their portfolio has a card in their operations whose tag is the card's requires.
+      Another player tied to them by a card in their portfolio has a card in their operations whose tag is the card's also requires.
       They have at least 2 times the license in capital.
     Then:
       They pay the license to another player of their choice who has a card in their operations whose tag is the card's requires.
         Only if they have no card in their operations whose tag is the card's requires.
+        Only if no other player tied to them by a card in their portfolio has a card in their operations whose tag is the card's requires.
       They pay the license to another player of their choice who has a card in their operations whose tag is the card's also requires.
         Only if they have no card in their operations whose tag is the card's also requires.
+        Only if no other player tied to them by a card in their portfolio has a card in their operations whose tag is the card's also requires.
       It loses its cut blue cubes.
       It loses its cut red cubes.
       They choose one:
@@ -2392,7 +2398,7 @@ Example: a Greenlight is refused when its License can't be paid, and nothing cha
   And p1's operations has a Tech Blog
   And p0's backlog has a Server Farm
   When p0 greenlights the Server Farm
-  Then it is rejected because "the card has no requires or they have a card in their operations whose tag is the card's requires or they have at least the license in capital"
+  Then it is rejected because "the card has no requires or they have a card in their operations whose tag is the card's requires or another player tied to them by a card in their portfolio has a card in their operations whose tag is the card's requires or they have at least the license in capital"
   And p0 has 2 capital
   And p1 has 7 capital
   And p0's backlog has a Server Farm
@@ -2402,7 +2408,7 @@ Example: Fusion Reactor needs Robotics and AI, and one provider of both is paid 
   And p1's operations has a Drone Delivery and a Search Engine
   And p0's backlog has a Fusion Reactor
   When p0 greenlights the Fusion Reactor
-  Then it is rejected because "the card has no requires or the card has no also requires or they have a card in their operations whose tag is the card's requires or they have a card in their operations whose tag is the card's also requires or they have at least 2 times the license in capital"
+  Then it is rejected because "the card has no requires or the card has no also requires or they have a card in their operations whose tag is the card's requires or they have a card in their operations whose tag is the card's also requires or another player tied to them by a card in their portfolio has a card in their operations whose tag is the card's requires or another player tied to them by a card in their portfolio has a card in their operations whose tag is the card's also requires or they have at least 2 times the license in capital"
   Given p0 has 7 capital
   When p0 greenlights the Fusion Reactor
   Then it is accepted
@@ -5790,3 +5796,64 @@ Example: dividends are not Operational Revenue: a Founder paid a dividend but ea
   And the phase is actions
   And p1 has 9 capital
   And p0 has 7 capital
+
+Example: Partners use each other's Tags for free, both ways: the Investor's Greenlight and the Founder's pay no License (section 6, section 17, ruling 11)
+  Given the phase is actions
+  And p0 has 2 capital
+  And p0's portfolio has an Equity whose founder is p1
+  And p0's operations has a Mobile Wallet
+  And p1's operations has a Dating App
+  And p1's ops team has a Junior Software Dev
+  And p0's backlog has a Streaming Service
+  And p1's backlog has a Neobank
+  When p0 greenlights the Streaming Service
+  Then it is accepted
+  And p0 has 2 capital
+  And p1 has 7 capital
+  When p0 ends their actions
+  Then it is p1's turn
+  And p1 has 8 capital
+  And p0 has 3 capital
+  When p1 greenlights the Neobank
+  Then it is accepted
+  And p1 has 8 capital
+  And p0 has 3 capital
+  And p1's development has a Neobank
+
+Example: a Tier 3 card pays a License only for the Tag no Partner provides: a Partner's Tag counts toward the two Licenses' worth of capital (section 6, section 17, ruling 11)
+  Given 3 players
+  And p0 has 3 capital
+  And p0's portfolio has an Equity whose founder is p1
+  And p1's operations has a Neobank
+  And p2's operations has a Server Farm
+  And p0's backlog has a Global Currency
+  When p0 greenlights the Global Currency
+  Then it is accepted
+  And p0 has 0 capital
+  And p1 has 7 capital
+  And p2 has 10 capital
+
+Example: a Partner providing a Tier 3 card's second Tag is paid nothing, and the provider of its first is paid (section 6, section 17, ruling 11)
+  Given 3 players
+  And p0 has 3 capital
+  And p0's portfolio has an Equity whose founder is p1
+  And p1's operations has a Server Farm
+  And p2's operations has a Neobank
+  And p0's backlog has a Global Currency
+  When p0 greenlights the Global Currency
+  Then it is accepted
+  And p0 has 0 capital
+  And p1 has 7 capital
+  And p2 has 10 capital
+
+Example: a player who provides one Tag and is Partners with the provider of the other Greenlights a Tier 3 card with no capital to spare (section 6, section 17, ruling 11)
+  Given the phase is actions
+  And p0 has 2 capital
+  And p0's operations has a Server Farm
+  And p0's portfolio has an Equity whose founder is p1
+  And p1's operations has a Smart Lock
+  And p0's backlog has a Planetary Wi-Fi
+  When p0 greenlights the Planetary Wi-Fi
+  Then it is accepted
+  And p0 has 2 capital
+  And p1 has 7 capital

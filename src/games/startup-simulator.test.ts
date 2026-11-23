@@ -161,6 +161,9 @@ const EQUITY_TOKENS = 3;
 const founderOf = (card: CardState): PlayerId | undefined => card.data?.founder as PlayerId | undefined;
 /** The Equity tokens in `seat`'s portfolio: the stakes it holds in other players (§17). */
 const portfolioOf = (state: GameState, seat: PlayerId): CardState[] => zoneCards(state, zoneIdFor('portfolio', seat));
+/** Whether either seat's portfolio holds a card whose founder is the other: Partners use each other's Tags for free (§17.B.3). */
+const tiedTo = (state: GameState, a: PlayerId, b: PlayerId): boolean =>
+  portfolioOf(state, a).some((card) => founderOf(card) === b) || portfolioOf(state, b).some((card) => founderOf(card) === a);
 /** The values the outputs check reads of each Board card, the Blue and Red outputs first (see `keepsTheRules`). */
 const OUTPUT_NAMES = ['blue output', 'red output', 'qa output', 'blue bandwidth'] as const;
 /** The name of the Event in play, or null before the first Round Start (§5 Phase A). */
@@ -1611,6 +1614,7 @@ const REPLAYED = [
  *   bench, and 'during Chip Shortage Hardware talent costs $3 more from the University, the agency row and the open job market, and a
  *   flex Firmware Specialist its printed price (section 20, section 13)' hires the Engineer and the Firmware Specialist to it); and
  *   Patent Trolls' $5 License (2 players seed 4; 'during Patent Trolls a Greenlight License costs $5, …').
+ * - Plan 7-2a: a License paid to a provider chosen among several, which 3 players seed 2 alone held once the seats invested and no game held once Partners waived the License (two rivals must run products of the Tag a seat's Greenlight lacks, and neither may be its Partner); the arranged test 'names the provider it pays a License to by t when two rivals provide the Tag, …' pins it.
  */
 const HELD_BY_FEWER_THAN_TWO = new Set<string>([
   'Attributes kept through a bench discard',
@@ -1621,6 +1625,7 @@ const HELD_BY_FEWER_THAN_TWO = new Set<string>([
   'Crunch Time: a Bug stopped by Clean Code',
   'a trained Junior declared red',
   'Patent Trolls: a $5 License',
+  'a license paid to a chosen provider',
 ]);
 
 /** A game kept for the Greenlight test: the moves to its first Greenlight that answered a choice, and the states before and after it. */
@@ -2236,8 +2241,8 @@ function scoreOf(state: GameState, seat: PlayerId): number {
  *   the card's price and the product's for a TechCrunch Feature (§20.A), and nothing for anything else but a Greenlight. The seat that
  *   reached its Income in the move (see `enteredIncome`) earns the total rev of its products in operation, as the rules work it out,
  *   and no one else earns anything.
- * - A Greenlight pays a License for each Tag the card requires that the mover's operations didn't provide, and pays it to the other
- *   seats: the mover pays the license times the Tags missing, each other seat gains a whole number of Licenses, no more than the
+ * - A Greenlight pays a License for each Tag the card requires that neither the mover's operations nor those of a seat tied to the
+ *   mover provide, and pays it to the other seats, never a tied one: the mover pays the license times the Tags missing, each other seat gains a whole number of Licenses, no more than the
  *   missing Tags its operations provided, and together they gain what the mover paid. Some seat provided every Tag the card
  *   requires (§6, §14.B.2).
  * - Market Share changes only for the seat that reached its Income, which gains 1 for each of its products in operation that earned.
@@ -2371,11 +2376,14 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       // A License for each Tag the mover lacks, paid to the seats that provide it, read as the rules hold the license (§6, §14.B.2).
       const license = gameNumber(before, game!, 'license');
       const required = requirementsOf(card!);
-      const missing = required.filter((tag) => !tagsOf(before, by).has(tag));
+      // A Partner's Tag is free, and a Partner is never paid (§17.B.3, ruling 11).
+      const partners = seats.filter((seat) => seat !== by && tiedTo(before, by, seat));
+      const missing = required.filter((tag) => !tagsOf(before, by).has(tag) && !partners.some((seat) => tagsOf(before, seat).has(tag)));
       noneOf(required.filter((tag) => !seats.some((seat) => tagsOf(before, seat).has(tag))), () => `Tags no seat provides ${at}`);
       const net = (seat: PlayerId) => gained[seats.indexOf(seat)] - earned(seat);
       sameAs(net(by), 0 - license * missing.length, () => `capital ${by} paid in Licenses ${at}`);
       const others = seats.filter((seat) => seat !== by);
+      noneOf(partners.filter((seat) => net(seat) !== 0), () => `a Partner paid a License ${at}`);
       const overpaid = others.flatMap((seat) => {
         const most = license * missing.filter((tag) => tagsOf(before, seat).has(tag)).length;
         return net(seat) >= 0 && net(seat) % license === 0 && net(seat) <= most ? [] : [`${seat} gained ${net(seat)}, at most ${most}`];
@@ -3122,7 +3130,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(317);
+    expect(results).toHaveLength(321);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
