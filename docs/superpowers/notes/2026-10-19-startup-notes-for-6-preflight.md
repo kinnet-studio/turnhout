@@ -46,3 +46,13 @@
 ## From the long-runs speed-up 2 (2026-11-23), for every later plan's pre-flight
 - The runtime keeps a worked value per card object when `cardAloneValues` (src/engine/core/lang/card-alone.ts) judges that its lines, all the way down, read only the card's own numbers, counts, flags, kind and zone. The classifier trusts the (kind, pattern) pairs registered by the card-number, card-value and card-subject phrase libraries, plus `it is {cardflag}`, and card-alone.test.ts pins that list and the code behind each; its transplant test (a card object moved into another state keeps its card-alone values) and power canary check the claim on played states. A plan that adds a phrase to one of those libraries must say whether it reads only the card. If it does, add it to the pinned list; if it reads more (the cards on it, its holder, its owner, a player, a game number, the round), exclude it in card-alone.ts.
 - The profile's next candidates, if the watch tightens again: the 3-player seed-2 undo test (about 2.3 s, O(n²) by design), the auto-player's `seatExtras` (about 1.65 s at seed 1), and `triggerSubject` over the box (about 1.9 s; a per-state memo was measured at 1.8% repeats, so it would need another approach).
+
+## From plan 6-2b (2026-11-23), for 6-3's pre-flight (Tasks 2–5)
+- 6-3 Task 1 is done (`92408f7`), with S1–S3 of 6-2b's pre-flight applied; S4 is Task 5's. `inPlayZones(game)` now gives `['event in play']` for Startup (6-2b's R8 re-pinned it).
+- In Task 2's edit of `src/engine/core/lang/worked-view.ts`, fix 6-2b's final review Minors 8–9 (`2026-11-23-startup-6-2b-ledger.md`, appendix):
+  - the file header, `standIns` and `shownFlags` comments still say a shown value reads "nothing but the card and the cards on it"; it may now also read a public shared zone;
+  - `card-alone.ts`'s header says it reads "as worked-view's `readsOnlyCards` reads them"; add that it never follows the centre path (a maintainer who aligned the two would cache values that read the Event in play) — unless speed-up 3 rewrites that header first;
+  - `readsOnlyCards(game, name, new Set(), false, false, true)` carries three positional booleans at three call sites: an options object (`{ holder, owner, centre }`) reads better;
+  - the `testsCentre` line (≈157 characters) wants wrapping.
+- Every Event flag reads the Event in play, so `shownFlags` leaves them all out (6-2b pre-flight, Gaps 5); the page shows the Event's §20.D text above the table instead.
+- 6-2b's example count is 307 (`README.md`, `designer-page.test.tsx`, the Startup test's count pin).
