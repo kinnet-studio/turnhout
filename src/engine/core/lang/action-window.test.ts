@@ -167,7 +167,7 @@ describe('the line and its refusals', () => {
       const objection = OBJECT_GAME.slice(OBJECT_GAME.indexOf('Phase: objection'), OBJECT_GAME.indexOf('Phase: answer'));
       const text = OBJECT_GAME.replace(objection, '').replace('Phase: working', `${objection}Phase: working`);
       expect(only(text).filter(([, message]) => message === WINDOW_ENTERED('objection'))).toEqual([]);
-      expect(only(text)).toContainEqual([lineOf(text, WINDOW), WINDOW_FIRST('objection')]);
+      expect(only(text).filter(([, message]) => message === WINDOW_FIRST('objection'))).toEqual([[lineOf(text, WINDOW), WINDOW_FIRST('objection')]]);
     });
     it('refuses a line of its own that starts another phase', () => {
       // The call button in working says the same, and is not refused: the line is the one after the objection's move.
