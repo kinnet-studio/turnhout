@@ -34,7 +34,7 @@ import { TableInputTracker } from '@/engine/input/table-input-tracker';
 import { STACK_STEP } from '@/engine/core/lang/fit-layout';
 import { fittedBounds, HANG_ONE } from '@/engine/core/lang/fit-layout';
 import { TALL_GAME } from '@/engine/core/lang/testing';
-import { setGameNumber } from '@/engine/core/lang/board-state';
+import { setCounter, setGameNumber } from '@/engine/core/lang/board-state';
 
 // The canvas a seat is drawn on: keep what its app was last made with.
 let canvasMadeWith: unknown = null;
@@ -1874,5 +1874,114 @@ describe('Attributes, Utility cards and Hype on the page', () => {
     expect(label).toBe('overworked, overworked in blue, burned out, 1 blue xp token, 1 workaholic, 1 burnout');
     hover(software);
     expect(detail()).toBe(`Junior Software Dev — cost 2 · skill software · output 1 · salary 0 · role Junior — ${label}`);
+  });
+});
+
+/**
+ * How the numbers come:
+ * - §20.A: Burnout costs $0 and 0 AP and goes on an opponent's Board staff (Development or Ops); R2: its card waits in the attributes in
+ *   play;
+ * - §20.B: the Diva's salary is $1, and the Engineer's $2 but $1 in Ops (Efficient); §5 Phase B: 3 − 2 = 1 at Income;
+ * - §20.D 6: $1 for each Board employee whose salary is above $0, from the Start Player; FIRST2 has none; SECOND2 owes $2 with $1, lets
+ *   the Diva go, then owes and pays $1;
+ * - §20.D 4: $3 to a player with a Tier 1 product and none of Tier 2 or 3, counting Development, 7 + 3 = 10; none to a player with no
+ *   product.
+ */
+describe("a Debuff on another seat's staff, and the steps as a round starts", () => {
+  const T = after(N, 3);
+  const tab = (name: string) => screen.getByRole('tab', { name });
+  const boardOf = (seat: string) => screen.getByTestId(`board-${seat}`).textContent;
+  const nameOf = (card: CardState) => parseTextFaceKey(card.faceKey)!.name;
+  const DEBUFF = "Play a card from your strategy hand to a card in another player's development team or another player's ops team";
+  const DEBUFF_PROMPT = "Pick where it goes: a card in another player's development team or another player's ops team";
+
+  it("Review Focus: picks a rival's card from the list, named with its place, and rings no card the canvas doesn't draw", () => {
+    let state = inPlay(setUp(), 'Whistleblower Protection Act');
+    const burnout = idOf(state, 'Burnout');
+    const [lock, engineer, dating, todo] = ['Smart Lock', 'Engineer', 'Dating App', 'To-Do List'].map((name) => idOf(state, name));
+    const tJunior = idOf(state, 'Junior Software Dev', `bench-${T}`);
+    const tQa = idOf(state, 'Junior QA Tester', `bench-${T}`);
+    const sJunior = idOf(state, 'Junior Software Dev', `bench-${S}`);
+    state = relocate(state, [burnout], `strategy-hand-${S}`, game);
+    state = putOn(relocate(state, [lock], `development-${N}`, game), [engineer], `development-team-${N}`, lock, game);
+    state = putOn(relocate(state, [dating], `development-${T}`, game), [tJunior], `development-team-${T}`, dating, game);
+    state = relocate(state, [tQa], `ops-team-${T}`, game);
+    state = putOn(relocate(state, [todo], `development-${S}`, game), [sJunior], `development-team-${S}`, todo, game);
+    mount({ initial: state });
+
+    click(burnout);
+    expect(offered()).toContainEqual([DEBUFF, true]);
+    choose(DEBUFF);
+    expect(within(picker()).getByText(DEBUFF_PROMPT)).toBeTruthy();
+    expect(within(picker()).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      `Engineer (${N}'s development team)`, `Junior Software Dev (${T}'s development team)`, `Junior QA Tester (${T}'s ops team)`, 'Cancel',
+    ]);
+    expect(ring(burnout)).toBe('chosen');
+    for (const id of [engineer, tJunior, tQa]) expect(Object.keys(table!.decor!), id).not.toContain(id);
+
+    click(sJunior);
+    expect(inOrder('attributes-in-play')).toEqual([]);
+    expect(screen.getByText(`${DEBUFF_PROMPT}.`)).toBeTruthy();
+    expect(picker()).toBeTruthy();
+
+    pickNamed(`Engineer (${N}'s development team)`);
+    expect(inOrder('attributes-in-play').map(nameOf)).toEqual(['Burnout']);
+    expect(lineOf(S)!.startsWith(`${S} 7 capital, 3 actions`), lineOf(S)!).toBe(true);
+    expect(screen.queryByRole('group', { name: 'Pick cards' })).toBeNull();
+    expect(Object.keys(table!.decor ?? {}).filter((id) => table!.decor![id].ring !== undefined)).toEqual([]);
+    fireEvent.click(tab(N));
+    const label = table!.decor![engineer]!.badge!;
+    expect(label.endsWith('1 burnout'), label).toBe(true);
+    const bracket = label === '1 burnout' ? '' : ` (${label.slice(0, -', 1 burnout'.length)})`;
+    expect(boardOf(N)).toContain(`with Engineer${bracket} [1 burnout]`);
+  });
+
+  it('Review Focus: follows the event check to the seat it waits on, lets staff go there, and Undo brings the step back', () => {
+    let state = onTop(inPlay(setUpTwo(), 'Whistleblower Protection Act'), 'Regulation Audit');
+    const [engineer, diva] = [idOf(state, 'Engineer'), idOf(state, 'Diva')];
+    state = setCounter(relocate(state, [engineer, diva], `ops-team-${SECOND2}`, game), 'capital', SECOND2, 3);
+    mount({ initial: state, players: 2 });
+
+    press('End your actions');
+    fireEvent.click(tab(`${SECOND2} — to act`));
+    expect(status()!.endsWith(hint('income')), status()!).toBe(true);
+    press('Pay salaries');
+    expect(lineOf(SECOND2)!.startsWith(`${SECOND2} 1 capital`), lineOf(SECOND2)!).toBe(true);
+    press('End your actions');
+    expect(tab(`${SECOND2} — to act`).getAttribute('aria-selected')).toBe('true');
+    expect(status()).toBe(`seat: ${SECOND2} — Your turn — ${hint('event check')}`);
+    expect(inPlayLine().startsWith('event in play: Regulation Audit — effect When revealed,'), inPlayLine()).toBe(true);
+    expect(seatButtons()).toEqual(['Let go of a card in your development team', 'Let go of a card in your ops team']);
+    expect(within(screen.getByTestId('seat-buttons')).getAllByRole('button')[0].getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(tab(FIRST2));
+    expect(status()).toBe(`seat: ${FIRST2} — ${hint('event check')} — waiting for ${SECOND2}`);
+    fireEvent.click(tab(`${SECOND2} — to act`));
+
+    click(diva);
+    expect(offered()).toEqual([['Let go of a card in your ops team', true]]);
+    choose('Let go of a card in your ops team');
+    expect(tab(`${FIRST2} — to act`).getAttribute('aria-selected')).toBe('true');
+    expect(status()).not.toContain(hint('event check'));
+    expect(lineOf(SECOND2)!.startsWith(`${SECOND2} 0 capital`), lineOf(SECOND2)!).toBe(true);
+    expect(inOrder('open-job-market').map((c) => c.id)).toContain(diva);
+
+    press('Undo');
+    expect(tab(`${SECOND2} — to act`).getAttribute('aria-selected')).toBe('true');
+    expect(status()).toContain(hint('event check'));
+    expect(lineOf(SECOND2)!.startsWith(`${SECOND2} 1 capital`), lineOf(SECOND2)!).toBe(true);
+    expect(inOrder(`ops-team-${SECOND2}`).map((c) => c.id)).toContain(diva);
+  });
+
+  it('Review Focus: passes steps that all pass at once, and comes back to the start player', () => {
+    let state = onTop(inPlay(setUpTwo(), 'Whistleblower Protection Act'), 'Angel Investors');
+    state = relocate(state, [idOf(state, 'To-Do List')], `development-${SECOND2}`, game);
+    mount({ initial: state, players: 2 });
+    press('End your actions');
+    press('End your actions');
+    expect(tab(`${FIRST2} — to act`).getAttribute('aria-selected')).toBe('true');
+    expect(status()!.endsWith(hint('actions')), status()!).toBe(true);
+    expect(lineOf(SECOND2)!.startsWith(`${SECOND2} 10 capital`), lineOf(SECOND2)!).toBe(true);
+    expect(lineOf(FIRST2)!.startsWith(`${FIRST2} 7 capital`), lineOf(FIRST2)!).toBe(true);
+    expect(inPlayLine().startsWith('event in play: Angel Investors — effect When revealed,'), inPlayLine()).toBe(true);
   });
 });

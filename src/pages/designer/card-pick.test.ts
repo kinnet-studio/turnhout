@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { ActionView, CardPickView, PickCardView } from '@/engine/core/lang/board-view';
-import { PICK_START, clickCard, confirmSet, liveAt, ontoChoices, ringsOf, takersOf, type PickAt } from './card-pick';
+import { initialState } from '@/engine/core/lang/build';
+import { compileGame } from '@/engine/core/lang/compile';
+import { putOn } from '@/engine/core/lang/attach';
+import { createDefaultLibrary } from '@/engine/core/lang/library';
+import { JINX_GAME } from '@/engine/core/lang/testing';
+import { relocate } from '@/engine/core/lang/zones';
+import { HIDDEN_FACE_KEY } from '@/engine/core/derive-scene';
+import type { CardState } from '@/engine/core/scene';
+import { PICK_START, clickCard, confirmSet, liveAt, ontoChoices, placesOf, ringsOf, takersOf, type PickAt } from './card-pick';
 
 const NOT_RUBY = 'the target card is not a Ruby';
 const PROMPT = 'Pick a card from your stash';
@@ -132,5 +140,43 @@ describe('takersOf', () => {
       { move: 'show', label: 'Show a card', allowed: 'x' },
     ]);
     expect(takersOf([plain, sell, show], 'zz')).toEqual([]);
+  });
+});
+
+describe('placesOf', () => {
+  const lib = createDefaultLibrary();
+  const jinx = compileGame(JINX_GAME, lib).game!;
+  /**
+   * Three players: p1's workshop holds a Vase with a Potter on it, p2's a Statue, p0's a Vase, p1's stash the other Statue, and the hall
+   * its hands. CREW_GAME's Setup deals 2 jobs to each stash, more than its 4 jobs at a table of three, so the table is arranged with no
+   * Setup (as 6-1's tests do).
+   */
+  const arranged = () => {
+    let state = initialState(jinx, 1);
+    const [vase1, vase0] = state.cards.filter((c) => c.data?.name === 'Vase').map((c) => c.id);
+    const [statue, stashed] = state.cards.filter((c) => c.data?.name === 'Statue').map((c) => c.id);
+    const potter = state.cards.find((c) => c.data?.name === 'Potter')!.id;
+    state = relocate(state, [vase1], 'workshop-p1', jinx);
+    state = relocate(state, [statue], 'workshop-p2', jinx);
+    state = relocate(state, [vase0], 'workshop-p0', jinx);
+    state = relocate(state, [stashed], 'stash-p1', jinx);
+    return { state: putOn(state, [potter], 'crew-p1', vase1, jinx), vase1, vase0, statue, potter };
+  };
+
+  it("names where each card in another seat's own zone is, and nothing for the seat's own zones or a shared zone's", () => {
+    const { state, vase1, vase0, statue, potter } = arranged();
+    const places = placesOf(jinx, state.cards, 'p0');
+    expect([places[vase1], places[potter], places[statue]]).toEqual(["p1's workshop", "p1's crew", "p2's workshop"]);
+    expect(places[vase0]).toBeUndefined();
+    const hall = state.cards.filter((c) => c.zoneId === 'hall');
+    expect(hall.length).toBeGreaterThan(0);
+    for (const card of hall) expect(places[card.id], card.id).toBeUndefined();
+  });
+
+  it('Review Focus: names a face-down card by its place, never by what it is', () => {
+    const { state } = arranged();
+    const card = state.cards.find((c) => c.zoneId === 'stash-p1')!;
+    const hidden: CardState = { ...card, faceUp: false, faceKey: HIDDEN_FACE_KEY, data: {} };
+    expect(placesOf(jinx, [hidden], 'p0')).toEqual({ [hidden.id]: "p1's stash" });
   });
 });

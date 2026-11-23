@@ -9,9 +9,11 @@ import { PICK_START, clickCard, confirmSet, liveAt, ontoChoices, type PickAt, ty
  * by card and goes on Confirm. A move that also picks the card they go to lists those cards next, under its second prompt. Given
  * `at`, it shows those picks and reports each change through `onAt`, so a page can share them with clicks on its table; without
  * it, it keeps its own. `at` comes only with `onAt` (the props' type says so), since picks it could not report would never change.
+ * A card given a place in `places` (another seat's zone) is listed with it, `Vase (p1's workshop)`.
  */
-export function CardPicker({ pick, at, onAt, onSend, onRefused, onCancel }: {
+export function CardPicker({ pick, places, at, onAt, onSend, onRefused, onCancel }: {
   pick: CardPickView;
+  places?: { [cardId: string]: string };
   onSend(chosen: PickChosen): void;
   onRefused(reason: string): void;
   onCancel(): void;
@@ -38,11 +40,13 @@ export function CardPicker({ pick, at, onAt, onSend, onRefused, onCancel }: {
     const live = verdict === true;
     // A card already picked always unpicks, even one the view has since refused, so a player can take back their own pick.
     const acts = live || pressed === true;
+    const place = places?.[card.id];
+    const name = place === undefined ? card.name : `${card.name} (${place})`;
     return (
       <button
         key={card.id}
         type="button"
-        aria-label={`Pick ${card.name}`}
+        aria-label={`Pick ${name}`}
         aria-disabled={!acts}
         aria-pressed={pressed}
         title={live ? undefined : verdict}
@@ -52,7 +56,7 @@ export function CardPicker({ pick, at, onAt, onSend, onRefused, onCancel }: {
           ...(pressed ? { background: PICKING_BACKGROUND, color: '#fff' } : {}),
         }}
       >
-        {card.name}
+        {name}
       </button>
     );
   };

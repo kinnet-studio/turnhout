@@ -1,6 +1,9 @@
 // Picking cards for a button, as one state that the list under the buttons and clicks on the table share: what is picked so far,
 // what a click on a card does next, which cards to ring, and which buttons a clicked card may be offered to.
 import type { ActionView, CardPickView, PickCardView } from '@/engine/core/lang/board-view';
+import type { CompiledGame } from '@/engine/core/lang/types';
+import { zoneInfo } from '@/engine/core/lang/zones';
+import type { CardState, PlayerId } from '@/engine/core/scene';
 
 /** The cards picked so far, in the order clicked, and whether the player has gone on to pick the card they go to. */
 export type PickAt = { picked: string[]; onto: boolean };
@@ -88,4 +91,20 @@ export function takersOf(actions: ActionView[], cardId: string): Taker[] {
     const card = cards?.cards.find((c) => c.id === cardId);
     return card === undefined ? [] : [{ move, label, allowed: card.allowed }];
   });
+}
+
+/**
+ * Where each card in another seat's own zone is, as `p1's workshop`; none for `seat`'s own zones or a shared zone's (Call 6). A
+ * fitted table draws only the seat's own zones and the shared ones, so a card picked from another seat's zone is picked from the
+ * list, where two of the same name would otherwise read alike. A face-down card is named by its place alone, since its zone is all
+ * the seat may know of it.
+ */
+export function placesOf(game: CompiledGame, cards: CardState[], seat: PlayerId): { [cardId: string]: string } {
+  const places: { [cardId: string]: string } = {};
+  for (const card of cards) {
+    const info = zoneInfo(game, card.zoneId);
+    if (info === null || info.seat === null || info.seat === seat) continue;
+    places[card.id] = `${info.seat}'s ${info.spec.name}`;
+  }
+  return places;
 }

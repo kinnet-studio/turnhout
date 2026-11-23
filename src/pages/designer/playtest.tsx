@@ -26,7 +26,7 @@ import { BoardGrid } from './board-grid';
 import { boardBadges, boardCaptions, boardDims, keptBadges, labelledFacts } from './board-text';
 import { cardDetail } from './card-detail';
 import { CardOffer } from './card-offer';
-import { NOTHING_TAKES, PICK_START, clickCard, liveAt, ringsOf, takersOf, type PickAt, type PickChosen } from './card-pick';
+import { NOTHING_TAKES, PICK_START, clickCard, liveAt, placesOf, ringsOf, takersOf, type PickAt, type PickChosen } from './card-pick';
 import { CardPicker } from './card-picker';
 import { ChoicePicker } from './choice-picker';
 import { aboutOf, choicesFor, choicesOfPress, nextChoice, questionOf, type Asking } from './choice-step';
@@ -236,7 +236,9 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
           : {};
     const badges = { ...keptBadges(game, placed), ...boardBadges(game, placed, worked) };
     const dims = new Set(boardDims(game, placed));
-    const ids = new Set([...Object.keys(captions), ...Object.keys(rings), ...Object.keys(badges), ...dims]);
+    // Only a card this canvas draws is decorated: a rival's card picked from the list is rung there, not here (Call 6).
+    const drawnIds = new Set(placed.map((card) => card.id));
+    const ids = new Set([...Object.keys(captions), ...Object.keys(rings), ...Object.keys(badges), ...dims].filter((id) => drawnIds.has(id)));
     return Object.fromEntries([...ids].map((id) => [id, {
       ...(id in rings && { ring: rings[id] }),
       ...(id in captions && { caption: captions[id] }),
@@ -244,6 +246,8 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
       ...(dims.has(id) && { dim: true }),
     }]));
   }, [game, captions, placed, worked, pickView, livePick, offered, asking, current]);
+  // A card in another seat's own zone isn't drawn on this seat's table, so where a button picks it, the list names its place.
+  const places = useMemo(() => placesOf(game, view?.scene.cards ?? [], seat), [game, view, seat]);
   // A card's face has room for only some of its columns, so a fitted table shows the card under the pointer in full below it.
   const [hovered, setHovered] = useState<string | null>(null);
   const hoveredCard = placement.cards.find((card) => card.id === hovered);
@@ -403,6 +407,7 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
     const cardPicker = choosingCards && (
       <CardPicker
         pick={choosingCards.pick}
+        places={places}
         at={livePick}
         onAt={setPickAt}
         onSend={(chosen) => sendPick(choosingCards.move, chosen)}

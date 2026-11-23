@@ -258,3 +258,25 @@ describe('CardPicker given the picks', () => {
     expect(onAt).toHaveBeenLastCalledWith({ picked: ['c2'], onto: false });
   });
 });
+
+describe('places', () => {
+  /** A Statue to jinx onto one of two Vases, each in another seat's workshop. */
+  const JINXING: CardPickView = {
+    some: false, prompt: 'Pick a card from your stash to jinx', cards: [{ id: 's', name: 'Statue', allowed: true }],
+    onto: {
+      prompt: "Pick where it goes: a card in another player's workshop",
+      targets: { s: [{ id: 'c1', name: 'Vase', allowed: true }, { id: 'c2', name: 'Vase', allowed: true }] },
+    },
+  };
+  const PLACES = { c1: "p1's workshop", c2: "p2's workshop" };
+
+  it('names each card with its place, on its button and after Pick, and sends the one pressed', () => {
+    const calls = { onSend: vi.fn(), onRefused: vi.fn(), onCancel: vi.fn() };
+    render(<CardPicker pick={JINXING} places={PLACES} {...calls} />);
+    fireEvent.click(button('Pick Statue'));
+    expect(within(picker()).getAllByRole('button').map((b) => b.textContent)).toEqual(["Vase (p1's workshop)", "Vase (p2's workshop)", 'Cancel']);
+    expect(buttonNames()).toEqual(["Pick Vase (p1's workshop)", "Pick Vase (p2's workshop)", 'Cancel']);
+    fireEvent.click(button("Pick Vase (p2's workshop)"));
+    expect(calls.onSend).toHaveBeenLastCalledWith({ cardId: 's', onto: 'c2' });
+  });
+});
