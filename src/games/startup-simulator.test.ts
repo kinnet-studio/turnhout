@@ -2807,9 +2807,20 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       const was = cardById(before, c.id);
       const on = c.data?.[HOLDER_KEY];
       const wasOn = was?.data?.[HOLDER_KEY];
-      if (on === wasOn) continue;
-      const placed = [INVEST_PLACING, PLACE].includes(move.type) && move.cardId === c.id && on === move.onto;
+      const pressed = [INVEST_PLACING, PLACE].includes(move.type) && move.cardId === c.id;
+      const placed = pressed && on === move.onto;
       const returned = move.type === PIVOT && wasOn === move.cardId && on === undefined && c.zoneId === was?.zoneId;
+      // Its three colour flags change only in a placement of that token or the Pivot that returns it, and a placement leaves exactly the
+      // colour the press chose, answered in the button's order Blue, Red, QA (§17.B.4).
+      const flagsOf = (card: CardState | undefined) => Object.values(CONSULTANT_COLOURS).filter((flag) => card?.data?.[flag] === true);
+      if (pressed) {
+        const asked = pressChoices(runtime, before, move);
+        const named = answersOf(move)[0] ?? (typeof asked === 'string' ? undefined : asked[0]?.options[0]);
+        sameList(flagsOf(c), [CONSULTANT_COLOURS[named as string]], () => `the colour ${c.id} was placed in, answered ${named}, ${at}`);
+      } else if (!returned) {
+        sameList(flagsOf(c), flagsOf(was), () => `the colour flags of ${c.id} ${at}`);
+      }
+      if (on === wasOn) continue;
       if (!placed && !returned) board.push(`${c.id} (${nameOf(c)}) in ${c.zoneId} went from ${JSON.stringify(wasOn)} to ${JSON.stringify(on)}`);
     }
     noneOf(board, () => `the Board ${at}`);
