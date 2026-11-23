@@ -1,6 +1,6 @@
 # Startup Simulator: where the work stands (handoff, paused 2026-10-19; updated 2026-11-23)
 
-Everything below is on `claude/peaceful-curie-rdfkow`; 3784 tests pass. Plan 6-2a finished 2026-11-23 (last code commit `850550f`). Plan 6-1 finished 2026-11-16 (last code commit `9677b98`); the owner asked to pause after it. The long-runs retune finished 2026-11-23 (`989b9e0`, `e824269`).
+Everything below is on `claude/peaceful-curie-rdfkow`; 3805 tests pass. The long-runs speed-up 2 finished 2026-11-23 (last code commit `f7d21d4`). Plan 6-2a finished 2026-11-23 (last code commit `850550f`). Plan 6-1 finished 2026-11-16 (last code commit `9677b98`); the owner asked to pause after it. The long-runs retune finished 2026-11-23 (`989b9e0`, `e824269`).
 
 ## Done
 - Slices 1, 3, 4 (all plans), the long-runs speed-up.
@@ -9,6 +9,8 @@ Everything below is on `claude/peaceful-curie-rdfkow`; 3784 tests pass. Plan 6-2
 - The long-runs retune (plan `2026-11-23-startup-long-runs-retune.md`): the actions phase waits for the player to end their actions (`989b9e0`); the auto-player builds what it greenlights, so all 20 long runs Launch, and every required key is held by two games (`e824269`). Its pre-flight: `2026-11-23-startup-retune-preflight.md`; its ledger: `2026-11-23-startup-retune-ledger.md` (the controller adds the ledger at the end).
 
 - Slice 6, plan 6-2a (Attributes and Utility cards): Attribute cards played as counts on a Talent, Buffs on the player's own staff and Debuffs on a rival's Board (`24cfa53`); the counts ride with their Talent, stripped when it is fired and boxed when it is evicted (`5cf08a6`); Workaholic, Clean Coder and Visionary (`046f25d`); Toxic Personality and Burnout (`3aa8ae8`); TechCrunch Feature, Hype scoring and Design Sprint (`8c97016`); the long runs, README and checks (`8aee253`); the final fix wave pinning Burnout after Workaholic and the salary order, with stronger Toxic and Buff invariants (`850550f`). 278 examples. Its pre-flight: `2026-11-23-startup-6-2a-preflight.md`; its ledger: `2026-11-23-startup-6-2a-ledger.md`.
+
+- The long-runs speed-up 2 (plan `2026-11-23-startup-long-runs-speed-2.md`, from the profile `2026-11-23-startup-speed-2-proposal.md`): the runtime keeps a worked value whose lines read only its own card per card object (`card-alone.ts`), finds each phrase's code once, and the view reads a game's shown names once per game (`c726e4d`, tests `c578bcf`, `91a2401`, `f7d21d4`); the long runs build failure text only on a failure, the 4-player Greenlight test reads the long run's game, and the ride-along check skips cards with nothing to carry (`1b6a4c4`). Behaviour byte-identical (tallies and all 20 long-run games' hashes; two mutations' failure text). Startup's test file 28.6 s → ≈21.9 s best (`tests`, alternating). Its ledger: `2026-11-23-startup-speed-2-ledger.md`.
 
 ## Next, in order
 1. (done) Plan 5-3.
@@ -19,10 +21,11 @@ Everything below is on `claude/peaceful-curie-rdfkow`; 3784 tests pass. Plan 6-2
    - the free-actions call is done: the actions phase waits at 0 actions until the player ends their actions (the auto-player presses it), so a free action can be taken at 0;
    - test time (vitest `tests` figure on Startup's test file, best of 3, alternating with BASE `5b1f1d9`): BASE 13.02 s, after the retune 18.92 s (single runs 18.9–19.8 s; BASE 13.0–13.9 s). This is under the 30 s watch and just under the 20 s aim by the `tests` figure, but over 20 s by wall Duration (22.3–23.0 s). The gate reads the `tests` figure, so it took the ≤ 20 s branch; the candidates below are named in case it drifts over. Next candidates, if it is wanted lower: the 3-player seed-2 undo test (2.0 s) and the 4-player Greenlight test (1.8 s, seeds 1–7), either of which could take its game's moves from the long run's logs instead of playing them again (the shared 2-player runs are already memoized, `twoPlayerGames`, `656d6eb`).
 4. (done 2026-11-23) Plan 6-2a: 18 new required keys, each held by 2+ games; 11 new keys and the old scouting-to-ops key counted, not required, each with a named pin; Startup's test file ≈27.1 s best (`tests`), from ≈20.1 s, under the 30 s watch but with single runs over it under load.
-5. The long-runs speed-up 2 (a mini plan from a fresh profile, before 6-2b's Events add more rules).
+5. (done 2026-11-23) The long-runs speed-up 2: Startup's test file ≈21.9 s best, from 28.6 s on the same machine; the card-alone classifier is a shared-engine cache every later plan must respect (see Notes).
 6. Plans 6-2b, 6-3; 7-1 … 7-3; 8-1 … 8-3; 9-1 … 9-3; 10-1 … 10-3 (all written; each gets a pre-flight first).
 
 ## Notes carried to later pre-flights
+- **Every later plan (from the speed-up 2):** a phrase added to the card-number, card-value or card-subject library (or `it is {cardflag}`) is trusted by the card-alone classifier only if `card-alone.test.ts`'s pinned list says so; a phrase that reads more than its card (the cards on it, its holder, its owner, a player, a game number, the round) must be excluded in `card-alone.ts`. The pin test fails until someone decides. Details in `…-notes-for-6-preflight.md`.
 - **6-2b:** 6-2a moved the Strategy money check to the worked `price` and retitled the "only a Training card" example; Online Course Boom's $1 Training and Chip Shortage need the price floor below. Burnout's `… output is 0.` lines stay last in each output block (6-2a's fix wave pins it; add a line-order probe for the Event lines). The README heading moves to "(slice 6)".
 - **7:** `some card on the target card is …` / `some card on it is …` read the cards-on zone through `cardsOn`, which `reportHiddenCardReads` doesn't check; slice 7's narrowing of `cardsOn` by owner won't close it — if slice 7 makes an owner-only zone of cards on a public card, fix it in `mayHideFromPresser`/`reportHiddenCardReads`.
 - **9-1:** reuse 6-1's re-keying rather than building it twice (what 6-1 built, and two gaps it left — `announceJoins`, `goes into the bottom fifth of` — are in `…-notes-for-9-preflight.md`).
@@ -159,4 +162,5 @@ Running list for the final report. Each is a call made under delegation; none bl
 - `2026-11-16-startup-6-1-preflight.md` and `2026-11-16-startup-6-1-ledger.md`: plan 6-1's pre-flight report and its ledger (complete; the parked findings are its appendix).
 - `2026-11-23-startup-retune-preflight.md` and `2026-11-23-startup-retune-ledger.md`: the long-runs retune's pre-flight report and its ledger.
 - `2026-11-23-startup-6-2a-preflight.md` and `2026-11-23-startup-6-2a-ledger.md`: plan 6-2a's pre-flight report and its ledger (the final review is its appendix).
+- `2026-11-23-startup-speed-2-proposal.md` and `2026-11-23-startup-speed-2-ledger.md`: the speed-up 2's profile and proposal, and its ledger (the final review's findings are its appendix).
 - `2026-10-19-startup-notes-for-<plan>-preflight.md`: the notes carried to each later plan's pre-flight (6, 7, 8, 9, 10, and 5-3's).
