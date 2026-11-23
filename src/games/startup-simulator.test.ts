@@ -151,6 +151,8 @@ const EVENTS = [
 ] as const;
 /** The three zones the Events move between (§15.D). */
 const EVENT_ZONES = ['event-deck', 'event-in-play', 'event-discard'];
+/** The values the outputs check reads of each Board card, the Blue and Red outputs first (see `keepsTheRules`). */
+const OUTPUT_NAMES = ['blue output', 'red output', 'qa output', 'blue bandwidth'] as const;
 /** The name of the Event in play, or null before the first Round Start (§5 Phase A). */
 const eventOf = (state: GameState): string | null => {
   const card = zoneCards(state, 'event-in-play')[0];
@@ -2780,13 +2782,15 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     const eventMoved = eventOf(before) !== eventOf(after);
     for (const c of after.cards) {
       if (!staffZones.has(c.zoneId)) continue;
-      for (const name of ['blue output', 'red output', 'qa output', 'blue bandwidth']) {
-        const value = runtime.workedValue(after, c.id, name) as number | null;
+      // Each value of `after` is read once: the Blue and Red outputs, first, are also what the second half compares.
+      const values = OUTPUT_NAMES.map((name) => runtime.workedValue(after, c.id, name) as number | null);
+      for (const [i, name] of OUTPUT_NAMES.entries()) {
+        const value = values[i];
         if (value !== null && value < 0) outputs.push(`${c.id} (${nameOf(c)}) has ${name} ${value}`);
       }
       if (eventMoved || wasById.get(c.id) !== c) continue;
-      for (const name of ['blue output', 'red output']) {
-        const [was, now] = [runtime.workedValue(before, c.id, name), runtime.workedValue(after, c.id, name)];
+      for (const [i, name] of ['blue output', 'red output'].entries()) {
+        const [was, now] = [runtime.workedValue(before, c.id, name), values[i]];
         if (was !== now) outputs.push(`${c.id} (${nameOf(c)}): ${name} ${was} → ${now}`);
       }
     }
@@ -3234,7 +3238,10 @@ describe('Startup Simulator (designer language)', () => {
     return (which: number) => {
       if (ran === undefined) {
         const added = advice.map(({ bare, lands, pressing }) => [bare, ...Object.keys(lands).map(pressing)]);
-        const results = runExamples(compileGame(`${STARTUP_SIMULATOR}\n\n${added.flat().join('\n\n')}\n`, lib).game!, lib).slice(-added.flat().length);
+        const advised = compileGame(`${STARTUP_SIMULATOR}\n\n${added.flat().join('\n\n')}\n`, lib).game!;
+        // Only the examples added here run: each example plays on a table of its own, so the rules' own would only repeat 'passes every
+        // example'.
+        const results = runExamples({ ...advised, examples: advised.examples.slice(-added.flat().length) }, lib);
         let next = 0;
         ran = added.map(({ length }) => {
           const mine = results.slice(next, next + length);
