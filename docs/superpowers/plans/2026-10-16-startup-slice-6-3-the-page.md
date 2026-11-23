@@ -32,6 +32,7 @@
   8. **The attributes in play** is a shared pile, drawn on the shared table by `fittedLayout` with its cards face up. It needs no code; Task 3 pins it.
   9. **Slice 6's buttons name no new press flag** (5-3's forward note): their `Then:` lines test card kinds, not worked flags. Task 1 pins `pressFlags` unchanged.
 - **Parked:** the card in play's line on a page that fits one table; clicking a rival's card on its Board line.
+- **Controller amendment (pre-flight 2026-11-23):** the pre-flight (`docs/superpowers/notes/2026-11-23-startup-6-2b-preflight.md`) built Task 1 in its probe, run ahead inside 6-2b's sequence; its findings S1–S4 are applied in this text. Task 1 runs inside 6-2b's sequence, after its Task 1 and before its Task 2.
 
 **Tech Stack:** TypeScript (strict), Bun, Vitest + happy-dom, React 19, PixiJS 8; Playwright (global install, Chromium in `/opt/pw-browsers`) for the browser check.
 
@@ -74,7 +75,7 @@ It sits under `docs/superpowers/specs/2026-10-16-startup-simulator-overview-desi
   - New names are imported on new `import` lines.
   - If any other existing test fails, stop and report it.
 - **The browser check** uses the pre-installed Chromium (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`; never `playwright install`).
-  - Its scripts and screenshots stay in `/tmp/claude-0/-home-user-turnhout/fbd53c51-0292-5f8c-bf20-70c6ad4ed3bd/scratchpad/browser-6-3/`, never in the repo.
+  - Its scripts and screenshots stay in `/tmp/claude-0/-home-user/fbd53c51-0292-5f8c-bf20-70c6ad4ed3bd/scratchpad/browser-6-3/`, never in the repo.
   - Its setup lines go where every seed sets up: after the Juniors go to the benches and before Setup's deal, checked at seeds 1 to 10.
 - **Page copy (exact):**
   - **The card in play:** `{zone}: {card}; {card}`, each card as the hover line gives it (`cardDetail`), in slot order, in `<div data-testid="in-play-{zone id}">`, first in the tableaux, in `#d1d5db`. A zone with no card has no line.
@@ -119,7 +120,8 @@ Re-read each item at HEAD by name, not by line; if one is missing or differs, st
   - `{ others: … }` targets, `ontoZoneIds`, `othersZoneIds`; `JINX_GAME`, `CHARM_GAME`, `PRICE_GAME`, `OMEN_GAME`; `ROUND_STEPS_KEY`, `roundStepsOf`;
   - **the controller's ruling:** worked-view counts an owner-scope test of a zone everyone can see (`its owner has a card in their ops team …`) as read. If it is missing, stop and report (G2).
 - **6-2a (built):** the zone `attributes in play`; the counts `workaholic` … `flight risk` and `hype`; the buttons `play a card from their strategy hand to a card in another player's development team or another player's ops team`, `… to a card in their operations` and `play a card in their strategy hand`; the flags `overworked`, `burned out`, `losing blue`/`red`/`qa`, `pool losing blue`/`red`/`qa`, `pitched`; the Startup view pins as 6-2a's Task 6 commit left them.
-- **6-2b (built):** the zones `event deck`, `event in play`, `event discard`; the Event table (`| name | copies |`); `EVENTS` in the test file; the game numbers `license`, `junior price`, `hardware junior price` set at each round start; the phase `event check` with its `Hint:` and the buttons `let go of a card in their development team` / `… ops team`; the round-start line `If some card in the event in play is acting once, each player has the event check, in turn from the start player.`
+- **6-2b Task 1 (built before this Task 1):** the zones `event deck`, `event in play`, `event discard`; the Event table (`| name | copies |`); `EVENTS` in the test file.
+- **6-2b Tasks 2–5 (built before Task 2):** the game numbers `license`, `junior price`, `hardware junior price` set at each round start; the phase `event check` with its `Hint:` and the buttons `let go of a card in their development team` / `… ops team`; the round-start line `If some card in the event in play is acting once, each player has the event check, in turn from the start player.`
 
 ---
 
@@ -187,10 +189,10 @@ export const GALE_GAME = [
     - 6-1's `CHARM_GAME` pins, 4-3's `shownPlayerValues` and `gaugePairs` tests, and 5-3's `pressFlags` tests pass unchanged.
 
   In `startup-simulator.test.ts`, append `describe('what the view reads in the centre')`:
-  - `inPlayZones(game)` is `['event in play']`.
+  - `inPlayZones(game)` is `[]` while Task 1 runs ahead of 6-2b's Task 2 (G1). 6-2b's Task 2 changes it to `['event in play']` (6-2b R8).
   - `pressFlags(game)` and `holderFlags(game)` are 5-3's pins (Call 9).
   - `shownFlags(game)` holds none of 6-2b's flags: `bubbly`, `legacy`, `open source boosted`, `hackathon boosted`, `server crashed`, `logjammed`, `chip short`, `course priced`, `show priced`, `blue covered`, `crunching blue`, `crunching red`, `crunched`, `acting once`, `angel funded`, `past tier 1`, `taxed`.
-  - **Changed lines (only if 6-2b dropped them).** Where HEAD's `standIns`, `shownFlags`, `shownPlayerValues` or `gaugePairs` pin lacks an entry 6-2a's Task 6 commit pinned, it is put back in the order the code gives. `standIns` also keeps 6-2b's `'blue made': 'blue reached'`. `gaugePairs(game)` is 4-3's `[['blue supply', 'blue demand'], ['red supply', 'red demand']]`. Name each changed line in the report. When Task 1 runs ahead of 6-2b (G1), nothing was dropped and the pins pass unchanged as guards.
+  - **Changed lines (only if 6-2b dropped them).** Where HEAD's `standIns`, `shownFlags`, `shownPlayerValues` or `gaugePairs` pin lacks an entry 6-2a's Task 6 commit pinned, it is put back in the order the code gives. `gaugePairs(game)` is 4-3's `[['blue supply', 'blue demand'], ['red supply', 'red demand']]`. Name each changed line in the report. When Task 1 runs ahead of 6-2b (G1), nothing was dropped and the pins pass unchanged as guards.
   - **Changed lines in the page tests.** A 4-3 gauge test that 6-2a or 6-2b changed to the gauges' absence is put back as 4-3 wrote it, with the values 6-2a's examples give. Name each.
 - [ ] **Step 2: Run** `bunx vitest run src/engine/core/lang/worked-view.test.ts src/games/startup-simulator.test.ts`. Expected: FAIL (`CENTRE_HAS`, `inPlayZones`, `GALE_GAME` and the centre reading are missing; the guards pass).
 - [ ] **Step 3: Implement** the interfaces.
@@ -506,7 +508,7 @@ EOF
 
 **Files:**
 - Modify: `README.md`
-- Browser scripts and screenshots go only in `SCRATCH=/tmp/claude-0/-home-user-turnhout/fbd53c51-0292-5f8c-bf20-70c6ad4ed3bd/scratchpad/browser-6-3`.
+- Browser scripts and screenshots go only in `SCRATCH=/tmp/claude-0/-home-user/fbd53c51-0292-5f8c-bf20-70c6ad4ed3bd/scratchpad/browser-6-3`.
 
 **Interfaces:** Consumes Tasks 1–4. Produces nothing new.
 

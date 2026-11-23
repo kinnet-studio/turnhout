@@ -17,7 +17,7 @@
 - **Builder calls this plan makes** (recorded for the owner):
   - **The reveal is two round-start lines** (6-1's Task 5 pattern): the Event in play moves to the discard, then one card is dealt from the deck, the discard shuffled in when the deck is empty. The Event just ended is therefore in that reshuffle (suwa's `reveal_event` also discards before it draws). A round start never runs after the last round (slice 1a's R1.3), so the Crash round ends with its Event still in play, and the game-end Ops check sees it (§12.2).
   - **Round-long effects are lines a flag turns on**, each flag reading `the event in play has the …` (the overview's "conditions on the Event in play"). They can't outlast the round: the next reveal changes what the flags read. Prices that are numbers of the game (the License, the University's two prices) are set again by every round's start lines, then changed by the Event (6-1's call).
-  - **The Events' output lines go before the mode lines and after Workaholic's**, so they reach only the colour a unit works in, and Burnout stays last (R3). Supply Chain Logjam needs no floor: every unit working in Red makes at least 1 before it (§20.B). Server Crash acts on Blue bandwidth, where a unit in another mode has 0, so `A card's blue bandwidth is at least 0.` follows it (spec call: no unit below 0). Toxic Personality's cube comes after all of them (R1), since it reads the team values the outputs make.
+  - **The Events' output lines go before the mode lines and after Workaholic's.** Each Event output flag reads the colour a card works in (its skill or mode, as the first lines of `Blue output:` and `Red output:` do), so they reach only the colour a unit works in, and Burnout stays last (R3). Legacy reads `decaying`, so a stopped decay stays stopped. Supply Chain Logjam needs no floor: every unit working in Red makes at least 1 before it (§20.B). Server Crash acts on Blue bandwidth, where a unit in another mode has 0, so `A card's blue bandwidth is at least 0.` follows it (spec call: no unit below 0). Toxic Personality's cube comes after all of them (R1), since it reads the team values the outputs make.
   - **Chip Shortage reaches every source** (§20.D): the University through the `hardware junior price`, the agency row and a scouting hire through a worked `cost`, the open job market through a worked `rehire price` that is $1 for any card. Flex staff have the skill `flex`, so they are untouched.
   - **Crunch Time's cube is the project's, added after Toxic Personality's cube is taken** (R1 takes the cube from the team's output; §20.D: "staffed or not"), so Toxic never takes it. "Blue if it still needs Blue" counts the cubes on the track and those this turn's team makes (suwa's `apply_crunch_time_bonus`): `blue reached` is `blue made` plus `blue cubes`. Its Bug comes right after the new cubes and before the Pending lines and Development QA, so QA can clean it the same turn (spec call), and the Junior who does learns Green (ruling 1).
   - **Angel Investors and Regulation Audit share one step phase, `event check`**, called by one round-start line that reads a flag `acting once` on the Event in play (6-1: one set of steps per round, as the last round-start line; `If` can't say "or"). Each step's start line pays Angel Investors' $3; a rule pays Regulation Audit's tax as soon as the player can pay it and passes the step on; until then the player lets go of taxed staff, choosing whom (spec call). A player who can pay can't let staff go instead: §20.D lets only "a player who can't pay" do so. Letting go fires the staff member, so its tokens and Attributes go as at Income (R2).
@@ -27,6 +27,7 @@
   - Game numbers: `junior price`, `hardware junior price`.
   - Worked flags: `bubbly`, `legacy`, `open source boosted`, `hackathon boosted`, `server crashed`, `logjammed`, `chip short`, `course priced`, `show priced`, `blue covered`, `crunching blue`, `crunching red`, `crunched`, `acting once`, `angel funded`, `past tier 1`, `taxed`.
   - Worked numbers: new `rehire price`, `blue reached`, `blue added`, `red added`, `payroll tax`; refined `cost`, `price`, `rev`, `bug decay`, `blue output`, `red output`, `blue bandwidth`.
+- **Controller amendment (pre-flight 2026-11-23):** the pre-flight (`docs/superpowers/notes/2026-11-23-startup-6-2b-preflight.md`) built every task in a probe; its findings R1–R21 are applied in this text (R4 ruled (a): counted-not-required, with a named pin). Its probe commits (`/tmp/claude-0/-home-user/fbd53c51-0292-5f8c-bf20-70c6ad4ed3bd/scratchpad/pf62b/work`, branch `chain2`) are a cross-check, not the requirement.
 
 **Tech Stack:** TypeScript (strict), Bun, Vitest + happy-dom.
 
@@ -54,14 +55,14 @@
 - **Every number comes from the rulebook, and examples say where:** a section or ruling in each title, and each task's "How the numbers come".
 - **Anti-goals (spec and overview):** Startup words in shared code; an Event's effect leaking past the next Round Start; a rule approximated without a recorded call; a game that can't end; an auto-player that hides a rule that never fires.
 - **Every rules line is pinned.** Each line this plan adds or changes, other than `Hint:` lines, table rows and `The game has …` declarations, fails some example when it alone is removed, or is named in its task as pinned by a test instead. Each task's Step 4 runs plan 5-2a's removal probe. Never leave a rulebook line out because no example fails without it: show it is redundant, or reach it with an example.
-- **Example counts.** N₇ is the count the committed test pins when Task 1 starts: plan 6-2a's N₆ + 31, plus whatever fix waves add. The tasks end at N₇ + 4, + 9, + 14, + 17 and + 19. Each task updates `results` in `startup-simulator.test.ts`, the Startup test in `designer-page.test.tsx` and the README's "Its N examples".
+- **Example counts.** N₇ is the count the committed test pins when Task 1 starts: plan 6-2a's N₆ + 31, plus whatever fix waves add. The tasks end at N₇ + 4, + 15, + 21, + 24 and + 27. Each task updates `results` in `startup-simulator.test.ts`, the Startup test in `designer-page.test.tsx` and the README's "Its N examples".
 - **The seeded games change.** `Shuffle the event deck.` (Task 1) draws from the state's random numbers at Setup, and the reshuffle draws again in play, so every seeded game plays differently from Task 1 on. Pins that read a seeded game by position rather than by rule are read again from the new games, and the change reported; a long-run tally that drops to 0 is handled as below.
-- **Earlier examples meet Events.** An example that arranges no Event starts with none in play and its Event deck in table order, the last row on top (`topCard` is the last card in slot order): each Round Start it crosses reveals Trade Show, then Whistleblower Protection Act, then Online Course Boom. They must pass unchanged. If one fails once a later task turns an Event on, add `  And the event deck has the Whistleblower Protection Act` after its first Given (an Event that does nothing, reshuffled onto itself) and report it.
+- **Earlier examples meet Events.** An example that arranges no Event starts with none in play and its Event deck in the order `buildCards` leaves it at the examples' seed (examples skip Setup). Each Round Start it crosses reveals Regulation Audit, then Trade Show. From Task 5 the Audit taxes at the reveal, so such an example that checks money fails. Add `  And the event deck has the Whistleblower Protection Act` after its first Given and report it. Task 5 adds it to the three examples named in R5 of the pre-flight.
 - **Commands.**
   - Single file: `bunx vitest run src/games/startup-simulator.test.ts`. Full suite: `bun run test`. Types: `bun run typecheck`.
   - Before Task 1: record `BASE=$(git rev-parse HEAD)`; run `bun run test` once for the passing count and the long runs' time; note N₇.
 - **Existing tests.** Only the lines each task names change. If any other existing test fails, stop and report it.
-- **Long runs.** If an invariant shows a wrong rule, fix the rules text. If a required tally stays at 0, change the auto-player (cadences, targets), never the rules; report a key that stays unreachable. If a rule can't be written with plans 4-1, 5-1 and 6-1's phrases, report it. If the long runs take more than a third longer than at BASE, report the timing.
+- **Long runs.** If an invariant shows a wrong rule, fix the rules text. If a required tally stays at 0, change the auto-player (cadences, targets), never the rules; report a key that stays unreachable. A required path that the Event deck's replay leaves to fewer than 2 of the 20 games is counted, not required, and named with its pinning example or test (6-2a's precedent). If a rule can't be written with plans 4-1, 5-1 and 6-1's phrases, report it. If the long runs take more than a third longer than at BASE, report the timing.
 - **Pre-flight notes carried from plans 4-2 and 5-2:** take every `shownFlags` / `standIns` / `shownPlayerValues` pin from HEAD and apply only the change named; never write `For each card … that is X`; read counts as numbers with missing as 0, never with `hasOwn`.
 - **Style.**
   - 2-space indent, single quotes, comments that say why.
@@ -76,7 +77,7 @@
   - Tests: Task 1, examples 2–4, and the long-run Event invariant.
 - **The event check when every seat can pay at once, when the Start Player is short, and when a seat holds only exempt staff.**
   - Expected: the steps pass at once and the Start Player's turn starts in the same move, with no second round; a short seat waits for its let-gos, and a let-go of an exempt Junior is refused; the next turn's Income and salaries run as usual.
-  - Tests: Task 5, examples 1–2, and the arranged auto-player test.
+  - Tests: Task 5, examples 1–3, and the arranged auto-player test.
 - **An Event's effect at the next Round Start.**
   - Expected: the License and both University prices go back to $3 and $2; no modifier of the old Event acts in the new round.
   - Tests: Task 2 example 1, Task 3 examples 1 and 3, and the long-run price invariant.
@@ -91,7 +92,7 @@
 
 Re-read each item at HEAD by name. If one is missing or differs, stop and report it.
 
-- **Plan 6-2a, built:** the counts and the `attributes in play`; the worked sections `Overworked:`, `Clean coding:`, `Pool losing qa:`, `Pitched:`, `Price:` (`  A pitched card's price is 2.`), `Blue made:`, `Red made:`, `QA made:`; `Blue output:` with `  An overworked card's blue output goes up by 2.` and `Red output:` with `  An overworked card's red output goes up by 2.`; the Engine's `its new blue cubes go up by its blue made.` and `its new red cubes go up by its red made.`; in the test file `PLAY_DEBUFF`, `PLAY_TO_PRODUCT`, `PLAY_ALONE`, `ATTRIBUTES`, `isPlayable`, `techCrunchPrice`, `MADE`, `POOL`, `debuffing()`, `utility()`, the slice-6 Strategy tallies.
+- **Plan 6-2a, built:** the counts and the `attributes in play`; the worked sections `Overworked:`, `Clean coding:`, `Pool losing qa:`, `Pitched:`, `Price:` (`  A pitched card's price is 2.`), `Blue made:`, `Red made:`, `QA made:`; `Blue output:` with `  An overworked in blue card's blue output goes up by 2.` and `Red output:` with `  An overworked in red card's red output goes up by 2.`; the Engine's `its new blue cubes go up by its blue made.` and `its new red cubes go up by its red made.`; in the test file `PLAY_DEBUFF`, `PLAY_TO_PRODUCT`, `PLAY_ALONE`, `ATTRIBUTES`, `isPlayable`, `techCrunchPrice`, `MADE`, `POOL`, `debuffing()`, `utility()`, the slice-6 Strategy tallies.
 - **Plan 6-1, built (its Interfaces):** `Each player has the {phase}, in turn from the start player.` under `When a round starts:` (with `If …,` around it), `ROUND_STEPS_KEY` (`lang:round-steps`), `roundStepsOf`, `The {phase} passes to the left.` in a step phase; `the {gamenumber} goes up by {int}`; the flagged value lines and `a card's {attribute} is {int}`; `{sharedzone} has {card}` read by a flag.
 - **Plan 5-2b, built:** the milestones table and `  The milestone row is a row in the center that everyone can see.`; Setup's `  Shuffle the strategy deck.`; the Training button's price lines; `Phase: final check` as the last phase.
 - **Plan 5-2a, built:** `Bug decay:` (`  A decaying card's bug decay is its bugs.`); the four let-go and dismiss buttons' `It is fired.`; the Pending lines of the Engine.
@@ -131,16 +132,30 @@ const eventOf = (state: GameState): string | null;
     - The Juniors are made after the 141 dealt cards, c141 to c149 at 3 players, and `NEXT_CARD_KEY` is 150.
     - `'lays out the table …'`: after `['milestone-row', false, 'row', 'public']` add `['event-deck', false, 'pile', 'secret']`, `['event-in-play', false, 'row', 'public']` and `['event-discard', false, 'pile', 'public']`.
     - The setup test (`sets up a table of %i players at every seed`) also expects 1 card in the event in play, 17 in the event deck and the event discard empty: Setup ends by starting the first round.
+    - The undo test's first recruit now comes at move 52 (it was 55): `expect(log).toHaveLength(52)` and `expect(states).toHaveLength(52)`, with its comment naming plan 6-2b's Event shuffle.
+  - **Paths the new games no longer reach.** After `REPLAYED`, add `const HELD_BY_FEWER_THAN_TWO = new Set<string>([…])` with the eight paths the Event deck's replay leaves at 0 of the 20 games: 'Attributes kept through a bench discard', 'TechCrunch Features' (the 3-player replay), 'Toxic: a Red cube taken', 'a Buff on a bench card', 'an Attribute played: Clean Coder', 'an Attribute played: Workaholic', 'hire a card from the agency row to their bench' and 'the Engineer paid 1 in the ops team'. Each tally's and replay test's 'never seen' filter skips its keys. Its doc comment names, for each path, the example or arranged test that pins it.
   - **Append `it('has the Event deck of §20.D: 18 cards, one of each')`:** `nameCounts` of the event deck in `fresh()` is each of `EVENTS` once.
   - **Invariants (Review Focus 1, the spec's Proof 2)**, after every move:
     - the 18 Events are conserved: by name, the event deck, the event in play and the event discard together hold each of `EVENTS` once;
-    - the event in play holds exactly one card once a round has started (`ROUND_KEY` at 1 or more);
+    - the event in play holds exactly one card once one has been revealed: in `after`, whenever it held one in `before` or a round started in the move. A game arranged without Setup has `ROUND_KEY` 1 and no Event in play until its next Round Start (the check reads `if (eventBefore !== null || rounds > 0) sameAs(zoneCards(after, 'event-in-play').length, 1, …)`);
     - the event in play changes only in a move in which `ROUND_KEY` rose, and then the Event in play before is in the event discard or, after a reshuffle, the event deck or in play again;
     - the event deck gains cards only in such a move, and only when it was empty in `before`.
   - **The game's end** (in the long-run game test): the Event in play at the result is the one revealed at the last Round Start (no reveal after the last round).
+  - **Append the Setup shuffle's pin** (examples skip Setup, so no example fails without `Shuffle the event deck.`):
+
+```ts
+it('shuffles the event deck at Setup, so the Events left after the first reveal are not in the order the deck was dealt in (§4, §15.D)', () => {
+  for (const seed of [1, 2, 3]) {
+    const set = setUp(2, seed);
+    const dealt = namesIn(fresh(seed), 'event-deck').filter((name) => name !== eventOf(set));
+    expect(namesIn(set, 'event-deck'), `seed ${seed}`).not.toEqual(dealt);
+  }
+});
+```
+
 - [ ] **Step 2: Run** `bunx vitest run src/games/startup-simulator.test.ts`. Expected: FAIL.
 - [ ] **Step 3: Change the rules text.**
-  - Before anything else, a throwaway probe (never committed) confirms the deck's top in an example that arranges no Event is the table's last row (see the Global Constraints). Report it if not.
+  - Before anything else, a throwaway probe (never committed) confirms that the deck's top in an example that arranges no Event is Regulation Audit (`buildCards`' order at the examples' seed). Report it if not.
   - **Cards** (§20.D). Right after the milestones table add:
 
 ```text
@@ -227,7 +242,7 @@ Example: no Event is revealed after the last round: the Crash round ends the gam
   - **The deck:** 18 Events, one of each (§20.D); shuffled at Setup (§4.1); the Start Player reveals one at each Round Start, in effect until the next (§5 Phase A); the revealed one is replaced and discarded at the next Round Start, and an empty deck at a Round Start is made from the shuffled discard (§15.D).
   - **A Given lists a pile bottom first,** so the last Event named is revealed first.
   - **The Crash** finishes the round, then the game-end Ops check and the score (§12); no Round Start comes between.
-  - **Lines each example pins:** 1 Setup's shuffle and the deal; 2 the move to the discard and the deal; 3 the reshuffle (the deal's last words) and the move's place before the deal. 4 is a guard (§12; slice 1a's R1.3).
+  - **Lines each example pins:** 1 the deal (Setup's shuffle is pinned by the test above); 2 the move to the discard and the deal; 3 the reshuffle (the deal's last words) and the move's place before the deal. 4 is a guard (§12; slice 1a's R1.3).
 - [ ] **Step 4: Run** `bunx vitest run src/games src/pages/designer`, then `bun run test` and `bun run typecheck`, then the removal probe (plan 5-2a's: a throwaway script compiles the rules once without each line this task added or changed, alone, and runs the examples; every removal must fail an example or give a diagnostic).
 - [ ] **Step 5: Commit**
 
@@ -254,7 +269,7 @@ EOF
 - Produces (rules): worked flags `bubbly`, `legacy`, `open source boosted`, `hackathon boosted`, `server crashed`, `logjammed`; refined `rev`, `bug decay`, `blue output`, `red output`, `blue bandwidth`.
 
 - [ ] **Step 1: Change the tests.**
-  - **Pins.** `results` is N₇ + 9; the designer page's count too. The values test adds the six flags. `shownFlags(game)` and `standIns(game)` are unchanged: each flag reads the Event in play, so it fails closed. Pin what the view says if it differs, and report it.
+  - **Pins.** `results` is N₇ + 15; the designer page's count too. The values test adds the six flags. `shownFlags(game)` and `standIns(game)` are unchanged: each flag reads the Event in play, so it fails closed. Pin what the view says if it differs, and report it. 6-3 Task 1's `inPlayZones(game)` pin (`[]` while it runs ahead, S2) becomes `['event in play']`.
   - **Invariants** (Review Focus 4), after every move: every card on a Board has worked `blue output`, `red output`, `qa output` and `blue bandwidth` of 0 or more, or none; a card's `blue output` or `red output` differs from what it was in `before` only in a move that changed the Event in play, its counts, its mode flags, its onboarding or its zone (a modifier never acts outside its round).
 - [ ] **Step 2: Run** the file. Expected: FAIL.
 - [ ] **Step 3: Change the rules text.**
@@ -266,24 +281,37 @@ Bubbly:
 
 Legacy:
   Only if the event in play has the Legacy Code.
+  Only if it is decaying.
 
 Open source boosted:
   Only if the event in play has the Open Source Boom.
+  Only if one of:
+    It is a software card.
+    It is a flex card.
+    It is blue mode.
 
 Hackathon boosted:
   Only if the event in play has the Hardware Hackathon.
+  Only if one of:
+    It is a hardware card.
+    It is red mode.
 
 Server crashed:
   Only if the event in play has the Server Crash.
 
 Logjammed:
   Only if the event in play has the Supply Chain Logjam.
+  Only if one of:
+    It is a hardware card.
+    It is red mode.
 ```
+
+  The gates mirror the first lines of `Blue output:` and `Red output:`.
 
   - **Tech Bubble** (§20.D 2, §5 Phase B step 2: Events are among a product's bonuses, before Decay). In `Rev:`, right after `  A card's rev goes up by the total rev bonus of the cards on it.`, add `  A bubbly card's rev goes up by 1.`
   - **Legacy Code** (§20.D 5). In `Bug decay:`, right after `  A decaying card's bug decay is its bugs.`, add `  A legacy card's bug decay goes up by its bugs.`
-  - **Open Source Boom** (§20.D 7). In `Blue output:`, right after `  An overworked card's blue output goes up by 2.`, add `  An open source boosted card's blue output goes up by 1.`
-  - **Hardware Hackathon and Supply Chain Logjam** (§20.D 8, 12). In `Red output:`, right after `  An overworked card's red output goes up by 2.`, add:
+  - **Open Source Boom** (§20.D 7). In `Blue output:`, right after `  An overworked in blue card's blue output goes up by 2.`, add `  An open source boosted card's blue output goes up by 1.`
+  - **Hardware Hackathon and Supply Chain Logjam** (§20.D 8, 12). In `Red output:`, right after `  An overworked in red card's red output goes up by 2.`, add:
 
 ```text
   A hackathon boosted card's red output goes up by 1.
@@ -297,7 +325,7 @@ Logjammed:
   A card's blue bandwidth is at least 0.
 ```
 
-  - **Append these 5 examples.**
+  - **Append these 11 examples:** the plan's five, then the six after them.
 
 ```text
 Example: Tech Bubble adds $1 to each Active product's revenue at every Income of its round, and ends at the next Round Start (section 20, section 5, ruling 13)
@@ -367,6 +395,7 @@ Example: Hardware Hackathon gives every staff member working in Red 1 more, and 
 
 Example: Server Crash takes 1 off the Blue bandwidth of each ops staff member, never below 0, and leaves development alone (section 20, the spec's call)
   Given the event in play has the Server Crash
+  And the event deck has the Whistleblower Protection Act
   And p1's development has a Dating App
   And p1's operations has a Smart Lock and a To-Do List
   And p1's ops team has a Junior Software Dev, a Firmware Specialist and a Junior Hardware Eng
@@ -384,6 +413,80 @@ Example: Server Crash takes 1 off the Blue bandwidth of each ops staff member, n
   And p1 ends their actions
   Then the Dating App in p1's development has 1 blue cube
   And p1 has 7 capital
+
+Example: Legacy Code doubles no Bug Decay that is stopped: a QA Engineer with 2 XP in the ops team keeps every Active product's full revenue (section 20, section 11, ruling 19)
+  Given the event in play has the Legacy Code
+  And p1's operations has a Dating App and a Mobile Wallet
+  And the Dating App in p1's operations has 2 bugs
+  And the Mobile Wallet in p1's operations has 1 bug
+  And p1's ops team has a QA Engineer, a Junior Software Dev and a Junior Software Dev
+  And the QA Engineer in p1's ops team has 2 training xp
+  And the turn passes to the left
+  Then the phase is income
+  And p1 has 10 capital
+
+Example: Open Source Boom gives its 1 more to a Junior trained in Blue and declared Blue, and nothing to a flex Senior declared Red (section 20, section 11)
+  Given the event in play has the Open Source Boom
+  And p1's operations has a To-Do List
+  And p1's ops team has a Junior Hardware Eng and a Firmware Specialist
+  And the Junior Hardware Eng in p1's ops team has 1 blue skill token
+  And the turn passes to the left
+  Then the phase is modes
+  When p1 declares the Junior Hardware Eng, choosing blue
+  And p1 declares the Firmware Specialist, choosing red
+  And p1 confirms their modes
+  Then p1's blue supply is 2
+  And p1's red supply is 2
+
+Example: Hardware Hackathon gives its 1 more, and Supply Chain Logjam its 1 less, to a Junior trained in Red and declared Red (section 20, section 11)
+  Given the event in play has the Hardware Hackathon
+  And the event deck has the Supply Chain Logjam
+  And p1's operations has a Smart Thermostat
+  And p1's ops team has a Junior QA Tester
+  And the Junior QA Tester in p1's ops team has 1 red skill token
+  And the turn passes to the left
+  Then the phase is modes
+  When p1 declares the Junior QA Tester, choosing red
+  And p1 confirms their modes
+  Then p1's red supply is 2
+  When p1 pays salaries
+  And p1 ends their actions
+  And p0 ends their actions
+  Then it is p1's turn
+  And the event in play has the Supply Chain Logjam
+  And p1's red supply is 0
+
+Example: Hardware Hackathon gives a burned-out unit nothing, as Burnout's 0 comes after every Event (section 20, the slice's R3)
+  Given the event in play has the Hardware Hackathon
+  And the phase is actions
+  And p0's development has a Smart Lock
+  And the Smart Lock in p0's development has the Engineer and the Diva on it
+  And the Diva in p0's development team has 1 burnout
+  When p0 ends their actions
+  Then the Smart Lock in p0's development has 4 red cubes
+
+Example: Supply Chain Logjam takes nothing from a burned-out unit or from the Fixer working in QA, so no unit makes less than 0 (section 20, the slice's R3, the spec's call)
+  Given the event in play has the Supply Chain Logjam
+  And the phase is actions
+  And p0's development has a Smart Lock
+  And the Smart Lock in p0's development has the Engineer, the Diva and the Fixer on it
+  And the Diva in p0's development team has 1 burnout
+  And the Fixer in p0's development team is qa mode
+  When p0 ends their actions
+  Then the Smart Lock in p0's development has 2 red cubes
+
+Example: Tech Bubble's $1 comes before Bug Decay and the $0 floor, and an Offline product gets none (section 20, section 5)
+  Given the event in play has the Tech Bubble
+  And p1's operations has a To-Do List and a Dating App
+  And p1's ops team has a Junior Software Dev
+  And the To-Do List in p1's operations has 2 bugs
+  And the turn passes to the left
+  Then the phase is ops check
+  When p1 switches off the Dating App
+  And p1 confirms the products online
+  Then the phase is actions
+  And p1 has 7 capital
+  And p1 has 0 market share
 ```
 
   **How the numbers come** (§5 Phase B, §20.B, §20.C, §20.D, ruling 13, R3):
@@ -392,8 +495,14 @@ Example: Server Crash takes 1 off the Blue bandwidth of each ops staff member, n
   - **Open Source Boom:** +1 to every staff member working in Software, in Development and in Ops (§20.D 7). Ops: the Junior's 1 + 1 = 2 runs the To-Do List and the Mobile Wallet (maintenance 1 each): 7 + 1 + 2 = 10. Salaries: Junior PM $1, Firmware Specialist $2: 10 − 3 = 7. Development: the Firmware Specialist 2 + 1 = 3, the burned-out Junior 0 (R3), Synergy 1 for the one working Blue teammate: 4; the burned-out Junior earns no Pending token.
   - **Hardware Hackathon / Logjam:** ±1 to every staff member working in Hardware (§20.D 8, 12). Ops Red 1 + 1 = 2 runs the Smart Thermostat and the Smart Toy (rev 2 each): 7 + 4 = 11; the project's Junior makes 2 Red. Under Logjam the Junior makes 0, so both products go offline and earn nothing, and the Smart Lock stays at 2.
   - **Server Crash:** −1 Bandwidth to Software staff in the Ops Zone (§20.D 11): the Junior 1 − 1 = 0, the Red-mode Firmware Specialist 0, kept at 0 (spec call); Red 2 + 1 = 3. The To-Do List (1/0) goes offline; the Smart Lock earns 2 and the Firmware Specialist's $2 is paid: 7. Development is untouched: 1 Blue.
-  - **Lines each example pins:** 1 the Tech Bubble line and Bubbly; 2 the Legacy Code line and Legacy; 3 the Open Source Boom line and its flag, and Burnout's place after it; 4 the Hackathon and Logjam lines and their flags; 5 the Server Crash line, its flag and the floor.
-- [ ] **Step 4: Run** `bunx vitest run src/games src/pages/designer`, then `bun run test` and `bun run typecheck`, then the removal probe.
+  - **Legacy Code, stopped decay (6):** the QA Engineer at 2 XP stops decay (ruling 19). The Dating App earns 1 and the Mobile Wallet 2: 7 + 3 = 10.
+  - **Open Source Boom, the gate (7):** the trained Junior's 1 + 1 = 2 Blue; the Firmware Specialist in Red makes 2 Red.
+  - **Hackathon and Logjam, the gates (8):** Red 1 + 1 = 2, then 1 − 1 = 0.
+  - **Hackathon and Burnout (9):** the Engineer's 3 + 1 = 4, and the burned-out Diva 0.
+  - **Logjam (10):** the Engineer's 3 − 1 = 2; the Diva 0; the Fixer in QA makes 0 Red, not −1.
+  - **Tech Bubble (11):** the To-Do List's 1 + 1 − 2 = 0. The Offline Dating App earns nothing and no Market Share.
+  - **Lines each example pins:** 1 the Tech Bubble line and Bubbly; 2 the Legacy Code line and Legacy; 3 the Open Source Boom line and its flag, and Burnout's place after it; 4 the Hackathon and Logjam lines and their flags; 5 the Server Crash line, its flag and the floor; 6 Legacy's decaying gate; 7 OSB's blue-mode gate; 8 Hackathon's and Logjam's red-mode gates; 9 Hackathon above Burnout's 0; 10 Logjam above Burnout's 0 and the QA-mode 0; 11 Tech Bubble above the rev floor and the Offline 0.
+- [ ] **Step 4: Run** `bunx vitest run src/games src/pages/designer`, then `bun run test` and `bun run typecheck`, then the removal probe, then the line-order probe: move each Event output line below Burnout's `… is 0.`, Logjam below the QA-mode 0, and Tech Bubble below `… is at least 0.` and the Offline 0, and expect each to fail an example.
 - [ ] **Step 5: Commit**
 
 ```bash
@@ -419,7 +528,7 @@ EOF
 - Produces (rules): game numbers `junior price`, `hardware junior price`; worked flags `chip short`, `course priced`, `show priced`; worked `cost` (refined), `rehire price`; the round's price lines; the recruit and open-job-market buttons read them.
 
 - [ ] **Step 1: Change the tests.**
-  - **Pins.** `results` is N₇ + 14; the designer page's count too. The values test adds `cost` (`refines: true`) and `rehire price` (numbers) and the three flags; `shownFlags(game)` and `standIns(game)` are unchanged.
+  - **Pins.** `results` is N₇ + 21; the designer page's count too. The values test adds `cost` (`refines: true`) and `rehire price` (numbers) and the three flags; `shownFlags(game)` and `standIns(game)` are unchanged.
   - **Money (`keepsTheRules`):** a recruit pays the game number `junior price`, or `hardware junior price` for `recruit a junior hardware eng`, read in `before`; an agency hire pays the card's worked `cost`, a hire from the open job market its worked `rehire price`, a scouting hire the total worked `cost` of the picked cards, all read in `before` with `runtime.workedValue`.
   - **Invariant (Review Focus 3, the spec's anti-goal)**, after every move once a round has started: `license` is 5 when the Event in play is Patent Trolls and 3 otherwise; `junior price` is 0 under Intern Season and 2 otherwise; `hardware junior price` is 0 under Intern Season, 5 under Chip Shortage and 2 otherwise.
 - [ ] **Step 2: Run** the file. Expected: FAIL.
@@ -480,7 +589,7 @@ Rehire price:
 ```
 
   - **The University's refusal.** In "you can't pay, so you can't act (section 6)", `  Then it is rejected because "they have at least 2 capital"` becomes `  Then it is rejected because "they have at least the junior price in capital"`. Re-read the file for any other example quoting one of the four changed guards, apply the same change and report it.
-  - **Append these 5 examples.**
+  - **Append these 6 examples.**
 
 ```text
 Example: during Patent Trolls a Greenlight License costs $5, and the next round it is $3 again (section 20, section 6, section 14)
@@ -533,35 +642,57 @@ Example: during Intern Season recruiting from the University costs $0, and the n
   Then it is accepted
   And p0 has 0 capital
   And p0's bench has a Junior Software Dev, a Junior Hardware Eng and a Junior QA Tester
-  When p1 ends their actions
+  When p0 ends their actions
+  And p1 ends their actions
   Then the event in play has the Venture Capital Rain
   And the junior price is 2
   And the hardware junior price is 2
 
 Example: during Online Course Boom every Training card costs $1, and other Strategy cards their printed price (section 20)
   Given the event in play has the Online Course Boom
-  And p0 has 2 capital
+  And p0 has 3 capital
   And p0's strategy hand has a Full Stack Bootcamp, a Leadership Masterclass and a Workaholic
   And p0's bench has a Junior Software Dev
   When p0 plays the Full Stack Bootcamp to the Junior Software Dev
-  Then p0 has 1 capital
+  Then p0 has 2 capital
   When p0 plays the Leadership Masterclass to the Junior Software Dev
-  Then p0 has 0 capital
+  Then p0 has 1 capital
   When p0 plays the Workaholic to the Junior Software Dev
   Then it is rejected because "they have at least the card's price in capital"
 
-Example: during Trade Show TechCrunch Feature costs $2, and with a Sales Rep on the product still $2, as the discounts don't stack (section 20, ruling 23)
+Example: during Trade Show TechCrunch Feature costs $2, and with a Sales Rep on the product still $2, as the discounts don't stack, while other Strategy cards keep their printed price (section 20, ruling 23)
   Given the event in play has the Trade Show
   And the phase is actions
-  And p0 has 4 capital
-  And p0's strategy hand has a TechCrunch Feature and a TechCrunch Feature
+  And p0 has 7 capital
+  And p0's strategy hand has a TechCrunch Feature, a TechCrunch Feature and a Clean Coder
   And p0's operations has a Dating App and a To-Do List
   And the To-Do List in p0's operations has a Sales Rep on it
+  And p0's bench has a Junior Software Dev
+  When p0 plays the Clean Coder to the Junior Software Dev
+  Then p0 has 4 capital
   When p0 plays a TechCrunch Feature to the Dating App
   Then p0 has 2 capital
   When p0 plays the TechCrunch Feature to the To-Do List
   Then p0 has 0 capital
   And the To-Do List in p0's operations has 1 hype
+
+Example: during Chip Shortage a player with $3 can't recruit a Junior Hardware Eng for $5 or hire the Diva from the open job market for $4, and recruits a Junior QA Tester for $2 but not a second (section 20, section 13, section 6)
+  Given the event deck has the Chip Shortage
+  And the open job market has the Diva
+  And it is p1's turn
+  When p1 ends their actions
+  Then the event in play has the Chip Shortage
+  Given p0 has 3 capital
+  When p0 recruits a junior hardware eng
+  Then it is rejected because "they have at least the hardware junior price in capital"
+  When p0 hires the Diva
+  Then it is rejected because "they have at least the card's rehire price in capital"
+  When p0 recruits a junior qa tester
+  Then it is accepted
+  And p0 has 1 capital
+  When p0 recruits a junior qa tester
+  Then it is rejected because "they have at least the junior price in capital"
+  And p0 has 2 actions
 ```
 
   **How the numbers come** (§6, §13.A, §14.B, §20.A, §20.B, §20.D):
@@ -569,8 +700,9 @@ Example: during Trade Show TechCrunch Feature costs $2, and with a Sales Rep on 
   - **Chip Shortage:** +$3 for talent whose native skill is Hardware, from any source; flex staff untouched (§20.D 9). Junior Hardware Eng 2 + 3 = 5; the Engineer 6 + 3 = 9; the Diva from the open job market 1 + 3 = 4; the Firmware Specialist (flex) 6. So 30 − 5 − 9 − 4 − 6 = 6.
   - **Intern Season:** University $0 this round (§20.D 14); $2 again after (§13.A.1).
   - **Online Course Boom:** every Training card $1 (§20.D 16): Bootcamp (Red, the colour a Junior Software Dev lacks) and Masterclass $1 each; Workaholic keeps its $2.
-  - **Trade Show:** TechCrunch Feature $2; it doesn't stack with the Sales Rep's $2 (§20.D 18, §20.A): 4 − 2 − 2 = 0.
-  - **Lines each example pins:** 1 the two License lines; 2 Chip short's lines, the Chip Shortage price line, `Cost:`'s line, both `Rehire price:` lines and the open job market's two lines; 3 the four University price lines and the three recruit buttons' lines; 4 Course priced's lines and its `Price:` line; 5 Show priced's lines and its `Price:` line.
+  - **Trade Show:** TechCrunch Feature $2 this round, and still $2 on a product with a Sales Rep, as the discounts don't stack (§20.D 18, §20.A, ruling 23); the Clean Coder keeps its printed $3: 7 − 3 − 2 − 2 = 0, and the To-Do List gets its 1 Hype.
+  - **Chip Shortage's guards:** $3 is short of the Junior Hardware Eng's 2 + 3 = $5 and of the Diva's open job market 1 + 3 = $4 (§20.D 9, §13); a Junior QA Tester's $2 (§13.A.1) leaves $1, short of a second; the one recruit taken uses one of the turn's 3 actions (§6): 3 − 1 = 2.
+  - **Lines each example pins:** 1 the two License lines; 2 Chip short's lines, the Chip Shortage price line, `Cost:`'s line, both `Rehire price:` lines and the open job market's two lines; 3 the four University price lines and the three recruit buttons' lines; 4 Course priced's lines and its `Price:` line, and Course priced's kind line (the Workaholic refused with $1 left); 5 Show priced's lines and its `Price:` line, and Show priced's kind line (the Clean Coder at its printed $3); 6 the hardware, QA and open job market guards.
 - [ ] **Step 4: Run** `bunx vitest run src/games src/pages/designer`, then `bun run test` and `bun run typecheck`, then the removal probe.
 - [ ] **Step 5: Commit**
 
@@ -597,7 +729,7 @@ EOF
 - Produces (rules): worked `blue reached`, `blue added`, `red added`; flags `blue covered`, `crunching blue`, `crunching red`, `crunched`; the Engine reads the added values and adds Crunch Time's Bug.
 
 - [ ] **Step 1: Change the tests.**
-  - **Pins.** `results` is N₇ + 17; the designer page's count too. The values test adds `blue reached`, `blue added`, `red added` (numbers) and the four flags. `standIns(game)` gains `'blue made': 'blue reached'` (no card keeps `blue made`, so no face changes); `shownFlags(game)` is unchanged. Pin what the view says if it differs, and report it.
+  - **Pins.** `results` is N₇ + 24; the designer page's count too. The values test adds `blue reached`, `blue added`, `red added` (numbers) and the four flags. `standIns(game)` and `shownFlags(game)` are unchanged: `blue made` reads `losing blue` (`its blue team output`), which the view doesn't count as card-only, so `blue reached` stands in for nothing. Pin what the view says if it differs, and report it.
   - **Append `it('adds exactly one Crunch Time cube to a project that isn’t Stalled, Blue while the project still needs Blue, else Red (§20.D, suwa’s apply_crunch_time_bonus)')`.** On `setUp(2, 1)` with S its start player and the Crunch Time moved to the event in play, read with `runtime.workedValue`:
     - an unstaffed Dating App in S's development: `blue added` 1, `red added` 0;
     - a Smart Lock with 1 blue cube: `blue added` 0, `red added` 1;
@@ -729,7 +861,7 @@ EOF
 - Produces (test file): `PHASES` gains `'event check'` last; `const EVENT_CHECK = 'event check';`; `payrollTaxOf(runtime, state, seat): number` (the total worked `payroll tax` of the seat's development team and ops team).
 
 - [ ] **Step 1: Change the tests.**
-  - **Pins.** `results` is N₇ + 19; the designer page's count too. `PHASES` gains `'event check'` last. The values test adds `payroll tax` (number) and the four flags; `shownFlags(game)` and `standIns(game)` are unchanged (each flag reads the Event in play, or no value line reads it).
+  - **Pins.** `results` is N₇ + 27; the designer page's count too. `PHASES` gains `'event check'` last. The values test adds `payroll tax` (number) and the four flags; `shownFlags(game)` and `standIns(game)` are unchanged (each flag reads the Event in play, or no value line reads it).
   - **Money (`keepsTheRules`, Review Focus 2).** A move in which `ROUND_STEPS_KEY` is set in `before` or `after`, or in which a round started with Angel Investors or Regulation Audit revealed, is checked as a whole rather than press by press: each seat's capital changes by
     - +3 when the Angel Investors were revealed in the move and the seat, in `before`, had a card in its development or operations and none of Tier 2 or 3;
     - −`payrollTaxOf(runtime, after, seat)` when the seat's event check step ended in the move (it had not passed in `before`, and has in `after`): its Board can change only by its own let-gos until the steps end;
@@ -740,8 +872,12 @@ EOF
     - the phase is `event check` only while `roundStepsOf(state)` is a `RoundSteps` whose phase it is, and the Event in play is Angel Investors or Regulation Audit;
     - a let-go press in `event check` moves a card that was `taxed` in `before`, and the card is fired (6-2a's strip invariant applies);
     - a seat whose step ended under Regulation Audit has at least 0 capital after it.
+  - **Turns under a round's steps** (6-1):
+    - `keepsTheRules`' rounds check: a round starts in a move whose `after` has round steps and whose `before` has none, or, with no steps in `before`, as the start player's turn starts. The start player's turn that starts as the steps end starts no new round (`const waited = roundStepsOf(before) !== null; const stepsStarted = !waited && roundStepsOf(after) !== null;` then `stepsStarted || (!waited && started === startPlayerOf(after, seats))`).
+    - `keepsTheBudget`: a seat whose turn starts in the move has `ACTIONS_EACH_TURN`, the mover included, since the start player's own step can end the steps.
+    - `playGame` adds each move made in `event check` to `finalCheck`, as it does the final check's, since they are no turn for `turnsIn`.
   - **The auto-player in `event check`:** it lets go, one press at a time, of the `taxed` card at `t % n` among its taxed Board cards (its development team's first, then its ops team's, in slot order).
-  - **Append `it('lets go of the staff the auto-player picks when a Regulation Audit finds it short, through the page’s view and without it (§20.D, the spec’s call)')`.** From `setUp(2, 1)` with S its start player and O the other seat: the Regulation Audit on top of the event deck; O with the Engineer and the Diva on a project of its development and 1 capital; S ending its turn. For t = 0 and t = 1, `playTurn` for O in `event check` lets go of a different card first; O then pays its $1 and the steps end; the logs with and without the view are equal.
+  - **Append `it('lets go of the staff the auto-player picks when a Regulation Audit finds it short, through the page’s view and without it (§20.D, the spec’s call)')`.** From `setUp(2, 1)` with S its start player and O the other seat: the Regulation Audit on top of the event deck; O with the Engineer and the Diva on a project of its development and 4 capital. S ends its actions. `playTurn` plays O's turn until it pays its salaries ($3, leaving $1), and O ends its actions. The next Round Start reveals the Audit, which asks O $2. For t = 0 and t = 1, `playTurn` for O in `event check` lets go of a different card first; O then pays its $1 and the steps end; the logs with and without the view are equal.
 - [ ] **Step 2: Run** the file. Expected: FAIL.
 - [ ] **Step 3: Change the rules text.**
   - **The flags.** Right after the `Crunched:` section add:
@@ -782,7 +918,6 @@ Payroll tax:
 
 ```text
 Phase: event check
-  Players take turns.
   Hint: The Regulation Audit taxes you $1 for each employee on your Board who draws a salary, and you can't pay it all. Let staff go, as you choose, until you can.
   When this phase starts:
     If they have a card in their development and their operations that is angel funded and they have no card in their development and their operations that is past tier 1, they get 3 capital.
@@ -801,7 +936,7 @@ Phase: event check
     The event check passes to the left.
 ```
 
-  - **Append these 2 examples.**
+  - **Append these 3 examples.**
 
 ```text
 Example: Angel Investors, as it is revealed, gives $3 to each player with a Tier 1 product and none of Tier 2 or 3, in development or in operations, and nothing to a player with no product (section 20, the spec's call)
@@ -835,7 +970,7 @@ Example: Regulation Audit, as it is revealed, taxes each player $1 for each Boar
   And the attributes in play has a Workaholic and a Burnout
   And the Dating App in p0's development has the Architect, a Junior Software Dev and a Junior PM on it
   And the Smart Lock in p1's development has the Engineer, a Junior Hardware Eng and a Junior QA Tester on it
-  And the Junior Hardware Eng in p1's development team has 2 red xp
+  And the Junior Hardware Eng in p1's development team has 2 red xp tokens
   And the Engineer in p1's development team has 1 workaholic
   And the Diva in p1's ops team has 1 burnout
   And it is p2's turn
@@ -856,13 +991,32 @@ Example: Regulation Audit, as it is revealed, taxes each player $1 for each Boar
   And the open job market has the Engineer and the Diva
   And the strategy discard has a Workaholic and a Burnout
   And the Smart Lock in p1's development has a Junior Hardware Eng and a Junior QA Tester on it
+
+Example: Regulation Audit lets a player go only of the staff it taxes, in the ops team too (section 20, the spec's call)
+  Given 2 players
+  And the event deck has the Regulation Audit
+  And p1 has 0 capital
+  And p1's ops team has a Junior QA Tester and the Diva
+  And it is p1's turn
+  And the phase is actions
+  When p1 ends their actions
+  Then the event in play has the Regulation Audit
+  And the phase is event check
+  And it is p1's turn
+  When p1 lets go of the Junior QA Tester
+  Then it is rejected because "it is taxed"
+  When p1 lets go of the Diva
+  Then it is p0's turn
+  And the open job market has the Diva
+  And p1's ops team has a Junior QA Tester
 ```
 
   **How the numbers come** (§3, §5 Phase A, §11.A.3, §20.B, §20.C, §20.D 4 and 6):
   - **Angel Investors:** when revealed, $3 to each player with at least one Tier 1 product and no Tier 2/3 product, counting Development and Maintenance; nothing for a player with no products (§20.D 4). p0's To-Do List (Tier 1, in development) and p3's Smart Lock (Tier 1, operations): 7 + 3 = 10. p1's Neobank and p2's Quantum Computer are Tier 2 and 3 (§20.C): 7. p4 has no product: 7. The Architect on p1's Neobank draws a salary but is not taxed (not a Regulation Audit).
   - **Regulation Audit:** when revealed, $1 for every Board employee with salary above $0; Juniors with 0–1 XP are exempt; a player who can't pay lets staff go, choosing who (§20.D 6). p0: the Architect ($2) and the Junior PM ($1), not its 0-XP Junior: 7 − 2 = 5. p1: the Engineer ($2 + $2 Workaholic), the Diva ($1), the 2-XP Junior Hardware Eng ($1, §11.A.3) = $3 against 1; the 0-XP Junior QA Tester can't be let go for it; after the Engineer and the Diva go, $1 is paid: 0. p2 has no Board: 7. Letting go fires (R2): Workaholic and Burnout go to the strategy discard.
+  - **Regulation Audit, ops team (3):** the Diva's $1 salary is taxed $1 against p1's $0. The 0-XP Junior is exempt (§20.D 6). Once the Diva is gone, the tax is $0.
   - **Order:** in turn order from the Start Player, p0 (§5 Phase A; the spec's call); then p0's turn starts, its salaries waiting at Income.
-  - **Lines each example pins:** 1 Acting once's Angel line, the steps line, the phase's start line, Angel funded, both Past tier 1 lines, and Taxed's event line (the Architect); 2 Acting once's Regulation Audit line, Taxed's salary line (the exempt Juniors), Payroll tax, the pay-and-pass rule, both let-go buttons with their guard and `It is fired.`, and Angel funded's event line (p0 holds only a Tier 1 product).
+  - **Lines each example pins:** 1 Acting once's Angel line, the steps line, the phase's start line, Angel funded, both Past tier 1 lines, and Taxed's event line (the Architect); 2 Acting once's Regulation Audit line, Taxed's salary line (the exempt Juniors), Payroll tax, the pay-and-pass rule, both let-go buttons with their guard and `It is fired.`, and Angel funded's event line (p0 holds only a Tier 1 product); 3 the ops team's `Only if it is taxed.`.
 - [ ] **Step 4: Run** `bunx vitest run src/games src/pages/designer`, then `bun run test` and `bun run typecheck`, then the removal probe. 6-1's checks give no diagnostic: the phase passes on, has no go-to and no After line, and is reached.
 - [ ] **Step 5: Commit**
 
@@ -892,25 +1046,27 @@ EOF
   - `Open Source Boom at work`, `Hardware Hackathon at work` and `Supply Chain Logjam at work`, in a move that ran the Engine for the mover under that Event, for each of its projects not `stalled` with a card on it whose `blue output` (Open Source Boom) or `red output` (the other two) was not null; `Server Crash at an Income`, for the seat that reached its Income under it with a card in its ops team whose `blue output` was above 0;
   - `Patent Trolls: a $5 License`, for a `GREENLIGHT` whose mover paid a License of 5; `Chip Shortage: a Hardware hire for $3 more`, for a recruit of a junior hardware eng or a hire of a `hardware` card under it; `Intern Season: a free recruit`; `Online Course Boom: a Training card for $1`; `Trade Show: a TechCrunch Feature for $2`, for a `PLAY_TO_PRODUCT` press under it;
   - `Crunch Time: a cube`, `Crunch Time: a Bug` and `Crunch Time: a Bug stopped by Clean Code`, in a move that ran the Engine for the mover under it, for each project not `stalled` by whether it was `crunched`.
+  - 6-2a's `TechCrunch for $2 with a Sales Rep` counts a `PLAY_TO_PRODUCT` only when the product's worked `price` is 2 in `before`.
 
 - [ ] **Step 1: Write the tests.**
   - **`'made every move in those runs …'`** also expects above 0 a let-go in `event check` (counted as `Regulation Audit: staff let go`).
-  - **Append `it('played slice 6’s Events in those runs: all 18 revealed, the discard reshuffled, Angel Investors and Regulation Audit paid and staff let go, every round-long effect at work, every price changed, and Crunch Time’s cubes and Bugs')`.** It expects every key above above 0, the 18 `an Event revealed: …` keys included.
-  - **Append `it('takes back the last move and rebuilds whole games from their logs, through reveals, a reshuffle and an event check that waited (Review Focus: 4 players, seeds 1 to 5)')`.** Play each game to its result, keeping the state before each move; a fresh engine given `loadLog(log)` equals the final state, and `engine.undo()` gives the state before the last move. Across the five logs some log holds a reshuffle and a let-go in `event check` (count them through the watch).
+  - **Append `it('played slice 6’s Events in those runs: all 18 revealed, the discard reshuffled, Angel Investors and Regulation Audit paid and staff let go, every round-long effect at work, every price changed, and Crunch Time’s cubes and Bugs')`.** It expects every key above above 0, the 18 `an Event revealed: …` keys included, but those in `HELD_BY_FEWER_THAN_TWO`.
+  - **`REPLAYED` gains `'Event reshuffles'` and `'let-gos in the event check'`.** `keepingForReplay` counts them from `EVENTS_RESHUFFLED` and `AUDIT_LET_GO`, and the 2-player replay test's title adds 'reveals, an Event reshuffle and an event check that waited'. No 4-player game lasts the 19 rounds a reshuffle takes.
   - **Kept as they are:** `'plays the same game through the page’s view as without it'` (now through round steps) and every earlier tally.
+  - Re-read the long-run tests' seed-specific comments (the 'Held by …' lines, and which seed holds what in the replay tests) from the new tallies.
 - [ ] **Step 2: Run** `bunx vitest run src/games/startup-simulator.test.ts`.
-  - If a required key stays at 0, print the tally and change the auto-player, never the rules: spend down to a few dollars more often so a Regulation Audit finds a seat short; hold a TechCrunch Feature for a Trade Show; greenlight a card needing a rival's Tag under Patent Trolls; recruit a junior hardware eng under Chip Shortage and Intern Season; play Training under Online Course Boom.
-  - Report a key that stays unreachable, with the tally, and pin its path with an arranged test in the shape of Task 5's.
+  - If a required key is held by fewer than 2 games, add it to `HELD_BY_FEWER_THAN_TWO` with its pin, and take out any key now held by 2 or more. At the probe that leaves the 14 above. Report the set.
 - [ ] **Step 3: Write the README.**
-  - **The Startup paragraph** becomes "**Startup Simulator (slice 6)**". After plan 6-2a's sentence, add: each round opens with an Event, revealed by the Start Player and in effect for everyone until the next Round Start, its deck reshuffled from its discard; fourteen Events act (revenue and decay, output and bandwidth, hiring, Training, TechCrunch and License prices, Crunch Time, and Angel Investors' and Regulation Audit's one-off effects taken in turn), and Venture Capital Rain, Recruiter Frenzy, Headhunter Holiday and Whistleblower Protection Act wait for their slices. Its rulings list adds 13.
-  - **"It still leaves out"** becomes: Equity and the stock market (with Venture Capital Rain and the Non-Compete Suit), selling and poaching (with the Headhunter, Corporate Raider, Cease & Desist, Flight Risk's effect, Recruiter Frenzy and Headhunter Holiday), Hit Piece and Scandal, Integration, the CTO, Stealth and audits (with Whistleblower Protection Act and Patent Trolls' other fees), Bankruptcy and the Broken Chain, and the HR Manager's and the Director of QA's perks. Each comes in a later slice.
+  - **The Startup paragraph** becomes "**Startup Simulator (slice 6)**". After plan 6-2a's sentence, add: each round opens with an Event, revealed by the Start Player and in effect for everyone until the next Round Start, its deck reshuffled from its discard; fourteen Events act (revenue and decay, output and bandwidth, hiring, Training, TechCrunch and License prices, Crunch Time, and Angel Investors' and Regulation Audit's one-off effects taken in turn), and Venture Capital Rain, Recruiter Frenzy, Headhunter Holiday and Whistleblower Protection Act wait for their slices.
+  - **"It still leaves out"** becomes: Equity and the stock market (with Venture Capital Rain and the Non-Compete Suit), selling and poaching (with the Headhunter, Corporate Raider, Cease & Desist, Flight Risk's effect, the Full Stack Ninja's trait, Recruiter Frenzy and Headhunter Holiday), Hit Piece and Scandal, Integration, the CTO, Stealth and audits (with Whistleblower Protection Act and Patent Trolls' other fees), Bankruptcy and the Broken Chain, and the HR Manager's and the Director of QA's perks. Each comes in a later slice.
   - **Plan 6-1's README paragraph** ("Other players' cards, lines a flag turns on, the lower of two prices, and steps at the start of a round.") gains a last bullet, `- **Startup Simulator** plays slice 6 this way: …`, naming the Debuff button's `… to a card in another player's development team or another player's ops team.`, `A losing blue card's blue made goes down by 1.`, `They pay the lower of the card's price and the target card's price.`, `If the event in play has the Chip Shortage, the hardware junior price goes up by 3.` and `If some card in the event in play is acting once, each player has the event check, in turn from the start player.`
 - [ ] **Step 4: Run** `bun run test` and `bun run typecheck`. The passing count is the starting count plus this plan's new tests.
-- [ ] **Step 5: Run the checks.** The first three print nothing. The fourth prints only the Startup count line in `designer-page.test.tsx` and any pin a task reported.
+- [ ] **Step 5: Run the checks.** The first check prints only plan 6-3 Task 1's four files; the second and third print nothing, and so does the added `git diff --stat <6-3 Task 1's commit> -- src/engine src/utils`. The fourth prints only the Startup count line in `designer-page.test.tsx` and any pin a task reported.
 
 ```bash
 # no shared code and no page code changed
 git diff --stat "$BASE" -- src/engine src/utils
+git diff --stat <6-3 Task 1's commit> -- src/engine src/utils
 git diff --stat "$BASE" -- src/pages ':!src/pages/designer/*.test.tsx' ':!src/pages/designer/*.test.ts'
 # protected files
 git diff --stat "$BASE" -- src/engine/core/game-state.ts src/engine/core/flow.ts src/engine/core/game-engine.ts src/pages/hearts-demo
