@@ -135,7 +135,7 @@ Cards:
     | Full Stack Founder    | 7  | 1      |
   A deck called events, starting in the event deck:
     | name                         | effect | copies |
-    | Venture Capital Rain         | Whenever a player Invests in a Founder this round, the Bank pays that Founder $3 extra cash (not on Secondary Trades or Buybacks). Not in effect yet. | 1 |
+    | Venture Capital Rain         | Whenever a player Invests in a Founder this round, the Bank pays that Founder $3 extra cash (not on Secondary Trades or Buybacks). | 1 |
     | Tech Bubble                  | All Active Maintenance Products generate +$1 Revenue this round. | 1 |
     | Patent Trolls                | This round the Tag Owner's share of every license fee is $5 instead of $3; Bank fees don't change. Only the Greenlight License is in effect yet. | 1 |
     | Angel Investors              | When revealed, each player with at least one Tier 1 product and no Tier 2 or 3 product, in Development or Maintenance, gains $3. | 1 |
@@ -612,6 +612,10 @@ Rehire price:
 Payroll tax:
   A taxed card's payroll tax is 1.
 
+Tier number:
+  A Tier 2 card's tier number is 2.
+  A Tier 3 card's tier number is 3.
+
 Stalled:
   Only if it is in a development.
   Only if it is not a Tier 1 card.
@@ -809,6 +813,14 @@ Bugged products:
 
 Operational revenue:
   A player's operational revenue is the total rev of the cards in their operations.
+
+Top tier:
+  A player's top tier is the highest tier number of the cards in their operations that are not offline.
+
+Share price:
+  A player's share price is 5.
+  A player's share price is 10 if their top tier is at least 2.
+  A player's share price is 15 if their top tier is at least 3.
 
 Active tags:
   A player's active tags is the number of different tag values among the cards in their operations that are not offline.
@@ -1356,6 +1368,14 @@ Phase: actions
     Then:
       Deal up to as many cards as they picked from the talent deck to their scouting.
       The sourcing phase starts with them.
+  A player may invest in a card in another player's equity.
+    It costs 1 action.
+    Only if its owner has at least 2 cards in their equity.
+    Only if they have at least its founder's share price in capital.
+    Then:
+      They pay its founder's share price to its owner.
+      If the event in play has the Venture Capital Rain, its founder gets 3 capital.
+      Move it to their portfolio.
   A player may end their actions.
     Then:
       Their actions go back to 0.
@@ -5657,3 +5677,59 @@ Example: each rival's Equity token held scores 5 points, and a player's own toke
   And p1 scores 11
   And p0 scores 1
   And p2 scores 1
+
+Example: Invest pays the Founder their Share Price: $5 with only Tier 1, $10 with an Active Tier 2, $15 with a Tier 3 (section 17, section 8)
+  Given 4 players
+  And p0 has 30 capital
+  And p0 has 4 actions
+  And p1's equity has an Equity whose founder is p1 and an Equity whose founder is p1
+  And p2's equity has an Equity whose founder is p2 and an Equity whose founder is p2
+  And p3's equity has an Equity whose founder is p3 and an Equity whose founder is p3
+  And p1's operations has a Dating App
+  And p2's operations has a Neobank
+  And p3's operations has a Quantum Computer
+  Then p1's share price is 5
+  And p2's share price is 10
+  And p3's share price is 15
+  When p0 invests in the Equity whose founder is p1
+  And p0 invests in the Equity whose founder is p2
+  And p0 invests in the Equity whose founder is p3
+  Then it is accepted
+  And p0 has 0 capital
+  And p0 has 1 action
+  And p1 has 12 capital
+  And p2 has 17 capital
+  And p3 has 22 capital
+  And p0's portfolio has an Equity whose founder is p1, an Equity whose founder is p2 and an Equity whose founder is p3
+  And p1's equity has an Equity whose founder is p1
+
+Example: an Offline product isn't Active, so a Founder whose only Tier 2 product is Offline sells at $5 (section 9, section 17, ruling 5)
+  Given p1's equity has an Equity whose founder is p1 and an Equity whose founder is p1
+  And p1's operations has a Neobank
+  And the Neobank in p1's operations is offline
+  Then p1's share price is 5
+  When p0 invests in the Equity whose founder is p1
+  Then p0 has 2 capital
+  And p1 has 12 capital
+
+Example: a Founder never sells the last token in their supply, and an Investor must pay the full price; a Founder with no product sells at $5 (section 17, ruling 16)
+  Given 3 players
+  And p0 has 5 capital
+  And p1's equity has an Equity whose founder is p1 and an Equity whose founder is p1
+  And p2's equity has an Equity whose founder is p2 and an Equity whose founder is p2
+  When p0 invests in the Equity whose founder is p1
+  Then p0 has 0 capital
+  And p1 has 12 capital
+  When p0 invests in the Equity whose founder is p1
+  Then it is rejected because "its owner has at least 2 cards in their equity"
+  When p0 invests in the Equity whose founder is p2
+  Then it is rejected because "they have at least its founder's share price in capital"
+  And p0 has 2 actions
+  And p1's equity has an Equity whose founder is p1
+
+Example: during Venture Capital Rain the bank pays the Founder $3 more on every Invest (section 20)
+  Given the event in play has the Venture Capital Rain
+  And p1's equity has an Equity whose founder is p1 and an Equity whose founder is p1
+  When p0 invests in the Equity whose founder is p1
+  Then p0 has 2 capital
+  And p1 has 15 capital

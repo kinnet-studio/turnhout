@@ -111,6 +111,7 @@ const RECRUITS = ['recruit a junior software dev', 'recruit a junior hardware en
 const RESEARCH_SEED = 'research the seed deck';
 const RESEARCH_GROWTH = 'research the growth deck';
 const END_ACTIONS = 'end their actions';
+const INVEST = "invest in a card in another player's equity";
 // The buttons that pick a card: one for each zone a card is hired, drafted, kept or discarded from.
 const HIRE_AGENCY = 'hire a card from the agency row to their bench';
 const HIRE_MARKET = 'hire a card from the open job market to their bench';
@@ -565,6 +566,13 @@ const payrollOf = (runtime: LangRuntime, state: GameState, seat: PlayerId) =>
 const payrollTaxOf = (runtime: LangRuntime, state: GameState, seat: PlayerId) =>
   [...zoneCards(state, zoneIdFor('development team', seat)), ...zoneCards(state, zoneIdFor('ops team', seat))]
     .reduce((total, card) => total + ((runtime.workedValue(state, card.id, 'payroll tax') as number | null) ?? 0), 0);
+/** A seat's Share Price as the rules work it out (§17.A). */
+const sharePriceOf = (runtime: LangRuntime, state: GameState, seat: PlayerId): number => runtime.playerValue(state, seat, 'share price');
+/** Every other seat's equity, seat by seat from `by`'s left: the zones an Invest picks in, in the order 7-1's fromZoneIds offers them. */
+const equitiesFrom = (seats: PlayerId[], by: PlayerId): string[] => {
+  const at = seats.indexOf(by);
+  return [...seats.slice(at + 1), ...seats.slice(0, at)].map((seat) => zoneIdFor('equity', seat));
+};
 /**
  * The colors `seat` is short of in `state`: its ops team's supply of each is below the maintenance its online products demand, as the
  * rules work both out (§5 Phase B, ruling 19).
@@ -630,7 +638,7 @@ const viewChecks = { targets: 0, sets: 0 };
  * zones, as Training does, offers the cards of each zone in turn, in the order `ontoZoneId` lists them.
  */
 function viewedCards(
-  runtime: LangRuntime, extras: SeatExtras, state: GameState, seat: PlayerId, type: string, zoneId: string,
+  runtime: LangRuntime, extras: SeatExtras, state: GameState, seat: PlayerId, type: string, zoneId: string | string[],
   ontoZoneId: string | string[] | null,
 ): CardPickView {
   const at = `${seat}'s ${type} in ${state.turn!.phase}`;
@@ -638,7 +646,7 @@ function viewedCards(
   if (button?.cards === undefined) expect(button?.cards, `the cards the view offers for ${at}`).toBeDefined();
   const picking = button!.cards!;
   const offered = picking.cards;
-  const zone = zoneCards(state, zoneId);
+  const zone = [zoneId].flat().flatMap((from) => zoneCards(state, from));
   sameList(cardCandidates(runtime, buttonOf(state, type)!, state, seat), zone.map((card) => card.id), () => `the candidates of ${at}`);
   sameList(offered.map((card) => card.id), zone.map((card) => card.id), () => `the cards the view offers for ${at}`);
   sameList(offered.map((card) => card.name), zone.map(nameOf), () => `the names the view gives the cards of ${at}`);
@@ -848,12 +856,12 @@ function playTurn(
    * The cards `type` offers from `zoneId`, and for each the cards of `ontoZoneId` it may go on: the zones' cards, or, through the view,
    * the ones the page's view lists, with the view itself. Targets in several zones are the cards of each zone in turn.
    */
-  const offers = (type: string, zoneId: string, ontoZoneId: string | string[] | null) => {
+  const offers = (type: string, zoneId: string | string[], ontoZoneId: string | string[] | null) => {
     const state = engine.getState();
     const byId = (id: string) => cardById(state, id)!;
     if (!throughView) {
       const targetsOf = (_id: string) => (ontoZoneId === null ? [] : [ontoZoneId].flat().flatMap((onto) => zoneCards(state, onto)));
-      return { row: zoneCards(state, zoneId), targetsOf, seen: null };
+      return { row: [zoneId].flat().flatMap((from) => zoneCards(state, from)), targetsOf, seen: null };
     }
     if (view?.of !== state) view = { of: state, extras: seatExtras(engine, runtime, state, by) };
     const seen = viewedCards(runtime, view.extras, state, by, type, zoneId, ontoZoneId);
@@ -864,7 +872,7 @@ function playTurn(
    * button that puts them on a card, on the card `onto` finds; null when either finds none. `which` may ask whether a press of a card
    * alone is allowed: as the view says through it, else when the rules don't refuse it before its choices (`pressChoices`).
    */
-  const pickFrom = (type: string, zoneId: string, some: boolean, which: Which, onto?: Onto): Move | null => {
+  const pickFrom = (type: string, zoneId: string | string[], some: boolean, which: Which, onto?: Onto): Move | null => {
     const { row, targetsOf, seen } = offers(type, zoneId, onto?.zoneId ?? null);
     const alone = (card: CardState) => pressChoices(runtime, engine.getState(), { type, by, cardId: card.id });
     const viewOf = (card: CardState) => seen!.cards.find(({ id }) => id === card.id)!;
@@ -915,7 +923,7 @@ function playTurn(
     }
     return move;
   };
-  const pick = (type: string, zoneId: string, which: Which<CardState | undefined>, onto?: Onto) =>
+  const pick = (type: string, zoneId: string | string[], which: Which<CardState | undefined>, onto?: Onto) =>
     pickFrom(type, zoneId, false, (row, pressing) => {
       const card = which(row, pressing);
       return card ? [card] : [];
@@ -1371,6 +1379,15 @@ function playTurn(
     if (t % 2 === 1 && flushed(cards(own('strategy hand'))).length > 0) return pickSome(BRAINSTORM_FLUSHING, own('strategy hand'), flushed);
     return press(BRAINSTORM);
   };
+  /**
+   * An Invest as the turn's action `a`, when `(t + a) % 7 === 3`: the first card offered, rival by rival from the seat's left
+   * (`equitiesFrom`), whose press is allowed and whose founder's Share Price leaves the seat 2 or more capital (§17.A). Null otherwise.
+   */
+  const investing = (a: number): Move | null => {
+    if ((t + a) % 7 !== 3) return null;
+    const keeps = (card: CardState) => capital() - sharePriceOf(runtime, engine.getState(), founderOf(card)!) >= 2;
+    return pick(INVEST, equitiesFrom(runtime.seats, by), (row, pressing) => row.find((card) => pressing.allows(card) && keeps(card)));
+  };
   /** The move the action numbered `action` makes, or null when it has nothing to pick (see above). */
   const boardAction = (action: number): Move | null => {
     const projects = cards(own('development'));
@@ -1483,7 +1500,7 @@ function playTurn(
         : ideation());
       const planned = a === 0 ? [launch(), ...ideas()] : [
         reassignDiva(), launch(), internRecruit(a), qaForBugs(), hireGrowthHacker(action), hireHacker(), moveGrowthHacker(), pmToProject(),
-        pivotDiva(), divaToOps(), hireDiva(), makersToProject(), brainstorming(a), ...board(),
+        pivotDiva(), divaToOps(), hireDiva(), makersToProject(), investing(a), brainstorming(a), ...board(),
       ];
       const move = choose([...planned, recruitMaker(a), press(END_ACTIONS)]);
       if (move.type === REASSIGN_TO_PRODUCT) movedOnProducts = true;
@@ -2337,7 +2354,11 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
           : SOURCE_HIRES.includes(move.type) ? costOf(move.cardIds as string[])
             : move.type === PAY_SALARIES ? payrollOf(runtime, before, by)
               : [PLAY_TRAINING, PLAY_DEBUFF].includes(move.type) ? (runtime.workedValue(before, move.cardId as string, 'price') as number)
-                : move.type === PLAY_TO_PRODUCT ? techCrunchPrice(runtime, before, move.cardId as string, move.onto as string) : 0;
+                : move.type === PLAY_TO_PRODUCT ? techCrunchPrice(runtime, before, move.cardId as string, move.onto as string)
+                  : move.type === INVEST ? sharePriceOf(runtime, before, founderOf(card!)!) : 0;
+    // An Invest pays its price to the token's Founder, and Venture Capital Rain adds $3 from the bank (§17.A, §20.D 1).
+    const investedIn = move.type === INVEST ? founderOf(card!) : undefined;
+    const proceeds = (seat: PlayerId) => (seat === investedIn ? paid + (eventOf(before) === 'Venture Capital Rain' ? 3 : 0) : 0);
     const earned = (seat: PlayerId) =>
       (seat === income ? operationsOf(after, seat).reduce((total, product) => total + revOf(runtime, after, product), 0) : 0);
     const gained = seats.map((seat) => capital(after, seat) - capital(before, seat));
@@ -2369,7 +2390,7 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       const funded = (seat: PlayerId) => revealed === 'Angel Investors' && products(before, seat).length > 0
         && products(before, seat).every((product) => product.data?.tier === 'Tier 1');
       const taxOf = (seat: PlayerId) => (ended.includes(seat) && eventOf(after) === 'Regulation Audit' ? payrollTaxOf(runtime, after, seat) : 0);
-      const want = seats.map((seat) => earned(seat) - (seat === by ? paid : 0) + (funded(seat) ? 3 : 0) - taxOf(seat));
+      const want = seats.map((seat) => earned(seat) - (seat === by ? paid : 0) + proceeds(seat) + (funded(seat) ? 3 : 0) - taxOf(seat));
       sameList(gained, want, () => `capital gained by ${seats.join(', ')} ${at}`);
     }
     // Market Share: 1 for each product that earned, when its owner reached Income.
@@ -2447,6 +2468,14 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     });
     const stray = seats.flatMap((seat) => [...zoneCards(after, zoneIdFor('equity', seat)), ...portfolioOf(after, seat)])
       .filter((c) => founderOf(c) === undefined).map((c) => `${c.id} (${nameOf(c)}) in ${c.zoneId}`);
+    // An Invest moves exactly its card, from its Founder's equity to the mover's portfolio, and only from an equity of 2 or more (§17.D).
+    if (move.type === INVEST) {
+      const moved = after.cards.filter((c) => cardById(before, c.id)?.zoneId !== c.zoneId).map((c) => c.id);
+      sameList(moved, [card!.id], () => `the cards moved ${at}`);
+      sameAs(from, zoneIdFor('equity', founderOf(card!)!), () => `where ${at} took its card`);
+      sameAs(cardById(after, card!.id)?.zoneId, zoneIdFor('portfolio', by), () => `where ${at} put its card`);
+      sameAs(zoneCards(before, from!).length >= 2, true, () => `whether ${from} held 2 or more ${at}`);
+    }
     noneOf([...equityProblems, ...stray], () => `the Equity tokens ${at}`);
 
     // The Milestones: Setup revealed 3 and boxed the rest (§4.3), and a revealed one is claimed into a milestones row for good, only at
@@ -3088,7 +3117,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(309);
+    expect(results).toHaveLength(313);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -3136,9 +3165,11 @@ describe('Startup Simulator (designer language)', () => {
     // every product in operation and the Bugs it has cleaned by a press this Engine, and the products that have Bugs are counted
     // (§5 Phase D, R3). Their operational revenue is the rev of their products in operation, which Revenue Leader reads at Income
     // (§9.A, §20.G). Their active tags are the different Tags of their products online, which Platform Power reads (§20.G, ruling 5).
+    // A card's tier number, which a player's top tier reads for the Share Price (§17.A).
+    expect(worked['tier number']).toMatchObject({ kind: 'number', refines: false });
     expect(Object.keys(game!.playerValues!)).toEqual([
       'blue supply', 'red supply', 'blue demand', 'red demand', 'blue load', 'red load', 'qa supply', 'bug load', 'qa spent', 'bugged products',
-      'operational revenue', 'active tags',
+      'operational revenue', 'top tier', 'share price', 'active tags',
     ]);
   });
 
@@ -4288,13 +4319,13 @@ describe('Startup Simulator (designer language)', () => {
 
     it('takes back every move with undo, and rebuilds the game from its log, through recruits and research (3 players, seed 1)', () => {
       const states: GameState[] = [];
-      // The retuned seats put their makers on projects before they recruit, so the first recruit comes at move 52 (it was within 40; a Design Sprint and its cleanup came before it from plan 6-2a, and the Event deck reshuffled the game from plan 6-2b).
+      // The retuned seats put their makers on projects before they recruit, so the first recruit comes at move 53 (it was within 40; a Design Sprint and its cleanup came before it from plan 6-2a, the Event deck reshuffled the game from plan 6-2b, and an Invest came before it from plan 7-2a).
       const both = (log: readonly Move[]) => log.some((move) => RECRUITS.includes(move.type))
         && log.some((move) => move.type === RESEARCH_SEED || move.type === RESEARCH_GROWTH);
       const engine = playGame(3, 1, (_before, _move, after) => states.push(after), { until: both });
       const log = [...engine.getLog()];
-      expect(log).toHaveLength(52);
-      expect(states).toHaveLength(52);
+      expect(log).toHaveLength(53);
+      expect(states).toHaveLength(53);
       // A recruit makes a Junior whose id comes from the state, and a research deals and keeps a card, so both must replay.
       expect(log.some((move) => RECRUITS.includes(move.type))).toBe(true);
       expect(log.some((move) => move.type === RESEARCH_SEED || move.type === RESEARCH_GROWTH)).toBe(true);
@@ -5293,6 +5324,25 @@ describe('Startup Simulator (designer language)', () => {
       expect(counterOf(run.end, 'capital', O)).toBe(0);
     }
   });
+
+  it('works out the Share Price from the highest Active Tier, Offline products left out (§17.A, §9.A, ruling 5)', () => {
+    const start = setUp(2, 1);
+    const O = seatsFor(2)[1];
+    const { runtime } = createEngine(game!, lib, 2, start);
+    const id = (name: string) => start.cards.find((card) => nameOf(card) === name)!.id;
+    const ops = zoneIdFor('operations', O);
+    const priceWith = (names: string[], offline: string[] = []) => {
+      let state = relocate(start, zoneCards(start, ops).map((card) => card.id), 'box', game!);
+      state = relocate(state, names.map(id), ops, game!);
+      for (const name of offline) state = changeCard(state, id(name), { offline: true }, game!);
+      return sharePriceOf(runtime, state, O);
+    };
+    expect(priceWith([])).toBe(5);
+    expect(priceWith(['Dating App'])).toBe(5);
+    expect(priceWith(['Neobank'])).toBe(10);
+    expect(priceWith(['Neobank'], ['Neobank'])).toBe(5);
+    expect(priceWith(['Neobank', 'Quantum Computer'])).toBe(15);
+  });
 });
 
 describe('what the view says the rules work out', () => {
@@ -5478,11 +5528,11 @@ it('ends an Event\'s effect "Not in effect yet." exactly when no rule outside th
   const unused = EVENTS.filter((name) => !text.includes(name.toLowerCase()));
   const dormant = zoneCards(fresh(), 'event-deck').filter((card) => (card.data?.effect as string).endsWith('Not in effect yet.')).map((card) => card.data?.name);
   expect(dormant.sort()).toEqual([...unused].sort());
-  expect([...unused].sort()).toEqual(['Headhunter Holiday', 'Recruiter Frenzy', 'Venture Capital Rain', 'Whistleblower Protection Act']);
+  expect([...unused].sort()).toEqual(['Headhunter Holiday', 'Recruiter Frenzy', 'Whistleblower Protection Act']);
 });
 
 it('gives every Event its effect, a sentence the page shows while it is in play, and makes the University prices the numbers a button pays (§20.D)', () => {
-  // §20.D's text of each Event, shortened only where the rulebook adds flavour; the four of later slices end "Not in effect yet."
+  // §20.D's text of each Event, shortened only where the rulebook adds flavour; the three of later slices end "Not in effect yet."
   const effects = zoneCards(fresh(), 'event-deck').map((card) => card.data?.effect as string);
   expect(effects).toHaveLength(EVENTS.length);
   for (const effect of effects) expect(isSentence(effect), effect).toBe(true);
