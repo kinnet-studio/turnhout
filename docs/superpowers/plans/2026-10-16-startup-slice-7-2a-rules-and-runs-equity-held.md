@@ -42,14 +42,14 @@ The long runs play all of it at 2 to 5 players.
   - **Two Invest buttons share the verb:** `invest in a card in another player's equity` and `invest in a card from another player's equity to a card in another player's development or another player's operations`. They are told apart by whether the example names a card to go on (4-1's P16 forms). The second is the overview's "placed when bought".
   - **A Consultant's colour is three flags** on the token: `blue consultant`, `red consultant`, `qa consultant`.
     - Each placement button first clears all three, then its choice (`Blue:` / `Red:` / `QA:`) sets one.
-    - The flags are read only through "the other players' cards on it", so an unplaced token's old colour does nothing, and every placement picks again (§17.B.4 "made when you place the token").
+    - Pivot clears all three as it returns the token (7-1's R8), so an unplaced token has no colour, and every placement picks again (§17.B.4 "made when you place the token").
   - **A Consultant's output is the project's, not the team's** (§17.B.4 "That product gains +1 Output"; suwa's `run_generate` adds it after Crunch Time):
     - Blue and Red go into 6-2b's `blue added` / `red added`;
     - QA goes into 6-2a's `qa made`, after Toxic Personality's line;
     - so Toxic never takes it, Crunch Time's "still needs Blue" doesn't count it, and Pending XP never reads it;
     - all three are 0 on a Stalled project (§17.B.4; suwa's `run_clean` skips Stalled projects for QA too).
   - **In Ops it is bandwidth and Ops QA:**
-    - each supply goes up by the products' consultant values, Offline products included (suwa's `ops_bandwidth.rs`);
+    - each product's pool goes up by its consultant values, and each supply totals the pools of the ops team and the operations, Offline products included (suwa's `ops_bandwidth.rs`);
     - QA joins the pooled `qa supply` (builder check, settled).
   - **The Round Start step** (6-2b's forward note):
     - 6-1 allows one steps line per game, so 6-2b's conditional line becomes `Each player has the event check, in turn from the start player.`, and `Acting once:` goes.
@@ -63,7 +63,7 @@ The long runs play all of it at 2 to 5 players.
 - **Names.**
   - Zones: each player's `equity` (row, public) and `portfolio` (row, public, `…, where some cards are on other players' cards`).
   - Card stack `equity tokens` (`| name |` / `| Equity |`). Fact `founder`. Flags `blue consultant`, `red consultant`, `qa consultant`.
-  - Worked numbers: `tier number`, `consultant blue`, `consultant red`, `consultant qa`; refined `blue added`, `red added`, `qa made`.
+  - Worked numbers: `tier number`, `consultant blue`, `consultant red`, `consultant qa`; refined `blue added`, `red added`, `qa made`, `pool blue`, `pool red`, `pool qa`.
   - Player values: `top tier`, `share price`, `dividend`; refined `blue supply`, `red supply`, `qa supply`.
 
 **Tech Stack:** TypeScript (strict), Bun, Vitest + happy-dom.
@@ -88,6 +88,10 @@ The other inputs:
   - Every task runs plan 5-2a's single-line removal probe over the lines it adds or changes. Every surviving line that isn't display text gets an example.
   - A task may steer the auto-player beyond its brief when a tallied path would stay at 0; its report lists each change.
   - Checks and tallies read counts as numbers (missing = 0) and flags as `=== true`, never by whether a key exists.
+- **Amended from its pre-flight** (`docs/superpowers/notes/2026-11-23-startup-7-2a-preflight.md`): this plan carries R1–R28, with R23 ruled (a) and R29 ruled (a), the 4-player replay dropped.
+  - BASE is 7-1's finished head: the code as at `dbb2f34`, 4026 tests in the full suite and Startup's 307 examples.
+  - At the plan's end the controller times Startup's test file, alternating BASE and HEAD.
+  - A speed-up mini plan runs before 7-2b if HEAD's best is over 30 s.
 - **Branch and commits.** Develop on `claude/peaceful-curie-rdfkow`. Commit by pathspec, never `git add -A`. Every commit message ends with these two lines and contains no model identifiers:
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`
   `Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC`
@@ -138,7 +142,7 @@ The other inputs:
 ## Review Focus
 
 - **A product that moves or leaves the Board with a Consultant on it.**
-  - Expected: a Launch keeps the token on the product in operations, and the Founder's staff go to the ops team without it. A Pivot sends the token back to its holder's portfolio, on no card, and the staff to the bench. No other slice-7a rule moves a product.
+  - Expected: a Launch keeps the token on the product in operations, and the Founder's staff go to the ops team without it. A Pivot sends the token back to its holder's portfolio, on no card, with no colour, and the staff to the bench. No other slice-7a rule moves a product.
   - Tests: Task 5, examples 7–8, and the long-run attachment invariant.
 - **A token placed again: bought back into a supply it left placed, or moved at a Round Start.**
   - Expected: exactly one colour, the one just chosen; an old colour never adds output.
@@ -196,7 +200,11 @@ Re-read each item at HEAD by name. If one is missing or differs, stop and report
 
 **Files:**
 - Modify: `src/games/startup-simulator.rules`, `src/games/startup-simulator.test.ts`, `README.md` (count)
-- Test pins: `src/pages/designer/designer-page.test.tsx` (count); `tableaux.test.ts` and `playtest-fitted.test.tsx` only where they pin the per-player rows, the fitted table or the next card id
+- Test pins: `src/pages/designer/designer-page.test.tsx` (count); `tableaux.test.ts` and `playtest-fitted.test.tsx` where they pin:
+  - the per-player rows: each tableau line gains ` · equity 3 · portfolio 0`;
+  - the Board text: each seat's Board line gains ` · equity: Equity; Equity; Equity`, and `'lists every seat's Board as text, whichever seat is looked at'` now expects `equity: Equity; Equity; Equity` for the seat with nothing on its Board, where it expected none;
+  - the fitted table: `'puts the Board in two lines between the shared lines and the strip, the milestones alone on the second, each slot 418 tall'` becomes `'…, the milestones, the equity and the portfolio on the second, each slot 418 tall'`, with milestones at `{ x: -420, y: 192 }`, equity at `{ x: 0, y: 192 }` and portfolio at `{ x: 420, y: 192 }`, all 418 tall, the table's height unchanged;
+  - or the next card id.
 
 **Interfaces:**
 - Consumes: 7-1 Task 1's declaration and per-player cards; 7-1 Task 5's zone line; 7-1 Task 10's score line.
@@ -217,14 +225,26 @@ const portfolioOf = (state: GameState, seat: PlayerId): CardState[];
     - `results` is N₈ + 2; the designer page's count too.
     - `'makes the Juniors after the 141 dealt cards, c141 to c149 at 3 players'` keeps its Juniors. Its `NEXT_CARD_KEY` becomes 159. It also expects `equity-p0` to hold `c150`–`c152`, `equity-p1` `c153`–`c155` and `equity-p2` `c156`–`c158`, each with `data` `{ name: 'Equity', founder: <its seat> }` (7-1: zone by zone in seat order).
     - The setup test (`sets up a table of %i players at every seed`) also expects every seat's equity to hold `EQUITY_TOKENS` cards whose `founder` is that seat, and every portfolio to be empty.
+    - `'has the three University stacks, which never run out (§20.B.2)'` expects `[...JUNIORS.map((name) => [name]), ['Equity']]`, with the comment `// And §17's Equity tokens, 3 made per player at Setup after the Juniors (§2, §4.4).`
     - `'lays out the table …'`:
       - after the last per-player entry add `['equity', true, 'row', 'public']` and `['portfolio', true, 'row', 'public']`;
       - the marked zones (`[name, onCards, holders]`) gain `portfolio`'s entry as the compiled spec gives it (`onCards: 'some'`), read and pinned.
   - **`scoreOf`** adds 5 for each card in the seat's portfolio (§12.4, ruling 16).
   - **Invariant (the spec's Proof 2 and anti-goal), after every move, for each seat F:**
-    - exactly `EQUITY_TOKENS` cards in play name F as `founder`, each in `equity-F` or in `portfolio-S` for some S ≠ F;
+    - exactly `EQUITY_TOKENS` cards in play name F as `founder`, or none in a game arranged without Setup (the arranged tests make no Equity), and no move changes how many; each is in `equity-F` or in `portfolio-S` for some S ≠ F;
     - no card without a `founder` is in an equity or a portfolio;
-    - `equity-F` is never empty (§17.D: nobody sells the last; slice 8's Vest and CTO will change this line).
+    - `equity-F` is never empty while some card names F (§17.D: nobody sells the last; slice 8's Vest and CTO will change this line).
+    - The code as built (its comment gains: "A game arranged without Setup, as the arranged tests below are, has none, as it has no Milestone out of the deck; no move changes how many."):
+
+```ts
+const named = after.cards.filter((c) => founderOf(c) === founder);
+const was = before.cards.filter((c) => founderOf(c) === founder).length;
+...
+...([EQUITY_TOKENS, 0].includes(named.length) && named.length === was ? [] : [`${was} then ${named.length} tokens name ${founder}`]),
+...misplaced.map((c) => `${c.id} names ${founder} in ${c.zoneId}`),
+...(named.length === 0 || zoneCards(after, zoneIdFor('equity', founder)).length > 0 ? [] : [`${founder}'s equity is empty`]),
+```
+
 - [ ] **Step 2: Run** `bunx vitest run src/games/startup-simulator.test.ts`. Expected: FAIL (the count, the table, the setup).
 - [ ] **Step 3: Change the rules text.**
   - **Cards** (§2, §4.4). Right after the Event table (6-2b's `  A deck called events, starting in the event deck:` and its rows) add:
@@ -257,22 +277,26 @@ Example: each player starts with 3 Equity tokens of their own in their supply, a
 
 Example: each rival's Equity token held scores 5 points, and a player's own tokens score nothing (section 12, ruling 16)
   Given 3 players
+  And the crash pile has the Market Crash
+  And it is p2's turn
   And p1's portfolio has an Equity whose founder is p0 and an Equity whose founder is p2
   And p0's equity has an Equity whose founder is p0
-  Then p1 scores 11
+  When p2 ends their actions
+  Then the game is over
+  And p1 scores 11
   And p0 scores 1
   And p2 scores 1
 ```
 
   **How the numbers come** (§2, §4.4, §12.1–4, ruling 16):
   - 3 Equity Tokens per player (§2, §4.4).
-  - Each seat's 7 capital scores 1 (§12.2). p1's two rival tokens score 5 each: 1 + 10 = 11 (§12.4). p0's own token in its supply scores 0 (ruling 16).
+  - Each seat's 7 capital scores 1 (§12.2). p1's two rival tokens score 5 each: 1 + 10 = 11 (§12.4). p0's own token in its supply scores 0 (ruling 16). p2, the round's last seat, ends their actions with the Market Crash in the crash pile, so the game ends and is scored (§12).
   - **Lines each example pins:** 1 the Setup line; 2 the score line.
 - [ ] **Step 4: Run** `bunx vitest run src/games src/pages/designer`, then `bun run test` and `bun run typecheck`, then the removal probe.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/games/startup-simulator.rules src/games/startup-simulator.test.ts src/pages/designer/designer-page.test.tsx README.md
+git add src/games/startup-simulator.rules src/games/startup-simulator.test.ts src/pages/designer/designer-page.test.tsx README.md src/pages/designer/tableaux.test.ts src/pages/designer/playtest-fitted.test.tsx
 # and each other designer test file this task re-pinned, by path
 git commit -F - <<'EOF'
 feat(games): Startup Simulator gives each player 3 Equity tokens naming them, in a supply everyone sees, and scores 5 points for each rival token held
@@ -287,7 +311,7 @@ EOF
 ### Task 2: Share Price and Invest, the hard cap, Venture Capital Rain
 
 **Files:**
-- Modify: `src/games/startup-simulator.rules`, `src/games/startup-simulator.test.ts`, `README.md` (count)
+- Modify: `src/games/startup-simulator.rules`, `src/games/startup-simulator.test.ts`, `README.md` (count, and the Events sentence)
 - Test pins: `src/pages/designer/designer-page.test.tsx` (count); `playtest-fitted.test.tsx` only where it pins the actions phase's offered buttons
 
 **Interfaces:**
@@ -308,8 +332,10 @@ const equitiesFrom = (seats: PlayerId[], by: PlayerId): string[];
 - [ ] **Step 1: Change the tests.**
   - **Pins.**
     - `results` is N₈ + 6; the designer page's count too.
-    - The values test adds `tier number` (`kind: 'number'`, `refines: false`). `Object.keys(game.playerValues!)` gains `'top tier', 'share price'` right after `'operational revenue'`.
+    - `'works out slice 4’s values for cards and players (§5, §11.C.2, §20.B)'` adds `tier number` (`kind: 'number'`, `refines: false`). `Object.keys(game.playerValues!)` gains `'top tier', 'share price'` right after `'operational revenue'`.
     - `shownPlayerValues(game)` and `shownFlags(game)` are re-read and pinned as the view gives them, and the change reported.
+    - `'ends an Event's effect "Not in effect yet." exactly when no rule outside the Event table names that Event'` expects `['Headhunter Holiday', 'Recruiter Frenzy', 'Whistleblower Protection Act']`. The next test's comment reads 'the three of later slices end "Not in effect yet."'.
+    - `'takes back every move with undo, and rebuilds the game from its log, through recruits and research (3 players, seed 1)'` pins 53 moves, where it pinned 52. The comment ends "…, the Event deck reshuffled the game from plan 6-2b, and an Invest came before it from plan 7-2a)."
   - **`viewedCards`** takes its pick zone as `string | string[]`. For a list, the button's candidates and the view's cards are those zones' cards in the list's order. `offers` in `playTurn` passes the same list.
   - **Money (`keepsTheRules`).** An `INVEST` press:
     - the mover pays the card's founder's `share price`, read in `before`;
@@ -357,6 +383,14 @@ Share price:
       If the event in play has the Venture Capital Rain, its founder gets 3 capital.
       Move it to their portfolio.
 ```
+
+  - **The Event's cell** (§20.D 1). Venture Capital Rain's row becomes:
+
+```text
+    | Venture Capital Rain         | Whenever a player Invests in a Founder this round, the Bank pays that Founder $3 extra cash (not on Secondary Trades or Buybacks). | 1 |
+```
+
+  - **The README's Events sentence** becomes: "fifteen Events act (revenue and decay, output and bandwidth, hiring, Training, TechCrunch and License prices, Crunch Time, Venture Capital Rain's $3 to a Founder on each Invest, and Angel Investors' and Regulation Audit's one-off effects taken in turn), and Recruiter Frenzy, Headhunter Holiday and Whistleblower Protection Act wait for their slices."
 
   - **Append these 4 examples.**
 
@@ -453,7 +487,7 @@ EOF
 - [ ] **Step 1: Change the tests.**
   - **Pins.**
     - `results` is N₈ + 10; the designer page's count too.
-    - `playerValues` gains `'dividend'` right after `'share price'`.
+    - In `'works out slice 4’s values for cards and players (§5, §11.C.2, §20.B)'`, `playerValues` gains `'dividend'` right after `'share price'`.
   - **Money (`keepsTheRules`'s `earned`).** For the seat F that reached its Income in the move (`enteredIncome`), every seat S ≠ F also earns `dividendOf(runtime, after, F)` times the number of cards in S's portfolio whose `founder` is F (§9.B: the bank pays).
   - **Append `it('pays a dividend by the Founder’s Operational Revenue: $0, $1 from $1, $2 from $11, $3 from $21 (§9.B, §17.B.1)')`.** Read through `runtime.playerValue` on `setUp(2, 1)`, with O's operations arranged so that `operational revenue` is 0, 1, 10, 11, 20 and 21. The expected `dividend` values are 0, 1, 1, 2, 2 and 3.
     - Use products of §20.C whose rev sums give each total; read the total back before the dividend.
@@ -494,8 +528,8 @@ Example: at the Founder's Income the bank pays each of their Equity tokens a div
 Example: Operational Revenue counts bonuses and Bug decay, and $6 pays $1 a token (section 9)
   Given p1's operations has a Search Engine
   And the Search Engine in p1's operations has 2 bugs
-  And the Search Engine in p1's operations has a Sales Rep on it
   And p1's ops team has a Junior Software Dev and a Junior Software Dev
+  And the Search Engine in p1's operations has a Sales Rep on it
   And p0's portfolio has an Equity whose founder is p1
   And the turn passes to the left
   Then the phase is actions
@@ -532,7 +566,7 @@ Example: dividends are not Operational Revenue: a Founder paid a dividend but ea
 
   **How the numbers come** (§5 Phase B, §9.A–C, §17.B.1, §17.D, §20.B, §20.C):
   - **Example 1:** the Search Engine and the Streaming Service earn 6 each, so 7 + 12 = 19. The bandwidth is 4 Blue against maintenance 2 + 2, and the Juniors draw no salary. $11–$20 pays $2 per token from the bank: 7 + 2 = 9 each.
-  - **Example 2 (§9.C's scenario):** the Search Engine's 6, plus the Sales Rep's 2, less 2 Bugs, is 6; 7 + 6 = 13. $1–$10 pays $1: 8. The Sales Rep draws no salary (§20.B).
+  - **Example 2 (§9.C's scenario):** the Search Engine's 6, plus the Sales Rep's 2, less 2 Bugs, is 6; 7 + 6 = 13. $1–$10 pays $1: 8. The Sales Rep draws no salary (§20.B). (the ops team is arranged first: a Given naming the ops team replaces it, and the Sales Rep on the product with it).
   - **Example 3:** the Immortality Pill earns 15 and the Search Engine 6, so 21 and 7 + 21 = 28. The bandwidth is 4 Blue and 2 Red against maintenance 2 + 2 Blue and 2 Red. $21+ pays $3 per token, two tokens: 7 + 6 = 13 (§17.D, dividends cumulative).
   - **Example 4:**
     - With p2 as start player the round runs p2, p0, p1, so no Round Start comes between.
@@ -568,7 +602,10 @@ EOF
 - [ ] **Step 1: Change the tests.**
   - **Pins.** `results` is N₈ + 14; the designer page's count too.
   - **The License check (`keepsTheRules`, Review Focus 4).** A Greenlight now pays a License for each Tag the card requires that neither the mover's operations nor the operations of a seat tied to the mover (in `before`) provide. No tied seat is ever paid.
-- [ ] **Step 2: Run** the file. Expected: FAIL (the count).
+  - `HELD_BY_FEWER_THAN_TWO` gains `'a license paid to a chosen provider'` provisionally (Task 7 removes it), with the bullet:
+
+    " * - Plan 7-2a: a License paid to a provider chosen among several, which 3 players seed 2 alone held once the seats invested and no game held once Partners waived the License (two rivals must run products of the Tag a seat's Greenlight lacks, and neither may be its Partner); the arranged test 'names the provider it pays a License to by t when two rivals provide the Tag, …' pins it."
+- [ ] **Step 2: Run** the file. Expected: FAIL (the count, two refusal reasons).
 - [ ] **Step 3: Change the rules text** (§6 Greenlight, §17.B.3, ruling 11). In `A player may greenlight a card in their backlog.`:
   - In the `Only if one of:` block holding `      They have a card in their operations whose tag is the card's requires.` and `      They have at least the license in capital.`, right after the first of those add:
 
@@ -600,6 +637,12 @@ EOF
 ```text
         Only if no other player tied to them by a card in their portfolio has a card in their operations whose tag is the card's also requires.
 ```
+
+  - Two existing examples quote the refusal.
+    - In `Example: a Greenlight is refused when its License can't be paid, and nothing changes (section 6)`:
+      `  Then it is rejected because "the card has no requires or they have a card in their operations whose tag is the card's requires or another player tied to them by a card in their portfolio has a card in their operations whose tag is the card's requires or they have at least the license in capital"`
+    - In `Example: Fusion Reactor needs Robotics and AI, and one provider of both is paid a License for each (ruling 3, section 6)`:
+      `  Then it is rejected because "the card has no requires or the card has no also requires or they have a card in their operations whose tag is the card's requires or they have a card in their operations whose tag is the card's also requires or another player tied to them by a card in their portfolio has a card in their operations whose tag is the card's requires or another player tied to them by a card in their portfolio has a card in their operations whose tag is the card's also requires or they have at least 2 times the license in capital"`
 
   - **Append these 4 examples.**
 
@@ -704,11 +747,10 @@ EOF
   - Tasks 1–3;
   - 7-1 Tasks 5–6: the cross-seat zone, `othersOn`, the group `the other players' cards on it`, the return line, the example lines;
   - 7-1 Task 2's pick in another player's zone with a target in another player's zone;
-  - 5-1's `a card's {attribute} is the number of {cardgroup}` and `a card's {attribute} goes up by its {attribute}`;
-  - 7-1 Task 4's `goes up by the total`.
+  - 5-1's `a card's {attribute} is the number of {cardgroup}` and `a card's {attribute} goes up by its {attribute}`.
 - Produces (rules):
   - flags `blue consultant`, `red consultant`, `qa consultant`;
-  - worked `consultant blue`, `consultant red`, `consultant qa`; refined `blue added`, `red added`, `qa made`, `blue supply`, `red supply`, `qa supply`;
+  - worked `consultant blue`, `consultant red`, `consultant qa`; refined `blue added`, `red added`, `qa made`, `blue supply`, `red supply`, `qa supply`, `pool blue`, `pool red`, `pool qa`;
   - the button `invest in a card from another player's equity to a card in another player's development or another player's operations`; Pivot's return line.
 - Produces (test file):
 
@@ -723,18 +765,47 @@ const foundersBoards = (seats: PlayerId[], by: PlayerId): string[];
 - [ ] **Step 1: Change the tests.**
   - **Pins.**
     - `results` is N₈ + 22; the designer page's count too.
-    - The values test adds `consultant blue`, `consultant red` and `consultant qa` (numbers, `refines: false`); `blue added`, `red added`, `qa made` keep their entries.
+    - `'works out slice 4’s values for cards and players (§5, §11.C.2, §20.B)'` adds `consultant blue`, `consultant red` and `consultant qa` (numbers, `refines: false`); `blue added`, `red added`, `qa made` keep their entries.
     - `shownFlags(game)`, `standIns(game)` and `shownPlayerValues(game)` are re-read and pinned, and any change reported. The supplies must stay shown, since the group reads only the public portfolio (7-1 Task 6).
+    - In `'Review Focus: a reshuffle no seat can follow (plan 6-1, Task 6)'`, the test plays `playGame(2, 2, …)`, and its title ends 'at 2 players seed 2'.
   - **The attachment invariant (4-2's, R1).** "Every card that sits on a card is in a development team or an ops team, on a card of the same seat's …" gains its exception. A card in a portfolio that sits on a card:
     - names a `founder` F;
     - sits on a card in F's development or operations;
     - has `lang:on-seat` F;
     - is never on a card of its own zone's seat (§17.B.4; a Consultant is never on its own Investor's product).
-  - **Invariant (Review Focus 2):** every Equity card that sits on a card has exactly one of the three `CONSULTANT_COLOURS` flags `=== true`.
+  - **Invariant (Review Focus 2):** every Equity card that sits on a card has exactly one of the three `CONSULTANT_COLOURS` flags `=== true`, and every Equity card on no card has none of them.
+    - Code, as the next branch of the attachment check:
+
+```ts
+} else if (founderOf(c) !== undefined && Object.values(CONSULTANT_COLOURS).some((flag) => c.data?.[flag] === true)) {
+  // An unplaced token keeps no colour: the Pivot's return clears it (7-1's R8), and the page labels no stale one (7-3's G1).
+  board.push(`${which()} sits on no card with a colour`);
+```
+
   - **Invariant (Review Focus 1):**
     - an Equity card's `lang:on` changes only in an `INVEST_PLACING` press of it, or in a `PIVOT` of the card it sat on, which leaves it in the same portfolio on no card (Task 6 adds its placement);
     - a `LAUNCH` leaves every Equity card on the launched product.
   - **Money:** an `INVEST_PLACING` press is checked as an `INVEST` (Task 2).
+  - **6-2a's Toxic Personality checks leave the Consultants out** (§17.B.4: their output is the product's, and Toxic never takes it).
+    - The ops team's compares with each supply less the total `consultant blue` / `consultant red` / `consultant qa` of the seat's operations.
+    - A project's compares with its `qa made` less its `consultant qa`.
+    - The code as built:
+
+```ts
+// The Consultants on its products add to its supplies too, outside the team, and Toxic Personality never takes their cube (§17.B.4).
+const products = zoneCards(after, zoneIdFor('operations', seat));
+const consulted = ['consultant blue', 'consultant red', 'consultant qa']
+  .map((name) => products.reduce((total, on) => total + ((runtime.workedValue(after, on.id, name) as number | null) ?? 0), 0));
+const supplies = ['blue supply', 'red supply', 'qa supply'].map((name, i) => runtime.playerValue(after, seat, name) - consulted[i]);
+```
+
+```ts
+// A QA Consultant on it adds its Bug removed to what it makes, outside the team, and Toxic Personality never takes it (§17.B.4).
+const consulted = (runtime.workedValue(after, c.id, 'consultant qa') as number | null) ?? 0;
+const made = read(MADE).map((value, i) => (MADE[i] === 'qa made' ? value - consulted : value));
+toxicity.push(...toxicCube(`${c.id} (${nameOf(c)})`, read(TEAM), made, toxic.data?.onboarding !== true));
+```
+
   - **The auto-player.** `investing()` presses `INVEST_PLACING` in place of `INVEST` when `t % 2 === 0` and the founder has a product: the target is the founder's first card in `foundersBoards` order. The colour is the choice's answer as any press's is (`(t + at) % 3`).
 - [ ] **Step 2: Run** the file. Expected: FAIL.
 - [ ] **Step 3: Change the rules text.**
@@ -766,10 +837,12 @@ Consultant qa:
     - In `Blue added:`, after `  A crunching blue card's blue added goes up by 1.`, add `  A card's blue added goes up by its consultant blue.`
     - In `Red added:`, after `  A crunching red card's red added goes up by 1.`, add `  A card's red added goes up by its consultant red.`
     - In `QA made:`, after `  A losing qa card's qa made goes down by 1.`, add `  A card's qa made goes up by its consultant qa.`
-  - **Ops** (§17.B.4, ruling 25).
-    - In `Blue supply:`, after `  A player's blue supply is the total pool blue of the cards in their ops team.`, add `  A player's blue supply goes up by the total consultant blue of the cards in their operations.`
-    - Likewise in `Red supply:` add `  A player's red supply goes up by the total consultant red of the cards in their operations.`
-    - In `QA supply:` add `  A player's qa supply goes up by the total consultant qa of the cards in their operations.`
+  - **Ops** (§17.B.4, ruling 25). Each product adds its Consultants to its pool, and each supply totals the pools of the ops team and the operations, Offline products included. The supply stays a total the page shows.
+    - In `Pool blue:`, after `  A card's pool blue goes up by its blue bandwidth.` add `  A card's pool blue goes up by its consultant blue.`
+    - In `Pool red:`, after `  A card's pool red goes up by its red bandwidth.` add `  A card's pool red goes up by its consultant red.`
+    - In `Pool qa:`, after `  A card's pool qa goes up by its qa output.` add `  A card's pool qa goes up by its consultant qa.`
+    - `  A player's blue supply is the total pool blue of the cards in their ops team.` becomes `  A player's blue supply is the total pool blue of the cards in their ops team and their operations.`
+    - Likewise `… total pool red of the cards in their ops team and their operations.` and `… total pool qa of the cards in their ops team and their operations.`
   - **Invest that places the token** (§17.A, §17.B.4, the overview's call). Right after Task 2's Invest button and its lines add:
 
 ```text
@@ -794,7 +867,15 @@ Consultant qa:
           It is qa consultant.
 ```
 
-  - **Pivot** (§17.B.4 "Lost product", R1). In `A player may pivot a card in their development.`, right before its `      Move it to the open idea pool.` add `      The other players' cards on it go to their owners' portfolio.`
+  - **Pivot** (§17.B.4 "Lost product", R1, 7-1's R8). In `A player may pivot a card in their development.`, right before its `      Move it to the open idea pool.` add:
+
+```text
+      Every other player's card on it is not blue consultant.
+      Every other player's card on it is not red consultant.
+      Every other player's card on it is not qa consultant.
+      The other players' cards on it go to their owners' portfolio.
+```
+
   - **Append these 8 examples.**
 
 ```text
@@ -818,6 +899,7 @@ Example: an Investor may place the token as a Consultant on one of the Founder's
   And p0 invests in the Equity whose founder is p3 to the To-Do List, choosing qa
   Then it is accepted
   And p0 has 0 capital
+  And p0 has 1 action
   And p1 has 12 capital
   And the Equity whose founder is p1 in p0's portfolio is on the Smart Lock in p1's development
   And the Equity whose founder is p1 in p0's portfolio is red consultant
@@ -935,22 +1017,34 @@ Example: a Launch moves the Founder's staff to the ops team and leaves the Inves
   And the Equity whose founder is p0 in p1's portfolio is on the Dating App in p0's operations
   And p0's blue supply is 2
 
-Example: a Pivot sends the Founder's staff to the bench and the Investor's Consultant back to them, unplaced (section 6, section 17, the slice's R1)
-  Given the phase is actions
+Example: a Pivot sends the Founder's staff to the bench and the Investors' Consultants back to them, unplaced and with no colour (section 6, section 17, the slice's R1)
+  Given 4 players
+  And the phase is actions
   And p0's development has a Dating App
   And the Dating App in p0's development has a Junior Software Dev on it
   And p1's portfolio has an Equity whose founder is p0
+  And p2's portfolio has an Equity whose founder is p0
+  And p3's portfolio has an Equity whose founder is p0
   And the Equity whose founder is p0 in p1's portfolio is on the Dating App in p0's development
   And the Equity whose founder is p0 in p1's portfolio is blue consultant
+  And the Equity whose founder is p0 in p2's portfolio is on the Dating App in p0's development
+  And the Equity whose founder is p0 in p2's portfolio is red consultant
+  And the Equity whose founder is p0 in p3's portfolio is on the Dating App in p0's development
+  And the Equity whose founder is p0 in p3's portfolio is qa consultant
   When p0 pivots the Dating App
   Then the open idea pool has a Dating App
   And p0's bench has a Junior Software Dev
   And p1's portfolio has an Equity whose founder is p0
   And the Equity whose founder is p0 in p1's portfolio is on no card
+  And the Equity whose founder is p0 in p1's portfolio is not blue consultant
+  And the Equity whose founder is p0 in p2's portfolio is on no card
+  And the Equity whose founder is p0 in p2's portfolio is not red consultant
+  And the Equity whose founder is p0 in p3's portfolio is on no card
+  And the Equity whose founder is p0 in p3's portfolio is not qa consultant
 ```
 
   **How the numbers come** (§3, §5 Phase B and D, §6 Launch and Pivot, §8, §17.A, §17.B.4, §17.D, §20.C, §20.D 1, ruling 25):
-  - **Placement:** the token goes on one of the Founder's product cards, Development or Maintenance, never a Talent, in Blue, Red or QA, chosen as it is placed (§17.B.4). The overview places it, optionally, as it is bought. Each Founder sells at $5 here (no Active product): 15 − 15 = 0; 7 + 5 = 12.
+  - **Placement:** the token goes on one of the Founder's product cards, Development or Maintenance, never a Talent, in Blue, Red or QA, chosen as it is placed (§17.B.4). The overview places it, optionally, as it is bought. Each Founder sells at $5 here (no Active product): 15 − 15 = 0; 7 + 5 = 12. The three Invests leave 1 of the 4 actions.
   - **Example 2:** 4 capital is below $5. Then 10 − 5 = 5, and 7 + 5 + 3 = 15 under Venture Capital Rain (§20.D 1). With one token left, the hard cap refuses (§17.D).
   - **Development:** +1 cube of its colour at the Engine, or +1 Bug removed for QA (§17.B.4).
     - The Dating App and the Smart Lock are Tier 1, so neither Stalls.
@@ -962,15 +1056,15 @@ Example: a Pivot sends the Founder's staff to the bench and the Investor's Consu
     - Ops QA 1 meets the one Bug at the Engine.
   - **Two tokens:** +2 Output (§17.D). The Smart Grid needs 2 Red and earns 7: 7 + 7 = 14; $7 pays $1 a token.
   - **Launch** moves the product and its staff to Ops (§6); the token stays on the product (R1). The Junior's Blue 1 and the Consultant's 1 make 2.
-  - **Pivot:** the product leaves the Founder's board, so the token returns to the Investor (§17.B.4); the staff go to the Bench (§6).
+  - **Pivot:** the product leaves the Founder's board, so the token returns to the Investor, on no card and with no colour (§17.B.4); the staff go to the Bench (§6).
   - **Lines each example pins:**
-    - 1: the target guard, the placement line, the three clearing lines (the stale `blue consultant` and `qa consultant` on p1's token, `red consultant` on p2's) and the three options;
+    - 1: the target guard, the action cost, the placement line, the three clearing lines (the stale `blue consultant` and `qa consultant` on p1's token, `red consultant` on p2's) and the three options;
     - 2: the capital guard, the Venture Capital Rain line, the pay line and the hard cap of the placing Invest;
     - 3: the three Consultant counts and the three added and made lines;
     - 4: the three Stalled lines;
-    - 5: the three supply lines;
+    - 5: the three pool lines and the three supply lines;
     - 7: the Launch guard (no line: R1's reading, kept as a guard);
-    - 8: the Pivot's return line.
+    - 8: the Pivot's return line and its three clearing lines (p1's token blue, p2's red, p3's QA).
     - 6 is a guard of §17.D's stacking.
 - [ ] **Step 4: Run** `bunx vitest run src/games src/pages/designer`, then `bun run test` and `bun run typecheck`, then the removal probe.
 - [ ] **Step 5: Commit**
@@ -1001,20 +1095,45 @@ EOF
 - [ ] **Step 1: Change the tests.**
   - **Pins.**
     - `results` is N₈ + 24; the designer page's count too.
-    - The values test drops `acting once`.
+    - `'works out slice 5’s values and flags for cards: …'` drops `acting once`.
     - The setup test still expects the first round's steps to pass at once: every portfolio is empty and no tax is due.
+    - `'takes back every move with undo, and rebuilds the game from its log, through recruits and research (3 players, seed 1)'` pins 51 moves (it pinned 53 after Task 2). The comment ends "…, and plan 7-2a's Invest and Round Start steps, a placement and two confirms among them, reshuffled it again)."
+    - In playtest-fitted's `'Review Focus: follows the event check to the seat it waits on, lets staff go there, and Undo brings the step back'` (in describe 'a Debuff on another seat's staff, and the steps as a round starts'), `seatButtons()` expects:
+
+```ts
+'Let go of a card in your development team', 'Let go of a card in your ops team',
+"Place a card from your portfolio to a card in another player's development or another player's operations", 'Confirm your consultants',
+```
+
   - **6-2b's `event check` invariant** becomes: the phase is `event check` only while `roundStepsOf(state)` names it, and the current seat either holds a card in its portfolio or has less capital than `payrollTaxOf(runtime, state, seat)`.
   - **Money.** A `PLACE` press changes no capital. A `CONFIRM_CONSULTANTS` press is inside 6-2b's "checked as a whole" round-step moves: it pays the presser's payroll tax.
+  - 6-2b's Angel Investors' $3 is checked in the move that starts each seat's step. Its comment reads "$3 to each seat the Angel Investors fund whose step started in it, …", and `EVENT_CHECK`'s doc becomes: "The step each player takes in turn from the start player at each Round Start: Angel Investors' $3, Regulation Audit's tax and the Consultants (§5 Phase A, §17.B.4, §20.D)." The code replaces `funded`:
+
+```ts
+// Angel Investors funds each seat as its step starts, and an Investor's step stops the steps (plan 7-2a), so a seat after it is
+// funded in the move that starts its step.
+const begun = (state: GameState) => {
+  const done = stepsDone(state, seats);
+  return done === null ? null : [...done, state.turn!.current as PlayerId];
+};
+const begunBefore = begun(before) ?? [];
+const starting = stepping ? (begun(after) ?? seats).filter((seat) => !begunBefore.includes(seat)) : [];
+const funded = (seat: PlayerId) => starting.includes(seat) && eventOf(after) === 'Angel Investors' && products(before, seat).length > 0
+  && products(before, seat).every((product) => product.data?.tier === 'Tier 1');
+```
+
   - **The Task 5 invariant on `lang:on`** gains: … or in a `PLACE` press of it.
   - **The auto-player in `event check`,** after 6-2b's let-gos have made the tax payable:
-    - when the seat's portfolio is not empty and `t % 3 === 1`, it places its first token on no card, else its first token, on the founder's first card (`foundersBoards` order) the token is not on, the colour answered as any choice is;
+    - when the seat's portfolio is not empty, `t % 4 === 1` (not `t % 3`: the colour is answered `(t + at) % 3`) and it has placed nothing yet this step, it places its first token on no card, else its first token, on the founder's first card (`foundersBoards` order) the token is not on, the colour answered as any choice is;
     - then it presses `CONFIRM_CONSULTANTS`.
+    - The comment as built: "… the colour answered as any choice is (`t % 3`, so not `t % 3 === 1`, which answers Red each time); then it confirms (§5 Phase A, §17.B.4)."
+  - `HELD_BY_FEWER_THAN_TWO` gains `"a Workaholic's +2 at the Engine"` provisionally: no game holds it until Task 7's steer, which removes it again.
 - [ ] **Step 2: Run** the file. Expected: FAIL.
 - [ ] **Step 3: Change the rules text.**
   - **The steps line** (§5 Phase A, §17.B.4, ruling 13). In `  When a round starts:`, `    If some card in the event in play is acting once, each player has the event check, in turn from the start player.` becomes `    Each player has the event check, in turn from the start player.`
   - **Remove** the `Acting once:` section (its header and its four lines).
   - **The event check.**
-    - Its `  Hint:` line becomes: `  Hint: Move each Consultant you hold to another of its Founder's products if you like, picking its colour again, then confirm. Under a Regulation Audit, pay $1 for each employee on your Board who draws a salary, letting staff go as you choose until you can.`
+    - Its `  Hint:` line becomes: `  Hint: Place each Consultant you hold on one of its Founder's products, or move it to another, if you like, picking its colour again, then confirm. Under a Regulation Audit, pay $1 for each employee on your Board who draws a salary, letting staff go as you choose until you can.`
     - Right after its two let-go buttons (before `  When they have at least the total payroll tax …:`) add:
 
 ```text
@@ -1133,15 +1252,26 @@ EOF
 - Modify: `src/games/startup-simulator.test.ts`, `README.md`
 
 **Interfaces:**
-- Consumes: every constant and policy above and in plans 4-2 to 6-2b; `enteredIncome`, `ranTheEngine`, `atTheEngine`, `sharePriceOf`, `dividendOf`, `tiedTo`, `founderOf`, `portfolioOf`.
+- Consumes: every constant and policy above and in plans 4-2 to 6-2b; `enteredIncome`, `ranTheEngine`, `atTheEngine`, `sharePriceOf`, `dividendOf`, `tiedTo`, `founderOf`, `portfolioOf`, `othersOn` (add `import { othersOn } from '@/engine/core/lang/attach';`).
 - **`happenings` gains these keys** (read through the runtime):
   - `an Invest at $5`, `… $10`, `… $15`, for an `INVEST` or `INVEST_PLACING` press, by the founder's `share price` in `before`; `an Invest during Venture Capital Rain`;
   - `a dividend of $1`, `$2`, `$3`, once for each token paid at the Income `enteredIncome` names, by the founder's `dividend` in `after`;
   - `a License waived between Partners`, for a `GREENLIGHT` with a required Tag the mover's operations lacked in `before` that a seat tied to the mover provided;
   - `a Consultant placed: Blue`, `… Red`, `… QA`, for an `INVEST_PLACING` or `PLACE` press, by the flag its card has in `after`;
-  - `a Consultant's cube at the Engine`, in a move that ran the Engine for the mover, for each of its projects not `stalled` (read in `atTheEngine`) whose `consultant blue` or `consultant red` was above 0;
+  - `a Consultant's cube at the Engine`, in a move that ran the Engine for the mover, for each of its projects not `stalled` (read inside the slice-3 `if (ranTheEngine(before, after, by))` block, from its `generating` and `stalled`) whose `consultant blue` or `consultant red` was above 0;
   - `a Consultant's Bug at the Engine`, likewise for `consultant qa` above 0 on a project that had `bugs` in `before`;
   - `a Consultant on a Stalled project at the Engine`, for a `stalled` project with a card in `othersOn`;
+  - The three Engine keys are not read in a second `atTheEngine` call: a second call makes a fresh `cards` array, so the runtime's per-`state.cards` caches miss and every value is worked out again. They sit inside the slice-3 `if (ranTheEngine(before, after, by))` block, reading its `generating` and `stalled`. The code as built:
+
+```ts
+for (const project of zoneCards(generating, zoneIdFor('development', by))) {
+  if (stalled.includes(project)) { if (othersOn(generating, project.id).length > 0) keys.push(CONSULTANT_STALLED); continue; }
+  if (consulting(generating, project.id, 'consultant blue') + consulting(generating, project.id, 'consultant red') > 0) keys.push(CONSULTANT_CUBE);
+  const had = cardById(before, project.id);
+  if (consulting(generating, project.id, 'consultant qa') > 0 && had !== undefined && bugsOn(had) > 0) keys.push(CONSULTANT_BUG);
+}
+```
+
   - `a Consultant's bandwidth at an Income`, for the seat `enteredIncome` names when the total `consultant blue` and `consultant red` of its operations is above 0;
   - `a Consultant's Bug in Ops QA`, in a move that ran the Engine for a seat whose operations' total `consultant qa` and `bug load` were both above 0 in `before`;
   - `a Consultant kept by a Launch` and `a Consultant sent back by a Pivot`, for a `LAUNCH` or `PIVOT` of a card with a card in `othersOn(before, …)`;
@@ -1154,19 +1284,108 @@ EOF
   - **Append `it('played slice 7’s held Equity in those runs: Invests at every price and during Venture Capital Rain, the hard cap, dividends of $1, $2 and $3, a License waived between Partners, Consultants placed in each colour and at work in Development, on a Stalled project, in Ops bandwidth and Ops QA, kept by a Launch, sent back by a Pivot, stacked, and placed and moved at a Round Start, and rival tokens scored')`.**
     - It expects every key above to be above 0.
     - It also expects the portfolio cards held at the runs' results, summed like `marketShare`, to be above 0.
-  - **Append `it('takes back the last move and rebuilds whole games from their logs, through Invests, placements, dividends and Round Start steps (Review Focus: 4 players, seeds 1 to 5)')`.**
-    - Play each game to its result, keeping the state before each move.
-    - A fresh engine given `loadLog(log)` equals the final state, and `engine.undo()` gives the state before the last move.
-    - Across the five logs, some log holds an `INVEST_PLACING`, a `PLACE` and a Pivot of a product with a Consultant (count them through the watch).
-  - **Kept as they are:** `'plays the same game through the page’s view as without it'` (now through picks in other players' equities and targets on their products) and every earlier tally.
+  - **No 4-player replay test is added** (timing: it cost about 1.6 s). The 2- and 3-player replay tests (`'takes back the last move and rebuilds whole games from their logs, … (Review Focus: 2 players, seeds 1 to 5)'` and `'… (Review Focus: 3 players, seeds 1 to 5)'`) carry this plan's paths.
+    - `REPLAYED` gains `'Consultant pivots'` (counted from `CONSULTANT_PIVOTED`, the key `a Consultant sent back by a Pivot`), `'placing Invests'` and `'Round Start placements'`. The last two are counted in `keepingForReplay`, and `keeping` is `players <= 3`.
+    - The 2-player test requires them all, the Consultant pivots included: it leaves out only the Design Sprints, which the 3-player test requires.
+    - Every 2- and 3-player log holds a placing Invest and a Round Start placement, and 2-player seed 4 holds a Pivot of a product with a Consultant.
+    - The code as built:
+
+```ts
+// REPLAYED ends: …, 'Event reshuffles', 'let-gos in the event check', 'Consultant pivots', 'placing Invests', 'Round Start placements',
+const keeping = players <= 3 ? keepingForReplay(runtime) : null;
+// in keepingForReplay's watch:
+seen['Consultant pivots'] += keys.filter((key) => key === CONSULTANT_PIVOTED).length;
+if (move.type === INVEST_PLACING) seen['placing Invests'] += 1;
+if (move.type === PLACE) seen['Round Start placements'] += 1;
+// in the 2-player test:
+type Required = Exclude<(typeof REPLAYED)[number], 'Design Sprints'>;
+const required = REPLAYED.filter((what): what is Required => what !== 'Design Sprints');
+```
+
+  - **Kept as they are:** `'plays the same game through the page’s view as without it'` (now through picks in other players' equities and targets on their products) and every earlier tally, the 2- and 3-player replay tests among them; their comments' per-seed facts are re-read.
+    - **2-player test.** The comment sentence naming what it requires reads "It requires every path `REPLAYED` counts but the Design Sprints, which the 3-player test below requires." Its seed sentence becomes:
+
+      "The declarations are in seeds 1, 2 and 4, the Debuffs in seeds 2, 4 and 5, the reshuffle in seed 2, the TechCrunch Feature in seeds 2 and 4, the strips in seeds 2, 4 and 5, the Event reshuffle in seeds 2 and 4 (only 2-player games last the 19 rounds a reshuffle takes) and a let-go in the event check in seeds 1 and 2 (plan 7-2a's Invests and Round Start steps replayed every game); every log holds a placing Invest and a Round Start placement, and seed 4 a Pivot of a product with a Consultant on it (plan 7-2a). The last move taken back is a backlog cleanup's discard in seeds 1, 3 and 5, the end of the actions in seed 2 and a final-check switch-off in seed 4."
+    - **3-player test.** Its comment becomes:
+
+      "A Debuff is in seeds 2, 4 and 5, the strips (Attributes discarded with a fired Talent) in seed 4, a TechCrunch Feature in seeds 2 and 4 (none before the second retune kept the TechCrunch Feature first) and a Design Sprint in seed 4, since plan 7-2a's Invests and Round Start steps replayed every game. The last move taken back is the end of the actions in seed 1, a final-check switch-off in seeds 2 and 5 and a backlog cleanup's discard in seeds 3 and 4."
+    - The "no log holds a clean, keep or Mentor press" sentences were re-checked and still hold.
 - [ ] **Step 2: Run** `bunx vitest run src/games/startup-simulator.test.ts`.
-  - If a required key stays at 0, print the tally and change the auto-player, never the rules:
-    - invest in the Founder whose Share Price is highest among those it can pay, for $10 and $15;
-    - prefer a Founder whose operations provide a Tag its backlog needs, for the License waiver;
-    - place on a Stalled project or a product with Bugs first;
-    - pivot a project with a Consultant on it;
-    - recruit QA staff less often when a Consultant QA is placed.
+  - The steer, as adopted (a required key still at 0 after it is reported, below):
+    - `investing(a)` invests when `(t + a) % 7 === 0`, and on every action while Venture Capital Rain is in play.
+    - It picks the dearest allowed Founder, then the higher Operational Revenue.
+    - It buys a second token of a Founder only in the Rain or above $5.
+    - A `capped(a)` press goes before it in the planned list.
+    - Task 6's placement cadence (`t % 4 === 1`) applies.
+    - The code as built:
+
+```ts
+const investing = (a: number): Move | null => {
+  const raining = eventOf(engine.getState()) === 'Venture Capital Rain';
+  if ((t + a) % 7 !== 0 && !raining) return null;
+  const priceOf = (card: CardState) => sharePriceOf(runtime, engine.getState(), founderOf(card)!);
+  const revenueOf = (card: CardState) => runtime.playerValue(engine.getState(), founderOf(card)!, 'operational revenue') as number;
+  const keeps = (card: CardState) => capital() - priceOf(card) >= 2;
+  const second = (card: CardState) => cards(own('portfolio')).some((c) => founderOf(c) === founderOf(card));
+  const wanted = (card: CardState) => !second(card) || raining || priceOf(card) > 5;
+  const dearest = (row: CardState[], pressing: Pressing) => row.filter((card) => pressing.allows(card) && keeps(card) && wanted(card))
+    .reduce<CardState | undefined>((top, card) => (top === undefined || priceOf(card) > priceOf(top)
+      || (priceOf(card) === priceOf(top) && revenueOf(card) > revenueOf(top)) ? card : top), undefined);
+  const plain = pick(INVEST, equitiesFrom(runtime.seats, by), dearest);
+  // ...the rest as Task 5 (INVEST_PLACING on an even t onto the founder's first product)
+};
+/** On the Invest cadence, the press of a Founder's last token in their equity, which the hard cap refuses at no cost before the seat invests (§17.D). */
+const capped = (a: number): Move | null => ((t + a) % 7 !== 0 ? null
+  : pick(INVEST, equitiesFrom(runtime.seats, by), (row) => row.find((card) => cards(card.zoneId).length === 1)));
+```
+
+  The planned list becomes `… makersToProject(), capped(a), investing(a), brainstorming(a), ...board(),`.
+
+  Holds at the end, as games of the 20:
+
+  | Key | Games |
+  |---|---|
+  | Invest at $5 | 20 |
+  | Invest at $10 | 1 |
+  | Invest at $15 | 0 |
+  | Invest during Venture Capital Rain | 3 |
+  | Hard cap refused | 3 |
+  | Dividend of $1 | 16 |
+  | Dividend of $2 | 2 |
+  | Dividend of $3 | 0 |
+  | License waived between Partners | 14 |
+  | Placed: Blue | 20 |
+  | Placed: Red | 9 |
+  | Placed: QA | 13 |
+  | Consultant's cube at the Engine | 20 |
+  | Consultant's Bug at the Engine | 6 |
+  | Consultant on a Stalled project | 9 |
+  | Consultant's bandwidth at an Income | 15 |
+  | Consultant's Bug in Ops QA | 0 |
+  | Kept by a Launch | 16 |
+  | Sent back by a Pivot | 3 |
+  | Placed at a Round Start | 13 |
+  | Moved at a Round Start | 17 |
+  | Two Consultants on one product | 2 |
+
+  The new move types are made in 16 (INVEST), 18 (INVEST_PLACING), 17 (PLACE) and 20 (CONFIRM_CONSULTANTS) games.
+
+  - `'takes back every move with undo, and rebuilds the game from its log, through recruits and research (3 players, seed 1)'` pins 52 moves (it pinned 51 after Task 6). The comment ends "…, and plan 7-2a's Invests and Round Start steps reshuffled it again: an Invest, a placement, a confirm and a placing Invest come before it, so undo takes each back)."
+  - `'takes back every move with undo, and rebuilds the game from its log, across an assign, a launch, a pivot and a reassign (Review Focus: 3 players, seed 2)'` moves to seed 4:
+    - `playGame(3, 4, …)`;
+    - `fresh` uses `initialState(game!, 4)`;
+    - the title ends "(Review Focus: 3 players, seed 4)";
+    - the comment reads "Seed 4 makes all four by its 64th move, the soonest of the 3-player seeds 1 to 5 once plan 7-2a's seats invest (seeds 3, 1, 5 and 2 take 122, 125, 129 and 131; seed 2 took 69 before). Undo plays the log again from the start, so a short log keeps it quick."
   - Report a key that stays unreachable, with the tally, and pin its path with an arranged test in the shape of 6-2b Task 5's.
+  - **Keys the runs can't reach** are met as the earlier slices' excused keys are: `HELD_BY_FEWER_THAN_TWO` gains the four keys, each pinned by its example. The Set entries: `'an Invest at $10'`, `'an Invest at $15'`, `'a dividend of $3'`, `"a Consultant's Bug in Ops QA"`. The doc bullet:
+
+    " * - Plan 7-2a, out of reach of the runs: an Invest at $15 (no run puts a Tier 3 product in operation), at $10 (one game, 2 players seed 4, where a rival holds the $12 while a Tier 2 product is in operation), a dividend of $3 (no Income comes to $21; one of $12 is the most) and a Consultant's Bug in Ops QA (a Bug on a product in operation is rare, and a QA Consultant must sit on it), each pinned by its example ('Invest pays the Founder their Share Price: $5 with only Tier 1, $10 with an Active Tier 2, $15 with a Tier 3 …', '$21 of Operational Revenue pays $3 a token, …', 'a Consultant on a Maintenance product adds 1 Ops bandwidth of its colour at the Founder's Income, or removes 1 Bug in Ops QA …')."
+
+    (The bullet says "one of $12 is the most", which was true without the steer; under the steer the most is $17 (2p seed 4). Both stay under $21.)
+  - **Four earlier required keys fall under 2 games once the seats invest** (the Invests and the Round Start steps replay every game): 'a Junior PM promoted at a Launch' (0 games), 'Pending tokens returned by a pivot' (1, 5 players seed 4), 'Trade Show: a TechCrunch Feature for $2' (1, 4 players seed 2) and 'a trained Junior declared blue' (1, 4 players seed 1). No cadence tried kept all four at 2. All four are demoted to `HELD_BY_FEWER_THAN_TWO`, each with its pin named. The Set entries: `'a Junior PM promoted at a Launch'`, `'Pending tokens returned by a pivot'`, `'Trade Show: a TechCrunch Feature for $2'`, `'a trained Junior declared blue'`. The doc bullet:
+
+    " * - Plan 7-2a, held by fewer once the seats invest (the Invests and the Round Start steps replay every game; nine cadences tried kept none of these four at 2): a Junior PM promoted at a Launch (none; 'claims First Mover Advantage, Platform Power and Full Stack Founder at one auto-player Launch of a Tier 2 card, which promotes its Junior PM, …'), Pending tokens returned by a pivot (5 players seed 4; 'Pending tokens stay with a Junior who is Reassigned, and a Pivot returns them all …'), Trade Show's TechCrunch Feature for $2 (4 players seed 2; 'during Trade Show TechCrunch Feature costs $2, …') and a trained Junior declared blue (4 players seed 1; 'a Junior Hardware Eng with a Blue Skill token declared Blue makes 1 Blue, its Red XP idle …')."
+  - **Remove the two provisional entries** Tasks 4 and 6 added, `'a license paid to a chosen provider'` and `"a Workaholic's +2 at the Engine"`, each with its bullet: the steer brings both back to 2 games (the chosen provider in 4 players seeds 2 and 4; the Workaholic in 2 players seed 2 and 5 players seed 5).
 - [ ] **Step 3: Write the README.**
   - **The Startup paragraph** becomes "**Startup Simulator (slice 7, Equity held)**". After plan 6-2b's sentence, add:
     - each player has 3 Equity tokens in a supply everyone sees;
@@ -1176,7 +1395,7 @@ EOF
     - a token may sit on one of the Founder's products as a Consultant, placed when bought or at a Round Start, adding a cube, a Bug removed or Ops bandwidth;
     - each rival token held scores 5.
     - Its rulings list adds 11 and 16.
-  - **"It still leaves out"** becomes: the Veto, Buyback, Secondary Trade and the Non-Compete Suit (plan 7-2b); selling and poaching, with Immunity, Vest, the CTO, the Headhunter, Corporate Raider, Cease & Desist, Flight Risk's effect, Recruiter Frenzy and Headhunter Holiday; Hit Piece and Scandal; Integration; Stealth and audits, with Partners' Secured Access, Whistleblower Protection Act and Patent Trolls' other fees; Bankruptcy and the Broken Chain; and the HR Manager's and the Director of QA's perks. Each comes in a later slice.
+  - **"It still leaves out"** becomes: the Veto, Buyback, Secondary Trade and the Non-Compete Suit (plan 7-2b); selling and poaching, with Immunity, Vest, the CTO, the Headhunter, Corporate Raider, Cease & Desist, Flight Risk's effect, the Full Stack Ninja's trait, Recruiter Frenzy and Headhunter Holiday; Hit Piece and Scandal; Integration; Stealth and audits, with Partners' Secured Access, Whistleblower Protection Act and Patent Trolls' other fees; Bankruptcy and the Broken Chain; and the HR Manager's and the Director of QA's perks. Each comes in a later slice.
   - **Plan 6-2b's bullet** in plan 6-1's README paragraph quotes `If some card in the event in play is acting once, …`; it now quotes `Each player has the event check, in turn from the start player.`
   - **Plan 7-1's README paragraph** gains a last bullet, `- **Startup Simulator** plays slice 7 this way: …`, naming these lines:
     - `3 new Equity cards go to each equity, each naming its owner as its founder.`
@@ -1186,7 +1405,7 @@ EOF
     - `Another player tied to them by a card in their portfolio has a card in their operations whose tag is the card's requires.`
     - `A card's consultant blue is the number of the other players' cards on it that are blue consultant.`
     - `The other players' cards on it go to their owners' portfolio.`
-- [ ] **Step 4: Run** `bun run test` and `bun run typecheck`. The passing count is the starting count plus this plan's new tests.
+- [ ] **Step 4: Run** `bun run test` and `bun run typecheck`. The passing count is the starting count plus this plan's new tests: 4026 at BASE and 4029 at the end, 3 new `it()`s (the Share Price test, the dividend test and the slice-7 tally test; no 4-player replay test is added). Startup's examples go from 307 to 331.
 - [ ] **Step 5: Run the checks.** The first three print nothing. The fourth prints only the Startup count line in `designer-page.test.tsx` and any pin a task reported.
 
 ```bash
@@ -1228,16 +1447,16 @@ EOF
   - the `event check` step's place and confirm buttons, and the seat switcher following it.
 - **Slice 8:**
   - **Immunity:** `Only if they have no card in their portfolio whose founder is the target card's owner.` on the Headhunter and Hit Piece buttons (7-1's forward note).
-  - **Product sales** return Consultants with `The other players' cards on it go to their owners' portfolio.`, after breaking an Integration stack (slice 8 R2).
+  - **Product sales** return Consultants with the Pivot's three clearing lines and `The other players' cards on it go to their owners' portfolio.`, after breaking an Integration stack (slice 8 R2).
   - **Vest and the CTO** may take the last token in a supply, so Task 1's "`equity-F` is never empty" invariant changes then.
 - **Slice 9:** Partners' Secured Access reads the same tie as Task 4.
-- **Slice 10:** Bankruptcy's seizure moves every portfolio card to `its founder's equity`, unpaid. Liquidation returns Consultants with the Pivot's line.
+- **Slice 10:** Bankruptcy's seizure moves every portfolio card to `its founder's equity`, unpaid. Liquidation returns Consultants with the Pivot's three clearing lines and `The other players' cards on it go to their owners' portfolio.`
 
 ## Gaps against plan 7-1
 
 None that needs a new phrase for this half: every line above is written with plans 4-1, 5-1, 6-1 and 7-1's phrases. These calls follow from what the language reads:
 - **Immunity (§17.B.2) has no line.** No Headhunter or Hit Piece button exists to carry the condition until slice 8. A worked flag can't read "them", and a line nothing reads would fail the removal probe. It is recorded in the forward notes.
-- **A Consultant's colour is three flags,** cleared and set again by each placement button (two here, a third in 7-2b). No line clears a card's flags as it leaves a card, so an unplaced token keeps its old colour. That colour is inert, since only "the other players' cards on it" are read.
+- **A Consultant's colour is three flags,** cleared and set again by each placement button (two here, a third in 7-2b), and cleared by the Pivot as it returns the token (7-1's R8), so an unplaced token has no colour.
 - **One steps line per game (6-1).** 6-2b's conditional line becomes unconditional, and `Acting once:` goes. An Investor stops at every Round Start to confirm, even when its Founders have no product: no test of a token reads the products of the player it names (5-1's `its owner has …` reads the owner).
 - **The `equity tokens` stack never runs out,** so an example could make a fourth token of a player. Only the long-run invariant and the Global Constraint hold the count at 3.
 - **The phase keeps the name `event check`** while it also places Consultants, so 6-2b's and 6-3's pins stay; its Hint names both jobs.
