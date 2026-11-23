@@ -865,6 +865,7 @@ Setup:
   Deal 1 card from the seed deck to each backlog.
 
 In every phase:
+  Before an action goes ahead, each player who has a card in their portfolio whose founder is the player acting has the veto, in turn from the left of the player acting.
   When a round starts:
     Move the event in play to the event discard.
     Deal up to 1 card from the event deck to the event in play, shuffling the event discard into it when it runs out.
@@ -1666,6 +1667,21 @@ Phase: event check
     Only if their portfolio is empty.
     They pay the total payroll tax of the cards in their development team and their ops team.
     The event check passes to the left.
+
+Phase: veto
+  Players take turns.
+  Hint: A Founder whose Equity you hold has declared an action. Burn one of their tokens back to them to cancel it, its action spent, or let it go ahead.
+  A player may veto with a card in their portfolio.
+    Only if it is a card whose founder is the player acting.
+    Then:
+      It is not blue consultant.
+      It is not red consultant.
+      It is not qa consultant.
+      Move it to its founder's equity.
+      The action does not go ahead.
+  A player may let the action go ahead.
+    Then:
+      The veto passes to the left.
 
 End:
   The game ends when the crash pile is not empty and the round is finished.
@@ -6055,6 +6071,7 @@ Example: a Launch moves the Founder's staff to the ops team and leaves the Inves
   And the Equity whose founder is p0 in p1's portfolio is on the Dating App in p0's development
   And the Equity whose founder is p0 in p1's portfolio is blue consultant
   When p0 launches the Dating App
+  And p1 lets the action go ahead
   Then p0's operations has a Dating App
   And p0's ops team has a Junior Software Dev
   And the Equity whose founder is p0 in p1's portfolio is on the Dating App in p0's operations
@@ -6075,6 +6092,9 @@ Example: a Pivot sends the Founder's staff to the bench and the Investors' Consu
   And the Equity whose founder is p0 in p3's portfolio is on the Dating App in p0's development
   And the Equity whose founder is p0 in p3's portfolio is qa consultant
   When p0 pivots the Dating App
+  And p1 lets the action go ahead
+  And p2 lets the action go ahead
+  And p3 lets the action go ahead
   Then the open idea pool has a Dating App
   And p0's bench has a Junior Software Dev
   And p1's portfolio has an Equity whose founder is p0
@@ -6185,3 +6205,77 @@ Example: a Consultant moved at one Round Start may move again at the next (secti
   And p1 confirms their consultants
   Then the Equity whose founder is p0 in p1's portfolio is on the Smart Lock in p0's development
   And the Equity whose founder is p0 in p1's portfolio is blue consultant
+
+Example: an Investor may Veto a Founder's action as it is declared, burning one of the Founder's tokens back to their supply: the Recruit is cancelled and its action spent (section 17, the overview's call)
+  Given p1's portfolio has an Equity whose founder is p0
+  When p0 recruits a junior software dev
+  Then the phase is veto
+  And it is p1's turn
+  And p0 has 2 actions
+  When p1 vetoes with the Equity whose founder is p0
+  Then the phase is actions
+  And it is p0's turn
+  And p0 has 2 actions
+  And p0 has 7 capital
+  And p0's bench is empty
+  And p0's equity has an Equity whose founder is p0
+  And p1's portfolio is empty
+
+Example: a free action opens no window: a Greenlight goes ahead at once though an Investor holds the Founder's Equity (section 17, the overview's call)
+  Given p1's portfolio has an Equity whose founder is p0
+  And p0's backlog has a Dating App
+  When p0 greenlights the Dating App
+  Then the phase is actions
+  And it is p0's turn
+  And p0's development has a Dating App
+  And p1's portfolio has an Equity whose founder is p0
+
+Example: every holder of the Founder's Equity is asked in turn from the Founder's left, and the action goes ahead when all let it go (section 17, the spec's call)
+  Given 4 players
+  And p1's portfolio has an Equity whose founder is p2
+  And p2's portfolio has an Equity whose founder is p0
+  And p3's portfolio has an Equity whose founder is p0
+  When p0 recruits a junior software dev
+  Then the phase is veto
+  And it is p2's turn
+  When p2 lets the action go ahead
+  Then it is p3's turn
+  When p3 lets the action go ahead
+  Then the phase is actions
+  And it is p0's turn
+  And p0 has 2 actions
+  And p0 has 5 capital
+  And p0's bench has a Junior Software Dev
+
+Example: only one of the Founder's own tokens can Veto their action (section 17)
+  Given 3 players
+  And p1's portfolio has an Equity whose founder is p0 and an Equity whose founder is p2
+  When p0 recruits a junior software dev
+  And p1 vetoes with the Equity whose founder is p2
+  Then it is rejected because "it is a card whose founder is the player acting"
+  When p1 vetoes with the Equity whose founder is p0
+  Then p1's portfolio has an Equity whose founder is p2
+  And p0's equity has an Equity whose founder is p0
+  And p0's bench is empty
+
+Example: a Veto of the Founder's last action still spends it, so they can only end their actions, and a Consultant burned in a Veto leaves its product (section 17, the overview's call)
+  Given p0 has 1 action
+  And p0's development has a Dating App
+  And p1's portfolio has an Equity whose founder is p0
+  And the Equity whose founder is p0 in p1's portfolio is on the Dating App in p0's development
+  And the Equity whose founder is p0 in p1's portfolio is blue consultant
+  And the Equity whose founder is p0 in p1's portfolio is red consultant
+  And the Equity whose founder is p0 in p1's portfolio is qa consultant
+  When p0 recruits a junior software dev
+  And p1 vetoes with the Equity whose founder is p0
+  Then the phase is actions
+  And it is p0's turn
+  And p0 has 0 actions
+  When p0 ends their actions
+  Then it is p1's turn
+  And the Dating App in p0's development has 0 blue cubes
+  And p0's equity has an Equity whose founder is p0
+  And the Equity whose founder is p0 in p0's equity is on no card
+  And the Equity whose founder is p0 in p0's equity is not blue consultant
+  And the Equity whose founder is p0 in p0's equity is not red consultant
+  And the Equity whose founder is p0 in p0's equity is not qa consultant

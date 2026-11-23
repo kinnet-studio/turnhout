@@ -21,6 +21,7 @@ import { ON_SEAT_KEY } from '@/engine/core/lang/zones';
 import { HIDDEN_FACE_KEY, deriveScene } from '@/engine/core/derive-scene';
 import type { GameState } from '@/engine/core/game-state';
 import { cardById, zoneCards } from '@/engine/core/lang/zone-index';
+import { waitingOf } from '@/engine/core/lang/action-window';
 import type { GameEngine } from '@/engine/core/game-engine';
 import type { Move } from '@/engine/core/moves';
 import type { CardState, PlayerId } from '@/engine/core/scene';
@@ -248,6 +249,8 @@ const attributesOn = (card: CardState) => ATTRIBUTE_COUNTS.filter((count) => tok
 const POOLS = ['open-job-market', 'open-idea-pool'];
 /** The rows each player has that only they can see: their hands, the rows a step deals into, and the Brainstorm look (§3, §15.C). */
 const OWN_ROWS = ['bench', 'backlog', 'research', 'scouting', 'strategy hand', 'brainstorm'];
+/** Each seat's own rows, by zone id: the zones only that seat sees. */
+const owners = (seats: PlayerId[]) => new Map(seats.flatMap((seat) => OWN_ROWS.map((row) => [zoneIdFor(row, seat), seat] as const)));
 /** The rows of each player's Board, which everyone can see: projects, products in operation, the staff on projects and the ops staff (§3). */
 const BOARD_ROWS = ['development', 'operations', 'development team', 'ops team'];
 /**
@@ -262,7 +265,7 @@ const FINAL_CHECK = 'final check';
  */
 const PHASES = [
   'modes', 'ops check', 'income', 'actions', 'research', 'sourcing', 'graduation', 'brainstorm', 'engine', 'commit', 'bench cleanup',
-  'strategy cleanup', 'backlog cleanup', FINAL_CHECK, 'event check',
+  'strategy cleanup', 'backlog cleanup', FINAL_CHECK, 'event check', 'veto',
 ];
 /**
  * The step each player takes in turn from the start player at each Round Start: Angel Investors' $3, Regulation Audit's tax and the
@@ -272,6 +275,44 @@ const EVENT_CHECK = 'event check';
 /** The Round Start step's Consultant buttons (§5 Phase A, §17.B.4). */
 const PLACE = "place a card from their portfolio to a card in another player's development or another player's operations";
 const CONFIRM_CONSULTANTS = 'confirm their consultants';
+/** The Veto window's two answers (§17.B.5). */
+const VETO = 'veto with a card in their portfolio';
+const LET_IT_GO_AHEAD = 'let the action go ahead';
+/** The moves a seat makes in another seat's turn, answering it: Task 2 adds the offer phase's. */
+const ANSWERS: string[] = [VETO, LET_IT_GO_AHEAD];
+/**
+ * A move as the long runs judge it across the Veto window (7-1 Task 8):
+ * - a press that opened a window spent its cost and did nothing else ('cost');
+ * - the move that let the waiting press go ahead did what that press does, made by its presser, its cost already spent ('ahead');
+ * - every other move, a Veto included, is itself ('own').
+ * `press` is the press the move counts as.
+ */
+type Judged = { press: Move; as: 'own' | 'cost' | 'ahead' };
+/** Follows one game's windows: keeps the press that opened the one now open, and judges each move. */
+function windowJudge(): (before: GameState, move: Move, after: GameState) => Judged {
+  let opened: Move | null = null;
+  return (before, move, after) => {
+    const was = waitingOf(before);
+    const now = waitingOf(after);
+    if (was === null && now !== null) {
+      opened = move;
+      return { press: move, as: 'cost' };
+    }
+    if (was !== null && now === null && move.type === LET_IT_GO_AHEAD) {
+      const press = opened!;
+      opened = null;
+      return { press, as: 'ahead' };
+    }
+    if (now === null) opened = null;
+    return { press: move, as: 'own' };
+  };
+}
+/** The seat whose turn it is (`TURN_OF_KEY`), and the phase its turn stands in: the phase it was interrupted from, during a window or an offer. */
+function turnOf(state: GameState): { seat: PlayerId; phase: string } {
+  // A round's steps and the final check's are no turn: TURN_OF_KEY is unset in them, and the seat is the one whose step it is.
+  const seat = (state.data[TURN_OF_KEY] ?? state.turn!.current) as PlayerId;
+  return { seat, phase: (waitingOf(state)?.back.phase ?? state.turn!.phase) as string };
+}
 // The two buttons that pick a card from a project's staff.
 const REASSIGN_FROM_PROJECT = 'reassign a card from their development team to a card in their development';
 const DISMISS_FROM_PROJECT = 'dismiss a card in their development team';
@@ -1549,14 +1590,31 @@ function playTurn(
 
   const going = () => {
     const state = engine.getState();
-    return state.result === undefined && state.turn!.current === by && !stop(engine.getLog());
+    return state.result === undefined && turnOf(state).seat === by && !stop(engine.getLog());
   };
   /** Whether this turn has let a card go at Income. */
   let letGo = false;
   /** Whether this step has placed a Consultant (§17.B.4). */
   let placed = false;
+  /** The windows opened so far in this turn (§17.B.5). */
+  let w = 0;
   for (let a = 0; going();) {
     const { phase } = engine.getState().turn!;
+    if (phase === 'veto') {
+      // The current seat answers: in the last round (see `lastRound`), it vetoes with the first card of its portfolio whose founder is the
+      // actor when (t + w) % 7 === 3, else it lets the action go ahead. Its pick goes through its view when the run's does. A Veto changes
+      // the game from there on, so vetoes wait for the last round, where they move no earlier slice's path below 2 games.
+      const state = engine.getState();
+      const answerer = state.turn!.current as PlayerId;
+      const portfolio = zoneIdFor('portfolio', answerer);
+      let row = zoneCards(state, portfolio);
+      if (throughView) row = viewedCards(runtime, seatExtras(engine, runtime, state, answerer), state, answerer, VETO, portfolio, null).cards.map(({ id }) => cardById(state, id)!);
+      const token = row.find((c) => founderOf(c) === by);
+      const veto: Move | null = lastRound() && (t + w) % 7 === 3 && token !== undefined ? { type: VETO, by: answerer, cardId: token.id } : null;
+      const answer = [veto, { type: LET_IT_GO_AHEAD, by: answerer }].find((m) => m !== null && accepts(m))!;
+      play(engine, answer, watch);
+      continue;
+    }
     if (phase === 'modes') {
       play(engine, choose([t % 4 === 3 ? null : declaration(), press(CONFIRM_MODES)]), watch);
     } else if (phase === 'ops check') {
@@ -1593,6 +1651,7 @@ function playTurn(
       const move = choose([...planned, recruitMaker(a), press(END_ACTIONS)]);
       if (move.type === REASSIGN_TO_PRODUCT) movedOnProducts = true;
       play(engine, move, watch);
+      if (waitingOf(engine.getState()) !== null) w++;
       a++;
     } else if (phase === 'research') {
       play(engine, choose([pick(KEEP, own('research'), (row) => cutIdea(row) ?? row[t % row.length])]), watch);
@@ -1661,6 +1720,8 @@ function playTurn(
  */
 type Run = {
   moves?: number; throughView?: boolean; until?: (log: readonly Move[]) => boolean; refused?: Refused; finalCheck?: Set<number>;
+  /** Told of the engine as the game is made, before its first move. */
+  made?: (engine: GameEngine) => void;
 };
 
 /**
@@ -1673,13 +1734,16 @@ type Run = {
  */
 function playGame(
   players: number, seed: number, watch: Watch,
-  { moves = Infinity, throughView = false, until = () => false, refused, finalCheck }: Run = {},
+  { moves = Infinity, throughView = false, until = () => false, refused, finalCheck, made }: Run = {},
 ): GameEngine {
   const { engine, runtime } = createEngine(game!, lib, players, initialState(game!, seed));
+  made?.(engine);
   const style: Style = seed % 2 === 0 ? 'drafts' : 'researches';
   const stop = (log: readonly Move[]) => log.length >= moves || until(log);
   const watching: Watch = (before, move, after) => {
-    if (before.turn?.phase === FINAL_CHECK || before.turn?.phase === EVENT_CHECK) finalCheck?.add(engine.getLog().length - 1);
+    if (before.turn?.phase === FINAL_CHECK || before.turn?.phase === EVENT_CHECK || ANSWERS.includes(move.type)) {
+      finalCheck?.add(engine.getLog().length - 1);
+    }
     watch(before, move, after);
   };
   for (let t = 0; t < MAX_TURNS && engine.getState().result === undefined && !stop(engine.getLog()); t++) {
@@ -1765,9 +1829,14 @@ function keepingForReplay(runtime: LangRuntime) {
   const seen = Object.fromEntries(REPLAYED.map((what) => [what, 0])) as KeptGame['seen'];
   let beforeLast: GameState | null = null;
   let watched = 0;
-  const watch = (before: GameState, move: Move, after: GameState, keys = happenings(runtime, before, move, after)) => {
+  const judge = windowJudge();
+  const watch = (before: GameState, raw: Move, after: GameState, given?: string[]) => {
     beforeLast = before;
     watched += 1;
+    // The counts read the press each move counts as, and nothing of a press that opened a window (see `Judged`).
+    const { press: move, as } = judge(before, raw, after);
+    if (as === 'cost') return;
+    const keys = given ?? happenings(runtime, before, move, after);
     if (Object.values(DECLARE).includes(move.type)) seen.declarations += 1;
     if (move.type === SWITCH_OFF) seen['switches off'] += 1;
     seen['Bugs added to a project'] += keys.filter((key) => key === BUG_ON_PROJECT).length;
@@ -1856,7 +1925,8 @@ function enteredIncome(before: GameState, after: GameState): PlayerId | null {
 /** Whether the Engine ran for `by` in the move from `before` to `after`: its turn was short of the Engine before, and is past it after. */
 function ranTheEngine(before: GameState, after: GameState, by: PlayerId): boolean {
   const { current, phase } = after.turn!;
-  return before.turn!.current === by && BEFORE_THE_ENGINE.includes(before.turn!.phase!)
+  const was = turnOf(before);
+  return was.seat === by && BEFORE_THE_ENGINE.includes(was.phase)
     && (after.result !== undefined || current !== by || !BEFORE_THE_ENGINE.includes(phase!));
 }
 
@@ -2672,7 +2742,8 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       atMost('growth-market', 2);
       for (const pool of POOLS) atMost(pool, 5);
       atMost('crash-pile', 1);
-      const { current, phase } = after.turn!;
+      // The seat whose turn it is, and its phase: a seat answering a window holds only what it holds outside its turn.
+      const { seat: current, phase } = turnOf(after);
       for (const seat of seats) {
         const own = (row: string) => zoneIdFor(row, seat);
         if (seat === current) {
@@ -2926,7 +2997,8 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     };
     const { atGenerate, board } = rulesPart15();
     // An Equity card's place on a card changes only by the placing Invest of it, or by the Pivot of the card it sat on, which leaves it in
-    // the same portfolio on no card; a Launch leaves every Equity card on the launched product (Review Focus 1, R1, §17.B.4).
+    // the same portfolio on no card, or in a Veto of it, which leaves it on no card; a Launch leaves every Equity card on the launched
+    // product (Review Focus 1, R1, §17.B.4, §17.B.5).
     const rulesPart16 = () => {
       for (const c of after.cards) {
         if (founderOf(c) === undefined) continue;
@@ -2936,18 +3008,24 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
         const pressed = [INVEST_PLACING, PLACE].includes(move.type) && move.cardId === c.id;
         const placed = pressed && on === move.onto;
         const returned = move.type === PIVOT && wasOn === move.cardId && on === undefined && c.zoneId === was?.zoneId;
-        // Its three colour flags change only in a placement of that token or the Pivot that returns it, and a placement leaves exactly the
-        // colour the press chose, answered in the button's order Blue, Red, QA (§17.B.4).
+        // … or in a Veto of it, which leaves it on no card (§17.B.5).
+        const vetoed = move.type === VETO && move.cardId === c.id && on === undefined;
+        // Its three colour flags change only in a placement of that token, the Pivot that returns it, or the Veto that burns it, which
+        // clears all three; a placement leaves exactly the colour the press chose, answered in the button's order Blue, Red, QA
+        // (§17.B.4, §17.B.5).
         const flagsOf = (card: CardState | undefined) => Object.values(CONSULTANT_COLOURS).filter((flag) => card?.data?.[flag] === true);
+        const cleared = [VETO].includes(move.type) && move.cardId === c.id;
         if (pressed) {
           const asked = pressChoices(runtime, before, move);
           const named = answersOf(move)[0] ?? (typeof asked === 'string' ? undefined : asked[0]?.options[0]);
           sameList(flagsOf(c), [CONSULTANT_COLOURS[named as string]], () => `the colour ${c.id} was placed in, answered ${named}, ${at}`);
+        } else if (cleared) {
+          sameList(flagsOf(c), [], () => `the colour flags of ${c.id} ${at}`);
         } else if (!returned) {
           sameList(flagsOf(c), flagsOf(was), () => `the colour flags of ${c.id} ${at}`);
         }
         if (on === wasOn) continue;
-        if (!placed && !returned) board.push(`${c.id} (${nameOf(c)}) in ${c.zoneId} went from ${JSON.stringify(wasOn)} to ${JSON.stringify(on)}`);
+        if (!placed && !returned && !vetoed) board.push(`${c.id} (${nameOf(c)}) in ${c.zoneId} went from ${JSON.stringify(wasOn)} to ${JSON.stringify(on)}`);
       }
       noneOf(board, () => `the Board ${at}`);
     };
@@ -3537,12 +3615,13 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
  * ending their actions leaves them none. Every other seat's actions stay as they were, but for the seat whose turn the move started,
  * which has its 3.
  */
-function keepsTheBudget(seats: PlayerId[]): Watch {
-  return (before, move, after) => {
+function keepsTheBudget(seats: PlayerId[]): (before: GameState, judged: Judged, after: GameState) => void {
+  return (before, { press: move, as }, after) => {
     const by = move.by as PlayerId;
     const at = `after ${by}'s ${move.type}${move.cardId === undefined ? '' : ` ${move.cardId}`}`;
     const actions = (state: GameState, seat: PlayerId) => counterOf(state, 'actions', seat);
-    const cost = buttonOf(before, move.type)?.cost?.amount ?? 0;
+    // A press that opened a window is charged its cost; the move that let it go ahead charges nothing, its cost already spent.
+    const cost = as === 'ahead' ? 0 : buttonOf(before, move.type)?.cost?.amount ?? 0;
     const turnOf = after.data[TURN_OF_KEY];
     const started = typeof turnOf === 'string' && turnOf !== before.data[TURN_OF_KEY] ? turnOf : null;
     // The start player's own step can end a round's steps, and so start its own turn (6-1's round steps).
@@ -3555,12 +3634,50 @@ function keepsTheBudget(seats: PlayerId[]): Watch {
   };
 }
 
+/**
+ * A watch that checks the Veto window after every move of a game at `seats` (Review Focus 1, the spec's anti-goal): a window is open only
+ * in the veto phase, and its `by` is the seat whose turn it is; a press that opens one asks every seat still in, from the actor's left
+ * round to its right, whose portfolio held a card naming the actor before it; and a Veto moves exactly one card, from the vetoer's
+ * portfolio to the actor's equity, on no card, changing no capital, no counter and no other card, the actor's actions as the opening move
+ * left them (§17.B.5).
+ */
+function keepsTheWindow(seats: PlayerId[]): Watch {
+  return (before, move, after) => {
+    const at = `after ${move.by}'s ${move.type}${move.cardId === undefined ? '' : ` ${move.cardId}`}`;
+    const waiting = waitingOf(after);
+    if (waiting !== null) {
+      sameAs(after.turn!.phase, 'veto', () => `the phase while a window is open ${at}`);
+      sameAs(waiting.by, turnOf(after).seat, () => `the actor of the window ${at}`);
+    }
+    if (waitingOf(before) === null && waiting !== null) {
+      const actor = move.by as PlayerId;
+      const i = seats.indexOf(actor);
+      const round = seats.map((_, k) => seats[(i + 1 + k) % seats.length]).filter((seat) => seat !== actor);
+      const holders = round.filter((seat) => portfolioOf(before, seat).some((c) => founderOf(c) === actor));
+      sameList(waiting.asked, holders, () => `the seats asked ${at}`);
+    }
+    if (move.type === VETO) {
+      const actor = waitingOf(before)!.by;
+      const moved = after.cards.filter((c) => {
+        const was = cardById(before, c.id);
+        return JSON.stringify(was) !== JSON.stringify(c);
+      });
+      sameList(moved.map((c) => c.id), [move.cardId], () => `the cards changed ${at}`);
+      const token = cardById(after, move.cardId as string)!;
+      sameAs(cardById(before, token.id)!.zoneId, zoneIdFor('portfolio', move.by as PlayerId), () => `where ${at} took its card`);
+      sameAs(token.zoneId, zoneIdFor('equity', actor), () => `where ${at} put its card`);
+      sameAs(token.data?.[HOLDER_KEY], undefined, () => `the card ${at} is on`);
+      sameAs(JSON.stringify(after.data[COUNTERS_KEY]), JSON.stringify(before.data[COUNTERS_KEY]), () => `the counters ${at}`);
+    }
+  };
+}
+
 describe('Startup Simulator (designer language)', () => {
   it('compiles with no diagnostics', () => expect(diagnostics).toEqual([]));
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(333);
+    expect(results).toHaveLength(338);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -4391,12 +4508,36 @@ describe('Startup Simulator (designer language)', () => {
         const greenlit = players === 4 ? keepingToGreenlight() : null;
         /** The Event revealed at the last Round Start. */
         let revealed: string | null = null;
+        const judge = windowJudge();
+        const window = keepsTheWindow(seats);
+        /** The engine the game is played on, once `playGame` makes it: the view check below reads the seats' views through it. */
+        let playing: GameEngine | null = null;
         const engine = playGame(players, seed, (before, move, after) => {
           if ((after.data[ROUND_KEY] as number) > (before.data[ROUND_KEY] as number)) revealed = eventOf(after);
-          rules(before, move, after);
-          budget(before, move, after);
-          const keys = happenings(runtime, before, move, after);
-          for (const key of [move.type, ...keys]) count(key);
+          const judged = judge(before, move, after);
+          window(before, move, after);
+          if (judged.as !== 'cost') rules(before, judged.press, after);
+          budget(before, judged, after);
+          const keys = judged.as === 'cost' ? [] : happenings(runtime, before, judged.press, after);
+          for (const key of [...(judged.as === 'cost' ? [] : [judged.press.type]), ...keys]) count(key);
+          // The view (Review Focus 5): as a press opens a window, every seat is told who acts, with no card id and no hidden card's name.
+          if (seed === 1 && judged.as === 'cost' && playing !== null) {
+            for (const seat of seats) {
+              const waiting = seatExtras(playing, runtime, after, seat).waiting;
+              sameAs(waiting?.by, move.by, () => `the actor ${seat} is shown ${where}`);
+              const text = JSON.stringify(waiting);
+              // No id; and each card the press picked from a row the seat can't see is a face-down card (a label may name a card's kind).
+              const { card: picked, cards: pickedSome = [], onto } = waitingOf(after)!.subject;
+              const ids = [...(picked === null ? pickedSome : [picked]), ...(onto === undefined ? [] : [onto])];
+              const hidden = after.cards.filter((c) => text.includes(`"${c.id}"`)).map((c) => `${c.id} (${nameOf(c)}) in ${c.zoneId}`);
+              ids.forEach((id, i) => {
+                const c = cardById(after, id)!;
+                const unseen = owners(seats).has(c.zoneId) && owners(seats).get(c.zoneId) !== seat;
+                if (unseen && waiting!.cards[i] !== 'a face-down card') hidden.push(`${id} (${nameOf(c)}) in ${c.zoneId} as ${waiting!.cards[i]}`);
+              });
+              noneOf(hidden, () => `cards ${seat}'s waiting view gives away ${where}`);
+            }
+          }
           keeping?.watch(before, move, after, keys);
           greenlit?.watch(before, move, after);
           const by = move.by as PlayerId;
@@ -4404,7 +4545,7 @@ describe('Startup Simulator (designer language)', () => {
           if (move.type === CONFIRM_MODES && !declaring.has(by)) count(MODES_KEPT);
           const started = turnStarted(before, after);
           if (started !== null) declaring.delete(started);
-        }, { throughView: seed === 1, refused, finalCheck });
+        }, { throughView: seed === 1, refused, finalCheck, made: (made) => { playing = made; } });
         if (seed === 1) {
           // The view was checked card by card: the cards each card may go on, and the cards of a set, each judged alone.
           expect(viewChecks.targets - checked.targets, `${where}: cards whose targets the view was checked for`).toBeGreaterThan(0);
@@ -4786,13 +4927,13 @@ describe('Startup Simulator (designer language)', () => {
 
     it('takes back every move with undo, and rebuilds the game from its log, through recruits and research (3 players, seed 1)', () => {
       const states: GameState[] = [];
-      // The retuned seats put their makers on projects before they recruit, so the first recruit comes at move 52 (it was within 40; a Design Sprint and its cleanup came before it from plan 6-2a, the Event deck reshuffled the game from plan 6-2b, and plan 7-2a's Invests and Round Start steps reshuffled it again: an Invest, a placement, a confirm and a placing Invest come before it, so undo takes each back).
+      // The retuned seats put their makers on projects before they recruit, so the first recruit comes at move 57 (it was within 40; a Design Sprint and its cleanup came before it from plan 6-2a, the Event deck reshuffled the game from plan 6-2b, and plan 7-2a's Invests and Round Start steps reshuffled it again: an Invest, a placement, a confirm and a placing Invest come before it, so undo takes each back; plan 7-2b's Veto windows add the 5 answers that let actions go ahead).
       const both = (log: readonly Move[]) => log.some((move) => RECRUITS.includes(move.type))
         && log.some((move) => move.type === RESEARCH_SEED || move.type === RESEARCH_GROWTH);
       const engine = playGame(3, 1, (_before, _move, after) => states.push(after), { until: both });
       const log = [...engine.getLog()];
-      expect(log).toHaveLength(52);
-      expect(states).toHaveLength(52);
+      expect(log).toHaveLength(57);
+      expect(states).toHaveLength(57);
       // A recruit makes a Junior whose id comes from the state, and a research deals and keeps a card, so both must replay.
       expect(log.some((move) => RECRUITS.includes(move.type))).toBe(true);
       expect(log.some((move) => move.type === RESEARCH_SEED || move.type === RESEARCH_GROWTH)).toBe(true);
@@ -5972,8 +6113,11 @@ describe('Review Focus: a reshuffle no seat can follow (plan 6-1, Task 6)', () =
     const hidden = new Set(['strategy-deck', ...seats.flatMap((seat) => [zoneIdFor('strategy hand', seat), zoneIdFor('brainstorm', seat)])]);
     let reshuffles = 0;
     let checked = 0;
-    playGame(2, 2, (before, move, after) => {
-      if (![BRAINSTORM, BRAINSTORM_FLUSHING].includes(move.type)) return;
+    const judge = windowJudge();
+    playGame(2, 2, (before, raw, after) => {
+      // A Brainstorm that opened a Veto window draws as it goes ahead (see `Judged`).
+      const { press: move, as } = judge(before, raw, after);
+      if (as === 'cost' || ![BRAINSTORM, BRAINSTORM_FLUSHING].includes(move.type)) return;
       // A Brainstorm leaves the discard empty only when it shuffled the discard, and the cards it flushed there, into the deck (§15.C).
       const flushed = (move.cardIds ?? []) as string[];
       if (zoneCards(after, 'strategy-discard').length > 0 || zoneCards(before, 'strategy-discard').length + flushed.length === 0) return;
