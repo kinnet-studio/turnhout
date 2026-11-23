@@ -1034,9 +1034,9 @@ function playTurn(
    * The agency row's first attaching card the seat can pay for, the Growth Hacker or a Sales Rep, onto the seat's first product in
    * operation, when the seat has a product and `action`, the cycle's action this turn (see `playTurn`), is 0, the recruit's (§3, §20.B,
    * ruling 19). Null otherwise. Only in the recruit's place: the three Sales Reps attach as well as the one Growth Hacker, and a seat
-   * hiring one at any action it could would take a Sales Rep where the agency row's hire to the ops team takes a QA Engineer (3 players
-   * seed 4, 4 players seed 3), and would lead 2 players seed 4 off what was then the long runs' only Cut 2 red (plan 5-2a's P9). Every
-   * Growth Hacker the long runs hired before the Sales Reps attached came at action 0, so those hires stay as they were.
+   * hiring one at any action it could would take a Sales Rep where the agency row's hire to the ops team then took a QA Engineer (3
+   * players seed 4, 4 players seed 3), and would lead 2 players seed 4 off what was then the long runs' only Cut 2 red (plan 5-2a's P9).
+   * Every Growth Hacker the long runs hired before the Sales Reps attached came at action 0, so those hires stay as they were.
    */
   const hireGrowthHacker = (action: number): Move | null => {
     if (action !== 0 || attachingFor(cards('agency-row')) === undefined || cards(own('operations')).length === 0) return null;
@@ -3247,9 +3247,9 @@ describe('Startup Simulator (designer language)', () => {
       // - a Milestone claimed at the last check: one must be met only as the final Ops check brings products back online (the arranged
       //   test 'rebuilds and takes back Platform Power claimed at the last check, …' below claims one).
       // Held by two games each, the fewest: Sales Seminar on a Sales Rep and the Sales Rep's XP bonus (2 and 4 players, seed 4); by three:
-      // a trained Junior declared red (2 players seed 3, 5 players seeds 1 and 3); by five: a badged Junior leading at the Engine (2
-      // players seeds 1 and 4, 3 players seed 4, 4 players seed 1, 5 players seed 5). A failure here means a cadence moved: retune the
-      // auto-player, never the rules.
+      // a trained Junior declared red (2 players seed 3, 5 players seeds 1 and 3); by four: a trained Junior declared blue (2 players
+      // seeds 1 and 2, 3 players seeds 2 and 3); by five: a badged Junior leading at the Engine (2 players seeds 1 and 4, 3 players seed
+      // 4, 4 players seed 1, 5 players seed 5). A failure here means a cadence moved: retune the auto-player, never the rules.
       expect(paths.filter((key) => !(tally[key] > 0)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
     });
 

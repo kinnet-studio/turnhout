@@ -697,7 +697,7 @@ Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC"
 - **D2:** both baselines are measured (HEAD and D1). The causes and the steering are measured. The before and after numbers are in "Measured numbers": Launches, games with a Launch, per seat count. The secondary measures are counted, with reasons, and none is forced or made required.
 - **D3:**
   - The re-count at HEAD agrees with the notes (ten keys, six on 3p s4).
-  - Seven of the ten reach 2 games or more.
+  - Eight of the ten reach 2 games or more (corrected by the final review; the D3 table shows eight).
   - Three keys move, each named with what pins it: the agency row's hire to the ops team, the reshuffle, and the bench's discard, which the retune itself dropped.
 - **D4:** measured before and after. The memo the brief names exists already, so Task 3 is a gate.
 
