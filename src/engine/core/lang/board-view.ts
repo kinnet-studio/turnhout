@@ -463,7 +463,7 @@ function actionViews(engine: GameEngine, runtime: LangRuntime, state: GameState,
 
 /** What `workedView` and `playerValuesView` show of a game: the rules alone decide it (see worked-view), so it is read once per game. */
 interface Shown {
-  readonly columns: readonly [string, string][];
+  readonly columns: readonly (readonly [string, string])[];
   readonly flags: readonly string[];
   readonly withoutHolder: readonly string[];
   readonly playerValues: readonly string[];

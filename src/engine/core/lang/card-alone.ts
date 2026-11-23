@@ -25,10 +25,11 @@ const cardsOnIt: readonly string[] = CARDS_ON_IT;
 const OF_THE_CARD = new Set(['attribute', 'cardflag', 'cardclass', 'perzone', 'int', 'cardfilter']);
 
 /** The names a test reads the card by; null for a test against “the card” a press moves, which is another card. */
-const testedBy = (filter: CardFilter): string[] | null => {
+export const testedBy = (filter: CardFilter): string[] | null => {
   if ('flag' in filter) return [filter.flag];
   if ('sameAs' in filter) return filter.sameAs.of === 'it' ? [filter.attribute, filter.sameAs.attribute] : null;
-  return [filter.attribute];
+  // Only a test of a number against a number or a value reads the card alone; a kind of test added later is not trusted until looked at.
+  return 'above' in filter || 'is' in filter ? [filter.attribute] : null;
 };
 
 /** The names a line reads the card by, when it reads nothing but the card; null for any other line. */

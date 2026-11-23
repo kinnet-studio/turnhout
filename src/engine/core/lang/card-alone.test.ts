@@ -2,10 +2,16 @@ import { describe, expect, it, vi } from 'vitest';
 import STARTUP_SIMULATOR from '@/games/startup-simulator.rules?raw';
 import type { GameState } from '../game-state';
 import type { Move } from '../moves';
-import { putOn } from './attach';
+import { cardsOn, putOn } from './attach';
 import { seatExtras, type ActionView, type PickCardView } from './board-view';
 import { createEngine, initialState } from './build';
-import { cardAloneValues } from './card-alone';
+import { changeCard } from './card-facts';
+import { cardAloneValues, testedBy } from './card-alone';
+import { registerCardNumberPhrases } from './library/card-number-phrases';
+import { registerCardSubjectPhrases } from './library/card-subject-phrases';
+import { registerCardValuePhrases } from './library/card-value-phrases';
+import { PhraseLibrary, STATIC_TYPES } from './phrases';
+import { VOCAB_TYPES } from './refs';
 import { compileGame } from './compile';
 import { createDefaultLibrary } from './library';
 import { LangRuntime } from './runtime';
@@ -32,12 +38,46 @@ const SECTIONS = [
   'Carried:', '  Only if the card it is on is a Vase card.', '',
   'Crowd:', '  Only if it is crowned.', '',
   'Hall mate:', '  Only if its sturdy is more than 0.', '  Only if some player has a card in their stash whose name is Vase.', '',
+  'Owned:', '  Only if its owner has a card in their stash that is tired.', '',
+  'Fee paid:', '  Only if the fee is more than 1.', '',
+  'Crafty:', '  Only if its craft is more than 0.', '',
+  'Whose same:', '  Only if it is a card whose skill is its wage.', '',
+  'Whose above:', '  Only if it is a card whose skill is more than 0.', '',
   'Looping:', '  Only if it is a Vase card.', '  Only if it is not looping.', '',
   'Ping:', '  Only if it is a Vase card.', '  Only if it is not pong.', '',
   'Pong:', '  Only if it is not ping.',
 ].join('\n');
-const GAME_TEXT = [WORKED_GAME, '', SECTIONS].join('\n');
+const GAME_TEXT = [WORKED_GAME.replace('  Players pay with coins.', '  Players pay with coins.\n  The game has a fee of 2.'), '', SECTIONS].join('\n');
 const game = compiled(GAME_TEXT);
+
+/** The condition and value phrases of the three libraries the classifier draws on, which it trusts to read nothing but the card. */
+const TRUSTED = [
+  'condition: it is a card whose {cardfilter}', 'condition: it is in a {perzone}', 'condition: it is in an {perzone}',
+  'condition: it is not a card whose {cardfilter}', 'condition: it is not {cardclass}', 'condition: it is not {cardflag}',
+  'condition: it is {cardclass}', 'condition: its {attribute} are at least its {attribute}', 'condition: its {attribute} are more than {int}',
+  'condition: its {attribute} are {int}', 'condition: its {attribute} is at least its {attribute}', 'condition: its {attribute} is more than {int}',
+  'condition: its {attribute} is {int}', 'condition: no card on it is {cardflag}', 'condition: some card on it is {cardflag}',
+  "value: a card's {attribute} goes down by its {attribute}", "value: a card's {attribute} goes up by its {attribute}",
+  "value: a card's {attribute} goes up by its {attribute} times its {attribute}", "value: a card's {attribute} goes up by {int} for each {attribute}",
+  "value: a card's {attribute} is at least {int}", "value: a card's {attribute} is its {attribute}", "value: a card's {attribute} is {int}",
+  "value: a {cardflag} card's {attribute} goes down by {int}", "value: a {cardflag} card's {attribute} goes up by its {attribute}",
+  "value: a {cardflag} card's {attribute} goes up by {int}", "value: a {cardflag} card's {attribute} is its {attribute}",
+  "value: a {cardflag} card's {attribute} is {int}", "value: an {cardflag} card's {attribute} goes down by {int}",
+  "value: an {cardflag} card's {attribute} goes up by its {attribute}", "value: an {cardflag} card's {attribute} goes up by {int}",
+  "value: an {cardflag} card's {attribute} is its {attribute}", "value: an {cardflag} card's {attribute} is {int}",
+  "value: {cardclass}'s {attribute} is its {attribute}", "value: {cardclass}'s {attribute} is {int}",
+];
+
+describe('the phrases the classifier draws on', () => {
+  it('are these: a phrase added to one of the three libraries must be checked for what it reads before it is listed here', () => {
+    const library = registerCardNumberPhrases(registerCardValuePhrases(registerCardSubjectPhrases(
+      new PhraseLibrary([...STATIC_TYPES, ...VOCAB_TYPES]),
+    ))) as unknown as { entries: Map<string, Map<string, unknown>> };
+    const found = [...library.entries].filter(([kind]) => kind === 'condition' || kind === 'value')
+      .flatMap(([kind, phrases]) => [...phrases.keys()].map((phrase) => `${kind}: ${phrase}`));
+    expect(found.sort()).toEqual([...TRUSTED].sort());
+  });
+});
 
 describe('which values read their card alone', () => {
   const alone = cardAloneValues(game);
@@ -61,8 +101,22 @@ describe('which values read their card alone', () => {
     expect(alone.has('carried')).toBe(false);
   });
 
-  it('does not count a value that reads its owner, a player or another zone', () => {
+  it('does not count a value that reads another zone, another player, its owner or a game number', () => {
     expect(alone.has('hall mate')).toBe(false);
+    expect(alone.has('owned')).toBe(false);
+    expect(alone.has('fee paid')).toBe(false);
+  });
+
+  it('counts a test of the card against its own number or a figure, and not one against the card a press moves', () => {
+    expect(alone.has('whose same')).toBe(true);
+    expect(alone.has('whose above')).toBe(true);
+    expect(testedBy({ attribute: 'skill', sameAs: { of: 'the card', attribute: 'wage' } })).toBeNull();
+    expect(testedBy({ attribute: 'skill', sameAs: { of: 'it', attribute: 'wage' } })).toEqual(['skill', 'wage']);
+    expect(testedBy({ attribute: 'skill', above: 1 })).toEqual(['skill']);
+    expect(testedBy({ attribute: 'skill', is: 1 })).toEqual(['skill']);
+    expect(testedBy({ flag: 'tired', wanted: true })).toEqual(['tired']);
+    // A kind of test this file does not know is not trusted.
+    expect(testedBy({ attribute: 'skill', between: [1, 2] } as never)).toBeNull();
   });
 
   it('does not count a value that reads a value that does not count', () => {
@@ -114,12 +168,13 @@ describe('a runtime keeping the values that read their card alone', () => {
     expect(runtime.workedFlag(fewer, vase, 'crowned')).toBe(false);
   });
 
-  it('works a value that reads the card it sits on out afresh when the card moves under it', () => {
-    const { state, vase, statue, potter, runtime } = arranged(game);
+  it('works a value that reads the card it sits on out afresh when that card changes and this one does not', () => {
+    const { state, vase, potter, runtime } = arranged(game);
     expect(runtime.workedFlag(state, potter, 'carried')).toBe(true);
-    const moved = putOn(state, [potter], 'crew-p0', statue, game);
-    expect(runtime.workedFlag(moved, potter, 'carried')).toBe(false);
-    expect(runtime.workedFlag(state, vase, 'carried')).toBe(false);
+    const renamed = changeCard(state, vase, { name: 'Statue' }, game);
+    expect(renamed.cards.find((card) => card.id === potter)).toBe(state.cards.find((card) => card.id === potter));
+    expect(runtime.workedFlag(renamed, potter, 'carried')).toBe(false);
+    expect(runtime.workedFlag(state, potter, 'carried')).toBe(true);
   });
 
   it('gives each of two runtimes over one state the values of its own game', () => {
@@ -148,6 +203,13 @@ describe('a runtime keeping the values that read their card alone', () => {
       expect(() => runtime.workedFlag(state, vase, 'ping')).toThrow('is worked out from itself.');
       expect(() => runtime.workedFlag(state, vase, 'pong')).toThrow('is worked out from itself.');
     }
+  });
+
+  it('throws every time for a value whose line throws of itself', () => {
+    const { state, potter, runtime } = arranged(game);
+    const first = outcome(() => runtime.workedFlag(state, potter, 'crafty'));
+    expect(first).toEqual({ threw: expect.stringContaining("isn't a number") });
+    expect(outcome(() => runtime.workedFlag(state, potter, 'crafty'))).toEqual(first);
   });
 
   it('keeps nothing of a value whose line threw, and works the card out afresh for a card it does not throw at', () => {
@@ -207,24 +269,40 @@ describe('a kept value against a fresh one, in a played game', () => {
       }
       return checked;
     };
+    const every = Object.keys(startup.worked!);
+    const readAll = (state: GameState) => {
+      for (const card of state.cards) {
+        for (const name of every) outcome(() => (startup.worked![name].kind === 'number' ? runtime.workedValue(state, card.id, name) : runtime.workedFlag(state, card.id, name)));
+      }
+    };
+    readAll(engine.getState());
     let checked = sample(engine.getState(), 0);
     let sampled = 1;
-    for (let step = 0; step < 160 && engine.getState().result === undefined; step++) {
+    let stacked = 0;
+    for (let step = 0; step < 140 && engine.getState().result === undefined; step++) {
       const state = engine.getState();
       const by = state.turn!.current;
       const presses = seatExtras(engine, runtime, state, by).actions
         .filter((action) => action.allowed === true)
         .map((action) => pressOf(action, by))
         .filter((move): move is Move => move !== null);
-      const accepted = presses.map((_, i) => presses[(i + step) % presses.length]).find((move) => engine.canDispatch(move) === true);
+      // Presses that put cards on cards come first, so that the states hold cards on cards.
+      const ordered = [...presses.filter((move) => 'onto' in move), ...presses.filter((move) => !('onto' in move))];
+      const pool = ordered.filter((move) => 'onto' in move).length || ordered.length;
+      const accepted = ordered.map((_, i) => ordered[(i + step) % pool]).find((move) => engine.canDispatch(move) === true);
       if (accepted === undefined) break;
       expect(engine.dispatch(accepted).ok).toBe(true);
+      // The long-lived runtime reads every worked value of every card as the game goes, as the page would, so that it holds what it can keep.
+      if ((step + 1) % 10 === 0) readAll(engine.getState());
       if ((step + 1) % 20 === 0) {
+        stacked += engine.getState().cards.filter((card) => cardsOn(engine.getState(), card.id).length > 0).length;
         checked += sample(engine.getState(), step + 1);
         sampled++;
       }
     }
     expect(sampled).toBeGreaterThan(4);
     expect(checked).toBeGreaterThan(1000);
+    // The states sampled hold cards on cards, the cards whose values read others.
+    expect(stacked).toBeGreaterThan(5);
   });
 });
