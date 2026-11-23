@@ -131,6 +131,26 @@ Cards:
     | Revenue Leader        | 6  | 1      |
     | Clean Launch          | 5  | 1      |
     | Full Stack Founder    | 7  | 1      |
+  A deck called events, starting in the event deck:
+    | name                         | copies |
+    | Venture Capital Rain         | 1      |
+    | Tech Bubble                  | 1      |
+    | Patent Trolls                | 1      |
+    | Angel Investors              | 1      |
+    | Legacy Code                  | 1      |
+    | Regulation Audit             | 1      |
+    | Open Source Boom             | 1      |
+    | Hardware Hackathon           | 1      |
+    | Chip Shortage                | 1      |
+    | Crunch Time                  | 1      |
+    | Server Crash                 | 1      |
+    | Supply Chain Logjam          | 1      |
+    | Recruiter Frenzy             | 1      |
+    | Intern Season                | 1      |
+    | Headhunter Holiday           | 1      |
+    | Online Course Boom           | 1      |
+    | Whistleblower Protection Act | 1      |
+    | Trade Show                   | 1      |
   Cards can be onboarding.
   Cards can be red mode.
   Cards can be qa mode.
@@ -163,6 +183,9 @@ Table:
   The attributes in play is a pile in the center that everyone can see.
   The milestone deck is a pile in the center that no one can see.
   The milestone row is a row in the center that everyone can see.
+  The event deck is a pile in the center that no one can see.
+  The event in play is a row in the center that everyone can see.
+  The event discard is a pile in the center that everyone can see.
   The box is a pile in the center that no one can see.
   Each player has a bench row that only they can see.
   Each player has a backlog row that only they can see.
@@ -678,6 +701,7 @@ Active tags:
 Setup:
   Shuffle the talent deck.
   Shuffle the strategy deck.
+  Shuffle the event deck.
   Shuffle the seed deck.
   Shuffle the growth deck.
   The market crash goes into the bottom fifth of the growth deck.
@@ -691,6 +715,9 @@ Setup:
   Deal 1 card from the seed deck to each backlog.
 
 In every phase:
+  When a round starts:
+    Move the event in play to the event discard.
+    Deal up to 1 card from the event deck to the event in play, shuffling the event discard into it when it runs out.
   When a player's turn starts:
     No card is onboarding.
   When the agency row has fewer than 4 cards:
@@ -5027,3 +5054,39 @@ Example: each Utility card plays only as itself: a Design Sprint goes on no prod
   When p0 plays the Cease & Desist
   Then it is rejected because "it is a Design Sprint card"
   And p0's strategy hand has a Design Sprint and a Cease & Desist
+
+Example: Setup shuffles the 18 Events, and the first round reveals one before the Start Player's turn (section 4, section 5, ruling 13)
+  Given the game is set up
+  Then the event in play has 1 card
+  And the event deck has 17 cards
+  And the event discard is empty
+
+Example: each Round Start discards the Event in play and reveals the next before the Start Player's turn; an Event whose system comes later does nothing yet (section 5, section 15, ruling 13, the spec's call)
+  Given the event in play has the Venture Capital Rain
+  And the event deck has the Headhunter Holiday and the Recruiter Frenzy
+  And it is p1's turn
+  When p1 ends their actions
+  Then it is p0's turn
+  And the event in play has the Recruiter Frenzy
+  And the event discard has the Venture Capital Rain
+  And the event deck has the Headhunter Holiday
+  And p0 has 7 capital
+
+Example: an empty Event deck shuffles its discard, the Event just ended included, to form a new deck at the Round Start (section 15, section 20)
+  Given the event in play has the Whistleblower Protection Act
+  And the event deck is empty
+  And it is p1's turn
+  When p1 ends their actions
+  Then the event in play has the Whistleblower Protection Act
+  And the event deck is empty
+  And the event discard is empty
+
+Example: no Event is revealed after the last round: the Crash round ends the game with its Event still in play (section 12, section 5)
+  Given the crash pile has the Market Crash
+  And the event in play has the Venture Capital Rain
+  And the event deck has the Headhunter Holiday
+  And it is p1's turn
+  When p1 ends their actions
+  Then the game is over
+  And the event in play has the Venture Capital Rain
+  And the event deck has the Headhunter Holiday
