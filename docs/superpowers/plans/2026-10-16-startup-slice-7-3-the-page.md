@@ -7,18 +7,18 @@
 - each tableau lists its supply and its portfolio, a placed token with the product it sits on;
 - a rival's Consultant hangs under the viewer's product on the canvas, in its colour, and the viewer's own placed token says where it sits;
 - an action waiting in the Veto window is written out in every seat's panel, cards named as that seat sees them, and the seat tabs follow the window, the offer and the lawsuit;
-- the court sits on the shared table, and Venture Capital Rain's effect no longer says it isn't in effect.
+- the court sits on the shared table.
 
 **Architecture:**
 - **This is plan 7-3, the page,** after plans 7-1, 7-2a and 7-2b. It takes plans 4-3 to 7-2b as given (see "Assumed from earlier plans").
-  - It changes one cell of the rules text: Venture Capital Rain's `effect` drops `Not in effect yet.` (6-3's G4). No phrase, no rule and no example changes.
+  - It changes no line of the rules: 7-2a (`103ad6b`) already dropped Venture Capital Rain's `Not in effect yet.`
   - What the page needs and those plans don't provide is listed under "Gaps".
 - **Six tasks:**
   1. cards that name a player, named by whom they name (core naming, the view's picks and waiting cards, the Board's names);
   2. where a card on another player's card sits, in words (Board text, the picker's places, a caption);
   3. other players' cards on the viewer's cards, drawn (fitted layout, the canvas, the hover line);
   4. the waiting action in every seat's panel, and the tabs following the window;
-  5. consent, the lawsuit, the court and the Round Start on the page, and Venture Capital Rain's effect;
+  5. consent, the lawsuit, the court and the Round Start on the page;
   6. the browser check, the README and the final checks.
 - **Nothing in shared code knows Startup Simulator.**
   - Core: `card-facts.ts` gains `nameWithPlayers`; `board-view.ts`'s `pickedAs` uses it; `fit-layout.ts`'s `fittedLayout` gains `seats`, and it gains `drawnCards`; `stackOnHolders` keeps one column per card.
@@ -26,7 +26,8 @@
 - **Calls this plan makes** (the spec leaves "the look of tokens and windows" to the builder):
   1. **A card that names a player is named as an example names it** (`Equity whose founder is p1`), except that a player whose zone it is in goes without saying.
      - So a supply reads `equity: Equity; Equity; Equity`: the line is the Founder's, which names them. A portfolio reads `Equity whose founder is p1`.
-     - It is the one name the page gives a card it sees: in the picker, the offer, the Board text and the waiting line (`pickedAs`, `cardLabel`).
+     - It is the one name the page gives a card it sees: in the picker, the offer and the Board text (`pickedAs`, `cardLabel`).
+     - The waiting line names every player a card names, the zone's seat too, since it says no place (7-1's naming, unchanged).
      - Rule messages, examples and `pickName` are unchanged.
   2. **Where a token sits is said on both sides** (R1's page bullet).
      - The Founder's product lists it after its own cards, with the Investor's seat: `with Junior Software Dev and p0's Equity whose founder is p1 (blue consultant)`.
@@ -67,6 +68,10 @@ These plans are inputs, with their Global Constraints amendments:
 
 ## Global Constraints
 
+- **Amended from its pre-flight** (`docs/superpowers/notes/2026-11-23-startup-7-3-preflight.md`): this plan carries R1–R18, with R5 ruled (a).
+  - BASE is plan 7-2b's finished head, not the pre-flight probe's (which had 4030 tests, Startup 115 tests and 346 examples). Counts are read from BASE's committed tests: the plan adds 39 `it()`s in all (T1 10, T2 8, T3 6, T4 9, T5 6; the report's 38 plus R5 (a)'s option test, which its 38 does not include), Startup's file gains 2, the page file 14, and Startup's examples are unchanged.
+  - A second amendment follows from the probe rebased onto that head (7-2b's real end: 348 examples, the split test file, the second amendment's colour checks).
+  - `pf73-speed` is not taken.
 - **Branch and commits.** Develop on `claude/peaceful-curie-rdfkow`. Commit by pathspec, never `git add -A`. Every commit message ends with these two lines and contains no model identifiers:
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`
   `Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC`
@@ -94,26 +99,25 @@ These plans are inputs, with their Global Constraints amendments:
   - Their code is referred to by the names their Interfaces blocks give.
   - Each task re-checks the names it consumes at HEAD before starting, and stops and reports one that differs.
 - **Files this plan changes outside page and core code:**
-  - `src/games/startup-simulator.rules`: the Venture Capital Rain `effect` cell only (Task 5);
   - `src/games/startup-simulator.test.ts`: appended tests and Task 1's named lines;
   - `README.md`.
 - **Existing tests.**
   - No existing test line changes, except these classes, each named by its task and listed in its report:
-    - Task 1: `viewedCards`' two name comparisons in `startup-simulator.test.ts`, and any test line of plans 7-1 to 7-2b that pins a seat's view name of a card naming a player other than its zone's seat (`'Stake'`, `'Equity'`, `equity: Equity` in a portfolio);
+    - Task 1: `viewedCards`' two name comparisons in `startup-simulator.test.ts` (the pre-flight found no other line of plans 7-1 to 7-2b in this class; one that fails on a name at HEAD is listed in the report);
     - Task 3: the page-test lines that compare the fitted table's whole zone list with a two-argument `fittedLayout` (at least `"draws the seat's own zones and the shared ones, and only their cards"`).
-  - New names are imported on new `import` lines.
+  - New names are imported on new `import` lines. The one exception: Task 1 drops `pickName` from the `card-facts` import line of `board-text.ts`, whose `cardLabel` was its only reader (TS6133).
   - If any other existing test fails, stop and report it.
-- **The browser check** uses the pre-installed Chromium (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`; never `playwright install`).
-  - Its scripts and screenshots stay in `/tmp/claude-0/-home-user-turnhout/fbd53c51-0292-5f8c-bf20-70c6ad4ed3bd/scratchpad/browser-7-3/`, never in the repo.
+- **The browser check** uses the pre-installed Chromium (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`; never `playwright install`). Run the check with `NODE_PATH=/opt/node22/lib/node_modules`.
+  - Its scripts and screenshots stay in `SCRATCH=/tmp/claude-0/-home-user/fbd53c51-0292-5f8c-bf20-70c6ad4ed3bd/scratchpad/browser-7-3` (or the executing session's own scratchpad, with 6-3's check copied from there), never in the repo.
   - Its setup lines go where every seed sets up: right after `  3 new Equity cards go to each equity, each naming its owner as its founder.`, before Setup's deal, checked at seeds 1 to 10.
 - **Page copy (exact):**
   - **A card that names a player:** `{name}`, then ` whose {fact} is {seat}` for each fact naming a player that is set on it, in declared order, leaving out one naming the seat whose zone the card is in: `Equity whose founder is p1`; `Equity` in p1's equity.
-  - **Under the card it sits on, a card of another seat's zone:** `{seat}'s {entry}`, after the card's own: `with Junior Software Dev and p0's Equity whose founder is p1 (blue consultant)`.
+  - **Under the card it sits on, a card of another seat's zone whose cards sit on other players' cards (`across`):** `{seat}'s {entry}`, after the card's own: `with Junior Software Dev and p0's Equity whose founder is p1 (blue consultant)`.
   - **Where a card sits, when it sits on another seat's card:** `on {card} in {seat}'s {zone}`.
     - In the Board text it follows the card's entry: `portfolio: Equity whose founder is p1 (blue consultant) on Dating App in p1's development; Equity whose founder is p2`.
     - In the picker it follows the place: `Equity whose founder is p1 (p0's portfolio, on Dating App in p1's development)`, or is the place in the viewer's own zone: `(on Dating App in p1's development)`.
     - As a caption, on a table that doesn't draw the card it sits on, it takes two lines: `on Dating App` and `in p1's development`.
-  - **The hover line of another seat's card:** `{seat}'s ` before 6-3's hover line: `p0's Equity — founder p1 · blue consultant yes — blue consultant`.
+  - **The hover line of another seat's card:** `{seat}'s ` before 6-3's hover line: `p0's Equity — founder p1 — blue consultant` (6-3's hover line leaves a fact the label says off the columns).
   - **The waiting line:** `{by} wants to {words}`, then `: {cards}` when there are any, then `, choosing {choices}` when there are any, then `.`.
     - The cards are joined by `joinAnd`; for a button that puts its cards on a card, the last is the target, after ` to `.
     - It goes in `<div data-testid="waiting">`, right under the status line, in `seatColor(by)`.
@@ -178,9 +182,9 @@ Re-read each item at HEAD by name, not by line. If one is missing or differs, st
   - `ThingFact.kind` `'player'` and the face's `maker: p0`;
   - `ZoneSpec.across`;
   - `ON_SEAT_KEY`, `putOn` setting it, `othersOn`;
-  - `WaitingView = { by; label; cards; choices }` and `SeatExtras.waiting` (and how its cards are named: through `pickedAs` or beside it);
+  - `WaitingView = { by; label; cards; choices }` and `SeatExtras.waiting` (its cards are named by `pickedAs`, then every naming fact is appended beside it);
   - `MAKER_GAME`, `BUY_GAME`, `POST_GAME`, `RIVAL_GAME`, `OBJECT_GAME`;
-  - the test-local `stake(state, game, zoneId, maker)`;
+  - `makeCard` (`cards.ts`); 7-1's tests each define their own `stake`, none shared;
   - 7-1 Task 8's engine helpers in `action-window.test.ts`, and Task 9's `describe('a waiting action')`.
 - **7-2a (built):**
   - zones `equity` and `portfolio` (`…, where some cards are on other players' cards`), the fact `founder`;
@@ -199,7 +203,7 @@ Re-read each item at HEAD by name, not by line. If one is missing or differs, st
   - `CONFIRM` = `Confirm your consultants`;
   - `VETO` = `Veto with a card in your portfolio`; `LET_GO` = `Let the action go ahead`;
   - `BUY_BACK` = `Buy back a card in another player's portfolio`; `SELL` = `Sell a card in your portfolio`; `SELL_BACK` = `Sell back a card in your portfolio`;
-  - `TAKE` = `Take a card in another player's portfolio`; `DECLINE` = `Decline the offer`;
+  - `TAKE` = `Take a card in another player's portfolio`; `DECLINE` = `Decline the offer`; `TAKE_PLACING` = `Take a card from another player's portfolio to a card in another player's development or another player's operations`;
   - `FILE` = `File a card in your strategy hand`; `SUE` = `Sue a card in another player's portfolio`;
   - `RECRUIT` = `Recruit a junior software dev`; `ASSIGN` = `Assign some cards from your bench to a card in your development`; `PIVOT` = `Pivot a card in your development`.
 
@@ -210,7 +214,7 @@ Re-read each item at HEAD by name, not by line. If one is missing or differs, st
 Before starting: re-check `pickName`, `pickedAs`, 7-1 Task 9's naming of `WaitingView.cards`, `cardLabel`, 6-3's `placesOf`, 7-1's fixtures and `stake`, and in `startup-simulator.test.ts` `viewedCards` and `nameOf`. Also check whether `card-facts.ts` can import `zoneInfo` from `zones.ts` without an import cycle. If it can't, put `nameWithPlayers` in `board-view.ts` with the same signature, and import it from there.
 
 **Files:**
-- Modify: `src/engine/core/lang/card-facts.ts` (`nameWithPlayers`), `src/engine/core/lang/board-view.ts` (`pickedAs`; the waiting view's names if it names cards itself), `src/pages/designer/board-text.ts` (`cardLabel`)
+- Modify: `src/engine/core/lang/card-facts.ts` (`nameWithPlayers`), `src/engine/core/lang/board-view.ts` (`pickedAs`; `waitingView` keeps 7-1's naming of its cards), `src/pages/designer/board-text.ts` (`cardLabel`; it drops `pickName` from its `card-facts` import line)
 - Test (append): `src/engine/core/lang/card-facts.test.ts`, `src/engine/core/lang/board-view.test.ts`, `src/pages/designer/board-text.test.ts`, `src/pages/designer/playtest-fitted.test.tsx`, `src/games/startup-simulator.test.ts` (and its named lines)
 
 **Interfaces:**
@@ -235,17 +239,22 @@ const setUp7: () => GameState;   // inPlay(setUp(), 'Whistleblower Protection Ac
 // T is after(N, 3), the third seat (the file's O may be N), defined in each describe that uses it, as 6-3's Task 4 does.
 ```
 
-- `pickedAs` names a card the seat sees with `nameWithPlayers`. So `PickCardView.name`, the offer's name and `WaitingView.cards` follow. A card it doesn't see is still `a face-down card`.
+- `pickedAs` names a card the seat sees with `nameWithPlayers`. So `PickCardView.name` and the offer's name follow; `WaitingView.cards` keep 7-1's names. A card it doesn't see is still `a face-down card`.
 - `cardLabel` is `nameWithPlayers` for a face-up card.
 
 - [ ] **Step 1: Write the failing tests.**
-  - **`card-facts.test.ts`,** `describe('nameWithPlayers')`, on `MAKER_GAME`'s compiled game and a 3-player state arranged with `stake` and `relocate`:
+  - **`card-facts.test.ts`,** `describe('nameWithPlayers')`, on `MAKER_GAME`'s compiled game and a 3-player state arranged with `stake` (defined in the describe: `const stake = (state: GameState, game: CompiledGame, zoneId: string, by: string) => makeCard(state, game, { name: 'Stake', maker: by }, zoneId)!;`) and `relocate`:
     - a Stake whose maker is p0 in `holdings-p1` is `Stake whose maker is p0`;
     - the same card in `purse-p0` is `Stake`, and in the scrap `Stake whose maker is p0`;
     - a Vase in `workshop-p0` is `Vase`;
     - (guard) `pickName` of the first is `Stake`.
   - **`board-view.test.ts`,** `describe('cards that name a player, as a seat is told of them')`:
-    - A 3-player `BUY_GAME` engine, p0 to act: the buy button's `cards.cards.map((c) => c.name)` is `Stake` four times, since each lies in its maker's purse.
+    - A 3-player `BUY_GAME` engine on a state made by hand, since its Setup deals 6 cards from a pile of 4:
+      - `initialState(buy, 1)`, with two Stakes made in each `purse-pN` (`makeCard(…, { name: 'Stake', maker: pN }, 'purse-pN')`);
+      - then `withBoardData(markTurnStarted({ ...state, turn: { current: 'p0', phase: 'working' } }), buy, seatsFor(3))`;
+      - passed to `createEngine(buy, lib, 3, start)`, p0 to act.
+
+      The buy button's `cards.cards.map((c) => c.name)` is `Stake` four times, since each lies in its maker's purse.
     - `OBJECT_GAME`, arranged as 7-1 Task 8's R2-shape test: `holdings-p0` holds a Stake whose maker is p1, `holdings-p1` one whose maker is p0, on p1's turn.
       - p1's `sell a card in their holdings` lists `Stake whose maker is p0`.
       - After p1 sells it, p0's and p2's `seatExtras(…).waiting.cards` are `['Stake whose maker is p0']`.
@@ -262,14 +271,14 @@ const setUp7: () => GameState;   // inPlay(setUp(), 'Whistleblower Protection Ac
     - `boardOf(N)` contains `` `portfolio: Equity whose founder is ${S}; Equity whose founder is ${T}` ``, and `boardOf(S)` contains `equity: Equity; Equity` and not `whose`.
     - Press `BUY_BACK`. The picker's buttons, before Cancel, are:
       - `` `Equity whose founder is ${S} (${N}'s portfolio)` ``, live;
-      - `` `Equity whose founder is ${T} (${N}'s portfolio)` ``, greyed (`aria-disabled` `true`), its reason pinned as the view gives it.
+      - `` `Equity whose founder is ${T} (${N}'s portfolio)` ``, greyed (`aria-disabled` `true`), its reason (`title`) is `it is a card whose founder is them`.
 
       Press Cancel.
     - Press `INVEST`. The buttons, before Cancel, are `` `Equity (${N}'s equity)` `` three times, then `` `Equity (${T}'s equity)` `` twice: seat by seat from S's left (7-1 Task 2), each Founder said by its zone.
 - [ ] **Step 2: Run** `bunx vitest run src/engine/core/lang/card-facts.test.ts src/engine/core/lang/board-view.test.ts src/pages/designer/board-text.test.ts src/pages/designer/playtest-fitted.test.tsx src/games/startup-simulator.test.ts`. Expected: FAIL (`nameWithPlayers` is missing; names read `Stake` and `Equity`).
 - [ ] **Step 3: Implement** the interfaces.
 - [ ] **Step 4: Run** `bunx vitest run src/engine src/pages src/games`, then `bun run test` and `bun run typecheck`.
-  - A test line of plans 7-1 to 7-2b that pins a seat's view name of a card naming another seat is in the named class: it reads the new name. List each.
+  - A test line of plans 7-1 to 7-2b that pins a seat's view name of a card naming another seat is in the named class: it reads the new name. List each. The pre-flight found none besides `viewedCards`' two.
   - Stop on any other failure.
 - [ ] **Step 5: Commit**
 
@@ -312,14 +321,22 @@ export function sitsOnCaptions(game: CompiledGame, drawn: CardState[], cards: Ca
 ```
 
 - **`boardText`:**
-  - under the card it sits on, a card of a zone whose seat is not that card's zone's seat reads `{seat}'s {entry}`;
+  - under the card it sits on, a card of an `across` zone whose seat is not that card's zone's seat reads `{seat}'s {entry}`; a card of any other zone reads as before (BASE's pin at `board-text.test.ts` l.127–135, p1's Potter on p0's Vase, stays). In code:
+
+    ```ts
+    const heldEntry = (other: CardState) => {
+      const info = zoneInfo(game, other.zoneId);
+      return info?.spec.across === true && info.seat !== seatOf(card) ? `${info.seat}'s ${entry(other)}` : entry(other);
+    };
+    ```
+
   - a zone whose spec has `across` lists every card it holds, and a card that `sitsOn` places is followed by ` {sitsOn}`;
   - every other line reads as before.
-- **`placesOf`.** A card that `sitsOn` places has those words after its place, `p1's holdings, on Vase in p0's workshop`, or as its place in the viewer's own zone, `on Vase in p0's workshop`.
+- **`placesOf`.** A card that `sitsOn` places has those words after its place, `p1's holdings, on Vase in p0's workshop`, or as its place in the viewer's own zone, `on Vase in p0's workshop`. A card whose place `sitsOn` already names never gains 6-3's `, on {card}` tie-break; labels still tell such cards apart.
 - **`playtest.tsx`.** A card's caption is its count captions, then its `sitsOnCaptions` entry, joined by `\n`. Both come from the captions memo, with `placed` and `view.scene.cards`.
 
 - [ ] **Step 1: Write the failing tests.**
-  - **`board-text.test.ts`,** `describe("cards on other players' cards")`. A 3-player `RIVAL_GAME` state arranged with `stake`, `relocate` and `putOn`, in this order:
+  - **`board-text.test.ts`,** `describe("cards on other players' cards")`. A 3-player `RIVAL_GAME` state arranged with `stake` (defined in the describe: `const stake = (state: GameState, game: CompiledGame, zoneId: string, by: string) => makeCard(state, game, { name: 'Stake', maker: by }, zoneId)!;`), `relocate` and `putOn`, in this order:
     - `workshop-p0` holds a Vase, with a Potter put on it in `crew-p0`;
     - p1's Stake whose maker is p0 is put on it in `holdings-p1`, and set `lit`;
     - p2's Stake whose maker is p0 is put on it in `holdings-p2`;
@@ -330,10 +347,13 @@ export function sitsOnCaptions(game: CompiledGame, drawn: CardState[], cards: Ca
     - The `holdings:` part of `boardText(game, cards, 'p1')` is `holdings: Stake whose maker is p0 (lit) on Vase in p0's workshop; Stake whose maker is p2`.
     - `sitsOn` of p1's placed Stake is `on Vase in p0's workshop`. It is null for the Potter, for the Stake on no card, and for the placed Stake when the Vase is left out of `cards`.
     - `sitsOnCaptions(game, <p1's cards>, cards)` is `{ [p1's placed Stake]: "on Vase\nin p0's workshop" }`. With the Vase among the drawn cards it is `{}`.
-    - (guard) The file's existing `boardText` and `boardCaptions` tests pass unchanged.
+    - (guard) The file's existing `boardText` and `boardCaptions` tests pass unchanged, among them BASE's 'lists the cards on a card from any zone and seat…' (l.127–135: p1's Potter on p0's Vase, listed with no seat).
   - **`card-pick.test.ts`,** `describe('placesOf, for a card on another player\'s card')`. The same state, with a second Stake whose maker is p0, on no card, in `holdings-p1` (Review Focus):
     - for p1: the placed Stake is `on Vase in p0's workshop`, and neither unplaced Stake has a place;
     - for p0: the placed Stake is `p1's holdings, on Vase in p0's workshop`, and the other two are `p1's holdings`;
+    - (two placed) the second Stake put on the Vase too, labels `{ [p1's placed Stake]: 'lit' }`:
+      - for p1: `on Vase in p0's workshop, lit` and `on Vase in p0's workshop`;
+      - for p0: `p1's holdings, on Vase in p0's workshop, lit` and `p1's holdings, on Vase in p0's workshop`;
     - (guard) 6-3's `JINX_GAME` tests pass unchanged.
   - **`playtest-fitted.test.tsx`,** `describe('Consultants in words')`, with `tab` and `boardOf` local. The arrangement is `setUp7()` with:
     - a Dating App in `development-${N}`;
@@ -342,7 +362,7 @@ export function sitsOnCaptions(game: CompiledGame, drawn: CardState[], cards: Ca
 
     Mount it (S's tab):
     - `boardOf(S)` contains `` `portfolio: Equity whose founder is ${N} (blue consultant) on Dating App in ${N}'s development; Equity whose founder is ${N}` ``.
-    - `boardOf(N)` ends with `` ` with ${S}'s Equity whose founder is ${N} (blue consultant)` ``.
+    - `boardOf(N)` contains `` `[Blue 0/6, Red 0/0] with ${S}'s Equity whose founder is ${N} (blue consultant) · equity: Equity` ``.
     - `table!.decor![onDating].caption` is `` `on Dating App\nin ${N}'s development` ``, where `onDating` is the placed token, and the other token's decor has no `caption`.
     - **Review Focus.** Press `SELL`. The picker's buttons, before Cancel, are `` `Equity whose founder is ${N} (on Dating App in ${N}'s development)` `` and `` `Equity whose founder is ${N}` ``. Press Cancel.
 - [ ] **Step 2: Run** `bunx vitest run src/pages/designer/board-text.test.ts src/pages/designer/card-pick.test.ts src/pages/designer/playtest-fitted.test.tsx`. Expected: FAIL (`sitsOn` and `sitsOnCaptions` are missing; the portfolio lists no placed token; the rival token has no seat).
@@ -422,7 +442,7 @@ export function drawnCards(defs: ZoneDef[], cards: CardState[], viewer: PlayerId
     - **Drops** (Review Focus). `unreachableZones(fittedLayout(zones, 'p1', seats), 7)`, less the entries for `holdings-p0` and `holdings-p2`, equals `unreachableZones(fittedLayout(zones, 'p1'), 7)`.
     - (guard) 1b-3's and 4-3's `stackOnHolders` tests pass unchanged.
   - **`playtest-fitted.test.tsx`.**
-    - **Changed line.** In `"draws the seat's own zones and the shared ones, and only their cards"`, `ids` is read from `fittedLayout(game.zones, S, seatsOf(3))`. Any other page-test line that compares the fitted table's whole zone list with a two-argument `fittedLayout` gets the seats the same way; name each.
+    - **Changed line.** In `"draws the seat's own zones and the shared ones, and only their cards"`, `ids` is read from `fittedLayout(game.zones, S, seatsOf(3))`. Any other page-test line that compares the fitted table's whole zone list with a two-argument `fittedLayout` gets the seats the same way; name each. The pre-flight found no other.
     - Append `describe("a rival's Consultant hangs under the viewer's product")`, with `tab`, `boardOf`, `hover` and `detail` local (as 6-3's hover describe has them). `[A, B]` is `[N, T]` in seat order.
       - **The arrangement:** `setUp7()`, with:
         - a Dating App in `development-${S}`;
@@ -439,7 +459,7 @@ export function drawnCards(defs: ZoneDef[], cards: CardState[], viewer: PlayerId
 
           Each is read through `computeZoneLayout` of its own free def.
       - **The colour.** `table!.decor![aToken].badge` is `blue consultant` and B's is `red consultant`. Pin each whole as the view gives it.
-      - **The hover line.** `hover(aToken)`: `detail()` is `` `${A}'s ${cardDetail(faceKey)} — ${badge}` ``.
+      - **The hover line.** `hover(aToken)`: `detail()` is `` `${A}'s ${cardDetail(faceKey, ['blue consultant'])} — blue consultant` ``, that is `` `${A}'s Equity — founder ${S} — blue consultant` ``; pin both.
       - **Clicked.** `click(aToken)`: `offered()` contains `[BUY_BACK, true]`. Press the offer's Cancel.
       - **The Board line.** `boardOf(S)` contains `` `${A}'s Equity whose founder is ${S} (blue consultant) and ${B}'s Equity whose founder is ${S} (red consultant)` ``, after the Junior's entry.
       - **Review Focus: pivoted through the window.** Press `PIVOT` and `pickNamed('Dating App')`.
@@ -522,11 +542,12 @@ const waitingText = () => screen.getByTestId('waiting').textContent;
       - `` tab(`${S} — to act`) `` is selected;
       - `screen.queryByTestId('waiting')` is null;
       - `lineOf(S)` starts `` `${S} 5 capital, 2 actions` `` and contains `bench 4`.
-    - **A Veto.** Mount W; press `RECRUIT`. On N's tab press `VETO`; its picker's only button is `` `Equity whose founder is ${S}` ``; pick it. Then:
+    - **A Veto.** Mount W; press `RECRUIT`. On N's tab press `VETO`; its picker's buttons are `` [`Equity whose founder is ${S}`, 'Cancel'] ``; pick the first. Then:
       - `` tab(`${S} — to act`) `` is selected, and there is no waiting line;
       - `lineOf(S)` starts `` `${S} 7 capital, 2 actions` `` and contains `bench 3` and `equity 2`;
       - `lineOf(N)` contains `portfolio 0`, and `boardOf(S)` contains `equity: Equity; Equity`.
     - **Undo** (Review Focus). Mount W; press `RECRUIT`, then `Undo`. Then `` tab(`${S} — to act`) `` is selected, there is no waiting line, and `lineOf(S)` starts `` `${S} 7 capital, 3 actions` ``.
+    - **(option) names every player a waiting card names: an Invest says whose Equity** (R5 (a)). Mount W; press `INVEST` and pick the first `` `Equity (${N}'s equity)` ``. On N's tab (selected), `waitingText()` is `` `${S} wants to invest in a card in another player's equity: Equity whose founder is ${N}.` ``, since the line says no place.
     - **Cards the asked seat can't see** (Review Focus). W with a To-Do List in `development-${S}`. Mount; press `ASSIGN`; `pickNamed('Junior Software Dev')`, `pickNamed('Junior Hardware Eng')`, `confirm()`, `pickNamed('To-Do List')`.
       - On N's tab (selected):
         - `waitingText()` is `` `${S} wants to assign some cards from their bench to a card in their development: a face-down card and a face-down card to To-Do List.` ``;
@@ -556,32 +577,27 @@ EOF
 
 ---
 
-### Task 5: Consent, the lawsuit, the court and the Round Start on the page, and Venture Capital Rain's effect
+### Task 5: Consent, the lawsuit, the court and the Round Start on the page
 
 Before starting: re-check 7-2b's `offer` and `lawsuit` phases, their Hints, `offered` and `court`; 7-2a's `event check` buttons and Hint; 6-3's `inPlay`, `onTop`, `setUpTwo`, `FIRST2`, `SECOND2`, `inPlayLine` and its Event table; 4-3's `askedGroup`, `answerAsked`, `seatButtons`; `setCounter` in `board-state.ts`; Tasks 1–4's helpers.
 
 **Files:**
-- Modify: `src/games/startup-simulator.rules` (the Venture Capital Rain `effect` cell)
 - Test (append): `src/games/startup-simulator.test.ts`, `src/pages/designer/playtest-fitted.test.tsx`
 
 **Interfaces:**
 - Consumes: Tasks 1–4; 6-3's helpers.
-- Produces: no page code (Calls 5–6). The Event table's Venture Capital Rain row becomes, exact copy:
-
-```text
-    | Venture Capital Rain         | Whenever a player Invests in a Founder this round, the Bank pays that Founder $3 extra cash (not on Secondary Trades or Buybacks). | 1 |
-```
+- Produces: no page code and no rules change (Calls 5–6).
 
 - [ ] **Step 1: Write the tests.**
-  - **`startup-simulator.test.ts`,** append `it('says Venture Capital Rain is in effect now that Invest is (§20.D 1)')`:
+  - **`startup-simulator.test.ts`,** append `it('says Venture Capital Rain is in effect, as 7-2a made it (§20.D 1)')`, a guard:
     - the Venture Capital Rain card's `effect` is `Whenever a player Invests in a Founder this round, the Bank pays that Founder $3 extra cash (not on Secondary Trades or Buybacks).`;
     - the Events whose effect ends `Not in effect yet.` are exactly Recruiter Frenzy, Headhunter Holiday and Whistleblower Protection Act.
   - **`playtest-fitted.test.tsx`,** `describe('consent, the lawsuit and the Round Start on the page')`, with `tab` and `boardOf` local:
-    - **The Event's line.** Mount `inPlay(setUp(), 'Venture Capital Rain')`: `inPlayLine()` is `event in play: Venture Capital Rain — effect Whenever a player Invests in a Founder this round, the Bank pays that Founder $3 extra cash (not on Secondary Trades or Buybacks).`
+    - **The Event's line (guard).** Mount `inPlay(setUp(), 'Venture Capital Rain')`: `inPlayLine()` is `event in play: Venture Capital Rain — effect Whenever a player Invests in a Founder this round, the Bank pays that Founder $3 extra cash (not on Secondary Trades or Buybacks).`
     - **A Buyback, consented in the Investor's strip.** `setUp7()` with `tokenOf(…, S)` held by N. Mount; press `BUY_BACK` and `` pickNamed(`Equity whose founder is ${S} (${N}'s portfolio)`) ``.
       - On N's tab, `waitingText()` is `` `${S} wants to buy back a card in another player's portfolio: Equity whose founder is ${S}.` ``. Press `LET_GO`.
       - `` tab(`${N} — to act`) `` is selected, and `status()` is `` `seat: ${N} — offer — Your turn — ${hint('offer')}` ``.
-      - `boardOf(N)` contains `` `portfolio: Equity whose founder is ${S} (offered)` ``, and `seatButtons()` is pinned as the view gives it.
+      - `boardOf(N)` contains `` `portfolio: Equity whose founder is ${S} (offered)` ``, and `seatButtons()` is `[SELL_BACK, TAKE, TAKE_PLACING, DECLINE]`.
       - **Review Focus.** Press `Undo`: `status()` is `` `seat: ${N} — Your turn — ${hint('veto')}` ``, `waitingText()` is back, and `boardOf(N)` doesn't contain `offered`. Press `LET_GO` again.
       - Press `SELL_BACK` and `` pickNamed(`Equity whose founder is ${S}`) ``. Then:
         - `` tab(`${S} — to act`) `` is selected;
@@ -597,7 +613,7 @@ Before starting: re-check 7-2b's `offer` and `lawsuit` phases, their Hints, `off
         - `lineOf(S)` starts `` `${S} 12 capital, 1 action` `` and `lineOf(T)` starts `` `${T} 2 capital` ``;
         - `boardOf(T)` contains `` `portfolio: Equity whose founder is ${N}` ``.
     - **The Non-Compete Suit and the court.** `setUp7()` with `tokenOf(…, S)` held by N, the first Non-Compete Suit in `strategy-hand-${S}`, and S's capital at 9 (`setCounter`). Mount.
-      - `fittedLayout(game.zones, S)` has `court`, a shared `'pile'`.
+      - `fittedLayout(game.zones, S)` has `court` with `layout` `'pile'` and `owner` `'shared'`.
       - `click(suit)`: `offered()` contains `[FILE, true]`. Choose it:
         - `status()` is `` `seat: ${S} — lawsuit — Your turn — ${hint('lawsuit')}` ``;
         - `inOrder('court')` is the Suit alone, face up;
@@ -612,14 +628,14 @@ Before starting: re-check 7-2b's `offer` and `lawsuit` phases, their Hints, `off
       - `tokenOf(…, FIRST2)` held by SECOND2 on the To-Do List, with `red consultant`.
 
       Mount with `players: 2`.
-      - Press `End your actions` (FIRST2's). On SECOND2's tab, press `Pay salaries` once the status ends with `hint('income')`, then `End your actions`.
+      - Press `End your actions` (FIRST2's). `` tab(`${SECOND2} — to act`) `` is selected and `status()` ends with `hint('actions')`: no income step comes, since no one of SECOND2's draws a salary (§20.B). Press `End your actions`.
       - `` tab(`${SECOND2} — to act`) `` is selected, and `status()` is `` `seat: ${SECOND2} — Your turn — ${hint('event check')}` ``.
-      - `seatButtons()` contains `PLACE` and `CONFIRM`; pin the list as the view gives it.
-      - Press `PLACE`; the picker's only button is `` `Equity whose founder is ${FIRST2} (on To-Do List in ${FIRST2}'s development)` ``. Pick it. Then:
+      - `seatButtons()` is `['Let go of a card in your development team', 'Let go of a card in your ops team', PLACE, CONFIRM]`.
+      - Press `PLACE`; the picker's buttons are `` [`Equity whose founder is ${FIRST2} (on To-Do List in ${FIRST2}'s development)`, 'Cancel'] ``. Pick the first. Then:
         - the target `` `To-Do List (${FIRST2}'s development)` `` is greyed;
         - the target `` `Dating App (${FIRST2}'s operations)` `` is live: pick it;
         - `answerAsked('QA')`.
-      - `boardOf(FIRST2)` contains `` `with ${SECOND2}'s Equity whose founder is ${FIRST2} (qa consultant)` `` in its `operations:` part.
+      - `boardOf(FIRST2)` contains `` `with ${SECOND2}'s Equity whose founder is ${FIRST2} (qa consultant, moved this round)` `` in its `operations:` part (7-2a's fix wave: a placed token is moved this round).
       - Press `CONFIRM`: `` tab(`${FIRST2} — to act`) `` is selected, and `status()` doesn't contain `hint('event check')`.
     - **How the numbers come:**
       - §17.A: a Founder with no Active product sells at $5;
@@ -629,18 +645,15 @@ Before starting: re-check 7-2b's `offer` and `lawsuit` phases, their Hints, `off
       - §17.C.2 and §20.A: the Suit costs $4 and pays the Investor $5, for no action, 9 − 4 = 5, then 5 − 5 = 0 and 7 + 5 = 12;
       - §17.B.4 and the overview's call: at a Round Start the Investor may move a Consultant to another of the Founder's products, picking its colour again;
       - §20.D 15: Headhunter Holiday takes no money at the Round Start.
-- [ ] **Step 2: Run** `bunx vitest run src/games/startup-simulator.test.ts src/pages/designer/playtest-fitted.test.tsx`. Expected:
-  - the Venture Capital Rain test and the Event's line FAIL;
-  - the page flows pass already (Calls 5–6, Tasks 1–4) and are guards; say so in the report.
+- [ ] **Step 2: Run** `bunx vitest run src/games/startup-simulator.test.ts src/pages/designer/playtest-fitted.test.tsx`. Expected: all pass (guards, Calls 5–6, Tasks 1–4); say so in the report.
   - If a guard fails for another reason, stop and report it: it is a page gap, not something to work around.
-- [ ] **Step 3: Change the Venture Capital Rain cell** as above. If a Startup line now reads two ways (an `ambiguous` diagnostic), stop and report it.
-- [ ] **Step 4: Run** `bunx vitest run src/games src/pages src/engine`, then `bun run test` and `bun run typecheck`. Startup compiles with `[]`, and its example count is unchanged.
-- [ ] **Step 5: Commit**
+- [ ] **Step 3: Run** `bunx vitest run src/games src/pages src/engine`, then `bun run test` and `bun run typecheck`. Startup compiles with `[]`, and its example count is unchanged.
+- [ ] **Step 4: Commit**
 
 ```bash
-git add src/games/startup-simulator.rules src/games/startup-simulator.test.ts src/pages/designer/playtest-fitted.test.tsx
+git add src/games/startup-simulator.test.ts src/pages/designer/playtest-fitted.test.tsx
 git commit -F - <<'EOF'
-feat(designer): Buyback, Secondary Trade, the Non-Compete Suit with its court and the Round Start's Consultants are played through the seat tabs, and Venture Capital Rain's effect says it is in effect
+feat(designer): Buyback, Secondary Trade, the Non-Compete Suit with its court and the Round Start's Consultants are played through the seat tabs
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01P94KqgHdj4g9qH4TtoLUYC
@@ -653,7 +666,7 @@ EOF
 
 **Files:**
 - Modify: `README.md`
-- Browser scripts and screenshots go only in `SCRATCH=/tmp/claude-0/-home-user-turnhout/fbd53c51-0292-5f8c-bf20-70c6ad4ed3bd/scratchpad/browser-7-3`.
+- Browser scripts and screenshots go only in `SCRATCH=/tmp/claude-0/-home-user/fbd53c51-0292-5f8c-bf20-70c6ad4ed3bd/scratchpad/browser-7-3` (or the executing session's own scratchpad, with 6-3's check copied from there).
 
 **Interfaces:** Consumes Tasks 1–5. Produces nothing new.
 
@@ -679,7 +692,7 @@ EOF
   - each seat's equity holds 3 cards whose `founder` is that seat, and every portfolio is empty.
 
   If a check fails at HEAD (`Shuffle the event deck.` after the anchor, say), stop and report.
-- [ ] **Step 2: The browser check.** Copy 6-3's `$SCRATCH/../browser-6-3/check.cjs` helpers: `at()`, `rowCard()`, `STRIP`, `BOARD`, `hover`, `click`, the launch, the error collection, `waitFor`, `press`, `pressIn`, `group`, `line`.
+- [ ] **Step 2: The browser check.** Copy 6-3's `$SCRATCH/../browser-6-3/check.cjs` helpers: `at()`, `rowCard()`, `STRIP`, `BOARD`, `hover`, `click`, the launch, the error collection, `waitFor`, `press`, `pressIn`, `group`, `line`. `press` and `pressIn` click the first match (`.first()`): a picker lists one Founder's tokens alike.
   - **Setup.**
     - Regenerate `zones.json` for p0, p1 and p2 from `fittedLayout(game.zones, viewer, ['p0', 'p1', 'p2'])` on the probe's rules.
     - Run the dev server on 5173 with `--strictPort`, polled with `curl -sf`.
@@ -715,8 +728,9 @@ EOF
     7. **`07-offer.png`.** p1 presses `BUY_BACK` and picks the token; p0 presses `LET_GO`.
        - The `p0 — to act` tab is selected, and the status reads `offer — Your turn — {offer Hint}`.
        - `board-p0`'s portfolio part reads `Equity whose founder is p1 (blue consultant, offered) on Dating App in p1's development`.
-    8. **`08-buyback.png`.** p0 presses `SELL_BACK` and picks the token. p1 is out of actions, so its turn runs on to p2's.
-       - The `p2 — to act` tab is selected.
+    8. **`08-buyback.png`.** p0 presses `SELL_BACK` and picks `Equity whose founder is p1 (on Dating App in p1's development)`.
+       - The `p1 — to act` tab is selected, p1 at 0 actions (a turn back from the offer waits for End); p1 presses `End your actions`.
+       - Then the `p2 — to act` tab is selected.
        - p0's line starts `p0 25 capital`, and p1's `p1 33 capital`.
        - `board-p1` contains `equity: Equity; Equity; Equity`; its development part has no `with`.
     9. **`09-trade.png`.** p2 presses `INVEST` and picks `Equity (p0's equity)`, then presses `SELL` and picks `Equity whose founder is p0`.
@@ -728,8 +742,8 @@ EOF
         - The `p1 — to act` tab is selected, the status reads the event check's Hint, and the in-play line starts `event in play: Headhunter Holiday`.
         - p1 presses `PLACE`, picks `Equity whose founder is p0`, `To-Do List (p0's development)` and `Red`, then presses `CONFIRM`.
         - Then the `p0 — to act` tab is selected.
-        - On p0's canvas the To-Do List has p1's token hanging under it, labelled `red consultant`.
-        - `board-p0` contains `with p1's Equity whose founder is p0 (red consultant)`.
+        - On p0's canvas the To-Do List has p1's token hanging under it, labelled `red consultant, moved this round`.
+        - `board-p0` contains `with p1's Equity whose founder is p0 (red consultant, moved this round)`.
     11. **`11-color-match.png`.** Color Match at 3: three panels as before, with no waiting line and no new label.
   - **Afterwards.**
     - Open every PNG (Read) and check it against its list.
@@ -762,7 +776,7 @@ EOF
     - Consultants hanging under the Founder's product in their colour;
     - the Veto window's line;
     - Buyback, Secondary Trade and the Non-Compete Suit through the tabs, and the court on the shared table.
-- [ ] **Step 4: Run** `bun run test` and `bun run typecheck`. The passing count is the starting count plus this plan's new tests. Then run these checks over `BASE..HEAD`. Each must print nothing, except where noted.
+- [ ] **Step 4: Run** `bun run test` and `bun run typecheck`. The passing count is the starting count plus 39 (T1 10, T2 8, T3 6, T4 9, T5 6); Startup's file gains 2 tests and the page file 14, and Startup's examples are unchanged. Then run these checks over `BASE..HEAD`. Each must print nothing, except where noted.
 
 ```bash
 # Startup Simulator's words in shared code, slices 3–7, tests included
@@ -773,14 +787,14 @@ git diff "$BASE" -- src/engine src/pages src/utils ':!src/pages/designer/designe
 git diff --stat "$BASE" -- src/engine/core/game-state.ts src/engine/core/flow.ts src/engine/core/game-engine.ts src/pages/hearts-demo
 # a pure core
 git diff "$BASE" -- src/engine/core ':!*.test.ts' | grep '^+' | grep -E "from '(pixi|react|@/components|@/utils)|\b(document|window)\.|Math\.random|Date\.now"
-# the rules: only the Venture Capital Rain row changed (prints it as removed and as added)
+# the rules: no line changed (prints nothing)
 git diff "$BASE" -- src/games/startup-simulator.rules | grep -E '^[-+][^-+]'
 # existing test lines removed or changed: only the named classes
 git diff "$BASE" -- '*.test.ts' '*.test.tsx' | grep -E '^-[^-]'
 ```
 
-  - The rules check prints only the Venture Capital Rain row.
-  - The last check prints only the lines Tasks 1 and 3 named, as their reports list them.
+  - The rules check prints nothing: no line of the rules changed.
+  - The last check prints exactly `viewedCards`' two lines (`zone.map(nameOf)`, `nameOf(target)`) and `const ids = fittedLayout(game.zones, S).map((z) => z.id);`, unless Task 1's report lists more.
   - Also read the `+` lines of `src/engine`, `src/pages` and `src/utils` for "court", "lawsuit", "offer" in the game's sense, and "stake" used of money rather than 7-1's fixture card.
 - [ ] **Step 5: Run the four games alone.** `bunx vitest run src/games/hearts.test.ts src/games/color-match.test.ts src/games/venom.test.ts src/games/rent-day.test.ts src/pages/hearts-demo src/engine/input` passes, and Rent Day still has 108 examples.
 - [ ] **Step 6: Commit**
@@ -799,27 +813,43 @@ EOF
 
 ## Gaps
 
-- **G1. An unplaced token keeps the colour it last had, and the page labels it.**
-  - 7-2a's Gaps make the colour flags inert off a product, but they stay set. A token sent back by a Pivot, a Veto, a sell-back or a lawsuit is labelled `blue consultant` in its portfolio or supply: on its label and in the Board text.
-  - The page can't tell an inert flag from a live one without walking every line of the game that reads it.
-  - **Recommendation:** a 7-2 fix wave clears the three flags as a token comes off a product, with the card rule 7-1's "Left to 7-2" suggested.
-  - No test here pins a returned token's flags.
+- **G1. A token keeps `moved this round` until the next round start.** 7-2a and 7-2b clear the three colour flags on every path a token comes off a product. But a token placed at this round's start that leaves its card in the same round keeps `moved this round` until `No card is moved this round.` (7-2b's rebase note, edit 6, at the real head). The page labels it so in the portfolio or supply. This needs no page work, and no test here pins it.
 - **G2. The Share Price is not on the page.** It is a lookup, not a total, so 4-3's `shownPlayerValues` leaves it out, and the page shows player values only as gauges. A player learns it from the Invest and Buyback buttons' verdicts. Parked.
 - **G3. Existing test lines change in two named classes:**
-  - Task 1: names of cards naming another seat, and `viewedCards`' two comparisons;
+  - Task 1: `viewedCards`' two comparisons (the pre-flight found no other line);
   - Task 3: whole zone lists compared with a two-argument `fittedLayout`.
 
-  Each is listed in its task's report, and Task 6's check prints exactly them.
+  Each is listed in its task's report, and Task 6's check prints exactly `viewedCards`' two lines (`zone.map(nameOf)`, `nameOf(target)`) and `const ids = fittedLayout(game.zones, S).map((z) => z.id);`, unless Task 1's report lists more.
 - **G4. On the canvas, other seats' cards hang first under a card; on its Board line they come after its own.**
   - That order on the canvas is what keeps every drop with the viewer's own zones and every strip in view (Call 3).
   - Recorded, not changed.
+- **G5. No waiting line during an offer or a lawsuit.**
+  - The buyer's status says "You are offered an Equity token at its Founder's Share Price". Who offers it and at what price is left to the Board's `(offered)` and the buttons' verdicts.
+  - Home: a later page plan, once 7-2b's offer stores a `WaitingView`. Slice 8's Vest note says the same.
+- **G6. Faces break mid-word.** In the milestone row, `Platfor|m Power` and `Talent Magne|t` break, as do the Whistleblower Protection Act's face in the event-in-play pile (`07-offer.png`, `01-table.png`).
+  - This predates 7-3. Home: a card-face text-fit fix in shared drawing code.
+- **G7. Greyed reasons mix sentences and lowercase clauses.** `it is a card whose founder is them` sits beside `There is no card in another player's portfolio.`
+  - This predates 7-3. Home: a reason-wording pass.
+- **G8. A two-flag label runs to three lines** in the token's corner (`blue consultant, offered`, `07-offer.png`). It's readable and leaves the corner index clear. With `moved this round`, the Round Start label is longer still.
+  - Home: a later page plan.
+- **G9. The face repeats the label** (`blue consultant: yes`, `offered: yes`, under `founder: p1`).
+  - Home: 4-3's face and label split.
+- **G10. File shows, greyed, on every Strategy card.** That's correct, but noisy.
+  - Home: a later page plan.
 
 ## Forward notes
 
+- **For 7-3's executor:**
+  - re-run Task 1's Step 4 and Task 5 at the real head after 7-2b. R6 and R15 depend on the real tests and rules; the second amendment (the probe rebased onto 7-2b's head) may change them.
+  - **Expected counts,** BASE-relative: the passing count is the starting count plus 39, Startup's file plus 2 tests, the page file plus 14, and Startup's examples unchanged. (7-2b's rebase note expects 4035 tests in 122 files, Startup's file at 115 tests and 348 examples after 7-2b.)
+  - The fix wave's long-run colour checks read flags from card data (`CONSULTANT_COLOURS`, `startup-simulator.test.ts` near l.119), not view names, so T1's naming shouldn't touch them. The probe can't confirm it.
+- **For 7-2b's executor:**
+  - the take-and-place button's `moved this round` decision (R15) changes nothing in 7-3's flows.
+  - The README's "Its N examples" count is 7-2b's to update; 7-3 adds no example.
 - **Slice 8:**
   - a product sold with Consultants on it returns them, and the page follows the view;
   - an Acquisition moves a product to another Board; no rival token travels with it (slice 8 R2);
-  - the Vest / Cease & Desist window can reuse Task 4's line if it stores a `WaitingView`.
+  - the Vest / Cease & Desist window can reuse Task 4's line (`waitingLine`) if it stores a `WaitingView`; under R5 (a) its cards say whose they are.
 - **Slice 9:**
   - a Face-Down product still shows its Consultants, since the portfolio is public;
   - `sitsOn` names it `on a face-down card in p1's development`;
@@ -827,3 +857,4 @@ EOF
 - **Slice 10:**
   - a seat that is out is never asked, and its tab never selected;
   - Bankruptcy's seizure moves every token to its Founder's supply, where it goes without saying.
+- **`pf73-speed`** (a compiled game's player facts worked out once, in a `WeakMap`) is not taken: its saving is under a second. It would matter only if a later slice calls `nameWithPlayers` in a hot loop.
