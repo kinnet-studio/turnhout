@@ -73,3 +73,156 @@ Copied from the SDD workspace (git-ignored) at the pause, so a new session can r
 - Task 6: complete (e806d4c)
 - Plan-end timing (controller, bench.sh 3, alternating): Startup's file BASE 19.65 / 17.92 / 19.34 s vs HEAD 20.50 / 19.06 / 18.99 s (115 → 117 tests); best 17.92 → 18.99 s (×1.06), CPU 28.9 → 29.9 s. Page file BASE 7.91 / 8.47 / 9.75 s vs HEAD 9.16 / 9.01 / 13.28 s (101 → 115; the last pair under other vitest jobs); best 7.91 → 9.01 s (+1.1 s for 14 tests). Startup well under 30 s: no speed-up before 8-1.
 - PAUSED 2026-11-24 at the owner's request (weekly token budget). 8-1's pre-flight stopped after T6 (its commits saved to docs/superpowers/notes/2026-11-24-startup-8-1-preflight-partial.md). The final review is let finish; then stop. Resume: the fix wave from the final review's brief plus the parked Minors ruled 'fix wave' above.
+- Final review (opus): no Critical; Important I1 — the `WaitingView` doc (board-view.ts) says the waiting cards drop the zone's seat, the opposite of R5 (a)'s code; Minors m1–m8 (four removal-probe survivors pinned by new tests, a T4/T5 seam test, stale docs, README, an "(amendment)" test name). Removal probe: 49 removals, 37 caught, 4 real gaps (m1–m4), 8 equivalent or unreachable. Clean: hidden information traced through every new path; shared code, imports, protected files, other games, trailers.
+- Ruling: the fix brief's 12 items accepted as written; T4 M3 and T1 M2 dropped as the review argues (getAllByRole throws on none; the two namings differ on purpose and a helper would force a second core -import edit); the fix wave also carries Task 6 M3 (README "what it sits on, on its owner's table") — cost if wrong: small, all reviewed. After the wave: 4075 tests.
+- Next (on resume): the fix wave (sonnet) from final-review.md's "## Fix brief" plus Task 6 M3, BASE = the head then; a scoped re-review; close-out.
+
+## Appendix: the final review (opus), adjudicated above, with the fix brief the fix wave runs from
+
+### Final review
+
+**Range:** `99c3548..e806d4c` (6 commits). I checked it from a clean `git archive e806d4c` with node_modules symlinked, then deleted that copy and the second copy I used for trying the fixes. I edited, committed and pushed nothing in /home/user/turnhout, its working tree is clean, and no process I started is still running. HEAD has since moved to `ed9d931`, a docs-only pause commit by the controller that is outside this range.
+
+**Checked and found clean**
+
+- **Builds and counts:**
+  - `npx tsc --noEmit -p .` is clean.
+  - The full suite passes 4074/4074 in 122 files: Startup's file 117, the page file 115, Rent Day 108 (`rent-day.test.ts:813`), Startup's examples 348.
+- **Hidden information (check 1).** I traced each named function for a face-down card on top, a face-down card underneath, and one as the waiting target.
+  - **On top.** `derive-scene` keeps only x/y in a hidden card's data, so `holderIdOf` is null. So:
+    - `sitsOn` and `sitsOnCaptions` are null;
+    - `drawnCards` never draws a rival's face-down card;
+    - `cardsOnCards` doesn't list it under a holder;
+    - `placesOf` gives its zone only;
+    - the hover line is null (`faceUp` is false);
+    - `cardLabel` is `a face-down card`.
+  - **Picks and the waiting line.** `pickedAs` and `waitingView` decide on `seesFace` against the real state. `nameWithPlayers` is never reached for a card the seat can't see.
+  - **Underneath.** `sitsOn` says `on a face-down card in p0's workshop` through `cardLabel`. `placesOf`'s tie-break skips a face-down holder.
+  - **As the target.** It reads `… to a face-down card`.
+  - No line, caption, place, hover, status or picker carries a card id. The browser shots 04 and 07 agree.
+- **The tasks together (check 2).** One card is named the same way by the Board, the picker, the offer, the caption and the waiting line, with two seams that are by design:
+  - the waiting line names the zone's own player too (R5 (a)), so on one screen N sees `… : Equity whose founder is T.` above T's `equity: Equity; …`;
+  - the hover line uses 6-3's column form (`p0's Equity — founder p1 — …`).
+
+  No T5 flow shows a stale T4 line. The window's line is gone once the offer opens (browser `07-offer.png`), and no line appears after FILE. Neither is pinned by a test yet (Minor m5).
+- **Shared code (check 3).**
+  - Startup words: the plan's word grep prints nothing. Every court/lawsuit/offer/stake hit is 7-1's `Stake` fixture.
+  - Protected files, the pure-core check and the rules diff all print nothing.
+  - The changed-test-lines check prints exactly the three expected lines.
+  - The `-import` check prints only `board-text.ts`'s line.
+  - `card-facts → zones` adds no import cycle.
+- **Other games (check 4).**
+  - `fittedLayout` with two arguments gives `rivals = []`, so the defs are the same as at BASE.
+  - Only Startup's rules have cards on cards, so `stackOnHolders`' merged column changes no other game.
+  - The hover line shows only on fitted tables, where only `across` cards of other seats are drawn.
+  - No other game has a window, so no other game gets a waiting line (browser `11-color-match.png`).
+- **Commits (check 6).** Each message ends with exactly the two trailer lines, and no other model name appears in the range.
+- **README (check 7).** It is accurate apart from m7.
+- **Removal probe (check 5).** I made 49 removals across the 7 new source files and ran the page tests plus the card-facts, board-view and fit-layout tests for each.
+  - 37 were caught. That includes a true revert of `stackOnHolders` to one column per zone.
+  - 12 survived:
+    - **Four real gaps:** m1–m4 below. Each new test in the fix brief catches its own; I confirmed this.
+    - **Eight equivalent or unreachable under the language:**
+      - `kind === 'player'` and `on === 'card'` in `nameWithPlayers`, which follow from the `ThingFact` type;
+      - `if (holderId === null)` in `sitting`;
+      - `at.seat === null` in `sitting`, since no seat's card sits on a shared-zone card today;
+      - `info.seat !== seatOf(card)` in `heldEntry`, for an `across` card on its own seat's card, which Startup can't do;
+      - the count-caption merge in playtest, since tokens carry no counts;
+      - `cards.length > 1` in `waitingLine`, since `aboutSet` refuses an empty set;
+      - the first-label `find`.
+  - No new test passes vacuously.
+
+**Critical:** none.
+
+**Important**
+
+- **I1. The `WaitingView` doc says the opposite of the code.**
+  - Where: `src/engine/core/lang/board-view.ts:130-132`.
+  - What it says: the waiting cards are named "as the seat's picker names it (`pickedAs`) … but the seat whose zone it is in".
+  - What the code does (R5 (a)): `waitingView` names every player, the zone's seat too. Its own comment at l.629 says so, and the page's option test pins `Equity whose founder is T` for a token in T's equity.
+  - T1 changed this doc to match the pre-R5 design; BASE's wording was right.
+  - Failure scenario: slice 8's Vest window and slice 9 are told to reuse `WaitingView`. Someone following this doc would "fix" `waitingView` to use `pickedAs`'s name, and the waiting line would stop saying whose card it is.
+  - Fix: put back BASE's meaning (fix item 1). Behaviour is unchanged.
+
+**Minor**
+
+- **m1 (T2 M1, kept).** `src/pages/designer/board-text.ts:57` (`sitting`). Swapping `cardLabel(holder)` for `nameWithPlayers(holder)` survives the probe. A face-down product would then be named by its hidden face. Fix: item 2.
+- **m2.** `src/engine/core/lang/fit-layout.ts:223`, `if (owner === undefined) return false;` in `drawnCards`. Removing it survives. This line is what keeps a non-`across` zone of another seat off the viewer's table (the plan's hidden-information rule). Fix: item 3.
+- **m3.** `src/pages/designer/playtest.tsx:456`. The waiting line's `seatColor(by)` is unpinned; removing it survives. Fix: item 4.
+- **m4.** `src/pages/designer/seat-status.ts:44`. Dropping `action?.pick?.onto != null` survives. A press without a target that picked two cards would then read `A to B`. Fix: item 6.
+- **m5.** The T4/T5 seam: no test pins that the waiting line is gone during an offer or a lawsuit. Fix: item 5. It passes at HEAD.
+- **m6.** Stale docs:
+  - `board-text.ts:203`: "A card that sits on a card is listed only under it" is no longer true for an `across` zone.
+  - `fit-layout.ts:3`: "rivals' zones are left off".
+  - `fit-layout.ts:146`: "nothing of the other players'".
+
+  Fix: item 9.
+- **m7.** `README.md:324` says a card is named "the player whose zone it is in going without saying", across the playtest. The waiting line (l.336) names every player. Fix: item 12.
+- **m8.** `src/pages/designer/card-pick.test.ts:251` has a test *name* starting `(amendment)`, the same kind of note as T4 M2 and T5 M3. Fix: item 10.
+- **The other parked Minors:**
+  - **Kept:** T3 M2 (item 8), T4 M1 (item 7), T4 M2 / T5 M3 (item 10), T5 M2 (item 11).
+  - **Dropped, T4 M3:** `getAllByRole` already throws when nothing matches, so the loop at `playtest-fitted.test.tsx:2204` can't pass with no buttons.
+  - **Dropped, T1 M2:** the two namings differ on purpose (R5 (a)), and `waitingView`'s comment says why. A shared helper with a flag would hide that difference. It would also leave `pickName` unused in `board-view.ts`, forcing a second `-import` change in core code (TS6133), to save two lines. I1's doc fix keeps the contract stated instead.
+
+### Fix brief (to run on resume, plus Task 6 M3)
+
+Paths are under /home/user/turnhout. Items 2–6 were run at e806d4c in a scratch copy: board-text, fit-layout, seat-status and the page file pass 271/271, tsc is clean, and each catches the removal it is named for. After the wave: 4075 tests in 122 files (board-text.test 43 → 44; the page file stays 115; Startup 117; examples 348; Rent Day 108).
+
+1. **`src/engine/core/lang/board-view.ts`, the `WaitingView` doc** (the comment above `export type WaitingView`).
+   - Replace its three lines from `choices it carries, and the card it picked` to `would give it away.` with:
+     ```
+      * choices it carries, and the card it picked (or the picked cards, in the press's order) then the card they go to, each by its name where the
+      * seat sees its face, with every player its facts name, the seat whose zone it is in too, since the line says no place (“Stake whose maker
+      * is p1”), and as “a face-down card” elsewhere. No card's id is in it: one that locates a hidden card would give it away.
+     ```
+   - Optional: in `waitingView`, rename the inner `const card = cardById(state, id)!;` and its two uses to `shown`. It shadows the `card` taken from `waiting.subject`.
+   - Test: tsc. Then `board-view.test.ts` "names a Stake in another player's holdings by its maker, in the picker and the waiting action", and the page's "(option) names every player a waiting card names" pass unchanged.
+2. **`src/pages/designer/board-text.test.ts`, `describe("cards on other players' cards")`.** Append after the `it("captions a card whose holder the table doesn't draw, on two lines"…)` block:
+   ```ts
+     it('names a face-down card it sits on as a face-down card, and says nothing of a face-down card on one', () => {
+       const hidden = (card: CardState): CardState => ({ ...card, faceUp: false, faceKey: HIDDEN_FACE_KEY, data: {} });
+       const vaseHidden = all.map((c) => (c.id === A.vaseId ? hidden(c) : c));
+       expect(sitsOn(rival, cardOf(A.state, A.placed), vaseHidden)).toBe("on a face-down card in p0's workshop");
+       expect(sitsOn(rival, hidden(cardOf(A.state, A.placed)), all)).toBeNull();
+     });
+   ```
+   `CardState` and `HIDDEN_FACE_KEY` are already imported. It fails if `sitting` names the holder with `nameWithPlayers`.
+3. **`src/engine/core/lang/fit-layout.test.ts`, `it("draws another seat's card only where it sits on one of the viewer's")`.**
+   - After `const d = fixtureCard('d', 'holdings-p1', {});` add `const e = fixtureCard('e', 'crew-p0', { 'lang:on': 'v' });`. This is a card of p0's non-`across` zone sitting on p1's card, made by hand.
+   - Change the call to `drawnCards(defs, [v, a, b, w, c, d, e], 'p1')`. The expected `[v, a, d]` stays.
+   - It fails if `drawnCards` loses `if (owner === undefined) return false;`.
+4. **`src/pages/designer/playtest-fitted.test.tsx`, `describe('the Veto window on the page')`, `it('asks each holder in turn, then lets the action go ahead (Review Focus)')`.**
+   - After the first `` expect(waitingText()).toBe(`${S} wants to recruit a junior software dev.`); `` add `` expect(screen.getByTestId('waiting').style.color).toBe(seatColor(S)); ``.
+   - Add a new import line at the end of the import block: `import { seatColor } from './seat-colors';`.
+   - It fails if the line loses its colour.
+5. **Same file, `describe('consent, the lawsuit and the Round Start on the page')`.**
+   - In the Buyback `it`, after the lines `press(LET_GO);` / `` selected(`${N} — to act`); `` that come before the offer's `status()` check, add `expect(screen.queryByTestId('waiting')).toBeNull();`.
+   - In the Suit `it`, after `` expect(status()).toBe(`seat: ${S} — lawsuit — Your turn — ${hint('lawsuit')}`); `` add the same line.
+   - These pin that no T4 line outlasts its window into T5's offer or lawsuit.
+6. **`src/pages/designer/seat-status.test.ts`, `it('falls back on the label, its first letter lower-cased, for a label no button has')`.**
+   - After the `Wave` expect add `expect(waitingLine(objects, { by: 'p0', label: 'Wave', cards: ['Potter', 'Vase'], choices: [] })).toBe('p0 wants to wave: Potter and Vase.');`.
+   - It fails if `waitingLine` takes a target for a button without one.
+7. **`src/pages/designer/seat-status.ts`, `waitingLine` (T4 M1).** Under `// A button that picks a target card names it last: the cards it picked go to it.` add:
+   ```
+     // A press picks one card or more (declared-actions' `aboutSet` refuses an empty set), so such a button always waits with two or more;
+     // the length test only keeps a lone card from being read as its target.
+   ```
+   Test: tsc.
+8. **`src/engine/core/lang/fit-layout.ts`, the `stackOnHolders` doc (T3 M2).** Rewrap from `` holder's cards hang in one column `` to `is the same object, and the order is kept.` with the same text, to the file's width. This removes the orphan line `` `STACK_GAP` below the holder's bottom edge and each ``. Test: tsc.
+9. **Stale docs (m6).**
+   - **`board-text.ts`, the `boardText` doc.** Replace `A card that sits on a card is listed only under it. Empty for a seat with nothing on its Board.` with `A card that sits on a card is listed only under it, but a zone whose cards sit on other players' cards lists every card it holds, a placed one followed by where it sits (`sitsOn`), and under the card it sits on such a card of another seat reads `p1's …`. Empty for a seat with nothing on its Board.` Then rewrap.
+   - **`fit-layout.ts` file header.** Change `and rivals' zones are left off.` to `and rivals' zones are left off but for their cards that sit on the viewer's, which hang under them.` Then rewrap.
+   - **`fittedLayout`'s first doc line.** Change `and nothing of the other players', in the world` to `and nothing of the other players' but their cards on the viewer's (the last paragraph), in the world`.
+   - Test: tsc.
+10. **`(amendment)` notes.**
+    - `playtest-fitted.test.tsx`: `// (amendment) The picker's buttons end with its Cancel, as every picker's do.` becomes `// The picker's buttons end with its Cancel, as every picker's do.`
+    - Same file: `// (amendment) SECOND2 has no one on a salary, so no income step comes: their actions follow at once.` becomes `// §20.B: SECOND2 has no one on a salary, so no income step comes: their actions follow at once.`
+    - `src/pages/designer/card-pick.test.ts`: the test name `'(amendment) names the card two of them sit on once, and tells them apart by their labels'` becomes `'names the card two placed ones sit on once, and tells them apart by their labels'`.
+    - Test: the two files pass.
+11. **`playtest-fitted.test.tsx`, Round Start `it` (T5 M2).** Delete `expect(seatButtons()).toContain(PLACE);` and `expect(seatButtons()).toContain(CONFIRM);`. The next line's `toEqual` covers both.
+12. **`README.md` (m7).**
+    - In plan 7-1's `In the playtest` bullet, after `the player whose zone it is in going without saying` insert ` (the waiting line, which says no place, names every player)`.
+    - In `The other seats`, change `its cards named as that seat sees them` to `its cards named as that seat sees them and with every player they name`.
+    - Check: the README says only what the page does.
+
+After the wave, run tsc and the full suite, and re-run Task 6's checks over `99c3548..HEAD`. The `-import` check still prints only `board-text.ts`'s line, and the changed-test-lines check still prints the same three lines.
