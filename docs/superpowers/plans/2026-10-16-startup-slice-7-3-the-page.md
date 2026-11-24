@@ -69,8 +69,9 @@ These plans are inputs, with their Global Constraints amendments:
 ## Global Constraints
 
 - **Amended from its pre-flight** (`docs/superpowers/notes/2026-11-23-startup-7-3-preflight.md`): this plan carries R1–R18, with R5 ruled (a).
-  - BASE is plan 7-2b's finished head, not the pre-flight probe's (which had 4030 tests, Startup 115 tests and 346 examples). Counts are read from BASE's committed tests: the plan adds 39 `it()`s in all (T1 10, T2 8, T3 6, T4 9, T5 6; the report's 38 plus R5 (a)'s option test, which its 38 does not include), Startup's file gains 2, the page file 14, and Startup's examples are unchanged.
-  - A second amendment follows from the probe rebased onto that head (7-2b's real end: 348 examples, the split test file, the second amendment's colour checks).
+  - BASE is plan 7-2b's finished head (`b5ec716`, or a docs-only descendant): 4035 tests in 122 files, Startup's file 115, the page file 101, Startup's examples 348 (`designer-page.test.tsx`), Rent Day 108. The plan adds 39 `it()`s (T1 10, T2 8, T3 6, T4 9, T5 6; the pre-flight's 38 plus R5 (a)'s option test) and ends at 4074 in 122 files, Startup's file 117, the page file 115, examples 348.
+  - Amended a second time from that probe rebased onto `b5ec716` (`2026-11-24-startup-7-3-rebase.md`). All 12 picks applied clean. The head needed only R15's `moved this round` pin, already in Task 5. 7-2a's fix wave and 7-2b's colour checks, trade pricing and offer Hint change none of 7-3's flows or pins.
+  - **The split test file** (speed-up 4; the handoff's "Every later plan (from speed-up 4)" rules). No task touches the long runs' sections (`rulesPartN`, `happeningsPartN`, from l.2770 at `b5ec716`). Task 1's `nameWithPlayers` import is a new line in the import block; Task 1's two `viewedCards` lines are in the top-level `function viewedCards` (l.778, l.786), outside every section; Tasks 1 and 5 append their `it()`s at the file's end, after the last top-level `it`. So no section, `return { … }` or caller changes. Never rerun `split.py`.
   - `pf73-speed` is not taken.
 - **Branch and commits.** Develop on `claude/peaceful-curie-rdfkow`. Commit by pathspec, never `git add -A`. Every commit message ends with these two lines and contains no model identifiers:
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`
@@ -263,7 +264,7 @@ const setUp7: () => GameState;   // inPlay(setUp(), 'Whistleblower Protection Ac
     - `cardLabel` of a Stake whose maker is p0 in `holdings-p1` is `Stake whose maker is p0`, and of one in `purse-p0` is `Stake`;
     - a face-down copy (`faceUp: false`, `faceKey: HIDDEN_FACE_KEY`, `data: {}`) is `a face-down card`.
   - **`startup-simulator.test.ts`.**
-    - **Changed lines.** In `viewedCards`, the two name comparisons read `nameWithPlayers(card, game)` in place of `nameOf`: `zone.map(nameOf)`, and `nameOf(target)` in `named`.
+    - **Changed lines.** In `viewedCards`, the two name comparisons (l.778 and l.786 at `b5ec716`) read `nameWithPlayers(card, game!)` and `nameWithPlayers(target, game!)` in place of `nameOf` (the file's `game` is `compileGame`'s `CompiledGame | undefined`, so a bare `game` fails TS2345): `zone.map(nameOf)`, and `nameOf(target)` in `named`.
     - Append `it('names an Equity token by its Founder wherever its own zone does not (§2)')`:
       - every Setup token's `nameWithPlayers` is `Equity`;
       - one whose founder is p0, moved to `portfolio-p1`, is `Equity whose founder is p0`.
@@ -278,7 +279,7 @@ const setUp7: () => GameState;   // inPlay(setUp(), 'Whistleblower Protection Ac
 - [ ] **Step 2: Run** `bunx vitest run src/engine/core/lang/card-facts.test.ts src/engine/core/lang/board-view.test.ts src/pages/designer/board-text.test.ts src/pages/designer/playtest-fitted.test.tsx src/games/startup-simulator.test.ts`. Expected: FAIL (`nameWithPlayers` is missing; names read `Stake` and `Equity`).
 - [ ] **Step 3: Implement** the interfaces.
 - [ ] **Step 4: Run** `bunx vitest run src/engine src/pages src/games`, then `bun run test` and `bun run typecheck`.
-  - A test line of plans 7-1 to 7-2b that pins a seat's view name of a card naming another seat is in the named class: it reads the new name. List each. The pre-flight found none besides `viewedCards`' two.
+  - A test line of plans 7-1 to 7-2b that pins a seat's view name of a card naming another seat is in the named class: it reads the new name. List each. The pre-flight found none besides `viewedCards`' two. The rebased probe confirms it at `b5ec716`: Startup's file passes 117/117 with them.
   - Stop on any other failure.
 - [ ] **Step 5: Commit**
 
@@ -531,7 +532,7 @@ const waitingText = () => screen.getByTestId('waiting').textContent;
       - `waitingText()` is `` `${S} wants to recruit a junior software dev.` ``.
       - `seatButtons()` is `[VETO, LET_GO]`.
       - `lineOf(S)` starts `` `${S} 7 capital, 2 actions` `` and contains `bench 3`.
-      - 7-1 keeps the window out of the interrupted turn, so no status here names `veto — `. If HEAD's view marks the window as an interrupted turn, every veto status below (and Task 5's) reads `… — veto — …` as `seatStatus` writes it: pin that and report it.
+      - 7-1 keeps the window out of the interrupted turn, so no status here names `veto — `. If HEAD's view marks the window as an interrupted turn, every veto status below (and Task 5's) reads `… — veto — …` as `seatStatus` writes it: pin that and report it. (At `b5ec716` the window is not an interrupted turn, and no `veto — ` appears.)
     - **The actor's tab.** Click S's tab:
       - `status()` is `` `seat: ${S} — ${hint('veto')} — waiting for ${N}` ``;
       - `waitingText()` is the same;
@@ -776,7 +777,7 @@ EOF
     - Consultants hanging under the Founder's product in their colour;
     - the Veto window's line;
     - Buyback, Secondary Trade and the Non-Compete Suit through the tabs, and the court on the shared table.
-- [ ] **Step 4: Run** `bun run test` and `bun run typecheck`. The passing count is the starting count plus 39 (T1 10, T2 8, T3 6, T4 9, T5 6); Startup's file gains 2 tests and the page file 14, and Startup's examples are unchanged. Then run these checks over `BASE..HEAD`. Each must print nothing, except where noted.
+- [ ] **Step 4: Run** `bun run test` and `bun run typecheck`. The passing count is the starting count plus 39 (T1 10, T2 8, T3 6, T4 9, T5 6); Startup's file gains 2 tests and the page file 14, and Startup's examples are unchanged (at `b5ec716`: 4035 → 4074; Startup's file 115 → 117; the page file 101 → 115; examples 348). Then run these checks over `BASE..HEAD`. Each must print nothing, except where noted.
 
 ```bash
 # Startup Simulator's words in shared code, slices 3–7, tests included
@@ -830,7 +831,7 @@ EOF
   - This predates 7-3. Home: a card-face text-fit fix in shared drawing code.
 - **G7. Greyed reasons mix sentences and lowercase clauses.** `it is a card whose founder is them` sits beside `There is no card in another player's portfolio.`
   - This predates 7-3. Home: a reason-wording pass.
-- **G8. A two-flag label runs to three lines** in the token's corner (`blue consultant, offered`, `07-offer.png`). It's readable and leaves the corner index clear. With `moved this round`, the Round Start label is longer still.
+- **G8. A two-flag label runs to three lines** in the token's corner (`blue consultant, offered`, `07-offer.png`). It's readable and leaves the corner index clear. With `moved this round`, the Round Start label (`red consultant, moved this round`, `10-round-start.png`) runs to four lines, still clear of the corner index, and the face's `moved this round: yes` reaches the card's right edge.
   - Home: a later page plan.
 - **G9. The face repeats the label** (`blue consultant: yes`, `offered: yes`, under `founder: p1`).
   - Home: 4-3's face and label split.
@@ -840,9 +841,10 @@ EOF
 ## Forward notes
 
 - **For 7-3's executor:**
-  - re-run Task 1's Step 4 and Task 5 at the real head after 7-2b. R6 and R15 depend on the real tests and rules; the second amendment (the probe rebased onto 7-2b's head) may change them.
-  - **Expected counts,** BASE-relative: the passing count is the starting count plus 39, Startup's file plus 2 tests, the page file plus 14, and Startup's examples unchanged. (7-2b's rebase note expects 4035 tests in 122 files, Startup's file at 115 tests and 348 examples after 7-2b.)
-  - The fix wave's long-run colour checks read flags from card data (`CONSULTANT_COLOURS`, `startup-simulator.test.ts` near l.119), not view names, so T1's naming shouldn't touch them. The probe can't confirm it.
+  - R6 and R15 hold at 7-2b's head (`b5ec716`): Task 6's test-lines check prints exactly R6's three lines, and Task 5's Round Start pin and screenshot 10 read `moved this round`. Re-run Task 1's Step 4 and Task 5 at HEAD all the same.
+  - **Expected counts,** BASE-relative: the passing count is the starting count plus 39, Startup's file plus 2 tests, the page file plus 14, and Startup's examples unchanged. (At `b5ec716`: 4035 → 4074 in 122 files, Startup's file 115 → 117, the page file 101 → 115, 348 examples, Rent Day 108.)
+  - The fix wave's long-run colour checks read flags from card data (`CONSULTANT_COLOURS`, `startup-simulator.test.ts` l.121 at `b5ec716`), not view names, so T1's naming doesn't touch them: the rebased probe's Startup file passes 117/117.
+  - Timing on the rebased probe (bench.sh, best of 3, alternating): Startup's file 18.34 s → 18.48 s (+0.14 s); the page file 7.00 s → 8.24 s (+1.24 s for 14 tests).
 - **For 7-2b's executor:**
   - the take-and-place button's `moved this round` decision (R15) changes nothing in 7-3's flows.
   - The README's "Its N examples" count is 7-2b's to update; 7-3 adds no example.
