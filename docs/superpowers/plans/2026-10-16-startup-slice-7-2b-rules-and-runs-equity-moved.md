@@ -127,7 +127,7 @@ The other inputs:
   - Expected: its AP is spent and nothing else happens. The turn then goes on exactly as after any last action: at 0 actions the Founder can only end their actions, and then the Engine, the cleanups and the next seat follow.
   - Tests: Task 1 example 5, and the long-run Veto invariant.
 - **A window that asks the very player the action is aimed at:** the Investor of a Buyback, or the Founder of a token being sold (R2).
-  - Expected: they are asked like any holder, in turn from the actor's left. A Veto burns the vetoer's token of the actor, never the token being traded.
+  - Expected: they are asked like any holder, in turn from the actor's left. A Veto burns the vetoer's token of the actor, never the token being traded (for a Buyback the Investor may burn the token being bought back: legal, and worse for them than declining).
   - Tests: Task 2, examples 1 and 4.
 - **An offer the answerer can't or won't take:** a buyer short of the price, a decline, a 2-player game.
   - Expected: decline only; the proposer's action is spent; the token stays where it was, not offered. With two players there is no third player to sell to.
@@ -820,7 +820,7 @@ Example: a Founder can't file the Suit when no Investor holds their Equity, and 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/games/startup-simulator.rules src/games/startup-simulator.test.ts src/pages/designer/designer-page.test.tsx README.md
+git add src/games/startup-simulator.rules src/games/startup-simulator.test.ts src/pages/designer/designer-page.test.tsx src/pages/designer/playtest-fitted.test.tsx README.md
 git commit -F - <<'EOF'
 feat(games): Startup Simulator's Non-Compete Suit costs $4 and pays an Investor of the Founder's choice $5 to return one of the Founder's tokens to their supply
 
@@ -921,12 +921,13 @@ EOF
   - after a vetoed last action the page must offer End at 0 actions (R4);
   - waiting labels may name a card's kind; a picked card from a zone the viewer can't see shows face down (R6);
   - starting budget: the rebased probe's best was 23.93 s against BASE's 23.01 s (alternating, best of 3; ×1.04, CPU 38.5 s against 36.4 s); the controller's timing at this plan's end is the figure 7-3 starts from;
+  - plan-end (controller, best of 3 alternating): BASE baaebcd 19.80 s, HEAD 344197a 20.73 s (×1.047, CPU +7%), under 30 s;
   - the browser check of a veto, a let-go, a Buyback and a trade.
 - **Slice 8:**
   - Divest of a product is a second kind of sale. Its consent can reuse the `offer` phase's shape, but its button words must differ from `sell a card in their portfolio`.
   - The Vest / Cease & Desist window is a different window (the victim answers after payment), and must open on public facts only (slice 8 R4).
   - A Vested or CTO token never sits in a portfolio, so the Veto, Buyback and the Suit can't take it (§16.D.2, §11.G.2).
-- **Slice 10:** Bankruptcy's seizure is `For each card in their portfolio, move it to its founder's equity.`, unpaid, and needs no window (it is no action).
+- **Slice 10:** Bankruptcy's seizure is `For each card in their portfolio, move it to its founder's equity.`, unpaid, and needs no window (it is no action), with the three colour clearing lines (or the flag-clearing phrase the Gaps ask for), as the Veto has.
 
 ## Gaps against plan 7-1
 
@@ -935,6 +936,7 @@ None that needs a new phrase: every line above is written with plans 4-1 to 7-1'
   - Nothing reads it as one: no button picks both a card in the hand and a card in another player's zone, no test of `the target card` reads the player a card names, and no guard adds a card's number to a fixed amount.
   - So `file` pays the price, parks the Suit in the public `court` and starts `lawsuit`, where the token is picked. The buyout lives on the Suit (`buyout`), its total with the price on the Suit (`suit cost`), and the payment reads it from the court (`buyout due`). Each number is written once.
 - **The buyer's placement repeats 7-2a's three clearing lines and colour options,** seven copies in all (R5): 7-2a's Invest and Round Start placements, plus the Veto, `sell back`, `take`, `take … to a card` and `sue` (see 7-2a's Gaps: no line clears a card's flags as it leaves a card). Home: a language phrase that clears a card's flags as it leaves a card (a later language plan).
+- **No replay test rebuilds a buyer's placement:** TAKE_PLACING comes only at 4 and 5 players (4p2, 5p2, 5p5), which no replay test plays (R21(b)); the placing Invest's replay covers the same choice mechanism. Home: a later retune.
 - **`buyout due` is a per-player value over a shared pile.** It shows on every panel, at 0 outside a lawsuit. Home: 7-3's view.
 - **The File button is greyed on every Strategy card but the Suit** ("it is a Non-Compete Suit card"). Home: 7-3's page.
 - **A plain `take` comes in one game only,** because buyers are short of cash. Home: a later retune.

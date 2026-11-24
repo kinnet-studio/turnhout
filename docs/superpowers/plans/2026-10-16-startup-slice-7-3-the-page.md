@@ -824,7 +824,7 @@ EOF
   - That order on the canvas is what keeps every drop with the viewer's own zones and every strip in view (Call 3).
   - Recorded, not changed.
 - **G5. No waiting line during an offer or a lawsuit.**
-  - The buyer's status says "You are offered an Equity token at its Founder's Share Price". Who offers it and at what price is left to the Board's `(offered)` and the buttons' verdicts.
+  - The buyer's status says "An Equity token is offered at its Founder's Share Price". Who offers it and at what price is left to the Board's `(offered)` and the buttons' verdicts.
   - Home: a later page plan, once 7-2b's offer stores a `WaitingView`. Slice 8's Vest note says the same.
 - **G6. Faces break mid-word.** In the milestone row, `Platfor|m Power` and `Talent Magne|t` break, as do the Whistleblower Protection Act's face in the event-in-play pile (`07-offer.png`, `01-table.png`).
   - This predates 7-3. Home: a card-face text-fit fix in shared drawing code.
