@@ -6,8 +6,9 @@
 // is never named, and the view works nothing out for either.
 import { HIDDEN_FACE_KEY } from '@/engine/core/derive-scene';
 import { holderIdOf } from '@/engine/core/lang/attach';
-import { cardAttribute, cardFact, pickName } from '@/engine/core/lang/card-facts';
+import { cardAttribute, cardFact } from '@/engine/core/lang/card-facts';
 import { tableColumns } from '@/engine/core/lang/card-facts';
+import { nameWithPlayers } from '@/engine/core/lang/card-facts';
 import { counted, joinAnd } from '@/engine/core/lang/refs';
 import type { CompiledGame, ZoneSpec } from '@/engine/core/lang/types';
 import type { WorkedCard, WorkedView } from '@/engine/core/lang/board-view';
@@ -34,9 +35,12 @@ const onABoard = (game: CompiledGame, card: CardState): boolean => {
 
 const isFaceDown = (card: CardState): boolean => card.faceKey === HIDDEN_FACE_KEY;
 
-/** A card as the Board names it: by its name, or as a face-down card, which says nothing of what it is. */
+/**
+ * A card as the Board names it: by its name with the players it names (`nameWithPlayers`), or as a face-down card, which says nothing of
+ * what it is.
+ */
 export function cardLabel(card: CardState, game: CompiledGame): string {
-  return isFaceDown(card) ? 'a face-down card' : pickName(card, game);
+  return isFaceDown(card) ? 'a face-down card' : nameWithPlayers(card, game);
 }
 
 /** A name's words but its last: 'red' for 'red done'. A name of one word has none. */

@@ -2018,3 +2018,50 @@ describe("a Debuff on another seat's staff, and the steps as a round starts", ()
     expect(inPlayLine().startsWith('event in play: Angel Investors — effect When revealed,'), inPlayLine()).toBe(true);
   });
 });
+
+/** The id of the `n`th card (slot order) in `founder`'s equity. Read every id an arrangement needs before moving any. */
+const tokenOf = (state: GameState, founder: string, n = 0): string =>
+  (cardsByZone({ cards: state.cards, zones: [] }).get(`equity-${founder}`) ?? [])[n].id;
+/** `state` with the token in `holder`'s portfolio, on the card `onto` when given (through putOn), and with the flag `colour` set when given. */
+const holding = (state: GameState, tokenId: string, holder: string, onto?: string, colour?: string): GameState => {
+  const moved = onto === undefined ? relocate(state, [tokenId], `portfolio-${holder}`, game) : putOn(state, [tokenId], `portfolio-${holder}`, onto, game);
+  return colour === undefined ? moved : changeCard(moved, tokenId, { [colour]: true }, game);
+};
+/** A 3-player table after Setup with a neutral Event in play (6-3's `inPlay`), so recruiting costs $2 and nothing pays extra. */
+const setUp7 = (): GameState => inPlay(setUp(), 'Whistleblower Protection Act');
+const INVEST = "Invest in a card in another player's equity";
+const BUY_BACK = "Buy back a card in another player's portfolio";
+
+/**
+ * How the numbers come: §4 and §17.A: each player has 3 Equity tokens, of their own colour; §17.D: a Founder never sells their last, so
+ * T, with 2 left, still sells.
+ */
+describe('Equity named by its Founder', () => {
+  const T = after(N, 3);
+  const boardOf = (seat: string) => screen.getByTestId(`board-${seat}`).textContent;
+
+  it("names a token by its Founder in a rival's portfolio, and by its name alone in its Founder's supply, on the Board and in the picker", () => {
+    let state = setUp7();
+    const [fromS, fromT] = [tokenOf(state, S), tokenOf(state, T)];
+    state = holding(holding(state, fromS, N), fromT, N);
+    mount({ initial: state });
+    expect(boardOf(N)).toContain(`portfolio: Equity whose founder is ${S}; Equity whose founder is ${T}`);
+    expect(boardOf(S)).toContain('equity: Equity; Equity');
+    expect(boardOf(S)).not.toContain('whose');
+
+    press(BUY_BACK);
+    const buttons = within(picker()).getAllByRole('button');
+    expect(buttons.map((b) => b.textContent)).toEqual([
+      `Equity whose founder is ${S} (${N}'s portfolio)`, `Equity whose founder is ${T} (${N}'s portfolio)`, 'Cancel',
+    ]);
+    expect(buttons[0].getAttribute('aria-disabled')).toBe('false');
+    expect(buttons[1].getAttribute('aria-disabled')).toBe('true');
+    expect(buttons[1].getAttribute('title')).toBe('it is a card whose founder is them');
+    press('Cancel');
+
+    press(INVEST);
+    expect(within(picker()).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      ...Array(3).fill(`Equity (${N}'s equity)`), ...Array(2).fill(`Equity (${T}'s equity)`), 'Cancel',
+    ]);
+  });
+});

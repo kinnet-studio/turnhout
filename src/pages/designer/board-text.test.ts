@@ -19,6 +19,8 @@ import { RESTING_GAME } from '@/engine/core/lang/testing';
 import { HIDDEN_FACE_KEY } from '@/engine/core/derive-scene';
 import { keptBadges } from './board-text';
 import { BOX_ZONE } from '@/engine/core/lang/zones';
+import { MAKER_GAME } from '@/engine/core/lang/testing';
+import { makeCard } from '@/engine/core/lang/cards';
 
 const lib = createDefaultLibrary();
 const TIRED = '  Cards can be tired.';
@@ -356,5 +358,19 @@ describe('what a card keeps, off a Board', () => {
     const card = cardOf(laid, potter2);
     expect(keptBadges(kept, [{ ...card, faceUp: false, faceKey: HIDDEN_FACE_KEY, data: {} }])).toEqual({});
     expect(keptBadges(kept, [{ ...card, faceUp: false, faceKey: HIDDEN_FACE_KEY }])).toEqual({});
+  });
+});
+
+describe('a card that names a player', () => {
+  const maker = compileGame(MAKER_GAME, lib).game!;
+  const stake = (s: GameState, g: CompiledGame, zoneId: string, by: string) => makeCard(s, g, { name: 'Stake', maker: by }, zoneId)!;
+  const made = stake(initialState(maker, 1), maker, 'holdings-p1', 'p0');
+
+  it("is named by its maker in another player's zone, and by its name alone in its maker's", () => {
+    expect(cardLabel(cardOf(made.state, made.id), maker)).toBe('Stake whose maker is p0');
+    expect(cardLabel(cardOf(relocate(made.state, [made.id], 'purse-p0', maker), made.id), maker)).toBe('Stake');
+  });
+  it('says nothing of a face-down copy', () => {
+    expect(cardLabel({ ...cardOf(made.state, made.id), faceUp: false, faceKey: HIDDEN_FACE_KEY, data: {} }, maker)).toBe('a face-down card');
   });
 });

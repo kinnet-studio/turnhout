@@ -1469,3 +1469,29 @@ describe('a waiting action', () => {
     expect(readSeatExtras({ ...(view as { [k: string]: Json }), waiting: { by: 'p0', label: 'Hire', cards: [1], choices: [] } })).toBeNull();
   });
 });
+
+describe('cards that name a player, as a seat is told of them', () => {
+  it('names each Stake in its maker\'s purse by its name alone', () => {
+    const buy = compileGame(BUY_GAME, lib).game!;
+    // Setup deals 6 jobs from a pile of 4 at three players, so the purses are filled by hand, as Setup would.
+    const purses = ['p0', 'p0', 'p1', 'p1', 'p2', 'p2'].reduce((s, seat) => makeCard(s, buy, { name: 'Stake', maker: seat }, `purse-${seat}`)!.state, initialState(buy, 1));
+    const start = withBoardData(markTurnStarted({ ...purses, turn: { current: 'p0', phase: 'working' } }), buy, seatsFor(3));
+    const { engine, runtime } = createEngine(buy, lib, 3, start);
+    const view = seatExtras(engine, runtime, engine.getState(), 'p0');
+    const button = view.actions.find((a) => a.move === "buy a card in another player's purse")!;
+    expect(button.cards!.cards.map((c) => c.name)).toEqual(['Stake', 'Stake', 'Stake', 'Stake']);
+  });
+  it("names a Stake in another player's holdings by its maker, in the picker and the waiting action", () => {
+    const game = compileGame(OBJECT_GAME, lib).game!;
+    const SEATS3 = seatsFor(3);
+    let state = initialState(game, 1);
+    state = makeCard(state, game, { name: 'Stake', maker: 'p1' }, 'holdings-p0')!.state;
+    const made = makeCard(state, game, { name: 'Stake', maker: 'p0' }, 'holdings-p1')!;
+    state = withBoardData(markTurnStarted({ ...made.state, turn: { current: 'p1', phase: 'working' } }), game, SEATS3);
+    const { engine, runtime } = createEngine(game, lib, 3, state);
+    const sell = seatExtras(engine, runtime, engine.getState(), 'p1').actions.find((a) => a.move === 'sell a card in their holdings')!;
+    expect(sell.cards!.cards.map((c) => c.name)).toEqual(['Stake whose maker is p0']);
+    expect(engine.dispatch({ type: 'sell a card in their holdings', by: 'p1', cardId: made.id }).reason).toBeUndefined();
+    for (const seat of ['p0', 'p2']) expect(seatExtras(engine, runtime, engine.getState(), seat).waiting?.cards, seat).toEqual(['Stake whose maker is p0']);
+  });
+});

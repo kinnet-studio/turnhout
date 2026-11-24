@@ -33,6 +33,7 @@ import { parseTextFaceKey } from '@/engine/core/lang/cards';
 import { inPlayZones } from '@/engine/core/lang/worked-view';
 import { isSentence } from '@/engine/core/lang/cards';
 import { paidNumbers } from '@/engine/core/lang/board-view';
+import { nameWithPlayers } from '@/engine/core/lang/card-facts';
 
 // The long runs check every rule after every move, thousands of checks a game, and an `expect` costs vitest far more to build than the
 // check costs to make. So the checks that run after every move make theirs first and ask vitest only when it fails, with the same matcher
@@ -775,7 +776,7 @@ function viewedCards(
   const zone = [zoneId].flat().flatMap((from) => zoneCards(state, from));
   sameList(cardCandidates(runtime, buttonOf(state, type)!, state, seat), zone.map((card) => card.id), () => `the candidates of ${at}`);
   sameList(offered.map((card) => card.id), zone.map((card) => card.id), () => `the cards the view offers for ${at}`);
-  sameList(offered.map((card) => card.name), zone.map(nameOf), () => `the names the view gives the cards of ${at}`);
+  sameList(offered.map((card) => card.name), zone.map((card) => nameWithPlayers(card, game!)), () => `the names the view gives the cards of ${at}`);
   sameAs(picking.onto === null, ontoZoneId === null, () => `whether ${at} puts its cards on a card`);
   if (picking.onto !== null) {
     const targets = [ontoZoneId!].flat().flatMap((onto) => zoneCards(state, onto));
@@ -783,7 +784,7 @@ function viewedCards(
     sameList(Object.keys(picking.onto.targets), zone.map((card) => card.id), () => `the cards the view lists targets for in ${at}`);
     for (const card of offered) {
       const goes = picking.onto.targets[card.id];
-      const named = targets.map((target) => [target.id, nameOf(target)]);
+      const named = targets.map((target) => [target.id, nameWithPlayers(target, game!)]);
       // Pairs of plain values: the same pairs when there are as many and each has the same id and the same name.
       if (goes.length !== named.length || !goes.every(({ id, name }, i) => Object.is(id, named[i][0]) && Object.is(name, named[i][1]))) {
         expect(goes.map(({ id, name }) => [id, name]), `the targets the view offers ${card.id} in ${at}`).toEqual(named);
@@ -6385,4 +6386,15 @@ it('gives every Event its effect, a sentence the page shows while it is in play,
   expect([...new Set(sentences)].sort()).toEqual([...effects].sort());
   // §6, §20.D: a recruit pays the University's price to the bank; the License is paid to a player.
   expect(paidNumbers(game!)).toEqual(['junior price', 'hardware junior price']);
+});
+
+it('names an Equity token by its Founder wherever its own zone does not (§2)', () => {
+  // §17.A: each player's tokens are of their colour; a token in its Founder's supply goes without saying, one held by a rival names them.
+  const state = setUp(3, 1);
+  const tokens = state.cards.filter((card) => card.data?.name === 'Equity');
+  expect(tokens).toHaveLength(9);
+  for (const token of tokens) expect(nameWithPlayers(token, game!)).toBe('Equity');
+  const held = zoneCards(state, 'equity-p0')[0].id;
+  const moved = relocate(state, [held], 'portfolio-p1', game!);
+  expect(nameWithPlayers(cardById(moved, held)!, game!)).toBe('Equity whose founder is p0');
 });

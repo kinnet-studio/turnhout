@@ -28,6 +28,7 @@ import { holderFlags, pressFlags, shownFlags, shownPlayerValues, standIns, thenR
 import { PAY_NUMBER } from './library/game-numbers';
 import { holderIdOf } from './attach';
 import { waitingOf } from './action-window';
+import { nameWithPlayers } from './card-facts';
 
 /**
  * `color` is the space's color when it is written as text; `details` is every other thing the table says about it. `facts` is
@@ -126,9 +127,9 @@ export type SeatExtras = {
 };
 /**
  * An action that waits for the players to answer it, the same for every seat but for the cards: who pressed it, the button's label, the
- * choices it carries, and the card it picked (or the picked cards, in the press's order) then the card they go to, each by its name where the
- * seat sees its face, with the player each of its facts names (“Stake whose maker is p1”), and as “a face-down card” elsewhere. No card's
- * id is in it: one that locates a hidden card would give it away.
+ * choices it carries, and the card it picked (or the picked cards, in the press's order) then the card they go to, each as the seat's picker
+ * names it (`pickedAs`): where the seat sees its face, by its name with the player each of its facts names but the seat whose zone it is in
+ * (“Stake whose maker is p1”), and as “a face-down card” elsewhere. No card's id is in it: one that locates a hidden card would give it away.
  */
 export type WaitingView = { by: PlayerId; label: string; cards: string[]; choices: string[] };
 
@@ -390,11 +391,14 @@ export function seesFace(game: CompiledGame, card: CardState, seat: PlayerId): b
   return isRevealed(card, zone ? { visibility: zone.spec.visibility, owner: zone.seat ?? 'shared' } : undefined, seat);
 }
 
-/** A card as `seat` sees it among the cards to pick: by its name, or as a face-down card when its face is hidden from the seat. */
+/**
+ * A card as `seat` sees it among the cards to pick: by its name with the players it names (`nameWithPlayers`), or as a face-down card when
+ * its face is hidden from the seat.
+ */
 function pickedAs(runtime: LangRuntime, state: GameState, seat: PlayerId, id: string): { id: string; name: string; seen: boolean } {
   const card = cardById(state, id)!;
   const seen = seesFace(runtime.game, card, seat);
-  return { id, name: seen ? pickName(card, runtime.game) : 'a face-down card', seen };
+  return { id, name: seen ? nameWithPlayers(card, runtime.game) : 'a face-down card', seen };
 }
 
 /**
@@ -622,11 +626,13 @@ function waitingView(runtime: LangRuntime, state: GameState, seat: PlayerId): Wa
   return {
     // The fallback to the move is never reached for a compiled game: it is kept for a stored state read against rules changed since.
     by: waiting.by, label: action?.label ?? waiting.move,
+    // Every fact naming a player is said, the zone's seat too: the words say only “another player's”, so the card's place is not known.
     cards: ids.map((id) => {
       const { name, seen } = pickedAs(runtime, state, seat, id);
-      const data = cardById(state, id)?.data ?? {};
+      const card = cardById(state, id)!;
+      const data = card.data ?? {};
       const naming = runtime.game.facts.filter((fact) => fact.on === 'card' && fact.kind === 'player' && typeof data[fact.name] === 'string');
-      return seen ? `${name}${naming.map((fact) => ` whose ${fact.name} is ${data[fact.name] as string}`).join('')}` : name;
+      return seen ? `${pickName(card, runtime.game)}${naming.map((fact) => ` whose ${fact.name} is ${data[fact.name] as string}`).join('')}` : name;
     }),
     choices: choices.filter((choice): choice is string => choice !== null),
   };

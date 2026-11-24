@@ -7,6 +7,12 @@ import { deckGameText, fixtureCard, fixtureColorGame, fixtureGame, fixtureState 
 import { makeRng } from '../rng';
 import type { CardState } from '../scene';
 import type { CompiledGame } from './types';
+import { nameWithPlayers, pickName } from './card-facts';
+import { makeCard } from './cards';
+import { initialState } from './build';
+import { MAKER_GAME } from './testing';
+import { relocate } from './zones';
+import type { GameState } from '../game-state';
 
 const knightFace = textFaceKey({ name: 'Knight', health: 3 });
 const knight = (): CardState => ({ id: 'c0', zoneId: 'draw pile', faceUp: true, faceKey: knightFace, data: { name: 'Knight', health: 3, movedBy: 'p0' } });
@@ -161,5 +167,30 @@ describe('what a card says', () => {
     const [card] = buildCards(fixtureGame().cards, makeRng(1)).cards;
     expect(saysOf(card)).toBeNull();
     expect(cardName(card, fixtureGame())).toBe(card.faceKey);
+  });
+});
+
+describe('nameWithPlayers', () => {
+  const maker = compileGame(MAKER_GAME, createDefaultLibrary()).game!;
+  /** A Stake whose maker is `by`, made in `zoneId`. */
+  const stake = (state: GameState, game: CompiledGame, zoneId: string, by: string) => makeCard(state, game, { name: 'Stake', maker: by }, zoneId)!;
+  const fresh = initialState(maker, 1);
+  const made = stake(fresh, maker, 'holdings-p1', 'p0');
+  const card = (state: GameState) => state.cards.find((c) => c.id === made.id)!;
+
+  it('names the player a card names, as an example does', () => {
+    expect(nameWithPlayers(card(made.state), maker)).toBe('Stake whose maker is p0');
+  });
+  it('leaves out the player whose zone the card is in, and keeps it in a shared zone', () => {
+    expect(nameWithPlayers(card(relocate(made.state, [made.id], 'purse-p0', maker)), maker)).toBe('Stake');
+    expect(nameWithPlayers(card(relocate(made.state, [made.id], 'scrap', maker)), maker)).toBe('Stake whose maker is p0');
+  });
+  it('names a card that names no player by its name alone', () => {
+    const vase = fresh.cards.find((c) => c.data?.name === 'Vase')!.id;
+    const state = relocate(fresh, [vase], 'workshop-p0', maker);
+    expect(nameWithPlayers(state.cards.find((c) => c.id === vase)!, maker)).toBe('Vase');
+  });
+  it('(guard) leaves pickName as it was', () => {
+    expect(pickName(card(made.state), maker)).toBe('Stake');
   });
 });

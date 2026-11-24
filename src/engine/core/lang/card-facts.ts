@@ -3,6 +3,7 @@ import type { CardState } from '../scene';
 import type { Json } from '../table-def';
 import { isSaysColumn, parseTextFaceKey, textFaceKey } from './cards';
 import type { CompiledGame } from './types';
+import { zoneInfo } from './zones';
 
 // A fact on a card lives in the card's own `data`, next to the columns of its table. A text card's face is built from
 // those columns and the facts that are set, so a change shows on the card and a saved game never loses it.
@@ -69,6 +70,20 @@ export function cardName(card: CardState, game: CompiledGame): string {
 export function pickName(card: CardState, game: CompiledGame): string {
   const named = card.data?.name;
   return typeof named === 'string' || typeof named === 'number' ? String(named) : cardName(card, game);
+}
+
+/**
+ * A card as a seat that sees its face is told of it, the way an example names it: `pickName`, then ` whose {fact} is {seat}` for each
+ * fact naming a player that is set on it, in the order the game declares them. A fact naming the seat whose zone the card is in goes
+ * without saying: `Stake whose maker is p0` in p1's holdings, `Stake` in p0's purse, `Stake whose maker is p0` in the scrap.
+ */
+export function nameWithPlayers(card: CardState, game: CompiledGame): string {
+  const seat = zoneInfo(game, card.zoneId)?.seat ?? null;
+  const whose = game.facts.flatMap(({ name, on, kind }) => {
+    const named = card.data?.[name];
+    return on === 'card' && kind === 'player' && typeof named === 'string' && named !== seat ? [` whose ${name} is ${named}`] : [];
+  });
+  return `${pickName(card, game)}${whose.join('')}`;
 }
 
 /**
