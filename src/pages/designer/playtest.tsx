@@ -36,6 +36,8 @@ import { drawnCards } from '@/engine/core/lang/fit-layout';
 import { zoneInfo } from '@/engine/core/lang/zones';
 import { SeatTabs } from './seat-tabs';
 import { Tableaux } from './tableaux';
+import { waitingLine } from './seat-status';
+import { seatColor } from './seat-colors';
 
 const initAppWithFaces = makeInitApp(designerFaceRenderer, { showEmptyZones: true });
 
@@ -451,6 +453,7 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
     return (
       <div style={{ ...PANEL_STYLE, width: fitted ? FITTED_WIDTH : SEAT_WIDTH, boxSizing: 'content-box', padding: 8, display: 'flex', flexDirection: 'column', gap: 8, font: '14px sans-serif', color: '#eee' }}>
         <div>{status}</div>
+        {extras?.waiting && <div data-testid="waiting" style={{ color: seatColor(extras.waiting.by) }}>{waitingLine(game, extras.waiting)}</div>}
         {/* Room for the notice and the banner is kept, so the board does not jump when either appears. */}
         <div style={{ minHeight: BANNER_SLOT, display: 'flex', alignItems: 'center', gap: 12 }}>
           {choosing && (

@@ -2163,3 +2163,111 @@ describe("a rival's Consultant hangs under the viewer's product", () => {
     expect(inOrder('open-idea-pool').map((c) => c.id)).toContain(dating);
   });
 });
+
+const waitingText = () => screen.getByTestId('waiting').textContent;
+const RECRUIT = 'Recruit a junior software dev';
+const VETO = 'Veto with a card in your portfolio';
+
+/**
+ * How the numbers come: §17.B.5 and the overview's Veto calls: a holder may cancel an action that costs AP at declaration, before anything
+ * is paid; the AP is spent and nothing else happens; the burned token goes back to its Founder's supply. The spec's call: holders are asked
+ * in turn from the Founder's left. §6 and §13.A (7-2b's citation): a Recruit costs 1 action and $2, 7 − 2 = 5. §4: three Juniors on the
+ * bench at setup.
+ */
+describe('the Veto window on the page', () => {
+  const T = after(N, 3);
+  const tab = (name: string) => screen.getByRole('tab', { name });
+  const boardOf = (seat: string) => screen.getByTestId(`board-${seat}`).textContent;
+  const confirm = () => fireEvent.click(within(picker()).getByRole('button', { name: 'Confirm' }));
+  const selected = (name: string) => expect(tab(name).getAttribute('aria-selected'), `${name} is selected`).toBe('true');
+  const begins = (seat: string, expected: string) => expect(lineOf(seat)?.slice(0, expected.length)).toBe(expected);
+  const ASSIGN = 'Assign some cards from your bench to a card in your development';
+  const W = (): GameState => {
+    const state = setUp7();
+    const [first, second] = [tokenOf(state, S, 0), tokenOf(state, S, 1)];
+    return holding(holding(state, first, N), second, T);
+  };
+
+  it('asks each holder in turn, then lets the action go ahead (Review Focus)', () => {
+    mount({ initial: W() });
+    press(RECRUIT);
+    selected(`${N} — to act`);
+    expect(status()).toBe(`seat: ${N} — Your turn — ${hint('veto')}`);
+    expect(waitingText()).toBe(`${S} wants to recruit a junior software dev.`);
+    expect(seatButtons()).toEqual([VETO, LET_GO]);
+    begins(S, `${S} 7 capital, 2 actions`);
+    expect(lineOf(S)).toContain('bench 3');
+
+    fireEvent.click(tab(`${S}`));
+    expect(status()).toBe(`seat: ${S} — ${hint('veto')} — waiting for ${N}`);
+    expect(waitingText()).toBe(`${S} wants to recruit a junior software dev.`);
+    for (const button of within(screen.getByTestId('seat-buttons')).getAllByRole('button')) expect(button.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(tab(`${N} — to act`));
+
+    press(LET_GO);
+    selected(`${T} — to act`);
+    expect(waitingText()).toBe(`${S} wants to recruit a junior software dev.`);
+    press(LET_GO);
+    selected(`${S} — to act`);
+    expect(screen.queryByTestId('waiting')).toBeNull();
+    begins(S, `${S} 5 capital, 2 actions`);
+    expect(lineOf(S)).toContain('bench 4');
+  });
+
+  it('cancels the action with a Veto, the token going back to its Founder', () => {
+    mount({ initial: W() });
+    press(RECRUIT);
+    press(VETO);
+    // (amendment) The picker's buttons end with its Cancel, as every picker's do.
+    expect(within(picker()).getAllByRole('button').map((b) => b.textContent)).toEqual([`Equity whose founder is ${S}`, 'Cancel']);
+    pickNamed(`Equity whose founder is ${S}`);
+    selected(`${S} — to act`);
+    expect(screen.queryByTestId('waiting')).toBeNull();
+    begins(S, `${S} 7 capital, 2 actions`);
+    expect(lineOf(S)).toContain('bench 3');
+    expect(lineOf(S)).toContain('equity 2');
+    expect(lineOf(N)).toContain('portfolio 0');
+    expect(boardOf(S)).toContain('equity: Equity; Equity');
+  });
+
+  it("(option) names every player a waiting card names: an Invest says whose Equity", () => {
+    let state = W();
+    const dating = idOf(state, 'Dating App');
+    state = relocate(state, [dating], `development-${T}`, game);
+    mount({ initial: state });
+    press(INVEST);
+    pickNamed(`Equity (${T}'s equity)`);
+    expect(waitingText()).toBe(`${S} wants to invest in a card in another player's equity: Equity whose founder is ${T}.`);
+  });
+
+  it('takes the press back with Undo (Review Focus)', () => {
+    mount({ initial: W() });
+    press(RECRUIT);
+    press('Undo');
+    selected(`${S} — to act`);
+    expect(screen.queryByTestId('waiting')).toBeNull();
+    begins(S, `${S} 7 capital, 3 actions`);
+  });
+
+  it("names the cards the asked seat can't see as face-down (Review Focus)", () => {
+    let state = W();
+    state = relocate(state, [idOf(state, 'To-Do List')], `development-${S}`, game);
+    mount({ initial: state });
+    press(ASSIGN);
+    pickNamed('Junior Software Dev');
+    pickNamed('Junior Hardware Eng');
+    confirm();
+    pickNamed('To-Do List');
+    selected(`${N} — to act`);
+    expect(waitingText()).toBe(`${S} wants to assign some cards from their bench to a card in their development: a face-down card and a face-down card to To-Do List.`);
+    expect(document.body.textContent).not.toContain('Junior Software Dev');
+    expect(document.body.textContent).not.toContain('Junior Hardware Eng');
+    fireEvent.click(tab(`${S}`));
+    expect(waitingText()).toBe(`${S} wants to assign some cards from their bench to a card in their development: Junior Software Dev and Junior Hardware Eng to To-Do List.`);
+  });
+
+  it('(guard) never shows a waiting line on a Color Match page', () => {
+    mount({ game: compileGame(COLOR_MATCH, lib).game! });
+    expect(screen.queryByTestId('waiting')).toBeNull();
+  });
+});

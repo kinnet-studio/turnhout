@@ -4,6 +4,7 @@ import type { CompiledGame } from '@/engine/core/lang/types';
 import type { PlayerId } from '@/engine/core/scene';
 import type { Json } from '@/engine/core/table-def';
 import type { ClientView } from '@/engine/net/protocol';
+import type { WaitingView } from '@/engine/core/lang/board-view';
 
 /** The line under a seat's name: what the game is waiting for, or how it ended. */
 export function seatStatus(game: CompiledGame, view: ClientView | null, seat: PlayerId): string {
@@ -30,6 +31,21 @@ export function seatToAct(game: CompiledGame, view: ClientView | null): PlayerId
   if (!view || view.result !== undefined || !view.turn) return null;
   const phase = game.phases.find((p) => p.id === view.turn?.phase);
   return phase?.actor === 'any' ? null : view.turn.current;
+}
+
+/**
+ * What every seat is told of an action that waits for the players to answer it (Page copy). `words` are the rules' own words of the first
+ * button in the game whose label is the view's, so “their” is the presser's; the label, its first letter lower-cased, when none is.
+ */
+export function waitingLine(game: CompiledGame, waiting: WaitingView): string {
+  const action = game.phases.flatMap((phase) => phase.actions).find((a) => a.label === waiting.label);
+  const words = action?.words ?? `${waiting.label.charAt(0).toLowerCase()}${waiting.label.slice(1)}`;
+  // A button that picks a target card names it last: the cards it picked go to it.
+  const onto = action?.pick?.onto != null && waiting.cards.length > 1 ? waiting.cards[waiting.cards.length - 1] : null;
+  const picked = onto === null ? waiting.cards : waiting.cards.slice(0, -1);
+  const cards = picked.length === 0 ? '' : `: ${joinAnd(picked)}${onto === null ? '' : ` to ${onto}`}`;
+  const choices = waiting.choices.length === 0 ? '' : `, choosing ${joinAnd(waiting.choices)}`;
+  return `${waiting.by} wants to ${words}${cards}${choices}.`;
 }
 
 /** The players who share the win, when two or more do; null for a win that is one player's. */

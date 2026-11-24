@@ -6,6 +6,8 @@ import { createDefaultLibrary } from '@/engine/core/lang/library';
 import type { CompiledGame } from '@/engine/core/lang/types';
 import type { ClientView } from '@/engine/net/protocol';
 import { seatStatus, seatToAct } from './seat-status';
+import { waitingLine } from './seat-status';
+import { OBJECT_GAME } from '@/engine/core/lang/testing';
 
 const lib = createDefaultLibrary();
 const colorMatch = compileGame(COLOR_MATCH, lib).game!;
@@ -141,5 +143,36 @@ describe('seatToAct', () => {
     const together = hearts.phases.find((p) => p.actor === 'any');
     expect(together).toBeDefined();
     expect(seatToAct(hearts, view({ current: 'p1', phase: together!.id }))).toBeNull();
+  });
+});
+
+describe('waitingLine', () => {
+  const objects = compileGame(OBJECT_GAME, lib).game!;
+  const labelOf = (words: string) => objects.phases.flatMap((p) => p.actions).find((a) => a.words === words)!.label;
+  const hire = labelOf('hire some cards from the hall to a card in their workshop');
+  const tidy = labelOf('tidy a card in their workshop');
+  const swap = labelOf('swap a card from their stash to their workshop');
+  const sell = labelOf('sell a card in their holdings');
+  const stop = labelOf('stop');
+
+  it('writes the action in the rules’ own words, its cards after a colon, the target last', () => {
+    expect(waitingLine(objects, { by: 'p0', label: hire, cards: ['Potter', 'Vase'], choices: [] }))
+      .toBe('p0 wants to hire some cards from the hall to a card in their workshop: Potter to Vase.');
+    expect(waitingLine(objects, { by: 'p0', label: hire, cards: ['Potter', 'Smith', 'Vase'], choices: [] }))
+      .toBe('p0 wants to hire some cards from the hall to a card in their workshop: Potter and Smith to Vase.');
+  });
+
+  it('adds the choices, and leaves the colon off with no card', () => {
+    expect(waitingLine(objects, { by: 'p0', label: tidy, cards: ['Vase'], choices: ['Pay'] }))
+      .toBe('p0 wants to tidy a card in their workshop: Vase, choosing Pay.');
+    expect(waitingLine(objects, { by: 'p0', label: swap, cards: ['a face-down card'], choices: [] }))
+      .toBe('p0 wants to swap a card from their stash to their workshop: a face-down card.');
+    expect(waitingLine(objects, { by: 'p1', label: sell, cards: ['Stake whose maker is p0'], choices: [] }))
+      .toBe('p1 wants to sell a card in their holdings: Stake whose maker is p0.');
+    expect(waitingLine(objects, { by: 'p0', label: stop, cards: [], choices: [] })).toBe('p0 wants to stop.');
+  });
+
+  it('falls back on the label, its first letter lower-cased, for a label no button has', () => {
+    expect(waitingLine(objects, { by: 'p0', label: 'Wave', cards: [], choices: [] })).toBe('p0 wants to wave.');
   });
 });
