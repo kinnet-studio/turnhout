@@ -1718,7 +1718,7 @@ Phase: veto
 
 Phase: offer
   Players take turns.
-  Hint: You are offered an Equity token at its Founder's Share Price. Accept it, placing it on one of the Founder's products if you like, or decline.
+  Hint: An Equity token is offered at its Founder's Share Price. Sell it back if it is yours; else take it, placing it on one of the Founder's products if you like, or decline.
   A player may sell back a card in their portfolio.
     Only if it is offered.
     Then:
