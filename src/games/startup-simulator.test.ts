@@ -618,6 +618,24 @@ const CONSULTANT_PIVOTED = 'a Consultant sent back by a Pivot';
 const CONSULTANT_PLACED_AT_START = 'a Consultant placed at a Round Start';
 const CONSULTANT_MOVED_AT_START = 'a Consultant moved at a Round Start';
 const TWO_CONSULTANTS = 'two Consultants on one product';
+/** Plan 7-2b's keys: Equity moved (§17.B.5, §17.C). The window, by how many holders it asked, and its answers. */
+const WINDOW_ONE = 'a window asked one holder';
+const WINDOW_SEVERAL = 'a window asked two or more holders';
+const ACTION_VETOED = 'an action vetoed';
+const ACTION_AHEAD = 'an action let go ahead';
+const LAST_VETOED = 'a last action vetoed';
+const CONSULTANT_BURNED = 'a Consultant burned in a Veto';
+const TRADE_VETOED = "a Secondary Trade vetoed by its token's Founder";
+/** The offers. */
+const BUYBACK_ACCEPTED = 'a Buyback accepted';
+const BUYBACK_DECLINED = 'a Buyback declined';
+const TRADE_DECLINED = 'a Secondary Trade declined';
+const TRADE_ACCEPTED = 'a Secondary Trade accepted';
+const BUYER_PLACED = 'a Consultant placed by a buyer';
+/** The Suit. */
+const SUIT_FILED = 'a Non-Compete Suit filed';
+const SUED_BACK = 'a token sued back';
+const CONSULTANT_SUED = 'a Consultant sued back';
 /** The colour each skill works in already, as a declaration's answer names it (§11.C.2). */
 const NATIVE_ANSWER: Record<string, string> = { software: 'blue', hardware: 'red', qa: 'qa' };
 /** The Permanent XP tokens of each colour a Junior holds (§11.A). */
@@ -1543,11 +1561,14 @@ function playTurn(
     : pick(INVEST, equitiesFrom(runtime.seats, by), (row) => row.find((card) => cards(card.zoneId).length === 1)));
   /**
    * A Buyback as the turn's action `a`, when `(t + a) % 9 === 6` at 3 or more players: the first own token held by another seat, when the
-   * seat's Share Price leaves it 2 or more capital (§17.C.4). Null otherwise. Not at 2 players, where a Buyback reshuffles the games that
-   * hold the 2-player paths (2 players seed 2's Strategy reshuffle, which plan 6-1's Review Focus test reads).
+   * seat's Share Price leaves it 2 or more capital, or at 4 or more players any capital (§17.C.4). Null otherwise. Not at 2 players, where a
+   * Buyback reshuffles the games that hold the 2-player paths (2 players seed 2's Strategy reshuffle, which plan 6-1's Review Focus test
+   * reads). At 4 and 5 players the seats are poorer when the slot comes, and none bought back with $2 to spare, so the 4-player replay
+   * test had no Buyback to rebuild.
    */
   const buyingBack = (a: number): Move | null => ((t + a) % 9 !== 6 || runtime.seats.length < 3 ? null
-    : pick(BUY_BACK, portfoliosFrom(runtime.seats, by), (row) => row.find((c) => founderOf(c) === by && capital() - sharePriceOf(runtime, engine.getState(), by) >= 2)));
+    : pick(BUY_BACK, portfoliosFrom(runtime.seats, by), (row) => row.find((c) => founderOf(c) === by
+      && capital() - sharePriceOf(runtime, engine.getState(), by) >= (runtime.seats.length >= 4 ? 0 : 2))));
   /** A Secondary Trade as the turn's action `a`, when `(t + a) % 9 === 2` at 3 or more players: the first card of its portfolio (§17.C.5). */
   const selling = (a: number): Move | null => ((t + a) % 9 !== 2 || runtime.seats.length < 3 ? null
     : pick(SELL_EQUITY, own('portfolio'), (row) => row[0]));
@@ -1833,7 +1854,10 @@ const REPLAYED = [
   'declarations', 'switches off', 'Bugs added to a project', 'Pending tokens gained', 'Launches that raised XP', 'reshuffles',
   'Training that asked a choice or had it filled in', 'Milestone claims', 'Debuffs', 'strips', 'TechCrunch Features', 'Design Sprints',
   'Event reshuffles', 'let-gos in the event check', 'Consultant pivots', 'placing Invests', 'Round Start placements',
+  'vetoes', 'sales back', 'suits',
 ] as const;
+/** The counts the 2-player replay test leaves to the 3-player one: Buybacks and Suits come at 3 or more players. */
+const REPLAYED_AT_3 = ['Design Sprints', 'vetoes', 'sales back', 'suits'] as const;
 
 /**
  * Paths (tally keys, and `REPLAYED` counts of the replay tests) that fewer than 2 of the long runs' 20 games hold once the Event deck
@@ -1868,6 +1892,16 @@ const REPLAYED = [
  *   Junior Hardware Eng with a Blue Skill token declared Blue makes 1 Blue, its Red XP idle …').
  */
 const HELD_BY_FEWER_THAN_TWO = new Set<string>([
+  // Plan 7-2b: the Secondary Trades replay every game of 3 or more players, and of the four trades the runs accept, one is a plain take
+  // (3 players seed 5); a Tier 2 or 3 Launch (2 players seed 4), Platform Power (2 players seed 2) and a License to a chosen provider (4
+  // players seed 4) fell to one game each (six cadences tried; trades only in the last round keep them, but hold no trade path). Each is
+  // pinned by its example or arranged test: 'a Secondary Trade sells a token to a third player at its Founder's Share Price, …', 'claims
+  // First Mover Advantage, Platform Power and Full Stack Founder at one auto-player Launch of a Tier 2 card, …' and 'the player chooses
+  // whom to pay when several provide the Tag (section 6, ruling 25)'.
+  "take a card in another player's portfolio",
+  'a Tier 2 or 3 card launched',
+  'a milestone claimed: Platform Power',
+  'a license paid to a chosen provider',
   'an Invest at $10',
   'an Invest at $15',
   'a dividend of $3',
@@ -1889,9 +1923,13 @@ const HELD_BY_FEWER_THAN_TWO = new Set<string>([
 /** A game kept for the Greenlight test: the moves to its first Greenlight that answered a choice, and the states before and after it. */
 type GreenlitGame = { log: Move[]; before: GameState | null; after: GameState };
 
-/** A game kept for the replay and view tests: its log, the state before its last move, its end, the moves watched and its counts. */
+/**
+ * A game kept for the replay and view tests: its log, the state before its last move, its end, the moves watched and its counts, and
+ * the first move made while a window was open, with its log index and the state before it.
+ */
 type KeptGame = {
   log: Move[]; beforeLast: GameState; end: GameState; watched: number; seen: Record<(typeof REPLAYED)[number], number>;
+  inWindow: { at: number; before: GameState } | null;
 };
 
 /**
@@ -1902,10 +1940,15 @@ function keepingForReplay(runtime: LangRuntime) {
   const seen = Object.fromEntries(REPLAYED.map((what) => [what, 0])) as KeptGame['seen'];
   let beforeLast: GameState | null = null;
   let watched = 0;
+  let inWindow: KeptGame['inWindow'] = null;
   const judge = windowJudge();
   const watch = (before: GameState, raw: Move, after: GameState, given?: string[]) => {
     beforeLast = before;
     watched += 1;
+    if (inWindow === null && waitingOf(before) !== null) inWindow = { at: watched - 1, before };
+    if (raw.type === VETO) seen.vetoes += 1;
+    if (raw.type === SELL_BACK) seen['sales back'] += 1;
+    if (raw.type === SUE) seen.suits += 1;
     // The counts read the press each move counts as, and nothing of a press that opened a window (see `Judged`).
     const { press: move, as } = judge(before, raw, after);
     if (as === 'cost') return;
@@ -1935,7 +1978,7 @@ function keepingForReplay(runtime: LangRuntime) {
     if (move.type === LAUNCH && after.cards.some((c) => gained(c, XP_TOKENS))) seen['Launches that raised XP'] += 1;
   };
   const kept = (engine: GameEngine): KeptGame =>
-    ({ log: [...engine.getLog()], beforeLast: beforeLast!, end: engine.getState(), watched, seen });
+    ({ log: [...engine.getLog()], beforeLast: beforeLast!, end: engine.getState(), watched, seen, inWindow });
   return { watch, kept };
 }
 
@@ -2542,6 +2585,34 @@ function happenings(runtime: LangRuntime, before: GameState, move: Move, after: 
     if (after.cards.some((c) => othersOn(after, c.id).length >= 2)) keys.push(TWO_CONSULTANTS);
   };
   happeningsPart9();
+
+  // Plan 7-2b's paths: Equity moved (§17.B.5, §17.C).
+  // A window is counted as it closes, by how many holders it asked: the press that opened it counts for nothing (see `Judged`).
+  const waiting = waitingOf(before);
+  const waits = waitingOf(after);
+  if (waiting !== null && waits === null) keys.push(waiting.asked.length === 1 ? WINDOW_ONE : WINDOW_SEVERAL);
+  if (move.type === VETO) {
+    keys.push(ACTION_VETOED);
+    // The actions phase waits for the end press at 0 actions (7-1's retune), so a last action vetoed leaves the actor none.
+    if (counterOf(after, 'actions', waiting!.by) === 0) keys.push(LAST_VETOED);
+    if (typeof card?.data?.[HOLDER_KEY] === 'string') keys.push(CONSULTANT_BURNED);
+    if (waiting!.move === SELL_EQUITY && founderOf(cardById(before, waiting!.subject.card as string)!) === by) keys.push(TRADE_VETOED);
+  } else if (waiting !== null && waits === null) {
+    // The press a closing let-go counts as (see `Judged`).
+    keys.push(ACTION_AHEAD);
+  }
+  if (move.type === SELL_BACK) keys.push(BUYBACK_ACCEPTED);
+  if (move.type === DECLINE) {
+    const offered = before.cards.find((c) => c.data?.offered === true);
+    keys.push(offered?.zoneId === zoneIdFor('portfolio', by) ? BUYBACK_DECLINED : TRADE_DECLINED);
+  }
+  if ([TAKE, TAKE_PLACING].includes(move.type)) keys.push(TRADE_ACCEPTED);
+  if (move.type === TAKE_PLACING) keys.push(BUYER_PLACED);
+  if (move.type === FILE) keys.push(SUIT_FILED);
+  if (move.type === SUE) {
+    keys.push(SUED_BACK);
+    if (typeof card?.data?.[HOLDER_KEY] === 'string') keys.push(CONSULTANT_SUED);
+  }
   return keys;
 }
 
@@ -4712,6 +4783,8 @@ describe('Startup Simulator (designer language)', () => {
         AUDIT_LET_GO,
         // Plan 7-2a's: both Invests, and the Round Start step's place and confirm.
         INVEST, INVEST_PLACING, PLACE, CONFIRM_CONSULTANTS,
+        // Plan 7-2b's: the window's answers, the Buyback, the Secondary Trade and the offer's answers, and the Suit.
+        VETO, LET_IT_GO_AHEAD, BUY_BACK, SELL_EQUITY, SELL_BACK, TAKE, TAKE_PLACING, DECLINE, FILE, SUE,
         // What the rules make happen on their own.
         'open idea pool lets a card go to the box', 'open job market lets a card go to the box', PUSHED_OUT,
         'the Market Crash reaches the crash pile from the growth market', 'the Market Crash reaches the crash pile from a research row',
@@ -4948,6 +5021,16 @@ describe('Startup Simulator (designer language)', () => {
       expect(paths.filter((key) => !(tally[key] > 0) && !HELD_BY_FEWER_THAN_TWO.has(key)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
       expect(held, 'the rival tokens held at the results').toBeGreaterThan(0);
     });
+
+    it('played slice 7’s moving Equity in those runs: windows asking one holder and several, actions vetoed and let go ahead, a last action vetoed, a Consultant burned, a sale vetoed by its token’s Founder, Buybacks and Secondary Trades accepted and declined, a buyer’s placement, and Suits filed and won', () => {
+      const paths = [
+        WINDOW_ONE, WINDOW_SEVERAL, ACTION_VETOED, ACTION_AHEAD, LAST_VETOED, CONSULTANT_BURNED, TRADE_VETOED,
+        BUYBACK_ACCEPTED, BUYBACK_DECLINED, TRADE_DECLINED, TRADE_ACCEPTED, BUYER_PLACED, SUIT_FILED, SUED_BACK, CONSULTANT_SUED,
+      ];
+      // A failure here means a cadence moved: retune the auto-player, never the rules.
+      expect(paths.filter((key) => !(tally[key] > 0) && !HELD_BY_FEWER_THAN_TWO.has(key)), `never seen: ${JSON.stringify(tally)}`).toEqual([]);
+    });
+
 
     it('plays the same game through the page’s view as without it (2 players, seed 2)', () => {
       // Seed 2 has a Greenlight that asks a choice (a cut, Cut 2 red or Cut 1 of each), which the view must list for the card. The game played without
@@ -5281,8 +5364,8 @@ describe('Startup Simulator (designer language)', () => {
       // The games are the long run's (see `keptGames`), with what each counted as it was played. Undo takes the last move off the
       // log and plays the rest again from the start, so it gives the same state on the engine rebuilt from the log as on the one that
       // played the game. It requires every path `REPLAYED` counts but the Design Sprints, which the 3-player test below requires.
-      type Required = Exclude<(typeof REPLAYED)[number], 'Design Sprints'>;
-      const required = REPLAYED.filter((what): what is Required => what !== 'Design Sprints');
+      type Required = Exclude<(typeof REPLAYED)[number], (typeof REPLAYED_AT_3)[number]>;
+      const required = REPLAYED.filter((what): what is Required => !(REPLAYED_AT_3 as readonly string[]).includes(what));
       const seen = Object.fromEntries(required.map((what) => [what, 0])) as Record<Required, number>;
       for (let seed = 1; seed <= 5; seed++) {
         const where = `2 players, seed ${seed}`;
@@ -5321,10 +5404,20 @@ describe('Startup Simulator (designer language)', () => {
       // retune kept the TechCrunch Feature first) and a Design Sprint in seed 4, since plan 7-2a's Invests and Round Start steps replayed
       // every game. The last move taken back is the end of the actions in seed 1, a final-check switch-off in seeds 2 and 5 and a
       // backlog cleanup's discard in seeds 3 and 4.
-      const seen = { Debuffs: 0, strips: 0, 'TechCrunch Features': 0, 'Design Sprints': 0 };
+      // Plan 7-2b: some log holds a Veto, a sale back and a suit, and one move made in a window, taken back, leaves the window as it was.
+      const seen = { Debuffs: 0, strips: 0, 'TechCrunch Features': 0, 'Design Sprints': 0, vetoes: 0, 'sales back': 0, suits: 0 };
+      let windowChecked = false;
       for (let seed = 1; seed <= 5; seed++) {
         const where = `3 players, seed ${seed}`;
-        const { log, beforeLast, end, seen: counted } = keptGame(3, seed);
+        const { log, beforeLast, end, seen: counted, inWindow } = keptGame(3, seed);
+        if (!windowChecked && inWindow !== null) {
+          const partway = createEngine(game!, lib, 3, initialState(game!, seed)).engine;
+          partway.loadLog(log.slice(0, inWindow.at + 1));
+          partway.undo();
+          expect(partway.getState(), `${where}: the game with ${log[inWindow.at].type} taken back`).toEqual(inWindow.before);
+          expect(waitingOf(partway.getState()), `${where}: the window waiting`).toEqual(waitingOf(inWindow.before));
+          windowChecked = true;
+        }
         for (const what of Object.keys(seen) as (keyof typeof seen)[]) seen[what] += counted[what];
         expect(end.result, `${where}: the result`).toBeDefined();
         const replayed = createEngine(game!, lib, 3, initialState(game!, seed)).engine;
@@ -5333,6 +5426,7 @@ describe('Startup Simulator (designer language)', () => {
         replayed.undo();
         expect(replayed.getState(), `${where}: the game with its last move taken back`).toEqual(beforeLast);
       }
+      expect(windowChecked, 'a move made in a window was taken back').toBe(true);
       expect(Object.entries(seen).filter(([what, times]) => times === 0 && !HELD_BY_FEWER_THAN_TWO.has(what)), JSON.stringify(seen)).toEqual([]);
     }, 120_000);
 
