@@ -1442,6 +1442,7 @@ describe('slice 5 on the page', () => {
   const TO_PRODUCT = 'Play a card from your strategy hand to a card in your operations';
   const ALONE = 'Play a card in your strategy hand';
   const FLUSH = 'Brainstorm after flushing some cards from your strategy hand';
+  const FILE = 'File a card in your strategy hand';
   const KEEP_IDEA = 'Keep a card in your brainstorm';
   const [KEEP_BLUE, KEEP_RED, KEEP_GREEN] = ['blue', 'red', 'green'].map((colour) => `Keep ${colour} on a card in your ops team`);
   const MENTOR = 'Mentor a card in your ops team';
@@ -1582,6 +1583,7 @@ describe('slice 5 on the page', () => {
     expect(offered()).toEqual([
       [PLAY, true], [DEBUFF, "There is no card in another player's development team or another player's ops team."],
       [TO_PRODUCT, 'There is no card in your operations.'], [ALONE, 'it is a Design Sprint card'], [FLUSH, true],
+      [FILE, 'it is a Non-Compete Suit card'],
     ]);
     choose(PLAY);
     expect(within(picker()).getByText('Pick where it goes: a card in your bench, your development team or your ops team')).toBeTruthy();
@@ -1802,6 +1804,7 @@ describe('Attributes, Utility cards and Hype on the page', () => {
   const TO_PRODUCT = 'Play a card from your strategy hand to a card in your operations';
   const ALONE = 'Play a card in your strategy hand';
   const FLUSH = 'Brainstorm after flushing some cards from your strategy hand';
+  const FILE = 'File a card in your strategy hand';
 
   it('Review Focus: labels an Attribute and Hype on their cards, plays a Workaholic, a TechCrunch Feature and a Design Sprint, and names the label on hover', () => {
     let state = inPlay(setUp(), 'Whistleblower Protection Act');
@@ -1828,6 +1831,7 @@ describe('Attributes, Utility cards and Hype on the page', () => {
     expect(offered()).toEqual([
       [PLAY, true], [DEBUFF, "There is no card in another player's development team or another player's ops team."],
       [TO_PRODUCT, 'the card is a TechCrunch Feature'], [ALONE, 'it is a Design Sprint card'], [FLUSH, true],
+      [FILE, 'it is a Non-Compete Suit card'],
     ]);
     choose(PLAY);
     click(junior);

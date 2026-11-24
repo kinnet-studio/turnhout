@@ -195,7 +195,7 @@ const BUFFS = ['Workaholic', 'Clean Coder', 'Visionary'];
 const DEBUFFS = ['Toxic Personality', 'Burnout', 'Flight Risk'];
 /** A Strategy card a button of slices 5 and 6 plays: Training, an Attribute, TechCrunch Feature or Design Sprint (§20.A). */
 const isPlayable = (card: CardState): boolean =>
-  isTraining(card) || card.data?.kind === 'Attribute' || ['TechCrunch Feature', 'Design Sprint'].includes(nameOf(card) as string);
+  isTraining(card) || card.data?.kind === 'Attribute' || ['TechCrunch Feature', 'Design Sprint', 'Non-Compete Suit'].includes(nameOf(card) as string);
 /** The zones a Debuff's target is offered in for `by`, as 6-1 orders them: each other seat's development team from `by`'s left, then each one's ops team. */
 const debuffZones = (seats: PlayerId[], by: PlayerId): string[] => {
   const at = seats.indexOf(by);
@@ -266,7 +266,7 @@ const FINAL_CHECK = 'final check';
  */
 const PHASES = [
   'modes', 'ops check', 'income', 'actions', 'research', 'sourcing', 'graduation', 'brainstorm', 'engine', 'commit', 'bench cleanup',
-  'strategy cleanup', 'backlog cleanup', FINAL_CHECK, 'event check', 'veto', 'offer',
+  'strategy cleanup', 'backlog cleanup', FINAL_CHECK, 'event check', 'veto', 'offer', 'lawsuit',
 ];
 /**
  * The step each player takes in turn from the start player at each Round Start: Angel Investors' $3, Regulation Audit's tax and the
@@ -288,6 +288,9 @@ const TAKE_PLACING = "take a card from another player's portfolio to a card in a
 const DECLINE = 'decline the offer';
 /** The moves a seat makes in another seat's turn, answering it. */
 const ANSWERS: string[] = [VETO, LET_IT_GO_AHEAD, SELL_BACK, TAKE, TAKE_PLACING, DECLINE];
+/** The Non-Compete Suit (§17.C.2, §20.A): its filing, and the lawsuit phase's press. */
+const FILE = 'file a card in their strategy hand';
+const SUE = "sue a card in another player's portfolio";
 /**
  * A move as the long runs judge it across the Veto window (7-1 Task 8):
  * - a press that opened a window spent its cost and did nothing else ('cost');
@@ -319,7 +322,7 @@ function windowJudge(): (before: GameState, move: Move, after: GameState) => Jud
 function turnOf(state: GameState): { seat: PlayerId; phase: string } {
   // A round's steps and the final check's are no turn: TURN_OF_KEY is unset in them, and the seat is the one whose step it is.
   const seat = (state.data[TURN_OF_KEY] ?? state.turn!.current) as PlayerId;
-  const offered = state.turn!.phase === 'offer' ? interruptedTurn(state)?.phase : undefined;
+  const offered = state.turn!.phase === 'offer' || state.turn!.phase === 'lawsuit' ? interruptedTurn(state)?.phase : undefined;
   return { seat, phase: (waitingOf(state)?.back.phase ?? offered ?? state.turn!.phase) as string };
 }
 // The two buttons that pick a card from a project's staff.
@@ -1243,6 +1246,14 @@ function playTurn(
     });
   };
   /**
+   * The filing of a Non-Compete Suit (§17.C.2, §20.A), a free move at 3 or more players: when the Strategy Hand holds one and another
+   * seat's portfolio holds a card naming the seat; `freeMove` makes it only when the press is allowed. At 2 players a Suit would move
+   * slice 6-1's reshuffle out of every game the replay test plays, so it waits for more players, as a Buyback does.
+   */
+  const suing = (): Move | null => (runtime.seats.length >= 3 && portfoliosFrom(runtime.seats, by).some((zoneId) => cards(zoneId).some((c) => founderOf(c) === by))
+    ? pick(FILE, own('strategy hand'), (row) => row.find((card) => nameOf(card) === 'Non-Compete Suit'))
+    : null);
+  /**
    * The play of a Utility card (§20.A): a TechCrunch Feature the seat can pay for on its first product a working Sales Rep pitches, else on
    * its product at `t` (mod how many); else, on a turn when `t % 3` is 0, a Design Sprint.
    */
@@ -1274,6 +1285,7 @@ function playTurn(
       }) : null,
       made.has(PLAY_TRAINING) ? null : training(),
       made.has(PLAY_DEBUFF) ? null : debuffing(),
+      made.has(FILE) ? null : suing(),
       made.has(PLAY_TO_PRODUCT) || made.has(PLAY_ALONE) ? null : utility(),
       dismiss !== null && !made.has(dismiss)
         ? pick(dismiss, own(fromOps ? 'ops team' : 'development team'), (row) => (fromOps ? spare(row) : row)[0])
@@ -1717,6 +1729,12 @@ function playTurn(
       play(engine, choose([
         pick(KEEP_STRATEGY, own('brainstorm'), (row) => row.find(techCrunch) ?? row.find(isPlayable) ?? row[t % row.length]),
       ]), watch);
+    } else if (phase === 'lawsuit') {
+      // The filer sues the card at t % n among its tokens in other seats' portfolios, in fromZoneIds order (§17.C.2).
+      play(engine, choose([pick(SUE, portfoliosFrom(runtime.seats, by), (row) => {
+        const named = row.filter((c) => founderOf(c) === by);
+        return named[t % named.length];
+      })]), watch);
     } else if (phase === 'sourcing') {
       play(engine, choose([...sourcing(), press(PASS_ON_THE_REST)]), watch);
     } else if (phase === GRADUATION) {
@@ -2707,12 +2725,14 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
           : move.type === HIRE_MARKET ? workedOf(card!.id, 'rehire price')
             : SOURCE_HIRES.includes(move.type) ? costOf(move.cardIds as string[])
               : move.type === PAY_SALARIES ? payrollOf(runtime, before, by)
-                : [PLAY_TRAINING, PLAY_DEBUFF].includes(move.type) ? (runtime.workedValue(before, move.cardId as string, 'price') as number)
+                : [PLAY_TRAINING, PLAY_DEBUFF, FILE].includes(move.type) ? (runtime.workedValue(before, move.cardId as string, 'price') as number)
                   : move.type === PLAY_TO_PRODUCT ? techCrunchPrice(runtime, before, move.cardId as string, move.onto as string)
                     : [INVEST, INVEST_PLACING].includes(move.type) ? investPriceOf(before, founderOf(card!)!)
                       // A buyer pays the Share Price to the card's holder, and a seller back gets it from the Founder (§17.C.4–5).
                       : [TAKE, TAKE_PLACING].includes(move.type) ? investPriceOf(before, founderOf(card!)!)
-                        : move.type === SELL_BACK ? -investPriceOf(before, founderOf(card!)!) : 0;
+                        : move.type === SELL_BACK ? -investPriceOf(before, founderOf(card!)!)
+                          // A suit pays the mover's buyout due to the token's holder (§17.C.2).
+                          : move.type === SUE ? runtime.playerValue(before, by, 'buyout due') : 0;
       return { paid };
     };
     const { paid } = rulesPart3();
@@ -2722,7 +2742,8 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       const proceeds = (seat: PlayerId) => (seat === investedIn ? paid + (eventOf(before) === 'Venture Capital Rain' ? 3 : 0)
         // No Venture Capital Rain on a trade or a Buyback (§20.D 1): the holder gets what the buyer pays, the Founder pays the seller back.
         : [TAKE, TAKE_PLACING].includes(move.type) && seat === from?.replace(/^portfolio-/, '') ? paid
-          : move.type === SELL_BACK && seat === founderOf(card!) ? paid : 0);
+          : move.type === SELL_BACK && seat === founderOf(card!) ? paid
+            : move.type === SUE && seat === from?.replace(/^portfolio-/, '') ? paid : 0);
       return { proceeds };
     };
     const { proceeds } = rulesPart4();
@@ -2838,7 +2859,7 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
     // shuffles the discard back into the deck (§15.C).
     const rulesPart9 = () => {
       const strategyZones = [
-        'strategy-deck', 'strategy-discard', ...seats.flatMap((seat) => [zoneIdFor('strategy hand', seat), zoneIdFor('brainstorm', seat)]),
+        'strategy-deck', 'strategy-discard', 'court', ...seats.flatMap((seat) => [zoneIdFor('strategy hand', seat), zoneIdFor('brainstorm', seat)]),
       ];
       const boxedStrategy = zoneCards(after, 'box').filter((c) => Object.hasOwn(STRATEGY_CARDS, nameOf(c) as string));
       const strategy = nameCounts([...[...strategyZones, 'attributes-in-play'].flatMap((zoneId) => zoneCards(after, zoneId)), ...boxedStrategy]);
@@ -2906,6 +2927,11 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
       }
       if (move.type === SELL_BACK) sameAs(cardById(after, card!.id)?.zoneId, zoneIdFor('equity', founderOf(card!)!), () => `where ${at} put its card`);
       if ([TAKE, TAKE_PLACING].includes(move.type)) sameAs(cardById(after, card!.id)?.zoneId, zoneIdFor('portfolio', by), () => `where ${at} put its card`);
+      // The court holds a card only while the turn stands in lawsuit, and then exactly one, a Non-Compete Suit (§17.C.2).
+      const court = zoneCards(after, 'court').map((c) => nameOf(c));
+      if (after.turn?.phase === 'lawsuit' ? !(court.length === 1 && court[0] === 'Non-Compete Suit') : court.length > 0) {
+        expect(court, `the court in ${after.turn?.phase} ${at}`).toEqual(after.turn?.phase === 'lawsuit' ? ['Non-Compete Suit'] : []);
+      }
     };
     rulesPart11();
 
@@ -3084,11 +3110,13 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
         const returned = move.type === PIVOT && wasOn === move.cardId && on === undefined && c.zoneId === was?.zoneId;
         // … or in a Veto of it, which leaves it on no card (§17.B.5).
         const vetoed = [VETO, SELL_BACK, TAKE].includes(move.type) && move.cardId === c.id && on === undefined;
-        // Its three colour flags change only in a placement of that token, the Pivot that returns it, or the Veto, sale back or take of it,
-        // which clears all three; a placement leaves exactly the colour the press chose, answered in the button's order Blue, Red, QA
-        // (§17.B.4, §17.B.5, §17.C).
+        // … or in a suit of it, which leaves it on no card in its founder's equity (§17.C.2).
+        const sued = move.type === SUE && move.cardId === c.id && on === undefined && c.zoneId === zoneIdFor('equity', founderOf(c)!);
+        // Its three colour flags change only in a placement of that token, the Pivot that returns it, or the Veto, sale back, take or suit
+        // of it, which clears all three; a placement leaves exactly the colour the press chose, answered in the button's order Blue, Red,
+        // QA (§17.B.4, §17.B.5, §17.C).
         const flagsOf = (card: CardState | undefined) => Object.values(CONSULTANT_COLOURS).filter((flag) => card?.data?.[flag] === true);
-        const cleared = [VETO, SELL_BACK, TAKE].includes(move.type) && move.cardId === c.id;
+        const cleared = [VETO, SELL_BACK, TAKE, SUE].includes(move.type) && move.cardId === c.id;
         if (pressed) {
           const asked = pressChoices(runtime, before, move);
           const named = answersOf(move)[0] ?? (typeof asked === 'string' ? undefined : asked[0]?.options[0]);
@@ -3099,7 +3127,7 @@ function keepsTheRules(seats: PlayerId[], runtime: LangRuntime): Watch {
           sameList(flagsOf(c), flagsOf(was), () => `the colour flags of ${c.id} ${at}`);
         }
         if (on === wasOn) continue;
-        if (!placed && !returned && !vetoed) board.push(`${c.id} (${nameOf(c)}) in ${c.zoneId} went from ${JSON.stringify(wasOn)} to ${JSON.stringify(on)}`);
+        if (!placed && !returned && !vetoed && !sued) board.push(`${c.id} (${nameOf(c)}) in ${c.zoneId} went from ${JSON.stringify(wasOn)} to ${JSON.stringify(on)}`);
       }
       noneOf(board, () => `the Board ${at}`);
     };
@@ -3751,7 +3779,7 @@ describe('Startup Simulator (designer language)', () => {
 
   it('passes every example', () => {
     const results = runExamples(game!, lib);
-    expect(results).toHaveLength(345);
+    expect(results).toHaveLength(348);
     expect(results.filter((r) => r.status !== 'pass')).toEqual([]);
   });
 
@@ -3803,9 +3831,11 @@ describe('Startup Simulator (designer language)', () => {
     expect(worked['tier number']).toMatchObject({ kind: 'number', refines: false });
     // A product's Consultants of each colour, the other players' cards on it, which add to its output and its owner's supplies (§17.B.4).
     for (const name of ['consultant blue', 'consultant red', 'consultant qa']) expect(worked[name], name).toMatchObject({ kind: 'number', refines: false });
+    // The Non-Compete Suit's buyout, and what filing it needs: its price and the buyout (§17.C.2, §20.A).
+    for (const name of ['buyout', 'suit cost']) expect(worked[name], name).toMatchObject({ kind: 'number' });
     expect(Object.keys(game!.playerValues!)).toEqual([
       'blue supply', 'red supply', 'blue demand', 'red demand', 'blue load', 'red load', 'qa supply', 'bug load', 'qa spent', 'bugged products',
-      'operational revenue', 'top tier', 'share price', 'dividend', 'active tags',
+      'operational revenue', 'top tier', 'share price', 'dividend', 'buyout due', 'active tags',
     ]);
   });
 
@@ -4163,6 +4193,7 @@ describe('Startup Simulator (designer language)', () => {
       ['open-job-market', false, 'row', 'public'],
       ['seed-deck', false, 'pile', 'secret'],
       ['growth-deck', false, 'pile', 'secret'],
+      ['court', false, 'pile', 'public'],
       ['seed-market', false, 'row', 'public'],
       ['growth-market', false, 'row', 'public'],
       ['open-idea-pool', false, 'row', 'public'],
@@ -6092,7 +6123,7 @@ describe('what the view says the rules work out', () => {
 describe('what the view says about each player', () => {
   it('shows the values that add up cards everyone sees, gauges each color’s bandwidth against the maintenance it runs, and fades a product switched off', () => {
     expect(shownPlayerValues(game!)).toEqual([
-      'blue supply', 'red supply', 'blue demand', 'red demand', 'blue load', 'red load', 'qa supply', 'bug load', 'qa spent',
+      'blue supply', 'red supply', 'blue demand', 'red demand', 'blue load', 'red load', 'qa supply', 'bug load', 'qa spent', 'buyout due',
     ]);
     // Bugged products is not there: it reads the bug mark, which reads Bugged, whose “its bugs are more than 0” the view doesn't count as
     // reading only the card (G1).
@@ -6118,14 +6149,14 @@ describe('what the view says about each player', () => {
     };
     const values = {
       'blue supply': 2, 'red supply': 0, 'blue demand': 1, 'red demand': 1, 'blue load': 1, 'red load': 1, 'qa supply': 0, 'bug load': 0,
-      'qa spent': 0,
+      'qa spent': 0, 'buyout due': 0,
     };
     expect(valuesOfN(state)).toEqual(seats.map(() => values));
     // Declared Red, it runs no Blue; switched off, the Dating App asks for none, though its maintenance stays in the load.
     const switched = changeCard(changeCard(state, firmware, { 'red mode': true }, game!), dating, { offline: true }, game!);
     const declared = {
       'blue supply': 0, 'red supply': 2, 'blue demand': 0, 'red demand': 1, 'blue load': 1, 'red load': 1, 'qa supply': 0, 'bug load': 0,
-      'qa spent': 0,
+      'qa spent': 0, 'buyout due': 0,
     };
     expect(valuesOfN(switched)).toEqual(seats.map(() => declared));
     expect(valuesOfN(changeCard(switched, lock, { bugs: 2 }, game!)).map((theirs) => theirs['bug load'])).toEqual([2, 2, 2]);
@@ -6146,7 +6177,7 @@ describe('what the page shows of slice 5', () => {
     expect(shownFlags(game!)).toEqual(['overworked', 'overworked in blue', 'overworked in red', 'overworked in qa', 'burned out', 'pitched', 'stalled', 'efficient in ops', 'experienced', 'practised']);
     // Operational revenue reads its owner's ops team through each product's rev, and active tags is a count: neither is shown.
     expect(shownPlayerValues(game!)).toEqual([
-      'blue supply', 'red supply', 'blue demand', 'red demand', 'blue load', 'red load', 'qa supply', 'bug load', 'qa spent',
+      'blue supply', 'red supply', 'blue demand', 'red demand', 'blue load', 'red load', 'qa supply', 'bug load', 'qa spent', 'buyout due',
     ]);
   });
 

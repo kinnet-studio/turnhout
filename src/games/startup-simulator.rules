@@ -185,6 +185,7 @@ Table:
   The open job market is a row in the center that everyone can see.
   The seed deck is a pile in the center that no one can see.
   The growth deck is a pile in the center that no one can see.
+  The court is a pile in the center that everyone can see.
   The seed market is a row in the center that everyone can see.
   The growth market is a row in the center that everyone can see.
   The open idea pool is a row in the center that everyone can see.
@@ -325,6 +326,13 @@ Consultant red:
 Consultant qa:
   A card's consultant qa is the number of the other players' cards on it that are qa consultant.
   A stalled card's consultant qa is 0.
+
+Buyout:
+  A Non-Compete Suit card's buyout is 5.
+
+Suit cost:
+  A Non-Compete Suit card's suit cost is its price.
+  A card's suit cost goes up by its buyout.
 
 Blue bandwidth:
   A card's blue bandwidth is its blue output.
@@ -844,6 +852,9 @@ Dividend:
   A player's dividend is 1 if their operational revenue is at least 1.
   A player's dividend is 2 if their operational revenue is at least 11.
   A player's dividend is 3 if their operational revenue is at least 21.
+
+Buyout due:
+  A player's buyout due is the total buyout of the cards in the court.
 
 Active tags:
   A player's active tags is the number of different tag values among the cards in their operations that are not offline.
@@ -1444,6 +1455,14 @@ Phase: actions
     Then:
       It is offered.
       Hand the offer phase to another player of their choice who is not the card's founder.
+  A player may file a card in their strategy hand.
+    Only if it is a Non-Compete Suit card.
+    Only if another player has a card in their portfolio whose founder is them.
+    Only if they have at least the card's suit cost in capital.
+    Then:
+      They pay the card's price.
+      Move it to the court.
+      The lawsuit phase starts with them.
   A player may end their actions.
     Then:
       Their actions go back to 0.
@@ -1743,6 +1762,19 @@ Phase: offer
   A player may decline the offer.
     Then:
       No card is offered.
+      Go back to the interrupted turn.
+
+Phase: lawsuit
+  Hint: Pick the Investor whose token of yours comes back. You pay them the buyout.
+  A player may sue a card in another player's portfolio.
+    Only if it is a card whose founder is them.
+    Then:
+      They pay its founder's buyout due to its owner.
+      It is not blue consultant.
+      It is not red consultant.
+      It is not qa consultant.
+      Move it to their equity.
+      Move the court to the strategy discard.
       Go back to the interrupted turn.
 
 End:
@@ -6502,3 +6534,61 @@ Example: a buyer may place the token as a Consultant as they take it, picking it
   And the Equity whose founder is p2 in p1's portfolio is not red consultant
   And the Equity whose founder is p3 in p2's portfolio is on the To-Do List in p3's development
   And the Equity whose founder is p3 in p2's portfolio is qa consultant
+
+Example: the Non-Compete Suit costs $4 and pays the Investor $5, who must return the token to the Founder's supply, for no action (section 17, section 20)
+  Given the phase is actions
+  And p0 has 9 capital
+  And p0's strategy hand has a Non-Compete Suit
+  And p0's operations has a Neobank
+  And p1's portfolio has an Equity whose founder is p0
+  And the Equity whose founder is p0 in p1's portfolio is on the Neobank in p0's operations
+  And the Equity whose founder is p0 in p1's portfolio is blue consultant
+  And the Equity whose founder is p0 in p1's portfolio is red consultant
+  And the Equity whose founder is p0 in p1's portfolio is qa consultant
+  When p0 files the Non-Compete Suit
+  Then the phase is lawsuit
+  And it is p0's turn
+  And p0 has 5 capital
+  When p0 sues the Equity whose founder is p0
+  Then the phase is actions
+  And p0 has 0 capital
+  And p1 has 12 capital
+  And p0 has 3 actions
+  And p0's equity has an Equity whose founder is p0
+  And the Equity whose founder is p0 in p0's equity is on no card
+  And the Equity whose founder is p0 in p0's equity is not blue consultant
+  And the Equity whose founder is p0 in p0's equity is not red consultant
+  And the Equity whose founder is p0 in p0's equity is not qa consultant
+  And p1's portfolio is empty
+  And the strategy discard has a Non-Compete Suit
+  And the court is empty
+
+Example: a Founder with two Investors picks whose token comes back, needs the Suit's price and the buyout before filing, and can only take back their own token (section 17, section 20)
+  Given 3 players
+  And p0 has 8 capital
+  And p0's strategy hand has a Non-Compete Suit
+  And p1's portfolio has an Equity whose founder is p0 and an Equity whose founder is p2
+  And p2's portfolio has an Equity whose founder is p0
+  When p0 files the Non-Compete Suit
+  Then it is rejected because "they have at least the card's suit cost in capital"
+  And p0's strategy hand has a Non-Compete Suit
+  Given p0 has 9 capital
+  When p0 files the Non-Compete Suit
+  And p0 sues the Equity whose founder is p2
+  Then it is rejected because "it is a card whose founder is them"
+  When p0 sues the Equity whose founder is p0 from p2's portfolio
+  Then p0 has 0 capital
+  And p2 has 12 capital
+  And p1 has 7 capital
+  And p1's portfolio has an Equity whose founder is p0 and an Equity whose founder is p2
+  And p2's portfolio is empty
+
+Example: a Founder can't file the Suit when no Investor holds their Equity, and no other Strategy card files (section 17, section 20)
+  Given p0 has 9 capital
+  And p0's strategy hand has a Non-Compete Suit and a Hit Piece
+  When p0 files the Non-Compete Suit
+  Then it is rejected because "another player has a card in their portfolio whose founder is them"
+  Given p1's portfolio has an Equity whose founder is p0
+  When p0 files the Hit Piece
+  Then it is rejected because "it is a Non-Compete Suit card"
+  And p0 has 9 capital
