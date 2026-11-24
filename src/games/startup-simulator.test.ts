@@ -6398,3 +6398,11 @@ it('names an Equity token by its Founder wherever its own zone does not (§2)', 
   const moved = relocate(state, [held], 'portfolio-p1', game!);
   expect(nameWithPlayers(cardById(moved, held)!, game!)).toBe('Equity whose founder is p0');
 });
+
+it('says Venture Capital Rain is in effect, as 7-2a made it (§20.D 1)', () => {
+  const events = zoneCards(fresh(), 'event-deck');
+  expect(events.find((card) => card.data?.name === 'Venture Capital Rain')!.data?.effect)
+    .toBe('Whenever a player Invests in a Founder this round, the Bank pays that Founder $3 extra cash (not on Secondary Trades or Buybacks).');
+  const dormant = events.filter((card) => (card.data?.effect as string).endsWith('Not in effect yet.')).map((card) => card.data?.name as string);
+  expect(dormant.sort()).toEqual(['Headhunter Holiday', 'Recruiter Frenzy', 'Whistleblower Protection Act']);
+});

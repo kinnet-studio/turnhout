@@ -2271,3 +2271,155 @@ describe('the Veto window on the page', () => {
     expect(screen.queryByTestId('waiting')).toBeNull();
   });
 });
+
+const SELL_BACK = 'Sell back a card in your portfolio';
+const TAKE = "Take a card in another player's portfolio";
+const DECLINE = 'Decline the offer';
+const FILE = 'File a card in your strategy hand';
+const SUE = "Sue a card in another player's portfolio";
+const PLACE = "Place a card from your portfolio to a card in another player's development or another player's operations";
+const CONFIRM = 'Confirm your consultants';
+const TAKE_PLACING = "Take a card from another player's portfolio to a card in another player's development or another player's operations";
+
+/**
+ * How the numbers come: §17.A: a Founder with no Active product sells at $5; §17.C.4: a Buyback at the Share Price, 7 − 5 = 2 and
+ * 7 + 5 = 12; §17.C.5: a Secondary Trade at the Share Price, paid by the buyer to the seller, 7 + 5 = 12 and 7 − 5 = 2; the spec's call: a
+ * decline still costs the proposer the action; §17.C.2 and §20.A: the Suit costs $4 and pays the Investor $5, for no action, 9 − 4 = 5,
+ * then 5 − 5 = 0 and 7 + 5 = 12; §17.B.4 and the overview's call: at a Round Start the Investor may move a Consultant to another of the
+ * Founder's products, picking its colour again; §20.D 15: Headhunter Holiday takes no money at the Round Start.
+ */
+describe('consent, the lawsuit and the Round Start on the page', () => {
+  const T = after(N, 3);
+  const tab = (name: string) => screen.getByRole('tab', { name });
+  const boardOf = (seat: string) => screen.getByTestId(`board-${seat}`).textContent;
+  const selected = (name: string) => expect(tab(name).getAttribute('aria-selected'), `${name} is selected`).toBe('true');
+  const begins = (seat: string, expected: string) => expect(lineOf(seat)?.slice(0, expected.length)).toBe(expected);
+  const pickButton = (name: string) => within(picker()).getAllByRole('button', { name: `Pick ${name}` })[0];
+
+  it("(guard) writes Venture Capital Rain's effect in full on the Event's line", () => {
+    mount({ initial: inPlay(setUp(), 'Venture Capital Rain') });
+    expect(inPlayLine()).toBe('event in play: Venture Capital Rain — effect Whenever a player Invests in a Founder this round, the Bank pays that Founder $3 extra cash (not on Secondary Trades or Buybacks).');
+  });
+
+  it("consents to a Buyback in the Investor's strip, and Undo takes the offer back (Review Focus)", () => {
+    let state = setUp7();
+    state = holding(state, tokenOf(state, S), N);
+    mount({ initial: state });
+    press(BUY_BACK);
+    pickNamed(`Equity whose founder is ${S} (${N}'s portfolio)`);
+    expect(waitingText()).toBe(`${S} wants to buy back a card in another player's portfolio: Equity whose founder is ${S}.`);
+    press(LET_GO);
+    selected(`${N} — to act`);
+    expect(status()).toBe(`seat: ${N} — offer — Your turn — ${hint('offer')}`);
+    expect(boardOf(N)).toContain(`portfolio: Equity whose founder is ${S} (offered)`);
+    expect(seatButtons()).toEqual([SELL_BACK, TAKE, TAKE_PLACING, DECLINE]);
+    expect(within(screen.getByTestId('seat-buttons')).getAllByRole('button').map((b) => b.getAttribute('aria-disabled'))).toEqual(['false', 'true', 'true', 'false']);
+
+    press('Undo');
+    expect(status()).toBe(`seat: ${N} — Your turn — ${hint('veto')}`);
+    expect(waitingText()).toBe(`${S} wants to buy back a card in another player's portfolio: Equity whose founder is ${S}.`);
+    expect(boardOf(N)).not.toContain('offered');
+    press(LET_GO);
+
+    press(SELL_BACK);
+    pickNamed(`Equity whose founder is ${S}`);
+    selected(`${S} — to act`);
+    begins(S, `${S} 2 capital, 2 actions`);
+    begins(N, `${N} 12 capital`);
+    expect(boardOf(S)).toContain('equity: Equity; Equity; Equity');
+  });
+
+  it("answers a Secondary Trade in the buyer's strip, declined then taken", () => {
+    let state = setUp7();
+    state = holding(state, tokenOf(state, N), S);
+    mount({ initial: state });
+
+    press(SELL);
+    pickNamed(`Equity whose founder is ${N}`);
+    selected(`${T} — to act`);
+    expect(status()).toBe(`seat: ${T} — offer — Your turn — ${hint('offer')}`);
+    expect(boardOf(S)).toContain(`Equity whose founder is ${N} (offered)`);
+    press(DECLINE);
+    selected(`${S} — to act`);
+    begins(S, `${S} 7 capital, 2 actions`);
+    expect(boardOf(S)).not.toContain('offered');
+
+    press(SELL);
+    pickNamed(`Equity whose founder is ${N}`);
+    press(TAKE);
+    pickNamed(`Equity whose founder is ${N} (${S}'s portfolio)`);
+    selected(`${S} — to act`);
+    begins(S, `${S} 12 capital, 1 action`);
+    begins(T, `${T} 2 capital`);
+    expect(boardOf(T)).toContain(`portfolio: Equity whose founder is ${N}`);
+  });
+
+  it('files a Non-Compete Suit to the court, and Undo takes it back (Review Focus)', () => {
+    let state = setUp7();
+    const suit = idOf(state, 'Non-Compete Suit');
+    state = holding(state, tokenOf(state, S), N);
+    state = setCounter(relocate(state, [suit], `strategy-hand-${S}`, game), 'capital', S, 9);
+    mount({ initial: state });
+    const court = fittedLayout(game.zones, S).find((d) => d.id === 'court');
+    expect(court?.layout).toBe('pile');
+    expect(court?.owner).toBe('shared');
+
+    click(suit);
+    expect(offered()).toContainEqual([FILE, true]);
+    choose(FILE);
+    expect(status()).toBe(`seat: ${S} — lawsuit — Your turn — ${hint('lawsuit')}`);
+    expect(inOrder('court').map((c) => [c.id, c.faceUp])).toEqual([[suit, true]]);
+    begins(S, `${S} 5 capital, 3 actions`);
+
+    press('Undo');
+    expect(inOrder('court')).toEqual([]);
+    expect(inOrder(`strategy-hand-${S}`).map((c) => c.id)).toContain(suit);
+    begins(S, `${S} 9 capital`);
+    click(suit);
+    choose(FILE);
+
+    press(SUE);
+    pickNamed(`Equity whose founder is ${S} (${N}'s portfolio)`);
+    expect(status()!.endsWith(hint('actions')), status()!).toBe(true);
+    expect(inOrder('court')).toEqual([]);
+    begins(S, `${S} 0 capital, 3 actions`);
+    expect(lineOf(S)).toContain('equity 3');
+    begins(N, `${N} 12 capital`);
+  });
+
+  it('moves a Consultant to another product at the Round Start, its colour picked again', () => {
+    let state = onTop(inPlay(setUpTwo(), 'Whistleblower Protection Act'), 'Headhunter Holiday');
+    const [todo, dating] = [idOf(state, 'To-Do List'), idOf(state, 'Dating App')];
+    const token = tokenOf(state, FIRST2);
+    state = relocate(relocate(state, [todo], `development-${FIRST2}`, game), [dating], `operations-${FIRST2}`, game);
+    state = holding(state, token, SECOND2, todo, 'red consultant');
+    mount({ initial: state, players: 2 });
+
+    press('End your actions');
+    selected(`${SECOND2} — to act`);
+    // (amendment) SECOND2 has no one on a salary, so no income step comes: their actions follow at once.
+    expect(status()!.endsWith(hint('actions')), status()!).toBe(true);
+    press('End your actions');
+    selected(`${SECOND2} — to act`);
+    expect(status()).toBe(`seat: ${SECOND2} — Your turn — ${hint('event check')}`);
+    expect(seatButtons()).toContain(PLACE);
+    expect(seatButtons()).toContain(CONFIRM);
+    expect(seatButtons()).toEqual(['Let go of a card in your development team', 'Let go of a card in your ops team', PLACE, CONFIRM]);
+
+    press(PLACE);
+    expect(within(picker()).getAllByRole('button').map((b) => b.textContent))
+      .toEqual([`Equity whose founder is ${FIRST2} (on To-Do List in ${FIRST2}'s development)`, 'Cancel']);
+    pickNamed(`Equity whose founder is ${FIRST2} (on To-Do List in ${FIRST2}'s development)`);
+    expect(pickButton(`To-Do List (${FIRST2}'s development)`).getAttribute('aria-disabled')).toBe('true');
+    expect(pickButton(`Dating App (${FIRST2}'s operations)`).getAttribute('aria-disabled')).toBe('false');
+    pickNamed(`Dating App (${FIRST2}'s operations)`);
+    answerAsked('QA');
+    const operations = boardOf(FIRST2)!.split(' · ').find((part) => part.startsWith('operations:'))!;
+    // 7-2a's fix wave: a placed token is moved this round, and keeps the flag until the next round starts.
+    expect(operations).toContain(`with ${SECOND2}'s Equity whose founder is ${FIRST2} (qa consultant, moved this round)`);
+
+    press(CONFIRM);
+    selected(`${FIRST2} — to act`);
+    expect(status()).not.toContain(hint('event check'));
+  });
+});
