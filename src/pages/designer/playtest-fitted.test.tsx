@@ -2065,3 +2065,29 @@ describe('Equity named by its Founder', () => {
     ]);
   });
 });
+
+const SELL = 'Sell a card in your portfolio';
+
+/** How the numbers come: §17.B.4: a held token may sit on one of its Founder's products as a Consultant, in the colour its Investor picks. */
+describe('Consultants in words', () => {
+  const boardOf = (seat: string) => screen.getByTestId(`board-${seat}`).textContent;
+
+  it("lists a placed token on both players' Board lines, captions it where the product isn't drawn, and places it in the picker", () => {
+    let state = setUp7();
+    const dating = idOf(state, 'Dating App');
+    const [onDating, loose] = [tokenOf(state, N, 0), tokenOf(state, N, 1)];
+    state = relocate(state, [dating], `development-${N}`, game);
+    state = holding(holding(state, onDating, S, dating, 'blue consultant'), loose, S);
+    mount({ initial: state });
+    expect(boardOf(S)).toContain(`portfolio: Equity whose founder is ${N} (blue consultant) on Dating App in ${N}'s development; Equity whose founder is ${N}`);
+    expect(boardOf(N)).toContain(`[Blue 0/6, Red 0/0] with ${S}'s Equity whose founder is ${N} (blue consultant) · equity: Equity`);
+    expect(table!.decor![onDating].caption).toBe(`on Dating App\nin ${N}'s development`);
+    expect(table!.decor?.[loose]?.caption).toBeUndefined();
+
+    press(SELL);
+    expect(within(picker()).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      `Equity whose founder is ${N} (on Dating App in ${N}'s development)`, `Equity whose founder is ${N}`, 'Cancel',
+    ]);
+    press('Cancel');
+  });
+});

@@ -43,6 +43,36 @@ export function cardLabel(card: CardState, game: CompiledGame): string {
   return isFaceDown(card) ? 'a face-down card' : nameWithPlayers(card, game);
 }
 
+/** Where a card sits on a card of another seat's zone, in two parts: `on Vase` and `in p0's workshop`; null as `sitsOn` says. */
+function sitting(game: CompiledGame, card: CardState, cards: CardState[]): { on: string; at: string } | null {
+  const holderId = holderIdOf(card);
+  if (holderId === null) return null;
+  const holder = cards.find((other) => other.id === holderId);
+  const at = holder === undefined ? null : zoneInfo(game, holder.zoneId);
+  if (holder === undefined || at === null || at.seat === null || at.seat === zoneInfo(game, card.zoneId)?.seat) return null;
+  return { on: `on ${cardLabel(holder, game)}`, at: `in ${at.seat}'s ${at.spec.name}` };
+}
+
+/**
+ * Where a card that sits on a card of another seat's zone sits, as an example says it: `on Vase in p0's workshop`, the card it sits on
+ * named by `cardLabel`. Null for a card that sits on none, on a card of its own seat's zone, or on a card not among `cards`.
+ */
+export function sitsOn(game: CompiledGame, card: CardState, cards: CardState[]): string | null {
+  const where = sitting(game, card, cards);
+  return where === null ? null : `${where.on} ${where.at}`;
+}
+
+/** For each of `drawn` that `sitsOn` places on a card `drawn` lacks: the same words on two lines, `on Vase` and `in p0's workshop`. */
+export function sitsOnCaptions(game: CompiledGame, drawn: CardState[], cards: CardState[]): { [cardId: string]: string } {
+  const drawnIds = new Set(drawn.map((card) => card.id));
+  const captions: { [cardId: string]: string } = {};
+  for (const card of drawn) {
+    const where = sitting(game, card, cards);
+    if (where !== null && !drawnIds.has(holderIdOf(card)!)) captions[card.id] = `${where.on}\n${where.at}`;
+  }
+  return captions;
+}
+
 /** A name's words but its last: 'red' for 'red done'. A name of one word has none. */
 const frontWords = (name: string): string => {
   const last = name.lastIndexOf(' ');
@@ -176,24 +206,36 @@ function cardsOnCards(game: CompiledGame, byZone: Map<string, CardState[]>): Map
 export function boardText(game: CompiledGame, cards: CardState[], seat: PlayerId, worked?: WorkedView): string {
   const byZone = cardsByZone({ zones: [], cards });
   const on = cardsOnCards(game, byZone);
+  const seatOf = (card: CardState) => zoneInfo(game, card.zoneId)?.seat ?? null;
   const entry = (card: CardState): string => {
     const counts = countParts(card, game, worked?.[card.id]);
     const words = counts.length > 0 ? wordsOf(card, game) : [];
     const bracketed = [...words, ...flagsOn(card, game), ...(worked?.[card.id]?.flags ?? [])];
     const squared = [...counts, ...loneCounts(card, game)];
     const held = on.get(card.id) ?? [];
+    // Under the card it sits on, a card of a zone whose cards sit on other players' cards says whose it is.
+    const heldEntry = (other: CardState) => {
+      const info = zoneInfo(game, other.zoneId);
+      return info?.spec.across === true && info.seat !== seatOf(card) ? `${info.seat}'s ${entry(other)}` : entry(other);
+    };
     return [
       cardLabel(card, game),
       bracketed.length > 0 ? ` (${bracketed.join(', ')})` : '',
       squared.length > 0 ? ` [${squared.join(', ')}]` : '',
-      held.length > 0 ? ` with ${joinAnd(held.map(entry))}` : '',
+      held.length > 0 ? ` with ${joinAnd(held.map(heldEntry))}` : '',
     ].join('');
   };
   return game.zones
     .filter(isBoardZone)
     .flatMap((spec) => {
-      const listed = (byZone.get(zoneIdFor(spec.name, seat)) ?? []).filter((card) => holderIdOf(card) === null);
-      return listed.length === 0 ? [] : [`${spec.name}: ${listed.map(entry).join('; ')}`];
+      // A zone whose cards sit on other players' cards lists them all, each placed one with where it sits.
+      const across = spec.across === true;
+      const listed = (byZone.get(zoneIdFor(spec.name, seat)) ?? []).filter((card) => across || holderIdOf(card) === null);
+      const line = (card: CardState) => {
+        const where = across ? sitsOn(game, card, cards) : null;
+        return where === null ? entry(card) : `${entry(card)} ${where}`;
+      };
+      return listed.length === 0 ? [] : [`${spec.name}: ${listed.map(line).join('; ')}`];
     })
     .join(' · ');
 }

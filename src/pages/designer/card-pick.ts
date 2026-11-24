@@ -6,6 +6,7 @@ import { pickName } from '@/engine/core/lang/card-facts';
 import type { CompiledGame } from '@/engine/core/lang/types';
 import { zoneInfo } from '@/engine/core/lang/zones';
 import { HIDDEN_FACE_KEY } from '@/engine/core/derive-scene';
+import { sitsOn } from './board-text';
 import type { CardState, PlayerId } from '@/engine/core/scene';
 
 const isFaceDown = (card: CardState): boolean => card.faceKey === HIDDEN_FACE_KEY;
@@ -102,18 +103,29 @@ export function takersOf(actions: ActionView[], cardId: string): Taker[] {
  * Where each card in another seat's own zone is, as `p1's workshop`; none for `seat`'s own zones or a shared zone's (Call 6). A
  * fitted table draws only the seat's own zones and the shared ones, so a card picked from another seat's zone is picked from the
  * list, where two of the same name would otherwise read alike. A face-down card is named by its place alone, since its zone is all
- * the seat may know of it. Two or more face-up cards of one name in one place are told apart: each gains `, on Vase` (the card it
- * sits on, named only when that card is face up), and those still alike gain `, {label}` from `labels` (a card's label, as the
- * Board line gives it). Cards still alike after that are equivalent to the seat and may repeat.
+ * the seat may know of it. A card that sits on a card of another seat's zone says where (`sitsOn`): after its place, `p1's holdings,
+ * on Vase in p0's workshop`, or as its place in the seat's own zone. Two or more face-up cards of one name in one place are told
+ * apart: each gains `, on Vase` (the card it sits on, named only when that card is face up, and never again for a card whose place
+ * already names it), and those still alike gain `, {label}` from `labels` (a card's label, as the Board line gives it). Cards still
+ * alike after that are equivalent to the seat and may repeat.
  */
 export function placesOf(
   game: CompiledGame, cards: CardState[], seat: PlayerId, labels: { [cardId: string]: string } = {},
 ): { [cardId: string]: string } {
   const places: { [cardId: string]: string } = {};
+  // The cards whose place already names the card they sit on.
+  const sitting = new Set<string>();
   for (const card of cards) {
     const info = zoneInfo(game, card.zoneId);
-    if (info === null || info.seat === null || info.seat === seat) continue;
-    places[card.id] = `${info.seat}'s ${info.spec.name}`;
+    if (info === null || info.seat === null) continue;
+    // A card on another seat's card says where it sits, after its place or, in the viewer's own zone, as its place.
+    const where = sitsOn(game, card, cards);
+    if (where !== null) sitting.add(card.id);
+    if (info.seat === seat) {
+      if (where !== null) places[card.id] = where;
+      continue;
+    }
+    places[card.id] = where === null ? `${info.seat}'s ${info.spec.name}` : `${info.seat}'s ${info.spec.name}, ${where}`;
   }
   const byId = new Map(cards.map((card) => [card.id, card]));
   const nameOf = (card: CardState) => pickName(card, game);
@@ -136,6 +148,7 @@ export function placesOf(
     for (const [id, more] of added) places[id] += more;
   };
   tellApart((card) => {
+    if (sitting.has(card.id)) return null;
     const holderId = holderIdOf(card);
     const holder = holderId === null ? undefined : byId.get(holderId);
     return holder === undefined || isFaceDown(holder) ? null : `, on ${nameOf(holder)}`;

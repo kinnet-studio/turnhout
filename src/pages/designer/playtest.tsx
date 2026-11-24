@@ -31,6 +31,7 @@ import { CardPicker } from './card-picker';
 import { ChoicePicker } from './choice-picker';
 import { aboutOf, choicesFor, choicesOfPress, nextChoice, questionOf, type Asking } from './choice-step';
 import { seatStatus, seatToAct } from './seat-status';
+import { sitsOnCaptions } from './board-text';
 import { SeatTabs } from './seat-tabs';
 import { Tableaux } from './tableaux';
 
@@ -220,10 +221,15 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
   // and counts it keeps. All of them change only with the view.
   const picksCards = game.phases.some((phase) => phase.actions.some((a) => a.pick !== undefined));
   const worked = extras?.worked;
-  const captions = useMemo(
-    () => (picksCards && view !== null ? boardCaptions(game, placed, worked) : null),
-    [picksCards, view, game, placed, worked],
-  );
+  // A card on another seat's card that this table doesn't draw is captioned with where it sits, under its counts.
+  const captions = useMemo(() => {
+    if (!picksCards || view === null) return null;
+    const merged = boardCaptions(game, placed, worked);
+    for (const [id, words] of Object.entries(sitsOnCaptions(game, placed, view.scene.cards))) {
+      merged[id] = id in merged ? `${merged[id]}\n${words}` : words;
+    }
+    return merged;
+  }, [picksCards, view, game, placed, worked]);
   // While cards are picked, the cards picked and those to pick next are ringed; while an offer is open, the card it is for; while a
   // question is open, the card it is about and the card it goes to.
   const pickView = choosingCards?.pick ?? null;

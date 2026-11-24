@@ -21,6 +21,9 @@ import { keptBadges } from './board-text';
 import { BOX_ZONE } from '@/engine/core/lang/zones';
 import { MAKER_GAME } from '@/engine/core/lang/testing';
 import { makeCard } from '@/engine/core/lang/cards';
+import { RIVAL_GAME } from '@/engine/core/lang/testing';
+import { sitsOn, sitsOnCaptions } from './board-text';
+import { zoneInfo } from '@/engine/core/lang/zones';
 
 const lib = createDefaultLibrary();
 const TIRED = '  Cards can be tired.';
@@ -372,5 +375,43 @@ describe('a card that names a player', () => {
   });
   it('says nothing of a face-down copy', () => {
     expect(cardLabel({ ...cardOf(made.state, made.id), faceUp: false, faceKey: HIDDEN_FACE_KEY, data: {} }, maker)).toBe('a face-down card');
+  });
+});
+
+describe("cards on other players' cards", () => {
+  const rival = compileGame(RIVAL_GAME, lib).game!;
+  const stake = (s: GameState, g: CompiledGame, zoneId: string, by: string) => makeCard(s, g, { name: 'Stake', maker: by }, zoneId)!;
+  /** p0's Vase with a Potter on it, p1's lit Stake and p2's Stake of p0's on it, and p1's Stake of p2's on no card. */
+  const arranged = () => {
+    let s = initialState(rival, 1);
+    const vaseId = idsOf(s, 'Vase')[0];
+    s = putOn(relocate(s, [vaseId], 'workshop-p0', rival), [idsOf(s, 'Potter')[0]], 'crew-p0', vaseId, rival);
+    const one = stake(s, rival, 'holdings-p1', 'p0');
+    s = changeCard(putOn(one.state, [one.id], 'holdings-p1', vaseId, rival), one.id, { lit: true }, rival);
+    const two = stake(s, rival, 'holdings-p2', 'p0');
+    s = putOn(two.state, [two.id], 'holdings-p2', vaseId, rival);
+    const loose = stake(s, rival, 'holdings-p1', 'p2');
+    return { state: loose.state, vaseId, placed: one.id, other: two.id, loose: loose.id, potter: idsOf(s, 'Potter')[0] };
+  };
+  const A = arranged();
+  const all = A.state.cards;
+  const part = (seat: string, zone: string) => boardText(rival, all, seat).split(' · ').find((p) => p.startsWith(`${zone}:`));
+
+  it("lists another player's card under the card it sits on, with that player's name", () => {
+    expect(part('p0', 'workshop')).toBe("workshop: Vase with Potter, p1's Stake whose maker is p0 (lit) and p2's Stake whose maker is p0");
+  });
+  it('lists every card of a zone whose cards sit on other players\' cards, a placed one with where it sits', () => {
+    expect(part('p1', 'holdings')).toBe("holdings: Stake whose maker is p0 (lit) on Vase in p0's workshop; Stake whose maker is p2");
+  });
+  it("says where a card on another player's card sits, and nothing for any other", () => {
+    expect(sitsOn(rival, cardOf(A.state, A.placed), all)).toBe("on Vase in p0's workshop");
+    expect(sitsOn(rival, cardOf(A.state, A.potter), all)).toBeNull();
+    expect(sitsOn(rival, cardOf(A.state, A.loose), all)).toBeNull();
+    expect(sitsOn(rival, cardOf(A.state, A.placed), all.filter((c) => c.id !== A.vaseId))).toBeNull();
+  });
+  it("captions a card whose holder the table doesn't draw, on two lines", () => {
+    const p1s = all.filter((c) => zoneInfo(rival, c.zoneId)?.seat === 'p1');
+    expect(sitsOnCaptions(rival, p1s, all)).toEqual({ [A.placed]: "on Vase\nin p0's workshop" });
+    expect(sitsOnCaptions(rival, [...p1s, cardOf(A.state, A.vaseId)], all)).toEqual({});
   });
 });

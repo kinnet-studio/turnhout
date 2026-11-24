@@ -8,6 +8,11 @@ import { JINX_GAME } from '@/engine/core/lang/testing';
 import { relocate } from '@/engine/core/lang/zones';
 import { HIDDEN_FACE_KEY } from '@/engine/core/derive-scene';
 import type { CardState } from '@/engine/core/scene';
+import { RIVAL_GAME } from '@/engine/core/lang/testing';
+import { makeCard } from '@/engine/core/lang/cards';
+import { changeCard } from '@/engine/core/lang/card-facts';
+import type { GameState } from '@/engine/core/game-state';
+import type { CompiledGame } from '@/engine/core/lang/types';
 import { PICK_START, clickCard, confirmSet, liveAt, ontoChoices, placesOf, ringsOf, takersOf, type PickAt } from './card-pick';
 
 const NOT_RUBY = 'the target card is not a Ruby';
@@ -219,5 +224,42 @@ describe('placesOf', () => {
     const hiddenPotter = cards.map((c) => (c.id === potterA ? { ...c, faceUp: false, faceKey: HIDDEN_FACE_KEY, data: {} } : c));
     expect(placesOf(jinx, hiddenPotter, 'p0')[potterA]).toBe("p1's crew");
     expect(placesOf(jinx, hiddenPotter, 'p0')[potterB]).toBe("p1's crew");
+  });
+});
+
+describe("placesOf, for a card on another player's card", () => {
+  const rival = compileGame(RIVAL_GAME, createDefaultLibrary()).game!;
+  const stake = (s: GameState, g: CompiledGame, zoneId: string, by: string) => makeCard(s, g, { name: 'Stake', maker: by }, zoneId)!;
+  const idOf = (s: GameState, name: string) => s.cards.find((c) => c.data?.name === name)!.id;
+  let s = initialState(rival, 1);
+  const vaseId = idOf(s, 'Vase');
+  s = putOn(relocate(s, [vaseId], 'workshop-p0', rival), [s.cards.find((c) => c.data?.name === 'Potter' && c.zoneId === 'hall')!.id], 'crew-p0', vaseId, rival);
+  const one = stake(s, rival, 'holdings-p1', 'p0');
+  s = changeCard(putOn(one.state, [one.id], 'holdings-p1', vaseId, rival), one.id, { lit: true }, rival);
+  const two = stake(s, rival, 'holdings-p2', 'p0');
+  s = putOn(two.state, [two.id], 'holdings-p2', vaseId, rival);
+  const loose = stake(s, rival, 'holdings-p1', 'p2');
+  const second = stake(loose.state, rival, 'holdings-p1', 'p0');
+  const cards = second.state.cards;
+
+  it('gives the place of a placed card in the viewer\'s own zone as where it sits, and none to the others', () => {
+    const places = placesOf(rival, cards, 'p1');
+    expect(places[one.id]).toBe("on Vase in p0's workshop");
+    expect(places[loose.id]).toBeUndefined();
+    expect(places[second.id]).toBeUndefined();
+  });
+  it('(amendment) names the card two of them sit on once, and tells them apart by their labels', () => {
+    const both = putOn(second.state, [second.id], 'holdings-p1', vaseId, rival);
+    const labels = { [one.id]: 'lit' };
+    expect(placesOf(rival, both.cards, 'p1', labels)).toMatchObject({ [one.id]: "on Vase in p0's workshop, lit", [second.id]: "on Vase in p0's workshop" });
+    expect(placesOf(rival, both.cards, 'p0', labels)).toMatchObject({
+      [one.id]: "p1's holdings, on Vase in p0's workshop, lit", [second.id]: "p1's holdings, on Vase in p0's workshop",
+    });
+  });
+  it("adds where it sits to the place of a placed card in another seat's zone (Review Focus)", () => {
+    const places = placesOf(rival, cards, 'p0');
+    expect(places[one.id]).toBe("p1's holdings, on Vase in p0's workshop");
+    expect(places[loose.id]).toBe("p1's holdings");
+    expect(places[second.id]).toBe("p1's holdings");
   });
 });
