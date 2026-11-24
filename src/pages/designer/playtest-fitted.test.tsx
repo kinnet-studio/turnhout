@@ -95,7 +95,7 @@ describe('Playtest of a game too big for one table', () => {
 
   it("draws the seat's own zones and the shared ones, and only their cards", () => {
     mount();
-    const ids = fittedLayout(game.zones, S).map((z) => z.id);
+    const ids = fittedLayout(game.zones, S, seatsOf(3)).map((z) => z.id);
     expect(zoneIds()).toEqual(ids);
     expect(table!.placement.cards.every((c) => ids.includes(c.zoneId))).toBe(true);
     expect(cardsIn(`bench-${S}`)).toHaveLength(3);
@@ -2089,5 +2089,77 @@ describe('Consultants in words', () => {
       `Equity whose founder is ${N} (on Dating App in ${N}'s development)`, `Equity whose founder is ${N}`, 'Cancel',
     ]);
     press('Cancel');
+  });
+});
+
+const LET_GO = 'Let the action go ahead';
+const PIVOT = 'Pivot a card in your development';
+
+/**
+ * How the numbers come: 176 is `CARD_HEIGHT` 140 + `STACK_GAP` 36, as 4-3's Growth Hacker test has it. §17.B.4: a Consultant sits on a
+ * Founder's product, and comes back to its Investor when the product leaves the Board. §6: a Pivot costs 1 action and sends the staff to
+ * the Bench.
+ */
+describe("a rival's Consultant hangs under the viewer's product", () => {
+  const T = after(N, 3);
+  const [A, B] = [N, T].sort();
+  const tab = (name: string) => screen.getByRole('tab', { name });
+  const boardOf = (seat: string) => screen.getByTestId(`board-${seat}`).textContent;
+  const detail = () => screen.getByTestId('card-detail').textContent;
+  const hover = (id: string | null) => act(() => table!.onHover!(id));
+  const arranged = () => {
+    let state = setUp7();
+    const dating = idOf(state, 'Dating App');
+    const junior = idOf(state, 'Junior Software Dev', `bench-${S}`);
+    const [aToken, bToken] = [tokenOf(state, S, 0), tokenOf(state, S, 1)];
+    state = relocate(state, [dating], `development-${S}`, game);
+    state = holding(holding(state, aToken, A, dating, 'blue consultant'), bToken, B, dating, 'red consultant');
+    state = putOn(state, [junior], `development-team-${S}`, dating, game);
+    return { state, dating, junior, aToken, bToken };
+  };
+
+  it('hangs first in the column under the product, in its colour, named by whose it is, and goes back with a Pivot (Review Focus)', () => {
+    const { state, dating, junior, aToken, bToken } = arranged();
+    mount({ initial: state });
+    const ids = table!.tableDef.zones.map((z) => z.id);
+    expect(ids.slice(0, 2)).toEqual([`portfolio-${A}`, `portfolio-${B}`]);
+    expect(cardsIn(`portfolio-${A}`).map((c) => c.id)).toEqual([aToken]);
+    expect(cardsIn(`portfolio-${B}`).map((c) => c.id)).toEqual([bToken]);
+    const defOf = (id: string) => table!.tableDef.zones.find((z) => z.id === id)!;
+    const at = computeZoneLayout(defOf(`development-${S}`), cardsIn(`development-${S}`)).get(dating)!;
+    const poseIn = (zoneId: string, id: string) => computeZoneLayout(defOf(zoneId), cardsIn(zoneId)).get(id)!;
+    expect([poseIn(`portfolio-${A}`, aToken).x, poseIn(`portfolio-${A}`, aToken).y]).toEqual([at.x, at.y + 176]);
+    expect([poseIn(`portfolio-${B}`, bToken).x, poseIn(`portfolio-${B}`, bToken).y]).toEqual([at.x, at.y + 176 + STACK_STEP]);
+    expect([poseIn(`development-team-${S}`, junior).x, poseIn(`development-team-${S}`, junior).y]).toEqual([at.x, at.y + 176 + 2 * STACK_STEP]);
+
+    expect(table!.decor![aToken].badge).toBe('blue consultant');
+    expect(table!.decor![bToken].badge).toBe('red consultant');
+    hover(aToken);
+    const faceKey = cardsIn(`portfolio-${A}`)[0].faceKey;
+    expect(detail()).toBe(`${A}'s ${cardDetail(faceKey, ['blue consultant'])} — blue consultant`);
+    expect(detail()).toBe(`${A}'s Equity — founder ${S} — blue consultant`);
+    hover(null);
+
+    click(aToken);
+    expect(offered()).toContainEqual([BUY_BACK, true]);
+    fireEvent.click(within(offer()).getByRole('button', { name: 'Cancel' }));
+
+    expect(boardOf(S)).toContain(`${A}'s Equity whose founder is ${S} (blue consultant) and ${B}'s Equity whose founder is ${S} (red consultant)`);
+
+    press(PIVOT);
+    pickNamed('Dating App');
+    expect(tab(`${N} — to act`).getAttribute('aria-selected')).toBe('true');
+    const nToken = N === A ? aToken : bToken;
+    expect(table!.decor![nToken].caption).toBe(`on Dating App\nin ${S}'s development`);
+    press(LET_GO);
+    expect(tab(`${T} — to act`).getAttribute('aria-selected')).toBe('true');
+    press(LET_GO);
+    expect(tab(`${S} — to act`).getAttribute('aria-selected')).toBe('true');
+    expect(cardsIn(`portfolio-${N}`)).toEqual([]);
+    expect(cardsIn(`portfolio-${T}`)).toEqual([]);
+    expect(Object.keys(table!.decor ?? {})).not.toContain(aToken);
+    expect(Object.keys(table!.decor ?? {})).not.toContain(bToken);
+    expect(lineOf(S)).toContain('development 0');
+    expect(inOrder('open-idea-pool').map((c) => c.id)).toContain(dating);
   });
 });

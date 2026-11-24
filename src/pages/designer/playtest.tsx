@@ -32,6 +32,8 @@ import { ChoicePicker } from './choice-picker';
 import { aboutOf, choicesFor, choicesOfPress, nextChoice, questionOf, type Asking } from './choice-step';
 import { seatStatus, seatToAct } from './seat-status';
 import { sitsOnCaptions } from './board-text';
+import { drawnCards } from '@/engine/core/lang/fit-layout';
+import { zoneInfo } from '@/engine/core/lang/zones';
 import { SeatTabs } from './seat-tabs';
 import { Tableaux } from './tableaux';
 
@@ -206,13 +208,13 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
     const init = makeInitApp(designerFaceRenderer, { showEmptyZones: true, size, ...(world !== TABLE_BOUNDS && { world }) });
     return { size, init };
   }, [game]);
-  const drawn = useMemo(() => new Set(tableDef.zones.map((zone) => zone.id)), [tableDef]);
-  // A fitted table leaves the other players' zones off, so their cards have nowhere to stand: they are counted in the tableaux.
-  // The cards on a card hang under it, placed once for each view rather than on every hover.
+  // A fitted table leaves the other players' zones off, so their cards have nowhere to stand: they are counted in the tableaux. Only
+  // their cards that sit on one of this seat's cards are drawn, hanging under it (`drawnCards`). The cards on a card hang under it,
+  // placed once for each view rather than on every hover.
   const placed = useMemo(() => {
     const cards = view?.scene.cards ?? [];
-    return fitted ? stackOnHolders(tableDef.zones, cards.filter((card) => drawn.has(card.zoneId))) : cards;
-  }, [view, fitted, tableDef, drawn]);
+    return fitted ? stackOnHolders(tableDef.zones, drawnCards(tableDef.zones, cards, seat)) : cards;
+  }, [view, fitted, tableDef, seat]);
   const placement: Placement = { cards: placed };
   // Only a game whose buttons pick cards puts anything on its cards or takes clicks on them, so every other game's table draws and
   // plays as it always has. A card on a seat's Board is captioned with its counts, read against what the rules work out, badged
@@ -265,7 +267,10 @@ function SeatCanvas({ game, session, tableDef, seats, seat, onError, fitted = fa
   // card hanging over it may cover the corner it is drawn in (Call 5). The facts the label says are left off the columns.
   const label = hoveredCard === undefined ? undefined : decor?.[hoveredCard.id]?.badge;
   const whole = hoveredCard?.faceUp ? cardDetail(hoveredCard.faceKey, label === undefined ? [] : labelledFacts(hoveredCard, game)) : null;
-  const detail = whole !== null && label !== undefined ? `${whole} — ${label}` : whole;
+  const labelled = whole !== null && label !== undefined ? `${whole} — ${label}` : whole;
+  // Another seat's card hanging under one of this seat's says whose it is.
+  const whose = hoveredCard === undefined ? null : zoneInfo(game, hoveredCard.zoneId)?.seat ?? null;
+  const detail = labelled !== null && whose !== null && whose !== seat ? `${whose}'s ${labelled}` : labelled;
   // A press whose view lists a choice of several answers is not sent yet: the offer and the picker close, and its questions open in
   // their place. Any other press goes at once.
   const askOrSend = (move: string, chosen: PickChosen | null, go: () => void) => {
@@ -509,7 +514,7 @@ export function Playtest({ game, library, players, seed, initial, onRestart, onS
     lastToAct.current = seat;
   }, []);
   const fittedDef = useMemo<TableDef | null>(
-    () => (running && fitted ? { players: running.seats, zones: fittedLayout(game.zones, selected) } : null),
+    () => (running && fitted ? { players: running.seats, zones: fittedLayout(game.zones, selected, running.seats) } : null),
     [running, fitted, game, selected],
   );
   const undo = () => {

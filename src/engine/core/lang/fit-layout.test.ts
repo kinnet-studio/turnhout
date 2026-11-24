@@ -19,6 +19,9 @@ import { fixtureCard } from './testing';
 import { BOARD_SPACING, STACK_GAP } from './fit-layout';
 import { fittedBounds, HANG_FOUR, HANG_ONE } from './fit-layout';
 import { TALL_GAME } from './testing';
+import { POST_GAME } from './testing';
+import { drawnCards } from './fit-layout';
+import { STACK_STEP } from './fit-layout';
 
 const lib = createDefaultLibrary();
 const seats = (n: number) => Array.from({ length: n }, (_, i) => `p${i}`);
@@ -465,4 +468,51 @@ describe("(guard) a zone whose cards sit on other players' cards (7-1 Task 5)", 
   const marked = BOARD.map((zone): ZoneSpec => (zone.name === 'idle' ? { ...zone, onCards: 'some', across: true } : zone));
   it("keeps it a board row, as 4-1's guard pins for 'some'", () =>
     expect(fittedLayout(marked, 'p1').find((d) => d.id === 'idle-p1')).toMatchObject({ layout: 'row', bounds: { height: 776 } }));
+});
+
+describe("other players' cards on the viewer's cards", () => {
+  const post = compileGame(POST_GAME, lib).game!.zones;
+  const SEATS = ['p0', 'p1', 'p2'];
+  const defs = fittedLayout(post, 'p1', SEATS);
+  const plain = fittedLayout(post, 'p1');
+
+  it("puts a free zone for each other seat's holdings first, resting where the viewer's free zones rest", () => {
+    expect(defs.slice(0, 2).map((d) => d.id)).toEqual(['holdings-p0', 'holdings-p2']);
+    const crew = plain.find((d) => d.id === 'crew-p1')!;
+    for (const [def, owner] of [[defs[0], 'p0'], [defs[1], 'p2']] as const) {
+      expect(def.layout).toBe('free');
+      expect(def.label).toBeUndefined();
+      expect(def.owner).toBe(owner);
+      expect(def.transform).toEqual(crew.transform);
+    }
+    expect(defs.slice(2)).toEqual(plain);
+  });
+  it('(guard) has no such zone with two arguments', () => {
+    expect(plain.map((d) => d.id)).not.toContain('holdings-p0');
+  });
+  it("draws another seat's card only where it sits on one of the viewer's", () => {
+    const v = fixtureCard('v', 'workshop-p1', {});
+    const a = fixtureCard('a', 'holdings-p0', { 'lang:on': 'v' });
+    const b = fixtureCard('b', 'holdings-p0', {});
+    const w = fixtureCard('w', 'workshop-p0', {});
+    const c = fixtureCard('c', 'holdings-p2', { 'lang:on': 'w' });
+    const d = fixtureCard('d', 'holdings-p1', {});
+    const drawn = drawnCards(defs, [v, a, b, w, c, d], 'p1');
+    expect(drawn).toEqual([v, a, d]);
+    drawn.forEach((card, i) => expect(card).toBe([v, a, d][i]));
+  });
+  it("hangs another seat's card first in the card's one column (Review Focus)", () => {
+    const v = fixtureCard('v', 'workshop-p1', {}, { slot: 0 });
+    const a = fixtureCard('a', 'holdings-p0', { 'lang:on': 'v' }, { slot: 0 });
+    const potter = fixtureCard('potter', 'crew-p1', { 'lang:on': 'v' }, { slot: 0 });
+    const out = stackOnHolders(defs, [v, a, potter]);
+    const pose = computeZoneLayout(defs.find((def) => def.id === 'workshop-p1')!, [v]).get('v')!;
+    const at = (id: string) => ({ x: out.find((card) => card.id === id)!.data!.x, y: out.find((card) => card.id === id)!.data!.y });
+    expect(at('a')).toEqual({ x: pose.x, y: pose.y + CARD_HEIGHT + STACK_GAP });
+    expect(at('potter')).toEqual({ x: pose.x, y: pose.y + CARD_HEIGHT + STACK_GAP + STACK_STEP });
+  });
+  it('lets every other zone win a drop over them (Review Focus)', () => {
+    const extra = unreachableZones(defs, 7).filter((problem) => !/^holdings-p[02]:/.test(problem));
+    expect(extra).toEqual(unreachableZones(plain, 7));
+  });
 });

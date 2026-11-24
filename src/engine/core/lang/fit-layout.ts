@@ -155,8 +155,13 @@ export function fittedBounds(zones: ZoneSpec[]): { min: Vec2; max: Vec2 } {
  * The private and board zones come in the order the table lists them, then the shared ones, then the free ones. Each zone keeps
  * the id the engine gives it, so a card dropped here goes where the engine's own layout would send it. A viewer with no public
  * zone of its own has no band: its zones lie along the bottom alone.
+ *
+ * And, for each zone each player has that everyone can see whose cards sit on other players' cards (`across`), in Table order, and
+ * each seat of `seats` but the viewer, in seat order: a free zone with that seat's id for it, owned by that seat, with no label,
+ * resting where the viewer's free zones rest. They come first in the list, so every other zone wins a drop over them, and the cards
+ * hanging from them are drawn first in a column, under the card's own.
  */
-export function fittedLayout(zones: ZoneSpec[], viewer: PlayerId): ZoneDef[] {
+export function fittedLayout(zones: ZoneSpec[], viewer: PlayerId, seats: PlayerId[] = [viewer]): ZoneDef[] {
   const own = zones.filter((z) => z.perPlayer);
   const ownId = (spec: ZoneSpec) => zoneIdFor(spec.name, viewer);
   const { shared, strip, band } = linesOf(zones);
@@ -200,7 +205,29 @@ export function fittedLayout(zones: ZoneSpec[], viewer: PlayerId): ZoneDef[] {
     const { layoutOptions: _spacing, ...def } = zoneDef(spec, ownId(spec), at, viewer);
     return { ...def, layout: 'free' };
   });
-  return [...slotted, ...common, ...attached];
+  const others = seats.filter((seat) => seat !== viewer);
+  const rivals = zones.filter((spec) => spec.across === true).flatMap((spec) => others.map((seat): ZoneDef => {
+    const { layoutOptions: _spacing, ...def } = zoneDef(spec, zoneIdFor(spec.name, seat), at, seat);
+    return { ...def, layout: 'free' };
+  }));
+  return [...rivals, ...slotted, ...common, ...attached];
+}
+
+/**
+ * The cards `viewer`'s fitted table draws, in the order given: those in a zone of `defs`, except that of a zone another seat owns only the
+ * cards that sit on a card in a zone the viewer owns.
+ */
+export function drawnCards(defs: ZoneDef[], cards: CardState[], viewer: PlayerId): CardState[] {
+  const owners = new Map(defs.map((def) => [def.id, def.owner] as const));
+  const zoneOf = new Map(cards.map((card) => [card.id, card.zoneId] as const));
+  return cards.filter((card) => {
+    const owner = owners.get(card.zoneId);
+    if (owner === undefined) return false;
+    if (owner === viewer || owner === 'shared') return true;
+    const holderId = holderIdOf(card);
+    const holderZone = holderId === null ? undefined : zoneOf.get(holderId);
+    return holderZone !== undefined && owners.get(holderZone) === viewer;
+  });
 }
 
 /**
@@ -219,7 +246,8 @@ function boardDef(def: ZoneDef, height: number, spec: ZoneSpec): ZoneDef {
 
 /**
  * The cards on cards placed under the cards they sit on, those of the free zones and of the rows that keep placed cards: each
- * holder's cards hang in a column at its x, in slot order, the first one's top `STACK_GAP` below the holder's bottom edge and each
+ * holder's cards hang in one column at its x, across every such zone in the order of `defs`, then in slot order, the first one's top
+ * `STACK_GAP` below the holder's bottom edge and each
  * next one `STACK_STEP` lower, the steps closing up evenly where the column would pass the bottom of the holder's slot. A moved
  * card is a copy with its place in `data.x` and `data.y`, where the free layout and such a row read it. A card of such a row that
  * hangs under nothing is spaced in the row, so one that carries a place from before is a copy without it. Every other card, a card
@@ -235,10 +263,10 @@ export function stackOnHolders(defs: ZoneDef[], cards: CardState[]): CardState[]
   }
 
   const moved = new Map<string, CardState>();
+  const columns = new Map<string, CardState[]>();
   for (const def of defs) {
     const keepsPlaced = def.layoutOptions?.keepPlaced === true;
     if (def.layout !== 'free' && !keepsPlaced) continue;
-    const columns = new Map<string, CardState[]>();
     for (const card of zoneCardsOf(def)) {
       const holderId = holderIdOf(card);
       if (holderId === null || !holders.has(holderId)) {
@@ -252,17 +280,17 @@ export function stackOnHolders(defs: ZoneDef[], cards: CardState[]): CardState[]
       column.push(card);
       columns.set(holderId, column);
     }
-    for (const [holderId, column] of columns) {
-      const holder = holders.get(holderId)!;
-      const slot = placeZone(holder.def, zoneCardsOf(holder.def));
-      const first = holder.y + CARD_HEIGHT + STACK_GAP;
-      const room = slot.y + slot.height / 2 - first - CARD_HEIGHT / 2;
-      const n = column.length;
-      const step = n > 1 ? Math.min(STACK_STEP, Math.max(0, room) / (n - 1)) : STACK_STEP;
-      column.forEach((card, k) => {
-        moved.set(card.id, { ...card, data: { ...card.data, x: holder.x, y: first + k * step } });
-      });
-    }
+  }
+  for (const [holderId, column] of columns) {
+    const holder = holders.get(holderId)!;
+    const slot = placeZone(holder.def, zoneCardsOf(holder.def));
+    const first = holder.y + CARD_HEIGHT + STACK_GAP;
+    const room = slot.y + slot.height / 2 - first - CARD_HEIGHT / 2;
+    const n = column.length;
+    const step = n > 1 ? Math.min(STACK_STEP, Math.max(0, room) / (n - 1)) : STACK_STEP;
+    column.forEach((card, k) => {
+      moved.set(card.id, { ...card, data: { ...card.data, x: holder.x, y: first + k * step } });
+    });
   }
   return cards.map((card) => moved.get(card.id) ?? card);
 }
